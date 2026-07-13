@@ -69,7 +69,7 @@ describe('FilterPrimitives', () => {
 
     it('opens sort options, selects a value, and closes on outside clicks', () => {
         const onSelect = vi.fn();
-        const { container } = render(
+        render(
             <SortDropdown
                 title="Sort by"
                 currentValue="name"
@@ -82,16 +82,16 @@ describe('FilterPrimitives', () => {
             />
         );
 
-        fireEvent.click(screen.getByTitle('Sort Options'));
-        expect(screen.getByText('Sort by')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Sort by' }));
+        expect(screen.getByRole('button', { name: 'Count' })).toBeTruthy();
 
         fireEvent.click(screen.getByText('Count'));
         expect(onSelect).toHaveBeenCalledWith('count');
-        expect(screen.queryByText('Sort by')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Count' })).toBeNull();
 
-        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort by' }));
         fireEvent.mouseDown(document.body);
-        expect(container.textContent).not.toContain('Sort by');
+        expect(screen.queryByRole('button', { name: 'Count' })).toBeNull();
     });
 
     it('filters grouped multi-select options, toggles selection, and clears selected values', () => {
@@ -271,9 +271,9 @@ describe('FilterPrimitives', () => {
                 triggerClassName={triggerClass}
             />
         );
-        expect(screen.getByTitle('Sort Options').className).toBe('closed-trigger');
-        fireEvent.click(screen.getByTitle('Sort Options'));
-        expect(screen.getByTitle('Sort Options').className).toBe('open-trigger');
+        expect(screen.getByRole('button', { name: 'Sort Options' }).className).toBe('closed-trigger');
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Options' }));
+        expect(screen.getByRole('button', { name: 'Sort Options' }).className).toBe('open-trigger');
         expect(document.querySelector('.right-0')).toBeTruthy();
 
         rerender(
@@ -284,7 +284,7 @@ describe('FilterPrimitives', () => {
                 triggerClassName="static-trigger"
             />
         );
-        expect(screen.getByTitle('Sort Options').className).toBe('static-trigger');
+        expect(screen.getByRole('button', { name: 'Sort Options' }).className).toBe('static-trigger');
     });
 
     it('removes multi-select values, shows grouped no-match, and closes outside', () => {
@@ -374,7 +374,7 @@ describe('FilterPrimitives', () => {
                 options={[{ id: 'name', label: 'Name' }]}
             />
         );
-        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Options' }));
         fireEvent.mouseDown(screen.getByText('Name'));
         expect(screen.getByText('Name')).toBeTruthy();
 

@@ -123,7 +123,7 @@ describe('ComfyUITab', () => {
         const setSettings = vi.fn();
         render(<ComfyUITab settings={settings} setSettings={setSettings} />);
 
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
 
         await waitFor(() => expect(setSettings).toHaveBeenCalled());
         expect(mocks.open).toHaveBeenCalledWith({
@@ -140,18 +140,18 @@ describe('ComfyUITab', () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { rerender } = render(<ComfyUITab settings={settings} setSettings={setSettings} />);
 
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
         await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
         expect(setSettings).not.toHaveBeenCalled();
 
         mocks.open.mockResolvedValueOnce(['E:/one', 'E:/two']);
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
         await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
         expect(setSettings).not.toHaveBeenCalled();
 
         mocks.open.mockRejectedValueOnce(new Error('dialog failed'));
         rerender(<ComfyUITab settings={settings} setSettings={setSettings} />);
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for ComfyUI Output Folder' }));
         await waitFor(() => expect(error).toHaveBeenCalledWith(expect.any(Error)));
         expect(setSettings).not.toHaveBeenCalled();
         error.mockRestore();

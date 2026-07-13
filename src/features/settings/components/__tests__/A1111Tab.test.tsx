@@ -126,6 +126,58 @@ describe('A1111Tab discovery warnings', () => {
         });
     });
 
+    it('keeps the non-standard folder switch keyboard-focusable and stateful', async () => {
+        mocks.discoverA1111Candidates.mockResolvedValue({
+            detectedVariant: WebUIVariant.A1111,
+            candidates: [
+                {
+                    path: 'D:/SD/outputs/txt2img-images',
+                    name: 'txt2img-images',
+                    imageCount: 1,
+                    inferredType: 'txt2img',
+                    isPriority: true,
+                    isAlreadyLinked: false,
+                    variant: WebUIVariant.A1111
+                },
+                {
+                    path: 'D:/SD/outputs/custom',
+                    name: 'custom',
+                    imageCount: 1,
+                    inferredType: 'unknown',
+                    isPriority: false,
+                    isAlreadyLinked: false,
+                    variant: WebUIVariant.A1111
+                }
+            ],
+            logs: [],
+            warnings: []
+        });
+
+        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /scan for folders/i }));
+
+        const switchControl = await screen.findByRole('switch', { name: 'Show Non-Standard Folders' });
+        expect(switchControl.className).toContain('sr-only');
+        expect(switchControl.className).not.toContain('hidden');
+        expect(switchControl.getAttribute('aria-checked')).toBe('false');
+
+        switchControl.focus();
+        expect(document.activeElement).toBe(switchControl);
+
+        const candidateCheckbox = screen.getByRole('checkbox', { name: 'Select D:/SD/outputs/txt2img-images' });
+        const visibleCheckbox = candidateCheckbox.nextElementSibling as HTMLElement;
+        expect(candidateCheckbox.className).toContain('peer');
+        expect(candidateCheckbox.className).toContain('sr-only');
+        expect(visibleCheckbox.className).toContain('peer-focus-visible:ring-2');
+        candidateCheckbox.focus();
+        expect(document.activeElement).toBe(candidateCheckbox);
+
+        fireEvent.click(switchControl);
+        expect(switchControl.getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByText('custom')).toBeTruthy();
+    });
+
     it('routes Link & Import through the provided cancellable scan callback', async () => {
         const onScanFolder = vi.fn().mockResolvedValue({
             images: [],
@@ -410,7 +462,7 @@ describe('A1111Tab discovery warnings', () => {
         render(<A1111Tab settings={createSettings()} setSettings={setSettings} />);
 
         fireEvent.change(screen.getByPlaceholderText(/stableDiffusion/i), { target: { value: 'E:/Archive' } });
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
         await waitFor(() => expect(setSettings).toHaveBeenCalledTimes(2));
 
         const paths = setSettings.mock.calls.map(([updater]) =>
@@ -435,9 +487,9 @@ describe('A1111Tab discovery warnings', () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         render(<A1111Tab settings={createSettings()} setSettings={setSettings} />);
 
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
         await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(1));
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for Stable Diffusion Folder' }));
         await waitFor(() => expect(console.error).toHaveBeenCalled());
         expect(setSettings).not.toHaveBeenCalled();
     });
@@ -469,9 +521,9 @@ describe('A1111Tab discovery warnings', () => {
         fireEvent.click(screen.getByText('Show non-standard folders'));
         expect(screen.getByText('archive')).toBeTruthy();
         const checkboxes = screen.getAllByRole('checkbox');
+        fireEvent.click(checkboxes[0]);
+        fireEvent.click(checkboxes[0]);
         fireEvent.click(checkboxes[1]);
-        fireEvent.click(checkboxes[1]);
-        fireEvent.click(checkboxes[2]);
         fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: 'saved' } });
         expect(screen.getByRole('button', { name: /link & import 2 folders/i })).toBeTruthy();
         expect(mocks.discoverA1111Candidates).toHaveBeenCalledWith('D:/SD/outputs', expect.any(Set), WebUIVariant.FORGE);

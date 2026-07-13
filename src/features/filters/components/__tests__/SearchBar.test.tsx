@@ -235,7 +235,7 @@ describe('SearchBar advanced date syntax guard', () => {
         const input = screen.getByPlaceholderText('Ask Ambit...');
         fireEvent.focus(input);
         fireEvent.blur(input);
-        fireEvent.click(screen.getByTitle('Disable AI Search'));
+        fireEvent.click(screen.getByRole('button', { name: 'Disable AI Search' }));
         expect(harness.searchProps.onFocus).toHaveBeenCalledOnce();
         expect(harness.searchProps.onBlur).toHaveBeenCalledOnce();
         expect(harness.searchProps.toggleAiSearch).toHaveBeenCalledOnce();

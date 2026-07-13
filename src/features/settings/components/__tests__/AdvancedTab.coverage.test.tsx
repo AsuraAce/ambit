@@ -202,10 +202,7 @@ describe('AdvancedTab', () => {
         const { setSettings } = renderAdvanced(createSettings(), { onCheckForUpdates });
 
         fireEvent.click(screen.getByRole('button', { name: /interface/i }));
-        const buttons = screen.getAllByRole('button');
-        const toggle = buttons.find((button) => button.className.includes('w-12'));
-        expect(toggle).toBeDefined();
-        fireEvent.click(toggle!);
+        fireEvent.click(screen.getByRole('switch', { name: 'Automatic Updates' }));
         const updater = setSettings.mock.calls[0][0] as (settings: AppSettings) => AppSettings;
         expect(updater(createSettings()).autoCheckForUpdates).toBe(false);
         expect(addToastMock).toHaveBeenCalledWith('Automatic update checks disabled', 'success');
@@ -218,8 +215,7 @@ describe('AdvancedTab', () => {
         const { setSettings } = renderAdvanced(createSettings({ autoCheckForUpdates: false }));
 
         fireEvent.click(screen.getByRole('button', { name: /interface/i }));
-        const toggle = screen.getAllByRole('button').find((button) => button.className.includes('w-12'));
-        fireEvent.click(toggle!);
+        fireEvent.click(screen.getByRole('switch', { name: 'Automatic Updates' }));
 
         const updater = setSettings.mock.calls[0][0] as (settings: AppSettings) => AppSettings;
         expect(updater(createSettings({ autoCheckForUpdates: false })).autoCheckForUpdates).toBe(true);

@@ -77,6 +77,8 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                             <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Resolving...</span>
                             <div className="w-[1px] h-3 bg-blue-500/30" />
                             <button
+                                type="button"
+                                aria-label="Cancel Online Model Resolution"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     void cancelResolveOnline();

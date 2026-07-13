@@ -22,7 +22,7 @@ const filters = (overrides: Partial<FilterState> = {}): FilterState => ({
     ...overrides,
 });
 
-const button = (tooltip: string) => screen.getByText(tooltip).closest('button') as HTMLButtonElement;
+const button = (label: string) => screen.getByRole('button', { name: label });
 
 describe('AppSidebar', () => {
     it('navigates, toggles filters, and opens utility dialogs', () => {
@@ -63,11 +63,11 @@ describe('AppSidebar', () => {
             fireEvent.click(button(label));
             expect(setViewMode).toHaveBeenCalledWith(mode);
         }
-        fireEvent.click(button('Toggle Filters'));
-        fireEvent.click(button('Favorites Only'));
-        fireEvent.click(button('Pinned Only'));
-        fireEvent.click(screen.getByTitle('Support'));
-        fireEvent.click(screen.getByTitle('Shortcuts'));
+        fireEvent.click(button('Show Filters'));
+        fireEvent.click(button('Disable Favorites Only'));
+        fireEvent.click(button('Disable Pinned Only'));
+        fireEvent.click(screen.getByRole('button', { name: 'Support Ambit' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Keyboard Shortcuts' }));
         fireEvent.click(button('Settings'));
 
         expect(panelOpen).toBe(true);
@@ -100,7 +100,7 @@ describe('AppSidebar', () => {
         );
 
         expect(button('Grid View').className).toContain(viewMode === 'grid' && !favoritesOnly ? 'bg-sage-500' : 'text-gray-400');
-        expect(button('Toggle Filters').className).toContain(
+        expect(button(panelOpen ? 'Hide Filters' : 'Show Filters').className).toContain(
             panelOpen && viewMode !== 'maintenance' ? 'bg-sage-500' : 'text-gray-400'
         );
     });

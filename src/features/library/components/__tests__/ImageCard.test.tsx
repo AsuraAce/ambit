@@ -89,8 +89,8 @@ describe('ImageCard', () => {
         expect(props.onImageError).toHaveBeenCalledTimes(1);
 
         fireEvent.click(container.querySelector('.absolute.top-2.left-2') as HTMLElement);
-        fireEvent.click(screen.getByTitle('Favorite'));
-        fireEvent.click(screen.getByTitle('Pin to Top'));
+        fireEvent.click(screen.getByRole('button', { name: 'Add to Favorites' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Pin to Top' }));
         expect(props.onToggleSelection).toHaveBeenCalledTimes(1);
         expect(props.onToggleFavorite).toHaveBeenCalledTimes(1);
         expect(props.onTogglePin).toHaveBeenCalledTimes(1);
@@ -101,16 +101,16 @@ describe('ImageCard', () => {
         const { container, props } = setup({ isMasked: true, isSelected: true });
         const root = container.firstElementChild as HTMLElement;
         expect(screen.getByText('Hidden Content')).toBeTruthy();
-        expect(screen.queryByTitle('Hide content')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Hide Content' })).toBeNull();
         fireEvent.mouseLeave(root);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
 
         fireEvent.click(screen.getByText('Reveal'));
         expect(screen.queryByText('Hidden Content')).toBeNull();
-        expect(screen.getByTitle('Hide content')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Hide Content' })).toBeTruthy();
         expect(root.className).toContain('border-sage-500');
 
-        fireEvent.click(screen.getByTitle('Hide content'));
+        fireEvent.click(screen.getByRole('button', { name: 'Hide Content' }));
         expect(screen.getByText('Hidden Content')).toBeTruthy();
         fireEvent.click(screen.getByText('Reveal'));
         fireEvent.mouseLeave(root);
@@ -135,19 +135,20 @@ describe('ImageCard', () => {
         expect(screen.queryByText('Trash')).toBeNull();
         expect(screen.queryByText('Hidden Content')).toBeNull();
         expect(screen.queryByTitle('Pinned')).toBeNull();
-        expect(screen.queryByTitle('Unfavorite')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Remove from Favorites' })).toBeNull();
         expect(screen.queryByTitle('Collection Thumbnail')).toBeNull();
-        expect(screen.queryByTitle('Pin to Top')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Pin to Top' })).toBeNull();
         fireEvent.dragStart(root);
 
         rerender(<ImageCard image={image({ isDeleted: true, isPinned: true, isFavorite: true })} isSelected={false} isThumbnail onClick={vi.fn()} onToggleSelection={vi.fn()} onToggleFavorite={favorite} onTogglePin={vi.fn()} />);
         expect(screen.getByText('Trash')).toBeTruthy();
         expect(screen.getByTitle('Pinned')).toBeTruthy();
-        expect(screen.getAllByTitle('Unfavorite')).toHaveLength(2);
+        expect(screen.getByRole('img', { name: 'Favorite' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Remove from Favorites' })).toBeTruthy();
         expect(screen.getByTitle('Collection Thumbnail')).toBeTruthy();
-        expect(screen.getByTitle('Unpin')).toBeTruthy();
-        for (const control of screen.getAllByTitle('Unfavorite')) fireEvent.click(control);
-        expect(favorite).toHaveBeenCalledTimes(2);
+        expect(screen.getByRole('button', { name: 'Unpin' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Remove from Favorites' }));
+        expect(favorite).toHaveBeenCalledOnce();
     });
 
     it('uses override, object, hash, and generic model labels in priority order', () => {

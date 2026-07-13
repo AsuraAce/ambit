@@ -146,11 +146,11 @@ describe('DuplicateFinder', () => {
         const onCompareImages = vi.fn();
         render(<DuplicateFinder {...baseProps()} onViewImage={onViewImage} onCompareImages={onCompareImages} />);
 
-        fireEvent.click(screen.getAllByTitle('Open in viewer')[0]);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Open in Viewer' })[0]);
         expect(onViewImage).toHaveBeenCalledWith('exact-0');
-        fireEvent.click(screen.getAllByTitle('Compare with another copy')[0]);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Compare with Another Copy' })[0]);
         expect(onCompareImages).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'exact-2' }), expect.objectContaining({ id: 'exact-0' }));
-        fireEvent.click(screen.getAllByTitle('Compare with another copy')[2]);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Compare with Another Copy' })[2]);
         expect(onCompareImages).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'exact-0' }), expect.objectContaining({ id: 'exact-2' }));
         fireEvent.click(screen.getAllByText('Keep Only This')[1]);
         expect(mocks.handleResolve).toHaveBeenCalledWith('exact-group', 'exact-1', ['exact-0', 'exact-1', 'exact-2']);
@@ -162,7 +162,7 @@ describe('DuplicateFinder', () => {
         mocks.masked = true;
         const { container } = render(<DuplicateFinder {...baseProps()} />);
         expect(screen.getAllByText('Reveal')).toHaveLength(2);
-        expect(screen.queryByTitle('Open in viewer')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open in Viewer' })).toBeNull();
         const firstItem = container.querySelector('[title="likely-a.png"]')?.closest('.group') as HTMLElement;
         fireEvent.mouseLeave(firstItem);
         expect(screen.getAllByText('Reveal')).toHaveLength(2);
@@ -174,6 +174,6 @@ describe('DuplicateFinder', () => {
         mocks.masked = false;
         const { rerender } = render(<DuplicateFinder {...baseProps()} />);
         rerender(<DuplicateFinder {...baseProps()} />);
-        for (const button of screen.getAllByTitle('Compare with another copy')) expect((button as HTMLButtonElement).disabled).toBe(true);
+        for (const button of screen.getAllByRole('button', { name: 'Compare with Another Copy' })) expect((button as HTMLButtonElement).disabled).toBe(true);
     });
 });

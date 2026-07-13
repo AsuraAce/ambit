@@ -20,7 +20,7 @@ describe('ArchitectureSection', () => {
         render(<ArchitectureSection filters={filters()} setFilters={vi.fn()} models={['flux']} isOpen={false} onToggle={onToggle} />);
         fireEvent.click(screen.getByText('Model Architecture'));
         expect(onToggle).toHaveBeenCalledTimes(1);
-        expect(screen.queryByTitle('Filter Models')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Search Models' })).toBeNull();
     });
 
     it('searches models and toggles selections in both directions', () => {
@@ -37,10 +37,10 @@ describe('ArchitectureSection', () => {
         fireEvent.click(screen.getByText('sdxl_base'));
         expect(current.models).toEqual(['sdxl_base']);
 
-        fireEvent.click(screen.getByTitle('Filter Models'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search Models' }));
         fireEvent.change(screen.getByPlaceholderText('Search models...'), { target: { value: 'missing' } });
         expect(screen.getByText('No models found')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('Filter Models'));
+        fireEvent.click(screen.getByRole('button', { name: 'Hide Model Search' }));
         expect(screen.queryByPlaceholderText('Search models...')).toBeNull();
     });
 });

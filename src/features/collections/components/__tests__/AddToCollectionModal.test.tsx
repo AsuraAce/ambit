@@ -58,6 +58,23 @@ const renderModal = (collections: Collection[], overrides: ModalOverrides = {}) 
     />
 );
 
+const FocusHarness = () => {
+    const [isOpen, setIsOpen] = React.useState(false);
+
+    return (
+        <>
+            <button type="button" onClick={() => setIsOpen(true)}>Open collection picker</button>
+            <AddToCollectionModal
+                isOpen={isOpen}
+                onClose={() => setIsOpen(false)}
+                collections={[baseCollection]}
+                selectedIds={['image-1']}
+                onConfirm={() => { }}
+            />
+        </>
+    );
+};
+
 describe('AddToCollectionModal thumbnail hydration states', () => {
     beforeEach(() => {
         useCollectionStore.setState(useCollectionStore.getInitialState(), true);
@@ -135,10 +152,10 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         renderModal([baseCollection, archived]);
         expect(screen.queryByText('Archived Set')).toBeNull();
 
-        fireEvent.click(screen.getByTitle('Show Archived'));
+        fireEvent.click(screen.getByRole('button', { name: 'Show Archived Collections' }));
         expect(screen.getByText('Archived Set')).not.toBeNull();
         expect(screen.getByText('Archived')).not.toBeNull();
-        fireEvent.click(screen.getByTitle('Hide Archived'));
+        fireEvent.click(screen.getByRole('button', { name: 'Hide Archived Collections' }));
         expect(screen.queryByText('Archived Set')).toBeNull();
     });
 
@@ -154,7 +171,7 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         const beta = { ...baseCollection, id: 'beta', name: 'Beta', count: undefined, imageIds: ['one', 'two', 'three'], createdAt: 2 };
         renderModal([beta, alpha]);
 
-        fireEvent.click(screen.getByTitle('Sort Collections'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
         fireEvent.click(screen.getByRole('button', { name: option }));
         const names = screen.getAllByRole('button').filter(button => expected.includes(button.textContent?.match(/Alpha|Beta/)?.[0] ?? ''));
         expect(names.map(button => button.textContent?.match(/Alpha|Beta/)?.[0])).toEqual(expected);
@@ -163,7 +180,7 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
     it('closes the sort menu from its backdrop and closes the modal from header and overlay', () => {
         const onClose = vi.fn();
         const { container } = renderModal([baseCollection], { onClose });
-        fireEvent.click(screen.getByTitle('Sort Collections'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
         const sortBackdrop = container.querySelector('.fixed.inset-0.z-10');
         expect(sortBackdrop).not.toBeNull();
         fireEvent.click(sortBackdrop!);
@@ -214,7 +231,35 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         ]);
         expect(screen.getByTestId('collection-thumbnail-skeleton')).not.toBeNull();
         expect(screen.getAllByTestId('collection-thumbnail-fallback')).toHaveLength(2);
-        fireEvent.click(screen.getByTitle('Show Archived'));
+        fireEvent.click(screen.getByRole('button', { name: 'Show Archived Collections' }));
         expect(screen.getAllByTestId('collection-thumbnail-fallback')).toHaveLength(3);
+    });
+});
+
+describe('AddToCollectionModal focus handoff', () => {
+    it('returns focus to the collection launcher after closing', () => {
+        render(<FocusHarness />);
+        const launcher = screen.getByRole('button', { name: 'Open collection picker' });
+        launcher.focus();
+
+        fireEvent.click(launcher);
+        const closeButton = screen.getByRole('button', { name: 'Close Add to Collection' });
+        expect(document.activeElement).toBe(closeButton);
+
+        fireEvent.click(closeButton);
+        expect(document.activeElement).toBe(launcher);
+    });
+
+    it('reports the sort popup as an expanded disclosure without claiming menu behavior', () => {
+        renderModal([baseCollection]);
+
+        const sortButton = screen.getByRole('button', { name: 'Sort Collections' });
+        expect(sortButton.getAttribute('aria-expanded')).toBe('false');
+        expect(sortButton.getAttribute('aria-haspopup')).toBeNull();
+
+        fireEvent.click(sortButton);
+
+        expect(sortButton.getAttribute('aria-expanded')).toBe('true');
+        expect(screen.getByRole('button', { name: 'Name (A-Z)' })).toBeTruthy();
     });
 });

@@ -289,7 +289,7 @@ describe('ResourceSection asset scope filtering', () => {
             />
         );
 
-        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), {
             target: { value: 'watercolor_flu' }
         });
@@ -396,11 +396,66 @@ describe('ResourceSection match mode controls', () => {
             />
         );
 
-        expect(screen.queryByTitle(/Match Any/)).toBeNull();
-        expect(screen.queryByTitle(/Match All/)).toBeNull();
+        expect(screen.queryByRole('button', { name: /match mode/i })).toBeNull();
     });
 
-    it('keeps the Match Any/All toggle for multi-valued resources', () => {
+    it('explains and updates Match Any/All for multi-valued resources', () => {
+        let nextFilters = filters;
+        const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => {
+            nextFilters = update(filters);
+        });
+        const view = render(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={filters}
+                setFilters={setFilters}
+                data={[{
+                    name: 'Detailer',
+                    hash: 'lora_Detailer',
+                    count: 3
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
+
+        expect(screen.queryByRole('button', { name: 'About Resources match modes' })).toBeNull();
+
+        const matchAnyButton = screen.getByRole('button', { name: /Resources match mode: Match Any/i });
+        fireEvent.focus(matchAnyButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Match Any: Show images containing at least one selected item.');
+
+        fireEvent.click(matchAnyButton);
+        expect(nextFilters.matchModes?.loras).toBe('all');
+
+        view.rerender(
+            <ResourceSection
+                title="Resources"
+                type="loras"
+                filters={nextFilters}
+                setFilters={setFilters}
+                data={[{
+                    name: 'Detailer',
+                    hash: 'lora_Detailer',
+                    count: 3
+                }]}
+                isOpen
+                onToggle={vi.fn()}
+            />
+        );
+
+        expect(screen.getByRole('button', { name: /Resources match mode: Match All/i }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByRole('tooltip').textContent).toBe('Match All: Show images containing every selected item.');
+    });
+});
+
+describe('ResourceSection toolbar tooltips', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('explains icon actions without native titles and preserves toolbar behavior', () => {
         render(
             <ResourceSection
                 title="Resources"
@@ -417,7 +472,39 @@ describe('ResourceSection match mode controls', () => {
             />
         );
 
-        expect(screen.getByTitle(/Match Any/)).toBeTruthy();
+        const sortButton = screen.getByRole('button', { name: 'Sort LoRAs' });
+        expect(sortButton.getAttribute('title')).toBeNull();
+        expect(sortButton.getAttribute('aria-haspopup')).toBeNull();
+        expect(sortButton.getAttribute('aria-expanded')).toBe('false');
+        fireEvent.mouseEnter(sortButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Sort LoRAs');
+        fireEvent.mouseLeave(sortButton);
+
+        fireEvent.click(sortButton);
+        const nameSortOption = screen.getByRole('button', { name: 'Name (A-Z)' });
+        fireEvent.pointerDown(nameSortOption);
+        fireEvent.click(nameSortOption);
+        expect(settingsContextMocks.setSettings).toHaveBeenCalled();
+
+        const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
+        expect(viewButton.getAttribute('title')).toBeNull();
+        expect(viewButton.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.focus(viewButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
+        fireEvent.blur(viewButton);
+        fireEvent.click(viewButton);
+        expect(settingsContextMocks.setSettings).toHaveBeenCalledTimes(2);
+        fireEvent.pointerDown(document.body);
+
+        const searchButton = screen.getByRole('button', { name: 'Search LoRAs' });
+        expect(searchButton.getAttribute('title')).toBeNull();
+        expect(searchButton.getAttribute('aria-expanded')).toBe('false');
+        fireEvent.mouseEnter(searchButton);
+        expect(screen.getByRole('tooltip').textContent).toBe('Search LoRAs');
+        fireEvent.mouseLeave(searchButton);
+        fireEvent.click(searchButton);
+        expect(searchButton.getAttribute('aria-expanded')).toBe('true');
+        expect(screen.getByPlaceholderText('Search LoRAs...')).toBeTruthy();
     });
 });
 
@@ -627,14 +714,14 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('persists view mode changes and renders the configured grid view', () => {
         const first = renderBasic();
-        fireEvent.click(screen.getByTitle('Switch to Grid View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to Grid View' }));
         const update = settingsContextMocks.setSettings.mock.calls[0][0];
         expect(update({ resourceViewModes: { loras: 'list' } }).resourceViewModes.loras).toBe('grid');
         first.unmount();
 
         settingsContextMocks.resourceViewModes = { loras: 'grid' };
         renderBasic({ data: [{ name: 'Grid Item', count: 2, thumbnailPath: 'thumb.webp', isLocalDisk: true }] });
-        expect(screen.getByTitle('Switch to List View')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Switch to List View' })).toBeTruthy();
         expect(screen.getByTitle('Grid Item')).toBeTruthy();
         expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
         expect(screen.getByLabelText('Local asset on disk')).toBeTruthy();
@@ -661,25 +748,25 @@ describe('ResourceSection interactions and remaining states', () => {
         let current = { ...filters };
         const setFilters = vi.fn((update: (prev: FilterState) => FilterState) => { current = update(current); });
         const first = renderBasic({ filters: current, setFilters });
-        fireEvent.click(screen.getByTitle(/Match Any/));
+        fireEvent.click(screen.getByRole('button', { name: /Match Any/ }));
         expect(current.matchModes?.loras).toBe('all');
         first.unmount();
 
         const second = renderBasic({ filters: current, setFilters });
-        fireEvent.click(screen.getByTitle(/Match All/));
+        fireEvent.click(screen.getByRole('button', { name: /Match All/ }));
         expect(current.matchModes?.loras).toBe('any');
         second.unmount();
     });
 
     it('opens, filters, and closes search while clearing the query', async () => {
         renderBasic({ data: [{ name: 'Alpha', count: 2 }, { name: 'Beta', count: 1 }] });
-        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'alp' } });
         expect(screen.getByText('Alpha')).toBeTruthy();
         await waitFor(() => expect(screen.queryByText('Beta')).toBeNull());
-        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         expect(screen.queryByPlaceholderText('Search LoRAs...')).toBeNull();
-        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         expect((screen.getByPlaceholderText('Search LoRAs...') as HTMLInputElement).value).toBe('');
         expect(screen.getByText('Beta')).toBeTruthy();
     });
@@ -696,7 +783,7 @@ describe('ResourceSection interactions and remaining states', () => {
         }
 
         const noMatch = renderBasic({ data: [{ name: 'Alpha', count: 1 }] });
-        fireEvent.click(screen.getByTitle('Search LoRAs'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search LoRAs' }));
         fireEvent.change(screen.getByPlaceholderText('Search LoRAs...'), { target: { value: 'zzz' } });
         expect(screen.getByText('No matching LoRAs')).toBeTruthy();
         noMatch.unmount();
@@ -736,7 +823,7 @@ describe('ResourceSection interactions and remaining states', () => {
 
     it('persists a sort selection from the dropdown', () => {
         renderBasic();
-        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort LoRAs' }));
         fireEvent.click(screen.getByText('Name (A-Z)'));
         const update = settingsContextMocks.setSettings.mock.calls.at(-1)?.[0];
         expect(update({ resourceSortOptions: {} }).resourceSortOptions.loras).toBe('name_asc');
@@ -880,7 +967,7 @@ describe('ResourceSection interactions and remaining states', () => {
     it('persists grid-to-list switching', () => {
         settingsContextMocks.resourceViewModes = { loras: 'grid' };
         renderBasic();
-        fireEvent.click(screen.getByTitle('Switch to List View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to List View' }));
         const update = settingsContextMocks.setSettings.mock.calls[0][0];
         expect(update({ resourceViewModes: { loras: 'grid' } }).resourceViewModes.loras).toBe('list');
     });
