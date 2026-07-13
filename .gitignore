@@ -38,6 +38,8 @@ gha-creds-*.json
 docs/*
 !docs/assets/
 !docs/assets/**
+!docs/plans/
+!docs/plans/*.md
 !docs/WORKFLOW_SETUP.md
 !docs/architecture.md
 !docs/experimental-unix-builds.md
