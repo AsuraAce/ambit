@@ -46,6 +46,20 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
     isProcessing
 }) => {
     const [selectedStyle, setSelectedStyle] = useState<RecoveryStyle>('generic');
+    const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
 
     return (
         <AnimatePresence mode="wait">
@@ -89,6 +103,9 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                             </div>
                             {!isProcessing && (
                                 <button
+                                    ref={closeButtonRef}
+                                    type="button"
+                                    aria-label="Close Metadata Recovery"
                                     onClick={onClose}
                                     className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                                 >

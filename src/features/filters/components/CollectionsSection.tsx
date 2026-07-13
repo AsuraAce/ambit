@@ -4,6 +4,7 @@ import { Plus, Save, FolderOpen } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SectionHeader } from './FilterPrimitives';
 import { CollectionList } from './CollectionList';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface CollectionsSectionProps {
     collections: Collection[];
@@ -110,21 +111,23 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                     renderToolbarExtras={() => (
                         <div className="ml-auto flex items-center gap-1">
                             {isDirty && !isCreating && (
-                                <button
+                                <TooltipButton
+                                    label="Save Filters as Collection"
+                                    content="Save the current filters as a smart collection"
                                     onClick={(e) => { e.stopPropagation(); startCreation(true); }}
                                     className="text-sage-600 dark:text-sage-400 hover:text-white hover:bg-sage-500 transition-all bg-sage-50 dark:bg-sage-900/40 border border-sage-500/30 p-1.5 rounded-lg shadow-sm"
-                                    title="Save Filters as Collection"
                                 >
                                     <Save className="w-3.5 h-3.5" />
-                                </button>
+                                </TooltipButton>
                             )}
-                            <button
+                            <TooltipButton
+                                label="New Empty Collection"
+                                content="Create a collection without saving the current filters"
                                 onClick={(e) => { e.stopPropagation(); startCreation(false); }}
                                 className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/5 p-1.5 rounded-lg shadow-sm"
-                                title="New Empty Collection"
                             >
                                 <Plus className="w-3.5 h-3.5" />
-                            </button>
+                            </TooltipButton>
                         </div>
                     )}
                     renderCreationForm={() => isCreating && (

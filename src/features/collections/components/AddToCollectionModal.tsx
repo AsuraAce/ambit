@@ -7,6 +7,7 @@ import { SearchInput } from '../../filters/components/FilterPrimitives';
 import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbnail';
 import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { useCollectionStore } from '../../../stores/collectionStore';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -46,8 +47,22 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
     const [sort, setSort] = useState<CollectionSort>('date_desc');
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showArchived, setShowArchived] = useState(false);
+    const closeButtonRef = React.useRef<HTMLButtonElement>(null);
     const thumbnailHydrationPendingIds = useCollectionStore(s => s.thumbnailHydrationPendingIds);
     const smartSummaryPendingIds = useCollectionStore(s => s.smartSummaryPendingIds);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
 
     const allCollections = [...collections, ...smartCollections];
 
@@ -105,7 +120,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         </h3>
                         <p className="text-xs text-gray-500">{selectedIds.length} images selected</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
+                    <button ref={closeButtonRef} type="button" aria-label="Close Add to Collection" onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
                         <X className="w-5 h-5 text-gray-400" />
                     </button>
                 </div>
@@ -120,21 +135,25 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                     />
 
                     <div className="relative">
-                        <button
+                        <TooltipButton
+                            label="Sort Collections"
+                            content="Sort Collections"
+                            aria-expanded={showSortMenu}
                             onClick={() => setShowSortMenu(!showSortMenu)}
                             className={`p-2 rounded-lg border transition-all ${showSortMenu ? 'bg-sage-600 text-white border-sage-600' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-gray-500'}`}
-                            title="Sort Collections"
                         >
                             <ArrowUpDown className="w-4 h-4" />
-                        </button>
+                        </TooltipButton>
 
-                        <button
+                        <TooltipButton
+                            label={showArchived ? "Hide Archived Collections" : "Show Archived Collections"}
+                            content={showArchived ? "Hide Archived Collections" : "Show Archived Collections"}
+                            aria-pressed={showArchived}
                             onClick={() => setShowArchived(!showArchived)}
                             className={`p-2 rounded-lg border transition-all ${showArchived ? 'bg-sage-600 text-white border-sage-600' : 'bg-white dark:bg-zinc-800 border-gray-200 dark:border-white/10 text-gray-500'}`}
-                            title={showArchived ? "Hide Archived" : "Show Archived"}
                         >
                             <Archive className="w-4 h-4" />
-                        </button>
+                        </TooltipButton>
 
                         <AnimatePresence>
                             {showSortMenu && (

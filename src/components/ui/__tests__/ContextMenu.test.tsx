@@ -37,7 +37,7 @@ describe('ContextMenu', () => {
         expect(root.style.left).toBe('760px');
         expect(root.style.top).toBe('500px');
 
-        for (const title of ['Unfavorite', 'Unpin', 'Show in Folder', 'Remove from Library']) fireEvent.click(screen.getByTitle(title));
+        for (const label of ['Unfavorite', 'Unpin', 'Show in Folder', 'Remove from Library']) fireEvent.click(screen.getByRole('button', { name: label }));
         expect(cb.onToggleFavorite).toHaveBeenCalledOnce();
         expect(cb.onTogglePin).toHaveBeenCalledOnce();
         expect(cb.onShowInFolder).toHaveBeenCalledOnce();
@@ -86,8 +86,8 @@ describe('ContextMenu', () => {
                 onToggleMask={cb.onToggleMask} onToggleIntermediate={cb.onToggleIntermediate}
             />
         );
-        expect(screen.getByTitle('Favorite')).toBeTruthy();
-        expect(screen.getByTitle('Pin to Top')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Favorite' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Pin to Top' })).toBeTruthy();
         openSubmenu('Privacy & AI');
         fireEvent.click(screen.getByRole('button', { name: 'Unmask Content' }));
         fireEvent.click(screen.getByRole('button', { name: 'Mark as Intermediate' }));
@@ -130,6 +130,6 @@ describe('ContextMenu', () => {
     it('uses no-op favorite behavior when no callback is supplied', () => {
         const cb = callbacks();
         render(<ContextMenu x={0} y={0} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt} onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin} onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder} />);
-        expect(() => fireEvent.click(screen.getByTitle('Favorite'))).not.toThrow();
+        expect(() => fireEvent.click(screen.getByRole('button', { name: 'Favorite' }))).not.toThrow();
     });
 });

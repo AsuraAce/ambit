@@ -5,6 +5,7 @@ import {
   Wand2, Eye, EyeOff, MinusCircle, ImageIcon, ExternalLink,
   ImageOff, ChevronRight, Share2, Layout, Shield
 } from 'lucide-react';
+import { TooltipButton } from './InfoTooltip';
 
 interface ContextMenuProps {
   x: number;
@@ -114,23 +115,25 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           <ActionButton
             icon={<Heart className={`w-4 h-4 ${isFavorite ? 'fill-red-500 text-red-500' : 'text-gray-400'}`} />}
             onClick={() => onToggleFavorite?.()}
-            title={isFavorite ? "Unfavorite" : "Favorite"}
+            label={isFavorite ? "Unfavorite" : "Favorite"}
+            pressed={Boolean(isFavorite)}
           />
           <ActionButton
             icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
             onClick={onTogglePin}
-            title={isPinned ? "Unpin" : "Pin to Top"}
+            label={isPinned ? "Unpin" : "Pin to Top"}
+            pressed={Boolean(isPinned)}
           />
           <ActionButton
             icon={<Folder className="w-4 h-4 text-gray-400" />}
             onClick={onShowInFolder}
-            title="Show in Folder"
+            label="Show in Folder"
           />
         </div>
         <ActionButton
           icon={<Trash2 className="w-4 h-4 text-gray-400" />}
           onClick={onDelete}
-          title="Remove from Library"
+          label="Remove from Library"
           className="hover:!bg-red-500/20 hover:!text-red-400"
         />
       </div>
@@ -241,16 +244,55 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 };
 
 const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.ReactNode, children: React.ReactNode, side: 'right' | 'left' }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isClickOpen, setIsClickOpen] = useState(false);
   const timeoutRef = useRef<number | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isOpen = isHovered || isClickOpen;
 
   const handleMouseEnter = () => {
     if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
-    setIsOpen(true);
+    setIsHovered(true);
   };
 
   const handleMouseLeave = () => {
-    timeoutRef.current = window.setTimeout(() => setIsOpen(false), 150);
+    timeoutRef.current = window.setTimeout(() => setIsHovered(false), 150);
+  };
+
+  const toggleOpen = () => {
+    if (isOpen) {
+      setIsHovered(false);
+      setIsClickOpen(false);
+    } else {
+      setIsClickOpen(true);
+    }
+  };
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.stopPropagation();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsClickOpen(true);
+    } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsHovered(false);
+      setIsClickOpen(false);
+    }
+  };
+
+  const handleSubmenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowRight') {
+      event.stopPropagation();
+    } else if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsHovered(false);
+      setIsClickOpen(false);
+      triggerRef.current?.focus();
+    }
   };
 
   return (
@@ -258,8 +300,21 @@ const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.R
       className="relative"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setIsHovered(false);
+          setIsClickOpen(false);
+        }
+      }}
     >
-      <button className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between transition-colors group">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={isOpen}
+        onClick={toggleOpen}
+        onKeyDown={handleKeyDown}
+        className="w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/10 hover:text-white flex items-center justify-between transition-colors group"
+      >
         <div className="flex items-center gap-2">
           {icon}
           <span>{label}</span>
@@ -269,6 +324,7 @@ const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.R
 
       {isOpen && (
         <div
+          onKeyDown={handleSubmenuKeyDown}
           className={`absolute top-0 w-56 bg-zinc-950/95 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl py-1 z-[60] animate-in fade-in zoom-in-95 duration-150 ${side === 'right' ? 'left-[calc(100%+4px)]' : 'right-[calc(100%+4px)]'}`}
         >
           {children}
@@ -291,15 +347,14 @@ const MenuItem = ({ icon, label, onClick, className = "" }: { icon: React.ReactN
   </button>
 );
 
-const ActionButton = ({ icon, onClick, title, className = "" }: { icon: React.ReactNode, onClick: () => void, title: string, className?: string }) => (
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      onClick();
-    }}
-    title={title}
+const ActionButton = ({ icon, onClick, label, pressed, className = "" }: { icon: React.ReactNode, onClick: () => void, label: string, pressed?: boolean, className?: string }) => (
+  <TooltipButton
+    label={label}
+    content={label}
+    aria-pressed={pressed}
+    onClick={onClick}
     className={`p-2 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white ${className}`}
   >
     {icon}
-  </button>
+  </TooltipButton>
 );

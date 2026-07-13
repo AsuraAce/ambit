@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock, Maximize2, Info } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface SlideshowModalProps {
   isOpen: boolean;
@@ -34,6 +35,20 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
   // Logic
   const hudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shuffledIndicesRef = useRef<number[]>([]);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousFocus = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    closeButtonRef.current?.focus();
+
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
+  }, [isOpen]);
 
   // Generate shuffled order on mount or when shuffle toggled
   useEffect(() => {
@@ -201,10 +216,13 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
 
       {/* HUD Controls */}
       <div
-        className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${showHud ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 pointer-events-none transition-opacity duration-300 focus-within:opacity-100 ${showHud ? 'opacity-100' : 'opacity-0'}`}
+        onKeyDown={(event) => {
+          if (event.key === ' ') event.stopPropagation();
+        }}
       >
         <div className="absolute top-0 left-0 right-0 p-6 flex justify-end bg-gradient-to-b from-black/60 to-transparent pointer-events-auto z-50">
-          <button onClick={onClose} className="p-3 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors">
+          <button ref={closeButtonRef} type="button" aria-label="Close Slideshow" onClick={onClose} className="p-3 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors">
             <X className="w-8 h-8" />
           </button>
         </div>
@@ -214,30 +232,37 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
           className="absolute top-8 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-black/40 backdrop-blur-xl px-8 py-3 rounded-full border border-white/10 shadow-2xl pointer-events-auto hover:bg-black/60 transition-colors z-50"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
+          <TooltipButton
+            label={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
+            content={isShuffle ? "Disable Shuffle" : "Enable Shuffle"}
+            aria-pressed={isShuffle}
             onClick={() => setIsShuffle(s => !s)}
             className={`p-2 rounded-full transition-colors ${isShuffle ? 'text-sage-400' : 'text-white/50 hover:text-white'}`}
-            title="Shuffle Order"
           >
             <Shuffle className="w-5 h-5" />
-          </button>
+          </TooltipButton>
 
-          <button onClick={prevImage} className="p-2 hover:bg-white/10 rounded-full text-white transition-colors">
+          <button type="button" aria-label="Previous Image" onClick={prevImage} className="p-2 hover:bg-white/10 rounded-full text-white transition-colors">
             <ChevronLeft className="w-6 h-6" />
           </button>
 
           <button
+            type="button"
+            aria-label={isPlaying ? "Pause Slideshow" : "Play Slideshow"}
+            aria-pressed={isPlaying}
             onClick={() => setIsPlaying(p => !p)}
             className="p-3 bg-white text-black hover:scale-105 transition-transform rounded-full shadow-lg shadow-white/20"
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-1" />}
           </button>
 
-          <button onClick={nextImage} className="p-2 hover:bg-white/10 rounded-full text-white transition-colors">
+          <button type="button" aria-label="Next Image" onClick={nextImage} className="p-2 hover:bg-white/10 rounded-full text-white transition-colors">
             <ChevronRight className="w-6 h-6" />
           </button>
 
           <button
+            type="button"
+            aria-label={`Change Slideshow Duration (${getDurationLabel(duration)})`}
             onClick={cycleDuration}
             className="flex items-center gap-1 text-xs font-mono text-white/70 hover:text-white w-12 justify-center"
             title="Toggle Duration"

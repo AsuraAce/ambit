@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { AIImage, GeneratorTool, Collection } from '../../../../types';
 import { getCollectionsForImage } from '../../../../services/db/collectionRepo';
+import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 
 interface MetadataEditTabProps {
     image: AIImage;
@@ -274,7 +275,7 @@ export const MetadataEditTab = ({
                     {isNotesDirty && (
                         <div className="absolute bottom-3 right-3 flex items-center gap-2">
                             <span className="text-[10px] text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">Unsaved</span>
-                            <button onClick={handleNotesBlur} className="p-1.5 bg-sage-500 text-white rounded-lg shadow-lg hover:scale-105 transition-transform"><Save className="w-3.5 h-3.5" /></button>
+                            <TooltipButton label="Save Notes" content="Save Notes" onClick={handleNotesBlur} className="p-1.5 bg-sage-500 text-white rounded-lg shadow-lg hover:scale-105 transition-transform"><Save className="w-3.5 h-3.5" /></TooltipButton>
                         </div>
                     )}
                 </div>

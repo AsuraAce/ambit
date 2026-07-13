@@ -168,7 +168,7 @@ describe('LibraryHealth missing audit ownership', () => {
             lastMissingScanResult: auditResult([])
         }));
         expect(screen.getByText('File Links Healthy')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('Open Maintenance'));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Maintenance' }));
         expect(onNavigate).toHaveBeenCalled();
 
         act(() => useLibraryStore.setState({ lastMissingScanResult: auditResult(['missing']) }));

@@ -78,6 +78,23 @@ describe('GeneralTab Smart Thumbnail details', () => {
         expect(screen.queryByText(/eta/i)).toBeNull();
     });
 
+    it('explains the CPU and responsiveness tradeoff between background speed profiles', () => {
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+
+        fireEvent.focus(screen.getByRole('button', { name: 'About background thumbnail speed' }));
+
+        expect(screen.getByRole('tooltip').textContent).toContain('Quiet minimizes CPU use');
+        expect(screen.getByRole('tooltip').textContent).toContain('Fast prioritizes completion speed');
+    });
+
+    it('exposes boolean preferences as named switches with their current state', () => {
+        render(<GeneralTab settings={createSettings({ confirmDelete: false })} setSettings={vi.fn()} />);
+
+        expect(screen.getByRole('switch', { name: 'Smart Thumbnail Optimization' }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('switch', { name: 'Upgrade Existing Thumbnails' }).getAttribute('aria-checked')).toBe('false');
+        expect(screen.getByRole('switch', { name: 'Confirm Deletions' }).getAttribute('aria-checked')).toBe('false');
+    });
+
     it('does not expose File Link Audit even when developer mode is enabled', () => {
         render(<GeneralTab settings={createSettings({ devMode: true })} setSettings={vi.fn()} />);
 

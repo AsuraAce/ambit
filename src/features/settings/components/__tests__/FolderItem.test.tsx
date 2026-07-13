@@ -21,9 +21,9 @@ describe('FolderItem', () => {
         expect(screen.getByText('COMFY')).toBeTruthy();
         expect(screen.getByText('12 images')).toBeTruthy();
         expect(screen.getByText('Monitored Folder')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('Rescan Folder'));
-        fireEvent.click(screen.getByTitle('Resume Smart Refresh (Shift+Click to Force Refresh All)'));
-        fireEvent.click(screen.getByTitle('Resume Smart Refresh (Shift+Click to Force Refresh All)'), { shiftKey: true });
+        fireEvent.click(screen.getByRole('button', { name: 'Rescan Folder' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Resume Smart Refresh' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Resume Smart Refresh' }), { shiftKey: true });
         const remove = container.querySelector('.lucide-trash-2')?.closest('button') as HTMLButtonElement;
         fireEvent.click(remove);
         expect(props.onRescan).toHaveBeenCalledWith('folder-1', 'C:/images', GeneratorTool.COMFYUI, undefined);
@@ -39,7 +39,7 @@ describe('FolderItem', () => {
         expect(screen.getByText('D:/Invoke/outputs')).toBeTruthy();
         expect(screen.getByText('Import cancelled. Rescan to continue.')).toBeTruthy();
         expect(screen.queryByText(/images$/)).toBeNull();
-        fireEvent.click(screen.getByTitle('Sync with InvokeAI Database'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sync with InvokeAI Database' }));
         expect(props.onRescan).toHaveBeenCalledWith('folder-1', 'D:/Invoke/outputs', GeneratorTool.INVOKEAI, true);
         expect(document.querySelector('.lucide-trash-2')).toBeNull();
     });
@@ -48,13 +48,13 @@ describe('FolderItem', () => {
         setup(folder({ isManaged: true, pathRaw: undefined, variant: GeneratorTool.UNKNOWN }), new Set(), null);
         expect(screen.getByText('C:/images')).toBeTruthy();
         expect(screen.getByText('Managed Integration')).toBeTruthy();
-        expect(screen.queryByTitle('Resume Smart Refresh (Shift+Click to Force Refresh All)')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Resume Smart Refresh' })).toBeNull();
     });
 
     it('disables controls and animates rescans while scanning', () => {
         const { container } = setup(folder(), new Set(['folder-1']));
-        const rescan = screen.getByTitle('Rescan Folder') as HTMLButtonElement;
-        const refresh = screen.getByTitle('Resume Smart Refresh (Shift+Click to Force Refresh All)') as HTMLButtonElement;
+        const rescan = screen.getByRole('button', { name: 'Rescan Folder' }) as HTMLButtonElement;
+        const refresh = screen.getByRole('button', { name: 'Resume Smart Refresh' }) as HTMLButtonElement;
         expect(rescan.disabled).toBe(true);
         expect(refresh.disabled).toBe(true);
         expect(container.querySelector('.animate-spin')).toBeTruthy();

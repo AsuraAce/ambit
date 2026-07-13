@@ -4,6 +4,7 @@ import { commands, BackupInfo } from '../../../bindings';
 import { useToast } from '../../../hooks/useToast';
 import { isOsOpenUnavailable, showPathInFolder } from '../../../services/osOpen';
 import { isBrowserMockMode } from '../../../services/runtime';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 export const BackupSettings: React.FC = () => {
     const [backups, setBackups] = React.useState<BackupInfo[]>([]);
@@ -76,14 +77,15 @@ export const BackupSettings: React.FC = () => {
                     <p className="text-sm text-gray-500">Manage snapshots of your library database</p>
                 </div>
                 <div className="flex gap-2">
-                    <button
+                    <TooltipButton
+                        label="Refresh Backup List"
+                        content="Refresh Backup List"
                         onClick={loadBackups}
                         disabled={isLoading}
                         className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                        title="Refresh List"
                     >
                         <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-                    </button>
+                    </TooltipButton>
                     {backups.length > 0 && (
                         <button
                             onClick={handleOpenFolder}

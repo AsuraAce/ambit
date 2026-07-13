@@ -2,6 +2,7 @@
 import * as React from 'react';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronRight, Check, Search, X, LucideIcon, ArrowDownWideNarrow } from 'lucide-react';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 // --- Section Header ---
 interface SectionHeaderProps {
@@ -214,6 +215,8 @@ export const SearchInput: React.FC<SearchInputProps> = ({ value, onChange, place
             />
             {value && (
                 <button
+                    type="button"
+                    aria-label={`Clear ${placeholder}`}
                     onClick={() => onChange('')}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 hover:bg-gray-200 dark:hover:bg-white/10 rounded-lg transition-all"
                 >
@@ -269,13 +272,15 @@ export const SortDropdown: React.FC<SortDropdownProps> = ({
 
     return (
         <div className={`relative ${className}`} ref={dropdownRef}>
-            <button
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+            <TooltipButton
+                label={title ?? 'Sort Options'}
+                content={title ?? 'Sort Options'}
+                aria-expanded={isOpen}
+                onClick={() => setIsOpen(!isOpen)}
                 className={resolvedTriggerClass}
-                title="Sort Options"
             >
                 <ArrowDownWideNarrow className="w-3.5 h-3.5" />
-            </button>
+            </TooltipButton>
 
             {isOpen && (
                 <div className={`absolute mt-2 w-48 bg-white dark:bg-zinc-800 border border-gray-100 dark:border-white/10 rounded-xl shadow-2xl z-[100] p-1 animate-in zoom-in-95 duration-200 ${align === 'right' ? 'right-0' : 'left-0'}`}>

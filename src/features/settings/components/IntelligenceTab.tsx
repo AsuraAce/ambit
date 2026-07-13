@@ -140,6 +140,9 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                         </div>
                         <button
                             type="button"
+                            role="switch"
+                            aria-checked={settings.enableAI}
+                            aria-label="Enable AI Features"
                             className={`w-12 h-7 rounded-full relative transition-colors ${settings.enableAI ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                         >
                             <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${settings.enableAI ? 'left-6' : 'left-1'}`} />

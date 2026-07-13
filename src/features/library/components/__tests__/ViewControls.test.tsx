@@ -48,11 +48,11 @@ describe('ViewControls', () => {
 
     it('routes every layout, slideshow, and thumbnail-size control', () => {
         const { props } = setup();
-        fireEvent.click(screen.getByTitle('Grid Layout'));
-        fireEvent.click(screen.getByTitle('Masonry Layout'));
-        fireEvent.click(screen.getByTitle('Justified Layout'));
+        fireEvent.click(screen.getByRole('button', { name: 'Use Grid Layout' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Use Masonry Layout' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Use Justified Layout' }));
         expect(vi.mocked(props.setLayoutMode).mock.calls.map(call => call[0])).toEqual(['grid', 'masonry', 'justified']);
-        fireEvent.click(screen.getByTitle('Play Slideshow'));
+        fireEvent.click(screen.getByRole('button', { name: 'Play Slideshow' }));
         expect(props.onSlideshow).toHaveBeenCalledTimes(1);
         fireEvent.change(screen.getByRole('slider'), { target: { value: '325' } });
         expect(props.setThumbnailSize).toHaveBeenCalledWith(325);
@@ -103,7 +103,7 @@ describe('ViewControls', () => {
         mocks.filters = { ...baseFilters(), showIntermediates: true };
         mocks.sortOption = 'name_desc';
         const { container, rerender, props } = setup({ layoutMode: 'grid' });
-        expect(screen.getByTitle('Grid Layout').className).toContain('bg-white');
+        expect(screen.getByRole('button', { name: 'Use Grid Layout' }).className).toContain('bg-white');
         expect(screen.getByText('Name (Z-A)')).toBeTruthy();
         fireEvent.click(screen.getByTitle('View Options'));
         expect(container.querySelector('[class~="right-0.5"]')).toBeTruthy();
@@ -113,11 +113,11 @@ describe('ViewControls', () => {
         mocks.sortOption = 'future' as SortOption;
         rerender(<ViewControls {...props} layoutMode="justified" showLayoutSwitcher={false} showSlideshowButton={false} />);
         expect(screen.getByText('Sort')).toBeTruthy();
-        expect(screen.queryByTitle('Grid Layout')).toBeNull();
-        expect(screen.queryByTitle('Play Slideshow')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Use Grid Layout' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Play Slideshow' })).toBeNull();
 
         rerender(<ViewControls {...props} layoutMode="justified" />);
-        expect(screen.getByTitle('Justified Layout').className).toContain('bg-white');
+        expect(screen.getByRole('button', { name: 'Use Justified Layout' }).className).toContain('bg-white');
     });
 
     it('formats match, search, loading, and total counters', () => {

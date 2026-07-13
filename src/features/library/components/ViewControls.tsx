@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye } from 'lucide-react';
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 // import { useSearchStore } from '../../../stores/searchStore';
 
 interface ViewControlsProps {
@@ -65,38 +66,45 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
         <div className="flex items-center gap-4">
             {showLayoutSwitcher && (
                 <div className="flex bg-gray-100 dark:bg-zinc-800/50 rounded-xl p-1 border border-gray-200 dark:border-white/5">
-                    <button
+                    <TooltipButton
+                        label="Use Grid Layout"
+                        content="Use Grid Layout"
+                        aria-pressed={layoutMode === 'grid'}
                         onClick={() => setLayoutMode('grid')}
                         className={`p-1.5 rounded-lg transition-all ${layoutMode === 'grid' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                        title="Grid Layout"
                     >
                         <LayoutGrid className="w-4 h-4" />
-                    </button>
-                    <button
+                    </TooltipButton>
+                    <TooltipButton
+                        label="Use Masonry Layout"
+                        content="Use Masonry Layout"
+                        aria-pressed={layoutMode === 'masonry'}
                         onClick={() => setLayoutMode('masonry')}
                         className={`p-1.5 rounded-lg transition-all ${layoutMode === 'masonry' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                        title="Masonry Layout"
                     >
                         <Columns className="w-4 h-4" />
-                    </button>
-                    <button
+                    </TooltipButton>
+                    <TooltipButton
+                        label="Use Justified Layout"
+                        content="Use Justified Layout"
+                        aria-pressed={layoutMode === 'justified'}
                         onClick={() => setLayoutMode('justified')}
                         className={`p-1.5 rounded-lg transition-all ${layoutMode === 'justified' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                        title="Justified Layout"
                     >
                         <AlignJustify className="w-4 h-4" />
-                    </button>
+                    </TooltipButton>
                 </div>
             )}
 
             {showSlideshowButton && (
-                <button
+                <TooltipButton
+                    label="Play Slideshow"
+                    content="Play Slideshow"
                     onClick={onSlideshow}
                     className="p-2 rounded-xl bg-gray-100 dark:bg-zinc-800/50 border border-gray-200 dark:border-white/5 text-gray-500 hover:text-sage-600 transition-colors"
-                    title="Play Slideshow"
                 >
                     <Play className="w-4 h-4 fill-current" />
-                </button>
+                </TooltipButton>
             )}
 
             {(showLayoutSwitcher || showSlideshowButton) && (
@@ -105,6 +113,8 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
             <div className="relative" ref={sortMenuRef}>
                 <button
+                    type="button"
+                    aria-expanded={showSortMenu}
                     onClick={() => setShowSortMenu(!showSortMenu)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                 >
@@ -150,6 +160,8 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
             {(availableHiddenContent.hasIntermediates || availableHiddenContent.hasGrids) && (
                 <div className="relative" ref={viewMenuRef}>
                     <button
+                        type="button"
+                        aria-expanded={showViewMenu}
                         onClick={() => setShowViewMenu(!showViewMenu)}
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${showViewMenu ? 'bg-sage-600 border-sage-500 text-white' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300'}`}
                         title="View Options"
@@ -167,6 +179,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
                             {availableHiddenContent.hasIntermediates && (
                                 <button
+                                    aria-pressed={filters.showIntermediates}
                                     onClick={() => {
                                         setFilters(prev => ({ ...prev, showIntermediates: !prev.showIntermediates }));
                                     }}
@@ -184,6 +197,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
                             {availableHiddenContent.hasGrids && (
                                 <button
+                                    aria-pressed={filters.showGrids}
                                     onClick={() => {
                                         setFilters(prev => ({ ...prev, showGrids: !prev.showGrids }));
                                     }}
@@ -206,6 +220,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
             <div className="flex items-center gap-2 text-gray-500 ml-2">
                 <Sliders className="w-3 h-3" />
                 <input
+                    aria-label="Thumbnail Size"
                     type="range"
                     min="100"
                     max="400"

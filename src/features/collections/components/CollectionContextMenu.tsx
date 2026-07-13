@@ -3,6 +3,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Pencil, Trash2, Archive, ArchiveRestore, Play, Download, ImageOff, ChevronRight, Pin, Settings } from 'lucide-react';
 import { SortOption } from '../../../types';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface CollectionContextMenuProps {
   x: number;
@@ -24,19 +25,16 @@ interface CollectionContextMenuProps {
   onEditCollection?: () => void;
 }
 
-// Reusing the ActionButton from ContextMenu.tsx by defining it locally since it's not exported
-// Ideally this should be a shared component, but for now we keep it internal to avoid wider refactors.
-const ActionButton = ({ icon, onClick, title, className = "" }: { icon: React.ReactNode, onClick: () => void, title: string, className?: string }) => (
-  <button
-    onClick={(e) => {
-      e.stopPropagation();
-      onClick();
-    }}
-    title={title}
+const ActionButton = ({ icon, onClick, label, pressed, className = "" }: { icon: React.ReactNode, onClick: () => void, label: string, pressed?: boolean, className?: string }) => (
+  <TooltipButton
+    label={label}
+    content={label}
+    aria-pressed={pressed}
+    onClick={onClick}
     className={`p-2 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white ${className}`}
   >
     {icon}
-  </button>
+  </TooltipButton>
 );
 
 export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
@@ -101,23 +99,25 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
           <ActionButton
             icon={<Play className="w-4 h-4 text-gray-400" />}
             onClick={onPlaySlideshow}
-            title="Play Slideshow"
+            label="Play Slideshow"
           />
           <ActionButton
             icon={<Pin className={`w-4 h-4 ${isPinned ? 'fill-sage-400 text-white' : 'text-gray-400'}`} />}
             onClick={onTogglePin}
-            title={isPinned ? "Unpin collection" : "Pin collection"}
+            label={isPinned ? "Unpin collection" : "Pin collection"}
+            pressed={Boolean(isPinned)}
           />
           <ActionButton
             icon={isArchived ? <ArchiveRestore className="w-4 h-4 text-yellow-400" /> : <Archive className="w-4 h-4 text-gray-400" />}
             onClick={onToggleArchive}
-            title={isArchived ? "Unarchive" : "Archive"}
+            label={isArchived ? "Unarchive" : "Archive"}
+            pressed={Boolean(isArchived)}
           />
         </div>
         <ActionButton
           icon={<Trash2 className="w-4 h-4 text-gray-400" />}
           onClick={onDelete}
-          title="Delete Collection"
+          label="Delete Collection"
           className="hover:!bg-red-500/20 hover:!text-red-400"
         />
       </div>
@@ -135,9 +135,11 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
         {colors.map(c => (
           <button
             key={String(c.id)}
+            type="button"
+            aria-label={c.id ? `Set collection color to ${c.id}` : "Clear collection color"}
+            aria-pressed={currentColor === c.id}
             onClick={() => { onColorChange(c.id); onClose(); }}
             className={`w-4 h-4 rounded-full transition-transform hover:scale-125 ${c.class} ${currentColor === c.id ? 'ring-2 ring-white' : ''}`}
-            title={c.id || "None"}
           />
         ))}
       </div>
@@ -185,4 +187,3 @@ const MenuItem = ({
     {rightElement}
   </button>
 );
-

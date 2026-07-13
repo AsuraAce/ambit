@@ -230,6 +230,8 @@ const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInpu
     return (
         <div className="bg-white dark:bg-slate-800/40 border border-gray-200 dark:border-white/5 rounded-xl text-sm overflow-hidden transition-all">
             <button
+                type="button"
+                aria-expanded={hasContent ? isExpanded : undefined}
                 onClick={() => setIsExpanded(!isExpanded)}
                 disabled={!hasContent}
                 className={`w-full flex items-center gap-3 p-3 text-left transition-colors ${isExpanded ? 'bg-gray-50 dark:bg-white/5' : 'hover:bg-gray-50 dark:hover:bg-white/5'} ${!hasContent ? 'cursor-default opacity-80' : ''}`}

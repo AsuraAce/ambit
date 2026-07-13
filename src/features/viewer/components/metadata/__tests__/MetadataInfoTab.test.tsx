@@ -88,7 +88,7 @@ describe('MetadataInfoTab prompt revert control', () => {
             metadata({ steps: 20, cfg: 7 }),
         ));
 
-        expect(screen.queryByTitle('Revert all metadata to original')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();
     });
 
     it('shows revert after the prompt has actually changed', () => {
@@ -97,7 +97,7 @@ describe('MetadataInfoTab prompt revert control', () => {
             metadata({ positivePrompt: 'Original prompt' }),
         ));
 
-        expect(screen.getByTitle('Revert all metadata to original')).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Revert All Metadata to Original' })).not.toBeNull();
         expect(screen.getByText('Generation Data').closest('.border')?.className).not.toContain('border-amber');
     });
 
@@ -131,8 +131,8 @@ describe('MetadataInfoTab prompt revert control', () => {
 
         fireEvent.click(screen.getByTitle('Show the original imported prompt'));
         fireEvent.click(screen.getByTitle('Show the current saved prompt'));
-        fireEvent.click(screen.getByTitle('AI Prompt Recovery'));
-        fireEvent.click(screen.getByTitle('Revert all metadata to original'));
+        fireEvent.click(screen.getByRole('button', { name: 'Recover Prompt with AI' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Revert All Metadata to Original' }));
 
         expect(props.setPromptValue).toHaveBeenNthCalledWith(1, 'Original prompt');
         expect(props.setPromptValue).toHaveBeenNthCalledWith(2, 'Current prompt');
@@ -160,7 +160,7 @@ describe('MetadataInfoTab prompt revert control', () => {
         });
         expect(screen.getByText(/no prompt data found/i)).toBeTruthy();
         expect(screen.queryByTitle('Show the original imported prompt')).toBeNull();
-        expect(screen.queryByTitle('AI Prompt Recovery')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Recover Prompt with AI' })).toBeNull();
     });
 
     it('treats empty, numeric, and trimmed metadata equivalents as unmodified', () => {
@@ -315,7 +315,7 @@ describe('MetadataInfoTab prompt revert control', () => {
         renderTab(value, { promptValue: '' });
         expect(screen.queryByText('Smart Tags')).toBeNull();
         expect(screen.getByText('Generation Data').closest('.border')?.className).not.toContain('border-amber');
-        expect(screen.queryByTitle('Revert all metadata to original')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();
     });
 
     it('copies default generated params when optional metadata is absent', () => {

@@ -73,10 +73,10 @@ describe('SelectionBar', () => {
             activeCollectionId: 'collection-1',
         });
 
-        for (const title of ['Compare', 'Favorite All', 'Pin All', 'Add to Collection', 'Remove from this Collection', 'Export', 'Remove from Library', 'Clear Selection']) {
-            fireEvent.click(screen.getByTitle(title));
+        for (const label of ['Compare Selected Images', 'Add Selected to Favorites', 'Pin Selected Images', 'Add Selected to Collection', 'Remove Selected from Collection', 'Export Selected Images', 'Remove Selected from Library', 'Clear Selection']) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
         }
-        fireEvent.click(screen.getByTitle('Force Mask All Content'));
+        fireEvent.click(screen.getByRole('button', { name: 'Force Mask All Content' }));
 
         expect(callbacks.onCompare).toHaveBeenCalledOnce();
         expect(callbacks.onToggleFavorite).toHaveBeenCalledOnce();
@@ -96,15 +96,15 @@ describe('SelectionBar', () => {
         ['Consolidate: Reset All to Auto Mask', [image('one', true), image('two', false)], null],
     ] as const)('cycles bulk masking through %s', (title, images, expected) => {
         const callbacks = renderBar([...images]);
-        fireEvent.click(screen.getByTitle(title));
+        fireEvent.click(screen.getByRole('button', { name: title }));
         expect(callbacks.onToggleMask).toHaveBeenCalledWith(undefined, expected);
     });
 
     it('hides optional actions and disables export while busy', () => {
         settingsState.privacyEnabled = false;
         renderBar([image('one')], { isExporting: true, onRemoveFromCollection: undefined });
-        expect(screen.queryByTitle('Compare')).toBeNull();
-        expect(screen.queryByTitle('Remove from this Collection')).toBeNull();
-        expect((screen.getByTitle('Export') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Remove Selected from Collection' })).toBeNull();
+        expect((screen.getByRole('button', { name: 'Export Selected Images' }) as HTMLButtonElement).disabled).toBe(true);
     });
 });

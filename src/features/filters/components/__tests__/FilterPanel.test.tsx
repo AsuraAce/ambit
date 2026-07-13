@@ -242,6 +242,30 @@ describe('FilterPanel local asset scope', () => {
         expect(screen.getByTestId('resource-section-checkpoints')).toBeTruthy();
         expect(screen.getByText('LocalCheckpoint')).toBeTruthy();
     });
+
+    it('removes the collapsed panel from accessibility and keyboard interaction until reopened', () => {
+        contextMocks.search.current = defaultSearchContext();
+        contextMocks.collections.current = defaultCollectionsContext();
+        const panelProps = {
+            filters,
+            setFilters: vi.fn() as Dispatch<SetStateAction<FilterState>>,
+            onCreateCollection: vi.fn(),
+            onSaveSmartCollection: vi.fn(),
+            onDeleteSmartCollection: vi.fn()
+        };
+        const { container, rerender } = render(<FilterPanel {...panelProps} isVisible={false} />);
+        const panel = container.firstElementChild as HTMLElement;
+
+        expect(panel.hasAttribute('inert')).toBe(true);
+        expect(panel.getAttribute('aria-hidden')).toBe('true');
+        expect(screen.queryByRole('heading', { name: 'Library' })).toBeNull();
+
+        rerender(<FilterPanel {...panelProps} isVisible />);
+
+        expect(panel.hasAttribute('inert')).toBe(false);
+        expect(panel.getAttribute('aria-hidden')).toBe('false');
+        expect(screen.getByRole('heading', { name: 'Library' })).toBeTruthy();
+    });
 });
 
 describe('FilterPanel interactions', () => {
@@ -276,7 +300,7 @@ describe('FilterPanel interactions', () => {
             props: { isVisible: false, className: 'custom-panel' }
         });
 
-        fireEvent.click(screen.getByRole('button', { name: /^Assets$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /^Assets$/, hidden: true }));
         expect(setFacetDrilldownActive).toHaveBeenLastCalledWith(false);
         expect(container.firstElementChild?.className).toContain('w-0');
         expect(container.firstElementChild?.className).toContain('custom-panel');
@@ -381,7 +405,7 @@ describe('FilterPanel interactions', () => {
         });
 
         fireEvent.click(screen.getByRole('button', { name: 'Reset All' }));
-        fireEvent.click(screen.getByTitle('Open Ambit on GitHub'));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Ambit on GitHub' }));
         expect(clearAllFilters).toHaveBeenCalledOnce();
         expect(openExternalUrl).toHaveBeenCalledOnce();
         expect(screen.getByText('v0.0.0-test')).toBeTruthy();

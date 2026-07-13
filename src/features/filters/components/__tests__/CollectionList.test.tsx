@@ -236,14 +236,14 @@ describe('CollectionList interactions', () => {
 
     it('persists list-grid view changes in both directions', () => {
         const first = renderList();
-        fireEvent.click(screen.getByTitle('Switch to Grid View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to Grid View' }));
         expect(settingsContextMocks.setSettings.mock.calls[0][0]({}).resourceViewModes.collections).toBe('grid');
         first.unmount();
 
         settingsContextMocks.resourceViewModes = { collections: 'grid' };
         renderList();
         expect(screen.getByTestId('collection-alpha').dataset.view).toBe('grid');
-        fireEvent.click(screen.getByTitle('Switch to List View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Switch to List View' }));
         expect(settingsContextMocks.setSettings.mock.calls.at(-1)?.[0]({ resourceViewModes: { collections: 'grid' } }).resourceViewModes.collections).toBe('list');
     });
 
@@ -252,12 +252,12 @@ describe('CollectionList interactions', () => {
             makeCollection({ id: 'alpha', name: 'Alpha', createdAt: 1, updatedAt: 1 }),
             makeCollection({ id: 'beta', name: 'Beta', createdAt: 2, updatedAt: 2 }),
         ] });
-        fireEvent.click(screen.getByTitle('Search Collections'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
         fireEvent.change(screen.getByPlaceholderText('Find collection...'), { target: { value: 'alp' } });
         await waitFor(() => expect(screen.queryByText('Beta')).toBeNull());
-        fireEvent.click(screen.getByTitle('Search Collections'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
         expect(screen.queryByPlaceholderText('Find collection...')).toBeNull();
-        fireEvent.click(screen.getByTitle('Search Collections'));
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
         expect((screen.getByPlaceholderText('Find collection...') as HTMLInputElement).value).toBe('');
         expect(screen.getByText('Beta')).toBeTruthy();
     });
@@ -266,10 +266,10 @@ describe('CollectionList interactions', () => {
         const archived = { ...makeCollection({ id: 'archived', name: 'Archived', createdAt: 1, updatedAt: 1 }), isArchived: true };
         renderList({ collections: [archived] });
         expect(screen.queryByText('Archived')).toBeNull();
-        fireEvent.click(screen.getByTitle('Include Archived'));
+        fireEvent.click(screen.getByRole('button', { name: 'Include Archived' }));
         expect(screen.getByText('Archived')).toBeTruthy();
         await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: true, markPending: true }));
-        expect(screen.getByTitle('Hide Archived')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Hide Archived' })).toBeTruthy();
     });
 
     it('refreshes a selected smart collection once per id', async () => {
@@ -373,7 +373,7 @@ describe('CollectionList interactions', () => {
 
     it('persists sort selections and exercises the open dropdown trigger style', () => {
         renderList();
-        fireEvent.click(screen.getByTitle('Sort Options'));
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
         fireEvent.click(screen.getByText('Name (A-Z)'));
         const update = settingsContextMocks.setSettings.mock.calls.at(-1)?.[0];
         expect(update({}).resourceSortOptions.collections).toBe('name_asc');
