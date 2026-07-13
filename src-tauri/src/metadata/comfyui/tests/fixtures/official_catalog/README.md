@@ -2,7 +2,7 @@
 
 These fixtures come from the official ComfyUI
 [`workflow_templates`](https://github.com/Comfy-Org/workflow_templates) repository.
-They contain exact minified workflow JSON wrapped as a `workflow` metadata chunk.
+They contain exact workflow JSON wrapped as a `workflow` metadata chunk.
 No generated images, thumbnails, input assets, or API prompt chunks are vendored.
 
 - Repository: `https://github.com/Comfy-Org/workflow_templates`
@@ -40,6 +40,48 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
+
+## Phase 22 Intake
+
+Captured on `2026-07-13`. These five workflows are intake fixtures, not coverage
+claims. Their catalog status remains unchanged until the later Phase 22 parser
+packages add exact metadata assertions.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_anima_base_v1`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_anima_base_v1.json) | `2b8eb6b61006a4e95a92f9e9b10fb23df44f3868` | 26973 |
+| [`image_newbieimage_exp0_1-t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_newbieimage_exp0_1-t2i.json) | `04bd4bae0d85c4860b65e603f3b5020391123210` | 37366 |
+| [`image_lens_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_lens_t2i.json) | `8784096ee565f02e20c13c07a0f582cfa9d0692d` | 42959 |
+| [`image_boogu_image_0_1_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_boogu_image_0_1_edit.json) | `35750c20d300a25e6e1f8231c664392accee8abe` | 31677 |
+| [`video_bernini_r_image_editing`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/video_bernini_r_image_editing.json) | `8d6b8327865c9421a0f20244f1f314d8c2818e67` | 98085 |
+
+Source-authored expectations, recorded without asserting current parser output:
+
+- `image_anima_base_v1`: model `anima-base-v1.0.safetensors`; seed
+  `875817230929465`; 30 steps; CFG 4; `er_sde` with `simple`; positive and
+  negative literals from definition nodes 11 and 12; no resources.
+- `image_newbieimage_exp0_1-t2i`: model
+  `NewBie-Image-Exp0.1-bf16.safetensors`; seed `27582042565232`; 20 steps;
+  CFG 5.5; `res_multistep` with `simple`; positive text is exactly
+  `StringReplace(StringReplace(node 47, "{user_prompt}", node 48),
+  "{caption}", node 44)` and negative text is definition node 49; no
+  resources.
+- `image_lens_t2i`: model `lens_bf16.safetensors`; seed `199454112061500`;
+  20 steps; CFG 5; `euler` with `simple`; positive and negative literals from
+  definition nodes 3 and 7; no resources.
+- `image_boogu_image_0_1_edit`: model
+  `boogu_image_edit_fp8_scaled.safetensors`; seed 22; 25 steps; CFG 3.5;
+  `dpmpp_2m` with `simple`; `TextEncodeBooguEdit` node 36 receives the literal
+  prompt `remove the hat` and has no separate authored negative text; no
+  resources.
+- `video_bernini_r_image_editing`: root/base model
+  `wan2.2_bernini_r_high_noise_fp8_scaled.safetensors`; seed
+  `283365432432581`; turbo mode selects 6 steps, CFG 1, `res_multistep` with
+  `simple`, and a 3-step split. The task selector chooses line 0 (`You are a
+  helpful assistant.`), then concatenates `make it night` with an empty
+  delimiter; definition node 4 supplies the negative literal. The same
+  `lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16.safetensors` resource
+  is active on the high- and low-noise model stages at strengths 3.0 and 1.5.
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser
