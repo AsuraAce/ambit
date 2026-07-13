@@ -1,6 +1,8 @@
 use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
 use super::eval_utils::{evaluate_float, evaluate_number, evaluate_string, get_source_id};
-use super::graph::{get_node_param, get_node_type, get_switch_branch_source, ComfyGraph};
+use super::graph::{
+    get_node_input_link, get_node_param, get_node_type, get_switch_branch_source, ComfyGraph,
+};
 use crate::metadata::utils::{
     extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
 };
@@ -22,7 +24,9 @@ pub fn extract_from_sampler(
     }
     if let Some(v) = evaluate_float(graph, node, "cfg", 200.0) {
         meta.cfg = v as f32;
-    } else if let Some(v) = extract_connected_flux_guidance(graph, node) {
+    } else if let Some(v) = extract_connected_cfg_guider(graph, node)
+        .or_else(|| extract_connected_flux_guidance(graph, node))
+    {
         meta.cfg = v as f32;
     }
     if let Some(v) = evaluate_number(graph, node, "seed", i64::MAX) {
@@ -77,9 +81,16 @@ pub fn extract_from_sampler(
         };
     }
 
-    if let Some(model_name) =
-        trace_model_chain(graph, node, "model", loras, ip_adapters, hypernetworks)
-    {
+    let mut model_control_nets = Vec::new();
+    if let Some(model_name) = trace_model_chain(
+        graph,
+        node,
+        "model",
+        loras,
+        ip_adapters,
+        hypernetworks,
+        &mut model_control_nets,
+    ) {
         meta.model = model_name;
     } else if let Some(guider_id) = get_source_id(graph, node, "guider") {
         if let Some(guider_node) = graph.get_node(&guider_id) {
@@ -90,18 +101,30 @@ pub fn extract_from_sampler(
                 loras,
                 ip_adapters,
                 hypernetworks,
+                &mut model_control_nets,
             ) {
                 meta.model = model_name;
             }
         }
     }
 
-    let pos = find_reachable_prompts(graph, node_id, "positive");
+    let cfg_guider = connected_cfg_guider(graph, node);
+    let (pos, neg) = if let Some((guider_id, guider_node)) = cfg_guider.as_ref() {
+        let prompt = |input_name| {
+            get_node_input_link(guider_node, input_name)
+                .map(|_| find_reachable_prompts(graph, &guider_id, input_name))
+                .unwrap_or_default()
+        };
+        (prompt("positive"), prompt("negative"))
+    } else {
+        (
+            find_reachable_prompts(graph, node_id, "positive"),
+            find_reachable_prompts(graph, node_id, "negative"),
+        )
+    };
     if !is_missing_prompt_value(&pos) {
         meta.positive_prompt = pos;
     }
-
-    let neg = find_reachable_prompts(graph, node_id, "negative");
     if !is_missing_prompt_value(&neg) {
         meta.negative_prompt = neg;
     }
@@ -139,7 +162,7 @@ pub fn extract_from_sampler(
         }
     }
 
-    if meta.positive_prompt.is_empty() {
+    if meta.positive_prompt.is_empty() && cfg_guider.is_none() {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             let pos_guider = find_reachable_prompts(graph, &guider_id, "conditioning");
             if !is_missing_prompt_value(&pos_guider) {
@@ -148,6 +171,7 @@ pub fn extract_from_sampler(
         }
     }
 
+    meta.control_nets.extend(model_control_nets);
     let cnets = find_connected_controlnets(graph, node_id, "positive", ip_adapters);
     for cn in cnets {
         if !meta.control_nets.contains(&cn) {
@@ -163,6 +187,20 @@ pub fn extract_from_sampler(
     meta.hypernetworks.dedup();
 
     meta
+}
+
+fn connected_cfg_guider<'a>(
+    graph: &'a ComfyGraph,
+    sampler_node: &Value,
+) -> Option<(String, &'a Value)> {
+    let guider_id = get_source_id(graph, sampler_node, "guider")?;
+    let guider_node = graph.get_node(&guider_id)?;
+    (get_node_type(guider_node) == "CFGGuider").then_some((guider_id, guider_node))
+}
+
+fn extract_connected_cfg_guider(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
+    let (_, guider_node) = connected_cfg_guider(graph, sampler_node)?;
+    evaluate_float(graph, guider_node, "cfg", 200.0)
 }
 
 fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
@@ -234,6 +272,7 @@ pub fn trace_model_chain(
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
+    control_nets: &mut Vec<String>,
 ) -> Option<String> {
     let mut current_id = get_source_id(graph, start_node, input_name)?;
 
@@ -268,6 +307,23 @@ pub fn trace_model_chain(
             break;
         } else if t == "HypernetworkLoader" {
             extract_hypernetwork_loader(node, hypernetworks);
+            if let Some(next) = get_source_id(graph, node, "model") {
+                current_id = next;
+                continue;
+            }
+            break;
+        } else if t == "ZImageFunControlnet" {
+            if let Some(patch_id) = get_source_id(graph, node, "model_patch") {
+                if let Some(patch_node) = graph.get_node(&patch_id) {
+                    if get_node_type(patch_node) == "ModelPatchLoader" {
+                        if let Some(name) = extract_model_patch_name(patch_node) {
+                            if !control_nets.contains(&name) {
+                                control_nets.push(name);
+                            }
+                        }
+                    }
+                }
+            }
             if let Some(next) = get_source_id(graph, node, "model") {
                 current_id = next;
                 continue;
@@ -361,6 +417,22 @@ pub fn trace_model_chain(
         break;
     }
     None
+}
+
+fn extract_model_patch_name(node: &Value) -> Option<String> {
+    let name = ["model_patch_name", "patch_name", "model_name"]
+        .into_iter()
+        .find_map(|key| get_node_param(node, key).and_then(Value::as_str))
+        .or_else(|| {
+            node.get("widgets_values")
+                .and_then(Value::as_array)
+                .and_then(|values| values.first())
+                .and_then(Value::as_str)
+        })?;
+
+    Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
+        name,
+    ))
 }
 
 fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {

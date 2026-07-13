@@ -535,6 +535,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "CFGGuider" && key == "cfg" {
+            return arr.first();
+        }
+
         if t == "SDPromptSaver" {
             match key {
                 "ckpt_name" | "model_name" => return arr.get(2),

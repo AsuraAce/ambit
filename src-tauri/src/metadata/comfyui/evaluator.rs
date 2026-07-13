@@ -21,6 +21,8 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) selected_output_candidate_count: usize,
     pub(crate) unique_root_sampler_count: usize,
     pub(crate) ambiguous: bool,
+    pub(crate) authoritative_positive_prompt: bool,
+    pub(crate) authoritative_negative_prompt: bool,
 }
 
 pub struct ComfyEvaluator<'a> {
@@ -70,6 +72,17 @@ impl<'a> ComfyEvaluator<'a> {
         let Some(root_node) = self.graph.get_node(root_sampler_id) else {
             return (ImageMetadata::default(), diagnostics);
         };
+
+        if let Some(guider_id) = get_source_id(self.graph, root_sampler_id, "guider") {
+            if let Some(guider_node) = self.graph.get_node(&guider_id) {
+                if get_node_type(guider_node) == "CFGGuider" {
+                    diagnostics.authoritative_positive_prompt =
+                        get_node_input_link(guider_node, "positive").is_some();
+                    diagnostics.authoritative_negative_prompt =
+                        get_node_input_link(guider_node, "negative").is_some();
+                }
+            }
+        }
 
         let mut loras = Vec::new();
         let mut ip_adapters = Vec::new();

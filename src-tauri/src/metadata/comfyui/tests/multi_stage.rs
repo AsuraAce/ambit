@@ -1,6 +1,4 @@
-use super::super::diagnostics::{
-    ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer,
-};
+use super::super::diagnostics::{ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer};
 use crate::metadata::comfyui::extract_comfyui_metadata_with_diagnostics;
 use std::collections::HashMap;
 
@@ -175,16 +173,12 @@ fn disconnected_sampler_does_not_override_saved_output_traversal() {
     assert_eq!(meta.cfg, 6.0);
     assert_eq!(meta.sampler, "euler_a (normal)");
     assert_eq!(meta.positive_prompt, "saved output prompt");
-    assert!(
-        !diagnostics
-            .attempted_layers
-            .contains(&ComfyParseLayer::SamplerFallback)
-    );
-    assert!(
-        !diagnostics
-            .attempted_layers
-            .contains(&ComfyParseLayer::GlobalScan)
-    );
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::SamplerFallback));
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::GlobalScan));
 }
 
 #[test]
@@ -235,7 +229,8 @@ fn sampler_fallback_fills_only_fields_missing_after_traversal() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "traversed_model");
     assert_eq!(meta.positive_prompt, "traversed prompt");
@@ -291,7 +286,8 @@ fn global_scan_fills_only_remaining_blanks_after_sampler_layers() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "global_scan_base");
     assert_eq!(meta.seed, Some(555));
@@ -336,7 +332,8 @@ fn global_scan_text_metadata_wins_over_generic_loader_fallback() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "intended_model");
     assert!(!meta.model.contains("wrong_loader"));
@@ -427,7 +424,8 @@ fn connected_flux_guidance_supplies_cfg_for_sampler_custom_advanced() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "flux_primary");
     assert_eq!(meta.seed, Some(888));
@@ -808,7 +806,8 @@ fn auxiliary_model_loaders_do_not_replace_primary_checkpoint() {
         }
     }"#;
 
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
 
     assert_eq!(meta.model, "primary_checkpoint");
     assert!(!meta.model.contains("realesrgan"));
@@ -817,6 +816,209 @@ fn auxiliary_model_loaders_do_not_replace_primary_checkpoint() {
     assert_field_source(
         &diagnostics,
         ComfyMetadataField::PositivePrompt,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn connected_cfg_guider_supplies_custom_sampler_metadata() {
+    // SamplerCustomAdvanced stores CFG and both prompt branches on its connected
+    // guider, so those values are still saved-output traversal evidence.
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "cfg-guider-model.safetensors" }
+        },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "cfg guider positive" }
+        },
+        "3": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "cfg guider negative" }
+        },
+        "4": {
+            "class_type": "CFGGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["13", 0],
+                "negative": ["3", 0],
+                "cfg": 2.5
+            }
+        },
+        "5": {
+            "class_type": "RandomNoise",
+            "inputs": { "noise_seed": 123456789 }
+        },
+        "6": {
+            "class_type": "KSamplerSelect",
+            "inputs": { "sampler_name": "euler" }
+        },
+        "7": {
+            "class_type": "BasicScheduler",
+            "inputs": { "scheduler": "simple", "steps": 12 }
+        },
+        "8": {
+            "class_type": "EmptyLatentImage",
+            "inputs": { "width": 1024, "height": 1024, "batch_size": 1 }
+        },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["5", 0],
+                "guider": ["4", 0],
+                "sampler": ["6", 0],
+                "sigmas": ["7", 0],
+                "latent_image": ["8", 0]
+            }
+        },
+        "10": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["9", 0] }
+        },
+        "11": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["10", 0] }
+        },
+        "12": {
+            "class_type": "CLIPTextEncode",
+            "_meta": { "title": "Positive Prompt" },
+            "inputs": { "text": "unrelated wireless prompt" }
+        },
+        "13": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": { "conditioning": ["2", 0] }
+        }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.model, "cfg_guider_model");
+    assert_eq!(meta.seed, Some(123456789));
+    assert_eq!(meta.steps, 12);
+    assert_eq!(meta.cfg, 2.5);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "cfg guider negative");
+    for field in [ComfyMetadataField::Cfg, ComfyMetadataField::NegativePrompt] {
+        assert_field_source(&diagnostics, field, ComfyParseLayer::SamplerTraversal);
+    }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn workflow_linked_cfg_guider_input_wins_over_stale_widget_value() {
+    // Converted CFGGuider widgets retain their old widgets_values entry. The
+    // connected cfg input is the live value and must remain authoritative.
+    let workflow = r#"{
+        "nodes": [
+            {
+                "id": 1,
+                "type": "UNETLoader",
+                "widgets_values": ["cfg-ui-linked.safetensors"]
+            },
+            {
+                "id": 2,
+                "type": "CLIPTextEncode",
+                "widgets_values": ["linked cfg positive"]
+            },
+            {
+                "id": 3,
+                "type": "CLIPTextEncode",
+                "widgets_values": ["linked cfg negative"]
+            },
+            {
+                "id": 4,
+                "type": "PrimitiveFloat",
+                "widgets_values": [4.75]
+            },
+            {
+                "id": 5,
+                "type": "CFGGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "positive", "link": 2 },
+                    { "name": "negative", "link": 3 },
+                    { "name": "cfg", "link": 4 }
+                ],
+                "widgets_values": [1.0]
+            },
+            {
+                "id": 6,
+                "type": "RandomNoise",
+                "widgets_values": [555555555]
+            },
+            {
+                "id": 7,
+                "type": "KSamplerSelect",
+                "widgets_values": ["euler"]
+            },
+            {
+                "id": 8,
+                "type": "BasicScheduler",
+                "widgets_values": ["simple", 16, 1.0]
+            },
+            {
+                "id": 9,
+                "type": "EmptyLatentImage",
+                "widgets_values": [1024, 1024, 1]
+            },
+            {
+                "id": 10,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 6 },
+                    { "name": "guider", "link": 5 },
+                    { "name": "sampler", "link": 7 },
+                    { "name": "sigmas", "link": 8 },
+                    { "name": "latent_image", "link": 9 }
+                ]
+            },
+            {
+                "id": 11,
+                "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "link": 10 }]
+            },
+            {
+                "id": 12,
+                "type": "SaveImage",
+                "inputs": [{ "name": "images", "link": 11 }]
+            }
+        ],
+        "links": [
+            [1, 1, 0, 5, 0, "MODEL"],
+            [2, 2, 0, 5, 1, "CONDITIONING"],
+            [3, 3, 0, 5, 2, "CONDITIONING"],
+            [4, 4, 0, 5, 3, "FLOAT"],
+            [5, 5, 0, 10, 1, "GUIDER"],
+            [6, 6, 0, 10, 0, "NOISE"],
+            [7, 7, 0, 10, 2, "SAMPLER"],
+            [8, 8, 0, 10, 3, "SIGMAS"],
+            [9, 9, 0, 10, 4, "LATENT"],
+            [10, 10, 0, 11, 0, "LATENT"],
+            [11, 11, 0, 12, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "cfg_ui_linked");
+    assert_eq!(meta.steps, 16);
+    assert_eq!(meta.cfg, 4.75);
+    assert_ne!(meta.cfg, 1.0);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "linked cfg positive");
+    assert_eq!(meta.negative_prompt, "linked cfg negative");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
         ComfyParseLayer::SamplerTraversal,
     );
 }

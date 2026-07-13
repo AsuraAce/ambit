@@ -663,7 +663,13 @@ fn extract_comfyui_graph_with_diagnostics(
     // scan specifically for standard KSamplers using the smart evaluator logic.
     if meta.is_incomplete() {
         diagnostics.attempt(ComfyParseLayer::SamplerFallback);
-        let sampler_meta = evaluator.extract_from_all_samplers();
+        let mut sampler_meta = evaluator.extract_from_all_samplers();
+        if output_diagnostics.authoritative_positive_prompt {
+            sampler_meta.positive_prompt.clear();
+        }
+        if output_diagnostics.authoritative_negative_prompt {
+            sampler_meta.negative_prompt.clear();
+        }
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge_if_missing(sampler_meta);
         diagnostics.record_diff(&before, &meta, ComfyParseLayer::SamplerFallback);
@@ -673,7 +679,13 @@ fn extract_comfyui_graph_with_diagnostics(
     // If we still found nothing (e.g. graph is totally disconnected or custom nodes unknown to evaluator)
     if meta.is_incomplete() {
         diagnostics.attempt(ComfyParseLayer::GlobalScan);
-        let scan_meta = global_scan(&graph);
+        let mut scan_meta = global_scan(&graph);
+        if output_diagnostics.authoritative_positive_prompt {
+            scan_meta.positive_prompt.clear();
+        }
+        if output_diagnostics.authoritative_negative_prompt {
+            scan_meta.negative_prompt.clear();
+        }
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge_if_missing(scan_meta);
         diagnostics.record_diff(&before, &meta, ComfyParseLayer::GlobalScan);
