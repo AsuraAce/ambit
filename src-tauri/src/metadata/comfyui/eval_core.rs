@@ -53,21 +53,29 @@ pub fn extract_from_sampler(
         scheduler = s;
     }
 
-    if meta.steps == 0 || sampler.is_empty() {
+    if meta.steps == 0 || sampler.is_empty() || scheduler.is_empty() {
         if let Some(sigmas_id) = get_source_id(graph, node, "sigmas") {
             if let Some(sigmas_node) = graph.get_node(&sigmas_id) {
-                if let Some(v) = evaluate_number(graph, sigmas_node, "steps", 500) {
-                    meta.steps = v as u32;
+                if meta.steps == 0 {
+                    if let Some(v) = evaluate_number(graph, sigmas_node, "steps", 500) {
+                        meta.steps = v as u32;
+                    }
                 }
-                if let Some(s) = evaluate_string(graph, sigmas_node, "scheduler") {
-                    scheduler = s;
+                if scheduler.is_empty() {
+                    if let Some(s) = evaluate_string(graph, sigmas_node, "scheduler") {
+                        scheduler = s;
+                    } else if get_node_type(sigmas_node) == "BetaSamplingScheduler" {
+                        scheduler = "beta".to_string();
+                    }
                 }
             }
         }
-        if let Some(samp_id) = get_source_id(graph, node, "sampler") {
-            if let Some(samp_node) = graph.get_node(&samp_id) {
-                if let Some(s) = evaluate_string(graph, samp_node, "sampler_name") {
-                    sampler = s;
+        if sampler.is_empty() {
+            if let Some(samp_id) = get_source_id(graph, node, "sampler") {
+                if let Some(samp_node) = graph.get_node(&samp_id) {
+                    if let Some(s) = evaluate_string(graph, samp_node, "sampler_name") {
+                        sampler = s;
+                    }
                 }
             }
         }
@@ -110,12 +118,14 @@ pub fn extract_from_sampler(
 
     let cfg_guider = connected_cfg_guider(graph, node);
     let (pos, neg) = if let Some((guider_id, guider_node)) = cfg_guider.as_ref() {
+        let (_, positive_input, negative_input) =
+            cfg_guider_params(guider_node).expect("connected guider should be supported");
         let prompt = |input_name| {
             get_node_input_link(guider_node, input_name)
                 .map(|_| find_reachable_prompts(graph, &guider_id, input_name))
                 .unwrap_or_default()
         };
-        (prompt("positive"), prompt("negative"))
+        (prompt(positive_input), prompt(negative_input))
     } else {
         (
             find_reachable_prompts(graph, node_id, "positive"),
@@ -195,12 +205,23 @@ fn connected_cfg_guider<'a>(
 ) -> Option<(String, &'a Value)> {
     let guider_id = get_source_id(graph, sampler_node, "guider")?;
     let guider_node = graph.get_node(&guider_id)?;
-    (get_node_type(guider_node) == "CFGGuider").then_some((guider_id, guider_node))
+    cfg_guider_params(guider_node).map(|_| (guider_id, guider_node))
 }
 
 fn extract_connected_cfg_guider(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
     let (_, guider_node) = connected_cfg_guider(graph, sampler_node)?;
-    evaluate_float(graph, guider_node, "cfg", 200.0)
+    let (cfg_input, _, _) = cfg_guider_params(guider_node)?;
+    evaluate_float(graph, guider_node, cfg_input, 200.0)
+}
+
+pub(crate) fn cfg_guider_params(
+    guider_node: &Value,
+) -> Option<(&'static str, &'static str, &'static str)> {
+    match get_node_type(guider_node) {
+        "CFGGuider" => Some(("cfg", "positive", "negative")),
+        "DualCFGGuider" => Some(("cfg_conds", "cond1", "negative")),
+        _ => None,
+    }
 }
 
 fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {

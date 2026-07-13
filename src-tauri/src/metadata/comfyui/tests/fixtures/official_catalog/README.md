@@ -24,6 +24,10 @@ Golden workflows:
 - `gsc_creator_2_2.chunks.json`
 - `image_flux2_klein_image_edit_4b_distilled.chunks.json`
 - `image_qwen_image_union_control_lora.chunks.json`
+- `Image_capybara_v0_1_text_to_image.chunks.json`
+- `image_kandinsky5_t2i.chunks.json`
+- `image_omnigen2_t2i.chunks.json`
+- `image_chroma1_radiance_text_to_image.chunks.json`
 
 Partial workflows:
 

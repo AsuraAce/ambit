@@ -1022,3 +1022,281 @@ fn workflow_linked_cfg_guider_input_wins_over_stale_widget_value() {
         ComfyParseLayer::SamplerTraversal,
     );
 }
+
+#[test]
+fn connected_dual_cfg_guider_uses_primary_conditioning_and_ignores_disconnected_guider() {
+    // DualCFGGuider has a second conditioning branch that the current metadata
+    // shape cannot represent. Only cond1 is the primary positive prompt.
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "dual-cfg-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "dual primary prompt" } },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "dual secondary prompt" } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "dual negative prompt" } },
+        "5": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "cond1": ["2", 0],
+                "cond2": ["3", 0],
+                "negative": ["4", 0],
+                "cfg_conds": 5.0,
+                "cfg_cond2_negative": 2.0
+            }
+        },
+        "6": { "class_type": "RandomNoise", "inputs": { "noise_seed": 4242 } },
+        "7": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "8": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+        "9": { "class_type": "EmptyLatentImage", "inputs": { "width": 1024, "height": 1024 } },
+        "10": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["6", 0],
+                "guider": ["5", 0],
+                "sampler": ["7", 0],
+                "sigmas": ["8", 0],
+                "latent_image": ["9", 0]
+            }
+        },
+        "11": { "class_type": "VAEDecode", "inputs": { "samples": ["10", 0] } },
+        "12": { "class_type": "SaveImage", "inputs": { "images": ["11", 0] } },
+        "30": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "cond1": ["3", 0],
+                "negative": ["4", 0],
+                "cfg_conds": 99.0
+            }
+        }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.model, "dual_cfg_model");
+    assert_eq!(meta.seed, Some(4242));
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.cfg, 5.0);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "dual primary prompt");
+    assert_eq!(meta.negative_prompt, "dual negative prompt");
+    assert!(!meta.positive_prompt.contains("secondary"));
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+    ] {
+        assert_field_source(&diagnostics, field, ComfyParseLayer::SamplerTraversal);
+    }
+}
+
+#[test]
+fn connected_dual_cfg_empty_primary_prompt_blocks_disconnected_fallback() {
+    // A linked ConditioningZeroOut is intentional absence, not an invitation
+    // to substitute an unrelated prompt found elsewhere in the graph.
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "dual-empty-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "prompt to zero" } },
+        "3": { "class_type": "ConditioningZeroOut", "inputs": { "conditioning": ["2", 0] } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "secondary only" } },
+        "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "dual negative" } },
+        "6": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0], "cond1": ["3", 0], "cond2": ["4", 0],
+                "negative": ["5", 0], "cfg_conds": 5.0
+            }
+        },
+        "7": { "class_type": "RandomNoise", "inputs": { "noise_seed": 7 } },
+        "8": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "9": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 4 } },
+        "10": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["7", 0], "guider": ["6", 0], "sampler": ["8", 0], "sigmas": ["9", 0]
+            }
+        },
+        "11": { "class_type": "VAEDecode", "inputs": { "samples": ["10", 0] } },
+        "12": { "class_type": "SaveImage", "inputs": { "images": ["11", 0] } },
+        "20": {
+            "class_type": "CLIPTextEncode",
+            "_meta": { "title": "Positive Prompt" },
+            "inputs": { "text": "disconnected fallback prompt" }
+        }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "dual negative");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn direct_sampler_cfg_wins_over_connected_dual_cfg_guider() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "direct-cfg-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "direct cfg prompt" } },
+        "3": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0], "cond1": ["2", 0], "negative": ["2", 0], "cfg_conds": 7.0
+            }
+        },
+        "4": { "class_type": "RandomNoise", "inputs": { "noise_seed": 1 } },
+        "5": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "6": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 4 } },
+        "7": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["4", 0], "guider": ["3", 0], "sampler": ["5", 0],
+                "sigmas": ["6", 0], "cfg": 1.25
+            }
+        },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0] } },
+        "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0] } }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.cfg, 1.25);
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn workflow_linked_dual_cfg_and_basic_scheduler_widgets_are_authoritative() {
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["dual-ui-model.safetensors"] },
+            { "id": 2, "type": "CLIPTextEncode", "widgets_values": ["linked dual primary"] },
+            { "id": 3, "type": "CLIPTextEncode", "widgets_values": ["linked dual secondary"] },
+            { "id": 4, "type": "CLIPTextEncode", "widgets_values": ["linked dual negative"] },
+            { "id": 5, "type": "PrimitiveFloat", "widgets_values": [4.75] },
+            {
+                "id": 6,
+                "type": "DualCFGGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "cond1", "link": 2 },
+                    { "name": "cond2", "link": 3 },
+                    { "name": "negative", "link": 4 },
+                    { "name": "cfg_conds", "link": 5 }
+                ],
+                "widgets_values": [1.0, 2.0, "regular"]
+            },
+            { "id": 7, "type": "RandomNoise", "widgets_values": [777] },
+            { "id": 8, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 9, "type": "BasicScheduler", "widgets_values": ["simple", 16, 1.0] },
+            { "id": 10, "type": "EmptyLatentImage", "widgets_values": [1024, 1024, 1] },
+            {
+                "id": 11,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 6 },
+                    { "name": "guider", "link": 7 },
+                    { "name": "sampler", "link": 8 },
+                    { "name": "sigmas", "link": 9 },
+                    { "name": "latent_image", "link": 10 }
+                ]
+            },
+            { "id": 12, "type": "VAEDecode", "inputs": [{ "name": "samples", "link": 11 }] },
+            { "id": 13, "type": "SaveImage", "inputs": [{ "name": "images", "link": 12 }] }
+        ],
+        "links": [
+            [1, 1, 0, 6, 0, "MODEL"], [2, 2, 0, 6, 1, "CONDITIONING"],
+            [3, 3, 0, 6, 2, "CONDITIONING"], [4, 4, 0, 6, 3, "CONDITIONING"],
+            [5, 5, 0, 6, 4, "FLOAT"], [6, 7, 0, 11, 0, "NOISE"],
+            [7, 6, 0, 11, 1, "GUIDER"], [8, 8, 0, 11, 2, "SAMPLER"],
+            [9, 9, 0, 11, 3, "SIGMAS"], [10, 10, 0, 11, 4, "LATENT"],
+            [11, 11, 0, 12, 0, "LATENT"], [12, 12, 0, 13, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "dual_ui_model");
+    assert_eq!(meta.steps, 16);
+    assert_eq!(meta.cfg, 4.75);
+    assert_ne!(meta.cfg, 1.0);
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(meta.positive_prompt, "linked dual primary");
+    assert_eq!(meta.negative_prompt, "linked dual negative");
+    assert!(!meta.positive_prompt.contains("secondary"));
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn workflow_beta_scheduler_widgets_supply_steps_and_stable_label() {
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["beta-model.safetensors"] },
+            { "id": 2, "type": "CLIPTextEncode", "widgets_values": ["beta positive"] },
+            { "id": 3, "type": "CLIPTextEncode", "widgets_values": ["beta negative"] },
+            {
+                "id": 4,
+                "type": "CFGGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "positive", "link": 2 },
+                    { "name": "negative", "link": 3 }
+                ],
+                "widgets_values": [3.5]
+            },
+            { "id": 5, "type": "RandomNoise", "widgets_values": [888] },
+            { "id": 6, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 7, "type": "BetaSamplingScheduler", "widgets_values": [30, 0.4, 0.4] },
+            {
+                "id": 8,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 5 },
+                    { "name": "guider", "link": 4 },
+                    { "name": "sampler", "link": 6 },
+                    { "name": "sigmas", "link": 7 }
+                ]
+            },
+            { "id": 9, "type": "VAEDecode", "inputs": [{ "name": "samples", "link": 8 }] },
+            { "id": 10, "type": "SaveImage", "inputs": [{ "name": "images", "link": 9 }] }
+        ],
+        "links": [
+            [1, 1, 0, 4, 0, "MODEL"], [2, 2, 0, 4, 1, "CONDITIONING"],
+            [3, 3, 0, 4, 2, "CONDITIONING"], [4, 4, 0, 8, 1, "GUIDER"],
+            [5, 5, 0, 8, 0, "NOISE"], [6, 6, 0, 8, 2, "SAMPLER"],
+            [7, 7, 0, 8, 3, "SIGMAS"], [8, 8, 0, 9, 0, "LATENT"],
+            [9, 9, 0, 10, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.steps, 30);
+    assert_eq!(meta.sampler, "euler (beta)");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Steps,
+        ComfyParseLayer::SamplerTraversal,
+    );
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Sampler,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}

@@ -539,6 +539,23 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "DualCFGGuider" && key == "cfg_conds" {
+            return arr.first();
+        }
+
+        if t == "BasicScheduler" {
+            match key {
+                "scheduler" => return arr.first(),
+                "steps" => return arr.get(1),
+                "denoise" => return arr.get(2),
+                _ => {}
+            }
+        }
+
+        if t == "BetaSamplingScheduler" && key == "steps" {
+            return arr.first();
+        }
+
         if t == "SDPromptSaver" {
             match key {
                 "ckpt_name" | "model_name" => return arr.get(2),

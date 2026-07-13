@@ -194,6 +194,18 @@ fn subgraph_inputs_use_defaults_then_proxy_then_external_link() {
 }
 
 #[test]
+fn null_proxy_widget_preserves_definition_default() {
+    let mut workflow = single_instance_workflow(None, None);
+    workflow["nodes"][0]["widgets_values"] = json!([null]);
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.seed, Some(11));
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
+}
+
+#[test]
 fn repeated_subgraph_instances_keep_namespaced_nodes_distinct() {
     let workflow = json!({
         "nodes": [
