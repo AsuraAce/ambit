@@ -28,13 +28,18 @@ Golden workflows:
 - `image_kandinsky5_t2i.chunks.json`
 - `image_omnigen2_t2i.chunks.json`
 - `image_chroma1_radiance_text_to_image.chunks.json`
+- `image_firered_image_edit1_1.chunks.json`
 
 Partial workflows:
 
 - `gsc_creator_2_3.chunks.json`: the workflow contains a Florence-generated
-  caption preview but preserves no link or literal result for the upscale
-  subgraph prompt, so the definition's stale prompt widget cannot be rejected
-  safely yet.
+  caption preview that is not connected to the upscale sampler. The sampler
+  instead uses its definition prompt, so the generated caption cannot be
+  represented as final generation metadata.
+- `image_ernie_image.chunks.json`: prompt enhancement is enabled, but the
+  selected `TextGenerate` result is not embedded in the workflow.
+- `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
+  selected `TextGenerate` result is not embedded in the workflow.
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser

@@ -73,6 +73,11 @@ impl<'a> ComfyEvaluator<'a> {
             return (ImageMetadata::default(), diagnostics);
         };
 
+        diagnostics.authoritative_positive_prompt =
+            get_node_input_link(root_node, "positive").is_some();
+        diagnostics.authoritative_negative_prompt =
+            get_node_input_link(root_node, "negative").is_some();
+
         if let Some(guider_id) = get_source_id(self.graph, root_sampler_id, "guider") {
             if let Some(guider_node) = self.graph.get_node(&guider_id) {
                 if let Some((_, positive_input, negative_input)) =
@@ -82,6 +87,10 @@ impl<'a> ComfyEvaluator<'a> {
                         get_node_input_link(guider_node, positive_input).is_some();
                     diagnostics.authoritative_negative_prompt =
                         get_node_input_link(guider_node, negative_input).is_some();
+                } else if get_node_type(guider_node) == "BasicGuider"
+                    && get_node_input_link(guider_node, "conditioning").is_some()
+                {
+                    diagnostics.authoritative_positive_prompt = true;
                 }
             }
         }
