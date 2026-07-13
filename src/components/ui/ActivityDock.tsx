@@ -117,7 +117,7 @@ const useLiveWatchPresentation = (
             }
 
             const now = Date.now();
-            const revealedAt = presentation.revealedAt ?? now;
+            const revealedAt = presentation.revealedAt!;
             const minVisibleRemainingMs = Math.max(0, LIVE_WATCH_DOCK_MIN_VISIBLE_MS - (now - revealedAt));
             const closeDelayMs = Math.max(LIVE_WATCH_DOCK_CLOSE_GRACE_MS, minVisibleRemainingMs);
             const timer = window.setTimeout(() => {
@@ -145,11 +145,7 @@ const useLiveWatchPresentation = (
         }
 
         const timer = window.setTimeout(() => {
-            setPresentation(prev => (
-                prev.key === presentationKey && presentationKey !== dismissedPresentationKey
-                    ? { key: presentationKey, visible: true, revealedAt: Date.now() }
-                    : prev
-            ));
+            setPresentation({ key: presentationKey, visible: true, revealedAt: Date.now() });
         }, LIVE_WATCH_DOCK_REVEAL_MS);
         return () => window.clearTimeout(timer);
     }, [

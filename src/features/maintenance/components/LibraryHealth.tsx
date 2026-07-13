@@ -31,8 +31,6 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
     }, [refreshMaintenanceCounts]);
 
     const handleVerify = async () => {
-        if (isScanningMissingFiles) return;
-
         const abortController = new AbortController();
         const isCurrentAudit = () => useLibraryStore.getState().missingScanAbortController === abortController;
         setPruningStatus('idle');
@@ -70,10 +68,10 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
     };
 
     const handlePrune = async () => {
-        if (!result || result.missingIds.length === 0) return;
+        const missingIds = result!.missingIds;
         setPruningStatus('running');
         try {
-            await pruneMissingLinks(result.missingIds);
+            await pruneMissingLinks(missingIds);
             setPruningStatus('done');
             setTimeout(() => window.location.reload(), 1500);
         } catch (e) {

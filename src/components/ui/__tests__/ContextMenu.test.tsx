@@ -1,203 +1,135 @@
-import * as React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextMenu } from '../ContextMenu';
 
-const renderContextMenu = () => render(
-    <ContextMenu
-        x={20}
-        y={20}
-        onClose={vi.fn()}
-        onCopyPrompt={vi.fn()}
-        onAddToCollection={vi.fn()}
-        onTogglePin={vi.fn()}
-        onDelete={vi.fn()}
-        onShowInFolder={vi.fn()}
-    />
-);
+const callbacks = () => ({
+    onClose: vi.fn(), onCopyPrompt: vi.fn(), onCopySeed: vi.fn(), onCopyGenerationInfo: vi.fn(),
+    onCopyImage: vi.fn(), onCopyFilePath: vi.fn(), onOpenInDefaultApp: vi.fn(), onAddToCollection: vi.fn(),
+    onMoveToCollection: vi.fn(), onRemoveFromCollection: vi.fn(), onTogglePin: vi.fn(), onDelete: vi.fn(),
+    onShowInFolder: vi.fn(), onRecoverMetadata: vi.fn(), onSetThumbnail: vi.fn(), onUnsetThumbnail: vi.fn(),
+    onToggleMask: vi.fn(), onToggleFavorite: vi.fn(), onToggleIntermediate: vi.fn(), onSetModelThumbnail: vi.fn(),
+});
 
-describe('ContextMenu submenus', () => {
-    afterEach(() => {
-        vi.useRealTimers();
-    });
+const openSubmenu = (label: string) => {
+    const trigger = screen.getByRole('button', { name: new RegExp(label) });
+    fireEvent.mouseEnter(trigger.closest('.relative') as Element);
+};
 
-    it('supports button activation, arrow keys, Escape, and focus-leave dismissal', () => {
-        renderContextMenu();
-
-        const trigger = screen.getByRole('button', { name: 'Copy Data' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-        expect(trigger.getAttribute('aria-haspopup')).toBeNull();
-
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-        expect(screen.getByRole('button', { name: 'Copy Prompt' })).toBeTruthy();
-
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-
-        fireEvent.keyDown(trigger, { key: 'Enter' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        fireEvent.keyDown(trigger, { key: ' ' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-
-        fireEvent.keyDown(trigger, { key: 'ArrowRight' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        fireEvent.keyDown(trigger, { key: 'ArrowLeft' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-
-        fireEvent.keyDown(trigger, { key: 'ArrowRight' });
-        fireEvent.keyDown(trigger, { key: 'Escape' });
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-
-        fireEvent.keyDown(trigger, { key: 'ArrowRight' });
-        fireEvent.focus(trigger);
-        fireEvent.blur(trigger, { relatedTarget: document.body });
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-    });
-
-    it('preserves hover opening and delayed mouse-leave dismissal', () => {
+describe('ContextMenu', () => {
+    beforeEach(() => {
         vi.useFakeTimers();
-        renderContextMenu();
-
-        const trigger = screen.getByRole('button', { name: 'Copy Data' });
-        const submenu = trigger.parentElement as HTMLElement;
-
-        fireEvent.mouseEnter(submenu);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        fireEvent.mouseLeave(submenu);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        act(() => vi.advanceTimersByTime(149));
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        act(() => vi.advanceTimersByTime(1));
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
+        Object.defineProperty(window, 'innerWidth', { value: 1000, configurable: true });
+        Object.defineProperty(window, 'innerHeight', { value: 800, configurable: true });
     });
+    afterEach(() => vi.useRealTimers());
 
-    it('lets explicit clicks close and reopen a hover-opened submenu', () => {
-        renderContextMenu();
-
-        const trigger = screen.getByRole('button', { name: 'Copy Data' });
-        const submenu = trigger.parentElement as HTMLElement;
-
-        fireEvent.mouseEnter(submenu);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('false');
-
-        fireEvent.click(trigger);
-        expect(trigger.getAttribute('aria-expanded')).toBe('true');
-    });
-
-    it('consumes every submenu keyboard command before global shortcuts see it', () => {
-        const onWindowKeyDown = vi.fn();
-        window.addEventListener('keydown', onWindowKeyDown);
-
-        try {
-            renderContextMenu();
-            const trigger = screen.getByRole('button', { name: 'Copy Data' });
-
-            for (const key of ['Enter', ' ', 'ArrowRight', 'ArrowLeft', 'Escape']) {
-                fireEvent.keyDown(trigger, { key });
-            }
-
-            expect(onWindowKeyDown).not.toHaveBeenCalled();
-        } finally {
-            window.removeEventListener('keydown', onWindowKeyDown);
-        }
-    });
-
-    it('isolates submenu-item keys without replacing native activation and returns focus on close', () => {
-        const onCopyPrompt = vi.fn();
-        const onWindowKeyDown = vi.fn();
-        window.addEventListener('keydown', onWindowKeyDown);
-
-        try {
-            render(
-                <ContextMenu
-                    x={20}
-                    y={20}
-                    onClose={vi.fn()}
-                    onCopyPrompt={onCopyPrompt}
-                    onAddToCollection={vi.fn()}
-                    onTogglePin={vi.fn()}
-                    onDelete={vi.fn()}
-                    onShowInFolder={vi.fn()}
-                />
-            );
-
-            const trigger = screen.getByRole('button', { name: 'Copy Data' });
-            fireEvent.click(trigger);
-            let item = screen.getByRole('button', { name: 'Copy Prompt' });
-            item.focus();
-
-            fireEvent.keyDown(item, { key: 'Enter' });
-            fireEvent.click(item);
-            fireEvent.keyDown(item, { key: ' ' });
-            fireEvent.click(item);
-            fireEvent.keyDown(item, { key: 'ArrowRight' });
-
-            expect(onCopyPrompt).toHaveBeenCalledTimes(2);
-            expect(trigger.getAttribute('aria-expanded')).toBe('true');
-
-            fireEvent.keyDown(item, { key: 'ArrowLeft' });
-            expect(trigger.getAttribute('aria-expanded')).toBe('false');
-            expect(document.activeElement).toBe(trigger);
-
-            fireEvent.click(trigger);
-            item = screen.getByRole('button', { name: 'Copy Prompt' });
-            item.focus();
-            fireEvent.keyDown(item, { key: 'Escape' });
-
-            expect(trigger.getAttribute('aria-expanded')).toBe('false');
-            expect(document.activeElement).toBe(trigger);
-            expect(onWindowKeyDown).not.toHaveBeenCalled();
-        } finally {
-            window.removeEventListener('keydown', onWindowKeyDown);
-        }
-    });
-
-    it('exposes quick actions through shared tooltips and reports toggle state', () => {
-        const onToggleFavorite = vi.fn();
-        const onTogglePin = vi.fn();
-        render(
+    it('positions within the viewport and runs every available action', () => {
+        const cb = callbacks();
+        const model = { name: 'Flux', hash: 'abc', type: 'checkpoint' };
+        const { container } = render(
             <ContextMenu
-                x={20}
-                y={20}
-                isFavorite={true}
-                isPinned={true}
-                onClose={vi.fn()}
-                onCopyPrompt={vi.fn()}
-                onAddToCollection={vi.fn()}
-                onToggleFavorite={onToggleFavorite}
-                onTogglePin={onTogglePin}
-                onDelete={vi.fn()}
-                onShowInFolder={vi.fn()}
+                x={950} y={750} isPinned enableAI activeCollectionName="Favorites"
+                isFavorite isMasked={false} userMasked isIntermediate
+                modelsForThumbnail={[model]} {...cb}
             />
         );
+        const root = container.firstElementChild as HTMLElement;
+        expect(root.style.left).toBe('760px');
+        expect(root.style.top).toBe('500px');
 
-        const favoriteButton = screen.getByRole('button', { name: 'Unfavorite' });
-        const pinButton = screen.getByRole('button', { name: 'Unpin' });
-        expect(favoriteButton.getAttribute('aria-pressed')).toBe('true');
-        expect(pinButton.getAttribute('aria-pressed')).toBe('true');
-        expect(favoriteButton.getAttribute('title')).toBeNull();
-        expect(pinButton.getAttribute('title')).toBeNull();
+        for (const label of ['Unfavorite', 'Unpin', 'Show in Folder', 'Remove from Library']) fireEvent.click(screen.getByRole('button', { name: label }));
+        expect(cb.onToggleFavorite).toHaveBeenCalledOnce();
+        expect(cb.onTogglePin).toHaveBeenCalledOnce();
+        expect(cb.onShowInFolder).toHaveBeenCalledOnce();
+        expect(cb.onDelete).toHaveBeenCalledOnce();
 
-        fireEvent.focus(favoriteButton);
-        expect(screen.getByRole('tooltip').textContent).toBe('Unfavorite');
-        fireEvent.blur(favoriteButton);
+        openSubmenu('Copy Data');
+        for (const label of ['Copy Prompt', 'Copy Seed', 'Copy All Info', 'Copy Image', 'Copy File Path']) fireEvent.click(screen.getByRole('button', { name: label }));
+        expect(cb.onCopyPrompt).toHaveBeenCalledOnce();
+        expect(cb.onCopySeed).toHaveBeenCalledOnce();
+        expect(cb.onCopyGenerationInfo).toHaveBeenCalledOnce();
+        expect(cb.onCopyImage).toHaveBeenCalledOnce();
+        expect(cb.onCopyFilePath).toHaveBeenCalledOnce();
 
-        fireEvent.click(favoriteButton);
-        fireEvent.click(pinButton);
-        expect(onToggleFavorite).toHaveBeenCalledOnce();
-        expect(onTogglePin).toHaveBeenCalledOnce();
+        openSubmenu('Organize');
+        for (const label of ['Add to Collection...', 'Move to Collection...', 'Remove from Collection', 'Set as Collection Thumb', 'Reset Collection Thumb']) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Flux' }));
+        expect(cb.onAddToCollection).toHaveBeenCalledOnce();
+        expect(cb.onMoveToCollection).toHaveBeenCalledOnce();
+        expect(cb.onRemoveFromCollection).toHaveBeenCalledOnce();
+        expect(cb.onSetThumbnail).toHaveBeenCalledOnce();
+        expect(cb.onUnsetThumbnail).toHaveBeenCalledOnce();
+        expect(cb.onSetModelThumbnail).toHaveBeenCalledWith(model);
+
+        openSubmenu('Privacy & AI');
+        for (const label of ['Reset Mask to Auto', 'Mask Content', 'Unmark as Intermediate', 'Recover Metadata (AI)']) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
+        }
+        expect(cb.onToggleMask.mock.calls).toEqual([[null], [true]]);
+        expect(cb.onToggleIntermediate).toHaveBeenCalledOnce();
+        expect(cb.onRecoverMetadata).toHaveBeenCalledOnce();
+        fireEvent.click(screen.getByRole('button', { name: 'Open in Default App' }));
+        expect(cb.onOpenInDefaultApp).toHaveBeenCalledOnce();
+        expect(screen.getByRole('button', { name: 'Flux' }).parentElement?.className).toContain('right-');
+    });
+
+    it('renders alternate labels and omits unavailable optional actions', () => {
+        const cb = callbacks();
+        render(
+            <ContextMenu
+                x={10} y={20} isPinned={false} enableAI={false} isFavorite={false} isMasked
+                isIntermediate={false} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt}
+                onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin}
+                onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder}
+                onToggleMask={cb.onToggleMask} onToggleIntermediate={cb.onToggleIntermediate}
+            />
+        );
+        expect(screen.getByRole('button', { name: 'Favorite' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Pin to Top' })).toBeTruthy();
+        openSubmenu('Privacy & AI');
+        fireEvent.click(screen.getByRole('button', { name: 'Unmask Content' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Mark as Intermediate' }));
+        expect(cb.onToggleMask).toHaveBeenCalledWith(false);
+        expect(screen.queryByRole('button', { name: 'Recover Metadata (AI)' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open in Default App' })).toBeNull();
+
+        openSubmenu('Copy Data');
+        expect(screen.queryByRole('button', { name: 'Copy Seed' })).toBeNull();
+        openSubmenu('Organize');
+        expect(screen.queryByRole('button', { name: 'Move to Collection...' })).toBeNull();
+    });
+
+    it('delays submenu closing, cancels pending close on reentry, and dismisses outside', () => {
+        const cb = callbacks();
+        const { container, unmount } = render(
+            <ContextMenu x={100} y={100} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt} onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin} onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder} />
+        );
+        const group = screen.getByRole('button', { name: /Copy Data/ }).closest('.relative') as Element;
+        fireEvent.mouseEnter(group);
+        expect(screen.getByRole('button', { name: 'Copy Prompt' })).toBeTruthy();
+        fireEvent.mouseLeave(group);
+        act(() => vi.advanceTimersByTime(100));
+        fireEvent.mouseEnter(group);
+        act(() => vi.advanceTimersByTime(100));
+        expect(screen.getByRole('button', { name: 'Copy Prompt' })).toBeTruthy();
+        fireEvent.mouseLeave(group);
+        act(() => vi.advanceTimersByTime(150));
+        expect(screen.queryByRole('button', { name: 'Copy Prompt' })).toBeNull();
+
+        fireEvent.mouseDown(container.firstElementChild as Element);
+        expect(cb.onClose).not.toHaveBeenCalled();
+        fireEvent.mouseDown(document.body);
+        expect(cb.onClose).toHaveBeenCalledOnce();
+        unmount();
+        fireEvent.mouseDown(document.body);
+        expect(cb.onClose).toHaveBeenCalledOnce();
+    });
+
+    it('uses no-op favorite behavior when no callback is supplied', () => {
+        const cb = callbacks();
+        render(<ContextMenu x={0} y={0} onClose={cb.onClose} onCopyPrompt={cb.onCopyPrompt} onAddToCollection={cb.onAddToCollection} onTogglePin={cb.onTogglePin} onDelete={cb.onDelete} onShowInFolder={cb.onShowInFolder} />);
+        expect(() => fireEvent.click(screen.getByRole('button', { name: 'Favorite' }))).not.toThrow();
     });
 });

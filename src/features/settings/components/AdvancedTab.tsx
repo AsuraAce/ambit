@@ -134,11 +134,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
     };
 
     const handleCopyDiagnostics = async () => {
-        if (!dbDiagnostics) {
-            addToast('Diagnostics are still loading', 'info');
-            return;
-        }
-
+        const diagnostics = dbDiagnostics!;
         try {
             if (!navigator.clipboard?.writeText) {
                 throw new Error('Clipboard is not available');
@@ -149,17 +145,17 @@ export const AdvancedTab: React.FC<TabProps> = ({
                 `${APP_NAME} Support Diagnostics`,
                 `App version: ${version}`,
                 `Console log level: ${settings.logLevel || 'info'}`,
-                `Active catalog: ${dbDiagnostics.activeDbPath || dbDiagnostics.dbPath}`,
-                `Local AppData target: ${dbDiagnostics.localDbPath}`,
-                `Legacy Roaming fallback: ${dbDiagnostics.roamingDbPath}`,
-                `Using Roaming fallback: ${dbDiagnostics.isUsingRoamingFallback ? 'yes' : 'no'}`,
-                `App log folder: ${dbDiagnostics.appLogDir}`,
-                `App log file: ${dbDiagnostics.appLogPath}`,
-                `Images: ${dbDiagnostics.imageCount}`,
-                `Deleted images: ${dbDiagnostics.deletedCount}`,
-                `Models: ${dbDiagnostics.modelCount}`,
-                `Facet cache rows: ${dbDiagnostics.cacheCount}`,
-                `Images missing tool metadata: ${dbDiagnostics.toolNullCount}`,
+                `Active catalog: ${diagnostics.activeDbPath || diagnostics.dbPath}`,
+                `Local AppData target: ${diagnostics.localDbPath}`,
+                `Legacy Roaming fallback: ${diagnostics.roamingDbPath}`,
+                `Using Roaming fallback: ${diagnostics.isUsingRoamingFallback ? 'yes' : 'no'}`,
+                `App log folder: ${diagnostics.appLogDir}`,
+                `App log file: ${diagnostics.appLogPath}`,
+                `Images: ${diagnostics.imageCount}`,
+                `Deleted images: ${diagnostics.deletedCount}`,
+                `Models: ${diagnostics.modelCount}`,
+                `Facet cache rows: ${diagnostics.cacheCount}`,
+                `Images missing tool metadata: ${diagnostics.toolNullCount}`,
             ].join('\n');
 
             await navigator.clipboard.writeText(diagnosticsText);
@@ -313,8 +309,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                 onClick={() => {
                                     updateContextSettings((prev: AppSettings) => ({
                                         ...prev,
-                                        hasCompletedOnboarding: false,
-                                        hideImportModal: false
+                                        hasCompletedOnboarding: false
                                     }));
                                     onClose?.();
                                     addToast('Onboarding restarted.', 'info');

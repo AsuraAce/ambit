@@ -121,6 +121,7 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             let relevant_prefixes = [
                 "conditioning",
                 "positive",
+                "negative",
                 "cond",
                 "c",
                 "clip",
@@ -431,17 +432,39 @@ pub fn evaluate_string_node(
 
     if t.contains("Qwen") || t.contains("LLM") {
         for input_name in ["0", "text", "prompt"] {
+            if let Some(source_id) = get_connected_text_source(node, input_name) {
+                return evaluate_string_node(graph, &source_id, visited, depth + 1);
+            }
+        }
+        for input_name in ["0", "text", "prompt"] {
             if let Some(text) = get_node_param(node, input_name).and_then(|v| v.as_str()) {
                 if !is_placeholder_prompt_value(text) {
                     return Some(text.to_string());
                 }
             }
-            if let Some(source_id) = get_source_id(graph, node_id, input_name) {
-                if let Some(text) = evaluate_string_node(graph, &source_id, visited, depth + 1) {
-                    return Some(text);
-                }
+        }
+        if let Some(text) = node
+            .get("widgets_values")
+            .and_then(Value::as_array)
+            .and_then(|widgets| widgets.first())
+            .and_then(Value::as_str)
+        {
+            if !is_placeholder_prompt_value(text) {
+                return Some(text.to_string());
             }
         }
+    }
+
+    if t == "CLIPTextEncode" {
+        if let Some(source_id) = get_connected_text_source(node, "text") {
+            return evaluate_string_node(graph, &source_id, visited, depth + 1);
+        }
+        if let Some(text) = get_node_param(node, "text").and_then(Value::as_str) {
+            if !is_placeholder_prompt_value(text) {
+                return Some(text.to_string());
+            }
+        }
+        return None;
     }
 
     if t == "PrimitiveNode"
@@ -453,6 +476,12 @@ pub fn evaluate_string_node(
         || t == "PrimitiveStringMultiline"
         || t == "smZ CLIPTextEncode"
     {
+        for input_name in ["value", "string", "String", "STRING", "VALUE", "text"] {
+            if let Some(source_id) = get_connected_text_source(node, input_name) {
+                return evaluate_string_node(graph, &source_id, visited, depth + 1);
+            }
+        }
+
         if let Some(v) = get_node_param(node, "value").and_then(|v| v.as_str()) {
             if !is_placeholder_prompt_value(v) {
                 return Some(v.to_string());
@@ -697,4 +726,36 @@ pub fn evaluate_string_node(
     }
 
     None
+}
+
+fn get_connected_text_source(node: &Value, key: &str) -> Option<String> {
+    if let Some(value) = node
+        .get("_resolved_inputs")
+        .and_then(|inputs| inputs.get(key))
+    {
+        if let Some(source_id) = value.as_str() {
+            return Some(source_id.to_string());
+        }
+        if let Some(source_id) = value
+            .as_array()
+            .and_then(|sources| sources.first())
+            .and_then(Value::as_str)
+        {
+            return Some(source_id.to_string());
+        }
+    }
+
+    let link = node
+        .get("inputs")
+        .and_then(Value::as_object)
+        .and_then(|inputs| inputs.get(key))
+        .and_then(Value::as_array)?;
+    if link.len() < 2 || !link[1].is_number() {
+        return None;
+    }
+
+    link[0]
+        .as_str()
+        .map(str::to_string)
+        .or_else(|| link[0].as_u64().map(|source_id| source_id.to_string()))
 }

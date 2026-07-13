@@ -13,7 +13,7 @@ vi.mock('../../../../hooks/useToast', () => ({
     }),
 }));
 
-const createSettings = (): AppSettings => ({
+const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     hasCompletedOnboarding: true,
     theme: 'dark',
     thumbnailSize: 200,
@@ -23,7 +23,16 @@ const createSettings = (): AppSettings => ({
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,
+    ...overrides,
 });
+
+const settingsHarness = (initial: AppSettings) => {
+    let current = initial;
+    const setSettings = vi.fn((update: React.SetStateAction<AppSettings>) => {
+        current = typeof update === 'function' ? update(current) : update;
+    });
+    return { setSettings, current: () => current };
+};
 
 describe('PrivacyTab', () => {
     beforeEach(() => {
@@ -57,5 +66,48 @@ describe('PrivacyTab', () => {
         expect(privacySwitch.getAttribute('aria-checked')).toBe('false');
         expect(useSettingsStore.getState().privacyEnabled).toBe(false);
         expect(addToastMock).toHaveBeenCalledWith('Privacy mode disabled for this session', 'success');
+    });
+
+    it('enables session privacy and changes both persisted masking modes', () => {
+        useSettingsStore.setState({ privacyEnabled: false });
+        const harness = settingsHarness(createSettings());
+        const { rerender } = render(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Privacy Mode' }));
+        expect(useSettingsStore.getState().privacyEnabled).toBe(true);
+        expect(addToastMock).toHaveBeenCalledWith('Privacy mode enabled for this session', 'success');
+
+        fireEvent.click(screen.getByLabelText('Hide Completely'));
+        expect(harness.current().maskingMode).toBe('hide');
+        expect(addToastMock).toHaveBeenCalledWith('Masking mode set to hide', 'success');
+        rerender(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+        fireEvent.click(screen.getByLabelText('Blur Content'));
+        expect(harness.current().maskingMode).toBe('blur');
+    });
+
+    it('normalizes new keywords, rejects duplicates, and removes existing entries', () => {
+        const harness = settingsHarness(createSettings({ maskedKeywords: ['existing'] }));
+        const { rerender } = render(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+        const input = screen.getByPlaceholderText('Type keyword and press Enter...');
+
+        fireEvent.keyDown(input, { key: 'Escape' });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(harness.setSettings).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: ' EXISTING ' } });
+        fireEvent.click(screen.getByText('Add'));
+        expect(addToastMock).toHaveBeenCalledWith('Keyword already exists', 'warning');
+        expect(harness.setSettings).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: '  Sensitive  ' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(harness.current().maskedKeywords).toEqual(['existing', 'sensitive']);
+        expect(addToastMock).toHaveBeenCalledWith('Added "sensitive" to masked keywords', 'success');
+
+        rerender(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+        const existingChip = screen.getByText('existing').closest('span') as HTMLElement;
+        fireEvent.click(existingChip.querySelector('button') as HTMLButtonElement);
+        expect(harness.current().maskedKeywords).toEqual(['sensitive']);
+        expect(addToastMock).toHaveBeenCalledWith('Removed "existing" from masked keywords', 'success');
     });
 });

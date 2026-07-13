@@ -64,12 +64,11 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
         // Don't intercept if clicking on a draggable item
         if ((e.target as HTMLElement).closest('[data-drag-source="true"]')) return;
 
-        if (!containerRef.current) return;
-
         e.preventDefault();
-        const rect = containerRef.current.getBoundingClientRect();
+        const container = containerRef.current!;
+        const rect = container.getBoundingClientRect();
         const startX = e.clientX - rect.left;
-        const startY = e.clientY - rect.top + containerRef.current.scrollTop;
+        const startY = e.clientY - rect.top + container.scrollTop;
 
         dragStartRef.current = { x: startX, y: startY };
         isDraggingRef.current = false;

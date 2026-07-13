@@ -91,6 +91,7 @@ describe('filterState', () => {
 
     it('identifies default browsing as unfiltered for prefetching', () => {
         expect(hasActiveResultFilters(createDefaultFilters())).toBe(false);
+        expect(hasActiveResultFilters(createDefaultFilters({ minSteps: null as unknown as number }))).toBe(false);
     });
 
     it('identifies result filters that should disable proactive prefetching', () => {

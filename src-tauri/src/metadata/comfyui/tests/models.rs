@@ -171,6 +171,52 @@ fn test_extract_comfyui_switch_model_collects_enabled_lora() {
 }
 
 #[test]
+fn test_extract_comfyui_switch_model_follows_rerouted_boolean() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": { "model": ["10", 0] }
+        },
+        "10": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": ["14", 0],
+                "on_false": ["12", 0],
+                "on_true": ["13", 0]
+            }
+        },
+        "11": {
+            "class_type": "PrimitiveBoolean",
+            "inputs": { "value": false }
+        },
+        "12": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "selected_base.safetensors" }
+        },
+        "13": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "lora_name": "disabled_lora.safetensors",
+                "model": ["12", 0]
+            }
+        },
+        "14": {
+            "class_type": "Reroute",
+            "inputs": { "": ["11", 0] }
+        }
+    }"#;
+
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.model, "selected_base");
+    assert!(
+        meta.loras.is_empty(),
+        "a false switch routed through a core Reroute must keep the LoRA disabled"
+    );
+}
+
+#[test]
 fn test_extract_comfyui_workflow_hypernetwork_loader_strength() {
     let workflow = r#"{
         "last_node_id": 10,
@@ -282,4 +328,66 @@ fn test_extract_comfyui_supir_conflict() {
 
     // Should find the actual KSampler model (novaAnimeXL), NOT SUPIR
     assert_eq!(meta.model, "novaanimexl_ilv30happynewyear");
+}
+
+#[test]
+fn z_image_model_patch_is_a_controlnet_not_the_primary_model() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "z_image_turbo_bf16.safetensors" }
+        },
+        "2": {
+            "class_type": "ModelPatchLoader",
+            "inputs": {
+                "model_patch_name": "Z-Image-Turbo-Fun-Controlnet-Union-2.1.safetensors"
+            }
+        },
+        "3": {
+            "class_type": "ZImageFunControlnet",
+            "inputs": {
+                "model": ["1", 0],
+                "model_patch": ["2", 0]
+            }
+        },
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "model patch prompt" }
+        },
+        "5": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["3", 0],
+                "positive": ["4", 0],
+                "seed": 42,
+                "steps": 9,
+                "cfg": 1.0,
+                "sampler_name": "res_multistep",
+                "scheduler": "simple"
+            }
+        },
+        "6": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["5", 0] }
+        },
+        "7": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["6", 0] }
+        }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "z_image_turbo_bf16");
+    assert_eq!(
+        meta.control_nets,
+        ["z_image_turbo_fun_controlnet_union_2.1"]
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::ControlNets),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
 }

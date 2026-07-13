@@ -1,4 +1,4 @@
-import { render, screen } from '../../../../test/testUtils';
+import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { describe, expect, it, vi } from 'vitest';
 import { ResourceDiscoverySection } from '../ResourceDiscoverySection';
 
@@ -102,5 +102,60 @@ describe('ResourceDiscoverySection', () => {
         expect(screen.getByRole('button', { name: 'Add Path' }).hasAttribute('disabled')).toBe(true);
         expect(screen.getByLabelText('Removing resource folder D:/StableDiffusion/models').hasAttribute('disabled')).toBe(true);
         expect(screen.getByLabelText('Remove resource folder D:/StableDiffusion/models/Lora').hasAttribute('disabled')).toBe(true);
+    });
+
+    it('forwards path editing and discovery commands', () => {
+        const setNewResourcePath = vi.fn();
+        const onBrowse = vi.fn();
+        const onAdd = vi.fn(event => event.preventDefault());
+        const onRemove = vi.fn();
+        const onScanNow = vi.fn();
+        render(
+            <ResourceDiscoverySection
+                {...defaultProps}
+                resourceFolders={['D:/Models/Lora']}
+                newResourcePath="D:/Models/checkpoints"
+                setNewResourcePath={setNewResourcePath}
+                onBrowse={onBrowse}
+                onAdd={onAdd}
+                onRemove={onRemove}
+                onScanNow={onScanNow}
+            />
+        );
+
+        fireEvent.change(screen.getByPlaceholderText('e.g. D:/StableDiffusion/models/Lora'), {
+            target: { value: 'D:/Models/VAE' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for resource folder' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Add Path' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Scan Now' }));
+        fireEvent.click(screen.getByLabelText('Remove resource folder D:/Models/Lora'));
+
+        expect(setNewResourcePath).toHaveBeenCalledWith('D:/Models/VAE');
+        expect(onBrowse).toHaveBeenCalled();
+        expect(onAdd).toHaveBeenCalled();
+        expect(onScanNow).toHaveBeenCalled();
+        expect(onRemove).toHaveBeenCalledWith('D:/Models/Lora');
+    });
+
+    it('shows scanning state without requiring a progress message', () => {
+        render(<ResourceDiscoverySection
+            {...defaultProps}
+            resourceFolders={['D:/Models/Lora']}
+            isScanning
+        />);
+
+        expect(screen.getAllByRole('button', { name: 'Scanning...' })).toHaveLength(2);
+    });
+
+    it('shows the current scan progress message', () => {
+        render(<ResourceDiscoverySection
+            {...defaultProps}
+            resourceFolders={['D:/Models/Lora']}
+            isScanning
+            scanProgress={{ message: 'Scanning Lora models' }}
+        />);
+
+        expect(screen.getByText('Scanning Lora models')).toBeTruthy();
     });
 });

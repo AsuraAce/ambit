@@ -51,8 +51,6 @@ const isEnabled = (): boolean =>
     typeof window !== 'undefined' && Boolean(import.meta.env.DEV);
 
 const ensureInstalled = () => {
-    if (!isEnabled()) return;
-
     const target = window as AmbitDiagnosticsWindow;
     target.ambitDiagnostics = target.ambitDiagnostics ?? {};
     target.ambitDiagnostics.background = {

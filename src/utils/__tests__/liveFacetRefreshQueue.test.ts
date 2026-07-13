@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { debugLiveWatchPerf } from '../liveWatchPerf';
 import { createLiveFacetRefreshQueue } from '../liveFacetRefreshQueue';
 
 vi.mock('../liveWatchPerf', () => ({
@@ -122,5 +123,108 @@ describe('createLiveFacetRefreshQueue', () => {
         expect(runIncremental).toHaveBeenCalledWith(['checkpoints', 'tools']);
         expect(runFullFallback).toHaveBeenCalledTimes(1);
         expect(onRefreshApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips refresh work when no facet type or resource was touched', async () => {
+        const runIncremental = vi.fn();
+        const queue = createLiveFacetRefreshQueue({
+            runIncremental,
+            runResourceIncremental: vi.fn(),
+            runFullFallback: vi.fn(),
+            onRefreshApplied: vi.fn()
+        });
+
+        await expect(queue.queue([], { source: 'generic' })).resolves.toBeUndefined();
+
+        expect(runIncremental).not.toHaveBeenCalled();
+        expect(debugLiveWatchPerf).toHaveBeenCalledWith('Live facet refresh skipped', {
+            cycleId: undefined,
+            source: 'generic',
+            changedImageCount: 0,
+            reason: 'no-touched-facet-types'
+        });
+    });
+
+    it('merges same-source metadata and resource names while a run is active', async () => {
+        const firstRun = createDeferred<number>();
+        const runIncremental = vi.fn().mockImplementationOnce(() => firstRun.promise);
+        const runResourceIncremental = vi.fn().mockResolvedValue(2);
+        const queue = createLiveFacetRefreshQueue({
+            runIncremental,
+            runResourceIncremental,
+            runFullFallback: vi.fn(),
+            onRefreshApplied: vi.fn()
+        });
+
+        const active = queue.queue(['tools'], { source: 'generic', cycleId: 'same' });
+        await Promise.resolve();
+        queue.queue([], { source: 'generic', cycleId: 'same', mergedRunCount: 2 }, {
+            checkpoints: ['A'],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: []
+        });
+        queue.queue(['tools'], { source: 'generic', cycleId: 'same' });
+        queue.queue(['loras'], { source: 'invoke', cycleId: 'other', changedImageCount: 4 });
+        firstRun.resolve(1);
+        await active;
+
+        expect(runResourceIncremental).toHaveBeenCalledWith(expect.objectContaining({ checkpoints: ['A'] }));
+        expect(debugLiveWatchPerf).toHaveBeenCalledWith(
+            'Live facet refresh merged',
+            expect.objectContaining({
+                source: 'mixed',
+                cycleId: undefined,
+                changedImageCount: 4,
+                mergedRunCount: 4,
+                facetTypes: ['checkpoints', 'loras', 'tools']
+            })
+        );
+    });
+
+    it('resolves safely when incremental and fallback refreshes both fail', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const runIncremental = vi.fn().mockRejectedValue('incremental unavailable');
+        const runFullFallback = vi.fn().mockRejectedValue(new Error('full unavailable'));
+        const queue = createLiveFacetRefreshQueue({
+            runIncremental,
+            runResourceIncremental: vi.fn(),
+            runFullFallback,
+            onRefreshApplied: vi.fn()
+        });
+
+        await expect(queue.queue(['tools'], { source: 'generic' })).resolves.toBeUndefined();
+
+        expect(debugLiveWatchPerf).toHaveBeenCalledWith(
+            'Live facet refresh incremental failed',
+            expect.objectContaining({ error: 'incremental unavailable' })
+        );
+        expect(error).toHaveBeenCalledWith(
+            '[LiveWatch] Failed to refresh facet cache after live changes',
+            expect.any(Error)
+        );
+        error.mockRestore();
+    });
+
+    it('starts a fresh promise after the previous refresh settles', async () => {
+        const runIncremental = vi.fn().mockResolvedValue(1);
+        const queue = createLiveFacetRefreshQueue({
+            runIncremental,
+            runResourceIncremental: vi.fn(),
+            runFullFallback: vi.fn(),
+            onRefreshApplied: vi.fn()
+        });
+
+        const first = queue.queue(['tools'], { source: 'generic' });
+        await first;
+        const second = queue.queue(['loras'], { source: 'invoke' });
+        await second;
+
+        expect(second).not.toBe(first);
+        expect(runIncremental).toHaveBeenNthCalledWith(1, ['tools']);
+        expect(runIncremental).toHaveBeenNthCalledWith(2, ['loras']);
     });
 });

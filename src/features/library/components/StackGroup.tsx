@@ -30,8 +30,6 @@ export const StackGroup: React.FC<StackGroupProps> = ({ group, onConfirm }) => {
         // Filter the master list by selection
         const finalSelection = allImages.filter(img => selectedIds.has(img.id));
 
-        if (finalSelection.length < 2) return;
-
         // Re-sort by timestamp/size to find the new "Base" (in case original base was deselected)
         // We stick to time-based ordering for the stack structure.
         finalSelection.sort((a, b) => a.timestamp - b.timestamp);

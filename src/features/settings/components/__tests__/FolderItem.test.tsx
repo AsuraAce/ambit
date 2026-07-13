@@ -1,35 +1,78 @@
-import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
-import type { MonitoredFolder } from '../../../../types';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { GeneratorTool, type MonitoredFolder } from '../../../../types';
 import { FolderItem } from '../FolderItem';
 
+const folder = (overrides: Partial<MonitoredFolder> = {}): MonitoredFolder => ({
+    id: 'folder-1', path: 'C:/images', isActive: true, imageCount: 12, ...overrides
+});
+
+const setup = (target = folder(), scanningIds = new Set<string>(), onRefresh: ((path: string, force: boolean, variant?: GeneratorTool, managed?: boolean) => void) | null = vi.fn()) => {
+    const props = { folder: target, scanningIds, onRescan: vi.fn(), onRemove: vi.fn(), onRefresh: onRefresh ?? undefined };
+    const result = render(<FolderItem {...props} />);
+    return { ...result, props };
+};
+
 describe('FolderItem', () => {
-    it('names the remove action with its folder path and explains it on focus', () => {
-        const folder: MonitoredFolder = {
-            id: 'folder-1',
-            path: 'C:/images/outputs',
-            isActive: true,
-            imageCount: 12,
-        };
-        const onRemove = vi.fn();
+    beforeEach(() => vi.spyOn(console, 'log').mockImplementation(() => undefined));
 
-        render(
-            <FolderItem
-                folder={folder}
-                scanningIds={new Set()}
-                onRescan={vi.fn()}
-                onRemove={onRemove}
-            />
-        );
+    it('routes rescan, removal, and normal or forced refresh for watched folders', () => {
+        const { props, container } = setup(folder({ variant: GeneratorTool.COMFYUI }));
+        expect(screen.getByText('COMFY')).toBeTruthy();
+        expect(screen.getByText('12 images')).toBeTruthy();
+        expect(screen.getByText('Monitored Folder')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Rescan Folder' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Resume Smart Refresh' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Resume Smart Refresh' }), { shiftKey: true });
+        const remove = container.querySelector('.lucide-trash-2')?.closest('button') as HTMLButtonElement;
+        fireEvent.click(remove);
+        expect(props.onRescan).toHaveBeenCalledWith('folder-1', 'C:/images', GeneratorTool.COMFYUI, undefined);
+        expect(props.onRefresh).toHaveBeenNthCalledWith(1, 'C:/images', false, GeneratorTool.COMFYUI, undefined);
+        expect(props.onRefresh).toHaveBeenNthCalledWith(2, 'C:/images', true, GeneratorTool.COMFYUI, undefined);
+        expect(props.onRemove).toHaveBeenCalledWith('folder-1');
+    });
 
-        const removeButton = screen.getByRole('button', { name: 'Remove Folder: C:/images/outputs' });
-        expect(removeButton.getAttribute('title')).toBeNull();
+    it('uses managed raw paths, database sync labels, and cancelled-import status', () => {
+        const target = folder({ isManaged: true, path: 'virtual', pathRaw: 'D:/Invoke/outputs', variant: GeneratorTool.INVOKEAI, initialScanCancelled: true });
+        const { props } = setup(target);
+        expect(screen.getByText('INVOKE')).toBeTruthy();
+        expect(screen.getByText('D:/Invoke/outputs')).toBeTruthy();
+        expect(screen.getByText('Import cancelled. Rescan to continue.')).toBeTruthy();
+        expect(screen.queryByText(/images$/)).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Sync with InvokeAI Database' }));
+        expect(props.onRescan).toHaveBeenCalledWith('folder-1', 'D:/Invoke/outputs', GeneratorTool.INVOKEAI, true);
+        expect(document.querySelector('.lucide-trash-2')).toBeNull();
+    });
 
-        fireEvent.focus(removeButton);
-        expect(screen.getByRole('tooltip').textContent).toBe('Remove Folder: C:/images/outputs');
+    it('falls back to managed normalized paths and hides optional refresh controls', () => {
+        setup(folder({ isManaged: true, pathRaw: undefined, variant: GeneratorTool.UNKNOWN }), new Set(), null);
+        expect(screen.getByText('C:/images')).toBeTruthy();
+        expect(screen.getByText('Managed Integration')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Resume Smart Refresh' })).toBeNull();
+    });
 
-        fireEvent.click(removeButton);
-        expect(onRemove).toHaveBeenCalledWith('folder-1');
+    it('disables controls and animates rescans while scanning', () => {
+        const { container } = setup(folder(), new Set(['folder-1']));
+        const rescan = screen.getByRole('button', { name: 'Rescan Folder' }) as HTMLButtonElement;
+        const refresh = screen.getByRole('button', { name: 'Resume Smart Refresh' }) as HTMLButtonElement;
+        expect(rescan.disabled).toBe(true);
+        expect(refresh.disabled).toBe(true);
+        expect(container.querySelector('.animate-spin')).toBeTruthy();
+    });
+
+    it.each([
+        [GeneratorTool.AUTOMATIC1111, 'A1111'],
+        [GeneratorTool.SDNEXT, 'SD.NEXT'],
+        [GeneratorTool.FORGE, 'FORGE'],
+        [GeneratorTool.ANAPNOE, 'ANAPNOE']
+    ])('renders the %s integration badge', (variant, label) => {
+        setup(folder({ variant }));
+        expect(screen.getByText(label)).toBeTruthy();
+    });
+
+    it('renders no integration badge for unrecognized future variants', () => {
+        const { container } = setup(folder({ variant: 'future-tool' as GeneratorTool }));
+        expect(screen.getByText('C:/images')).toBeTruthy();
+        expect(container.querySelector('.w-16')?.textContent).toBe('');
     });
 });

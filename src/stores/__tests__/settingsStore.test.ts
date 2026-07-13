@@ -1,8 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import { useSettingsStore } from '../settingsStore';
 import { appRepository } from '../../services/repository';
 import { commands } from '../../bindings';
 import type { AppSettings } from '../../types';
+import type { AppState } from '../../services/repository';
+
+const mocks = vi.hoisted(() => ({
+    browserMockMode: false,
+    ensureAssetPathAccessible: vi.fn(),
+    ensureConfiguredAssetPathsAccessible: vi.fn()
+}));
+
+const appState = (settings: AppSettings): AppState => ({
+    images: [],
+    collections: [],
+    smartCollections: [],
+    settings,
+    recentSearches: []
+});
 
 // --- Mocks ---
 vi.mock('../../services/repository', () => ({
@@ -21,9 +36,28 @@ vi.mock('../../bindings', () => ({
     },
 }));
 
+vi.mock('../../services/runtime', () => ({
+    isBrowserMockMode: () => mocks.browserMockMode
+}));
+
+vi.mock('../../services/assetScope', () => ({
+    ensureAssetPathAccessible: mocks.ensureAssetPathAccessible,
+    ensureConfiguredAssetPathsAccessible: mocks.ensureConfiguredAssetPathsAccessible
+}));
+
 describe('SettingsStore', () => {
     beforeEach(() => {
+        vi.useFakeTimers();
         vi.clearAllMocks();
+        mocks.browserMockMode = false;
+        mocks.ensureAssetPathAccessible.mockResolvedValue(undefined);
+        mocks.ensureConfiguredAssetPathsAccessible.mockResolvedValue(undefined);
+        vi.mocked(commands.saveApiKey).mockResolvedValue({ status: 'ok', data: null });
+        vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: null });
+        vi.mocked(commands.deleteApiKey).mockResolvedValue({ status: 'ok', data: null });
+        vi.mocked(appRepository.load).mockResolvedValue({ settings: null } as unknown as AppState);
+        vi.mocked(appRepository.save).mockResolvedValue(undefined);
+        vi.unstubAllEnvs();
         // Reset Zustand store state before each test
         useSettingsStore.setState({
             isLoaded: false,
@@ -38,14 +72,18 @@ describe('SettingsStore', () => {
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
                 enableAI: false,
-                libraryLayoutMode: 'masonry',
-                hideImportModal: false
+                libraryLayoutMode: 'masonry'
             }
         });
     });
 
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.unstubAllEnvs();
+    });
+
     it('should initialize with default settings', async () => {
-        (appRepository.load as any).mockResolvedValue({ settings: null });
+        vi.mocked(appRepository.load).mockResolvedValue({ settings: null } as unknown as AppState);
         
         await useSettingsStore.getState().initialize();
 
@@ -54,7 +92,7 @@ describe('SettingsStore', () => {
     });
 
     it('should load API key from keyring on initialize', async () => {
-        (appRepository.load as any).mockResolvedValue({ settings: {} });
+        vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: 'secure-key' });
 
         await useSettingsStore.getState().initialize();
@@ -63,7 +101,7 @@ describe('SettingsStore', () => {
     });
 
     it('should default high quality thumbnail upgrades to off', async () => {
-        (appRepository.load as any).mockResolvedValue({ settings: {} });
+        vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
 
         await useSettingsStore.getState().initialize();
 
@@ -73,7 +111,7 @@ describe('SettingsStore', () => {
     });
 
     it('should default gallery layout mode to masonry', async () => {
-        (appRepository.load as any).mockResolvedValue({ settings: {} });
+        vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
 
         await useSettingsStore.getState().initialize();
 
@@ -126,7 +164,7 @@ describe('SettingsStore', () => {
     });
 
     it('should preserve persisted gallery layout mode on initialize', async () => {
-        (appRepository.load as any).mockResolvedValue({ settings: { libraryLayoutMode: 'justified' } });
+        vi.mocked(appRepository.load).mockResolvedValue(appState({ libraryLayoutMode: 'justified' } as AppSettings));
 
         await useSettingsStore.getState().initialize();
 
@@ -139,7 +177,7 @@ describe('SettingsStore', () => {
             theme: 'light',
             monitoredFolders: []
         };
-        (appRepository.load as any).mockResolvedValue({ settings: legacySettings });
+        vi.mocked(appRepository.load).mockResolvedValue(appState(legacySettings as unknown as AppSettings));
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: null });
 
         await useSettingsStore.getState().initialize();
@@ -171,5 +209,188 @@ describe('SettingsStore', () => {
 
         expect(commands.deleteApiKey).toHaveBeenCalled();
         expect(useSettingsStore.getState().geminiApiKey).toBeNull();
+    });
+
+    it('stores API keys in memory only in browser mock mode', async () => {
+        mocks.browserMockMode = true;
+
+        await useSettingsStore.getState().setGeminiApiKey('browser-key');
+        expect(useSettingsStore.getState().geminiApiKey).toBe('browser-key');
+        expect(commands.saveApiKey).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['save', 'key'],
+        ['delete', null]
+    ] as const)('rejects %s API key command errors', async (operation, key) => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        if (operation === 'save') {
+            vi.mocked(commands.saveApiKey).mockResolvedValueOnce({ status: 'error', error: 'save failed' });
+        } else {
+            vi.mocked(commands.deleteApiKey).mockResolvedValueOnce({ status: 'error', error: 'delete failed' });
+        }
+
+        await expect(useSettingsStore.getState().setGeminiApiKey(key)).rejects.toThrow(`${operation} failed`);
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to save/delete API key:', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('applies object and functional settings updates and debounces repository persistence', async () => {
+        vi.mocked(appRepository.load).mockResolvedValue({
+            settings: useSettingsStore.getState().settings,
+            images: [], collections: [], smartCollections: [], recentSearches: []
+        });
+
+        useSettingsStore.getState().setSettings({ theme: 'light' });
+        useSettingsStore.getState().setSettings(previous => ({ thumbnailSize: previous.thumbnailSize + 25 }));
+        expect(useSettingsStore.getState().settings.theme).toBe('light');
+        expect(useSettingsStore.getState().settings.thumbnailSize).toBe(225);
+
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(appRepository.save).toHaveBeenCalledTimes(1);
+        expect(appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+            settings: expect.objectContaining({ theme: 'light', thumbnailSize: 225 })
+        }));
+    });
+
+    it('contains auto-save failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(appRepository.load).mockRejectedValueOnce(new Error('load failed'));
+
+        useSettingsStore.getState().setSettings({ theme: 'light' });
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to auto-save settings', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('registers new monitored, resource, and InvokeAI paths', async () => {
+        useSettingsStore.getState().setSettings({
+            monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
+            resourceFolders: ['C:/models'],
+            invokeAiPath: 'C:/invokeai'
+        });
+        await Promise.resolve();
+
+        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/images', { assumeDirectory: true });
+        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/models', { assumeDirectory: true });
+        expect(mocks.ensureAssetPathAccessible).toHaveBeenCalledWith('C:/invokeai', { assumeDirectory: true });
+    });
+
+    it('skips existing and browser-mock asset paths', async () => {
+        const folder = { id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 };
+        useSettingsStore.setState(state => ({
+            settings: { ...state.settings, monitoredFolders: [folder], resourceFolders: ['C:/models'], invokeAiPath: 'C:/invokeai' }
+        }));
+        useSettingsStore.getState().setSettings({ theme: 'light' });
+        expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
+
+        mocks.browserMockMode = true;
+        useSettingsStore.getState().setSettings({
+            monitoredFolders: [...useSettingsStore.getState().settings.monitoredFolders, { id: 'new', path: 'D:/new', isActive: true, imageCount: 0 }],
+            resourceFolders: ['C:/models', 'D:/models'],
+            invokeAiPath: 'D:/invokeai'
+        });
+        expect(mocks.ensureAssetPathAccessible).not.toHaveBeenCalled();
+    });
+
+    it('contains asynchronous scope registration failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mocks.ensureAssetPathAccessible.mockRejectedValue(new Error('scope failed'));
+        useSettingsStore.getState().setSettings({
+            monitoredFolders: [{ id: 'folder', path: 'C:/images', isActive: true, imageCount: 0 }],
+            resourceFolders: ['C:/models'],
+            invokeAiPath: 'C:/invokeai'
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register new folder scope:', expect.any(Error));
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register resource folder scope:', expect.any(Error));
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to register InvokeAI scope:', expect.any(Error));
+        error.mockRestore();
+    });
+
+    it('updates privacy and only the matching folder scan cursor', () => {
+        useSettingsStore.setState(state => ({
+            settings: {
+                ...state.settings,
+                monitoredFolders: [
+                    { id: 'one', path: 'C:/one', isActive: true, imageCount: 0, initialScanPending: true, initialScanCancelled: true },
+                    { id: 'two', path: 'C:/two', isActive: true, imageCount: 0 }
+                ]
+            }
+        }));
+
+        useSettingsStore.getState().setPrivacyEnabled(false);
+        useSettingsStore.getState().updateFolderLastScanned('one', 123);
+
+        expect(useSettingsStore.getState().privacyEnabled).toBe(false);
+        expect(useSettingsStore.getState().settings.monitoredFolders[0]).toEqual(expect.objectContaining({
+            lastScanned: 123,
+            initialScanPending: false,
+            initialScanCancelled: false
+        }));
+        expect(useSettingsStore.getState().settings.monitoredFolders[1].lastScanned).toBeUndefined();
+    });
+
+    it('short-circuits repeated initialization', async () => {
+        useSettingsStore.setState({ isLoaded: true });
+        await useSettingsStore.getState().initialize();
+        expect(appRepository.load).not.toHaveBeenCalled();
+    });
+
+    it('contains keyring load and legacy migration failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(commands.loadApiKey).mockRejectedValueOnce(new Error('keyring failed'));
+        vi.mocked(commands.saveApiKey).mockRejectedValueOnce(new Error('migration failed'));
+        vi.mocked(appRepository.load).mockResolvedValue(appState({
+            ...useSettingsStore.getState().settings,
+            googleGeminiApiKey: 'legacy'
+        }));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to load API key from keyring:', expect.any(Error));
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Migration failed:', expect.any(Error));
+        expect(useSettingsStore.getState().geminiApiKey).toBeNull();
+        error.mockRestore();
+    });
+
+    it('prefers the environment key and preserves an explicit development mode', async () => {
+        vi.stubEnv('API_KEY', 'environment-key');
+        vi.mocked(commands.loadApiKey).mockResolvedValueOnce({ status: 'error', error: 'unavailable' });
+        vi.mocked(appRepository.load).mockResolvedValue(appState({
+            ...useSettingsStore.getState().settings,
+            devMode: false
+        }));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().geminiApiKey).toBe('environment-key');
+        expect(useSettingsStore.getState().settings.devMode).toBe(false);
+        expect(mocks.ensureConfiguredAssetPathsAccessible).toHaveBeenCalled();
+    });
+
+    it('initializes in browser mode without keyring or asset-scope access', async () => {
+        mocks.browserMockMode = true;
+        vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(commands.loadApiKey).not.toHaveBeenCalled();
+        expect(mocks.ensureConfiguredAssetPathsAccessible).not.toHaveBeenCalled();
+        expect(useSettingsStore.getState().isLoaded).toBe(true);
+    });
+
+    it('marks settings loaded when repository initialization fails', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(appRepository.load).mockRejectedValueOnce(new Error('repository failed'));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState().isLoaded).toBe(true);
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to load settings', expect.any(Error));
+        error.mockRestore();
     });
 });

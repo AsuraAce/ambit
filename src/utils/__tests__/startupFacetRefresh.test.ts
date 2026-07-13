@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { refreshStartupFacetCache } from '../startupFacetRefresh';
+import { countTouchedFacetResources, refreshStartupFacetCache } from '../startupFacetRefresh';
 
 const mocks = vi.hoisted(() => ({
     rebuildFacetCacheStrict: vi.fn(),
@@ -134,5 +134,66 @@ describe('refreshStartupFacetCache', () => {
         expect(mocks.refreshFacetCacheForResourcesStrict).toHaveBeenCalledTimes(1);
         expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledTimes(1);
         expect(onRefreshApplied).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a full rebuild when touched resource details are missing or empty', async () => {
+        const empty = {
+            checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+            controlNets: [], ipAdapters: [], tools: [],
+        };
+
+        const missing = await refreshStartupFacetCache({
+            source: 'folder',
+            totalProcessed: 1,
+            touchedFacetTypes: ['tools'],
+            onRefreshApplied: vi.fn(),
+        });
+        const emptyResult = await refreshStartupFacetCache({
+            source: 'folder',
+            totalProcessed: 1,
+            touchedFacetTypes: ['tools'],
+            touchedFacetResources: empty,
+            onRefreshApplied: vi.fn(),
+        });
+
+        expect(missing.reason).toBe('missing-touched-resources');
+        expect(emptyResult.reason).toBe('missing-touched-resources');
+        expect(countTouchedFacetResources()).toBe(0);
+        expect(countTouchedFacetResources(touchedResources)).toBe(3);
+    });
+
+    it('uses a full rebuild when resource cardinality exceeds the configured limit', async () => {
+        const result = await refreshStartupFacetCache({
+            source: 'invoke',
+            totalProcessed: 1,
+            touchedFacetTypes: [],
+            touchedFacetResources: touchedResources,
+            maxProcessed: 1,
+            maxTouchedResources: 2,
+            onRefreshApplied: vi.fn(),
+        });
+
+        expect(result.strategy).toBe('full');
+        expect(result.reason).toBe('too-many-touched-resources');
+    });
+
+    it('formats non-Error incremental failures before falling back', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        mocks.refreshFacetCacheForResourcesStrict.mockRejectedValueOnce('offline');
+
+        const result = await refreshStartupFacetCache({
+            source: 'folder',
+            totalProcessed: 1,
+            touchedFacetTypes: [],
+            touchedFacetResources: touchedResources,
+            onRefreshApplied: vi.fn(),
+        });
+
+        expect(result.strategy).toBe('fallback-full');
+        expect(warn).toHaveBeenCalledWith(
+            '[Startup Facets] Incremental refresh failed; falling back to full rebuild.',
+            expect.objectContaining({ error: 'offline' })
+        );
+        warn.mockRestore();
     });
 });

@@ -288,8 +288,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     }, [activeMediaFrame]);
 
     useEffect(() => {
-        const container = containerRef.current;
-        if (!container) return;
+        const container = containerRef.current!;
 
         const updateMediaFrame = () => {
             const rect = container.getBoundingClientRect();
@@ -348,11 +347,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     }, [position, scale]);
 
     const getAnchorForEvent = useCallback((e: React.MouseEvent | React.WheelEvent): Point => {
-        if (!containerRef.current) {
-            return CENTER_ANCHOR;
-        }
-
-        const containerRect = containerRef.current.getBoundingClientRect();
+        const containerRect = containerRef.current!.getBoundingClientRect();
         const viewportRect = getCompareViewportRect(containerRect, e.clientX, mode);
 
         return getAnchorPoint({ x: e.clientX, y: e.clientY }, viewportRect);

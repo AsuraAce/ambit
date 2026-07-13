@@ -1,3 +1,4 @@
+use super::super::diagnostics::ComfyMetadataField;
 use crate::metadata::comfyui::*;
 use std::collections::HashMap;
 
@@ -168,6 +169,66 @@ fn test_extract_comfyui_switch_string_true_branch() {
     let meta = extract_comfyui_metadata(&chunks);
 
     assert_eq!(meta.positive_prompt, "chosen prompt");
+}
+
+#[test]
+fn test_extract_comfyui_workflow_clip_text_widget_prompts() {
+    let workflow = r#"{
+        "nodes": [
+            {"id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors"]},
+            {"id": 2, "type": "CLIPTextEncode", "widgets_values": ["literal positive"]},
+            {"id": 3, "type": "CLIPTextEncode", "widgets_values": ["literal negative"]},
+            {
+                "id": 4,
+                "type": "KSampler",
+                "inputs": [
+                    {"name": "model", "type": "MODEL", "link": 1},
+                    {"name": "positive", "type": "CONDITIONING", "link": 6},
+                    {"name": "negative", "type": "CONDITIONING", "link": 7}
+                ],
+                "outputs": [{"name": "LATENT", "type": "LATENT", "links": [4]}],
+                "widgets_values": [1, "fixed", 4, 1, "euler", "simple", 1]
+            },
+            {
+                "id": 5,
+                "type": "VAEDecode",
+                "inputs": [{"name": "samples", "type": "LATENT", "link": 4}],
+                "outputs": [{"name": "IMAGE", "type": "IMAGE", "links": [5]}]
+            },
+            {
+                "id": 6,
+                "type": "SaveImage",
+                "inputs": [{"name": "images", "type": "IMAGE", "link": 5}]
+            },
+            {
+                "id": 7,
+                "type": "ControlNetApplyAdvanced",
+                "inputs": [
+                    {"name": "positive", "type": "CONDITIONING", "link": 2},
+                    {"name": "negative", "type": "CONDITIONING", "link": 3}
+                ],
+                "outputs": [
+                    {"name": "positive", "type": "CONDITIONING", "links": [6]},
+                    {"name": "negative", "type": "CONDITIONING", "links": [7]}
+                ]
+            }
+        ],
+        "links": [
+            [1, 1, 0, 4, 0, "MODEL"],
+            [2, 2, 0, 7, 0, "CONDITIONING"],
+            [3, 3, 0, 7, 1, "CONDITIONING"],
+            [4, 4, 0, 5, 0, "LATENT"],
+            [5, 5, 0, 6, 0, "IMAGE"],
+            [6, 7, 0, 4, 1, "CONDITIONING"],
+            [7, 7, 1, 4, 2, "CONDITIONING"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "literal positive");
+    assert_eq!(meta.negative_prompt, "literal negative");
 }
 
 #[test]
@@ -656,4 +717,279 @@ fn test_extract_comfyui_flux_zero_out_negative() {
     );
     // This is the critical part: it should NOT be the same as positive_prompt
     assert_eq!(meta.negative_prompt, "");
+}
+
+#[test]
+fn linked_clip_text_is_authoritative_over_stale_direct_value() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "stale widget prompt" },
+            "_resolved_inputs": { "text": "3" }
+        },
+        "3": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "linked prompt" } },
+        "4": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["4", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "linked prompt");
+}
+
+#[test]
+fn authoritative_unresolved_sampler_prompt_blocks_disconnected_global_fallback() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "stale widget prompt" },
+            "_resolved_inputs": { "text": "3" }
+        },
+        "3": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "4": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["4", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } },
+        "7": { "class_type": "CLIPTextEncode", "inputs": { "text": "disconnected stale prompt" } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn basic_guider_linked_conditioning_blocks_disconnected_global_prompt_fallback() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": { "class_type": "TextGenerate", "inputs": { "prompt": "generator instruction" } },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": ["2", 0] } },
+        "4": {
+            "class_type": "BasicGuider",
+            "inputs": {
+                "model": ["1", 0],
+                "conditioning": ["3", 0]
+            }
+        },
+        "5": { "class_type": "RandomNoise", "inputs": { "noise_seed": 1 } },
+        "6": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "7": {
+            "class_type": "BasicScheduler",
+            "inputs": {
+                "model": ["1", 0],
+                "scheduler": "simple",
+                "steps": 4,
+                "denoise": 1.0
+            }
+        },
+        "8": { "class_type": "EmptyLatentImage", "inputs": { "width": 512, "height": 512 } },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["5", 0],
+                "guider": ["4", 0],
+                "sampler": ["6", 0],
+                "sigmas": ["7", 0],
+                "latent_image": ["8", 0]
+            }
+        },
+        "10": { "class_type": "VAEDecode", "inputs": { "samples": ["9", 0] } },
+        "11": { "class_type": "SaveImage", "inputs": { "images": ["10", 0] } },
+        "12": { "class_type": "CLIPTextEncode", "inputs": { "text": "disconnected stale prompt" } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn unresolved_linked_string_intermediaries_do_not_reopen_stale_literals() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "CLIPTextEncode",
+            "_resolved_inputs": { "text": "3" }
+        },
+        "3": {
+            "class_type": "PrimitiveStringMultiline",
+            "inputs": { "value": "stale direct prompt" },
+            "_resolved_inputs": { "value": "7" }
+        },
+        "4": {
+            "class_type": "CLIPTextEncode",
+            "_resolved_inputs": { "text": "5" }
+        },
+        "5": {
+            "class_type": "PrimitiveStringMultiline",
+            "widgets_values": ["stale widget prompt"],
+            "_resolved_inputs": { "value": "8" }
+        },
+        "6": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "negative": ["4", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "7": { "class_type": "TextGenerate", "inputs": { "prompt": "positive instruction" } },
+        "8": { "class_type": "TextGenerate", "inputs": { "prompt": "negative instruction" } },
+        "9": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
+        "10": { "class_type": "SaveImage", "inputs": { "images": ["9", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::NegativePrompt),
+        None
+    );
+}
+
+#[test]
+fn linked_qwen_prompt_is_authoritative_over_stale_direct_value() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "inputs": { "prompt": "stale widget prompt" },
+            "_resolved_inputs": { "prompt": "3" }
+        },
+        "3": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "linked qwen prompt" } },
+        "4": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["4", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "linked qwen prompt");
+}
+
+#[test]
+fn unlinked_qwen_prompt_remains_available() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "inputs": { "prompt": "direct qwen prompt" }
+        },
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "4": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0] } },
+        "5": { "class_type": "SaveImage", "inputs": { "images": ["4", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "direct qwen prompt");
+}
+
+#[test]
+fn unlinked_qwen_workflow_widget_remains_available() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": {
+            "class_type": "TextEncodeQwenImageEditPlus",
+            "widgets_values": ["workflow qwen prompt"]
+        },
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "4": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0] } },
+        "5": { "class_type": "SaveImage", "inputs": { "images": ["4", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.positive_prompt, "workflow qwen prompt");
 }

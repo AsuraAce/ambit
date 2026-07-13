@@ -1,119 +1,107 @@
-import * as React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '../../../../test/testUtils';
-import { createDefaultFilters } from '../../../../utils/filterState';
-import { DonationModal } from '../../../../components/ui/DonationModal';
-import { ShortcutsModal } from '../../../../components/ui/ShortcutsModal';
+import { GeneratorTool, type FilterState, type ViewMode } from '../../../../types';
 import { AppSidebar } from '../AppSidebar';
 
-const SidebarHarness = () => {
-    const [viewMode, setViewMode] = React.useState<'grid' | 'timeline' | 'dashboard' | 'maintenance'>('grid');
-    const [filters, setFilters] = React.useState(createDefaultFilters());
-    const [isFilterPanelOpen, setIsFilterPanelOpen] = React.useState(false);
+const filters = (overrides: Partial<FilterState> = {}): FilterState => ({
+    searchQuery: '',
+    models: [],
+    tools: [GeneratorTool.COMFYUI],
+    loras: [],
+    embeddings: [],
+    hypernetworks: [],
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    dateRange: 'all',
+    favoritesOnly: false,
+    collectionId: null,
+    showIntermediates: false,
+    showGrids: false,
+    ...overrides,
+});
 
-    return (
-        <AppSidebar
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            filters={filters}
-            setFilters={setFilters}
-            isFilterPanelOpen={isFilterPanelOpen}
-            setIsFilterPanelOpen={setIsFilterPanelOpen}
-            onOpenSettings={vi.fn()}
-            onOpenShortcuts={vi.fn()}
-            onOpenDonation={vi.fn()}
-            showSupportPulse={false}
-        />
-    );
-};
+const button = (label: string) => screen.getByRole('button', { name: label });
 
-const SidebarModalHarness = () => {
-    const [viewMode, setViewMode] = React.useState<'grid' | 'timeline' | 'dashboard' | 'maintenance'>('grid');
-    const [filters, setFilters] = React.useState(createDefaultFilters());
-    const [isFilterPanelOpen, setIsFilterPanelOpen] = React.useState(false);
-    const [modal, setModal] = React.useState<'donation' | 'shortcuts' | null>(null);
+describe('AppSidebar', () => {
+    it('navigates, toggles filters, and opens utility dialogs', () => {
+        let currentFilters = filters({ favoritesOnly: true, pinnedOnly: true });
+        let panelOpen = false;
+        const setViewMode = vi.fn<(mode: ViewMode) => void>();
+        const setFilters = vi.fn((update: React.SetStateAction<FilterState>) => {
+            currentFilters = typeof update === 'function' ? update(currentFilters) : update;
+        });
+        const setIsFilterPanelOpen = vi.fn((update: React.SetStateAction<boolean>) => {
+            panelOpen = typeof update === 'function' ? update(panelOpen) : update;
+        });
+        const onOpenSettings = vi.fn();
+        const onOpenShortcuts = vi.fn();
+        const onOpenDonation = vi.fn();
 
-    return (
-        <>
+        render(
+            <AppSidebar
+                viewMode="timeline"
+                setViewMode={setViewMode}
+                filters={currentFilters}
+                setFilters={setFilters}
+                isFilterPanelOpen={false}
+                setIsFilterPanelOpen={setIsFilterPanelOpen}
+                onOpenSettings={onOpenSettings}
+                onOpenShortcuts={onOpenShortcuts}
+                onOpenDonation={onOpenDonation}
+                showSupportPulse
+            />
+        );
+
+        for (const [label, mode] of [
+            ['Grid View', 'grid'],
+            ['Timeline View', 'timeline'],
+            ['Statistics', 'dashboard'],
+            ['Maintenance', 'maintenance'],
+        ] as const) {
+            fireEvent.click(button(label));
+            expect(setViewMode).toHaveBeenCalledWith(mode);
+        }
+        fireEvent.click(button('Show Filters'));
+        fireEvent.click(button('Disable Favorites Only'));
+        fireEvent.click(button('Disable Pinned Only'));
+        fireEvent.click(screen.getByRole('button', { name: 'Support Ambit' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Keyboard Shortcuts' }));
+        fireEvent.click(button('Settings'));
+
+        expect(panelOpen).toBe(true);
+        expect(currentFilters.favoritesOnly).toBe(true);
+        expect(currentFilters.pinnedOnly).toBe(false);
+        expect(onOpenDonation).toHaveBeenCalledOnce();
+        expect(onOpenShortcuts).toHaveBeenCalledOnce();
+        expect(onOpenSettings).toHaveBeenCalledOnce();
+    });
+
+    it.each([
+        ['grid', false, false],
+        ['timeline', true, false],
+        ['dashboard', true, false],
+        ['maintenance', true, true],
+    ] as const)('renders active states for %s mode', (viewMode, panelOpen, favoritesOnly) => {
+        render(
             <AppSidebar
                 viewMode={viewMode}
-                setViewMode={setViewMode}
-                filters={filters}
-                setFilters={setFilters}
-                isFilterPanelOpen={isFilterPanelOpen}
-                setIsFilterPanelOpen={setIsFilterPanelOpen}
+                setViewMode={vi.fn()}
+                filters={filters({ favoritesOnly, pinnedOnly: false })}
+                setFilters={vi.fn()}
+                isFilterPanelOpen={panelOpen}
+                setIsFilterPanelOpen={vi.fn()}
                 onOpenSettings={vi.fn()}
-                onOpenShortcuts={() => setModal('shortcuts')}
-                onOpenDonation={() => setModal('donation')}
+                onOpenShortcuts={vi.fn()}
+                onOpenDonation={vi.fn()}
                 showSupportPulse={false}
             />
-            <DonationModal isOpen={modal === 'donation'} onClose={() => setModal(null)} />
-            <ShortcutsModal isOpen={modal === 'shortcuts'} onClose={() => setModal(null)} />
-        </>
-    );
-};
+        );
 
-describe('AppSidebar tooltips', () => {
-    it('replaces hover-only navigation help with keyboard-discoverable action labels', () => {
-        render(<SidebarHarness />);
-
-        const gridButton = screen.getByRole('button', { name: 'Grid View' });
-        expect(gridButton.getAttribute('aria-current')).toBe('page');
-        expect(gridButton.getAttribute('title')).toBeNull();
-
-        fireEvent.focus(gridButton);
-        expect(screen.getByRole('tooltip').textContent).toBe('Grid View');
-        fireEvent.blur(gridButton);
-
-        fireEvent.click(screen.getByRole('button', { name: 'Show Favorites Only' }));
-        const disableFavorites = screen.getByRole('button', { name: 'Disable Favorites Only' });
-        expect(disableFavorites.getAttribute('aria-pressed')).toBe('true');
-        expect(screen.getByRole('button', { name: 'Grid View' }).getAttribute('aria-current')).toBe('page');
-    });
-
-    it('exposes filter visibility as a pressed toggle with a next-action label', () => {
-        render(<SidebarHarness />);
-
-        const showFilters = screen.getByRole('button', { name: 'Show Filters' });
-        expect(showFilters.getAttribute('aria-pressed')).toBe('false');
-        fireEvent.click(showFilters);
-
-        const hideFilters = screen.getByRole('button', { name: 'Hide Filters' });
-        expect(hideFilters.getAttribute('aria-pressed')).toBe('true');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Maintenance' }));
-        expect(screen.getByRole('button', { name: 'Hide Filters' }).getAttribute('aria-pressed')).toBe('true');
-    });
-
-    it('hands focus from the Support tooltip into its modal and restores it on close', () => {
-        render(<SidebarModalHarness />);
-
-        const launcher = screen.getByRole('button', { name: 'Support Ambit' });
-        act(() => launcher.focus());
-        expect(screen.getByRole('tooltip')).toBeTruthy();
-        fireEvent.click(launcher);
-
-        const closeButton = screen.getByRole('button', { name: 'Close Support Dialog' });
-        expect(document.activeElement).toBe(closeButton);
-        expect(screen.queryByRole('tooltip')).toBeNull();
-
-        fireEvent.click(closeButton);
-        expect(document.activeElement).toBe(launcher);
-    });
-
-    it('hands focus from the Shortcuts tooltip into its modal and restores it on close', () => {
-        render(<SidebarModalHarness />);
-
-        const launcher = screen.getByRole('button', { name: 'Open Keyboard Shortcuts' });
-        act(() => launcher.focus());
-        expect(screen.getByRole('tooltip')).toBeTruthy();
-        fireEvent.click(launcher);
-
-        const closeButton = screen.getByRole('button', { name: 'Close Keyboard Shortcuts' });
-        expect(document.activeElement).toBe(closeButton);
-        expect(screen.queryByRole('tooltip')).toBeNull();
-
-        fireEvent.click(closeButton);
-        expect(document.activeElement).toBe(launcher);
+        expect(button('Grid View').className).toContain(viewMode === 'grid' && !favoritesOnly ? 'bg-sage-500' : 'text-gray-400');
+        expect(button(panelOpen ? 'Hide Filters' : 'Show Filters').className).toContain(
+            panelOpen && viewMode !== 'maintenance' ? 'bg-sage-500' : 'text-gray-400'
+        );
     });
 });

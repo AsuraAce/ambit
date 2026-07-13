@@ -4,6 +4,11 @@ import { HighlightedPromptText } from '../../components/metadata/HighlightedProm
 import { derivePromptHighlightSpec } from '../searchHighlights';
 
 describe('derivePromptHighlightSpec', () => {
+    it('returns no highlights for empty and one-character terms', () => {
+        expect(derivePromptHighlightSpec('   ')).toEqual({ positivePrompt: [], negativePrompt: [] });
+        expect(derivePromptHighlightSpec('a neg:b')).toEqual({ positivePrompt: [], negativePrompt: [] });
+    });
+
     it('highlights plain terms in the positive prompt', () => {
         expect(derivePromptHighlightSpec('sunset')).toEqual({
             positivePrompt: ['sunset'],
@@ -79,5 +84,40 @@ describe('HighlightedPromptText', () => {
 
         const marks = Array.from(container.querySelectorAll('mark')).map(mark => mark.textContent);
         expect(marks).toEqual(['c++', '[brackets]']);
+    });
+
+    it('renders plain text when terms are empty, too short, duplicate, or unmatched', () => {
+        const { container, rerender } = render(
+            <div><HighlightedPromptText text="plain prompt" /></div>
+        );
+        expect(container.querySelector('mark')).toBeNull();
+
+        rerender(
+            <div>
+                <HighlightedPromptText text="plain prompt" terms={[' ', 'p', 'MISSING', 'missing']} />
+            </div>
+        );
+        expect(container.textContent).toBe('plain prompt');
+        expect(container.querySelector('mark')).toBeNull();
+
+        rerender(<div><HighlightedPromptText text="" terms={['prompt']} /></div>);
+        expect(container.textContent).toBe('');
+    });
+
+    it('prefers the longest overlapping term and highlights repeated boundary matches', () => {
+        const { container } = render(
+            <div>
+                <HighlightedPromptText
+                    text="foobar middle foobar"
+                    terms={['foo', 'FOOBAR', 'bar']}
+                />
+            </div>
+        );
+
+        expect(Array.from(container.querySelectorAll('mark')).map(mark => mark.textContent)).toEqual([
+            'foobar',
+            'foobar',
+        ]);
+        expect(container.textContent).toBe('foobar middle foobar');
     });
 });

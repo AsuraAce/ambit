@@ -51,8 +51,7 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
         if (toolLower.includes('comfy')) {
             if (trimmed.startsWith('"')) {
                 try {
-                    const parsed = JSON.parse(trimmed);
-                    if (typeof parsed === 'string') return toComfyMetadata(parsed);
+                    return toComfyMetadata(JSON.parse(trimmed) as string);
                 } catch { /* ignore and preserve the raw string */ }
             }
             return toComfyMetadata(chunks);
@@ -64,12 +63,10 @@ export function mapRawChunksToMetadata(chunks: unknown, tool: GeneratorTool): Pa
                 // If it parsed as a string (was a JSON-escaped string), 
                 // we recurse to handle the unescaped content.
                 // If it parsed as an object, we recurse to use object mapping.
-                if (parsed !== chunks) {
-                    if (isRecord(parsed) && isComfyWorkflowRecord(parsed)) {
-                        return toComfyMetadata(chunks);
-                    }
-                    return mapRawChunksToMetadata(parsed, tool);
+                if (isRecord(parsed) && isComfyWorkflowRecord(parsed)) {
+                    return toComfyMetadata(chunks);
                 }
+                return mapRawChunksToMetadata(parsed, tool);
             } catch { /* ignore and treat as raw text */ }
         }
 
@@ -160,8 +157,6 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     };
 
     const lines = text.split('\n').map(l => l.trim());
-    if (lines.length === 0) return metadata;
-
     let positiveParts: string[] = [];
     let negativePrompt = "";
     let paramsLine = "";
@@ -178,8 +173,6 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
             positiveParts.push(line);
         } else if (state === 1) {
             negativePrompt += " " + line;
-        } else if (state === 2) {
-            if (!paramsLine.includes("Steps: ")) paramsLine = line;
         }
     }
 

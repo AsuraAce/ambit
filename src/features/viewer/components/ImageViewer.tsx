@@ -247,7 +247,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     useEffect(() => {
         revealStatusHud();
         return () => {
-            if (statusHudTimeoutRef.current) clearTimeout(statusHudTimeoutRef.current);
+            clearTimeout(statusHudTimeoutRef.current as ReturnType<typeof setTimeout>);
         };
     }, [displayImage.id, revealStatusHud]);
 

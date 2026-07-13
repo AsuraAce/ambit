@@ -12,6 +12,7 @@ describe('useStacking', () => {
     ] as any[];
 
     beforeEach(() => {
+        vi.clearAllMocks();
         vi.useFakeTimers();
     });
 
@@ -60,6 +61,119 @@ describe('useStacking', () => {
         });
 
         expect(result.current.suggestedStacks).toEqual(mockGroups);
+        expect(result.current.isCalculating).toBe(false);
+    });
+
+    it('resets immediately for an empty library', () => {
+        const { result } = renderHook(() => useStacking([]));
+
+        expect(result.current.suggestedStacks).toEqual([]);
+        expect(result.current.isCalculating).toBe(false);
+        expect(Worker.prototype.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('cancels an active worker listener when images are cleared', () => {
+        const removeEventListener = vi.spyOn(Worker.prototype, 'removeEventListener');
+        const { result, rerender } = renderHook(
+            ({ images }) => useStacking(images),
+            { initialProps: { images: mockImages } }
+        );
+        act(() => vi.advanceTimersByTime(500));
+        expect(result.current.isCalculating).toBe(true);
+
+        rerender({ images: [] });
+
+        expect(result.current.isCalculating).toBe(false);
+        expect(removeEventListener).toHaveBeenCalledWith('message', expect.any(Function));
+    });
+
+    it('does not restart analysis for an unchanged length and first timestamp signature', () => {
+        const { rerender } = renderHook(
+            ({ images }) => useStacking(images),
+            { initialProps: { images: mockImages } }
+        );
+        act(() => vi.advanceTimersByTime(500));
+        expect(Worker.prototype.postMessage).toHaveBeenCalledTimes(1);
+
+        rerender({ images: [{ ...mockImages[0] }, { ...mockImages[1], timestamp: 999 }] });
+        act(() => vi.advanceTimersByTime(500));
+
+        expect(Worker.prototype.postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancels a pending debounce when the image signature changes', () => {
+        const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
+        const { rerender } = renderHook(
+            ({ images }) => useStacking(images),
+            { initialProps: { images: mockImages } }
+        );
+
+        rerender({ images: [...mockImages, { ...mockImages[1], id: '3' }] });
+        act(() => vi.advanceTimersByTime(500));
+
+        expect(clearTimeoutSpy).toHaveBeenCalled();
+        expect(Worker.prototype.postMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('normalizes string, object, and missing model values in the worker payload', () => {
+        const images = [
+            { ...mockImages[0], metadata: { ...mockImages[0].metadata, model: 'String Model' } },
+            { ...mockImages[1], metadata: { ...mockImages[1].metadata, model: { name: 'Object Model' } } },
+            { ...mockImages[1], id: '3', metadata: { ...mockImages[1].metadata, model: null } },
+            { ...mockImages[1], id: '4', metadata: { ...mockImages[1].metadata, model: { name: undefined } } },
+        ];
+        renderHook(() => useStacking(images));
+        act(() => vi.advanceTimersByTime(500));
+
+        const calls = vi.mocked(Worker.prototype.postMessage).mock.calls;
+        const payload = calls[calls.length - 1][0] as { images: Array<{ metadata: { model: string } }> };
+        expect(payload.images.map(image => image.metadata.model)).toEqual([
+            'String Model',
+            'Object Model',
+            '',
+            '',
+        ]);
+    });
+
+    it('clears a previously suggested stack when the library becomes empty', () => {
+        const { result, rerender } = renderHook(
+            ({ images }) => useStacking(images),
+            { initialProps: { images: mockImages } }
+        );
+        act(() => vi.advanceTimersByTime(500));
+        const requestId = (vi.mocked(Worker.prototype.postMessage).mock.calls.at(-1)?.[0] as { requestId: string }).requestId;
+        const handler = vi.mocked(Worker.prototype.addEventListener).mock.calls.at(-1)?.[1] as EventListener;
+        act(() => handler(new MessageEvent('message', {
+            data: { requestId, type: 'stacks-result', groups: [{ id: 'stack' }] },
+        })));
+
+        rerender({ images: [] });
+
+        expect(result.current.suggestedStacks).toEqual([]);
+    });
+
+    it('ignores stale replies and completes matching worker errors without replacing stacks', () => {
+        const { result } = renderHook(() => useStacking(mockImages));
+        act(() => vi.advanceTimersByTime(500));
+        const calls = vi.mocked(Worker.prototype.postMessage).mock.calls;
+        const requestId = (calls[calls.length - 1][0] as { requestId: string }).requestId;
+        const listenerCalls = vi.mocked(Worker.prototype.addEventListener).mock.calls;
+        const handler = listenerCalls[listenerCalls.length - 1][1] as EventListener;
+
+        act(() => handler(new MessageEvent('message', {
+            data: { requestId: 'stale', type: 'stacks-result', groups: [{ id: 'wrong' }] }
+        })));
+        expect(result.current.isCalculating).toBe(true);
+
+        act(() => handler(new MessageEvent('message', {
+            data: { requestId, error: 'analysis failed' }
+        })));
+        expect(result.current.suggestedStacks).toEqual([]);
+        expect(result.current.isCalculating).toBe(false);
+
+        act(() => handler(new MessageEvent('message', {
+            data: { requestId, error: 'duplicate completion' }
+        })));
         expect(result.current.isCalculating).toBe(false);
     });
 });

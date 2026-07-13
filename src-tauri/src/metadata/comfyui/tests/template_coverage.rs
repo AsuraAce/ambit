@@ -185,7 +185,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
 }
 
 #[test]
-fn manifest_counts_match_the_declared_phase_17_scope() {
+fn manifest_counts_match_the_declared_catalog_scope() {
     let manifest = load_manifest();
     let count = |category: &str, scope: &str| {
         manifest
@@ -210,9 +210,10 @@ fn manifest_counts_match_the_declared_phase_17_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 4);
-    assert_eq!(count_coverage("pattern_covered"), 1);
-    assert_eq!(count_coverage("unassessed"), 70);
+    assert_eq!(count_coverage("golden"), 16);
+    assert_eq!(count_coverage("pattern_covered"), 7);
+    assert_eq!(count_coverage("partial"), 3);
+    assert_eq!(count_coverage("unassessed"), 49);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -220,11 +221,32 @@ fn manifest_counts_match_the_declared_phase_17_scope() {
 fn manifest_links_covered_entries_to_test_evidence() {
     let manifest = load_manifest();
     let expected = [
+        ("01_get_started_text_to_image", "golden"),
+        ("02_qwen_Image_edit_subgraphed", "golden"),
+        ("Image_capybara_v0_1_text_to_image", "golden"),
+        ("default", "pattern_covered"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
+        ("gsc_creator_2_1", "pattern_covered"),
+        ("gsc_creator_2_2", "golden"),
+        ("gsc_creator_2_3", "partial"),
+        ("gsc_starter_1", "pattern_covered"),
+        ("gsl_creator_2", "pattern_covered"),
+        ("gsl_starter_1_1", "pattern_covered"),
+        ("gsl_starter_1_3", "pattern_covered"),
         ("hidream_i1_full", "golden"),
+        ("image_ernie_image", "partial"),
+        ("image_ernie_image_turbo", "partial"),
+        ("image_firered_image_edit1_1", "golden"),
+        ("image_flux2_klein_image_edit_4b_distilled", "golden"),
+        ("image_flux2_text_to_image", "golden"),
+        ("image_chroma1_radiance_text_to_image", "golden"),
+        ("image_kandinsky5_t2i", "golden"),
         ("image_krea2_turbo_t2i", "pattern_covered"),
+        ("image_omnigen2_t2i", "golden"),
+        ("image_qwen_Image_2512_controlnet", "golden"),
         ("image_qwen_image_edit_2509", "golden"),
+        ("image_qwen_image_union_control_lora", "golden"),
     ];
 
     for (id, coverage) in expected {

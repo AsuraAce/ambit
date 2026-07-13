@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '../../../test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from '../../../test/testUtils';
 import { ThumbnailsTab } from './ThumbnailsTab';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import type { AIImage } from '../../../types';
 
 const addToastMock = vi.hoisted(() => vi.fn());
 const thumbnailMocks = vi.hoisted(() => ({
@@ -34,6 +35,29 @@ vi.mock('../../../services/thumbnailService', () => ({
     syncExistingThumbnailsToDB: (...args: Parameters<typeof thumbnailMocks.syncExistingThumbnailsToDB>) => thumbnailMocks.syncExistingThumbnailsToDB(...args),
 }));
 
+vi.mock('../../library/components/VirtualGrid', () => ({
+    VirtualGrid: ({ items, renderItem, onRangeSelection, onBackgroundClick }: {
+        items: AIImage[];
+        renderItem: (image: AIImage, style: React.CSSProperties, index: number) => React.ReactNode;
+        onRangeSelection: (indexes: number[], additive: boolean) => void;
+        onBackgroundClick: () => void;
+    }) => (
+        <div data-testid="virtual-grid">
+            {items.map((image, index) => renderItem(image, {}, index))}
+            <button onClick={() => onRangeSelection([0], true)}>Range</button>
+            <button onClick={onBackgroundClick}>Background</button>
+        </div>
+    )
+}));
+
+vi.mock('./MaintenanceItem', () => ({
+    MaintenanceItem: ({ img, isSelected, onClick }: {
+        img: AIImage;
+        isSelected: boolean;
+        onClick: (event: React.MouseEvent) => void;
+    }) => <button data-selected={isSelected} onClick={onClick}>{img.filename}</button>
+}));
+
 const renderThumbnailsTab = (onRepairComplete = vi.fn().mockResolvedValue(undefined)) => {
     const onRegenerate = vi.fn();
     const onScopeChange = vi.fn();
@@ -58,6 +82,50 @@ const renderThumbnailsTab = (onRepairComplete = vi.fn().mockResolvedValue(undefi
         />
     );
     return { onRepairComplete, onRegenerate, onScopeChange };
+};
+
+const imageFixture = (id: string): AIImage => ({
+    id,
+    filename: `${id}.png`,
+    url: '',
+    thumbnailUrl: '',
+    timestamp: 1,
+    width: 100,
+    height: 100,
+    isFavorite: false,
+    metadata: {
+        tool: 'Unknown',
+        model: 'Unknown',
+        steps: 0,
+        cfg: 0,
+        sampler: 'Unknown',
+        positivePrompt: '',
+        negativePrompt: ''
+    }
+} as AIImage);
+
+const renderCustomTab = (overrides: Partial<React.ComponentProps<typeof ThumbnailsTab>> = {}) => {
+    const props: React.ComponentProps<typeof ThumbnailsTab> = {
+        images: [],
+        totalCount: 0,
+        selectedIds: new Set(),
+        onItemClick: vi.fn(),
+        onSelectAll: vi.fn(),
+        onClearSelection: vi.fn(),
+        onRegenerate: vi.fn(),
+        thumbnailsScope: 'global',
+        onScopeChange: vi.fn(),
+        maskedKeywords: [],
+        scrollContainerRef: React.createRef<HTMLElement>(),
+        onRangeSelection: vi.fn(),
+        onBackgroundClick: vi.fn(),
+        includeUpgradeable: false,
+        onIncludeUpgradeableChange: vi.fn(),
+        onRepairComplete: vi.fn().mockResolvedValue(undefined),
+        ...overrides
+    };
+    render(<ThumbnailsTab {...props} />);
+    return props;
 };
 
 const enableDeveloperFeatures = () => {
@@ -234,5 +302,152 @@ describe('ThumbnailsTab', () => {
 
         expect(thumbnailMocks.pruneBrokenThumbnails).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBeNull();
+    });
+
+    it.each([
+        [1, 'Cleaned up 1 orphan thumbnail'],
+        [2, 'Cleaned up 2 orphan thumbnails']
+    ])('reports cleanup success for %i removed files', async (count, message) => {
+        thumbnailMocks.cleanupOrphanThumbnails.mockResolvedValueOnce(count);
+        renderThumbnailsTab();
+
+        fireEvent.click(screen.getByRole('button', { name: /clean up unused thumbnails/i }));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(message, 'success'));
+    });
+
+    it('reports cleanup failures and releases its operation claim', async () => {
+        thumbnailMocks.cleanupOrphanThumbnails.mockRejectedValueOnce(new Error('cleanup failed'));
+        renderThumbnailsTab();
+
+        fireEvent.click(screen.getByRole('button', { name: /clean up unused thumbnails/i }));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Failed to clean up thumbnails', 'error'));
+        expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBeNull();
+    });
+
+    it.each([
+        [1, 'Synced 1 existing thumbnail to database'],
+        [2, 'Synced 2 existing thumbnails to database']
+    ])('reports sync success for %i database updates', async (count, message) => {
+        enableDeveloperFeatures();
+        thumbnailMocks.syncExistingThumbnailsToDB.mockResolvedValueOnce(count);
+        renderThumbnailsTab();
+
+        fireEvent.click(screen.getByRole('button', { name: /sync db/i }));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(message, 'success'));
+    });
+
+    it('reports already-synced thumbnails', async () => {
+        enableDeveloperFeatures();
+        renderThumbnailsTab();
+
+        fireEvent.click(screen.getByRole('button', { name: /sync db/i }));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('All thumbnails already synced to database', 'info'));
+    });
+
+    it('reports empty and failed repair passes', async () => {
+        thumbnailMocks.pruneBrokenThumbnails.mockResolvedValueOnce(0);
+        const first = renderThumbnailsTab();
+        fireEvent.click(screen.getByRole('button', { name: /repair broken thumbnails/i }));
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('No broken thumbnail references found', 'info'));
+        first.onRepairComplete.mockClear();
+
+        thumbnailMocks.pruneBrokenThumbnails.mockRejectedValueOnce(new Error('repair failed'));
+        fireEvent.click(screen.getByRole('button', { name: /repair broken thumbnails/i }));
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Failed to repair broken thumbnails', 'error'));
+    });
+
+    it('uses singular repair copy for one broken reference', async () => {
+        thumbnailMocks.pruneBrokenThumbnails.mockResolvedValueOnce(1);
+        renderThumbnailsTab();
+
+        fireEvent.click(screen.getByRole('button', { name: /repair broken thumbnails/i }));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Repaired 1 broken thumbnail reference.', 'success'));
+    });
+
+    it('dispatches scope, upgrade, and all-regeneration controls', () => {
+        const props = renderCustomTab({ totalCount: 5 });
+
+        fireEvent.click(screen.getByRole('button', { name: /library/i }));
+        fireEvent.click(screen.getByRole('button', { name: /filtered view/i }));
+        fireEvent.click(screen.getByRole('checkbox', { name: /include upgradeable/i }));
+        fireEvent.click(screen.getByRole('button', { name: /regenerate all unoptimized/i }));
+
+        expect(props.onScopeChange).toHaveBeenNthCalledWith(1, 'global');
+        expect(props.onScopeChange).toHaveBeenNthCalledWith(2, 'filtered');
+        expect(props.onIncludeUpgradeableChange).toHaveBeenCalledWith(true);
+        expect(props.onRegenerate).toHaveBeenCalledWith();
+        expect(screen.getAllByText('5')).toHaveLength(2);
+    });
+
+    it('regenerates selected images and renders item/range/background callbacks', () => {
+        const first = imageFixture('first');
+        const second = imageFixture('second');
+        const props = renderCustomTab({
+            images: [first, second],
+            totalCount: 4,
+            selectedIds: new Set(['first']),
+            thumbnailsScope: 'filtered'
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /regenerate selected/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'first.png' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Range' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Background' }));
+
+        expect(props.onRegenerate).toHaveBeenCalledWith(['first']);
+        expect(props.onItemClick).toHaveBeenCalledWith('first', 0, expect.any(Object));
+        expect(props.onRangeSelection).toHaveBeenCalledWith([0], true);
+        expect(props.onBackgroundClick).toHaveBeenCalled();
+        expect(screen.getByText(/in current filter.*showing first 2/i)).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'first.png' }).getAttribute('data-selected')).toBe('true');
+    });
+
+    it('shows busy regeneration labels and the non-truncated filtered description', () => {
+        useLibraryStore.setState({ isRegeneratingThumbnails: true });
+        renderCustomTab({
+            images: [imageFixture('only')],
+            totalCount: 1,
+            selectedIds: new Set(['only']),
+            thumbnailsScope: 'filtered',
+            includeUpgradeable: true
+        });
+
+        expect(screen.getByText('Processing...')).not.toBeNull();
+        expect(screen.getByText(/could benefit from thumbnail regeneration/i)).not.toBeNull();
+        expect((screen.getByRole('checkbox', { name: /include upgradeable/i }) as HTMLInputElement).checked).toBe(true);
+    });
+
+    it('shows the all-library busy label when no items are selected', () => {
+        useLibraryStore.setState({ isRegeneratingThumbnails: true });
+        renderCustomTab({ totalCount: 0 });
+
+        expect(screen.getByText('Optimizing Library...')).not.toBeNull();
+    });
+
+    it('rejects cleanup and sync claims when another operation appears at click time', () => {
+        enableDeveloperFeatures();
+        renderThumbnailsTab();
+        const cleanup = screen.getByRole('button', { name: /clean up unused thumbnails/i });
+        cleanup.addEventListener('click', () => {
+            useLibraryStore.setState({ thumbnailMaintenanceOperation: 'repair' });
+        }, { capture: true, once: true });
+        fireEvent.click(cleanup);
+        expect(thumbnailMocks.cleanupOrphanThumbnails).not.toHaveBeenCalled();
+
+        act(() => useLibraryStore.setState({ thumbnailMaintenanceOperation: null }));
+        const sync = screen.getByRole('button', { name: /sync db/i });
+        const currentState = useLibraryStore.getState();
+        const getState = vi.spyOn(useLibraryStore, 'getState').mockReturnValue({
+            ...currentState,
+            isRegeneratingThumbnails: true
+        });
+        fireEvent.click(sync);
+        expect(thumbnailMocks.syncExistingThumbnailsToDB).not.toHaveBeenCalled();
+        getState.mockRestore();
     });
 });

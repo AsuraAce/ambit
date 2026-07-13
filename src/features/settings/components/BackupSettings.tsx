@@ -36,11 +36,6 @@ export const BackupSettings: React.FC = () => {
     }, [loadBackups]);
 
     const handleCreateBackup = async () => {
-        if (browserMockMode) {
-            addToast('Backups are unavailable in browser mock mode.', 'info');
-            return;
-        }
-
         setIsCreating(true);
         const result = await commands.backupDatabase();
         if (result.status === 'ok') {
@@ -54,15 +49,11 @@ export const BackupSettings: React.FC = () => {
     };
 
     const handleOpenFolder = async () => {
-        if (backups.length > 0) {
-            const result = await showPathInFolder(backups[0].path);
-            if (result.status === 'ok') {
-                addToast('Opening backup folder...', 'info');
-            } else {
-                addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
-            }
+        const result = await showPathInFolder(backups[0].path);
+        if (result.status === 'ok') {
+            addToast('Opening backup folder...', 'info');
         } else {
-            addToast('No backups exist yet to show folder', 'info');
+            addToast(result.error, isOsOpenUnavailable(result.error) ? 'info' : 'error');
         }
     };
 
@@ -75,11 +66,7 @@ export const BackupSettings: React.FC = () => {
     };
 
     const formatDate = (dateStr: string) => {
-        try {
-            return new Date(dateStr).toLocaleString();
-        } catch {
-            return dateStr;
-        }
+        return new Date(dateStr).toLocaleString();
     };
 
     return (

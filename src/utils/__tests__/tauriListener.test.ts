@@ -38,4 +38,44 @@ describe('listenWithCleanup', () => {
         expect(ready).toBe(true);
         expect(unlisten).toHaveBeenCalledTimes(1);
     });
+
+    it('reports non-Error listener registration failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockedListen.mockRejectedValueOnce('bridge unavailable');
+
+        const managed = listenWithCleanup('background-event', vi.fn(), 'Background listener');
+
+        await expect(managed.ready).resolves.toBe(false);
+        expect(error).toHaveBeenCalledWith(
+            '[TauriListener] Failed to listen for background-event',
+            'bridge unavailable'
+        );
+        error.mockRestore();
+    });
+
+    it('reports Error listener registration failures', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockedListen.mockRejectedValueOnce(new Error('bridge unavailable'));
+
+        await expect(listenWithCleanup('background-event', vi.fn()).ready).resolves.toBe(false);
+
+        expect(error).toHaveBeenCalledWith(
+            '[TauriListener] Failed to listen for background-event',
+            expect.any(Error)
+        );
+        error.mockRestore();
+    });
+
+    it('finishes diagnostics only once during reentrant cleanup', async () => {
+        let managed: ReturnType<typeof listenWithCleanup>;
+        const unlisten = vi.fn();
+        unlisten.mockImplementationOnce(() => managed.cleanup());
+        mockedListen.mockResolvedValueOnce(unlisten);
+        managed = listenWithCleanup('background-event', vi.fn());
+        await managed.ready;
+
+        managed.cleanup();
+
+        expect(unlisten).toHaveBeenCalledTimes(2);
+    });
 });

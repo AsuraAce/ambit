@@ -34,8 +34,6 @@ import { listenWithCleanup } from '../utils/tauriListener';
  * Used to skip already-imported files during rescan.
  */
 const getExistingPaths = async (paths: string[]): Promise<Set<string>> => {
-    if (paths.length === 0) return new Set();
-
     const db = await getDb();
     const CHUNK_SIZE = 900; // SQLite parameter limit
     const existingSet = new Set<string>();
@@ -143,13 +141,10 @@ async function waitForStableFileSizes(
     onProgress?: ImportProgressCallback,
     abortSignal?: AbortSignal
 ): Promise<boolean> {
-    if (paths.length === 0) return true;
-
     const states = new Map<string, { size: number; stablePolls: number }>();
     let pendingPaths = [...paths];
 
     for (let poll = 0; poll < FILE_STABILITY_MAX_POLLS && pendingPaths.length > 0; poll++) {
-        if (abortSignal?.aborted) return false;
         onProgress?.(0, paths.length, `Waiting for ${pendingPaths.length} file(s) to finish writing...`);
 
         let sizes: number[] = [];
@@ -202,7 +197,7 @@ const mapMetadata = (meta: Partial<ImageMetadata>): ImageMetadata => ({
 async function processFileEntries(
     entries: FileEntry[],
     stats: ImportStats,
-    options: ImportOptions = {},
+    options: ImportOptions,
     defaultTool?: GeneratorTool
 ): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean }> {
     const { onProgress, abortSignal, forceRescan, skipThumbnail = true, waitForStableFiles, perfContext } = options;
@@ -338,7 +333,7 @@ async function processFileEntries(
                 const img: AIImage = {
                     id: normalizePath(path),
                     ...mappedMetadata,
-                    filename: path.split(/[\\/]/).pop() || path,
+                    filename: path.split(/[\\/]/).pop() as string,
                     timestamp: info.timestamp ?? Date.now(),
                     width: info.width || 0,
                     height: info.height || 0,
@@ -795,22 +790,6 @@ export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
         cancelledSourcePaths: []
     };
 };
-
-/**
- * Canonical stringify to ignore key order for metadata comparison
- */
-function canonicalStringify(obj: unknown): string {
-    if (obj === null || typeof obj !== 'object') {
-        return JSON.stringify(obj);
-    }
-    const record = obj as Record<string, unknown>;
-    const allKeys = Object.keys(record).sort();
-    const result: Record<string, string> = {};
-    for (const key of allKeys) {
-        result[key] = canonicalStringify(record[key]);
-    }
-    return JSON.stringify(result);
-}
 
 // Legacy Wrapper - maintains backward compatibility for file-list imports
 export const processNativePaths = async (

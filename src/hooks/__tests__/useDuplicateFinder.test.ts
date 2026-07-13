@@ -179,4 +179,59 @@ describe('useDuplicateFinder', () => {
 
         expect(result.current.groups).toHaveLength(0);
     });
+
+    it('keeps metadata rows without a prompt or seed unverifiable', () => {
+        const first = createMockImage('1', 1, 1000);
+        const second = createMockImage('2', 1, 2000);
+        first.metadata = { ...first.metadata, seed: undefined, positivePrompt: '', negativePrompt: '' };
+        second.metadata = { ...second.metadata, seed: undefined, positivePrompt: '', negativePrompt: '' };
+
+        const { result } = renderHook(() => useDuplicateFinder([first, second], mockOnResolve));
+
+        expect(result.current.groups).toEqual([]);
+    });
+
+    it('ignores deleted and pre-grouped rows in both duplicate passes', () => {
+        const grouped = { ...createMockImage('grouped', 1, 1, 1000, 'same'), groupId: 'stack' };
+        const deleted = { ...createMockImage('deleted', 1, 2, 1000, 'same'), isDeleted: true };
+        const single = createMockImage('single', 1, 3, 2000);
+
+        const { result } = renderHook(() => useDuplicateFinder([grouped, deleted, single], mockOnResolve));
+
+        expect(result.current.groups).toEqual([]);
+    });
+
+    it('does not bulk-resolve an exact group already resolved individually', () => {
+        const images = [
+            createMockImage('one', 1, 1, 1000, 'same'),
+            createMockImage('two', 1, 2, 1000, 'same'),
+        ];
+        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+        const group = result.current.groups[0];
+
+        act(() => result.current.handleResolve(group.id, 'two', ['one', 'two']));
+        mockOnResolve.mockClear();
+        act(() => result.current.handleBulkResolve('newest'));
+
+        expect(mockOnResolve).not.toHaveBeenCalled();
+    });
+
+    it('normalizes corrupted prompt values and optional fingerprint arrays', () => {
+        const first = createMockImage('one', 7, 1, 0);
+        const second = createMockImage('two', 7, 2, 0);
+        for (const image of [first, second]) {
+            image.width = 0;
+            image.height = 0;
+            image.metadata.positivePrompt = 42 as unknown as string;
+            image.metadata.negativePrompt = null as unknown as string;
+            image.metadata.loras = ['b', 'a'];
+            image.metadata.controlNets = [];
+            image.metadata.ipAdapters = ['adapter'];
+        }
+
+        const { result } = renderHook(() => useDuplicateFinder([first, second], mockOnResolve));
+
+        expect(result.current.groups).toHaveLength(1);
+        expect(result.current.groups[0].kind).toBe('likely');
+    });
 });

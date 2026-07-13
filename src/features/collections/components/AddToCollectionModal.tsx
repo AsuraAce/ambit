@@ -22,8 +22,7 @@ interface AddToCollectionModalProps {
 
 type CollectionSort = 'name_asc' | 'name_desc' | 'count_asc' | 'count_desc' | 'date_asc' | 'date_desc';
 
-const getColorClass = (colorName?: string) => {
-    if (!colorName) return '';
+const getColorClass = (colorName: string) => {
     switch (colorName) {
         case 'red': return 'bg-red-500';
         case 'orange': return 'bg-orange-500';

@@ -126,6 +126,8 @@ describe('useFileOperations', () => {
 
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
             expect(mockSetImages).toHaveBeenCalled();
+            const updateImages = mockSetImages.mock.calls[0][0] as (images: typeof mockImages) => typeof mockImages;
+            expect(updateImages(mockImages).map(image => image.id)).toEqual(['2', '3']);
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
             expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
@@ -159,7 +161,45 @@ describe('useFileOperations', () => {
 
             expect(deleteImageFromDisk).toHaveBeenCalledWith('2', '2', 'thumb2');
             expect(mockSetImages).toHaveBeenCalled();
+            const updateImages = mockSetImages.mock.calls[0][0] as (images: typeof mockImages) => typeof mockImages;
+            expect(updateImages(mockImages).map(image => image.id)).toEqual(['1', '3']);
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Moved 1 file to OS trash'), 'success');
+        });
+
+        it('keeps the delete successful when facet cache rebuilding fails', async () => {
+            const { rebuildFacetCache } = await import('../../services/db/imageRepo');
+            vi.mocked(rebuildFacetCache).mockRejectedValueOnce(new Error('cache failed'));
+            const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            const { result } = renderFileOperations();
+
+            await act(async () => result.current.deleteImages(['1'], false));
+
+            expect(mockAddToast).toHaveBeenCalledWith(
+                'Library update succeeded, but filters may take a moment to refresh.',
+                'info'
+            );
+            expect(error).toHaveBeenCalledWith(
+                '[MaintenanceOps] removeFromLibrary: facet rebuild failed',
+                expect.any(Error)
+            );
+            error.mockRestore();
+        });
+
+        it('reports primary delete mutation failures without changing local images', async () => {
+            const { removeImagesFromLibrary } = await import('../../services/db/imageRepo');
+            vi.mocked(removeImagesFromLibrary).mockRejectedValueOnce(new Error('delete failed'));
+            const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            const { result } = renderFileOperations();
+
+            await act(async () => result.current.deleteImages(['1'], false));
+
+            expect(mockSetImages).not.toHaveBeenCalled();
+            expect(mockAddToast).toHaveBeenCalledWith('Failed to update library state', 'error');
+            expect(error).toHaveBeenCalledWith(
+                '[MaintenanceOps] removeFromLibrary: mutation failed',
+                expect.any(Error)
+            );
+            error.mockRestore();
         });
     });
 

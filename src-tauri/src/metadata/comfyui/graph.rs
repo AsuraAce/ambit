@@ -1,6 +1,6 @@
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::workflow_normalizer::normalize_workflow;
 
@@ -300,20 +300,41 @@ fn resolve_bool_input(graph: &ComfyGraph, node_id: &str, node: &Value, key: &str
         return Some(value);
     }
 
-    if let Some(source_id) = get_source_id(graph, node_id, key) {
-        if let Some(source) = graph.get_node(&source_id) {
-            for source_key in ["value", "bool", "BOOLEAN", "switch"] {
-                if let Some(value) = get_node_param(source, source_key).and_then(value_as_bool) {
-                    return Some(value);
-                }
-            }
+    let source_id = get_source_id(graph, node_id, key)?;
+    resolve_linked_bool(graph, &source_id, &mut HashSet::new(), 0)
+}
 
-            if let Some(arr) = source.get("widgets_values").and_then(|v| v.as_array()) {
-                if let Some(value) = arr.first().and_then(value_as_bool) {
-                    return Some(value);
-                }
-            }
+fn resolve_linked_bool(
+    graph: &ComfyGraph,
+    node_id: &str,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<bool> {
+    if depth > 16 || !visited.insert(node_id.to_string()) {
+        return None;
+    }
+
+    let node = graph.get_node(node_id)?;
+    for key in ["value", "bool", "BOOLEAN", "switch"] {
+        if let Some(value) = get_node_param(node, key).and_then(value_as_bool) {
+            return Some(value);
         }
+    }
+
+    if let Some(value) = node
+        .get("widgets_values")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(value_as_bool)
+    {
+        return Some(value);
+    }
+
+    if get_node_type(node) == "Reroute" {
+        let source_id = ["", "value", "input", "any"]
+            .into_iter()
+            .find_map(|key| get_source_id(graph, node_id, key))?;
+        return resolve_linked_bool(graph, &source_id, visited, depth + 1);
     }
 
     None
@@ -470,6 +491,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "CLIPTextEncode" && key == "text" {
+            return arr.first();
+        }
+
         if t == "KSampler" {
             match key {
                 "seed" | "noise_seed" => return arr.get(0),
@@ -508,6 +533,27 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "guidance" => return arr.first(),
                 _ => {}
             }
+        }
+
+        if t == "CFGGuider" && key == "cfg" {
+            return arr.first();
+        }
+
+        if t == "DualCFGGuider" && key == "cfg_conds" {
+            return arr.first();
+        }
+
+        if t == "BasicScheduler" {
+            match key {
+                "scheduler" => return arr.first(),
+                "steps" => return arr.get(1),
+                "denoise" => return arr.get(2),
+                _ => {}
+            }
+        }
+
+        if t == "BetaSamplingScheduler" && key == "steps" {
+            return arr.first();
         }
 
         if t == "SDPromptSaver" {

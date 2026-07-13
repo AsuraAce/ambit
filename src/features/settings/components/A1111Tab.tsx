@@ -6,7 +6,6 @@ import { useLibraryContext } from '../../../hooks/useLibraryContext';
 import { useSearch } from '../../../contexts/SearchContext'; // Added
 import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../../../services/a1111/types';
 import { useToast } from '../../../hooks/useToast';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import type { ImportResult } from '../../../services/importService';
 import { isImportSourceCancelled, isImportSourceCompleted } from '../../../utils/importSourceStatus';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
@@ -44,18 +43,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     const { refreshMetadata } = useSearch(); // Added hook usage
     const { addToast } = useToast();
     const [localTestResult, setLocalTestResult] = useState<{ success: boolean; message: string } | null>(null);
-    const [confirmState, setConfirmState] = useState<{
-        isOpen: boolean;
-        title: string;
-        message: string;
-        confirmLabel?: string;
-        onConfirm: () => void;
-    }>({
-        isOpen: false,
-        title: '',
-        message: '',
-        onConfirm: () => { }
-    });
     const [isDiscovering, setIsDiscovering] = useState(false);
     const [candidates, setCandidates] = useState<DiscoveryCandidate[]>([]);
     const [scanLogs, setScanLogs] = useState<string[]>([]);
@@ -65,14 +52,14 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
 
     const handleDiscover = async () => {
-        if (!settings.a1111Path) return;
+        const rootPath = settings.a1111Path!;
         setIsDiscovering(true);
         setLocalTestResult(null);
         setScanLogs([]);
         try {
             const { discoverA1111Candidates, getUnlinkedPriorityCandidatePaths } = await import('../../../services/a1111/config');
             const existing = new Set(settings.monitoredFolders.map(f => f.path.replace(/\\/g, '/').toLowerCase()));
-            const { candidates: results, logs, warnings } = await discoverA1111Candidates(settings.a1111Path, existing, forceVariant);
+            const { candidates: results, logs, warnings } = await discoverA1111Candidates(rootPath, existing, forceVariant);
 
             setCandidates(results);
             setScanLogs(logs);
@@ -112,7 +99,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
     const handleLinkSelected = async () => {
         const toLink = candidates.filter(c => selectedPaths.has(c.path));
-        if (toLink.length === 0) return;
         if (!onScanFolder) {
             setLocalTestResult({ success: false, message: "Import service is unavailable." });
             addToast("Import service is unavailable", "error");
@@ -153,8 +139,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
             ];
 
             // 4. Run Unified Import
-            if (foldersToSync.length > 0) {
-                const result = await onScanFolder(foldersToSync);
+            const result = await onScanFolder(foldersToSync);
                 const completedAt = Date.now();
                 const importCancelled = !!result && result.wasCancelled;
                 const importCompleted = !!result && !result.wasCancelled && result.failedPaths.length === 0;
@@ -201,8 +186,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
                 let refreshFailed = false;
                 try {
-                    if (refreshCollections) await refreshCollections();
-                    if (refreshMetadata) await refreshMetadata(); // Force full gallery refresh
+                    await refreshCollections();
+                    await refreshMetadata(); // Force full gallery refresh
                 } catch (refreshError) {
                     refreshFailed = true;
                     console.error("Post-import refresh failed", refreshError);
@@ -218,8 +203,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                     const msg = `Processed ${totalCount} folders with ${result.failedPaths.length} failed file(s). Completed folders were marked scanned; folders with failures were left retryable.`;
                     setLocalTestResult({ success: false, message: msg });
                 }
-            }
-
         } catch (e) {
             console.error("Link/Import failed", e);
             if (newFolderIds.size > 0) {
@@ -265,7 +248,10 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     <input
                                         type="text"
                                         value={settings.a1111Path || ''}
-                                        onChange={(e) => setSettings(prev => ({ ...prev, a1111Path: e.target.value }))}
+                                        onChange={(e) => {
+                                            const a1111Path = e.target.value;
+                                            setSettings(prev => ({ ...prev, a1111Path }));
+                                        }}
                                         placeholder="e.g. C:\\StableDiffusion or C:\\MyArchive"
                                         className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
                                     />
@@ -510,17 +496,6 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                     )}
                 </div>
             </section >
-
-
-
-            <ConfirmDialog
-                isOpen={confirmState.isOpen}
-                title={confirmState.title}
-                message={confirmState.message}
-                confirmLabel={confirmState.confirmLabel}
-                onConfirm={confirmState.onConfirm}
-                onCancel={() => setConfirmState(prev => ({ ...prev, isOpen: false }))}
-            />
         </div>
     );
 });

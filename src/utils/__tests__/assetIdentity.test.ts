@@ -8,6 +8,14 @@ import {
 } from '../assetIdentity';
 
 describe('assetIdentity', () => {
+    it('handles absent and separator-only identities', () => {
+        expect(stripAssetExtension('/')).toBe('/');
+        expect(getAssetMatchKey(null)).toBe('');
+        expect(getAssetMatchKeyCandidates(undefined)).toEqual([]);
+        expect(getAssetMatchKeyCandidates('-')).toEqual([]);
+        expect(resolveAssetMatchKey(undefined)).toBe('');
+    });
+
     it('builds the same match key for display names and local filenames', () => {
         expect(getAssetMatchKey('Pony Diffusion V6 XL')).toBe(getAssetMatchKey('ponyDiffusionV6XL.safetensors'));
     });
@@ -34,9 +42,15 @@ describe('assetIdentity', () => {
             'gothicneong0th1cpxl',
             'g0th1cpxl'
         ]);
+
+        expect(getAssetMatchKeyCandidates('Alpha - alpha')).toEqual(['alphaalpha', 'alpha']);
+        expect(getAssetMatchKeyCandidates('alpha, alpha')).toEqual(['alphaalpha', 'alpha']);
     });
 
     it('resolves display labels to a local disk key only when that key is known', () => {
+        expect(resolveAssetMatchKey('Primary')).toBe('primary');
+        expect(resolveAssetMatchKey('Primary', new Set())).toBe('primary');
+        expect(resolveAssetMatchKey('Primary', new Set(['primary']))).toBe('primary');
         expect(resolveAssetMatchKey(
             'Flux Style - watercolor_flux_v1.1_rank_16_bf16',
             new Set(['watercolorfluxv11rank16bf16'])

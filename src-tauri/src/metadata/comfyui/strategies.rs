@@ -254,6 +254,7 @@ fn is_auxiliary_model_node(t_lower: &str) -> bool {
     // LoRAs, upscalers, detectors, and detailers often carry model-like filenames
     // but are not the primary checkpoint/diffusion model for the image.
     t_lower.contains("lora")
+        || t_lower.contains("controlnet")
         || t_lower.contains("upscale")
         || t_lower.contains("detector")
         || t_lower.contains("segment")

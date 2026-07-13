@@ -33,17 +33,15 @@ const normalizeSafeRelativePath = (path: string | null | undefined): string | nu
     if (!raw || isUnsafePathInput(raw)) return null;
 
     const normalized = normalizePath(raw).replace(/\/+$/, '');
-    if (!normalized) return null;
-
     const parts = normalized.split('/').filter(Boolean);
     if (parts.some(part => part === '.' || part === '..')) return null;
 
     return parts.join('/');
 };
 
-const joinRelativePath = (...parts: Array<string | null | undefined>): string =>
+const joinRelativePath = (...parts: string[]): string =>
     parts
-        .map(part => normalizeSafeRelativePath(part) || '')
+        .map(part => normalizeSafeRelativePath(part)!)
         .filter(Boolean)
         .join('/');
 
@@ -54,7 +52,7 @@ const toRootRelativeImagePath = (imageName: string): string => {
 };
 
 const toSubfolderImagePath = (imageName: string, imageSubfolder: string): string => {
-    const filename = getFilename(imageName) || imageName;
+    const filename = getFilename(imageName);
     const normalizedSubfolder = isOutputImagesRelative(imageSubfolder)
         ? imageSubfolder.slice(OUTPUT_IMAGES_PREFIX.length)
         : imageSubfolder;
@@ -62,8 +60,7 @@ const toSubfolderImagePath = (imageName: string, imageSubfolder: string): string
 };
 
 const fromOutputImagesRelative = (rootRelativePath: string): string | null => {
-    const normalized = normalizeSafeRelativePath(rootRelativePath);
-    if (!normalized) return null;
+    const normalized = normalizeSafeRelativePath(rootRelativePath)!;
 
     return isOutputImagesRelative(normalized)
         ? normalized.slice(OUTPUT_IMAGES_PREFIX.length)
@@ -71,7 +68,7 @@ const fromOutputImagesRelative = (rootRelativePath: string): string | null => {
 };
 
 const toAbsolutePath = (invokeRoot: string, rootRelativePath: string): string =>
-    normalizePath(`${invokeRoot}/${normalizeSafeRelativePath(rootRelativePath) || ''}`);
+    normalizePath(`${invokeRoot}/${normalizeSafeRelativePath(rootRelativePath)!}`);
 
 export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
     const byRootRelative = new Map<string, string>();
@@ -90,7 +87,6 @@ export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
         }
 
         const basename = getFilename(rootRelative).toLowerCase();
-        if (!basename) return;
 
         if (!byBasename.has(basename)) {
             byBasename.set(basename, rootRelative);
@@ -162,22 +158,20 @@ export const createInvokeImagePathResolver = (
                 };
             }
 
-            if (!hasPathSeparator(normalizedName)) {
-                const basenameMatch = index.byBasename.get(normalizedName.toLowerCase());
-                if (basenameMatch === null) {
-                    console.warn('[InvokeAI Sync] Ambiguous image basename; skipping DB row to avoid importing the wrong file.', {
-                        imageName
-                    });
-                    return { absolutePath: null, relativePath: null, ambiguous: true };
-                }
+            const basenameMatch = index.byBasename.get(normalizedName.toLowerCase());
+            if (basenameMatch === null) {
+                console.warn('[InvokeAI Sync] Ambiguous image basename; skipping DB row to avoid importing the wrong file.', {
+                    imageName
+                });
+                return { absolutePath: null, relativePath: null, ambiguous: true };
+            }
 
-                if (basenameMatch) {
-                    return {
-                        absolutePath: toAbsolutePath(normalizedRoot, basenameMatch),
-                        relativePath: basenameMatch,
-                        ambiguous: false
-                    };
-                }
+            if (basenameMatch) {
+                return {
+                    absolutePath: toAbsolutePath(normalizedRoot, basenameMatch),
+                    relativePath: basenameMatch,
+                    ambiguous: false
+                };
             }
         } catch (error) {
             console.warn('[InvokeAI Sync] Failed to build InvokeAI image path index; falling back to flat path resolution.', error);
@@ -242,10 +236,7 @@ export const createInvokeImagePathResolver = (
         const normalizedName = normalizeSafeRelativePath(imageName);
         if (!normalizedName) return null;
 
-        const filename = getFilename(normalizedName);
-        if (!filename) return null;
-
-        return toAbsolutePath(normalizedRoot, `${OUTPUT_IMAGES_PREFIX}${filename}`);
+        return toAbsolutePath(normalizedRoot, `${OUTPUT_IMAGES_PREFIX}${getFilename(normalizedName)}`);
     };
 
     return { resolveImagePath, resolveThumbnailPath, getThumbnailPathCandidates, getLegacyFlatImagePath };

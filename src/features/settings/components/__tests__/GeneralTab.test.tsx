@@ -31,6 +31,14 @@ const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     ...overrides
 });
 
+const settingsHarness = (initial = createSettings()) => {
+    let current = initial;
+    const setSettings = vi.fn((update: React.SetStateAction<AppSettings>) => {
+        current = typeof update === 'function' ? update(current) : update;
+    });
+    return { setSettings, current: () => current };
+};
+
 describe('GeneralTab Smart Thumbnail details', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -234,5 +242,123 @@ describe('GeneralTab Smart Thumbnail details', () => {
 
         const retryButton = await screen.findByRole('button', { name: /retry all/i });
         expect(retryButton).toHaveProperty('disabled', true);
+    });
+
+    it('updates appearance, deletion, optimization, quality, and speed settings', () => {
+        const harness = settingsHarness();
+        const { rerender } = render(<GeneralTab settings={harness.current()} setSettings={harness.setSettings} />);
+
+        fireEvent.click(screen.getByText('Theme Mode').closest('.group') as HTMLElement);
+        expect(harness.current().theme).toBe('light');
+        expect(mockAddToast).toHaveBeenCalledWith('Switched to light mode', 'success');
+
+        fireEvent.click(screen.getByText('Confirm Deletions').closest('.group') as HTMLElement);
+        expect(harness.current().confirmDelete).toBe(false);
+        fireEvent.click(screen.getByText('Smart Thumbnail Optimization').closest('.group') as HTMLElement);
+        expect(harness.current().enableAutoThumbnailHealing).toBe(false);
+
+        fireEvent.click(screen.getByText('Upgrade Existing Thumbnails').closest('.group') as HTMLElement);
+        expect(harness.current().enforceHighQualityThumbnails).toBe(true);
+        for (const profile of ['Quiet', 'Balanced', 'Fast']) fireEvent.click(screen.getByText(profile));
+        expect(harness.current().thumbnailOptimizationProfile).toBe('fast');
+
+        rerender(<GeneralTab settings={createSettings({ theme: 'light', confirmDelete: false, enableAutoThumbnailHealing: false })} setSettings={harness.setSettings} />);
+        expect(screen.getByText('Light Mode Active')).toBeTruthy();
+        expect(screen.queryByText('Background Speed')).toBeNull();
+    });
+
+    it('formats paused metrics and second/hour duration boundaries', () => {
+        useLibraryStore.setState({
+            backgroundHealingPaused: true,
+            isBackgroundHealingActive: false,
+            backgroundHealingDetails: null,
+            lastBackgroundHealingRun: {
+                checked: 2, optimized: 1, reused: 1, failed: 0, skipped: 0,
+                imagesPerSecond: 0.4, durationMs: 3_661_000, completedAt: 1, profile: 'quiet'
+            }
+        });
+        const { rerender } = render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        expect(screen.getByText('Paused')).toBeTruthy();
+        expect(screen.getByText(/Last run 1h 1m/)).toBeTruthy();
+        expect(screen.getByText(/Speed 0.4\/s/)).toBeTruthy();
+
+        useLibraryStore.setState({ lastBackgroundHealingRun: { ...useLibraryStore.getState().lastBackgroundHealingRun!, durationMs: -1 } });
+        rerender(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        expect(screen.getByText(/Last run 0s/)).toBeTruthy();
+    });
+
+    it('shows load errors, retries loading after reopening, and formats unknown failure fields', async () => {
+        vi.mocked(invoke)
+            .mockRejectedValueOnce('offline')
+            .mockResolvedValueOnce({ failures: [{ id: 'odd', path: '///', thumbnailPath: null, failureCount: 0, lastError: null, lastAttemptAt: null }] });
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        expect(await screen.findByText(/Failed to load thumbnail failures: offline/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /hide failures/i }));
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        expect(await screen.findByText('Unknown time')).toBeTruthy();
+        expect(screen.getByText('Unknown error')).toBeTruthy();
+        expect(screen.getByTitle('///').textContent).toBe('///');
+    });
+
+    it('reports retry failures from Error and non-Error values', async () => {
+        vi.mocked(invoke)
+            .mockResolvedValueOnce({ failures: [{ id: 'failed', path: 'failed.png', thumbnailPath: null, failureCount: 1, lastError: 'bad', lastAttemptAt: 1 }] })
+            .mockRejectedValueOnce(new Error('retry exploded'));
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        expect(await screen.findAllByText('failed.png')).toHaveLength(2);
+        fireEvent.click(screen.getByRole('button', { name: /retry all/i }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to retry thumbnails: retry exploded', 'error'));
+    });
+
+    it('covers opposite toggle directions and default optimization profile state', () => {
+        const harness = settingsHarness(createSettings({
+            theme: 'light',
+            confirmDelete: false,
+            enableAutoThumbnailHealing: false,
+            thumbnailOptimizationProfile: undefined
+        }));
+        const { rerender } = render(<GeneralTab settings={harness.current()} setSettings={harness.setSettings} />);
+        fireEvent.click(screen.getByText('Theme Mode').closest('.group') as HTMLElement);
+        fireEvent.click(screen.getByText('Confirm Deletions').closest('.group') as HTMLElement);
+        fireEvent.click(screen.getByText('Smart Thumbnail Optimization').closest('.group') as HTMLElement);
+        expect(harness.current()).toMatchObject({ theme: 'dark', confirmDelete: true, enableAutoThumbnailHealing: true });
+        expect(mockAddToast).toHaveBeenCalledWith('Removal confirmations enabled', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Smart optimization enabled', 'success');
+
+        rerender(<GeneralTab settings={createSettings({ enforceHighQualityThumbnails: true, thumbnailOptimizationProfile: undefined })} setSettings={harness.setSettings} />);
+        expect(screen.getByText('Balanced').className).toContain('bg-white');
+        fireEvent.click(screen.getByText('Upgrade Existing Thumbnails').closest('.group') as HTMLElement);
+        expect(harness.current().enforceHighQualityThumbnails).toBe(false);
+        expect(mockAddToast).toHaveBeenCalledWith('High quality enforcement disabled', 'success');
+    });
+
+    it('formats Error load failures and plural retry success', async () => {
+        vi.mocked(invoke)
+            .mockRejectedValueOnce(new Error('database unavailable'))
+            .mockResolvedValueOnce({ failures: [{ id: 'two', path: 'two.png', thumbnailPath: null, failureCount: 1, lastError: 'bad', lastAttemptAt: 1 }] })
+            .mockResolvedValueOnce(2)
+            .mockResolvedValueOnce({ failures: [] });
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        expect(await screen.findByText(/database unavailable/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /hide failures/i }));
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        await screen.findAllByText('two.png');
+        fireEvent.click(screen.getByRole('button', { name: /retry all/i }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Queued 2 thumbnails for retry', 'success'));
+    });
+
+    it('stringifies non-Error retry failures', async () => {
+        vi.mocked(invoke)
+            .mockResolvedValueOnce({ failures: [{ id: 'string', path: 'string.png', thumbnailPath: null, failureCount: 1, lastError: 'bad', lastAttemptAt: 1 }] })
+            .mockRejectedValueOnce('retry offline');
+        render(<GeneralTab settings={createSettings()} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /check failures/i }));
+        await screen.findAllByText('string.png');
+        fireEvent.click(screen.getByRole('button', { name: /retry all/i }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to retry thumbnails: retry offline', 'error'));
     });
 });

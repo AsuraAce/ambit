@@ -63,16 +63,16 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
     if (!rootPath) return { success: false, count: 0, message: "No path provided." };
 
     const isFile = rootPath.endsWith('.db');
-    const candidates = isFile ? [rootPath] : [
+    const rawCandidates = isFile ? [rootPath] : [
         `${rootPath}/databases/invokeai.db`,
         `${rootPath}\\databases\\invokeai.db`,
         `${rootPath}/invokeai.db`
     ];
+    const candidates = Array.from(new Set(rawCandidates.map(path => path.replace(/\\/g, '/'))));
 
     for (const path of candidates) {
         try {
-            const cleanPath = path.replace(/\\/g, '/');
-            const connectionString = `sqlite:${cleanPath}`;
+            const connectionString = `sqlite:${path}`;
 
             console.log(`[InvokeAI] Testing connection to ${connectionString}`);
             const db = await Database.load(connectionString);

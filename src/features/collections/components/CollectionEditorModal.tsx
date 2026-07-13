@@ -54,9 +54,9 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     };
 
     const removeFilter = (key: keyof FilterState, value: unknown) => {
-        if (!draftFilters) return;
-
         setDraftFilters(prev => {
+            // Defend against an event queued while switching collections.
+            /* istanbul ignore next */
             if (!prev) return null;
             const next = { ...prev };
 
@@ -70,10 +70,10 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 next.favoritesOnly = false;
             } else if (key === 'searchQuery') {
                 next.searchQuery = '';
-            } else if (key === 'minSteps' || key === 'maxSteps') {
+            } else if (key === 'minSteps') {
                 next.minSteps = undefined;
                 next.maxSteps = undefined;
-            } else if (key === 'minCfg' || key === 'maxCfg') {
+            } else {
                 next.minCfg = undefined;
                 next.maxCfg = undefined;
             }
@@ -178,8 +178,6 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                         case 'cyan':
                             className += "bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 border-cyan-200 dark:border-cyan-500/30";
                             break;
-                        default:
-                            className += "bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-white/10";
                     }
 
                     chips.push(

@@ -39,7 +39,7 @@ const chunk = <T,>(items: T[], size: number): T[][] => {
     return chunks;
 };
 
-const shouldShowThumbnailHydrationPending = (collection: Collection, force = false): boolean => {
+const shouldShowThumbnailHydrationPending = (collection: Collection, force: boolean): boolean => {
     if (collection.filters) return false;
     if (collection.customThumbnail) return true;
 
@@ -50,7 +50,7 @@ const shouldShowThumbnailHydrationPending = (collection: Collection, force = fal
     return imageCount > 0;
 };
 
-const shouldHydrateCollectionThumbnail = (collection: Collection, force = false): boolean => (
+const shouldHydrateCollectionThumbnail = (collection: Collection, force: boolean): boolean => (
     shouldShowThumbnailHydrationPending(collection, force)
 );
 
@@ -61,7 +61,7 @@ const sortForThumbnailHydration = (collections: Collection[]): Collection[] => (
     })
 );
 
-const buildPendingThumbnailMap = (collections: Collection[], force = false): Record<string, true> => (
+const buildPendingThumbnailMap = (collections: Collection[], force: boolean): Record<string, true> => (
     Object.fromEntries(
         collections
             .filter(collection => shouldShowThumbnailHydrationPending(collection, force))

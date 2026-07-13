@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Check, Filter, ExternalLink, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
-import { AIImage, FilterState } from '../../../types';
+import { AIImage, FilterState, type SmartCollection } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { CollectionsSection } from './CollectionsSection';
@@ -120,7 +120,11 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Quick Update Logic
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
     const activeSmartCol = React.useMemo(() =>
-        filters.collectionId ? allCols.find(c => c.id === filters.collectionId && !!c.filters) : null,
+        filters.collectionId
+            ? allCols.find((collection): collection is SmartCollection =>
+                collection.id === filters.collectionId && collection.filters !== undefined
+            ) ?? null
+            : null,
         [filters.collectionId, allCols]
     );
     const dateFilterLabel = getDateFilterLabel(filters);
@@ -154,14 +158,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             // For lists (models, etc.), we UNION them.
             // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
 
-            const saved: FilterState = activeSmartCol.filters ?? filters;
+            const saved = activeSmartCol.filters;
             const manual = filters;
             const hasManualDateFilter = !!getDateFilterLabel(manual);
 
             const mergedFilters: FilterState = {
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
-                searchQuery: [(saved.searchQuery || ''), (manual.searchQuery || '')].filter(Boolean).join(' ').trim(),
+                searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
                 dateRange: hasManualDateFilter ? manual.dateRange : saved.dateRange,
                 dateFrom: hasManualDateFilter ? manual.dateFrom : saved.dateFrom,
                 dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
@@ -173,13 +177,13 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 maxCfg: manual.maxCfg || saved.maxCfg,
 
                 // Union Lists
-                models: Array.from(new Set([...(saved.models || []), ...manual.models])),
-                tools: Array.from(new Set([...(saved.tools || []), ...manual.tools])),
-                loras: Array.from(new Set([...(saved.loras || []), ...manual.loras])),
-                embeddings: Array.from(new Set([...(saved.embeddings || []), ...manual.embeddings])),
-                hypernetworks: Array.from(new Set([...(saved.hypernetworks || []), ...manual.hypernetworks])),
-                controlNets: Array.from(new Set([...(saved.controlNets || []), ...manual.controlNets])),
-                ipAdapters: Array.from(new Set([...(saved.ipAdapters || []), ...manual.ipAdapters])),
+                models: Array.from(new Set([...saved.models, ...manual.models])),
+                tools: Array.from(new Set([...saved.tools, ...manual.tools])),
+                loras: Array.from(new Set([...saved.loras, ...manual.loras])),
+                embeddings: Array.from(new Set([...saved.embeddings, ...manual.embeddings])),
+                hypernetworks: Array.from(new Set([...saved.hypernetworks, ...manual.hypernetworks])),
+                controlNets: Array.from(new Set([...saved.controlNets, ...manual.controlNets])),
+                ipAdapters: Array.from(new Set([...saved.ipAdapters, ...manual.ipAdapters])),
 
                 // Keep Collection ID? Usually filters object for a collection definition doesn't contain its own ID or 'collectionId'.
                 // But FilterState might. Let's explicitly NOT include collectionId in the saved rule "payload" if possible, 
@@ -216,9 +220,9 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 ipAdapters: []
                 // Preserve collectionId and view options
             }));
-        } else if (activeSmartCol) {
+        } else {
             // Fallback
-            onSaveSmartCollection(activeSmartCol.name, filters);
+            onSaveSmartCollection(activeSmartCol!.name, filters);
         }
     };
 

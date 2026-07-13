@@ -1,73 +1,110 @@
-import * as React from 'react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { GeneratorTool, type AIImage } from '../../../../types';
-import { useSettingsStore } from '../../../../stores/settingsStore';
 import { SelectionBar } from '../SelectionBar';
 
-const createImage = (id: string): AIImage => ({
+const settingsState = vi.hoisted(() => ({ privacyEnabled: true }));
+vi.mock('../../../../stores/settingsStore', () => ({
+    useSettingsStore: (selector: (state: typeof settingsState) => unknown) => selector(settingsState),
+}));
+
+const image = (id: string, userMasked?: boolean, prompt = ''): AIImage => ({
     id,
-    url: `asset://${id}.png`,
-    thumbnailUrl: `asset://${id}.webp`,
+    url: `asset://${id}`,
+    thumbnailUrl: `asset://${id}-thumb`,
     filename: `${id}.png`,
     timestamp: 1,
     width: 512,
     height: 512,
-    isFavorite: true,
-    isPinned: true,
+    isFavorite: false,
+    userMasked,
     metadata: {
         tool: GeneratorTool.UNKNOWN,
-        model: 'Unknown',
-        seed: 1,
+        model: '',
         steps: 20,
         cfg: 7,
-        sampler: 'Euler',
-        positivePrompt: '',
+        sampler: '',
+        positivePrompt: prompt,
         negativePrompt: '',
     },
 });
 
-describe('SelectionBar tooltips', () => {
+const actions = () => ({
+    onClearSelection: vi.fn(),
+    onDelete: vi.fn(),
+    onExport: vi.fn(),
+    onAddToCollection: vi.fn(),
+    onRemoveFromCollection: vi.fn(),
+    onToggleFavorite: vi.fn(),
+    onTogglePin: vi.fn(),
+    onToggleMask: vi.fn(),
+    onCompare: vi.fn(),
+});
+
+const renderBar = (images: AIImage[], extra: Partial<React.ComponentProps<typeof SelectionBar>> = {}) => {
+    const callbacks = actions();
+    render(
+        <SelectionBar
+            selectedIds={new Set(images.map(item => item.id))}
+            filteredImages={images}
+            lastSelectedId={images[0]?.id ?? null}
+            isExporting={false}
+            confirmDelete={false}
+            maskedKeywords={['secret']}
+            {...callbacks}
+            {...extra}
+        />
+    );
+    return callbacks;
+};
+
+describe('SelectionBar', () => {
     beforeEach(() => {
-        useSettingsStore.setState(useSettingsStore.getInitialState(), true);
-        useSettingsStore.setState({ privacyEnabled: false });
+        settingsState.privacyEnabled = true;
     });
 
-    it('describes bulk actions, forwards pressed state, and preserves callbacks', () => {
-        const onCompare = vi.fn();
-        const onToggleFavorite = vi.fn();
-        const images = [createImage('one'), createImage('two')];
+    it('stays hidden without a selection', () => {
+        renderBar([]);
+        expect(screen.queryByText('Selected')).toBeNull();
+    });
 
-        render(
-            <SelectionBar
-                selectedIds={new Set(images.map(image => image.id))}
-                filteredImages={images}
-                lastSelectedId="two"
-                isExporting={false}
-                confirmDelete
-                maskedKeywords={[]}
-                onClearSelection={vi.fn()}
-                onDelete={vi.fn()}
-                onExport={vi.fn()}
-                onAddToCollection={vi.fn()}
-                onToggleFavorite={onToggleFavorite}
-                onTogglePin={vi.fn()}
-                onToggleMask={vi.fn()}
-                onCompare={onCompare}
-            />
-        );
+    it('runs all bulk actions and force-masks automatic visible content', () => {
+        const callbacks = renderBar([image('one'), image('two')], {
+            activeCollectionId: 'collection-1',
+        });
 
-        const compareButton = screen.getByRole('button', { name: 'Compare Selected Images' });
-        expect(compareButton.getAttribute('title')).toBeNull();
-        fireEvent.focus(compareButton);
-        expect(screen.getByRole('tooltip').textContent).toBe('Compare Selected Images');
-        fireEvent.click(compareButton);
-        expect(onCompare).toHaveBeenCalledTimes(1);
+        for (const label of ['Compare Selected Images', 'Add Selected to Favorites', 'Pin Selected Images', 'Add Selected to Collection', 'Remove Selected from Collection', 'Export Selected Images', 'Remove Selected from Library', 'Clear Selection']) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
+        }
+        fireEvent.click(screen.getByRole('button', { name: 'Force Mask All Content' }));
 
-        const favoriteButton = screen.getByRole('button', { name: 'Remove Selected from Favorites' });
-        expect(favoriteButton.getAttribute('aria-pressed')).toBe('true');
-        fireEvent.click(favoriteButton);
-        expect(onToggleFavorite).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('button', { name: 'Clear Selection' }).getAttribute('title')).toBeNull();
+        expect(callbacks.onCompare).toHaveBeenCalledOnce();
+        expect(callbacks.onToggleFavorite).toHaveBeenCalledOnce();
+        expect(callbacks.onTogglePin).toHaveBeenCalledOnce();
+        expect(callbacks.onAddToCollection).toHaveBeenCalledOnce();
+        expect(callbacks.onRemoveFromCollection).toHaveBeenCalledOnce();
+        expect(callbacks.onExport).toHaveBeenCalledOnce();
+        expect(callbacks.onDelete).toHaveBeenCalledOnce();
+        expect(callbacks.onClearSelection).toHaveBeenCalledOnce();
+        expect(callbacks.onToggleMask).toHaveBeenCalledWith(undefined, true);
+    });
+
+    it.each([
+        ['Force Unmask All Content', [image('one', undefined, 'secret')], false],
+        ['Unmask All Content', [image('one', true), image('two', true)], false],
+        ['Reset All to Auto Mask', [image('one', false), image('two', false)], null],
+        ['Consolidate: Reset All to Auto Mask', [image('one', true), image('two', false)], null],
+    ] as const)('cycles bulk masking through %s', (title, images, expected) => {
+        const callbacks = renderBar([...images]);
+        fireEvent.click(screen.getByRole('button', { name: title }));
+        expect(callbacks.onToggleMask).toHaveBeenCalledWith(undefined, expected);
+    });
+
+    it('hides optional actions and disables export while busy', () => {
+        settingsState.privacyEnabled = false;
+        renderBar([image('one')], { isExporting: true, onRemoveFromCollection: undefined });
+        expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Remove Selected from Collection' })).toBeNull();
+        expect((screen.getByRole('button', { name: 'Export Selected Images' }) as HTMLButtonElement).disabled).toBe(true);
     });
 });

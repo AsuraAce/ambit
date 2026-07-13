@@ -21,6 +21,7 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, removeTo
 const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ toast, onRemove }) => {
   const [isHovered, setIsHovered] = React.useState(false);
   const onRemoveRef = useRef(onRemove);
+  const action = toast.action;
 
   useEffect(() => {
     onRemoveRef.current = onRemove;
@@ -30,9 +31,7 @@ const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ to
     if (isHovered) return;
 
     const timer = setTimeout(() => {
-      if (onRemoveRef.current) {
-        onRemoveRef.current();
-      }
+      onRemoveRef.current();
     }, 3000);
     return () => clearTimeout(timer);
   }, [isHovered]);
@@ -57,16 +56,16 @@ const ToastItem: React.FC<{ toast: ToastMessage; onRemove: () => void }> = ({ to
       <div className="flex items-center gap-3">
         <span className="text-sm font-medium tracking-tight">{toast.message}</span>
 
-        {toast.action && (
+        {action && (
           <button
             onClick={(e) => {
               e.stopPropagation();
-              toast.action?.onClick();
+              action.onClick();
               onRemove();
             }}
             className="px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-wider text-sage-400 hover:text-white transition-all border border-white/5 active:scale-95"
           >
-            {toast.action.label}
+            {action.label}
           </button>
         )}
       </div>

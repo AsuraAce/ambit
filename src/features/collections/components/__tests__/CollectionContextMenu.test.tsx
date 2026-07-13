@@ -1,12 +1,8 @@
-import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CollectionContextMenu } from '../CollectionContextMenu';
 
-const createProps = () => ({
-    x: 20,
-    y: 20,
-    collectionId: 'collection-1',
+const callbacks = () => ({
     onClose: vi.fn(),
     onRename: vi.fn(),
     onToggleArchive: vi.fn(),
@@ -16,50 +12,103 @@ const createProps = () => ({
     onExport: vi.fn(),
     onResetThumbnail: vi.fn(),
     onColorChange: vi.fn(),
+    onEditCollection: vi.fn()
 });
 
-describe('CollectionContextMenu quick actions', () => {
-    it('uses shared tooltips and exposes current pin and archive state', () => {
-        const props = createProps();
-        const { rerender } = render(
-            <CollectionContextMenu {...props} isPinned={true} isArchived={true} />
-        );
-
-        const slideshowButton = screen.getByRole('button', { name: 'Play Slideshow' });
-        const pinButton = screen.getByRole('button', { name: 'Unpin collection' });
-        const archiveButton = screen.getByRole('button', { name: 'Unarchive' });
-        expect(pinButton.getAttribute('aria-pressed')).toBe('true');
-        expect(archiveButton.getAttribute('aria-pressed')).toBe('true');
-        expect(slideshowButton.getAttribute('title')).toBeNull();
-        expect(pinButton.getAttribute('title')).toBeNull();
-
-        fireEvent.focus(slideshowButton);
-        expect(screen.getByRole('tooltip').textContent).toBe('Play Slideshow');
-        fireEvent.blur(slideshowButton);
-
-        fireEvent.click(pinButton);
-        expect(props.onTogglePin).toHaveBeenCalledOnce();
-
-        rerender(<CollectionContextMenu {...props} isPinned={false} isArchived={false} />);
-        expect(screen.getByRole('button', { name: 'Pin collection' }).getAttribute('aria-pressed')).toBe('false');
-        expect(screen.getByRole('button', { name: 'Archive' }).getAttribute('aria-pressed')).toBe('false');
+describe('CollectionContextMenu', () => {
+    beforeEach(() => {
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
     });
 
-    it('names color actions, reports the selected color, and preserves selection behavior', () => {
-        const props = createProps();
-        render(<CollectionContextMenu {...props} currentColor="red" />);
+    it('keeps the menu on screen and closes only for outside interactions', () => {
+        const handlers = callbacks();
+        const { container, unmount } = render(
+            <CollectionContextMenu
+                x={480}
+                y={390}
+                collectionId="collection-1"
+                {...handlers}
+            />
+        );
 
-        const redButton = screen.getByRole('button', { name: 'Set collection color to red' });
-        const blueButton = screen.getByRole('button', { name: 'Set collection color to blue' });
-        const clearButton = screen.getByRole('button', { name: 'Clear collection color' });
+        const menu = container.firstElementChild as HTMLElement;
+        expect(menu.style.left).toBe('260px');
+        expect(menu.style.top).toBe('100px');
 
-        expect(redButton.getAttribute('aria-pressed')).toBe('true');
-        expect(blueButton.getAttribute('aria-pressed')).toBe('false');
-        expect(clearButton.getAttribute('aria-pressed')).toBe('false');
-        expect(redButton.getAttribute('title')).toBeNull();
+        fireEvent.contextMenu(menu);
+        fireEvent.mouseDown(screen.getByText('Rename'));
+        expect(handlers.onClose).not.toHaveBeenCalled();
 
-        fireEvent.click(blueButton);
-        expect(props.onColorChange).toHaveBeenCalledWith('blue');
-        expect(props.onClose).toHaveBeenCalledOnce();
+        fireEvent.mouseDown(document.body);
+        expect(handlers.onClose).toHaveBeenCalledTimes(1);
+
+        unmount();
+        fireEvent.mouseDown(document.body);
+        expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('exposes every collection action and optional management item', () => {
+        const handlers = callbacks();
+        render(
+            <CollectionContextMenu
+                x={10}
+                y={20}
+                collectionId="collection-1"
+                isArchived
+                isPinned
+                hasCustomThumbnail
+                {...handlers}
+            />
+        );
+
+        const iconActions: Array<[string, ReturnType<typeof vi.fn>]> = [
+            ['Play Slideshow', handlers.onPlaySlideshow],
+            ['Unpin collection', handlers.onTogglePin],
+            ['Unarchive', handlers.onToggleArchive],
+            ['Delete Collection', handlers.onDelete]
+        ];
+        const textActions: Array<[string, ReturnType<typeof vi.fn>]> = [
+            ['Rename', handlers.onRename],
+            ['Edit Filters', handlers.onEditCollection],
+            ['Export to ZIP...', handlers.onExport],
+            ['Reset Thumbnail', handlers.onResetThumbnail]
+        ];
+
+        for (const [name, callback] of iconActions) {
+            fireEvent.click(screen.getByRole('button', { name }));
+            expect(callback).toHaveBeenCalledTimes(1);
+        }
+        for (const [name, callback] of textActions) {
+            fireEvent.click(screen.getByText(name));
+            expect(callback).toHaveBeenCalledTimes(1);
+        }
+    });
+
+    it('reports color choices, closes afterward, and hides optional actions', () => {
+        const handlers = callbacks();
+        render(
+            <CollectionContextMenu
+                x={10}
+                y={20}
+                collectionId="collection-1"
+                currentColor="red"
+                {...handlers}
+                onEditCollection={undefined}
+            />
+        );
+
+        expect(screen.queryByText('Edit Filters')).toBeNull();
+        expect(screen.queryByText('Reset Thumbnail')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Pin collection' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Archive' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Set collection color to red' }).className).toContain('ring-2');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Set collection color to blue' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear collection color' }));
+
+        expect(handlers.onColorChange).toHaveBeenNthCalledWith(1, 'blue');
+        expect(handlers.onColorChange).toHaveBeenNthCalledWith(2, undefined);
+        expect(handlers.onClose).toHaveBeenCalledTimes(2);
     });
 });

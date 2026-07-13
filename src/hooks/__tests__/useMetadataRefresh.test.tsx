@@ -4,10 +4,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { useMetadataRefresh } from '../useMetadataRefresh';
 import { useLibraryStore } from '../../stores/libraryStore';
 
-const { mockAddToast, mockRebuildFacetCacheIncrementalBatchStrict, listenerCallbacks } = vi.hoisted(() => ({
+const { mockAddToast, mockRebuildFacetCacheIncrementalBatchStrict, listenerCallbacks, listenerCleanups, runtimeMock } = vi.hoisted(() => ({
     mockAddToast: vi.fn(),
     mockRebuildFacetCacheIncrementalBatchStrict: vi.fn(),
-    listenerCallbacks: new Map<string, (event: { payload: unknown }) => void>()
+    listenerCallbacks: new Map<string, (event: { payload: unknown }) => void>(),
+    listenerCleanups: [] as ReturnType<typeof vi.fn>[],
+    runtimeMock: { browserMode: false }
 }));
 
 vi.mock('../useToast', () => ({
@@ -19,8 +21,14 @@ vi.mock('../useToast', () => ({
 vi.mock('../../utils/tauriListener', () => ({
     listenWithCleanup: vi.fn((eventName: string, callback: (event: { payload: unknown }) => void) => {
         listenerCallbacks.set(eventName, callback);
-        return { cleanup: vi.fn() };
+        const cleanup = vi.fn();
+        listenerCleanups.push(cleanup);
+        return { cleanup };
     })
+}));
+
+vi.mock('../../services/runtime', () => ({
+    isBrowserMockMode: () => runtimeMock.browserMode
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
@@ -38,9 +46,13 @@ describe('useMetadataRefresh', () => {
         vi.clearAllMocks();
         vi.useFakeTimers();
         listenerCallbacks.clear();
+        listenerCleanups.length = 0;
+        runtimeMock.browserMode = false;
         useLibraryStore.setState({
             facetCacheVersion: 0,
             isStartupCatchupPending: false,
+            isImporting: false,
+            syncStatus: 'idle',
             isMetadataRefreshPending: false,
             isRefreshingMetadata: false,
             refreshProgress: null
@@ -505,5 +517,148 @@ describe('useMetadataRefresh', () => {
             'Failed to start refresh: database is locked',
             'error'
         );
+    });
+
+    it('disables refresh controls and listeners in browser mock mode', async () => {
+        runtimeMock.browserMode = true;
+        const { result } = renderHook(() => useMetadataRefresh());
+        expect(listenerCallbacks.size).toBe(0);
+
+        await act(async () => {
+            expect(await result.current.startRefresh()).toEqual({ ok: false });
+            await result.current.cancelRefresh();
+            await result.current.forceRefresh();
+        });
+
+        expect(invoke).not.toHaveBeenCalled();
+        expect(mockAddToast).toHaveBeenCalledTimes(2);
+        expect(mockAddToast).toHaveBeenCalledWith('Unavailable in browser mock mode.', 'info');
+    });
+
+    it('cleans up both backend listeners on unmount', () => {
+        const { unmount } = renderHook(() => useMetadataRefresh());
+        expect(listenerCleanups).toHaveLength(2);
+        unmount();
+        expect(listenerCleanups.every(cleanup => cleanup.mock.calls.length === 1)).toBe(true);
+    });
+
+    it('reports completion warnings and suppresses empty completion toasts', () => {
+        renderHook(() => useMetadataRefresh());
+        act(() => listenerCallbacks.get('refresh-complete')?.({
+            payload: { processed: 5, updated: 0, errors: 2, wasCancelled: false }
+        }));
+        expect(mockAddToast).toHaveBeenCalledWith('Refresh complete: 0 updated, 2 errors', 'warning');
+        mockAddToast.mockClear();
+        act(() => listenerCallbacks.get('refresh-complete')?.({
+            payload: { processed: 0, updated: 0, errors: 0, wasCancelled: false }
+        }));
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
+    it('starts a tool-filtered refresh without showing a suppressed failure toast', async () => {
+        vi.mocked(invoke).mockRejectedValueOnce(new Error('tool failed'));
+        const { result } = renderHook(() => useMetadataRefresh());
+        await act(async () => {
+            const response = await result.current.startRefresh('ComfyUI', { showFailureToast: false });
+            expect(response.ok).toBe(false);
+        });
+        expect(invoke).toHaveBeenCalledWith('start_reparse_job', expect.objectContaining({ filterTool: 'ComfyUI' }));
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Failed to start refresh'), 'error');
+    });
+
+    it('cancels refresh jobs and logs cancellation failures', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(invoke).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('cancel failed'));
+        const { result } = renderHook(() => useMetadataRefresh());
+        await act(async () => result.current.cancelRefresh());
+        await act(async () => result.current.cancelRefresh());
+        expect(invoke).toHaveBeenCalledWith('cancel_reparse_job');
+        expect(consoleError).toHaveBeenCalledWith('[Refresh] Cancel error:', expect.any(Error));
+        consoleError.mockRestore();
+    });
+
+    it('passes force-refresh filters and reports Error failures', async () => {
+        vi.mocked(invoke)
+            .mockResolvedValueOnce({ processed: 1, updated: 0, errors: 0, wasCancelled: false })
+            .mockRejectedValueOnce(new Error('force failed'));
+        const { result } = renderHook(() => useMetadataRefresh());
+        await act(async () => result.current.forceRefresh('D:/Images', false, 'ComfyUI'));
+        expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
+            forceReparse: false,
+            filterRoot: 'D:/Images',
+            filterTool: 'ComfyUI'
+        });
+        await act(async () => result.current.forceRefresh());
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to force refresh: force failed', 'error');
+    });
+
+    it('clears startup pending state when no images require reparsing', async () => {
+        vi.mocked(invoke).mockResolvedValueOnce(0);
+        renderHook(() => useMetadataRefresh());
+        await act(async () => vi.advanceTimersByTimeAsync(3000));
+        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+        expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
+    });
+
+    it.each([
+        { isImporting: true },
+        { syncStatus: 'syncing' as const },
+    ])('defers startup refresh while another library task is active', async (busyState) => {
+        vi.mocked(invoke).mockImplementation(command => command === 'get_reparse_count'
+            ? Promise.resolve(2)
+            : Promise.resolve({ processed: 2, updated: 0, errors: 0, wasCancelled: false }));
+        useLibraryStore.setState(busyState);
+        renderHook(() => useMetadataRefresh());
+        await act(async () => vi.advanceTimersByTimeAsync(3000));
+        expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
+    });
+
+    it.each([
+        'database table is locked',
+        'database schema is locked',
+        'database busy',
+        'SQLITE_BUSY',
+    ])('retries transient startup count failures: %s', async (error) => {
+        vi.mocked(invoke)
+            .mockRejectedValueOnce(error)
+            .mockResolvedValueOnce(0);
+        renderHook(() => useMetadataRefresh());
+        await act(async () => vi.advanceTimersByTimeAsync(3000));
+        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
+        await act(async () => vi.advanceTimersByTimeAsync(15000));
+        expect(invoke).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports non-transient startup count failures', async () => {
+        const error = new Error('count unavailable');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(invoke).mockRejectedValueOnce(error);
+        renderHook(() => useMetadataRefresh());
+        await act(async () => vi.advanceTimersByTimeAsync(3000));
+        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+        expect(consoleError).toHaveBeenCalledWith('[Refresh] Startup check failed:', error);
+        consoleError.mockRestore();
+    });
+
+    it('reports non-transient startup start failures once', async () => {
+        vi.mocked(invoke).mockImplementation(command => command === 'get_reparse_count'
+            ? Promise.resolve(2)
+            : Promise.reject('permission denied'));
+        renderHook(() => useMetadataRefresh());
+        await act(async () => vi.runAllTimersAsync());
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: permission denied', 'error');
+    });
+
+    it('ignores a startup count result that resolves after unmount', async () => {
+        let resolveCount!: (count: number) => void;
+        vi.mocked(invoke).mockReturnValueOnce(new Promise(resolve => { resolveCount = resolve; }));
+        const view = renderHook(() => useMetadataRefresh());
+        await act(async () => vi.advanceTimersByTimeAsync(3000));
+        view.unmount();
+        await act(async () => {
+            resolveCount(5);
+            await Promise.resolve();
+        });
+        expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
     });
 });

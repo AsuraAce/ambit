@@ -45,13 +45,16 @@ const baseCollection: Collection = {
     source: 'ambit'
 };
 
-const renderModal = (collections: Collection[]) => render(
+type ModalOverrides = Partial<React.ComponentProps<typeof AddToCollectionModal>>;
+
+const renderModal = (collections: Collection[], overrides: ModalOverrides = {}) => render(
     <AddToCollectionModal
         isOpen
         onClose={() => { }}
         collections={collections}
         selectedIds={['image-1']}
         onConfirm={() => { }}
+        {...overrides}
     />
 );
 
@@ -108,6 +111,128 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         expect(screen.getByTestId('collection-thumbnail-skeleton')).toBeTruthy();
         expect(screen.queryByTestId('collection-thumbnail-fallback')).toBeNull();
         expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
+    });
+
+    it('renders nothing while closed', () => {
+        renderModal([baseCollection], { isOpen: false });
+        expect(screen.queryByText('Add to Collection')).toBeNull();
+    });
+
+    it('combines regular and smart collections and confirms the selected target', () => {
+        const onConfirm = vi.fn();
+        renderModal([baseCollection], {
+            smartCollections: [{ ...baseCollection, id: 'smart', name: 'Smart', createdAt: 2 }],
+            selectedIds: ['one', 'two'],
+            onConfirm,
+        });
+
+        expect(screen.getByText('2 images selected')).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /smart/i }));
+        expect(onConfirm).toHaveBeenCalledWith(['one', 'two'], 'smart', 'add', undefined);
+    });
+
+    it('renders move mode and excludes the source collection', () => {
+        renderModal([baseCollection, { ...baseCollection, id: 'target', name: 'Target' }], {
+            mode: 'move',
+            sourceCollectionId: baseCollection.id,
+        });
+        expect(screen.getByText('Move to Collection')).not.toBeNull();
+        expect(screen.queryByText(baseCollection.name)).toBeNull();
+        expect(screen.getByText('Target')).not.toBeNull();
+    });
+
+    it('filters by search and shows the empty state', () => {
+        renderModal([baseCollection]);
+        fireEvent.change(screen.getByPlaceholderText('Search collections...'), { target: { value: 'missing' } });
+        expect(screen.getByText('No matching collections found')).not.toBeNull();
+    });
+
+    it('hides archived collections until requested', () => {
+        const archived = { ...baseCollection, id: 'archived', name: 'Archived Set', isArchived: true };
+        renderModal([baseCollection, archived]);
+        expect(screen.queryByText('Archived Set')).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Show Archived Collections' }));
+        expect(screen.getByText('Archived Set')).not.toBeNull();
+        expect(screen.getByText('Archived')).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Hide Archived Collections' }));
+        expect(screen.queryByText('Archived Set')).toBeNull();
+    });
+
+    it.each([
+        ['Name (A-Z)', ['Alpha', 'Beta']],
+        ['Name (Z-A)', ['Beta', 'Alpha']],
+        ['Most Images', ['Beta', 'Alpha']],
+        ['Fewest Images', ['Alpha', 'Beta']],
+        ['Oldest Created', ['Alpha', 'Beta']],
+        ['Recently Created', ['Beta', 'Alpha']],
+    ])('sorts collections by %s', (option, expected) => {
+        const alpha = { ...baseCollection, id: 'alpha', name: 'Alpha', count: undefined, imageIds: ['one'], createdAt: 1 };
+        const beta = { ...baseCollection, id: 'beta', name: 'Beta', count: undefined, imageIds: ['one', 'two', 'three'], createdAt: 2 };
+        renderModal([beta, alpha]);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
+        fireEvent.click(screen.getByRole('button', { name: option }));
+        const names = screen.getAllByRole('button').filter(button => expected.includes(button.textContent?.match(/Alpha|Beta/)?.[0] ?? ''));
+        expect(names.map(button => button.textContent?.match(/Alpha|Beta/)?.[0])).toEqual(expected);
+    });
+
+    it('closes the sort menu from its backdrop and closes the modal from header and overlay', () => {
+        const onClose = vi.fn();
+        const { container } = renderModal([baseCollection], { onClose });
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
+        const sortBackdrop = container.querySelector('.fixed.inset-0.z-10');
+        expect(sortBackdrop).not.toBeNull();
+        fireEvent.click(sortBackdrop!);
+        expect(screen.queryByRole('button', { name: 'Name (A-Z)' })).toBeNull();
+
+        const closeButton = container.querySelector('button.p-2.hover\\:bg-gray-100');
+        fireEvent.click(closeButton!);
+        const modalOverlay = container.querySelector('.absolute.inset-0.bg-black\\/40');
+        fireEvent.click(modalOverlay!);
+        expect(onClose).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops clicks inside the dialog from reaching its overlay', () => {
+        const { container } = renderModal([baseCollection]);
+        const dialog = container.querySelector('.relative.w-full.max-w-md');
+        const event = new MouseEvent('click', { bubbles: true });
+        const stopPropagation = vi.spyOn(event, 'stopPropagation');
+        dialog!.dispatchEvent(event);
+        expect(stopPropagation).toHaveBeenCalled();
+    });
+
+    it('renders hydrated thumbnails and all collection color classes', () => {
+        const colors = ['red', 'orange', 'green', 'blue', 'purple', 'unknown'] as const;
+        renderModal(colors.map((color, index) => ({
+            ...baseCollection,
+            id: color,
+            name: color,
+            color,
+            thumbnail: `thumb-${index}`,
+            safeThumbnail: `safe-${index}`,
+            thumbnailIsSensitive: index === 0,
+            filters: index % 2 === 0 ? createDefaultFilters() : undefined,
+            createdAt: index,
+        })));
+        expect(screen.getAllByTestId('privacy-aware-thumbnail')).toHaveLength(colors.length);
+        for (const className of ['bg-red-500', 'bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-purple-500']) {
+            expect(document.querySelector(`.${className}`)).not.toBeNull();
+        }
+    });
+
+    it('renders colored skeletons and smart, folder, and archived fallbacks', () => {
+        useCollectionStore.setState({ thumbnailHydrationPendingIds: { pending: true } });
+        renderModal([
+            { ...baseCollection, id: 'pending', name: 'Pending', color: 'red' },
+            { ...baseCollection, id: 'smart', name: 'Smart', filters: createDefaultFilters() },
+            { ...baseCollection, id: 'folder', name: 'Folder' },
+            { ...baseCollection, id: 'archived', name: 'Old', isArchived: true, color: 'blue' },
+        ]);
+        expect(screen.getByTestId('collection-thumbnail-skeleton')).not.toBeNull();
+        expect(screen.getAllByTestId('collection-thumbnail-fallback')).toHaveLength(2);
+        fireEvent.click(screen.getByRole('button', { name: 'Show Archived Collections' }));
+        expect(screen.getAllByTestId('collection-thumbnail-fallback')).toHaveLength(3);
     });
 });
 

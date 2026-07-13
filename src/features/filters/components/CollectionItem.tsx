@@ -32,8 +32,7 @@ interface CollectionItemProps {
     isThumbnailPending?: boolean;
 }
 
-const getColorClass = (colorName?: string) => {
-    if (!colorName) return '';
+const getColorClass = (colorName: string) => {
     switch (colorName) {
         case 'red': return 'bg-red-500';
         case 'orange': return 'bg-orange-500';

@@ -110,4 +110,16 @@ describe('workflow graph source selection', () => {
             originalChunks: { prompt: richerApiPrompt }
         })).toBe(richerApiPrompt);
     });
+
+    it('recognizes data-only nodes as graph content', () => {
+        const source = selectWorkflowGraphSource({
+            tool: 'ComfyUI',
+            workflowJson: JSON.stringify({
+                only: { data: { prompt: 'hello' } },
+            }),
+        });
+
+        expect(source?.nodes).toHaveLength(1);
+        expect(source?.nodes[0]).toMatchObject({ type: 'Unknown', title: 'Unknown' });
+    });
 });

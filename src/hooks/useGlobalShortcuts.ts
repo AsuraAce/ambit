@@ -141,6 +141,12 @@ export const useGlobalShortcuts = ({
             }
 
             // 6. Action Shortcuts
+            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+                return;
+            }
+
             if (e.key === 'f' || e.key === 'F') {
                 if (isViewerOpen) return;
                 e.preventDefault();
@@ -171,12 +177,6 @@ export const useGlobalShortcuts = ({
 
                 const allIds = filteredImages.map(img => img.id);
                 setSelectedIds(new Set(allIds));
-                return;
-            }
-
-            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-                e.preventDefault();
-                searchInputRef.current?.focus();
                 return;
             }
 

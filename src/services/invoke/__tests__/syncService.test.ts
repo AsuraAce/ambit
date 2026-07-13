@@ -12,7 +12,7 @@ import {
     syncCollectionImages
 } from '../../db/imageRepo';
 import { syncImages } from '../syncService';
-import { GeneratorTool } from '../../../types';
+import { GeneratorTool, type AIImage } from '../../../types';
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
@@ -74,6 +74,97 @@ const createInvokeDb = (selectMock: ReturnType<typeof vi.fn>) => ({
     select: selectMock
 });
 
+const makeExistingInvokeImage = (filename: string, overrides: Partial<AIImage> = {}): AIImage => {
+    const id = `D:/AmbitFixtures/InvokeAI/outputs/images/${filename}`;
+    const metadata = {
+        tool: GeneratorTool.INVOKEAI,
+        model: 'Test Model',
+        steps: 20,
+        cfg: 7,
+        sampler: 'Euler',
+        positivePrompt: 'raw',
+        negativePrompt: ''
+    };
+    return {
+        id,
+        url: `asset://${id}`,
+        thumbnailUrl: `asset://${id}`,
+        filename,
+        timestamp: 100,
+        width: 512,
+        height: 512,
+        isFavorite: false,
+        isPinned: false,
+        metadata,
+        originalMetadata: metadata,
+        originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) },
+        ...overrides,
+    };
+};
+
+const arrangeManualRepair = async ({
+    name,
+    subfolder = 'nested',
+    size = 123,
+    existingPaths,
+    rejectSize = false,
+    includeUnmatchedRow = false,
+    rowImageName = name,
+    thumbnailName = null,
+    signal,
+    onRepairRows,
+}: {
+    name: string;
+    subfolder?: string;
+    size?: number;
+    existingPaths: string[];
+    rejectSize?: boolean;
+    includeUnmatchedRow?: boolean;
+    rowImageName?: string;
+    thumbnailName?: string | null;
+    signal?: AbortSignal;
+    onRepairRows?: () => void;
+}) => {
+    const root = 'D:/AmbitFixtures/InvokeAI';
+    const stalePath = `${root}/outputs/images/${name}`;
+    const targetPath = subfolder ? `${root}/outputs/images/${subfolder}/${name}` : stalePath;
+    const repairRow = {
+        image_name: rowImageName,
+        image_subfolder: subfolder || null,
+        thumbnail_name: thumbnailName,
+        metadata_blob: {},
+        created_at: '2026-04-18 12:00:00'
+    };
+    const selectMock = vi.fn(async (query: string) => {
+        if (query.includes('PRAGMA table_info(images)')) {
+            return [{ name: 'metadata_json' }, { name: 'image_subfolder' }, { name: 'thumbnail_name' }];
+        }
+        if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+        if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 0 }];
+        if (query.includes('SELECT i.image_name')) {
+            onRepairRows?.();
+            return includeUnmatchedRow
+                ? [repairRow, { ...repairRow, image_name: 'not-stale.png' }]
+                : [repairRow];
+        }
+        return [];
+    });
+    vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+    vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([stalePath]);
+    vi.mocked(commands.listInvokeaiImages).mockResolvedValue({
+        status: 'ok',
+        data: [subfolder ? `outputs/images/${subfolder}/${name}` : `outputs/images/${name}`]
+    } as never);
+    if (rejectSize) vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
+    else vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [size] } as never);
+    vi.mocked(getImagesByIds).mockResolvedValue(existingPaths.map(path => makeExistingInvokeImage(name, { id: path })));
+
+    const result = await syncImages(root, vi.fn(), signal, {
+        mode: 'manual', syncBoards: false, syncFavorites: false
+    });
+    return { result, stalePath, targetPath };
+};
+
 describe('syncImages live mode', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -98,6 +189,44 @@ describe('syncImages live mode', () => {
             imageToBoardId: new Map(),
             boards: new Map()
         });
+    });
+
+    it('returns an empty result without opening a database when the root path is empty', async () => {
+        const result = await syncImages('', vi.fn());
+
+        expect(result).toMatchObject({
+            imported: 0,
+            updated: 0,
+            maxTimestamp: null,
+            touchedFacetTypes: []
+        });
+        expect(result.syncedIds).toEqual(new Set());
+        expect(result.boardMapping).toEqual(new Map());
+        expect(Database.load).not.toHaveBeenCalled();
+    });
+
+    it('reports the resolved database path when connection fails', async () => {
+        vi.mocked(Database.load).mockRejectedValue(new Error('locked'));
+
+        await expect(syncImages('D:/InvokeAI/databases', vi.fn())).rejects.toThrow(
+            'Could not connect to InvokeAI DB at D:/InvokeAI/databases/invokeai.db'
+        );
+        expect(Database.load).toHaveBeenCalledWith('sqlite:D:/InvokeAI/databases/invokeai.db');
+    });
+
+    it('accepts a direct database path and rejects schemas without metadata', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'created_at' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            throw new Error(`Unexpected query: ${query}`);
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        await expect(syncImages('D:/InvokeAI/databases/invokeai.db', vi.fn())).rejects.toThrow(
+            "Could not find metadata column (checked 'metadata_json' and 'metadata')"
+        );
+        expect(Database.load).toHaveBeenCalledWith('sqlite:D:/InvokeAI/databases/invokeai.db');
+        expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
     it('returns early for no-op live cycles before board and collection sync work', async () => {
@@ -249,7 +378,7 @@ describe('syncImages live mode', () => {
                 mode: 'live',
                 syncBoards: true,
                 syncFavorites: true,
-                starredAs: 'both'
+                starredAs: 'favorite'
             }
         );
 
@@ -275,6 +404,439 @@ describe('syncImages live mode', () => {
             'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
         expect(upsertCollection).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs a final collection reconciliation after a manual board sync', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'starred' }, { name: 'thumbnail_name' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'manual-image.png', metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
+                    created_at: '2026-04-18 12:00:00', width: 512, height: 512,
+                    starred: 0, thumbnail_name: 'manual-image.webp'
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValue({
+            imageToBoardId: new Map([['manual-image.png', 'board-1']]),
+            boards: new Map([['board-1', { name: 'Board One', createdAt: 0 }]])
+        });
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: true, syncFavorites: true, starredAs: 'favorite'
+        });
+
+        expect(result.imported).toBe(1);
+        expect(syncCollectionImages).toHaveBeenCalledTimes(2);
+        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'board-1', name: 'Board One' }));
+    });
+
+    it('does not rewrite an unchanged image that already preserves raw Invoke metadata', async () => {
+        const fullPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/unchanged.png';
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'unchanged.png', metadata_blob: { positive_prompt: 'raw' },
+                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([{
+            id: fullPath, url: `asset://${fullPath}`, thumbnailUrl: `asset://${fullPath}`,
+            filename: 'unchanged.png', fileSize: 123, timestamp: 100, width: 512, height: 512,
+            isFavorite: false, isPinned: false,
+            metadata: {
+                tool: GeneratorTool.INVOKEAI, model: 'Test Model', steps: 20, cfg: 7,
+                sampler: 'Euler', positivePrompt: 'raw', negativePrompt: ''
+            },
+            originalMetadata: {
+                tool: GeneratorTool.INVOKEAI, model: 'Test Model', steps: 20, cfg: 7,
+                sampler: 'Euler', positivePrompt: 'raw', negativePrompt: ''
+            },
+            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) }
+        }]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false
+        });
+
+        expect(result).toMatchObject({ imported: 0, updated: 0 });
+        expect(result.syncedIds).toContain('unchanged.png');
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('rewrites an existing image when its stored raw chunk is already mapped', async () => {
+        const fullPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/mapped.png';
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'mapped.png', metadata_blob: { positive_prompt: 'raw' },
+                    created_at: '2026-04-18 12:00:00', width: 512, height: 512
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('mapped.png', {
+                originalMetadata: undefined,
+                originalChunks: { invokeai_metadata: JSON.stringify({ positivePrompt: 'already mapped' }) }
+            })
+        ]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false
+        });
+
+        expect(result.updated).toBe(1);
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ id: fullPath, filename: 'mapped.png' })
+        ]);
+    });
+
+    it('stops before querying the first batch when a live sync is already aborted', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET')) throw new Error('batch query should not run');
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
+            mode: 'live', syncBoards: false, syncFavorites: false
+        })).rejects.toThrow('Aborted');
+    });
+
+    it('falls back safely when thumbnail verification and file-size probes fail', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'thumbnail_name' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'unreadable.png', thumbnail_name: 'unreadable.webp', metadata_blob: {},
+                    created_at: '2026-04-18 12:00:00', width: 512, height: 512
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(commands.verifyImagePaths).mockRejectedValue(new Error('verify failed'));
+        vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false
+        });
+
+        expect(result.imported).toBe(1);
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                filename: 'unreadable.png',
+                fileSize: 0,
+                thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/unreadable.png'
+            })
+        ]);
+        expect(warnSpy).toHaveBeenCalledWith(
+            '[InvokeAI Sync] Failed to verify InvokeAI thumbnail paths; using source image fallback.',
+            expect.any(Error)
+        );
+        warnSpy.mockRestore();
+    });
+
+    it.each([
+        { label: 'target file is missing', name: 'missing-target.png', size: 0, paths: ['stale'] as const },
+        { label: 'target identity exists', name: 'existing-target.png', size: 123, paths: ['stale', 'target'] as const },
+        { label: 'legacy source is missing', name: 'missing-source.png', size: 123, paths: [] as const },
+        { label: 'source already equals target', name: 'already-flat.png', size: 123, paths: ['stale'] as const, subfolder: '' },
+    ])('skips manual repair when the $label', async ({ name, size, paths, subfolder }) => {
+        const root = 'D:/AmbitFixtures/InvokeAI';
+        const stalePath = `${root}/outputs/images/${name}`;
+        const targetPath = subfolder === '' ? stalePath : `${root}/outputs/images/nested/${name}`;
+        const existingPaths = paths.map(path => path === 'stale' ? stalePath : targetPath);
+
+        const { result } = await arrangeManualRepair({
+            name,
+            size,
+            existingPaths,
+            subfolder: subfolder ?? 'nested',
+            includeUnmatchedRow: name === 'missing-target.png'
+        });
+
+        expect(result.updated).toBe(0);
+        expect(moveImagePathIdentities).not.toHaveBeenCalled();
+    });
+
+    it('uses zero sizes when filesystem probing fails during manual repair', async () => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const root = 'D:/AmbitFixtures/InvokeAI';
+        const name = 'probe-failure.png';
+
+        const { result } = await arrangeManualRepair({
+            name,
+            existingPaths: [`${root}/outputs/images/${name}`],
+            rejectSize: true
+        });
+
+        expect(result.updated).toBe(0);
+        expect(warnSpy).toHaveBeenCalledWith(
+            '[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.',
+            expect.any(Error)
+        );
+        warnSpy.mockRestore();
+    });
+
+    it('records Invoke thumbnail provenance for a successful broad repair', async () => {
+        const root = 'D:/AmbitFixtures/InvokeAI';
+        const name = 'thumbnail-repair.png';
+        vi.mocked(moveImagePathIdentities).mockResolvedValue({
+            moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0
+        });
+
+        const { result } = await arrangeManualRepair({
+            name,
+            thumbnailName: 'thumbnail-repair.webp',
+            existingPaths: [`${root}/outputs/images/${name}`]
+        });
+
+        expect(result.updated).toBe(1);
+        expect(moveImagePathIdentities).toHaveBeenCalledWith([
+            expect.objectContaining({
+                thumbnailPath: expect.stringContaining('thumbnail-repair.webp'),
+                thumbnailSource: 'invokeai'
+            })
+        ]);
+    });
+
+    it('ignores a malformed empty stale image identity', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 0 }];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue(['']);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false
+        });
+
+        expect(result.updated).toBe(0);
+        expect(moveImagePathIdentities).not.toHaveBeenCalled();
+    });
+
+    it('skips an unsafe unresolved database path during manual repair', async () => {
+        const root = 'D:/AmbitFixtures/InvokeAI';
+        const name = 'unsafe.png';
+
+        const { result } = await arrangeManualRepair({
+            name,
+            rowImageName: `../${name}`,
+            existingPaths: [`${root}/outputs/images/${name}`]
+        });
+
+        expect(result.updated).toBe(0);
+        expect(moveImagePathIdentities).not.toHaveBeenCalled();
+    });
+
+    it('aborts before querying stale repair candidates when already cancelled', async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(arrangeManualRepair({
+            name: 'pre-aborted.png',
+            existingPaths: [],
+            signal: controller.signal
+        })).rejects.toThrow('Aborted');
+    });
+
+    it('aborts before moving repair candidates when cancelled after their query', async () => {
+        const controller = new AbortController();
+
+        await expect(arrangeManualRepair({
+            name: 'mid-repair-abort.png',
+            existingPaths: [],
+            signal: controller.signal,
+            onRepairRows: () => controller.abort()
+        })).rejects.toThrow('Aborted');
+    });
+
+    it('preserves legacy and user-modified state while applying Invoke state to untouched images', async () => {
+        const rows = [
+            { name: 'legacy.png', starred: 1 },
+            { name: 'modified.png', starred: 1 },
+            { name: 'untouched.png', starred: 1 },
+            { name: 'unstarred.png', starred: 0 },
+            { name: 'no-raw-key.png', starred: 0 },
+            { name: 'object-raw.png', starred: 0 },
+            { name: 'primitive-raw.png', starred: 0 },
+        ];
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'starred' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: rows.length }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return rows.map(row => ({
+                    image_name: row.name,
+                    metadata_blob: { positive_prompt: 'raw' },
+                    created_at: '2026-04-18 12:00:00',
+                    width: 512,
+                    height: 512,
+                    starred: row.starred
+                }));
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValue({
+            imageToBoardId: new Map([
+                ['legacy.png', 'invoke-legacy'],
+                ['modified.png', 'invoke-modified'],
+                ['untouched.png', 'invoke-untouched'],
+            ]),
+            boards: new Map([
+                ['invoke-legacy', { name: 'Invoke Legacy', createdAt: 1 }],
+                ['invoke-modified', { name: 'Invoke Modified', createdAt: 2 }],
+                ['invoke-untouched', { name: 'Invoke Untouched', createdAt: 3 }],
+            ])
+        });
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('legacy.png', {
+                isFavorite: true,
+                isPinned: undefined,
+                boardId: 'ambit-legacy'
+            }),
+            makeExistingInvokeImage('modified.png', {
+                isFavorite: true,
+                isPinned: undefined,
+                boardId: 'ambit-modified',
+                originalState: { isFavorite: false, isPinned: true, boardId: 'original-modified' }
+            }),
+            makeExistingInvokeImage('untouched.png', {
+                boardId: 'original-untouched',
+                originalState: { isFavorite: false, isPinned: false, boardId: 'original-untouched' }
+            }),
+            makeExistingInvokeImage('unstarred.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined }
+            }),
+            makeExistingInvokeImage('no-raw-key.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+                originalChunks: {}
+            }),
+            makeExistingInvokeImage('object-raw.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+                originalChunks: {
+                    invokeai_metadata: { negativePrompt: 'already mapped' }
+                } as unknown as Record<string, string>
+            }),
+            makeExistingInvokeImage('primitive-raw.png', {
+                originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+                originalChunks: { invokeai_metadata: 1 } as unknown as Record<string, string>
+            }),
+        ]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: true, syncFavorites: true, starredAs: 'both'
+        });
+
+        expect(result).toMatchObject({ imported: 0, updated: 2 });
+        expect(insertImagesBatch).toHaveBeenCalledWith(expect.arrayContaining([
+            expect.objectContaining({
+                filename: 'untouched.png',
+                isFavorite: true,
+                isPinned: true,
+                boardId: 'invoke-untouched'
+            }),
+            expect.objectContaining({ filename: 'object-raw.png' })
+        ]));
+    });
+
+    it('imports a legacy Invoke schema with string metadata and conservative fallbacks', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [
+                    { name: 'metadata' }, { name: 'is_starred' }, { name: 'updated_at' },
+                    { name: 'has_workflow' }, { name: 'is_intermediate' }
+                ];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'legacy-schema.png',
+                    metadata_blob: null,
+                    created_at: 'invalid-date',
+                    updated_at: '2026-04-18T12:00:05Z',
+                    width: null,
+                    height: null,
+                    is_starred: true,
+                    has_workflow: undefined,
+                    is_intermediate: 1
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValue({
+            imageToBoardId: new Map([['legacy-schema.png', 'missing-board']]),
+            boards: new Map()
+        });
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            syncBoards: true,
+            syncFavorites: true,
+            importIntermediates: true,
+            starredAs: 'pin'
+        });
+
+        expect(result.imported).toBe(1);
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                filename: 'legacy-schema.png',
+                width: 0,
+                height: 0,
+                isFavorite: false,
+                isPinned: true,
+                boardId: 'missing-board',
+                originalChunks: { invokeai_metadata: {} }
+            })
+        ]);
+        expect(upsertCollection).not.toHaveBeenCalled();
     });
 
     it('keeps startup changed cycles incremental and skips the final full collection sync', async () => {
@@ -554,9 +1116,9 @@ describe('syncImages live mode', () => {
             status: 'ok',
             data: ['outputs/images/2026/04/18/date.png']
         } as never);
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
+        vi.mocked(commands.verifyImagePaths).mockImplementation(async () => ({
             status: 'ok',
-            data: paths
+            data: []
         }) as never);
         vi.mocked(getImagesByIds).mockResolvedValue([{
             id: staleFlatPath,
@@ -582,9 +1144,25 @@ describe('syncImages live mode', () => {
                 negativePrompt: '',
                 loras: [],
                 controlNets: []
-            }
+            },
+            originalMetadata: {
+                tool: GeneratorTool.INVOKEAI,
+                model: 'Test Model',
+                seed: 1,
+                steps: 20,
+                cfg: 7,
+                sampler: 'Euler',
+                positivePrompt: 'test',
+                negativePrompt: '',
+                loras: [],
+                controlNets: []
+            },
+            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'test' }) }
         }]);
-        vi.mocked(moveImagePathIdentity).mockResolvedValue(true);
+        vi.mocked(moveImagePathIdentity)
+            .mockResolvedValueOnce(true)
+            .mockResolvedValueOnce(false)
+            .mockResolvedValueOnce(true);
 
         const result = await syncImages(
             'D:/AmbitFixtures/InvokeAI/databases',
@@ -602,16 +1180,30 @@ describe('syncImages live mode', () => {
         expect(moveImagePathIdentity).toHaveBeenCalledWith(
             staleFlatPath,
             resolvedPath,
-            resolvedPath,
-            null
+            expect.stringContaining('date.webp'),
+            'invokeai'
         );
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({
-                id: resolvedPath,
-                isFavorite: true,
-                thumbnailUrl: resolvedPath
-            })
-        ]);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+
+        const declinedResult = await syncImages(
+            'D:/AmbitFixtures/InvokeAI/databases',
+            vi.fn(),
+            undefined,
+            { mode: 'live', syncBoards: false, syncFavorites: false }
+        );
+        expect(declinedResult.updated).toBe(0);
+
+        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths
+        }) as never);
+        const fallbackResult = await syncImages(
+            'D:/AmbitFixtures/InvokeAI/databases',
+            vi.fn(),
+            undefined,
+            { mode: 'live', syncBoards: false, syncFavorites: false }
+        );
+        expect(fallbackResult.updated).toBe(1);
     });
 
     it('repairs stale existing rows during a timestamp-filtered manual sync even when there are no import candidates', async () => {

@@ -211,12 +211,12 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
 const StatCard = ({
     label,
     value,
-    isLoading = false,
+    isLoading,
     loadingText
 }: {
     label: string;
     value: number | string;
-    isLoading?: boolean;
+    isLoading: boolean;
     loadingText?: string;
 }) => (
     <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 p-4 rounded-lg shadow-sm">

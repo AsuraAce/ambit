@@ -8,6 +8,7 @@ const addToastMock = vi.hoisted(() => vi.fn());
 const getDbDiagnosticsMock = vi.hoisted(() => vi.fn());
 const showAppLogFolderMock = vi.hoisted(() => vi.fn());
 const clipboardWriteTextMock = vi.hoisted(() => vi.fn());
+const getVersionMock = vi.hoisted(() => vi.fn());
 const libraryContextMock = vi.hoisted(() => ({
     setSettings: vi.fn(),
     cleanLibrary: vi.fn().mockResolvedValue(undefined),
@@ -32,6 +33,10 @@ vi.mock('../../../../bindings', () => ({
         getDbDiagnostics: getDbDiagnosticsMock,
         showAppLogFolder: showAppLogFolderMock,
     },
+}));
+
+vi.mock('@tauri-apps/api/app', () => ({
+    getVersion: getVersionMock,
 }));
 
 const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
@@ -78,6 +83,7 @@ describe('AdvancedTab', () => {
             configurable: true,
         });
         clipboardWriteTextMock.mockResolvedValue(undefined);
+        getVersionMock.mockResolvedValue('0.8.0');
         showAppLogFolderMock.mockResolvedValue({ status: 'ok', data: null });
         getDbDiagnosticsMock.mockResolvedValue({
             status: 'ok',
@@ -188,6 +194,64 @@ describe('AdvancedTab', () => {
         expect(payload).not.toMatch(/prompt|metadata_json|api[_-]?key|secret/i);
     });
 
+    it('reports unavailable clipboard support', async () => {
+        Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+        renderAdvanced();
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+        await waitFor(() => expect(screen.getByText(/Ambit\.log/)).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /copy diagnostics/i }));
+
+        await waitFor(() => {
+            expect(addToastMock).toHaveBeenCalledWith('Failed to copy diagnostics', 'error');
+        });
+    });
+
+    it('copies diagnostics with an unknown version when version lookup fails', async () => {
+        getVersionMock.mockRejectedValueOnce(new Error('version unavailable'));
+        renderAdvanced();
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+        await waitFor(() => expect(screen.getByText(/Ambit\.log/)).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /copy diagnostics/i }));
+
+        await waitFor(() => expect(clipboardWriteTextMock).toHaveBeenCalledOnce());
+        expect(clipboardWriteTextMock.mock.calls[0][0]).toContain('App version: unknown');
+    });
+
+    it('uses diagnostic fallbacks for missing active path and log level', async () => {
+        const response = await getDbDiagnosticsMock();
+        getDbDiagnosticsMock.mockClear();
+        getDbDiagnosticsMock.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...response.data,
+                activeDbPath: '',
+                isUsingRoamingFallback: true,
+            },
+        });
+        renderAdvanced(createSettings({ logLevel: '' as AppSettings['logLevel'] }));
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+        await waitFor(() => expect(screen.getByText(/Ambit\.log/)).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /copy diagnostics/i }));
+
+        await waitFor(() => expect(clipboardWriteTextMock).toHaveBeenCalledOnce());
+        const payload = clipboardWriteTextMock.mock.calls[0][0];
+        expect(payload).toContain('Console log level: info');
+        expect(payload).toContain(`Active catalog: ${response.data.dbPath}`);
+        expect(payload).toContain('Using Roaming fallback: yes');
+    });
+
+    it('reports clipboard write failures', async () => {
+        clipboardWriteTextMock.mockRejectedValueOnce(new Error('clipboard denied'));
+        renderAdvanced();
+        fireEvent.click(screen.getByRole('button', { name: /support/i }));
+        await waitFor(() => expect(screen.getByText(/Ambit\.log/)).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: /copy diagnostics/i }));
+
+        await waitFor(() => {
+            expect(addToastMock).toHaveBeenCalledWith('Failed to copy diagnostics', 'error');
+        });
+    });
+
     it('warns when debug logging is selected', () => {
         renderAdvanced(createSettings({ logLevel: 'debug' }));
 
@@ -209,7 +273,7 @@ describe('AdvancedTab', () => {
     });
 
     it('restarts onboarding immediately without changing unrelated settings', () => {
-        const settings = createSettings({ hideImportModal: true });
+        const settings = createSettings({ confirmDelete: false });
         const onClose = vi.fn();
         renderAdvanced(settings, onClose);
 
@@ -221,7 +285,6 @@ describe('AdvancedTab', () => {
         expect(update(settings)).toEqual({
             ...settings,
             hasCompletedOnboarding: false,
-            hideImportModal: false,
         });
         expect(onClose).toHaveBeenCalledOnce();
         expect(addToastMock).toHaveBeenCalledWith('Onboarding restarted.', 'info');

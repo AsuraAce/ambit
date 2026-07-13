@@ -203,7 +203,7 @@ export const useFoldersTabLogic = ({
                         }
                     } else {
                         const allFiles = await unwrap(commands.scanDirectoryWithStats(path));
-                        const knownCount = folder?.imageCount ?? 0;
+                        const knownCount = folder!.imageCount;
 
                         if (allFiles.length > knownCount) {
                             const repairPaths = allFiles.map(f => f.path);

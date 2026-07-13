@@ -106,6 +106,11 @@ describe('StartupMaintenanceGate', () => {
         expect(screen.getByText('Preparing the local database. Startup may take longer than usual this time.')).toBeTruthy();
 
         await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+        expect(document.getElementById('static-loading')).toBeNull();
+
+        await act(async () => {
             resolveDb();
             await Promise.resolve();
         });
