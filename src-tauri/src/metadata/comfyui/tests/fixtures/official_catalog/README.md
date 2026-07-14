@@ -29,6 +29,7 @@ Golden workflows:
 - `image_omnigen2_t2i.chunks.json`
 - `image_chroma1_radiance_text_to_image.chunks.json`
 - `image_firered_image_edit1_1.chunks.json`
+- `image_newbieimage_exp0_1-t2i.chunks.json`
 
 Partial workflows:
 
@@ -43,9 +44,8 @@ Partial workflows:
 
 ## Phase 22 Intake
 
-Captured on `2026-07-13`. These five workflows are intake fixtures, not coverage
-claims. Their catalog status remains unchanged until the later Phase 22 parser
-packages add exact metadata assertions.
+Captured on `2026-07-13`. These five workflows began as intake fixtures. Coverage
+claims are added package by package only after exact metadata assertions pass.
 
 | Workflow | Upstream Git blob | Bytes |
 | --- | --- | ---: |
@@ -65,7 +65,8 @@ Source-authored expectations, recorded without asserting current parser output:
   CFG 5.5; `res_multistep` with `simple`; positive text is exactly
   `StringReplace(StringReplace(node 47, "{user_prompt}", node 48),
   "{caption}", node 44)` and negative text is definition node 49; no
-  resources.
+  resources. Work Package 2 stores the independently expanded positive prompt
+  in `image_newbieimage_exp0_1-t2i.expected-positive.txt` and asserts it exactly.
 - `image_lens_t2i`: model `lens_bf16.safetensors`; seed `199454112061500`;
   20 steps; CFG 5; `euler` with `simple`; positive and negative literals from
   definition nodes 3 and 7; no resources.

@@ -108,6 +108,12 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_ernie_image_turbo",
         chunks_json: include_str!("fixtures/official_catalog/image_ernie_image_turbo.chunks.json"),
     },
+    CatalogFixture {
+        name: "image_newbieimage_exp0_1-t2i",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
+        ),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -228,7 +234,11 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata
         "{name} ControlNets"
     );
     assert!(meta.ip_adapters.is_empty(), "{name} IP-Adapters");
-    assert!(meta.embeddings.is_empty(), "{name} embeddings");
+    assert!(
+        meta.embeddings.is_empty(),
+        "{name} embeddings: {:?}",
+        meta.embeddings
+    );
     assert!(meta.hypernetworks.is_empty(), "{name} hypernetworks");
 }
 
@@ -761,4 +771,34 @@ fn linked_numeric_switches_and_conditioning_branches_follow_selected_inputs() {
             Some(&ComfyParseLayer::SamplerTraversal)
         );
     }
+}
+
+#[test]
+fn newbie_deterministic_string_transforms() {
+    let positive_prompt = include_str!(
+        "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.expected-positive.txt"
+    )
+    .strip_suffix('\n')
+    .expect("NewBie expected prompt should end with one fixture newline");
+    assert_eq!(positive_prompt.len(), 4_647);
+
+    assert_fixture(
+        "image_newbieimage_exp0_1-t2i",
+        ExpectedMetadata {
+            model: "newbie_image_exp0.1_bf16",
+            seed: Some(27_582_042_565_232),
+            steps: 20,
+            cfg: 5.5,
+            sampler: "res_multistep (simple)",
+            positive_prompt,
+            negative_prompt: "You are an assistant designed to generate low-quality images based on textual prompts. <Prompt Start>",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
 }

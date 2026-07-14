@@ -94,6 +94,21 @@ Completion criteria:
 
 Depends on: Work Package 1.
 
+Status: Complete (`2026-07-14`)
+
+Branch: `fix/comfyui-deterministic-string-transforms`
+
+Evidence:
+
+- `StringReplace`, the required `RegexExtract` subset, and `StringConcatenate` resolve bounded literal inputs with connected-link authority;
+- unresolved, cyclic, malformed, unsupported, or oversized transforms return no prompt and cannot reopen stale widget or disconnected fallback text;
+- the independently expanded 4,647-byte NewBie prompt is stored as adjacent expected text and matches parser output exactly;
+- `image_newbieimage_exp0_1-t2i` is golden with `SamplerTraversal` provenance for all core fields and both prompts;
+- ComfyUI prompt resource extraction ignores XML-like prompt markup while the legacy InvokeAI bare-tag behavior remains covered;
+- parser version is `22` and manifest totals are 17 `golden`, 7 `pattern_covered`, 3 `partial`, 48 `unassessed`, and 474 `excluded`;
+- prompt, official-catalog, template-coverage, catalog-intake, full ComfyUI, metadata-utils, and reparse tests pass;
+- `cargo fmt --check` and `git diff --check` pass.
+
 Primary invariant: a selected deterministic transform returns the literal result or no prompt; it never substitutes stale or disconnected text.
 
 Scope:
