@@ -1,6 +1,7 @@
 use super::graph::{
-    get_node_input_link, get_node_param, get_node_type, get_source_id, get_switch_branch_input,
-    ComfyGraph,
+    get_input_connection, get_node_input_link, get_node_param, get_node_type,
+    get_reroute_source_id, get_source_id, get_strict_source_id, get_switch_branch_input,
+    get_switch_branch_input_strict, ComfyGraph, InputConnection,
 };
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::{is_missing_prompt_value, is_placeholder_prompt_value};
@@ -17,12 +18,6 @@ enum StringEvaluationMode {
     TransformOperand,
 }
 
-enum TextInputConnection {
-    Connected(String),
-    DeclaredUnresolved,
-    Unconnected,
-}
-
 /// Finds all prompts reachable from the given start node (usually KSampler) by traversing
 /// upstream "conditioning" inputs using Breadth-First Search (BFS).
 ///
@@ -30,13 +25,21 @@ enum TextInputConnection {
 /// - Branching (ConditioningCombine)
 /// - Pass-through nodes (ControlNet, SetArea)
 /// - Unknown custom nodes (by heuristically following 'conditioning' inputs)
-pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_name: &str) -> String {
+pub fn find_reachable_prompts(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    strict_connections: bool,
+) -> String {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut prompts = Vec::new();
 
     // Initial push: Get source of the KSampler's conditioning input
-    if let Some(source_id) = get_source_id(graph, start_node_id, input_name) {
+    let source_id = graph.get_node(start_node_id).and_then(|node| {
+        get_conditioning_source_id(graph, start_node_id, node, input_name, strict_connections)
+    });
+    if let Some(source_id) = source_id {
         queue.push_back(source_id);
     }
 
@@ -48,6 +51,20 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
         if let Some(node) = graph.get_node(&current_id) {
             let t = get_node_type(node);
             let t_lower = t.to_lowercase();
+
+            if t == "Reroute" {
+                let source_id = if strict_connections {
+                    get_reroute_source_id(node)
+                } else {
+                    ["", "value", "input", "any"]
+                        .into_iter()
+                        .find_map(|key| get_source_id(graph, &current_id, key))
+                };
+                if let Some(source_id) = source_id {
+                    queue.push_back(source_id);
+                }
+                continue;
+            }
 
             // 1. Found a Text Encode Node? Extract and Stop branch.
             // Nodes that directly contain or produce the final text
@@ -64,7 +81,9 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                 || t.contains("Qwen")
                 || t.contains("LLM")
             {
-                if let Some(text) = extract_text_from_node(graph, &current_id, node) {
+                if let Some(text) =
+                    extract_text_from_node(graph, &current_id, node, strict_connections)
+                {
                     if !is_missing_prompt_value(&text) {
                         // Filter out A1111 parameter blobs (containing Steps/Model)
                         if text.contains("Steps:")
@@ -97,21 +116,50 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             // A. Known Splitters/Combiners
             if t == "ConditioningCombine" || t == "ConditioningAverage" {
                 // Check conditioning_1, conditioning_2, etc. (often just 1 and 2)
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_1") {
-                    queue.push_back(s);
-                }
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_2") {
-                    queue.push_back(s);
+                for branch in ["conditioning_1", "conditioning_2"] {
+                    if strict_connections {
+                        match get_input_connection(node, branch) {
+                            InputConnection::Connected(source_id) => queue.push_back(source_id),
+                            InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
+                                return String::new()
+                            }
+                        }
+                    } else if let Some(source_id) = get_source_id(graph, &current_id, branch) {
+                        queue.push_back(source_id);
+                    }
                 }
                 continue;
             }
 
             // C. ConditioningConcat
             if t == "ConditioningConcat" {
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") {
+                if strict_connections {
+                    for branch in ["conditioning_to", "conditioning_from"] {
+                        match get_input_connection(node, branch) {
+                            InputConnection::Connected(source_id) => queue.push_back(source_id),
+                            InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
+                                return String::new()
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_to",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_from",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
                 continue;
@@ -127,7 +175,9 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
             // "Text to Conditioning" nodes take 'text' and 'clip' => output conditioning.
             // So we MUST follow 'text'.
             if t == "Text to Conditioning" {
-                if let Some(s) = get_source_id(graph, &current_id, "text") {
+                if let Some(s) =
+                    get_conditioning_source_id(graph, &current_id, node, "text", strict_connections)
+                {
                     queue.push_back(s);
                 }
                 continue;
@@ -197,7 +247,13 @@ pub fn find_reachable_prompts(graph: &ComfyGraph, start_node_id: &str, input_nam
                         if input_name == "negative" && is_positive_input {
                             continue;
                         }
-                        if let Some(s) = get_source_id(graph, &current_id, input_key) {
+                        if let Some(s) = get_conditioning_source_id(
+                            graph,
+                            &current_id,
+                            node,
+                            input_key,
+                            strict_connections,
+                        ) {
                             queue.push_back(s);
                         }
                     }
@@ -239,8 +295,14 @@ pub fn find_connected_controlnets(
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut controlnets = Vec::new();
+    let strict_connections = graph
+        .get_node(start_node_id)
+        .is_some_and(|node| get_node_type(node) == "SamplerCustom");
 
-    if let Some(source_id) = get_source_id(graph, start_node_id, input_name) {
+    let source_id = graph.get_node(start_node_id).and_then(|node| {
+        get_conditioning_source_id(graph, start_node_id, node, input_name, strict_connections)
+    });
+    if let Some(source_id) = source_id {
         queue.push_back(source_id);
     }
 
@@ -279,12 +341,30 @@ pub fn find_connected_controlnets(
                     }
                 }
                 // Continue upstream via conditioning
-                if let Some(s) = get_source_id(graph, &current_id, "positive") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "positive",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
-                } else if let Some(s) = get_source_id(graph, &current_id, "conditioning") {
+                } else if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
-                if let Some(s) = get_source_id(graph, &current_id, "negative") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "negative",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
                 continue;
@@ -292,19 +372,43 @@ pub fn find_connected_controlnets(
 
             // combiners/splitters
             if t == "ConditioningCombine" || t == "ConditioningAverage" {
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_1") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_1",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_2") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_2",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
                 continue;
             }
             if t == "ConditioningConcat" {
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_to") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_to",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
-                if let Some(s) = get_source_id(graph, &current_id, "conditioning_from") {
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "conditioning_from",
+                    strict_connections,
+                ) {
                     queue.push_back(s);
                 }
                 continue;
@@ -338,7 +442,13 @@ pub fn find_connected_controlnets(
                         if input_name == "positive" && input_lower.contains("negative") {
                             continue;
                         }
-                        if let Some(s) = get_source_id(graph, &current_id, input_key) {
+                        if let Some(s) = get_conditioning_source_id(
+                            graph,
+                            &current_id,
+                            node,
+                            input_key,
+                            strict_connections,
+                        ) {
                             queue.push_back(s);
                         }
                     }
@@ -347,6 +457,20 @@ pub fn find_connected_controlnets(
         }
     }
     controlnets
+}
+
+fn get_conditioning_source_id(
+    graph: &ComfyGraph,
+    node_id: &str,
+    node: &Value,
+    input_name: &str,
+    strict_connections: bool,
+) -> Option<String> {
+    if strict_connections {
+        get_strict_source_id(node, input_name)
+    } else {
+        get_source_id(graph, node_id, input_name)
+    }
 }
 
 fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<String> {
@@ -379,17 +503,28 @@ fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<Stri
 }
 
 /// Extracts text from a node, executing simple string graph traversal if needed.
-fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
+fn extract_text_from_node(
+    graph: &ComfyGraph,
+    node_id: &str,
+    node: &Value,
+    strict_connections: bool,
+) -> Option<String> {
     let t = get_node_type(node);
 
     // SDXL specific (if we want to combine them specifically)
     if t == "CLIPTextEncodeSDXL" {
         let mut parts = Vec::new();
-        if let Some(g) = trace_text_input(graph, node_id, "text_g") {
-            parts.push(g);
-        }
-        if let Some(l) = trace_text_input(graph, node_id, "text_l") {
-            parts.push(l);
+        for input_name in ["text_g", "text_l"] {
+            let text = trace_text_input(graph, node_id, input_name, strict_connections);
+            if strict_connections
+                && get_input_connection(node, input_name) != InputConnection::Unconnected
+                && text.is_none()
+            {
+                return None;
+            }
+            if let Some(text) = text {
+                parts.push(text);
+            }
         }
         if !parts.is_empty() {
             return Some(parts.join(" . "));
@@ -397,10 +532,22 @@ fn extract_text_from_node(graph: &ComfyGraph, node_id: &str, node: &Value) -> Op
     }
 
     let mut visited = HashSet::new();
-    evaluate_string_node(graph, node_id, &mut visited, 0)
+    evaluate_string_node_with_mode(
+        graph,
+        node_id,
+        &mut visited,
+        0,
+        StringEvaluationMode::Prompt,
+        strict_connections,
+    )
 }
 
-fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
+fn trace_text_input(
+    graph: &ComfyGraph,
+    node_id: &str,
+    input_name: &str,
+    strict_connections: bool,
+) -> Option<String> {
     trace_text_input_with_state(
         graph,
         node_id,
@@ -408,6 +555,7 @@ fn trace_text_input(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opti
         &HashSet::new(),
         0,
         StringEvaluationMode::Prompt,
+        strict_connections,
     )
 }
 
@@ -418,7 +566,30 @@ pub fn evaluate_string_node(
     visited: &mut HashSet<String>,
     depth: usize,
 ) -> Option<String> {
-    evaluate_string_node_with_mode(graph, node_id, visited, depth, StringEvaluationMode::Prompt)
+    evaluate_string_node_with_mode(
+        graph,
+        node_id,
+        visited,
+        depth,
+        StringEvaluationMode::Prompt,
+        false,
+    )
+}
+
+pub(crate) fn evaluate_string_node_strict(
+    graph: &ComfyGraph,
+    node_id: &str,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<String> {
+    evaluate_string_node_with_mode(
+        graph,
+        node_id,
+        visited,
+        depth,
+        StringEvaluationMode::Prompt,
+        true,
+    )
 }
 
 fn evaluate_string_node_with_mode(
@@ -427,6 +598,7 @@ fn evaluate_string_node_with_mode(
     visited: &mut HashSet<String>,
     depth: usize,
     mode: StringEvaluationMode,
+    strict_connections: bool,
 ) -> Option<String> {
     if depth > 10 || !visited.insert(node_id.to_string()) {
         return None;
@@ -446,8 +618,19 @@ fn evaluate_string_node_with_mode(
 
     if t.contains("Qwen") || t.contains("LLM") {
         for input_name in ["0", "text", "prompt"] {
-            if let Some(source_id) = get_connected_text_source(node, input_name) {
-                return evaluate_string_node_with_mode(graph, &source_id, visited, depth + 1, mode);
+            match get_input_connection(node, input_name) {
+                InputConnection::Connected(source_id) => {
+                    return evaluate_string_node_with_mode(
+                        graph,
+                        &source_id,
+                        visited,
+                        depth + 1,
+                        mode,
+                        strict_connections,
+                    );
+                }
+                InputConnection::DeclaredUnresolved if strict_connections => return None,
+                InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {}
             }
         }
         for input_name in ["0", "text", "prompt"] {
@@ -470,15 +653,15 @@ fn evaluate_string_node_with_mode(
     }
 
     if t == "CLIPTextEncode" {
-        if let Some(source_id) = get_connected_text_source(node, "text") {
-            return evaluate_string_node_with_mode(graph, &source_id, visited, depth + 1, mode);
-        }
-        if let Some(text) = get_node_param(node, "text").and_then(Value::as_str) {
-            if !is_placeholder_prompt_value(text) {
-                return Some(text.to_string());
-            }
-        }
-        return None;
+        return trace_text_input_with_state(
+            graph,
+            node_id,
+            "text",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        );
     }
 
     if t == "PrimitiveNode"
@@ -491,8 +674,19 @@ fn evaluate_string_node_with_mode(
         || t == "smZ CLIPTextEncode"
     {
         for input_name in ["value", "string", "String", "STRING", "VALUE", "text"] {
-            if let Some(source_id) = get_connected_text_source(node, input_name) {
-                return evaluate_string_node_with_mode(graph, &source_id, visited, depth + 1, mode);
+            match get_input_connection(node, input_name) {
+                InputConnection::Connected(source_id) => {
+                    return evaluate_string_node_with_mode(
+                        graph,
+                        &source_id,
+                        visited,
+                        depth + 1,
+                        mode,
+                        strict_connections,
+                    );
+                }
+                InputConnection::DeclaredUnresolved if strict_connections => return None,
+                InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {}
             }
         }
 
@@ -541,8 +735,15 @@ fn evaluate_string_node_with_mode(
         }
 
         // Linked input fallback (e.g. PrimitiveString linked to another PrimitiveString or logic)
-        if let Some(s) = trace_text_input_with_state(graph, node_id, "value", visited, depth, mode)
-        {
+        if let Some(s) = trace_text_input_with_state(
+            graph,
+            node_id,
+            "value",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        ) {
             return Some(s);
         }
     }
@@ -555,13 +756,23 @@ fn evaluate_string_node_with_mode(
     {
         let names = ["text", "string", "value", "STRING", "VALUE"];
         for n in names {
-            if let Some(source_id) = get_source_id(graph, node_id, n) {
-                if let Some(s) =
-                    evaluate_string_node_with_mode(graph, &source_id, visited, depth + 1, mode)
-                {
+            if let Some(source_id) =
+                get_conditioning_source_id(graph, node_id, node, n, strict_connections)
+            {
+                if let Some(s) = evaluate_string_node_with_mode(
+                    graph,
+                    &source_id,
+                    visited,
+                    depth + 1,
+                    mode,
+                    strict_connections,
+                ) {
                     return Some(s);
                 }
             }
+        }
+        if strict_connections {
+            return None;
         }
         for n in names {
             if let Some(val) = get_node_param(node, n) {
@@ -576,14 +787,35 @@ fn evaluate_string_node_with_mode(
     }
 
     if t == "ComfySwitchNode" {
-        if let Some(branch) = get_switch_branch_input(graph, node_id, node) {
-            return trace_text_input_with_state(graph, node_id, branch, visited, depth, mode);
+        let branch = if strict_connections {
+            get_switch_branch_input_strict(graph, node)
+        } else {
+            get_switch_branch_input(graph, node_id, node)
+        };
+        if let Some(branch) = branch {
+            return trace_text_input_with_state(
+                graph,
+                node_id,
+                branch,
+                visited,
+                depth,
+                mode,
+                strict_connections,
+            );
         }
         return None;
     }
 
     if t == "PreviewAny" {
-        return trace_text_input_with_state(graph, node_id, "source", visited, depth, mode);
+        return trace_text_input_with_state(
+            graph,
+            node_id,
+            "source",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        );
     }
 
     // JoinStringMulti
@@ -592,8 +824,15 @@ fn evaluate_string_node_with_mode(
         // Check string_1..10
         for i in 1..=10 {
             let key = format!("string_{}", i);
-            if let Some(s) = trace_text_input_with_state(graph, node_id, &key, visited, depth, mode)
-            {
+            if let Some(s) = trace_text_input_with_state(
+                graph,
+                node_id,
+                &key,
+                visited,
+                depth,
+                mode,
+                strict_connections,
+            ) {
                 parts.push(s);
             }
         }
@@ -612,6 +851,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
+            strict_connections,
         )?;
         let find = evaluate_transform_input(
             graph,
@@ -621,6 +861,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_PATTERN_BYTES,
             None,
+            strict_connections,
         )?;
         let replacement = evaluate_transform_input(
             graph,
@@ -630,6 +871,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
+            strict_connections,
         )?;
         return replace_string_bounded(&source, &find, &replacement);
     }
@@ -643,6 +885,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             None,
+            strict_connections,
         )?;
         let pattern = evaluate_transform_input(
             graph,
@@ -652,6 +895,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_PATTERN_BYTES,
             None,
+            strict_connections,
         )?;
         let mode = get_node_param(node, "mode").and_then(Value::as_str)?;
         let case_insensitive = get_node_param(node, "case_insensitive").and_then(Value::as_bool)?;
@@ -679,6 +923,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
+            strict_connections,
         )?;
         let string_b = evaluate_transform_input(
             graph,
@@ -688,6 +933,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
+            strict_connections,
         )?;
         let delimiter = evaluate_transform_input(
             graph,
@@ -697,6 +943,7 @@ fn evaluate_string_node_with_mode(
             depth,
             MAX_TRANSFORM_STRING_BYTES,
             Some(""),
+            strict_connections,
         )?;
         if string_a.is_empty() {
             return Some(string_b);
@@ -720,10 +967,26 @@ fn evaluate_string_node_with_mode(
 
     // Text Concatenate (WAS Node suite)
     if t == "Text Concatenate" {
-        let text_a = trace_text_input_with_state(graph, node_id, "text_a", visited, depth, mode)
-            .unwrap_or_default();
-        let text_b = trace_text_input_with_state(graph, node_id, "text_b", visited, depth, mode)
-            .unwrap_or_default();
+        let text_a = trace_text_input_with_state(
+            graph,
+            node_id,
+            "text_a",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        )
+        .unwrap_or_default();
+        let text_b = trace_text_input_with_state(
+            graph,
+            node_id,
+            "text_b",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        )
+        .unwrap_or_default();
         let linebreak_val = get_node_param(node, "linebreak_addition")
             .and_then(|v| v.as_str())
             .unwrap_or("false");
@@ -733,10 +996,26 @@ fn evaluate_string_node_with_mode(
 
     // Concat Text _O (Custom node)
     if t == "Concat Text _O" {
-        let text_a = trace_text_input_with_state(graph, node_id, "text1", visited, depth, mode)
-            .unwrap_or_default();
-        let text_b = trace_text_input_with_state(graph, node_id, "text2", visited, depth, mode)
-            .unwrap_or_default();
+        let text_a = trace_text_input_with_state(
+            graph,
+            node_id,
+            "text1",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        )
+        .unwrap_or_default();
+        let text_b = trace_text_input_with_state(
+            graph,
+            node_id,
+            "text2",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        )
+        .unwrap_or_default();
         // Typically these are joined with a comma or space
         if text_a.is_empty() {
             return Some(text_b);
@@ -749,9 +1028,15 @@ fn evaluate_string_node_with_mode(
 
     // TriggerWord Toggle (LoraManager)
     if t == "TriggerWord Toggle (LoraManager)" {
-        if let Some(text) =
-            trace_text_input_with_state(graph, node_id, "trigger_words", visited, depth, mode)
-        {
+        if let Some(text) = trace_text_input_with_state(
+            graph,
+            node_id,
+            "trigger_words",
+            visited,
+            depth,
+            mode,
+            strict_connections,
+        ) {
             return Some(text);
         }
     }
@@ -825,13 +1110,23 @@ fn evaluate_string_node_with_mode(
     // Fallback: check all common inputs for links, then widgets
     let names = ["text", "string", "value", "STRING", "VALUE"];
     for n in names {
-        if let Some(source_id) = get_source_id(graph, node_id, n) {
-            if let Some(s) =
-                evaluate_string_node_with_mode(graph, &source_id, visited, depth + 1, mode)
-            {
+        if let Some(source_id) =
+            get_conditioning_source_id(graph, node_id, node, n, strict_connections)
+        {
+            if let Some(s) = evaluate_string_node_with_mode(
+                graph,
+                &source_id,
+                visited,
+                depth + 1,
+                mode,
+                strict_connections,
+            ) {
                 return Some(s);
             }
         }
+    }
+    if strict_connections {
+        return None;
     }
     for n in names {
         if let Some(val) = get_node_param(node, n) {
@@ -853,80 +1148,29 @@ fn trace_text_input_with_state(
     visited: &HashSet<String>,
     depth: usize,
     mode: StringEvaluationMode,
+    strict_connections: bool,
 ) -> Option<String> {
     let node = graph.get_node(node_id)?;
-    match get_text_input_connection(node, input_name) {
-        TextInputConnection::Connected(source_id) => {
+    match get_input_connection(node, input_name) {
+        InputConnection::Connected(source_id) => {
             let mut branch_visited = visited.clone();
-            evaluate_string_node_with_mode(graph, &source_id, &mut branch_visited, depth + 1, mode)
+            evaluate_string_node_with_mode(
+                graph,
+                &source_id,
+                &mut branch_visited,
+                depth + 1,
+                mode,
+                strict_connections,
+            )
         }
-        TextInputConnection::DeclaredUnresolved => None,
-        TextInputConnection::Unconnected => get_node_param(node, input_name)
-            .and_then(Value::as_str)
-            .filter(|value| !is_placeholder_prompt_value(value))
-            .map(str::to_string),
-    }
-}
-
-fn get_connected_text_source(node: &Value, key: &str) -> Option<String> {
-    match get_text_input_connection(node, key) {
-        TextInputConnection::Connected(source_id) => Some(source_id),
-        TextInputConnection::DeclaredUnresolved | TextInputConnection::Unconnected => None,
-    }
-}
-
-fn get_text_input_connection(node: &Value, key: &str) -> TextInputConnection {
-    if let Some(value) = node
-        .get("_resolved_inputs")
-        .and_then(|inputs| inputs.get(key))
-    {
-        if let Some(source_id) = value.as_str() {
-            return TextInputConnection::Connected(source_id.to_string());
-        }
-        if let Some(source_id) = value
-            .as_array()
-            .and_then(|sources| sources.first())
-            .and_then(Value::as_str)
-        {
-            return TextInputConnection::Connected(source_id.to_string());
-        }
-        return TextInputConnection::DeclaredUnresolved;
-    }
-
-    if let Some(value) = node
-        .get("inputs")
-        .and_then(Value::as_object)
-        .and_then(|inputs| inputs.get(key))
-    {
-        if let Some(link) = value.as_array() {
-            if link.len() >= 2 && link[1].is_number() {
-                if let Some(source_id) = link[0]
-                    .as_str()
-                    .map(str::to_string)
-                    .or_else(|| link[0].as_i64().map(|source_id| source_id.to_string()))
-                    .or_else(|| link[0].as_u64().map(|source_id| source_id.to_string()))
-                {
-                    return TextInputConnection::Connected(source_id);
-                }
-                return TextInputConnection::DeclaredUnresolved;
-            }
+        InputConnection::DeclaredUnresolved if strict_connections => None,
+        InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
+            get_node_param(node, input_name)
+                .and_then(Value::as_str)
+                .filter(|value| !is_placeholder_prompt_value(value))
+                .map(str::to_string)
         }
     }
-
-    if node
-        .get("inputs")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .any(|input| {
-            input.get("name").and_then(Value::as_str) == Some(key)
-                && input.get("link").is_some_and(|link| !link.is_null())
-        })
-    {
-        return TextInputConnection::DeclaredUnresolved;
-    }
-
-    TextInputConnection::Unconnected
 }
 
 fn evaluate_transform_input(
@@ -937,9 +1181,10 @@ fn evaluate_transform_input(
     depth: usize,
     max_bytes: usize,
     default: Option<&str>,
+    strict_connections: bool,
 ) -> Option<String> {
-    let value = match get_text_input_connection(node, key) {
-        TextInputConnection::Connected(source_id) => {
+    let value = match get_input_connection(node, key) {
+        InputConnection::Connected(source_id) => {
             let mut branch_visited = visited.clone();
             evaluate_string_node_with_mode(
                 graph,
@@ -947,10 +1192,11 @@ fn evaluate_transform_input(
                 &mut branch_visited,
                 depth + 1,
                 StringEvaluationMode::TransformOperand,
+                strict_connections,
             )?
         }
-        TextInputConnection::DeclaredUnresolved => return None,
-        TextInputConnection::Unconnected => {
+        InputConnection::DeclaredUnresolved => return None,
+        InputConnection::Unconnected => {
             if let Some(value) = get_node_param(node, key).and_then(Value::as_str) {
                 value.to_string()
             } else {

@@ -48,6 +48,7 @@ pub(crate) struct ComfyParseDiagnostics {
     pub(crate) selected_output_candidate_count: usize,
     pub(crate) unique_output_root_sampler_count: usize,
     pub(crate) output_ambiguous: bool,
+    pub(crate) authoritative_sampler_custom_path: bool,
     pub(crate) attempted_layers: Vec<ComfyParseLayer>,
     pub(crate) field_sources: BTreeMap<ComfyMetadataField, ComfyParseLayer>,
 }

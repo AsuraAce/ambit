@@ -1,4 +1,5 @@
 use crate::metadata::comfyui::*;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 
 #[test]
@@ -389,5 +390,53 @@ fn z_image_model_patch_is_a_controlnet_not_the_primary_model() {
             .field_sources
             .get(&ComfyMetadataField::ControlNets),
         Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn switch_boolean_links_are_authoritative_through_nested_sources() {
+    let extract_model = |bool_nodes: Value| {
+        let mut prompt = json!({
+            "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "false.safetensors" } },
+            "2": { "class_type": "UNETLoader", "inputs": { "unet_name": "true.safetensors" } },
+            "3": { "class_type": "ComfySwitchNode", "inputs": {
+                "switch": ["4", 0], "on_false": ["1", 0], "on_true": ["2", 0]
+            } },
+            "9": { "class_type": "SamplerCustom", "inputs": { "model": ["3", 0], "noise_seed": 42, "cfg": 5.5 } },
+            "10": { "class_type": "VAEDecode", "inputs": { "samples": ["9", 0] } },
+            "11": { "class_type": "SaveImage", "inputs": { "images": ["10", 0] } }
+        });
+        prompt
+            .as_object_mut()
+            .expect("test prompt should be an object")
+            .extend(
+                bool_nodes
+                    .as_object()
+                    .expect("bool nodes should be an object")
+                    .clone(),
+            );
+        extract_comfyui_metadata(&HashMap::from([("prompt".to_string(), prompt.to_string())])).model
+    };
+
+    assert_eq!(
+        extract_model(json!({
+            "4": { "class_type": "PrimitiveBoolean", "inputs": { "value": ["5", 0] }, "widgets_values": [true] },
+            "5": { "class_type": "Reroute", "inputs": { "input": ["6", 0] } },
+            "6": { "class_type": "PrimitiveBoolean", "inputs": { "value": false } }
+        })),
+        "false"
+    );
+    assert_eq!(
+        extract_model(json!({
+            "4": { "class_type": "PrimitiveBoolean", "inputs": { "value": ["99", 0] }, "widgets_values": [true] }
+        })),
+        "Unknown"
+    );
+    assert_eq!(
+        extract_model(json!({
+            "4": { "class_type": "PrimitiveBoolean", "inputs": { "value": ["5", 0] }, "widgets_values": [true] },
+            "5": { "class_type": "PrimitiveBoolean", "inputs": { "value": ["4", 0] }, "widgets_values": [false] }
+        })),
+        "Unknown"
     );
 }

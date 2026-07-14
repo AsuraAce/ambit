@@ -153,6 +153,98 @@ fn explicit_metadata_overrides_conflicting_flat_fields() {
 }
 
 #[test]
+fn selected_sampler_custom_replaces_disconnected_explicit_core_fields() {
+    // Explicit nodes remain authoritative for ordinary samplers, but a selected
+    // SamplerCustom path owns its core fields, including an unresolved seed.
+    let prompt = r#"{
+        "0": { "class_type": "SDParameterGenerator", "inputs": {
+            "ckpt_name": "explicit-model.safetensors", "seed": 314,
+            "steps": 12, "cfg": 4.5, "sampler_name": "dpmpp_2m", "scheduler": "karras"
+        } },
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "selected-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "selected positive" } },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "" } },
+        "4": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+        "5": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "6": { "class_type": "EmptyLatentImage", "inputs": { "width": 512, "height": 512 } },
+        "7": { "class_type": "SamplerCustom", "inputs": {
+            "model": ["1",0], "positive": ["2",0], "negative": ["3",0],
+            "sampler": ["5",0], "sigmas": ["4",0], "latent_image": ["6",0],
+            "noise_seed": ["99",0], "cfg": 5.5
+        } },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7",0] } },
+        "9": { "class_type": "SaveImage", "inputs": { "images": ["8",0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "selected_model");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.cfg, 5.5);
+    assert_eq!(meta.sampler, "euler (simple)");
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_source(&diagnostics, field, ComfyParseLayer::SamplerTraversal);
+    }
+    assert!(!diagnostics
+        .field_sources
+        .contains_key(&ComfyMetadataField::Seed));
+}
+
+#[test]
+fn incomplete_sampler_custom_clears_mixed_flat_core_fields_for_scanner_and_reparse() {
+    // A selected SamplerCustom owns core-field absence across both ingestion
+    // paths; stale flat parameters cannot describe unresolved runtime sockets.
+    let prompt = r#"{
+        "1": { "class_type": "EmptyLatentImage", "inputs": { "width": 512, "height": 512 } },
+        "2": { "class_type": "SamplerCustom", "inputs": {
+            "model": ["90",0], "positive": ["91",0], "negative": ["92",0],
+            "sampler": ["93",0], "sigmas": ["94",0], "latent_image": ["1",0],
+            "noise_seed": ["95",0], "cfg": ["96",0]
+        } },
+        "3": { "class_type": "VAEDecode", "inputs": { "samples": ["2",0] } },
+        "4": { "class_type": "SaveImage", "inputs": { "images": ["3",0] } }
+    }"#;
+    let chunks = mixed_chunks(FLAT_COMPLETE, prompt);
+    let mut scanner_meta = extract_a1111_metadata(FLAT_COMPLETE, None);
+    let scanner_diagnostics = merge_comfyui_metadata(&mut scanner_meta, &chunks);
+    let envelope = serde_json::json!({
+        "parameters": FLAT_COMPLETE,
+        "prompt": prompt
+    })
+    .to_string();
+    let reparsed = reparse_from_json(&envelope, "ComfyUI")
+        .expect("mixed ComfyUI envelope should reparse")
+        .metadata;
+
+    assert_core_metadata_eq(&scanner_meta, &reparsed);
+    assert_eq!(scanner_meta.model, "Unknown");
+    assert_eq!(scanner_meta.model_hash, None);
+    assert_eq!(scanner_meta.seed, None);
+    assert_eq!(scanner_meta.steps, 0);
+    assert_eq!(scanner_meta.cfg, 0.0);
+    assert_eq!(scanner_meta.sampler, "Unknown");
+    assert_eq!(scanner_meta.positive_prompt, "");
+    assert_eq!(scanner_meta.negative_prompt, "");
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+    ] {
+        assert!(!scanner_diagnostics.field_sources.contains_key(&field));
+    }
+}
+
+#[test]
 fn sampler_fallback_only_fills_fields_missing_from_flat_parameters() {
     let parameters = "flat positive\nSteps: 20, Sampler: flat_sampler, CFG scale: 7.0, Model hash: flat_hash, Model: flat_model, Version: ComfyUI";
     let prompt = r#"{

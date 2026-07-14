@@ -142,6 +142,8 @@ Completion criteria:
 
 ## Work Package 3: Connected SamplerCustom Scalars
 
+Status: Complete (`fix/comfyui-sampler-custom-traversal`, 2026-07-14)
+
 Depends on: Work Packages 1 and 2.
 
 Primary invariant: model, seed, steps, CFG, sampler, and scheduler come only from the connected saved-output `SamplerCustom` path.
@@ -173,6 +175,19 @@ Completion criteria:
 - disconnected controls cannot affect output;
 - increment the parser version again if this separately merged package changes stored output;
 - the package is independently review-clean.
+
+Verification evidence:
+
+- core `SamplerCustom` now reads only its connected saved-output model,
+  conditioning, seed, CFG, scheduler, and sampler-selection paths;
+- linked scalar/string inputs fail closed instead of reopening stale workflow
+  widgets, while unlinked definition defaults remain available;
+- the Lens fixture is exact with 19 normalized nodes, one output/root, no
+  ambiguity, and `SamplerTraversal` provenance for every populated core field;
+- parser version is 23 and catalog totals are 18 golden, 7 pattern-covered,
+  3 partial, 47 unassessed, and 474 excluded;
+- focused and full verification commands are recorded in the package delivery
+  summary; the independent review cycle follows this uncommitted implementation.
 
 ## Work Package 4: Custom Edit Conditioning
 
