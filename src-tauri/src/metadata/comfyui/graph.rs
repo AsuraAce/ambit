@@ -495,6 +495,37 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "StringReplace" {
+            match key {
+                "string" => return arr.first(),
+                "find" => return arr.get(1),
+                "replace" => return arr.get(2),
+                _ => {}
+            }
+        }
+
+        if t == "RegexExtract" {
+            match key {
+                "string" => return arr.first(),
+                "regex_pattern" => return arr.get(1),
+                "mode" => return arr.get(2),
+                "case_insensitive" => return arr.get(3),
+                "multiline" => return arr.get(4),
+                "dotall" => return arr.get(5),
+                "group_index" => return arr.get(6),
+                _ => {}
+            }
+        }
+
+        if t == "StringConcatenate" {
+            match key {
+                "string_a" => return arr.first(),
+                "string_b" => return arr.get(1),
+                "delimiter" => return arr.get(2),
+                _ => {}
+            }
+        }
+
         if t == "KSampler" {
             match key {
                 "seed" | "noise_seed" => return arr.get(0),

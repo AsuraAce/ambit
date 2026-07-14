@@ -1,6 +1,95 @@
-use super::super::diagnostics::ComfyMetadataField;
+use super::super::diagnostics::{ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer};
 use crate::metadata::comfyui::*;
+use crate::metadata::ImageMetadata;
+use serde_json::{json, Value};
 use std::collections::HashMap;
+
+fn extract_transform_prompt(nodes: Vec<(&str, Value)>) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut graph = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": ["3", 0] } },
+        "90": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "91": { "class_type": "VAEDecode", "inputs": { "samples": ["90", 0] } },
+        "92": { "class_type": "SaveImage", "inputs": { "images": ["91", 0] } }
+    })
+    .as_object()
+    .expect("test graph should be an object")
+    .clone();
+    for (node_id, node) in nodes {
+        graph.insert(node_id.to_string(), node);
+    }
+
+    let chunks = HashMap::from([("prompt".to_string(), Value::Object(graph).to_string())]);
+    extract_comfyui_metadata_with_diagnostics(&chunks)
+}
+
+fn extract_workflow_transform_prompt(
+    transform_nodes: Vec<Value>,
+    transform_links: Vec<Value>,
+) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut nodes = vec![
+        json!({
+            "id": 1,
+            "type": "UNETLoader",
+            "inputs": [],
+            "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [1] }],
+            "widgets_values": ["model.safetensors"]
+        }),
+        json!({
+            "id": 2,
+            "type": "CLIPTextEncode",
+            "inputs": [{ "name": "text", "type": "STRING", "link": 2 }],
+            "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [3] }],
+            "widgets_values": ["stale encoded prompt"]
+        }),
+        json!({
+            "id": 90,
+            "type": "KSampler",
+            "inputs": [
+                { "name": "model", "type": "MODEL", "link": 1 },
+                { "name": "positive", "type": "CONDITIONING", "link": 3 }
+            ],
+            "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [4] }],
+            "widgets_values": [1, "fixed", 4, 1.0, "euler", "simple", 1.0]
+        }),
+        json!({
+            "id": 91,
+            "type": "VAEDecode",
+            "inputs": [{ "name": "samples", "type": "LATENT", "link": 4 }],
+            "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [5] }]
+        }),
+        json!({
+            "id": 92,
+            "type": "SaveImage",
+            "inputs": [{ "name": "images", "type": "IMAGE", "link": 5 }]
+        }),
+    ];
+    nodes.extend(transform_nodes);
+
+    let mut links = vec![
+        json!([1, 1, 0, 90, 0, "MODEL"]),
+        json!([2, 3, 0, 2, 0, "STRING"]),
+        json!([3, 2, 0, 90, 1, "CONDITIONING"]),
+        json!([4, 90, 0, 91, 0, "LATENT"]),
+        json!([5, 91, 0, 92, 0, "IMAGE"]),
+    ];
+    links.extend(transform_links);
+
+    let workflow = json!({ "nodes": nodes, "links": links });
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+    extract_comfyui_metadata_with_diagnostics(&chunks)
+}
 
 #[test]
 fn test_extract_comfyui_complex_prompt() {
@@ -992,4 +1081,434 @@ fn unlinked_qwen_workflow_widget_remains_available() {
     let meta = extract_comfyui_metadata(&chunks);
 
     assert_eq!(meta.positive_prompt, "workflow qwen prompt");
+}
+
+#[test]
+fn string_replace_prefers_links_and_replaces_every_occurrence() {
+    let (meta, diagnostics) = extract_transform_prompt(vec![
+        (
+            "3",
+            json!({
+                "class_type": "StringReplace",
+                "inputs": {
+                    "string": "stale {name}",
+                    "find": "{name}",
+                    "replace": "stale replacement"
+                },
+                "_resolved_inputs": { "string": "4", "replace": "5" }
+            }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "hello {name}, {name}" } }),
+        ),
+        (
+            "5",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "Ada" } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "hello Ada, Ada");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn string_replace_supports_unlinked_workflow_widgets() {
+    let (meta, _) = extract_transform_prompt(vec![(
+        "3",
+        json!({
+            "class_type": "StringReplace",
+            "widgets_values": ["alpha beta beta", "beta", "gamma"]
+        }),
+    )]);
+
+    assert_eq!(meta.positive_prompt, "alpha gamma gamma");
+}
+
+#[test]
+fn unresolved_or_cyclic_string_replace_does_not_reopen_stale_prompts() {
+    let cases = [
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringReplace",
+                    "widgets_values": ["stale prompt", "prompt", "result"],
+                    "_resolved_inputs": { "string": "4" }
+                }),
+            ),
+            (
+                "4",
+                json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+            ),
+            (
+                "99",
+                json!({ "class_type": "CLIPTextEncode", "inputs": { "text": "disconnected prompt" } }),
+            ),
+        ],
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringReplace",
+                    "inputs": { "find": "a", "replace": "b" },
+                    "_resolved_inputs": { "string": "4" }
+                }),
+            ),
+            (
+                "4",
+                json!({
+                    "class_type": "StringReplace",
+                    "inputs": { "find": "b", "replace": "a" },
+                    "_resolved_inputs": { "string": "3" }
+                }),
+            ),
+        ],
+    ];
+
+    for nodes in cases {
+        let (meta, diagnostics) = extract_transform_prompt(nodes);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
+fn string_replace_rejects_empty_find_and_transform_budget_overflows() {
+    let over_limit = "a".repeat(64 * 1024 + 1);
+    let expansion_source = "a".repeat(32 * 1024 + 1);
+    let oversized_pattern = "a".repeat(4 * 1024 + 1);
+    let cases = [
+        json!({ "class_type": "StringReplace", "inputs": { "string": "prompt", "find": "", "replace": "x" } }),
+        json!({ "class_type": "StringReplace", "inputs": { "string": over_limit, "find": "a", "replace": "b" } }),
+        json!({ "class_type": "StringReplace", "inputs": { "string": expansion_source, "find": "a", "replace": "aa" } }),
+        json!({ "class_type": "StringReplace", "inputs": { "string": "prompt", "find": oversized_pattern, "replace": "x" } }),
+    ];
+
+    for transform in cases {
+        let (meta, diagnostics) = extract_transform_prompt(vec![("3", transform)]);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
+fn regex_extract_supports_only_bounded_first_group_literals() {
+    let (meta, diagnostics) = extract_transform_prompt(vec![
+        (
+            "3",
+            json!({
+                "class_type": "RegexExtract",
+                "widgets_values": ["stale source", "(", "First Group", false, false, false, 1],
+                "_resolved_inputs": { "string": "4", "regex_pattern": "5" }
+            }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "zero\nselected\ntwo" } }),
+        ),
+        (
+            "5",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "^(?:[^\\n]*\\n){1}([^\\n]*)(?:\\n|$)" } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "selected");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn regex_extract_rejects_unsupported_or_invalid_configurations() {
+    let oversized_pattern = "a".repeat(4 * 1024 + 1);
+    let cases = [
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", "(", "First Group", false, false, false, 1] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", "(prompt)", "First Match", false, false, false, 1] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["PROMPT", "(prompt)", "First Group", true, false, false, 1] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", "(prompt)", "First Group", false, true, false, 1] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", "(prompt)", "First Group", false, false, true, 1] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", "(prompt)", "First Group", false, false, false, 0] }),
+        json!({ "class_type": "RegexExtract", "widgets_values": ["prompt", oversized_pattern, "First Group", false, false, false, 1] }),
+    ];
+
+    for transform in cases {
+        let (meta, diagnostics) = extract_transform_prompt(vec![("3", transform)]);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
+fn string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks() {
+    let (meta, _) = extract_transform_prompt(vec![(
+        "3",
+        json!({ "class_type": "StringConcatenate", "widgets_values": ["", "literal", ", "] }),
+    )]);
+    assert_eq!(meta.positive_prompt, "literal");
+
+    let (meta, diagnostics) = extract_transform_prompt(vec![
+        (
+            "3",
+            json!({
+                "class_type": "StringConcatenate",
+                "widgets_values": ["stale", "literal", ", "],
+                "_resolved_inputs": { "string_a": "4" }
+            }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "instruction" } }),
+        ),
+    ]);
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn transform_cycles_through_preview_or_selected_switch_branch_return_no_prompt() {
+    let cases = [
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringReplace",
+                    "inputs": { "string": ["4", 0], "find": "a", "replace": "b" }
+                }),
+            ),
+            (
+                "4",
+                json!({ "class_type": "PreviewAny", "inputs": { "source": ["3", 0] } }),
+            ),
+        ],
+        vec![
+            (
+                "3",
+                json!({
+                    "class_type": "StringReplace",
+                    "inputs": { "string": ["4", 0], "find": "a", "replace": "b" }
+                }),
+            ),
+            (
+                "4",
+                json!({
+                    "class_type": "ComfySwitchNode",
+                    "inputs": {
+                        "on_false": ["3", 0],
+                        "on_true": ["5", 0],
+                        "switch": false
+                    }
+                }),
+            ),
+            (
+                "5",
+                json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "unused" } }),
+            ),
+        ],
+    ];
+
+    for nodes in cases {
+        let (meta, diagnostics) = extract_transform_prompt(nodes);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
+fn unresolved_workflow_transform_links_do_not_reopen_stale_widgets() {
+    let transforms = [
+        json!({
+            "id": 3,
+            "type": "StringReplace",
+            "inputs": [
+                { "name": "string", "type": "STRING", "link": 123 },
+                { "name": "find", "type": "STRING", "link": null },
+                { "name": "replace", "type": "STRING", "link": null }
+            ],
+            "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+            "widgets_values": ["stale prompt", "prompt", "result"]
+        }),
+        json!({
+            "id": 3,
+            "type": "RegexExtract",
+            "inputs": [
+                { "name": "string", "type": "STRING", "link": 123 },
+                { "name": "regex_pattern", "type": "STRING", "link": null }
+            ],
+            "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+            "widgets_values": ["stale prompt", "(stale prompt)", "First Group", false, false, false, 1]
+        }),
+        json!({
+            "id": 3,
+            "type": "StringConcatenate",
+            "inputs": [
+                { "name": "string_a", "type": "STRING", "link": 123 },
+                { "name": "string_b", "type": "STRING", "link": null },
+                { "name": "delimiter", "type": "STRING", "link": null }
+            ],
+            "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+            "widgets_values": ["stale", "prompt", " "]
+        }),
+    ];
+
+    for transform in transforms {
+        let (meta, diagnostics) = extract_workflow_transform_prompt(vec![transform], vec![]);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
+fn workflow_transform_operands_preserve_short_and_empty_string_primitives() {
+    let (meta, _) = extract_workflow_transform_prompt(
+        vec![
+            json!({
+                "id": 3,
+                "type": "StringReplace",
+                "inputs": [
+                    { "name": "string", "type": "STRING", "link": 10 },
+                    { "name": "find", "type": "STRING", "link": 11 },
+                    { "name": "replace", "type": "STRING", "link": 12 }
+                ],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+                "widgets_values": ["stale", "stale", "stale"]
+            }),
+            json!({
+                "id": 4,
+                "type": "PrimitiveStringMultiline",
+                "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [10] }],
+                "widgets_values": ["aba"]
+            }),
+            json!({
+                "id": 5,
+                "type": "PrimitiveStringMultiline",
+                "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [11] }],
+                "widgets_values": ["a"]
+            }),
+            json!({
+                "id": 6,
+                "type": "PrimitiveStringMultiline",
+                "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [12] }],
+                "widgets_values": [""]
+            }),
+        ],
+        vec![
+            json!([10, 4, 0, 3, 0, "STRING"]),
+            json!([11, 5, 0, 3, 1, "STRING"]),
+            json!([12, 6, 0, 3, 2, "STRING"]),
+        ],
+    );
+    assert_eq!(meta.positive_prompt, "b");
+
+    let (meta, _) = extract_workflow_transform_prompt(
+        vec![
+            json!({
+                "id": 3,
+                "type": "RegexExtract",
+                "inputs": [
+                    { "name": "string", "type": "STRING", "link": 10 },
+                    { "name": "regex_pattern", "type": "STRING", "link": 11 }
+                ],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+                "widgets_values": ["stale", "stale", "First Group", false, false, false, 1]
+            }),
+            json!({
+                "id": 4,
+                "type": "PrimitiveStringMultiline",
+                "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [10] }],
+                "widgets_values": ["x"]
+            }),
+            json!({
+                "id": 5,
+                "type": "PrimitiveStringMultiline",
+                "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [11] }],
+                "widgets_values": ["(.)"]
+            }),
+        ],
+        vec![
+            json!([10, 4, 0, 3, 0, "STRING"]),
+            json!([11, 5, 0, 3, 1, "STRING"]),
+        ],
+    );
+    assert_eq!(meta.positive_prompt, "x");
+
+    for (left, right) in [("", "kept"), ("kept", "")] {
+        let (meta, _) = extract_workflow_transform_prompt(
+            vec![
+                json!({
+                    "id": 3,
+                    "type": "StringConcatenate",
+                    "inputs": [
+                        { "name": "string_a", "type": "STRING", "link": 10 },
+                        { "name": "string_b", "type": "STRING", "link": 11 },
+                        { "name": "delimiter", "type": "STRING", "link": null }
+                    ],
+                    "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+                    "widgets_values": ["stale", "stale", ", "]
+                }),
+                json!({
+                    "id": 4,
+                    "type": "PrimitiveStringMultiline",
+                    "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                    "outputs": [{ "name": "STRING", "type": "STRING", "links": [10] }],
+                    "widgets_values": [left]
+                }),
+                json!({
+                    "id": 5,
+                    "type": "PrimitiveStringMultiline",
+                    "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+                    "outputs": [{ "name": "STRING", "type": "STRING", "links": [11] }],
+                    "widgets_values": [right]
+                }),
+            ],
+            vec![
+                json!([10, 4, 0, 3, 0, "STRING"]),
+                json!([11, 5, 0, 3, 1, "STRING"]),
+            ],
+        );
+        assert_eq!(meta.positive_prompt, "kept");
+    }
 }

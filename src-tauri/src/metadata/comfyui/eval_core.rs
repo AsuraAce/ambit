@@ -4,7 +4,8 @@ use super::graph::{
     get_node_input_link, get_node_param, get_node_type, get_switch_branch_source, ComfyGraph,
 };
 use crate::metadata::utils::{
-    extract_embeddings_from_prompt, extract_hypernets_from_prompt, extract_loras_from_prompt,
+    extract_explicit_embeddings_from_prompt, extract_hypernets_from_prompt,
+    extract_loras_from_prompt,
 };
 use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use serde_json::Value;
@@ -139,12 +140,12 @@ pub fn extract_from_sampler(
         meta.negative_prompt = neg;
     }
 
-    for emb in extract_embeddings_from_prompt(&meta.positive_prompt) {
+    for emb in extract_explicit_embeddings_from_prompt(&meta.positive_prompt) {
         if !meta.embeddings.contains(&emb) {
             meta.embeddings.push(emb);
         }
     }
-    for emb in extract_embeddings_from_prompt(&meta.negative_prompt) {
+    for emb in extract_explicit_embeddings_from_prompt(&meta.negative_prompt) {
         if !meta.embeddings.contains(&emb) {
             meta.embeddings.push(emb);
         }
