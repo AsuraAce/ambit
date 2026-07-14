@@ -1,6 +1,6 @@
 use super::graph::{
-    compare_node_ids, get_node_input_link, get_node_input_links, get_node_type, get_source_id,
-    ComfyGraph,
+    compare_node_ids, get_input_connection, get_node_input_link, get_node_input_links,
+    get_node_type, get_source_id, ComfyGraph, InputConnection,
 };
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
@@ -21,6 +21,7 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) selected_output_candidate_count: usize,
     pub(crate) unique_root_sampler_count: usize,
     pub(crate) ambiguous: bool,
+    pub(crate) authoritative_sampler_custom_path: bool,
     pub(crate) authoritative_positive_prompt: bool,
     pub(crate) authoritative_negative_prompt: bool,
 }
@@ -73,6 +74,7 @@ impl<'a> ComfyEvaluator<'a> {
             return (ImageMetadata::default(), diagnostics);
         };
 
+        diagnostics.authoritative_sampler_custom_path = get_node_type(root_node) == "SamplerCustom";
         diagnostics.authoritative_positive_prompt =
             get_node_input_link(root_node, "positive").is_some();
         diagnostics.authoritative_negative_prompt =
@@ -232,6 +234,13 @@ impl<'a> ComfyEvaluator<'a> {
     ) -> Vec<String> {
         let mut sources = Vec::new();
 
+        if get_node_type(node) == "Reroute" {
+            if let Some(source_id) = self.reroute_image_like_source_id(node) {
+                self.push_existing_source(&mut sources, source_id);
+            }
+            return sources;
+        }
+
         for input_name in IMAGE_LIKE_INPUT_NAMES {
             for source_id in self.input_source_ids(node_id, node, input_name, allow_wireless) {
                 self.push_existing_source(&mut sources, source_id);
@@ -259,6 +268,38 @@ impl<'a> ComfyEvaluator<'a> {
 
         sources.sort_by(|left, right| compare_node_ids(left, right));
         sources
+    }
+
+    fn reroute_image_like_source_id(&self, node: &Value) -> Option<String> {
+        for input_name in ["", "value", "input", "any"]
+            .into_iter()
+            .chain(IMAGE_LIKE_INPUT_NAMES)
+        {
+            match get_input_connection(node, input_name) {
+                InputConnection::Connected(source_id) => return Some(source_id),
+                InputConnection::DeclaredUnresolved => return None,
+                InputConnection::Unconnected => {}
+            }
+        }
+
+        for input in node.get("inputs").and_then(Value::as_array)? {
+            let input_type = input.get("type").and_then(Value::as_str).unwrap_or("");
+            if !input_type.eq_ignore_ascii_case("IMAGE")
+                && !input_type.eq_ignore_ascii_case("LATENT")
+            {
+                continue;
+            }
+            let Some(input_name) = input.get("name").and_then(Value::as_str) else {
+                continue;
+            };
+            match get_input_connection(node, input_name) {
+                InputConnection::Connected(source_id) => return Some(source_id),
+                InputConnection::DeclaredUnresolved => return None,
+                InputConnection::Unconnected => {}
+            }
+        }
+
+        None
     }
 
     fn input_source_ids(

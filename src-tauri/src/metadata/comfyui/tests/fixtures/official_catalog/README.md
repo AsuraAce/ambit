@@ -29,6 +29,7 @@ Golden workflows:
 - `image_omnigen2_t2i.chunks.json`
 - `image_chroma1_radiance_text_to_image.chunks.json`
 - `image_firered_image_edit1_1.chunks.json`
+- `image_lens_t2i.chunks.json`
 - `image_newbieimage_exp0_1-t2i.chunks.json`
 
 Partial workflows:

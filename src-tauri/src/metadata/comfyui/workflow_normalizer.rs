@@ -429,6 +429,13 @@ fn flatten_container<'a>(
             continue;
         };
 
+        clear_unlinked_boundary_input_links(
+            instance,
+            definition,
+            &mut child.nodes,
+            &child.input_targets,
+        );
+
         if !apply_proxy_widget_overrides(instance, &instance_id, &mut child.nodes, budget) {
             block_instance_inputs(&mut edges, &instance_id);
             continue;
@@ -512,6 +519,51 @@ fn flatten_container<'a>(
         input_targets,
         output_sources,
     })
+}
+
+fn clear_unlinked_boundary_input_links(
+    instance: &Value,
+    definition: &Value,
+    nodes: &mut HashMap<String, Value>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+) {
+    let Some(instance_inputs) = instance.get("inputs").and_then(Value::as_array) else {
+        return;
+    };
+    let Some(definition_inputs) = definition.get("inputs").and_then(Value::as_array) else {
+        return;
+    };
+
+    for (definition_slot, definition_input) in definition_inputs.iter().enumerate() {
+        let Some(input_name) = definition_input.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let instance_input = instance_inputs
+            .iter()
+            .find(|input| input.get("name").and_then(Value::as_str) == Some(input_name));
+        if instance_input
+            .and_then(|input| input.get("link"))
+            .is_some_and(|link| !link.is_null())
+        {
+            continue;
+        }
+        let Some(targets) = input_targets.get(&definition_slot) else {
+            continue;
+        };
+
+        for target in targets {
+            if let Some(input) = nodes
+                .get_mut(&target.node_id)
+                .and_then(Value::as_object_mut)
+                .and_then(|node| node.get_mut("inputs"))
+                .and_then(Value::as_array_mut)
+                .and_then(|inputs| inputs.get_mut(target.slot))
+                .and_then(Value::as_object_mut)
+            {
+                input.insert("link".to_string(), Value::Null);
+            }
+        }
+    }
 }
 
 fn block_instance_inputs(edges: &mut Vec<WorkflowEdge>, instance_id: &str) {

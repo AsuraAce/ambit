@@ -114,6 +114,10 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_lens_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -796,6 +800,29 @@ fn newbie_deterministic_string_transforms() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn lens_connected_sampler_custom_traversal() {
+    assert_fixture(
+        "image_lens_t2i",
+        ExpectedMetadata {
+            model: "lens_bf16",
+            seed: Some(199_454_112_061_500),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A cluster of wild cosmos flowers swaying in gentle wind, crinkled soft petals and slender green stems, warm golden hour sunlight, natural field scenery, detailed floral texture, lifelike outdoor atmosphere",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

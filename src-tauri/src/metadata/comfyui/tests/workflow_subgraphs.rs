@@ -1,4 +1,5 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
+use super::super::graph::{get_input_connection, ComfyGraph, InputConnection};
 use super::super::workflow_normalizer::{normalize_workflow_with_test_limits, normalized_node_ids};
 use crate::metadata::comfyui::extract_comfyui_metadata_with_diagnostics;
 use serde_json::{json, Value};
@@ -191,6 +192,24 @@ fn subgraph_inputs_use_defaults_then_proxy_then_external_link() {
         assert_eq!(meta.seed, Some(expected_seed));
         assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
     }
+}
+
+#[test]
+fn declared_missing_subgraph_input_remains_unresolved() {
+    // A non-null instance link says the definition default was not the runtime
+    // value. If its edge is missing, flattening must preserve that fail-closed
+    // state instead of exposing the proxied widget as an unlinked default.
+    let mut workflow = single_instance_workflow(Some(77), None);
+    workflow["nodes"][0]["inputs"][0]["link"] = json!(999);
+    let graph = ComfyGraph::from_chunks(&chunks_from_workflow(workflow));
+    let sampler = graph
+        .get_node("30:4")
+        .expect("the expanded sampler should remain available");
+
+    assert!(matches!(
+        get_input_connection(sampler, "seed"),
+        InputConnection::DeclaredUnresolved
+    ));
 }
 
 #[test]

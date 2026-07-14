@@ -10,6 +10,13 @@ pub struct ComfyGraph {
     pub(crate) broadcasters: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum InputConnection {
+    Connected(String),
+    DeclaredUnresolved,
+    Unconnected,
+}
+
 impl ComfyGraph {
     pub fn from_chunks(chunks: &HashMap<String, String>) -> Self {
         let mut nodes_map = HashMap::new();
@@ -187,6 +194,78 @@ pub fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
     get_node_input_links(node, key).into_iter().next()
 }
 
+pub(crate) fn get_input_connection(node: &Value, key: &str) -> InputConnection {
+    if let Some(value) = node
+        .get("_resolved_inputs")
+        .and_then(|inputs| inputs.get(key))
+    {
+        if let Some(source_id) = value.as_str() {
+            return InputConnection::Connected(source_id.to_string());
+        }
+        if let Some(source_id) = value
+            .as_array()
+            .and_then(|sources| sources.first())
+            .and_then(Value::as_str)
+        {
+            return InputConnection::Connected(source_id.to_string());
+        }
+        return InputConnection::DeclaredUnresolved;
+    }
+
+    if let Some(value) = node
+        .get("inputs")
+        .and_then(Value::as_object)
+        .and_then(|inputs| inputs.get(key))
+    {
+        if let Some(link) = value.as_array() {
+            if link.len() >= 2 && link[1].is_number() {
+                if let Some(source_id) = link[0]
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| link[0].as_i64().map(|source_id| source_id.to_string()))
+                    .or_else(|| link[0].as_u64().map(|source_id| source_id.to_string()))
+                {
+                    return InputConnection::Connected(source_id);
+                }
+                return InputConnection::DeclaredUnresolved;
+            }
+        }
+    }
+
+    if node
+        .get("inputs")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|input| {
+            input.get("name").and_then(Value::as_str) == Some(key)
+                && input.get("link").is_some_and(|link| !link.is_null())
+        })
+    {
+        return InputConnection::DeclaredUnresolved;
+    }
+
+    InputConnection::Unconnected
+}
+
+pub(crate) fn get_strict_source_id(node: &Value, key: &str) -> Option<String> {
+    match get_input_connection(node, key) {
+        InputConnection::Connected(source_id) => Some(source_id),
+        InputConnection::DeclaredUnresolved | InputConnection::Unconnected => None,
+    }
+}
+
+pub(crate) fn get_reroute_source_id(node: &Value) -> Option<String> {
+    for key in ["", "value", "input", "any"] {
+        match get_input_connection(node, key) {
+            InputConnection::Connected(source_id) => return Some(source_id),
+            InputConnection::DeclaredUnresolved => return None,
+            InputConnection::Unconnected => {}
+        }
+    }
+    None
+}
+
 pub(crate) fn get_node_input_links(node: &Value, key: &str) -> Vec<String> {
     // 0. Check pre-resolved check inputs
     if let Some(val) = node.get("_resolved_inputs").and_then(|m| m.get(key)) {
@@ -290,6 +369,19 @@ pub fn get_switch_branch_input(
     })
 }
 
+pub(crate) fn get_switch_branch_input_strict(
+    graph: &ComfyGraph,
+    node: &Value,
+) -> Option<&'static str> {
+    resolve_bool_input_strict(graph, node, "switch").map(|enabled| {
+        if enabled {
+            "on_true"
+        } else {
+            "on_false"
+        }
+    })
+}
+
 pub fn get_switch_branch_source(graph: &ComfyGraph, node_id: &str, node: &Value) -> Option<String> {
     let branch = get_switch_branch_input(graph, node_id, node)?;
     get_source_id(graph, node_id, branch)
@@ -302,6 +394,16 @@ fn resolve_bool_input(graph: &ComfyGraph, node_id: &str, node: &Value, key: &str
 
     let source_id = get_source_id(graph, node_id, key)?;
     resolve_linked_bool(graph, &source_id, &mut HashSet::new(), 0)
+}
+
+fn resolve_bool_input_strict(graph: &ComfyGraph, node: &Value, key: &str) -> Option<bool> {
+    match get_input_connection(node, key) {
+        InputConnection::Connected(source_id) => {
+            resolve_linked_bool_strict(graph, &source_id, &mut HashSet::new(), 0)
+        }
+        InputConnection::DeclaredUnresolved => None,
+        InputConnection::Unconnected => get_node_param(node, key).and_then(value_as_bool),
+    }
 }
 
 fn resolve_linked_bool(
@@ -338,6 +440,48 @@ fn resolve_linked_bool(
     }
 
     None
+}
+
+fn resolve_linked_bool_strict(
+    graph: &ComfyGraph,
+    node_id: &str,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<bool> {
+    if depth > 16 || !visited.insert(node_id.to_string()) {
+        return None;
+    }
+
+    let node = graph.get_node(node_id)?;
+    let is_reroute = get_node_type(node) == "Reroute";
+    let input_keys: &[&str] = if is_reroute {
+        &["", "value", "input", "any"]
+    } else {
+        &["value", "bool", "BOOLEAN", "switch"]
+    };
+    for key in input_keys {
+        match get_input_connection(node, key) {
+            InputConnection::Connected(source_id) => {
+                return resolve_linked_bool_strict(graph, &source_id, visited, depth + 1);
+            }
+            InputConnection::DeclaredUnresolved => return None,
+            InputConnection::Unconnected => {}
+        }
+    }
+    if is_reroute {
+        return None;
+    }
+
+    for key in ["value", "bool", "BOOLEAN", "switch"] {
+        if let Some(value) = get_node_param(node, key).and_then(value_as_bool) {
+            return Some(value);
+        }
+    }
+
+    node.get("widgets_values")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(value_as_bool)
 }
 
 fn value_as_bool(value: &Value) -> Option<bool> {
@@ -579,6 +723,18 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "scheduler" => return arr.first(),
                 "steps" => return arr.get(1),
                 "denoise" => return arr.get(2),
+                _ => {}
+            }
+        }
+
+        if t == "KSamplerSelect" && key == "sampler_name" {
+            return arr.first();
+        }
+
+        if t == "SamplerCustom" {
+            match key {
+                "noise_seed" => return arr.get(1),
+                "cfg" => return arr.get(3),
                 _ => {}
             }
         }
