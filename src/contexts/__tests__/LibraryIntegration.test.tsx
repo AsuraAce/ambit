@@ -11,6 +11,7 @@ import { useCollectionStore } from '../../stores/collectionStore';
 import { QueryClient } from '@tanstack/react-query';
 import type { Collection, InvokeDbSnapshotState } from '../../types';
 import { INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../../services/invoke/dbSnapshot';
+import { settingsPersistenceCoordinator } from '../../utils/settingsPersistenceCoordinator';
 
 // --- Extensive Mocks for Integration ---
 
@@ -80,7 +81,8 @@ const mocks = vi.hoisted(() => ({
             images: [],
             recentSearches: []
         }),
-        save: vi.fn().mockResolvedValue({})
+        save: vi.fn().mockResolvedValue({}),
+        update: vi.fn()
     }
 }));
 
@@ -136,6 +138,7 @@ vi.mock('../../services/db/imageRepo', () => ({
 
 vi.mock('../../services/runtime', () => ({
     isBrowserMockMode: () => mocks.browserMockMode,
+    isTauriRuntime: () => false,
 }));
 
 // 3. Service Mocks
@@ -234,8 +237,13 @@ const SyncTestConsumer = ({ onHook }: { onHook: (hook: SyncHook) => void }) => {
 describe('Library Integration (Provider Stack)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        settingsPersistenceCoordinator.reopenAdmission();
         mocks.browserMockMode = false;
         mocks.purgeLibrary.mockResolvedValue('Library purge scheduled.');
+        mocks.appRepository.save.mockResolvedValue({});
+        mocks.appRepository.update.mockImplementation(async (updater: (state: unknown) => unknown) => (
+            updater(await mocks.appRepository.load())
+        ));
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
         useSettingsStore.setState(useSettingsStore.getInitialState(), true);
         useCollectionStore.setState({
@@ -709,7 +717,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
-        mocks.appRepository.save.mockClear();
+        mocks.appRepository.update.mockClear();
         mocks.scanForOrphans.mockClear();
 
         await act(async () => {
@@ -727,12 +735,10 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().syncStatus).toBe('idle');
         expect(useLibraryStore.getState().syncProgress.message).toBeUndefined();
-        expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
-            settings: expect.objectContaining({
-                invokeDbSnapshot: expect.objectContaining({
-                    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION
-                })
-            })
+        expect(mocks.appRepository.update).toHaveBeenCalled();
+        const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
+        expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot).toEqual(expect.objectContaining({
+            pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION
         }));
 
         await act(async () => {
@@ -1587,15 +1593,25 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => syncHook?.cleanLibrary());
 
         expect(mocks.watcherStopWatching).toHaveBeenCalledOnce();
-        expect(mocks.appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
+        const resetUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as (state: unknown) => {
+            images: unknown[];
+            collections: unknown[];
+            smartCollections: unknown[];
+            recentSearches: string[];
+            settings: Record<string, unknown>;
+        };
+        expect(resetUpdater(await mocks.appRepository.load())).toEqual(expect.objectContaining({
             images: [],
             collections: [],
             smartCollections: [],
+            recentSearches: [],
             settings: expect.objectContaining({
                 monitoredFolders: [],
                 lastSyncedAt: null,
                 enableAutoThumbnailHealing: true,
                 hasCompletedOnboarding: false,
+                maskedKeywords: ['nsfw', 'blood', 'gore'],
+                maskingMode: 'blur',
             }),
         }));
         expect(mocks.purgeLibrary).toHaveBeenCalledOnce();

@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     },
     repository: {
         load: vi.fn(),
-        save: vi.fn()
+        save: vi.fn(),
+        update: vi.fn()
     },
     getDb: vi.fn().mockResolvedValue(undefined),
     refreshPrivacyMaskIndex: vi.fn(),
@@ -169,6 +170,13 @@ describe('SearchProvider', () => {
         };
         mocks.repository.load.mockResolvedValue({ settings: {} });
         mocks.repository.save.mockResolvedValue(undefined);
+        mocks.repository.update.mockImplementation(async (updater: (state: unknown) => unknown) => updater({
+            images: [],
+            collections: [],
+            smartCollections: [],
+            settings: settings(),
+            recentSearches: ['portrait']
+        }));
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false });
         mocks.buildSqlWhereClause.mockReturnValue({ where: 'deleted_at IS NULL', params: ['value'] });
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 0 });
@@ -347,8 +355,14 @@ describe('SearchProvider', () => {
         vi.useFakeTimers();
         mocks.repository.load.mockResolvedValue({
             recentSearches: ['portrait'],
-            settings: { libraryShowGrids: true, libraryShowIntermediates: true }
+            settings: {}
         });
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true
+        };
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true });
         renderProvider();
 
@@ -359,14 +373,16 @@ describe('SearchProvider', () => {
         expect((mocks.searchState.current as SearchValue).setFilters).toHaveBeenCalled();
 
         act(() => latest.setRecentSearches(['landscape']));
-        await act(() => vi.advanceTimersByTimeAsync(1000));
-        expect(mocks.repository.save).toHaveBeenCalledWith(expect.objectContaining({ recentSearches: ['landscape'] }));
+        await act(() => Promise.resolve());
+        expect(mocks.repository.update).toHaveBeenCalledOnce();
+        const recentSearchUpdater = mocks.repository.update.mock.calls[0][0] as (state: { recentSearches: string[] }) => { recentSearches: string[] };
+        expect(recentSearchUpdater({ recentSearches: ['portrait'] }).recentSearches).toEqual(['landscape']);
         await act(() => latest.refreshHiddenAvailability());
     });
 
-    it('uses current filter values for missing persisted grid preferences and syncs changed settings', async () => {
+    it('hydrates view filters from initialized settings before enabling write-back', async () => {
         const currentSettings = settings({ libraryShowGrids: false, libraryShowIntermediates: false });
-        const setSettings = vi.fn((updater: (value: AppSettings) => AppSettings) => updater(currentSettings));
+        const setSettings = vi.fn();
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
@@ -378,29 +394,55 @@ describe('SearchProvider', () => {
             privacyEnabled: false,
             isLoaded: true
         };
-        mocks.repository.load.mockResolvedValue({
-            settings: { libraryShowGrids: true, libraryShowIntermediates: undefined }
-        });
         renderProvider();
 
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(expect.objectContaining({
-            showGrids: true,
-            showIntermediates: true
+            showGrids: false,
+            showIntermediates: false
         }));
-        expect(setSettings).toHaveBeenCalledTimes(2);
+        expect(setSettings).not.toHaveBeenCalled();
     });
 
     it('falls back to the current grid value when only intermediates were persisted', async () => {
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
-        mocks.repository.load.mockResolvedValue({
-            settings: { libraryShowGrids: undefined, libraryShowIntermediates: true }
-        });
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: undefined, libraryShowIntermediates: true }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true
+        };
         renderProvider();
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater(baseFilters)).toEqual(expect.objectContaining({ showGrids: false, showIntermediates: true }));
+    });
+
+    it('does not write default view settings before settings initialization completes', async () => {
+        const setSettings = vi.fn();
+        const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
+        mocks.settings.current = {
+            settings: settings(),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: false
+        };
+        const rendered = renderProvider();
+
+        await act(() => Promise.resolve());
+        expect(setFilters).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true
+        };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        await waitFor(() => expect(setFilters).toHaveBeenCalledOnce());
+        expect(setSettings).not.toHaveBeenCalled();
     });
 
     it('refreshes privacy indexes and dependent caches when hidden masking changes records', async () => {

@@ -4,6 +4,21 @@ import { Shield, X, Plus } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { settingsPersistenceCoordinator } from '../../../utils/settingsPersistenceCoordinator';
+
+type PrivacySettingsField = 'maskedKeywords' | 'maskingMode';
+
+const privacyValuesEqual = <Field extends PrivacySettingsField>(
+    field: Field,
+    left: AppSettings[Field],
+    right: AppSettings[Field]
+): boolean => {
+    if (field !== 'maskedKeywords') return left === right;
+    const leftKeywords = left as AppSettings['maskedKeywords'];
+    const rightKeywords = right as AppSettings['maskedKeywords'];
+    return leftKeywords.length === rightKeywords.length
+        && leftKeywords.every((keyword, index) => keyword === rightKeywords[index]);
+};
 
 interface TabProps {
     settings: AppSettings;
@@ -12,9 +27,21 @@ interface TabProps {
 
 export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
     const [keywordInput, setKeywordInput] = useState('');
+    const [isSavingPrivacy, setIsSavingPrivacy] = useState(false);
     const { addToast } = useToast();
     const privacyEnabled = useSettingsStore(state => state.privacyEnabled);
     const setPrivacyEnabled = useSettingsStore(state => state.setPrivacyEnabled);
+    const flushSettings = useSettingsStore(state => state.flushSettings);
+    const rollbackSettings = useSettingsStore(state => state.rollbackSettings);
+    const mountedRef = React.useRef(true);
+    const operationGenerationsRef = React.useRef<Record<PrivacySettingsField, number>>({
+        maskedKeywords: 0,
+        maskingMode: 0,
+    });
+
+    React.useEffect(() => () => {
+        mountedRef.current = false;
+    }, []);
 
     const handlePrivacyToggle = () => {
         const nextValue = !privacyEnabled;
@@ -22,12 +49,65 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         addToast(nextValue ? 'Privacy mode enabled for this session' : 'Privacy mode disabled for this session', 'success');
     };
 
-    const handleMaskingModeChange = (mode: 'blur' | 'hide') => {
-        setSettings(prev => ({ ...prev, maskingMode: mode }));
-        addToast(`Masking mode set to ${mode}`, 'success');
+    const persistPrivacyChange = async <Field extends PrivacySettingsField>(
+        field: Field,
+        optimisticValue: AppSettings[Field],
+        previousValue: AppSettings[Field],
+        successMessage: string,
+        errorMessage: string
+    ): Promise<boolean> => {
+        if (isSavingPrivacy || !settingsPersistenceCoordinator.isAccepting()) return false;
+
+        const generation = ++operationGenerationsRef.current[field];
+        const ownsOperation = () => operationGenerationsRef.current[field] === generation;
+        return settingsPersistenceCoordinator.run(async (permit) => {
+            setIsSavingPrivacy(true);
+            setSettings(prev => ({ ...prev, [field]: optimisticValue }));
+            try {
+                await flushSettings();
+                if (mountedRef.current && ownsOperation()) {
+                    addToast(successMessage, 'success');
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                console.error('[Privacy] Failed to persist privacy settings', error);
+                let didRollback = false;
+                const restoredSettings = rollbackSettings(permit, prev => {
+                    if (!ownsOperation()
+                        || !privacyValuesEqual(field, prev[field], optimisticValue)) {
+                        return prev;
+                    }
+                    didRollback = true;
+                    return { ...prev, [field]: previousValue };
+                });
+                if (didRollback && restoredSettings) {
+                    try {
+                        await flushSettings(restoredSettings);
+                    } catch (rollbackError) {
+                        console.error('[Privacy] Failed to persist privacy settings rollback', rollbackError);
+                    }
+                    if (mountedRef.current) addToast(errorMessage, 'error');
+                }
+                return false;
+            } finally {
+                if (mountedRef.current) setIsSavingPrivacy(false);
+            }
+        });
     };
 
-    const handleAddKeyword = () => {
+    const handleMaskingModeChange = async (mode: 'blur' | 'hide') => {
+        const previousMode = settings.maskingMode;
+        await persistPrivacyChange(
+            'maskingMode',
+            mode,
+            previousMode,
+            `Masking mode set to ${mode}`,
+            'Failed to save masking mode'
+        );
+    };
+
+    const handleAddKeyword = async () => {
         const trimmed = keywordInput.trim().toLowerCase();
         if (!trimmed) return;
 
@@ -36,26 +116,34 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             return;
         }
 
-        setSettings(prev => ({
-            ...prev,
-            maskedKeywords: [...prev.maskedKeywords, trimmed]
-        }));
-        setKeywordInput('');
-        addToast(`Added "${trimmed}" to masked keywords`, 'success');
+        const previousKeywords = [...settings.maskedKeywords];
+        const nextKeywords = [...previousKeywords, trimmed];
+        const saved = await persistPrivacyChange(
+            'maskedKeywords',
+            nextKeywords,
+            previousKeywords,
+            `Added "${trimmed}" to masked keywords`,
+            `Failed to save "${trimmed}" as a masked keyword`
+        );
+        if (saved) setKeywordInput('');
     };
 
-    const handleRemoveKeyword = (keyword: string) => {
-        setSettings(prev => ({
-            ...prev,
-            maskedKeywords: prev.maskedKeywords.filter(k => k !== keyword)
-        }));
-        addToast(`Removed "${keyword}" from masked keywords`, 'success');
+    const handleRemoveKeyword = async (keyword: string) => {
+        const previousKeywords = [...settings.maskedKeywords];
+        const nextKeywords = previousKeywords.filter(k => k !== keyword);
+        await persistPrivacyChange(
+            'maskedKeywords',
+            nextKeywords,
+            previousKeywords,
+            `Removed "${keyword}" from masked keywords`,
+            `Failed to remove "${keyword}" from masked keywords`
+        );
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            handleAddKeyword();
+            void handleAddKeyword();
         }
     };
 
@@ -100,7 +188,8 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         type="radio"
                                         name="maskingMode"
                                         checked={settings.maskingMode === 'blur'}
-                                        onChange={() => handleMaskingModeChange('blur')}
+                                        onChange={() => { void handleMaskingModeChange('blur'); }}
+                                        disabled={isSavingPrivacy}
                                         className="accent-sage-600"
                                     />
                                     <span className="text-sm text-gray-700 dark:text-gray-300">Blur Content</span>
@@ -110,7 +199,8 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         type="radio"
                                         name="maskingMode"
                                         checked={settings.maskingMode === 'hide'}
-                                        onChange={() => handleMaskingModeChange('hide')}
+                                        onChange={() => { void handleMaskingModeChange('hide'); }}
+                                        disabled={isSavingPrivacy}
                                         className="accent-sage-600"
                                     />
                                     <span className="text-sm text-gray-700 dark:text-gray-300">Hide Completely</span>
@@ -130,13 +220,14 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 value={keywordInput}
                                 onChange={(e) => setKeywordInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
+                                disabled={isSavingPrivacy}
                                 placeholder="Type keyword and press Enter..."
                                 className="flex-1 bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-sm focus:border-sage-500 outline-none text-gray-700 dark:text-gray-300"
                             />
                             <button
                                 type="button"
-                                onClick={handleAddKeyword}
-                                disabled={!keywordInput.trim()}
+                                onClick={() => { void handleAddKeyword(); }}
+                                disabled={!keywordInput.trim() || isSavingPrivacy}
                                 className="px-4 py-2.5 bg-sage-600 hover:bg-sage-500 disabled:bg-gray-200 dark:disabled:bg-white/10 disabled:cursor-not-allowed text-white disabled:text-gray-400 rounded-xl text-sm font-bold transition-colors flex items-center gap-1.5"
                             >
                                 <Plus className="w-4 h-4" /> Add
@@ -156,7 +247,8 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         {keyword}
                                         <button
                                             type="button"
-                                            onClick={() => handleRemoveKeyword(keyword)}
+                                            onClick={() => { void handleRemoveKeyword(keyword); }}
+                                            disabled={isSavingPrivacy}
                                             className="p-0.5 hover:bg-rose-200 dark:hover:bg-rose-500/30 rounded-full transition-colors"
                                         >
                                             <X className="w-3 h-3" />

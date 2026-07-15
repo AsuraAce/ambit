@@ -475,4 +475,34 @@ describe('OnboardingWizard', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
         expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ maskedKeywords: [] }));
     });
+
+    it('preserves custom masking keywords when onboarding is restarted with masking enabled', () => {
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, maskedKeywords: ['custom', 'private'] };
+        const { onComplete } = renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        expect(screen.getByRole('switch', { name: 'Enable prompt keyword masking' }).getAttribute('aria-checked')).toBe('true');
+        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
+            maskedKeywords: ['custom', 'private']
+        }));
+    });
+
+    it('seeds default keywords when masking is enabled from an empty list', () => {
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, maskedKeywords: [] };
+        const { onComplete } = renderWizard();
+        continueToIntelligence();
+        fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+        const maskingSwitch = screen.getByRole('switch', { name: 'Enable prompt keyword masking' });
+        expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
+        fireEvent.click(maskingSwitch);
+        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
+            maskedKeywords: DEFAULT_APP_SETTINGS.maskedKeywords
+        }));
+    });
 });

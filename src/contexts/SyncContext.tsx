@@ -31,8 +31,10 @@ import {
 import { processTargetedFiles } from '../services/importService';
 import { scanForOrphans } from '../services/invoke/orphanScanner';
 import { syncImages } from '../services/invoke/syncService';
-import { appRepository } from '../services/repository';
+import { appRepository, type AppState } from '../services/repository';
 import { watcherService } from '../services/WatcherService';
+import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
+import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -305,16 +307,13 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                         lastSyncedAt
                     }
                 );
-                const nextSettings = {
-                    ...useSettingsStore.getState().settings,
-                    invokeDbSnapshot: snapshot
-                };
-                setSettings(nextSettings);
-
-                const appState = await appRepository.load();
-                await appRepository.save({
-                    ...appState,
-                    settings: nextSettings
+                await settingsPersistenceCoordinator.run(async () => {
+                    const nextSettings = {
+                        ...useSettingsStore.getState().settings,
+                        invokeDbSnapshot: snapshot
+                    };
+                    setSettings(nextSettings);
+                    await useSettingsStore.getState().flushSettings(nextSettings);
                 });
             } catch (snapshotError) {
                 console.warn('[Startup Catch-up] Failed to persist Invoke DB snapshot.', snapshotError);
@@ -800,71 +799,79 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             return;
         }
 
+        useSettingsStore.getState().cancelPendingSave();
         try {
-            console.log('[Purge] Starting library purge...');
+            await settingsPersistenceCoordinator.runExclusive(async () => {
+                console.log('[Purge] Starting library purge...');
+                console.log('[Purge] Stopping background services...');
 
-            // 1. Graceful Shutdown & Auto-Healing Disable
-            console.log('[Purge] Stopping background services...');
-            setSettings(s => ({ ...s, enableAutoThumbnailHealing: false })); // Disable first to stop CPU usage
+                await watcherService.stopWatching();
+                useLibraryStore.getState().cancelThumbnailRegeneration();
+                useLibraryStore.getState().cancelImport();
+                useLibraryStore.getState().setBackgroundHealingPaused(true);
 
-            await watcherService.stopWatching();
-            useLibraryStore.getState().cancelThumbnailRegeneration();
-            useLibraryStore.getState().cancelImport();
-            useLibraryStore.getState().setBackgroundHealingPaused(true);
+                console.log('[Purge] Resetting settings and legacy storage...');
+                let stateBeforeReset!: AppState;
+                const resetState = await appRepository.update((legacyState) => {
+                    stateBeforeReset = legacyState;
+                    const cleanSettings: AppSettings = {
+                        ...legacyState.settings,
+                        lastSyncedAt: null,
+                        monitoredFolders: [],
+                        invokeAiPath: undefined,
+                        a1111Path: undefined,
+                        comfyUiPath: undefined,
+                        resourceFolders: [],
+                        importIntermediates: false,
+                        enableAutoThumbnailHealing: true,
+                        thumbnailOptimizationProfile: 'balanced',
+                        maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
+                        maskingMode: DEFAULT_APP_SETTINGS.maskingMode,
+                        hasCompletedOnboarding: false
+                    };
+                    return {
+                        ...legacyState,
+                        images: [],
+                        collections: [],
+                        smartCollections: [],
+                        recentSearches: [],
+                        settings: cleanSettings
+                    };
+                });
 
-            // 2. Prepare Clean State (Settings & Legacy Data)
-            console.log('[Purge] Resetting settings and legacy storage...');
+                let backendMessage: string;
+                try {
+                    console.log('[Purge] Purging backend database...');
+                    backendMessage = await purgeLibrary();
+                } catch (error) {
+                    try {
+                        await appRepository.save(stateBeforeReset);
+                        useSettingsStore.setState({ settings: stateBeforeReset.settings });
+                    } catch (rollbackError) {
+                        console.error('[Purge] Failed to restore library.json after purge scheduling failed:', rollbackError);
+                    }
+                    throw error;
+                }
 
-            const legacyState = await appRepository.load();
+                useSettingsStore.setState({ settings: resetState.settings });
+                try {
+                    console.log('[Purge] Clearing React Query cache and store...');
+                    await queryClient.resetQueries();
+                    useSearchStore.getState().clearAllFilters();
+                    useSearchStore.getState().setImages([]);
+                } catch (cleanupError) {
+                    console.error('[Purge] Post-schedule UI cleanup failed; restart is still required:', cleanupError);
+                }
 
-            // Define clean settings
-            const cleanSettings: AppSettings = {
-                ...legacyState.settings,
-                lastSyncedAt: null,
-                monitoredFolders: [],
-                invokeAiPath: undefined,
-                a1111Path: undefined,
-                comfyUiPath: undefined,
-                resourceFolders: [], // Clear added model/lora folders
-                importIntermediates: false,
-                enableAutoThumbnailHealing: true, // Reset to default (True) so next run is fresh
-                thumbnailOptimizationProfile: 'balanced',
-                hasCompletedOnboarding: false // Optional: Reset onboarding for factory reset feel
-            };
-
-            // Force immediate save to disk BEFORE invoking the backend restart
-            await appRepository.save({
-                ...legacyState,
-                images: [],
-                collections: [],
-                smartCollections: [],
-                settings: cleanSettings
+                addToast(backendMessage, 'success');
+                console.log('[Purge] Purge complete. User should restart the app.');
             });
-
-            // Update local state (for Dev mode or if restart has delay)
-            setSettings(cleanSettings);
-
-            // 3. Reset React Query cache and Zustand store
-            console.log('[Purge] Clearing React Query cache and store...');
-            await queryClient.resetQueries();
-            useSearchStore.getState().clearAllFilters();
-            useSearchStore.getState().setImages([]);
-
-            // 4. THE POINT OF NO RETURN: Trigger Backend Purge (Restarts App)
-            console.log('[Purge] Purging backend database...');
-            const backendMessage = await purgeLibrary();
-
-            // Show the backend's message (e.g., "Purge scheduled. Please restart...")
-            addToast(backendMessage, 'success');
-            console.log('[Purge] Purge complete. User should restart the app.');
-
-            // Note: In production, the app auto-restarts. In dev mode, user must restart terminal.
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             console.error("[Purge] Purge failed:", e);
             addToast('Purge failed: ' + message, 'error');
         }
-    }, [addToast, setSettings, queryClient]);
+    }, [addToast, queryClient]);
 
     return (
         <SyncContext.Provider value={{

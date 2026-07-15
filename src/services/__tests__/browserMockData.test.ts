@@ -177,6 +177,22 @@ describe('browserMockData filtering', () => {
         expect(getBrowserMockImages()).toHaveLength(180);
     });
 
+    it('updates persisted mock state without replacing unrelated settings', async () => {
+        const repository = new BrowserMockRepository();
+        await repository.update(current => ({
+            ...current,
+            settings: { ...current.settings, maskedKeywords: ['durable'] }
+        }));
+        await repository.update(current => ({
+            ...current,
+            recentSearches: ['latest-search']
+        }));
+
+        const loaded = await repository.load();
+        expect(loaded.settings.maskedKeywords).toEqual(['durable']);
+        expect(loaded.recentSearches).toEqual(['latest-search']);
+    });
+
     it('recovers from malformed storage and storage API failures', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         localStorage.setItem('ambit_browser_mock_state_v1', '{broken-json');
@@ -188,7 +204,8 @@ describe('browserMockData filtering', () => {
         getSpy.mockRestore();
 
         const setSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('write failed'); });
-        await new BrowserMockRepository().save(await new BrowserMockRepository().load());
+        await expect(new BrowserMockRepository().save(await new BrowserMockRepository().load()))
+            .rejects.toThrow('write failed');
         expect(errorSpy).toHaveBeenCalledWith('[BrowserMock] Failed to persist mock state', expect.any(Error));
         setSpy.mockRestore();
         errorSpy.mockRestore();

@@ -6,6 +6,7 @@ import { createDefaultAppSettings } from './constants/defaultSettings';
 import { createDefaultFilters } from './utils/filterState';
 import { GeneratorTool, type AIImage, type AppSettings, type Collection, type FilterState, type LayoutMode, type SmartCollection, type ViewMode } from './types';
 import App from './App';
+import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
 type AppLayoutProbe = {
     changeViewMode: (mode: ViewMode) => void;
@@ -31,6 +32,7 @@ type AppLayoutProbe = {
 };
 
 type GlobalModalsProbe = {
+    filteredImages: AIImage[];
     onExportConfirm: (name: string, folder: string) => void;
     onDeleteCollectionConfirm: () => void;
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => Promise<void>;
@@ -51,7 +53,7 @@ type GlobalModalsProbe = {
 
 type OnboardingProbe = {
     isOpen: boolean;
-    onComplete: (settings: Partial<AppSettings>) => void;
+    onComplete: (settings: Partial<AppSettings>) => void | Promise<void>;
     onOpenSettings: (tab: string) => void;
 };
 
@@ -118,6 +120,8 @@ const mocks = vi.hoisted(() => ({
     settingsLoaded: true,
     geminiApiKey: null as string | null,
     setSettings: vi.fn(),
+    rollbackSettings: vi.fn(),
+    flushSettings: vi.fn().mockResolvedValue(undefined),
     collectionsLoaded: true,
     collections: [] as Collection[],
     setCollections: vi.fn(),
@@ -234,22 +238,39 @@ const image = (id: string): AIImage => ({
     }
 });
 
+const createDeferred = <T,>() => {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+    });
+    return { promise, resolve, reject };
+};
+
 vi.mock('./hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
 vi.mock('./hooks/useModalManager', () => ({ useModalManager: () => mocks.modals }));
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
-vi.mock('./stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: {
-        isLoaded: boolean;
-        settings: AppSettings;
-        geminiApiKey: string | null;
-        setSettings: typeof mocks.setSettings;
-    }) => unknown) => selector({
+vi.mock('./stores/settingsStore', () => {
+    const storeState = () => ({
         isLoaded: mocks.settingsLoaded,
         settings: mocks.settings,
         geminiApiKey: mocks.geminiApiKey,
-        setSettings: mocks.setSettings
-    })
-}));
+        setSettings: mocks.setSettings,
+        rollbackSettings: mocks.rollbackSettings,
+        flushSettings: mocks.flushSettings,
+    });
+    const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) => selector({
+        isLoaded: mocks.settingsLoaded,
+        settings: mocks.settings,
+        geminiApiKey: mocks.geminiApiKey,
+        setSettings: mocks.setSettings,
+        rollbackSettings: mocks.rollbackSettings,
+        flushSettings: mocks.flushSettings
+    });
+    useSettingsStore.getState = storeState;
+    return { useSettingsStore };
+});
 vi.mock('./stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: {
         isLoaded: boolean;
@@ -412,6 +433,7 @@ const requireProbe = <T,>(value: T | null, name: string): T => {
 
 describe('App orchestration', () => {
     beforeEach(() => {
+        settingsPersistenceCoordinator.reopenAdmission();
         vi.clearAllMocks();
         captured.appLayout = null;
         captured.globalModals = null;
@@ -444,8 +466,19 @@ describe('App orchestration', () => {
         mocks.modals.collectionToEditId = null;
         mocks.modals.isAnyModalOpen = false;
         mocks.setSettings.mockImplementation((update: React.SetStateAction<AppSettings>) => {
-            mocks.settings = typeof update === 'function' ? update(mocks.settings) : update;
+            mocks.settings = {
+                ...mocks.settings,
+                ...(typeof update === 'function' ? update(mocks.settings) : update),
+            };
         });
+        mocks.rollbackSettings.mockImplementation((_permit, update: React.SetStateAction<AppSettings>) => {
+            mocks.settings = {
+                ...mocks.settings,
+                ...(typeof update === 'function' ? update(mocks.settings) : update),
+            };
+            return mocks.settings;
+        });
+        mocks.flushSettings.mockResolvedValue(undefined);
         mocks.setRecentSearches.mockImplementation((update: React.SetStateAction<string[]>) => {
             if (typeof update === 'function') update(['old']);
         });
@@ -563,8 +596,9 @@ describe('App orchestration', () => {
         render(<App />);
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
         expect(onboarding.isOpen).toBe(true);
-        act(() => onboarding.onComplete({ theme: 'light' }));
+        await act(async () => onboarding.onComplete({ theme: 'light' }));
         expect(mocks.settings.theme).toBe('light');
+        expect(mocks.flushSettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' }));
         expect(mocks.addToast).toHaveBeenCalledWith('Setup complete!', 'success');
         act(() => onboarding.onOpenSettings('privacy'));
         expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('privacy');
@@ -585,6 +619,76 @@ describe('App orchestration', () => {
         vi.mocked(open).mockResolvedValue(['C:/a.png', 'C:/b.webp']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
         expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/a.png', 'C:/b.webp']);
+    });
+
+    it('keeps onboarding open and restores only its fields when the durable flush rejects', async () => {
+        const flush = createDeferred<void>();
+        const rollbackFlush = createDeferred<void>();
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: false,
+            enableAI: false,
+            maskedKeywords: ['existing-private'],
+            maskingMode: 'hide',
+            thumbnailSize: 200,
+        });
+        let durableSettings = mocks.settings;
+        mocks.flushSettings
+            .mockImplementationOnce(async (nextSettings: AppSettings) => {
+                // Model a repository that wrote its pending/main snapshots before
+                // a later backup step rejected the onboarding flush.
+                durableSettings = nextSettings;
+                await flush.promise;
+            })
+            .mockImplementationOnce(async (restoredSettings: AppSettings) => {
+                durableSettings = restoredSettings;
+                await rollbackFlush.promise;
+            });
+        render(<App />);
+
+        const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
+        const completion = onboarding.onComplete({
+            hasCompletedOnboarding: true,
+            enableAI: true,
+            maskedKeywords: ['new-private'],
+            maskingMode: 'blur',
+        });
+        await waitFor(() => expect(mocks.flushSettings).toHaveBeenCalledOnce());
+        let drainSettled = false;
+        const drain = settingsPersistenceCoordinator.closeAdmissionAndDrain().finally(() => {
+            drainSettled = true;
+        });
+        void drain.catch(() => undefined);
+        mocks.settings = { ...mocks.settings, thumbnailSize: 320 };
+        flush.reject(new Error('disk full'));
+
+        await waitFor(() => expect(mocks.flushSettings).toHaveBeenCalledTimes(2));
+        expect(drainSettled).toBe(false);
+        rollbackFlush.resolve();
+        await act(async () => expect(completion).rejects.toThrow('disk full'));
+        await expect(drain).rejects.toBeInstanceOf(AggregateError);
+        expect(mocks.settings).toEqual(expect.objectContaining({
+            hasCompletedOnboarding: false,
+            enableAI: false,
+            maskedKeywords: ['existing-private'],
+            maskingMode: 'hide',
+            thumbnailSize: 320,
+        }));
+        expect(mocks.flushSettings).toHaveBeenCalledTimes(2);
+        expect(mocks.flushSettings).toHaveBeenLastCalledWith(expect.objectContaining({
+            hasCompletedOnboarding: false,
+            enableAI: false,
+            maskedKeywords: ['existing-private'],
+            maskingMode: 'hide',
+            thumbnailSize: 320,
+        }));
+        expect(durableSettings).toEqual(expect.objectContaining({
+            hasCompletedOnboarding: false,
+            maskedKeywords: ['existing-private'],
+            thumbnailSize: 320,
+        }));
+        expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
+        expect(mocks.addToast).not.toHaveBeenCalledWith('Setup complete!', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Setup could not be saved. Please try again.', 'error');
     });
 
     it('routes global modal collection, update, and command-palette actions', async () => {
@@ -661,6 +765,23 @@ describe('App orchestration', () => {
         expect(mocks.handlePinImage).toHaveBeenCalledWith('one', true, { showToast: false });
         expect(mocks.handleDeleteViewerImage).toHaveBeenCalledWith('one');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('removes viewer and compare/slideshow image exposure when SearchContext fails closed', async () => {
+        mocks.selectedIds = new Set(['one', 'two']);
+        mocks.modals.modals = { ...mocks.modals.modals, compare: true, slideshow: true };
+        const view = render(<App />);
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setViewingImageId('one'));
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull());
+
+        mocks.images = [];
+        captured.viewer = null;
+        view.rerender(<App />);
+
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+        expect(requireProbe(captured.globalModals, 'GlobalModals').filteredImages).toEqual([]);
+        expect(captured.viewer).toBeNull();
     });
 
     it('handles orchestration defaults, picker variants, and viewer boundaries', async () => {
