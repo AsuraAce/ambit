@@ -143,4 +143,17 @@ describe('WatcherService', () => {
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, []);
         expect(mockedListen).not.toHaveBeenCalled();
     });
+
+    it('resumes the same watcher only when a paused purge attempt fails', async () => {
+        const onChange = vi.fn();
+        const service = new WatcherService();
+        await service.startWatching(['C:/watch'], onChange);
+
+        const resume = await service.pauseWatching();
+        expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, []);
+
+        await resume();
+        expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(3, ['C:/watch']);
+        expect(mockedListen).toHaveBeenCalledTimes(2);
+    });
 });

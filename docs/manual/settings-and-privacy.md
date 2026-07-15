@@ -50,6 +50,8 @@ You can choose:
 
 Masked keywords are matched against prompts. Add only terms you actually want Ambit to use for local masking decisions.
 
+Restarting onboarding preserves a custom masked-keyword list while prompt masking remains enabled. Turning prompt masking off in onboarding clears the list; enabling it from an empty list restores Ambit's standard defaults. Purge Database is a factory reset and always restores the default masked keywords and Blur Content behavior.
+
 ## Intelligence Features
 
 Intelligence features are off unless configured. When enabled, Ambit can use Gemini for tasks such as prompt analysis or variation ideas. These actions are on-demand and depend on your own Gemini API key.

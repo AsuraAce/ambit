@@ -14,6 +14,8 @@ use db::reparse::ReparseState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
 #[cfg(not(test))]
+use tauri::Manager;
+#[cfg(not(test))]
 use watcher::WatcherState;
 
 /// Create the Specta builder with all commands registered.
@@ -37,7 +39,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::image_commands::get_image_count_for_path_prefix,
         db::commands::image_commands::refresh_privacy_mask_index,
         db::commands::maintenance::optimize_database,
-        db::commands::maintenance::purge_database,
+        db::commands::maintenance::schedule_purge_transaction,
         db::commands::filter_commands::get_parameter_ranges,
         db::commands::filter_commands::backfill_parameter_columns,
         db::facets::rebuild_facet_cache,
@@ -113,7 +115,10 @@ pub fn run() {
     }
 
     // Check for deferred purge request BEFORE initializing the database.
-    app_data_migration::check_and_execute_deferred_purge();
+    if let Err(error) = app_data_migration::check_and_execute_deferred_purge() {
+        eprintln!("[Purge] {error}");
+        return;
+    }
 
     // Move the production SQLite catalog from Roaming AppData to Local AppData
     // before tauri-plugin-sql can open images.db.
@@ -134,7 +139,23 @@ pub fn run() {
         .parse()
         .unwrap_or(log::LevelFilter::Info);
 
-    tauri::Builder::default()
+    let mut app_builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        // Development and installed builds have different identifiers, so this
+        // blocks only another process that could mutate the same profile.
+        app_builder = app_builder.plugin(tauri_plugin_single_instance::init(
+            |app, _arguments, _working_directory| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            },
+        ));
+    }
+
+    app_builder
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log_level)
@@ -197,6 +218,25 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod startup_order_tests {
+    #[test]
+    fn same_profile_process_guard_is_registered_before_sql() {
+        let source = include_str!("lib.rs");
+        let single_instance = source
+            .find("tauri_plugin_single_instance::init")
+            .expect("same-profile process guard should be registered");
+        let sql = source
+            .find(".plugin(sql_builder.build())")
+            .expect("SQL plugin should be registered");
+
+        assert!(
+            single_instance < sql,
+            "same-profile process exclusion must be active before SQLite opens"
+        );
+    }
 }
 
 /// Repair historical migration metadata for a known development/mainline collision.

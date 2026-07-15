@@ -345,14 +345,22 @@ pub async fn optimize_database(app: AppHandle) -> Result<String, String> {
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
-pub async fn purge_database(app: AppHandle) -> Result<String, String> {
+pub async fn schedule_purge_transaction(
+    app: AppHandle,
+    transaction_id: String,
+    journal_json: String,
+) -> Result<String, String> {
+    let journal_dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
     let db_path = resolve_db_path(&app)?;
-    let marker_path = db_path
+    let marker_dir = db_path
         .parent()
-        .ok_or("Failed to get DB parent directory")?
-        .join(".purge_on_restart");
-    std::fs::write(&marker_path, "purge requested")
-        .map_err(|e| format!("Failed to create purge marker: {}", e))?;
+        .ok_or("Failed to get DB parent directory")?;
+    crate::app_data_migration::schedule_purge_artifacts(
+        &journal_dir,
+        marker_dir,
+        &transaction_id,
+        &journal_json,
+    )?;
 
     #[cfg(not(debug_assertions))]
     {
@@ -361,7 +369,8 @@ pub async fn purge_database(app: AppHandle) -> Result<String, String> {
 
     #[cfg(debug_assertions)]
     {
-        Ok("Purge scheduled. Please restart 'npm run tauri dev' to complete.".to_string())
+        app.exit(0);
+        Ok("Factory reset committed. Ambit is closing to finish recovery.".to_string())
     }
 }
 

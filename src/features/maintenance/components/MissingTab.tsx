@@ -15,6 +15,7 @@ interface MissingTabProps {
     onDeleteSelected: () => void;
     onPurgeMissing: () => void;
     onViewImage: (id: string) => void;
+    maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
     onBackgroundClick: () => void;
@@ -29,6 +30,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     onDeleteSelected,
     onPurgeMissing,
     onViewImage,
+    maskedKeywords,
     scrollContainerRef,
     onRangeSelection,
     onBackgroundClick
@@ -53,12 +55,12 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 style={style}
                 isSelected={selectedIds.has(img.id)}
                 onClick={(e) => onItemClick(img.id, index, e)}
-                maskedKeywords={[]}
+                maskedKeywords={maskedKeywords}
                 overlayActions={overlayActions}
                 isMissing={true}
             />
         );
-    }, [selectedIds, onItemClick, onViewImage]);
+    }, [maskedKeywords, selectedIds, onItemClick, onViewImage]);
 
     if (images.length === 0) {
         return (

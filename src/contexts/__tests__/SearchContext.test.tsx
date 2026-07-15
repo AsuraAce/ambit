@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AIImage, AppSettings, Collection, FilterState, SortOption } from '../../types';
 import type { ImagesQueryKey } from '../../hooks/useImagesQuery';
 import { SearchProvider, useSearch } from '../SearchContext';
+import { useSettingsStore } from '../../stores/settingsStore';
+import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoordinator';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -12,13 +14,15 @@ const mocks = vi.hoisted(() => ({
     collections: { current: {} as unknown },
     searchState: { current: {} as unknown },
     imagesQuery: { current: {} as unknown },
+    imagesQueryArgs: { current: null as { settingsLoaded?: boolean } | null },
     statsQuery: { current: {} as unknown },
     queryClient: {
         invalidateQueries: vi.fn().mockResolvedValue(undefined)
     },
     repository: {
         load: vi.fn(),
-        save: vi.fn()
+        save: vi.fn(),
+        update: vi.fn()
     },
     getDb: vi.fn().mockResolvedValue(undefined),
     refreshPrivacyMaskIndex: vi.fn(),
@@ -45,7 +49,12 @@ vi.mock('../../stores/searchStore', () => ({
         { getState: () => mocks.searchState.current }
     )
 }));
-vi.mock('../../hooks/useImagesQuery', () => ({ useImagesQuery: () => mocks.imagesQuery.current }));
+vi.mock('../../hooks/useImagesQuery', () => ({
+    useImagesQuery: (args: { settingsLoaded?: boolean }) => {
+        mocks.imagesQueryArgs.current = args;
+        return mocks.imagesQuery.current;
+    }
+}));
 vi.mock('../../hooks/useLibraryStatsQuery', () => ({ useLibraryStatsQuery: () => mocks.statsQuery.current }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.queryClient }));
 vi.mock('../../services/repository', () => ({ appRepository: mocks.repository }));
@@ -161,6 +170,7 @@ describe('SearchProvider', () => {
             isPlaceholderData: false,
             queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null] as ImagesQueryKey
         };
+        mocks.imagesQueryArgs.current = null;
         mocks.statsQuery.current = {
             data: undefined,
             isFacetsFetching: false,
@@ -169,6 +179,13 @@ describe('SearchProvider', () => {
         };
         mocks.repository.load.mockResolvedValue({ settings: {} });
         mocks.repository.save.mockResolvedValue(undefined);
+        mocks.repository.update.mockImplementation(async (updater: (state: unknown) => unknown) => updater({
+            images: [],
+            collections: [],
+            smartCollections: [],
+            settings: settings(),
+            recentSearches: ['portrait']
+        }));
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false });
         mocks.buildSqlWhereClause.mockReturnValue({ where: 'deleted_at IS NULL', params: ['value'] });
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 0 });
@@ -177,6 +194,13 @@ describe('SearchProvider', () => {
         mocks.applyOptimisticPinOrder.mockImplementation((images: AIImage[]) => images);
         mocks.shouldPrefetchResultPages.mockReturnValue(false);
         mocks.browserMockMode.current = false;
+        privacyMaskRefreshCoordinator.resetForTests();
+        useSettingsStore.setState({
+            privacyEnabled: false,
+            privacyMaskIndexStatus: 'ready',
+            privacyMaskIndexError: null,
+            privacyMaskIndexRetryToken: 0,
+        });
     });
 
     afterEach(() => vi.useRealTimers());
@@ -347,8 +371,14 @@ describe('SearchProvider', () => {
         vi.useFakeTimers();
         mocks.repository.load.mockResolvedValue({
             recentSearches: ['portrait'],
-            settings: { libraryShowGrids: true, libraryShowIntermediates: true }
+            settings: {}
         });
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true
+        };
         mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true });
         renderProvider();
 
@@ -359,14 +389,16 @@ describe('SearchProvider', () => {
         expect((mocks.searchState.current as SearchValue).setFilters).toHaveBeenCalled();
 
         act(() => latest.setRecentSearches(['landscape']));
-        await act(() => vi.advanceTimersByTimeAsync(1000));
-        expect(mocks.repository.save).toHaveBeenCalledWith(expect.objectContaining({ recentSearches: ['landscape'] }));
+        await act(() => Promise.resolve());
+        expect(mocks.repository.update).toHaveBeenCalledOnce();
+        const recentSearchUpdater = mocks.repository.update.mock.calls[0][0] as (state: { recentSearches: string[] }) => { recentSearches: string[] };
+        expect(recentSearchUpdater({ recentSearches: ['portrait'] }).recentSearches).toEqual(['landscape']);
         await act(() => latest.refreshHiddenAvailability());
     });
 
-    it('uses current filter values for missing persisted grid preferences and syncs changed settings', async () => {
+    it('hydrates view filters from initialized settings before enabling write-back', async () => {
         const currentSettings = settings({ libraryShowGrids: false, libraryShowIntermediates: false });
-        const setSettings = vi.fn((updater: (value: AppSettings) => AppSettings) => updater(currentSettings));
+        const setSettings = vi.fn();
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
@@ -378,32 +410,60 @@ describe('SearchProvider', () => {
             privacyEnabled: false,
             isLoaded: true
         };
-        mocks.repository.load.mockResolvedValue({
-            settings: { libraryShowGrids: true, libraryShowIntermediates: undefined }
-        });
         renderProvider();
 
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(expect.objectContaining({
-            showGrids: true,
-            showIntermediates: true
+            showGrids: false,
+            showIntermediates: false
         }));
-        expect(setSettings).toHaveBeenCalledTimes(2);
+        expect(setSettings).not.toHaveBeenCalled();
     });
 
     it('falls back to the current grid value when only intermediates were persisted', async () => {
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
-        mocks.repository.load.mockResolvedValue({
-            settings: { libraryShowGrids: undefined, libraryShowIntermediates: true }
-        });
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: undefined, libraryShowIntermediates: true }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true
+        };
         renderProvider();
         await waitFor(() => expect(setFilters).toHaveBeenCalled());
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater(baseFilters)).toEqual(expect.objectContaining({ showGrids: false, showIntermediates: true }));
     });
 
+    it('does not write default view settings before settings initialization completes', async () => {
+        const setSettings = vi.fn();
+        const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
+        mocks.settings.current = {
+            settings: settings(),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: false
+        };
+        const rendered = renderProvider();
+
+        await act(() => Promise.resolve());
+        expect(setFilters).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+
+        mocks.settings.current = {
+            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true
+        };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        await waitFor(() => expect(setFilters).toHaveBeenCalledOnce());
+        expect(setSettings).not.toHaveBeenCalled();
+    });
+
     it('refreshes privacy indexes and dependent caches when hidden masking changes records', async () => {
+        let resolveRebuild: (() => void) | undefined;
+        useSettingsStore.setState({ privacyEnabled: true });
         mocks.settings.current = {
             settings: settings({ maskingMode: 'hide', maskedKeywords: [' Face ', ''] }),
             setSettings: vi.fn(),
@@ -411,14 +471,47 @@ describe('SearchProvider', () => {
             isLoaded: true
         };
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: true, updated: 2 });
+        mocks.rebuildThumbnailFacetCache.mockReturnValueOnce(new Promise<void>(resolve => {
+            resolveRebuild = resolve;
+        }));
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         renderProvider();
 
         await waitFor(() => expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce());
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+        await act(async () => resolveRebuild?.());
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
         expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith(['face']);
         expect(mocks.clearAllCollectionThumbnailCaches).toHaveBeenCalledOnce();
         expect(mocks.incrementFacetCacheVersion).toHaveBeenCalledOnce();
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['parameterRanges'] });
+    });
+
+    it('blocks stale search data and disables database queries while refresh is pending', async () => {
+        let resolveRefresh: ((value: { changed: boolean; updated: number }) => void) | undefined;
+        const staleImage = image({ id: 'stale' });
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        (mocks.searchState.current as SearchValue).images = [staleImage];
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [staleImage], totalCount: 1, globalCount: 1 }] },
+        };
+        mocks.refreshPrivacyMaskIndex.mockReturnValue(new Promise(resolve => {
+            resolveRefresh = resolve;
+        }));
+
+        const view = renderProvider();
+
+        expect(latest.images).toEqual([]);
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
+        view.unmount();
+        await act(async () => resolveRefresh?.({ changed: false, updated: 0 }));
     });
 
     it('rebuilds privacy caches when only updated rows are reported', async () => {
@@ -448,7 +541,7 @@ describe('SearchProvider', () => {
         expect(mocks.rebuildThumbnailFacetCache).not.toHaveBeenCalled();
     });
 
-    it('marks privacy initialization ready after refresh failures', async () => {
+    it('fails closed when the privacy index refresh fails', async () => {
         mocks.settings.current = {
             settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] }),
             setSettings: vi.fn(),
@@ -462,6 +555,62 @@ describe('SearchProvider', () => {
             '[Privacy] Failed to refresh privacy mask index',
             expect.any(Error)
         ));
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('failed');
+        expect(useSettingsStore.getState().privacyMaskIndexError).toBe('refresh failed');
+        expect(latest.images).toEqual([]);
+    });
+
+    it('retries a failed refresh and becomes ready only after retry succeeds', async () => {
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        mocks.refreshPrivacyMaskIndex
+            .mockRejectedValueOnce(new Error('refresh failed'))
+            .mockResolvedValueOnce({ changed: false, updated: 0 });
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        renderProvider();
+
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('failed'));
+        act(() => useSettingsStore.getState().retryPrivacyMaskIndex());
+
+        await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledTimes(2));
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+    });
+
+    it('runs only the latest keyword refresh requested behind active work', async () => {
+        let resolveFirst: ((value: { changed: boolean; updated: number }) => void) | undefined;
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskedKeywords: ['first'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        mocks.refreshPrivacyMaskIndex
+            .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve; }))
+            .mockResolvedValue({ changed: false, updated: 0 });
+        const view = renderProvider();
+        await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith(['first']));
+
+        mocks.settings.current = {
+            ...mocks.settings.current as object,
+            settings: settings({ maskedKeywords: ['superseded'] }),
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        mocks.settings.current = {
+            ...mocks.settings.current as object,
+            settings: settings({ maskedKeywords: ['latest'] }),
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        await act(async () => resolveFirst?.({ changed: false, updated: 0 }));
+        await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledTimes(2));
+        expect(mocks.refreshPrivacyMaskIndex).toHaveBeenLastCalledWith(['latest']);
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
     });
 
     it('ignores a privacy refresh result after unmount cancellation', async () => {

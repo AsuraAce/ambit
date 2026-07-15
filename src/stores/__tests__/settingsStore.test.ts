@@ -4,6 +4,8 @@ import { appRepository } from '../../services/repository';
 import { commands } from '../../bindings';
 import type { AppSettings } from '../../types';
 import type { AppState } from '../../services/repository';
+import { settingsPersistenceCoordinator } from '../../utils/settingsPersistenceCoordinator';
+import { createDefaultAppSettings } from '../../constants/defaultSettings';
 
 const mocks = vi.hoisted(() => ({
     browserMockMode: false,
@@ -24,6 +26,7 @@ vi.mock('../../services/repository', () => ({
     appRepository: {
         load: vi.fn(),
         save: vi.fn(),
+        update: vi.fn(),
     },
 }));
 
@@ -47,6 +50,8 @@ vi.mock('../../services/assetScope', () => ({
 
 describe('SettingsStore', () => {
     beforeEach(() => {
+        useSettingsStore.getState().cancelPendingSave();
+        settingsPersistenceCoordinator.reopenAdmission();
         vi.useFakeTimers();
         vi.clearAllMocks();
         mocks.browserMockMode = false;
@@ -57,10 +62,16 @@ describe('SettingsStore', () => {
         vi.mocked(commands.deleteApiKey).mockResolvedValue({ status: 'ok', data: null });
         vi.mocked(appRepository.load).mockResolvedValue({ settings: null } as unknown as AppState);
         vi.mocked(appRepository.save).mockResolvedValue(undefined);
+        vi.mocked(appRepository.update).mockImplementation(async (updater) => updater(await appRepository.load()));
         vi.unstubAllEnvs();
         // Reset Zustand store state before each test
         useSettingsStore.setState({
+            initializationStatus: 'loading',
             isLoaded: false,
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'pending',
+            privacyMaskIndexError: null,
+            privacyMaskIndexRetryToken: 0,
             geminiApiKey: null,
             settings: {
                 hasCompletedOnboarding: false,
@@ -190,7 +201,36 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().geminiApiKey).toBe('legacy-key');
 
         // Should have triggered a save to cleanup library.json
-        expect(appRepository.save).toHaveBeenCalled();
+        expect(appRepository.update).toHaveBeenCalled();
+    });
+
+    it('hydrates loaded settings when best-effort legacy API key cleanup fails', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.mocked(appRepository.load).mockResolvedValue(appState({
+            googleGeminiApiKey: 'legacy-key',
+            theme: 'light',
+            monitoredFolders: [],
+            maskedKeywords: ['private'],
+        } as unknown as AppSettings));
+        vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: 'secure-key' });
+        vi.mocked(appRepository.update).mockRejectedValueOnce(new Error('disk full'));
+
+        await useSettingsStore.getState().initialize();
+
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            isLoaded: true,
+            geminiApiKey: 'secure-key',
+            settings: expect.objectContaining({
+                theme: 'light',
+                maskedKeywords: ['private'],
+            }),
+        }));
+        expect(useSettingsStore.getState().settings.googleGeminiApiKey).toBeUndefined();
+        expect(error).toHaveBeenCalledWith(
+            '[SettingsStore] Failed to remove legacy API key from persisted settings:',
+            expect.any(Error)
+        );
+        error.mockRestore();
     });
 
     it('should update API key via setGeminiApiKey', async () => {
@@ -240,6 +280,7 @@ describe('SettingsStore', () => {
             settings: useSettingsStore.getState().settings,
             images: [], collections: [], smartCollections: [], recentSearches: []
         });
+        useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
 
         useSettingsStore.getState().setSettings({ theme: 'light' });
         useSettingsStore.getState().setSettings(previous => ({ thumbnailSize: previous.thumbnailSize + 25 }));
@@ -247,21 +288,59 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().settings.thumbnailSize).toBe(225);
 
         await vi.advanceTimersByTimeAsync(1000);
-        expect(appRepository.save).toHaveBeenCalledTimes(1);
-        expect(appRepository.save).toHaveBeenCalledWith(expect.objectContaining({
-            settings: expect.objectContaining({ theme: 'light', thumbnailSize: 225 })
-        }));
+        expect(appRepository.update).toHaveBeenCalledTimes(1);
+        const updater = vi.mocked(appRepository.update).mock.calls[0][0];
+        expect(updater(appState(useSettingsStore.getState().settings)).settings).toEqual(
+            expect.objectContaining({ theme: 'light', thumbnailSize: 225 })
+        );
     });
 
     it('contains auto-save failures', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        vi.mocked(appRepository.load).mockRejectedValueOnce(new Error('load failed'));
+        vi.mocked(appRepository.update).mockRejectedValueOnce(new Error('save failed'));
+        useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
 
         useSettingsStore.getState().setSettings({ theme: 'light' });
         await vi.advanceTimersByTimeAsync(1000);
 
         expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to auto-save settings', expect.any(Error));
         error.mockRestore();
+    });
+
+    it('flushes the latest settings immediately and cancels the debounced duplicate save', async () => {
+        vi.mocked(appRepository.load).mockResolvedValue(appState(useSettingsStore.getState().settings));
+        useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
+
+        useSettingsStore.getState().setSettings({ maskedKeywords: ['private'] });
+        await useSettingsStore.getState().flushSettings();
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(appRepository.update).toHaveBeenCalledTimes(1);
+        const updater = vi.mocked(appRepository.update).mock.calls[0][0];
+        expect(updater(appState(useSettingsStore.getState().settings)).settings.maskedKeywords).toEqual(['private']);
+    });
+
+    it('flushes an explicit reset snapshot without publishing its privacy settings', async () => {
+        useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
+        const visibleSettings = useSettingsStore.getState().settings;
+        const purgeSettings = {
+            ...visibleSettings,
+            maskedKeywords: ['reset-private'],
+            maskingMode: 'blur' as const,
+        };
+
+        await useSettingsStore.getState().flushSettings(purgeSettings);
+
+        expect(useSettingsStore.getState().settings).toBe(visibleSettings);
+        const updater = vi.mocked(appRepository.update).mock.calls[0][0];
+        expect(updater(appState(visibleSettings)).settings).toBe(purgeSettings);
+    });
+
+    it('does not persist pre-initialization default updates', async () => {
+        useSettingsStore.getState().setSettings({ libraryShowGrids: false });
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(appRepository.update).not.toHaveBeenCalled();
     });
 
     it('registers new monitored, resource, and InvokeAI paths', async () => {
@@ -335,9 +414,39 @@ describe('SettingsStore', () => {
     });
 
     it('short-circuits repeated initialization', async () => {
-        useSettingsStore.setState({ isLoaded: true });
+        useSettingsStore.setState({ initializationStatus: 'ready', isLoaded: true });
         await useSettingsStore.getState().initialize();
         expect(appRepository.load).not.toHaveBeenCalled();
+    });
+
+    it('shares concurrent initialization so a stale second load cannot overwrite a later settings flush', async () => {
+        let resolveScope!: () => void;
+        mocks.ensureConfiguredAssetPathsAccessible.mockReturnValueOnce(new Promise<void>(resolve => {
+            resolveScope = resolve;
+        }));
+        vi.mocked(appRepository.load).mockResolvedValue(appState({
+            ...useSettingsStore.getState().settings,
+            maskedKeywords: ['persisted-old']
+        }));
+        vi.mocked(appRepository.update).mockImplementation(async updater => (
+            updater(appState(useSettingsStore.getState().settings))
+        ));
+
+        const first = useSettingsStore.getState().initialize();
+        const concurrent = useSettingsStore.getState().initialize();
+        await Promise.resolve();
+
+        expect(concurrent).toBe(first);
+        expect(appRepository.load).toHaveBeenCalledOnce();
+        resolveScope();
+        await Promise.all([first, concurrent]);
+
+        useSettingsStore.getState().setSettings({ maskedKeywords: ['saved-new'] });
+        await useSettingsStore.getState().flushSettings();
+
+        expect(appRepository.load).toHaveBeenCalledOnce();
+        const updater = vi.mocked(appRepository.update).mock.calls.at(-1)?.[0];
+        expect(updater?.(appState(useSettingsStore.getState().settings)).settings.maskedKeywords).toEqual(['saved-new']);
     });
 
     it('contains keyring load and legacy migration failures', async () => {
@@ -383,14 +492,74 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().isLoaded).toBe(true);
     });
 
-    it('marks settings loaded when repository initialization fails', async () => {
+    it('keeps failed repository initialization fail-closed', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         vi.mocked(appRepository.load).mockRejectedValueOnce(new Error('repository failed'));
 
         await useSettingsStore.getState().initialize();
 
-        expect(useSettingsStore.getState().isLoaded).toBe(true);
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            initializationStatus: 'failed',
+            isLoaded: false,
+        }));
         expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to load settings', expect.any(Error));
+
+        useSettingsStore.getState().setSettings({
+            theme: 'light',
+            maskedKeywords: ['fallback-edit'],
+        });
+        await useSettingsStore.getState().flushSettings();
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(appRepository.update).not.toHaveBeenCalled();
+
+        vi.mocked(appRepository.load).mockResolvedValueOnce(appState({
+            ...createDefaultAppSettings(),
+            theme: 'dark',
+            maskedKeywords: ['retry-loaded']
+        }));
+        await useSettingsStore.getState().initialize();
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            initializationStatus: 'ready',
+            isLoaded: true,
+        }));
+        expect(useSettingsStore.getState().settings.theme).toBe('dark');
+        expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retry-loaded']);
         error.mockRestore();
+    });
+
+    it('marks the privacy index stale synchronously when keywords change', () => {
+        useSettingsStore.setState({
+            initializationStatus: 'ready',
+            isLoaded: true,
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+        });
+
+        useSettingsStore.getState().setSettings({ maskedKeywords: ['different'] });
+
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+        expect(useSettingsStore.getState().privacyMaskIndexError).toBeNull();
+    });
+
+    it('unblocks on explicit disable and requires a fresh refresh after re-enable', () => {
+        useSettingsStore.setState({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'failed',
+            privacyMaskIndexError: 'failed',
+        });
+
+        useSettingsStore.getState().setPrivacyEnabled(false);
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            privacyEnabled: false,
+            privacyMaskIndexStatus: 'ready',
+            privacyMaskIndexError: null,
+        }));
+
+        useSettingsStore.getState().setPrivacyEnabled(true);
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'pending',
+            privacyMaskIndexError: null,
+        }));
     });
 });

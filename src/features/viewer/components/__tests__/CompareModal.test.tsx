@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '../../../../test/testUt
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { CompareModal } from '../CompareModal';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 
 const resizeMocks = vi.hoisted(() => ({
     observe: vi.fn(),
@@ -72,6 +73,20 @@ describe('CompareModal', () => {
         resizeMocks.callbacks.length = 0;
         vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => rect());
         Reflect.deleteProperty(globalThis, 'ResizeObserver');
+        useSettingsStore.setState({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+        });
+    });
+
+    it('closes without rendering images when privacy protection is stale', async () => {
+        useSettingsStore.setState({ privacyMaskIndexStatus: 'pending' });
+        const onClose = vi.fn();
+
+        renderModal({ onClose });
+
+        await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+        expect(document.querySelector('img')).toBeNull();
     });
 
     afterEach(() => {

@@ -1,7 +1,11 @@
 const PRODUCTION_IDENTIFIER: &str = "io.github.asuraace.ambit";
 const LEGACY_PRODUCTION_IDENTIFIER: &str = "com.ambit.app";
 const MAIN_DATABASE_FILES: [&str; 3] = ["images.db", "images.db-wal", "images.db-shm"];
+const PURGE_DATABASE_FILES: [&str; 3] = ["images.db-wal", "images.db-shm", "images.db"];
 const PURGE_MARKER_FILE: &str = ".purge_on_restart";
+pub(crate) const PURGE_JOURNAL_FILE: &str = "library.purge.json";
+pub(crate) const PURGE_COMPLETION_FILE: &str = "library.purge.completed";
+const DEVELOPMENT_IDENTIFIER: &str = "com.ambit.dev";
 const PRODUCTION_IDENTIFIER_PATHS: [&str; 2] =
     [PRODUCTION_IDENTIFIER, LEGACY_PRODUCTION_IDENTIFIER];
 const APP_IDENTIFIER_PATHS: [&str; 5] = [
@@ -43,6 +47,22 @@ struct DatabaseFileMove {
 struct AppProfileDir {
     identifier: &'static str,
     path: std::path::PathBuf,
+}
+
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PurgeTransactionArtifact {
+    version: u8,
+    transaction_id: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PurgeJournalArtifact {
+    version: u8,
+    transaction_id: String,
+    before: serde_json::Value,
+    after: serde_json::Value,
 }
 
 #[cfg(not(test))]
@@ -317,9 +337,14 @@ struct DeferredPurgeOutcome {
 }
 
 #[cfg(not(test))]
-pub(crate) fn check_and_execute_deferred_purge() {
+pub(crate) fn check_and_execute_deferred_purge() -> Result<(), String> {
     let roots = app_data_roots_to_check();
-    let outcome = execute_deferred_purge_for_roots(&roots);
+    let active_identifier = if cfg!(debug_assertions) {
+        DEVELOPMENT_IDENTIFIER
+    } else {
+        PRODUCTION_IDENTIFIER
+    };
+    let outcome = execute_deferred_purge_for_roots(&roots, active_identifier);
     if outcome.profiles_purged > 0 {
         println!(
             "[Purge] Completed deferred purge: {} profiles, {} database files, {} markers, {} failures",
@@ -329,59 +354,190 @@ pub(crate) fn check_and_execute_deferred_purge() {
             outcome.failures
         );
     }
+    if outcome.failures > 0 {
+        return Err(format!(
+            "Factory reset recovery is incomplete ({} failure(s)); startup was stopped and recovery evidence was preserved",
+            outcome.failures
+        ));
+    }
+    Ok(())
 }
 
-fn execute_deferred_purge_for_roots(roots: &[std::path::PathBuf]) -> DeferredPurgeOutcome {
-    let profile_dirs = profile_dirs_for_roots(roots);
-    let marked_profiles: Vec<AppProfileDir> = profile_dirs
+fn execute_deferred_purge_for_roots(
+    roots: &[std::path::PathBuf],
+    active_identifier: &'static str,
+) -> DeferredPurgeOutcome {
+    let purge_targets: Vec<AppProfileDir> = profile_dirs_for_roots(roots)
+        .into_iter()
+        .filter(|profile| {
+            if is_production_identifier(active_identifier) {
+                is_production_identifier(profile.identifier)
+            } else {
+                profile.identifier == active_identifier
+            }
+        })
+        .collect();
+    let marked_profiles: Vec<&AppProfileDir> = purge_targets
         .iter()
         .filter(|profile| profile.path.join(PURGE_MARKER_FILE).exists())
-        .cloned()
         .collect();
+    let journal_profiles: Vec<&AppProfileDir> = purge_targets
+        .iter()
+        .filter(|profile| profile.path.join(PURGE_JOURNAL_FILE).exists())
+        .collect();
+    let has_completion_receipt = purge_targets
+        .iter()
+        .any(|profile| profile.path.join(PURGE_COMPLETION_FILE).exists());
 
     if marked_profiles.is_empty() {
+        if !has_completion_receipt {
+            for profile in journal_profiles {
+                let _ = remove_existing_file_with_retry(&profile.path.join(PURGE_JOURNAL_FILE));
+            }
+        }
         return DeferredPurgeOutcome::default();
     }
 
-    let has_production_marker = marked_profiles
+    let marker_contents: Result<Vec<String>, String> = marked_profiles
         .iter()
-        .any(|profile| is_production_identifier(profile.identifier));
-    let mut purge_targets: Vec<AppProfileDir> = Vec::new();
+        .map(|profile| {
+            std::fs::read_to_string(profile.path.join(PURGE_MARKER_FILE))
+                .map_err(|error| format!("Failed to read purge marker: {error}"))
+        })
+        .collect();
+    let marker_contents = match marker_contents {
+        Ok(contents) => contents,
+        Err(error) => {
+            eprintln!("[Purge] {error}; recovery evidence was preserved");
+            return DeferredPurgeOutcome {
+                failures: 1,
+                ..Default::default()
+            };
+        }
+    };
 
-    if has_production_marker {
-        for profile in profile_dirs
+    let legacy_marker = marker_contents
+        .iter()
+        .all(|content| content == "purge requested");
+    let transaction = if legacy_marker {
+        None
+    } else {
+        let parsed: Result<Vec<PurgeTransactionArtifact>, _> = marker_contents
             .iter()
-            .filter(|profile| is_production_identifier(profile.identifier))
-        {
-            push_unique_profile(&mut purge_targets, profile.clone());
+            .map(|content| serde_json::from_str(content))
+            .collect();
+        match parsed {
+            Ok(markers)
+                if !markers.is_empty()
+                    && markers.iter().all(|marker| {
+                        marker.version == 1 && marker.transaction_id == markers[0].transaction_id
+                    }) =>
+            {
+                Some(markers[0].transaction_id.clone())
+            }
+            _ => {
+                eprintln!(
+                    "[Purge] Invalid or mismatched purge markers; recovery evidence was preserved"
+                );
+                return DeferredPurgeOutcome {
+                    failures: 1,
+                    ..Default::default()
+                };
+            }
         }
-    }
+    };
 
-    for profile in marked_profiles {
-        if !has_production_marker || !is_production_identifier(profile.identifier) {
-            push_unique_profile(&mut purge_targets, profile);
+    let completion_path = if let Some(transaction_id) = transaction.as_deref() {
+        if journal_profiles.len() != 1 {
+            eprintln!(
+                "[Purge] Expected exactly one purge journal; recovery evidence was preserved"
+            );
+            return DeferredPurgeOutcome {
+                failures: 1,
+                ..Default::default()
+            };
         }
-    }
+        let journal_path = journal_profiles[0].path.join(PURGE_JOURNAL_FILE);
+        let journal = match read_purge_journal(&journal_path) {
+            Ok(journal) if journal.transaction_id == transaction_id => journal,
+            Ok(_) | Err(_) => {
+                eprintln!("[Purge] Purge journal does not match the committed marker; recovery evidence was preserved");
+                return DeferredPurgeOutcome {
+                    failures: 1,
+                    ..Default::default()
+                };
+            }
+        };
+        if journal.version != 1 || !journal.before.is_object() || !journal.after.is_object() {
+            eprintln!("[Purge] Purge journal has an invalid state payload; recovery evidence was preserved");
+            return DeferredPurgeOutcome {
+                failures: 1,
+                ..Default::default()
+            };
+        }
+        Some(journal_profiles[0].path.join(PURGE_COMPLETION_FILE))
+    } else {
+        None
+    };
 
     let mut outcome = DeferredPurgeOutcome::default();
     let mut touched_profiles: Vec<std::path::PathBuf> = Vec::new();
 
-    for target in &purge_targets {
-        println!(
-            "[Purge] Processing deferred purge for {} at {}",
-            target.identifier,
-            target.path.display()
-        );
-        let target_outcome = purge_database_files(&target.path);
-        if target_outcome.database_files_deleted > 0 {
-            push_unique_path(&mut touched_profiles, target.path.clone());
+    let completion_exists = match completion_path.as_ref() {
+        Some(path) if path.exists() => match read_purge_transaction(path) {
+            Ok(receipt)
+                if receipt.version == 1
+                    && Some(receipt.transaction_id.as_str()) == transaction.as_deref() =>
+            {
+                true
+            }
+            _ => {
+                eprintln!(
+                    "[Purge] Invalid purge completion receipt; recovery evidence was preserved"
+                );
+                return DeferredPurgeOutcome {
+                    failures: 1,
+                    ..Default::default()
+                };
+            }
+        },
+        _ => false,
+    };
+
+    if !completion_exists {
+        for target in &purge_targets {
+            println!(
+                "[Purge] Processing deferred purge for {} at {}",
+                target.identifier,
+                target.path.display()
+            );
+            let target_outcome = purge_database_files(&target.path);
+            if target_outcome.database_files_deleted > 0 {
+                push_unique_path(&mut touched_profiles, target.path.clone());
+            }
+            outcome.database_files_deleted += target_outcome.database_files_deleted;
+            outcome.failures += target_outcome.failures;
         }
-        outcome.database_files_deleted += target_outcome.database_files_deleted;
-        outcome.failures += target_outcome.failures;
+
+        if outcome.failures == 0 {
+            if let (Some(path), Some(transaction_id)) =
+                (completion_path.as_ref(), transaction.as_ref())
+            {
+                let receipt = serde_json::to_string_pretty(&PurgeTransactionArtifact {
+                    version: 1,
+                    transaction_id: transaction_id.clone(),
+                })
+                .expect("purge receipt serialization should not fail");
+                if let Err(error) = atomic_write_new(path, &receipt, transaction_id) {
+                    eprintln!("[Purge] Failed to write completion receipt: {error}");
+                    outcome.failures += 1;
+                }
+            }
+        }
     }
 
     if outcome.failures == 0 {
-        for target in &purge_targets {
+        for target in marked_profiles {
             let target_outcome = purge_purge_marker(&target.path);
             if target_outcome.markers_deleted > 0 {
                 push_unique_path(&mut touched_profiles, target.path.clone());
@@ -397,6 +553,118 @@ fn execute_deferred_purge_for_roots(roots: &[std::path::PathBuf]) -> DeferredPur
 
     outcome.profiles_purged = touched_profiles.len();
     outcome
+}
+
+pub(crate) fn schedule_purge_artifacts(
+    journal_dir: &std::path::Path,
+    marker_dir: &std::path::Path,
+    transaction_id: &str,
+    journal_json: &str,
+) -> Result<(), String> {
+    validate_transaction_id(transaction_id)?;
+    let journal: PurgeJournalArtifact = serde_json::from_str(journal_json)
+        .map_err(|error| format!("Invalid purge journal: {error}"))?;
+    if journal.version != 1
+        || journal.transaction_id != transaction_id
+        || !journal.before.is_object()
+        || !journal.after.is_object()
+    {
+        return Err("Invalid purge journal payload".to_string());
+    }
+
+    std::fs::create_dir_all(journal_dir)
+        .map_err(|error| format!("Failed to prepare purge journal directory: {error}"))?;
+    std::fs::create_dir_all(marker_dir)
+        .map_err(|error| format!("Failed to prepare purge marker directory: {error}"))?;
+    let journal_path = journal_dir.join(PURGE_JOURNAL_FILE);
+    let marker_path = marker_dir.join(PURGE_MARKER_FILE);
+    if journal_path.exists()
+        || marker_path.exists()
+        || journal_dir.join(PURGE_COMPLETION_FILE).exists()
+    {
+        return Err("A purge transaction is already pending recovery".to_string());
+    }
+
+    atomic_write_new(&journal_path, journal_json, transaction_id)?;
+    let marker_json = serde_json::to_string_pretty(&PurgeTransactionArtifact {
+        version: 1,
+        transaction_id: transaction_id.to_string(),
+    })
+    .map_err(|error| format!("Failed to serialize purge marker: {error}"))?;
+    if let Err(error) = atomic_write_new(&marker_path, &marker_json, transaction_id) {
+        let _ = remove_existing_file_with_retry(&journal_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn validate_transaction_id(transaction_id: &str) -> Result<(), String> {
+    if transaction_id.is_empty()
+        || transaction_id.len() > 128
+        || !transaction_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("Invalid purge transaction id".to_string());
+    }
+    Ok(())
+}
+
+fn atomic_write_new(
+    path: &std::path::Path,
+    contents: &str,
+    transaction_id: &str,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    if path.exists() {
+        return Err(format!(
+            "Refusing to replace existing recovery artifact {}",
+            path.display()
+        ));
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("Invalid recovery artifact path {}", path.display()))?;
+    let temporary_path = path.with_file_name(format!("{file_name}.{transaction_id}.tmp"));
+    if temporary_path.exists() {
+        remove_existing_file_with_retry(&temporary_path)?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary_path)
+        .map_err(|error| format!("Failed to create {}: {error}", temporary_path.display()))?;
+    if let Err(error) = file
+        .write_all(contents.as_bytes())
+        .and_then(|_| file.sync_all())
+    {
+        let _ = std::fs::remove_file(&temporary_path);
+        return Err(format!(
+            "Failed to write {}: {error}",
+            temporary_path.display()
+        ));
+    }
+    drop(file);
+    std::fs::rename(&temporary_path, path).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary_path);
+        format!("Failed to commit {}: {error}", path.display())
+    })
+}
+
+fn read_purge_journal(path: &std::path::Path) -> Result<PurgeJournalArtifact, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|error| format!("Failed to parse {}: {error}", path.display()))
+}
+
+fn read_purge_transaction(path: &std::path::Path) -> Result<PurgeTransactionArtifact, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|error| format!("Failed to parse {}: {error}", path.display()))
 }
 
 fn profile_dirs_for_roots(roots: &[std::path::PathBuf]) -> Vec<AppProfileDir> {
@@ -416,16 +684,6 @@ fn is_production_identifier(identifier: &str) -> bool {
     PRODUCTION_IDENTIFIER_PATHS.contains(&identifier)
 }
 
-fn push_unique_profile(profiles: &mut Vec<AppProfileDir>, profile: AppProfileDir) {
-    if profiles
-        .iter()
-        .any(|existing| existing.path == profile.path)
-    {
-        return;
-    }
-    profiles.push(profile);
-}
-
 fn push_unique_path(paths: &mut Vec<std::path::PathBuf>, path: std::path::PathBuf) {
     if paths.iter().any(|existing| existing == &path) {
         return;
@@ -436,7 +694,7 @@ fn push_unique_path(paths: &mut Vec<std::path::PathBuf>, path: std::path::PathBu
 fn purge_database_files(profile_dir: &std::path::Path) -> DeferredPurgeOutcome {
     let mut outcome = DeferredPurgeOutcome::default();
 
-    for name in MAIN_DATABASE_FILES {
+    for name in PURGE_DATABASE_FILES {
         let path = profile_dir.join(name);
         match remove_existing_file_with_retry(&path) {
             Ok(true) => {
@@ -1031,6 +1289,16 @@ mod identifier_migration_tests {
         write_file(&profile_dir.join(PURGE_MARKER_FILE), "purge requested");
     }
 
+    fn purge_journal_json(transaction_id: &str) -> String {
+        serde_json::json!({
+            "version": 1,
+            "transactionId": transaction_id,
+            "before": { "settings": { "maskedKeywords": ["custom"] } },
+            "after": { "settings": { "maskedKeywords": ["nsfw", "blood", "gore"] } }
+        })
+        .to_string()
+    }
+
     fn assert_db_triplet_missing(profile_dir: &Path) {
         assert!(!profile_dir.join("images.db").exists());
         assert!(!profile_dir.join("images.db-wal").exists());
@@ -1242,7 +1510,8 @@ mod identifier_migration_tests {
         write_db_triplet(&dev_profile, "dev");
         write_file(&local_profile.join("library.json"), "{}");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 6);
         assert_eq!(outcome.markers_deleted, 2);
@@ -1269,7 +1538,8 @@ mod identifier_migration_tests {
         write_purge_marker(&roaming_profile);
         write_db_triplet(&roaming_profile, "roaming");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
         let migration_outcome = migrate_database_files_to_local(&roaming_profile, &local_profile);
 
         assert_eq!(outcome.database_files_deleted, 3);
@@ -1295,7 +1565,8 @@ mod identifier_migration_tests {
         write_db_triplet(&legacy_local_profile, "legacy-local");
         write_db_triplet(&legacy_roaming_profile, "legacy-roaming");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 6);
         assert_db_triplet_missing(&legacy_local_profile);
@@ -1316,7 +1587,8 @@ mod identifier_migration_tests {
         write_db_triplet(&local_profile, "local");
         write_db_triplet(&roaming_profile, "roaming");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], DEVELOPMENT_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 3);
         assert_eq!(outcome.markers_deleted, 1);
@@ -1338,7 +1610,8 @@ mod identifier_migration_tests {
         write_file(&local_profile.join("images.db-wal"), "wal");
         write_file(&local_profile.join("images.db-shm"), "shm");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 2);
         assert_eq!(outcome.markers_deleted, 0);
@@ -1361,7 +1634,8 @@ mod identifier_migration_tests {
         fs::create_dir_all(roaming_profile.join("images.db"))
             .expect("directory-shaped roaming db sentinel should be created");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 0);
         assert_eq!(outcome.markers_deleted, 0);
@@ -1383,7 +1657,8 @@ mod identifier_migration_tests {
             .expect("directory-shaped dev db sentinel should be created");
         write_db_triplet(&local_profile, "local");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], DEVELOPMENT_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 0);
         assert_eq!(outcome.markers_deleted, 0);
@@ -1402,7 +1677,8 @@ mod identifier_migration_tests {
         let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
         write_purge_marker(&local_profile);
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome.database_files_deleted, 0);
         assert_eq!(outcome.markers_deleted, 1);
@@ -1421,11 +1697,221 @@ mod identifier_migration_tests {
         write_db_triplet(&local_profile, "local");
         write_db_triplet(&roaming_profile, "roaming");
 
-        let outcome = execute_deferred_purge_for_roots(&[roaming_root, local_root]);
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
 
         assert_eq!(outcome, DeferredPurgeOutcome::default());
         assert_db_triplet_exists(&local_profile);
         assert_db_triplet_exists(&roaming_profile);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn purge_schedule_commits_journal_before_matching_marker() {
+        let root = unique_temp_root("purge-schedule");
+        let journal_dir = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        let marker_dir = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let transaction_id = "purge-transaction-1";
+        let journal_json = purge_journal_json(transaction_id);
+
+        schedule_purge_artifacts(&journal_dir, &marker_dir, transaction_id, &journal_json)
+            .expect("purge transaction should be scheduled");
+
+        assert_eq!(
+            fs::read_to_string(journal_dir.join(PURGE_JOURNAL_FILE)).unwrap(),
+            journal_json
+        );
+        let marker = read_purge_transaction(&marker_dir.join(PURGE_MARKER_FILE)).unwrap();
+        assert_eq!(marker.transaction_id, transaction_id);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn purge_schedule_removes_uncommitted_journal_when_marker_write_fails() {
+        let root = unique_temp_root("purge-schedule-marker-failure");
+        let journal_dir = root.join("Local").join(PRODUCTION_IDENTIFIER);
+        let marker_dir = root.join("Roaming").join(PRODUCTION_IDENTIFIER);
+        let transaction_id = "purge-transaction-2";
+        fs::create_dir_all(marker_dir.join(format!("{PURGE_MARKER_FILE}.{transaction_id}.tmp")))
+            .expect("marker temp conflict should be created");
+
+        let result = schedule_purge_artifacts(
+            &journal_dir,
+            &marker_dir,
+            transaction_id,
+            &purge_journal_json(transaction_id),
+        );
+
+        assert!(result.is_err());
+        assert!(!journal_dir.join(PURGE_JOURNAL_FILE).exists());
+        assert!(!marker_dir.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn committed_purge_deletes_sqlite_then_writes_completion_receipt() {
+        let root = unique_temp_root("purge-committed-recovery");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let local_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let roaming_profile = roaming_root.join(PRODUCTION_IDENTIFIER);
+        let transaction_id = "purge-transaction-3";
+        write_db_triplet(&local_profile, "local");
+        write_db_triplet(&roaming_profile, "roaming");
+        schedule_purge_artifacts(
+            &local_profile,
+            &roaming_profile,
+            transaction_id,
+            &purge_journal_json(transaction_id),
+        )
+        .unwrap();
+
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome.database_files_deleted, 6);
+        assert_eq!(outcome.failures, 0);
+        assert_db_triplet_missing(&local_profile);
+        assert_db_triplet_missing(&roaming_profile);
+        assert!(!roaming_profile.join(PURGE_MARKER_FILE).exists());
+        assert!(local_profile.join(PURGE_JOURNAL_FILE).exists());
+        let receipt = read_purge_transaction(&local_profile.join(PURGE_COMPLETION_FILE)).unwrap();
+        assert_eq!(receipt.transaction_id, transaction_id);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn committed_purge_keeps_marker_and_journal_when_database_delete_fails() {
+        let root = unique_temp_root("purge-committed-delete-failure");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let transaction_id = "purge-transaction-4";
+        fs::create_dir_all(profile.join("images.db"))
+            .expect("directory-shaped db sentinel should be created");
+        schedule_purge_artifacts(
+            &profile,
+            &profile,
+            transaction_id,
+            &purge_journal_json(transaction_id),
+        )
+        .unwrap();
+
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome.failures, 1);
+        assert!(profile.join("images.db").is_dir());
+        assert!(profile.join(PURGE_MARKER_FILE).exists());
+        assert!(profile.join(PURGE_JOURNAL_FILE).exists());
+        assert!(!profile.join(PURGE_COMPLETION_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn completed_native_purge_recovery_is_idempotent() {
+        let root = unique_temp_root("purge-idempotent-recovery");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let transaction_id = "purge-transaction-5";
+        write_db_triplet(&profile, "production");
+        schedule_purge_artifacts(
+            &profile,
+            &profile,
+            transaction_id,
+            &purge_journal_json(transaction_id),
+        )
+        .unwrap();
+        let roots = [roaming_root, local_root];
+
+        let first = execute_deferred_purge_for_roots(&roots, PRODUCTION_IDENTIFIER);
+        let second = execute_deferred_purge_for_roots(&roots, PRODUCTION_IDENTIFIER);
+
+        assert_eq!(first.failures, 0);
+        assert_eq!(second, DeferredPurgeOutcome::default());
+        assert_db_triplet_missing(&profile);
+        assert!(profile.join(PURGE_JOURNAL_FILE).exists());
+        assert!(profile.join(PURGE_COMPLETION_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn development_recovery_does_not_consume_installed_profile_transaction() {
+        let root = unique_temp_root("purge-profile-isolation");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let production_profile = local_root.join(PRODUCTION_IDENTIFIER);
+        let development_profile = local_root.join(DEVELOPMENT_IDENTIFIER);
+        write_db_triplet(&production_profile, "production");
+        write_db_triplet(&development_profile, "development");
+        schedule_purge_artifacts(
+            &production_profile,
+            &production_profile,
+            "production-purge",
+            &purge_journal_json("production-purge"),
+        )
+        .unwrap();
+
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], DEVELOPMENT_IDENTIFIER);
+
+        assert_eq!(outcome, DeferredPurgeOutcome::default());
+        assert_db_triplet_exists(&production_profile);
+        assert_db_triplet_exists(&development_profile);
+        assert!(production_profile.join(PURGE_MARKER_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn mismatched_transaction_preserves_database_and_recovery_evidence() {
+        let root = unique_temp_root("purge-mismatch");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_db_triplet(&profile, "production");
+        write_file(
+            &profile.join(PURGE_JOURNAL_FILE),
+            &purge_journal_json("journal-transaction"),
+        );
+        write_file(
+            &profile.join(PURGE_MARKER_FILE),
+            &serde_json::json!({
+                "version": 1,
+                "transactionId": "marker-transaction"
+            })
+            .to_string(),
+        );
+
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome.failures, 1);
+        assert_db_triplet_exists(&profile);
+        assert!(profile.join(PURGE_JOURNAL_FILE).exists());
+        assert!(profile.join(PURGE_MARKER_FILE).exists());
+        assert!(!profile.join(PURGE_COMPLETION_FILE).exists());
+        cleanup(&root);
+    }
+
+    #[test]
+    fn precommit_orphan_journal_is_discarded_without_touching_database() {
+        let root = unique_temp_root("purge-orphan-journal");
+        let roaming_root = root.join("Roaming");
+        let local_root = root.join("Local");
+        let profile = local_root.join(PRODUCTION_IDENTIFIER);
+        write_db_triplet(&profile, "production");
+        write_file(
+            &profile.join(PURGE_JOURNAL_FILE),
+            &purge_journal_json("orphan-transaction"),
+        );
+
+        let outcome =
+            execute_deferred_purge_for_roots(&[roaming_root, local_root], PRODUCTION_IDENTIFIER);
+
+        assert_eq!(outcome, DeferredPurgeOutcome::default());
+        assert_db_triplet_exists(&profile);
+        assert!(!profile.join(PURGE_JOURNAL_FILE).exists());
         cleanup(&root);
     }
 
