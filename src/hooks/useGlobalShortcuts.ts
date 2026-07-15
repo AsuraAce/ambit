@@ -161,7 +161,7 @@ export const useGlobalShortcuts = ({
                 return;
             }
 
-            if (e.key === 'c' || e.key === 'C') {
+            if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
                 e.preventDefault();
                 openCollection();
                 return;
