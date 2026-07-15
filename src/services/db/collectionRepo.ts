@@ -247,6 +247,22 @@ export const clearCollectionThumbnailCacheForImages = async (imageIds: string[])
     await clearDynamicThumbnailCacheForCollections(db, collectionIds);
 };
 
+export const clearInvokeBoardThumbnailCaches = async () => {
+    if (isBrowserMockMode()) return;
+
+    const db = await getDb();
+    await db.execute(
+        `UPDATE collections
+         SET dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL,
+             dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE source = 'invoke'
+           AND filter_state IS NULL
+           AND (custom_thumbnail IS NULL OR custom_thumbnail = '')`
+    );
+};
+
 export const clearAllCollectionThumbnailCaches = async () => {
     if (isBrowserMockMode()) return;
 
