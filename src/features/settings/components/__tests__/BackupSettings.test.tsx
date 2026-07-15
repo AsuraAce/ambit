@@ -51,7 +51,7 @@ describe('BackupSettings', () => {
         expect(screen.queryByText('backup-4.db')).toBeNull();
         expect(screen.getByText('+ 1 more archived backups')).toBeTruthy();
 
-        fireEvent.click(screen.getByTitle('Refresh List'));
+        fireEvent.click(screen.getByRole('button', { name: 'Refresh Backup List' }));
         await waitFor(() => expect(getBackups).toHaveBeenCalledTimes(2));
         fireEvent.click(screen.getByRole('button', { name: 'Folder' }));
         await waitFor(() => expect(mockedShowPath).toHaveBeenCalledWith('C:/backups/backup-1.db'));

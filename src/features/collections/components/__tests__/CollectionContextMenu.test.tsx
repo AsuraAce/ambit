@@ -62,7 +62,7 @@ describe('CollectionContextMenu', () => {
             />
         );
 
-        const titledActions: Array<[string, ReturnType<typeof vi.fn>]> = [
+        const iconActions: Array<[string, ReturnType<typeof vi.fn>]> = [
             ['Play Slideshow', handlers.onPlaySlideshow],
             ['Unpin collection', handlers.onTogglePin],
             ['Unarchive', handlers.onToggleArchive],
@@ -75,8 +75,8 @@ describe('CollectionContextMenu', () => {
             ['Reset Thumbnail', handlers.onResetThumbnail]
         ];
 
-        for (const [name, callback] of titledActions) {
-            fireEvent.click(screen.getByTitle(name, { exact: true }));
+        for (const [name, callback] of iconActions) {
+            fireEvent.click(screen.getByRole('button', { name }));
             expect(callback).toHaveBeenCalledTimes(1);
         }
         for (const [name, callback] of textActions) {
@@ -100,12 +100,12 @@ describe('CollectionContextMenu', () => {
 
         expect(screen.queryByText('Edit Filters')).toBeNull();
         expect(screen.queryByText('Reset Thumbnail')).toBeNull();
-        expect(screen.getByTitle('Pin collection')).toBeTruthy();
-        expect(screen.getByTitle('Archive')).toBeTruthy();
-        expect(screen.getByTitle('red').className).toContain('ring-2');
+        expect(screen.getByRole('button', { name: 'Pin collection' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Archive' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Set collection color to red' }).className).toContain('ring-2');
 
-        fireEvent.click(screen.getByTitle('blue'));
-        fireEvent.click(screen.getByTitle('None'));
+        fireEvent.click(screen.getByRole('button', { name: 'Set collection color to blue' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear collection color' }));
 
         expect(handlers.onColorChange).toHaveBeenNthCalledWith(1, 'blue');
         expect(handlers.onColorChange).toHaveBeenNthCalledWith(2, undefined);

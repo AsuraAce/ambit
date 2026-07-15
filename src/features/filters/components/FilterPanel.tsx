@@ -17,6 +17,7 @@ import { APP_NAME } from '../../../constants/app';
 import { REPOSITORY_URL } from '../../../constants/support';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import { openExternalUrl } from '../../../utils/externalLinks';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface FilterPanelProps {
     filters: FilterState;
@@ -270,6 +271,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     return (
         <div
+            aria-hidden={!isVisible}
+            inert={isVisible ? undefined : true}
             className={`bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-3xl flex flex-col h-full transition-all duration-500 ease-spring shadow-2xl ${isVisible ? 'w-72 opacity-100 translate-x-0' : 'w-0 opacity-0 -translate-x-4 overflow-hidden'} ${className}`}
         >
             {/* Header */}
@@ -377,20 +380,19 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                         const isSelected = assetScope === option.id;
 
                                         return (
-                                            <button
+                                            <TooltipButton
                                                 key={option.id}
-                                                type="button"
+                                                label={option.label}
+                                                content={option.label}
                                                 onClick={() => setAssetScope(option.id)}
-                                                aria-label={option.label}
                                                 aria-pressed={isSelected}
-                                                title={option.label}
                                                 className={`flex h-9 items-center justify-center rounded-lg transition-all ${isSelected
                                                     ? 'bg-white text-gray-900 shadow-sm dark:bg-zinc-800 dark:text-white'
                                                     : 'text-gray-500 hover:bg-white/50 hover:text-gray-800 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-200'
                                                     }`}
                                             >
                                                 <ScopeIcon className="h-4 w-4" aria-hidden="true" />
-                                            </button>
+                                            </TooltipButton>
                                         );
                                     })}
                                 </div>
@@ -528,14 +530,14 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     <span className="font-medium hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">{APP_NAME}</span>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button
-                        type="button"
+                    <TooltipButton
+                        label="Open Ambit on GitHub"
+                        content="Open Ambit on GitHub"
                         onClick={() => openExternalUrl(REPOSITORY_URL)}
                         className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors opacity-80 hover:opacity-100"
-                        title="Open Ambit on GitHub"
                     >
                         <ExternalLink className="w-3 h-3" />
-                    </button>
+                    </TooltipButton>
                     <span className="hover:text-gray-900 dark:hover:text-zinc-200 transition-colors cursor-default">v{appVersion ?? '...'}</span>
                 </div>
             </div>

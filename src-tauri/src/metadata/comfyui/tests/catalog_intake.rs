@@ -1,0 +1,185 @@
+use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
+use crate::metadata::comfyui::extract_comfyui_metadata_with_diagnostics;
+use std::collections::HashMap;
+
+struct IntakeFixture {
+    name: &'static str,
+    source_blob: &'static str,
+    chunks_json: &'static str,
+    graph_node_count: usize,
+    output_candidates: usize,
+    output_roots: usize,
+    output_ambiguous: bool,
+}
+
+const FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_anima_base_v1",
+        source_blob: "2b8eb6b61006a4e95a92f9e9b10fb23df44f3868",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_newbieimage_exp0_1-t2i",
+        source_blob: "04bd4bae0d85c4860b65e603f3b5020391123210",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
+        ),
+        graph_node_count: 17,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_lens_t2i",
+        source_blob: "8784096ee565f02e20c13c07a0f582cfa9d0692d",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
+        graph_node_count: 19,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_boogu_image_0_1_edit",
+        source_blob: "35750c20d300a25e6e1f8231c664392accee8abe",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit.chunks.json"
+        ),
+        graph_node_count: 17,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "video_bernini_r_image_editing",
+        source_blob: "8d6b8327865c9421a0f20244f1f314d8c2818e67",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
+        ),
+        graph_node_count: 45,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
+fn git_blob_sha1(bytes: &[u8]) -> String {
+    let mut message = format!("blob {}\0", bytes.len()).into_bytes();
+    message.extend_from_slice(bytes);
+    let bit_len = (message.len() as u64) * 8;
+    message.push(0x80);
+    while message.len() % 64 != 56 {
+        message.push(0);
+    }
+    message.extend_from_slice(&bit_len.to_be_bytes());
+
+    let mut state = [
+        0x6745_2301u32,
+        0xefcd_ab89,
+        0x98ba_dcfe,
+        0x1032_5476,
+        0xc3d2_e1f0,
+    ];
+    for chunk in message.chunks_exact(64) {
+        let mut words = [0u32; 80];
+        for (index, word) in words.iter_mut().take(16).enumerate() {
+            let offset = index * 4;
+            *word = u32::from_be_bytes(chunk[offset..offset + 4].try_into().unwrap());
+        }
+        for index in 16..80 {
+            words[index] =
+                (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16])
+                    .rotate_left(1);
+        }
+
+        let [mut a, mut b, mut c, mut d, mut e] = state;
+        for (index, word) in words.iter().enumerate() {
+            let (function, constant) = match index {
+                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
+                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
+                _ => (b ^ c ^ d, 0xca62_c1d6),
+            };
+            let next = a
+                .rotate_left(5)
+                .wrapping_add(function)
+                .wrapping_add(e)
+                .wrapping_add(constant)
+                .wrapping_add(*word);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = next;
+        }
+        for (slot, value) in state.iter_mut().zip([a, b, c, d, e]) {
+            *slot = slot.wrapping_add(value);
+        }
+    }
+
+    format!(
+        "{:08x}{:08x}{:08x}{:08x}{:08x}",
+        state[0], state[1], state[2], state[3], state[4]
+    )
+}
+
+#[test]
+fn pinned_phase22_workflows_have_stable_graph_shape() {
+    for fixture in FIXTURES {
+        let chunks: HashMap<String, String> = serde_json::from_str(fixture.chunks_json)
+            .unwrap_or_else(|error| {
+                panic!("{} chunks should be valid JSON: {error}", fixture.name)
+            });
+        assert_eq!(chunks.len(), 1, "{} should be workflow-only", fixture.name);
+        let workflow = chunks
+            .get("workflow")
+            .unwrap_or_else(|| panic!("{} should include a workflow chunk", fixture.name));
+        assert_eq!(
+            git_blob_sha1(workflow.as_bytes()),
+            fixture.source_blob,
+            "{} pinned Git blob identity",
+            fixture.name
+        );
+        let _: serde_json::Value = serde_json::from_str(workflow).unwrap_or_else(|error| {
+            panic!("{} workflow should be valid JSON: {error}", fixture.name)
+        });
+
+        let (metadata, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+        assert_eq!(
+            metadata.workflow_json.as_deref(),
+            Some(workflow.as_str()),
+            "{} workflow preservation",
+            fixture.name
+        );
+        assert!(metadata.has_workflow_hint, "{} workflow hint", fixture.name);
+        assert_eq!(diagnostics.graph_node_count, fixture.graph_node_count);
+        assert_eq!(
+            diagnostics.selected_output_candidate_count,
+            fixture.output_candidates
+        );
+        assert_eq!(
+            diagnostics.unique_output_root_sampler_count,
+            fixture.output_roots
+        );
+        assert_eq!(diagnostics.output_ambiguous, fixture.output_ambiguous);
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::WorkflowJson),
+            Some(&ComfyParseLayer::WorkflowChunk),
+            "{} workflow JSON provenance",
+            fixture.name
+        );
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::WorkflowHint),
+            Some(&ComfyParseLayer::WorkflowChunk),
+            "{} workflow hint provenance",
+            fixture.name
+        );
+    }
+}

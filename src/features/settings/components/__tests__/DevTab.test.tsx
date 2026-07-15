@@ -151,7 +151,7 @@ describe('DevTab', () => {
 
         fireEvent.click(screen.getAllByRole('button', { name: 'Edit' })[0]);
         expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('override');
-        fireEvent.click(screen.getByTitle('Reset to Default'));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset Prompt to Default' }));
 
         expect(settingsStoreMock.settings.systemPrompts?.ANALYSIS).toBeUndefined();
         expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toContain('expert AI Image Generation Prompt Engineer');
@@ -161,7 +161,7 @@ describe('DevTab', () => {
         settingsStoreMock.settings = createSettings({ systemPrompts: { ANALYSIS: 'override' } });
         render(<DevTab />);
 
-        fireEvent.click(screen.getByTitle('Reset to Default'));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset Prompt to Default' }));
 
         expect(settingsStoreMock.settings.systemPrompts?.ANALYSIS).toBeUndefined();
         expect(screen.queryByRole('textbox')).toBeNull();
@@ -172,7 +172,7 @@ describe('DevTab', () => {
         render(<DevTab />);
         settingsStoreMock.settings.systemPrompts = undefined;
 
-        fireEvent.click(screen.getByTitle('Reset to Default'));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset Prompt to Default' }));
 
         expect(settingsStoreMock.settings.systemPrompts).toEqual({});
     });

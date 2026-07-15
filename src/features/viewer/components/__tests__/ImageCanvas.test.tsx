@@ -26,8 +26,8 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ImageCanvas>> = {}
 describe('ImageCanvas', () => {
     it('routes controls, navigation, and pointer handlers', () => {
         const { container, props, handlers } = setup();
-        for (const [title, callback] of [['Zoom Out', props.onZoomOut], ['Zoom In', props.onZoomIn], ['Reset View', props.onResetZoom], ['Previous Image (Left Arrow)', props.onPrev], ['Next Image (Right Arrow)', props.onNext]] as const) {
-            fireEvent.click(screen.getByTitle(title));
+        for (const [label, callback] of [['Zoom Out', props.onZoomOut], ['Zoom In', props.onZoomIn], ['Reset View', props.onResetZoom], ['Previous Image (Left Arrow)', props.onPrev], ['Next Image (Right Arrow)', props.onNext]] as const) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
             expect(callback).toHaveBeenCalledTimes(1);
         }
         const area = screen.getByAltText('prompt').closest('.group') as HTMLElement;

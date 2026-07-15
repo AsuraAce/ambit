@@ -125,6 +125,27 @@ describe('ActivityDock', () => {
         expect(screen.queryByText('Cancel')).toBeNull();
     });
 
+    it('reveals dock actions when keyboard focus enters the hover-hidden action group', () => {
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: {
+                current: 1,
+                total: 5,
+                message: 'Importing images...'
+            }
+        });
+
+        render(<ActivityDock />);
+
+        const minimizeButton = screen.getByRole('button', { name: 'Minimize Activity Details' });
+        const actionGroup = minimizeButton.parentElement;
+        expect(actionGroup?.className).toContain('opacity-0');
+        expect(actionGroup?.className).toContain('group-focus-within:opacity-100');
+
+        minimizeButton.focus();
+        expect(document.activeElement).toBe(minimizeButton);
+    });
+
     it('aborts an import when cancel is clicked and a controller is registered', () => {
         const abortController = new AbortController();
         const abortSpy = vi.spyOn(abortController, 'abort');
@@ -705,7 +726,7 @@ describe('ActivityDock', () => {
             vi.advanceTimersByTime(2500);
         });
 
-        fireEvent.click(screen.getByTitle('Dismiss'));
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
         expect(screen.queryByText('Live Watch')).toBeNull();
 
         act(() => {
@@ -851,9 +872,9 @@ describe('ActivityDock', () => {
             syncProgress: { current: 1, total: 4, message: 'Syncing' }
         });
         const view = render(<ActivityDock />);
-        fireEvent.click(screen.getByTitle('Minimize'));
-        expect(screen.getByTitle('Click to expand details')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('Click to expand details'));
+        fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
+        expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
         expect(screen.getAllByText('Syncing')).toHaveLength(2);
 
         view.unmount();
@@ -873,7 +894,7 @@ describe('ActivityDock', () => {
             syncProgress: { current: 1, total: 2, message: 'Syncing' }
         });
         render(<ActivityDock />);
-        fireEvent.click(screen.getByTitle('Dismiss'));
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
         expect(screen.queryByText('Background Activity')).toBeNull();
         expect(useLibraryStore.getState().isActivityDockDismissed).toBe(true);
     });
@@ -950,8 +971,8 @@ describe('ActivityDock', () => {
         useLibraryStore.getState().startLiveWatchSession('invoke', { phase: 'syncing' });
         const { container } = render(<ActivityDock />);
         act(() => vi.advanceTimersByTime(2500));
-        fireEvent.click(screen.getByTitle('Minimize'));
-        expect(screen.getByTitle('Click to expand details')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
+        expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
         expect(container.querySelector('.animate-pulse')).toBeNull();
     });
 

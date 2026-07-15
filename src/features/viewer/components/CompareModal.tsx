@@ -13,6 +13,7 @@ import {
     getZoomTransform
 } from '../../../utils/zoomMath';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface CompareModalProps {
     imageA: AIImage;
@@ -161,7 +162,10 @@ const ImageActions = ({
     onTogglePin?: (id: string, isPinned: boolean) => void
 }) => (
     <div className={`absolute top-3 ${side === 'left' ? 'left-3' : 'right-3'} z-50 flex gap-2 pointer-events-auto`}>
-        <button
+        <TooltipButton
+            label={img.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+            content={img.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
+            aria-pressed={img.isFavorite}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
                 e.preventDefault();
@@ -169,13 +173,15 @@ const ImageActions = ({
                 onToggleFavorite(img.id);
             }}
             className="p-2.5 bg-black/60 hover:bg-black/90 rounded-full transition-all group cursor-pointer border border-white/10 backdrop-blur-md"
-            title={img.isFavorite ? "Remove from favorites" : "Add to favorites"}
         >
             <Heart className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'}`} />
-        </button>
+        </TooltipButton>
 
         {onTogglePin && (
-            <button
+            <TooltipButton
+                label={img.isPinned ? "Unpin" : "Pin to Top"}
+                content={img.isPinned ? "Unpin" : "Pin to Top"}
+                aria-pressed={Boolean(img.isPinned)}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                     e.preventDefault();
@@ -183,10 +189,9 @@ const ImageActions = ({
                     onTogglePin(img.id, !img.isPinned);
                 }}
                 className="p-2.5 bg-black/60 hover:bg-black/90 rounded-full transition-all group cursor-pointer border border-white/10 backdrop-blur-md"
-                title={img.isPinned ? "Unpin" : "Pin to top"}
             >
                 <Pin className={`w-4 h-4 transition-transform group-hover:scale-110 ${img.isPinned ? 'fill-sage-400 text-sage-400' : 'text-white'}`} />
-            </button>
+            </TooltipButton>
         )}
     </div>
 );
@@ -268,11 +273,23 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     const dragStartRef = useRef({ x: 0, y: 0 });
     const sliderRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
     const activeMediaFrame = clampFrameToCanvas(
         getZoomedFrame(mediaFrame, canvasSize, position, scale),
         canvasSize
     );
     const activeMediaFrameRef = useRef(activeMediaFrame);
+
+    useEffect(() => {
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, []);
 
     useEffect(() => {
         activeMediaFrameRef.current = activeMediaFrame;
@@ -552,32 +569,34 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     </div>
 
                     <div className="flex bg-black rounded-lg p-0.5 border border-white/10">
-                        <button onClick={() => setMode('split')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'split' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Side by Side">Split</button>
-                        <button onClick={() => setMode('slider')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'slider' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Slider Swipe">Swipe</button>
-                        <button onClick={() => setMode('overlay')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'overlay' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Hover Overlay">Overlay</button>
+                        <button type="button" aria-pressed={mode === 'split'} onClick={() => setMode('split')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'split' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Side by Side">Split</button>
+                        <button type="button" aria-pressed={mode === 'slider'} onClick={() => setMode('slider')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'slider' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Slider Swipe">Swipe</button>
+                        <button type="button" aria-pressed={mode === 'overlay'} onClick={() => setMode('overlay')} className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${mode === 'overlay' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`} title="Hover Overlay">Overlay</button>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 bg-black rounded-full px-3 py-1 border border-white/10">
-                        <button onClick={() => applyZoom(scale - COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomOut className="w-4 h-4" /></button>
+                        <TooltipButton label="Zoom Out" content="Zoom Out" onClick={() => applyZoom(scale - COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomOut className="w-4 h-4" /></TooltipButton>
                         <span className="text-xs font-mono text-gray-400 w-12 text-center">{Math.round(scale * 100)}%</span>
-                        <button onClick={() => applyZoom(scale + COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomIn className="w-4 h-4" /></button>
+                        <TooltipButton label="Zoom In" content="Zoom In" onClick={() => applyZoom(scale + COMPARE_BUTTON_ZOOM_STEP)} className="p-1 hover:text-white text-gray-500"><ZoomIn className="w-4 h-4" /></TooltipButton>
                         <div className="w-px h-3 bg-white/10 mx-1" />
-                        <button onClick={resetZoom} className="p-1 hover:text-white text-gray-500" title="Reset Zoom"><RotateCcw className="w-4 h-4" /></button>
+                        <TooltipButton label="Reset Zoom" content="Reset Zoom" onClick={resetZoom} className="p-1 hover:text-white text-gray-500"><RotateCcw className="w-4 h-4" /></TooltipButton>
                     </div>
 
                     <div className="h-6 w-px bg-white/10" />
 
-                    <button
+                    <TooltipButton
+                        label={isPanelOpen ? "Hide Diff Sidebar" : "Show Diff Sidebar"}
+                        content={isPanelOpen ? "Hide Diff Sidebar" : "Show Diff Sidebar"}
+                        aria-pressed={isPanelOpen}
                         onClick={() => setIsPanelOpen(!isPanelOpen)}
                         className={`p-2 rounded-lg transition-colors ${isPanelOpen ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}
-                        title="Toggle Diff Sidebar"
                     >
                         <Sidebar className="w-5 h-5" />
-                    </button>
+                    </TooltipButton>
 
-                    <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors">
+                    <button ref={closeButtonRef} type="button" aria-label="Close Comparison" onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg text-gray-500 hover:text-white transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -676,6 +695,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                 {/* Right Sidebar - With Animation */}
                 <div
                     style={{ width: isPanelOpen ? `${panelWidth}px` : '0px' }}
+                    aria-hidden={!isPanelOpen}
+                    inert={isPanelOpen ? undefined : true}
                     className={`bg-[#0a0a0a] border-l border-white/10 flex flex-col flex-shrink-0 relative shadow-2xl z-20 transition-all duration-500 ease-spring overflow-hidden ${isPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-20'}`}
                     onClick={e => e.stopPropagation()}
                 >
@@ -714,8 +735,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                         </div>
                                     )}
                                     <div className="flex bg-black rounded-lg p-0.5 border border-white/10">
-                                        <button onClick={() => setDiffMode('diff')} className={`p-1 rounded ${diffMode === 'diff' ? 'bg-white/10 text-white' : 'text-gray-500'}`} title="Diff View"><Eye className="w-3 h-3" /></button>
-                                        <button onClick={() => setDiffMode('raw')} className={`p-1 rounded ${diffMode === 'raw' ? 'bg-white/10 text-white' : 'text-gray-500'}`} title="Raw View"><EyeOff className="w-3 h-3" /></button>
+                                        <TooltipButton label="Show Diff View" content="Show Diff View" aria-pressed={diffMode === 'diff'} onClick={() => setDiffMode('diff')} className={`p-1 rounded ${diffMode === 'diff' ? 'bg-white/10 text-white' : 'text-gray-500'}`}><Eye className="w-3 h-3" /></TooltipButton>
+                                        <TooltipButton label="Show Raw View" content="Show Raw View" aria-pressed={diffMode === 'raw'} onClick={() => setDiffMode('raw')} className={`p-1 rounded ${diffMode === 'raw' ? 'bg-white/10 text-white' : 'text-gray-500'}`}><EyeOff className="w-3 h-3" /></TooltipButton>
                                     </div>
                                 </div>
                             </div>

@@ -210,8 +210,8 @@ describe('SlideshowModal', () => {
         fireEvent.click(iconButton(container, 'lucide-chevron-left'));
         expect(screen.getByAltText('slideshow').getAttribute('src')).toBe('asset://image-2.png');
 
-        fireEvent.click(screen.getByTitle('Shuffle Order'));
-        expect(screen.getByTitle('Shuffle Order').className).toContain('text-white/50');
+        fireEvent.click(screen.getByRole('button', { name: 'Disable Shuffle' }));
+        expect(screen.getByRole('button', { name: 'Enable Shuffle' }).className).toContain('text-white/50');
     });
 
     it('uses navigation fallback logic when a single image cannot be preloaded', () => {

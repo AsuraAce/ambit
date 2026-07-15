@@ -111,17 +111,17 @@ describe('CompareModal', () => {
         expect(screen.getByText('Removed')).toBeTruthy();
         expect(screen.getByText('Added')).toBeTruthy();
 
-        const favorites = screen.getAllByTitle('Add to favorites');
+        const favorites = screen.getAllByRole('button', { name: 'Add to Favorites' });
         fireEvent.mouseDown(favorites[0]);
         fireEvent.click(favorites[0]);
         fireEvent.click(favorites[1]);
         expect(onToggleFavorite).toHaveBeenNthCalledWith(1, 'a');
         expect(onToggleFavorite).toHaveBeenNthCalledWith(2, 'b');
 
-        const pinButton = screen.getByTitle('Pin to top');
+        const pinButton = screen.getAllByRole('button', { name: 'Pin to Top' })[0];
         fireEvent.mouseDown(pinButton);
         fireEvent.click(pinButton);
-        fireEvent.click(screen.getByTitle('Unpin'));
+        fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
         expect(onTogglePin).toHaveBeenNthCalledWith(1, 'a', true);
         expect(onTogglePin).toHaveBeenNthCalledWith(2, 'b', false);
     });
@@ -144,9 +144,9 @@ describe('CompareModal', () => {
         await waitFor(() => expect(screen.getByText('100%')).toBeTruthy());
         fireEvent.doubleClick(canvas, { clientX: 750, clientY: 250 });
         await waitFor(() => expect(screen.getByText('200%')).toBeTruthy());
-        fireEvent.click(screen.getByTitle('Reset Zoom'));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset Zoom' }));
         expect(screen.getByText('100%')).toBeTruthy();
-        const zoomControls = screen.getByTitle('Reset Zoom').parentElement;
+        const zoomControls = screen.getByRole('button', { name: 'Reset Zoom' }).parentElement;
         if (!zoomControls) throw new Error('Zoom controls were not rendered');
         const zoomButtons = zoomControls.querySelectorAll('button');
         fireEvent.click(zoomButtons[0]);
@@ -177,10 +177,10 @@ describe('CompareModal', () => {
         const { container } = renderModal({ imageB: identical });
 
         expect(screen.getByText('Prompts are identical')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('Raw View'));
-        fireEvent.click(screen.getByTitle('Diff View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Show Raw View' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Show Diff View' }));
 
-        const panelToggle = screen.getByTitle('Toggle Diff Sidebar');
+        const panelToggle = screen.getByRole('button', { name: 'Hide Diff Sidebar' });
         fireEvent.click(panelToggle);
         fireEvent.click(panelToggle);
 
@@ -194,11 +194,11 @@ describe('CompareModal', () => {
     it('shows raw prompt text and keeps canvas clicks from closing the modal', () => {
         const onClose = vi.fn();
         const { container } = renderModal({ onClose, onTogglePin: undefined });
-        fireEvent.click(screen.getByTitle('Raw View'));
+        fireEvent.click(screen.getByRole('button', { name: 'Show Raw View' }));
 
         expect(screen.getByText('red sunset over ocean')).toBeTruthy();
         expect(screen.getByText('blue sunrise above mountains')).toBeTruthy();
-        expect(screen.queryByTitle('Pin to top')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Pin to Top' })).toBeNull();
 
         const canvas = container.querySelector('.select-none') as HTMLElement;
         fireEvent.click(canvas);
@@ -260,7 +260,7 @@ describe('CompareModal', () => {
         });
         const { container } = renderModal({ imageA, imageB });
 
-        expect(screen.getAllByTitle('Remove from favorites')).toHaveLength(2);
+        expect(screen.getAllByRole('button', { name: 'Remove from Favorites' })).toHaveLength(2);
         expect(screen.getAllByText('Unknown')).toHaveLength(2);
         expect(screen.getAllByText('shared')).toHaveLength(2);
 

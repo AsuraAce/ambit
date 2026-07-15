@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Keyboard, Command, Search, ChevronDown, ChevronRight, Monitor, Hash, Puzzle, Sliders, Calendar } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
@@ -13,6 +13,20 @@ interface ShortcutsModalProps {
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, initialTab = 'shortcuts' }) => {
     const [activeTab, setActiveTab] = useState<'shortcuts' | 'search'>(initialTab);
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
 
     // Load expanded state from localStorage
     useEffect(() => {
@@ -138,7 +152,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 {/* Header */}
                 <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white pl-2">{APP_NAME} Help & Guide</h2>
-                    <button onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                    <button ref={closeButtonRef} type="button" aria-label="Close Keyboard Shortcuts" onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -171,6 +185,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                 return (
                                     <div key={ci} className="border border-transparent">
                                         <button
+                                            type="button"
+                                            aria-expanded={isExpanded}
                                             onClick={() => toggleCategory(cat.title)}
                                             className="w-full flex items-center justify-between py-2 px-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-gray-900 dark:hover:text-white hover:bg-gray-50 dark:hover:bg-white/5 rounded transition-colors group"
                                         >

@@ -4,6 +4,7 @@ import { Search } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { SectionHeader, SelectableRow, SearchInput } from './FilterPrimitives';
 import { formatModelName } from '../../../utils/formatUtils';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface ArchitectureSectionProps {
     filters: FilterState;
@@ -43,13 +44,15 @@ export const ArchitectureSection: React.FC<ArchitectureSectionProps> = ({
                 isOpen={isOpen}
                 onToggle={onToggle}
                 action={isOpen && (
-                    <button
+                    <TooltipButton
+                        label={isSearchOpen ? 'Hide Model Search' : 'Search Models'}
+                        content={isSearchOpen ? 'Hide Model Search' : 'Search Models'}
                         onClick={(e) => { e.stopPropagation(); setIsSearchOpen(!isSearchOpen); }}
+                        aria-expanded={isSearchOpen}
                         className={`p-1 rounded ${isSearchOpen ? 'text-sage-500' : 'text-gray-400 hover:text-gray-600'}`}
-                        title="Filter Models"
                     >
                         <Search className="w-3 h-3" />
-                    </button>
+                    </TooltipButton>
                 )}
             />
             {isOpen && (

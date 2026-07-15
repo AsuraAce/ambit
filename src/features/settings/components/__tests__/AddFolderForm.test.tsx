@@ -16,7 +16,7 @@ describe('AddFolderForm', () => {
         />);
 
         fireEvent.change(screen.getByRole('textbox'), { target: { value: 'E:/Images' } });
-        fireEvent.click(screen.getByTitle('Browse'));
+        fireEvent.click(screen.getByRole('button', { name: 'Browse for Folder' }));
         fireEvent.click(screen.getByRole('button', { name: 'Add' }));
 
         expect(onChange).toHaveBeenCalledWith('E:/Images');

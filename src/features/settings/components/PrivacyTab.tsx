@@ -5,6 +5,7 @@ import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { settingsPersistenceCoordinator } from '../../../utils/settingsPersistenceCoordinator';
+import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 
 type PrivacySettingsField = 'maskedKeywords' | 'maskingMode';
 
@@ -19,7 +20,6 @@ const privacyValuesEqual = <Field extends PrivacySettingsField>(
     return leftKeywords.length === rightKeywords.length
         && leftKeywords.every((keyword, index) => keyword === rightKeywords[index]);
 };
-
 interface TabProps {
     settings: AppSettings;
     setSettings: React.Dispatch<React.SetStateAction<AppSettings>>;
@@ -227,7 +227,13 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                             <Shield className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
-                            <label className="text-sm font-bold text-gray-900 dark:text-white block mb-1">Masking Behavior</label>
+                            <div className="mb-1 flex items-center gap-2">
+                                <label className="text-sm font-bold text-gray-900 dark:text-white">Masking Behavior</label>
+                                <InfoTooltip
+                                    label="About privacy masking behavior"
+                                    content="Blur keeps matching images visible while obscuring sensitive thumbnails. Hide removes matching images from results while Privacy Mode is active."
+                                />
+                            </div>
                             <div className="flex gap-4 mt-2">
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
@@ -293,6 +299,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         {keyword}
                                         <button
                                             type="button"
+                                            aria-label={`Remove Masked Keyword ${keyword}`}
                                             onClick={() => { void handleRemoveKeyword(keyword); }}
                                             disabled={isSavingPrivacy}
                                             className="p-0.5 hover:bg-rose-200 dark:hover:bg-rose-500/30 rounded-full transition-colors"

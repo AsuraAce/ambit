@@ -11,6 +11,21 @@ interface DonationModalProps {
 }
 
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
+    const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus?.isConnected) previousFocus.focus();
+        };
+    }, [isOpen]);
+
     const handleOpenLink = async (url: string) => {
         await openExternalUrl(url);
     };
@@ -38,6 +53,9 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                         <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-sage-500/20 to-amethyst-500/20 pointer-events-none" />
 
                         <button
+                            ref={closeButtonRef}
+                            type="button"
+                            aria-label="Close Support Dialog"
                             onClick={(e) => {
                                 e.stopPropagation();
                                 onClose();

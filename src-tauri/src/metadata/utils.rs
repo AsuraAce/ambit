@@ -12,6 +12,17 @@ static HYPERNET_RE: OnceLock<Regex> = OnceLock::new();
 /// - ComfyUI/A1111: (embedding:name:1.2), embedding:name, <embedding:name>
 /// - InvokeAI: <name>
 pub fn extract_embeddings_from_prompt(text: &str) -> Vec<String> {
+    extract_embeddings(text, true)
+}
+
+/// Extracts only explicit `embedding:` references, excluding InvokeAI's bare
+/// `<name>` syntax. ComfyUI prompts can contain XML-like tags that are not
+/// embedding resources.
+pub fn extract_explicit_embeddings_from_prompt(text: &str) -> Vec<String> {
+    extract_embeddings(text, false)
+}
+
+fn extract_embeddings(text: &str, allow_bare_tags: bool) -> Vec<String> {
     let re = EMBEDDING_RE.get_or_init(|| {
         // Matches:
         // 1. embedding:name
@@ -32,6 +43,9 @@ pub fn extract_embeddings_from_prompt(text: &str) -> Vec<String> {
 
         // Stricter check for bare <name> format
         if prefix == "<" {
+            if !allow_bare_tags {
+                continue;
+            }
             // Must have closing > and name must not be a prefix for other things
             if closing != ">" {
                 continue;
@@ -131,4 +145,27 @@ pub fn extract_hypernets_from_prompt(text: &str) -> Vec<String> {
         }
     }
     hypernets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_embeddings_from_prompt, extract_explicit_embeddings_from_prompt};
+
+    #[test]
+    fn explicit_embedding_extraction_ignores_prompt_markup() {
+        assert_eq!(
+            extract_explicit_embeddings_from_prompt(
+                "<gender> embedding:style <embedding:detail> <Prompt Start>"
+            ),
+            vec!["style", "detail"]
+        );
+    }
+
+    #[test]
+    fn general_embedding_extraction_keeps_legacy_bare_tags() {
+        assert_eq!(
+            extract_embeddings_from_prompt("<invoke-style>"),
+            vec!["invoke_style"]
+        );
+    }
 }

@@ -45,7 +45,7 @@ describe('CollectionsSection', () => {
         fireEvent.submit(input.closest('form') as HTMLFormElement);
         expect(view.onCreateCollection).toHaveBeenCalledWith('New Collection', undefined);
 
-        fireEvent.click(screen.getByTitle('New Empty Collection'));
+        fireEvent.click(screen.getByRole('button', { name: 'New Empty Collection' }));
         fireEvent.change(screen.getByPlaceholderText('New collection name...'), { target: { value: '   ' } });
         fireEvent.submit(screen.getByPlaceholderText('New collection name...').closest('form') as HTMLFormElement);
         expect(view.onCreateCollection).toHaveBeenCalledOnce();
@@ -53,13 +53,13 @@ describe('CollectionsSection', () => {
 
     it('saves current filters and cancels blank creation on blur', () => {
         const view = setup({ isDirty: true });
-        fireEvent.click(screen.getByTitle('Save Filters as Collection'));
+        fireEvent.click(screen.getByRole('button', { name: 'Save Filters as Collection' }));
         const input = screen.getByPlaceholderText('Save search as...');
         fireEvent.change(input, { target: { value: 'Saved Search' } });
         fireEvent.submit(input.closest('form') as HTMLFormElement);
         expect(view.onCreateCollection).toHaveBeenCalledWith('Saved Search', filters);
 
-        fireEvent.click(screen.getByTitle('New Empty Collection'));
+        fireEvent.click(screen.getByRole('button', { name: 'New Empty Collection' }));
         fireEvent.blur(screen.getByPlaceholderText('New collection name...'));
         expect(screen.queryByPlaceholderText('New collection name...')).toBeNull();
     });

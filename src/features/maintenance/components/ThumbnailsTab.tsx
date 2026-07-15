@@ -8,6 +8,7 @@ import { MaintenanceHeader } from './MaintenanceHeader';
 import { useToast } from '../../../hooks/useToast';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 import { cleanupOrphanThumbnails, pruneBrokenThumbnails, syncExistingThumbnailsToDB } from '../../../services/thumbnailService';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 
@@ -175,6 +176,10 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 <label htmlFor="includeUpgradeable" className="text-[10px] font-medium text-gray-600 dark:text-gray-300 cursor-pointer select-none">
                     Include upgradeable
                 </label>
+                <InfoTooltip
+                    label="About upgradeable thumbnails"
+                    content="Also includes imported or legacy thumbnails and images missing micro-thumbnails, even when a thumbnail already exists."
+                />
             </div>
 
             {selectedIds.size > 0 ? (

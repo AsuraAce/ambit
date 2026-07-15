@@ -1,3 +1,4 @@
+pub mod catalog_intake;
 pub mod complex_workflows;
 pub mod diagnostics;
 pub mod false_positive_models;

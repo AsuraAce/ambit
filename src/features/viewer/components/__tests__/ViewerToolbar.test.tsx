@@ -24,12 +24,12 @@ describe('ViewerToolbar', () => {
         expect(screen.getByText('a.png')).toBeTruthy();
         expect(screen.getByText('Version 2 of 3')).toBeTruthy();
         const actions: Array<[string, () => void]> = [
-            ['Copy Image to Clipboard', props.onCopy], ['Open in Default App', props.onOpenExternal], ['Theater Mode (Z)', props.onToggleTheater],
-            ['Share', props.onShare], ['Favorite (F)', props.onToggleFavorite], ['Pin to top (P)', props.onTogglePin!],
-            ['Remove from Library', props.onDelete!], ['Hide Sidebar (I)', props.onToggleSidebar!], ['Close (Esc)', props.onClose]
+            ['Copy Image to Clipboard', props.onCopy], ['Open in Default App', props.onOpenExternal], ['Enter Theater Mode (Z)', props.onToggleTheater],
+            ['Share Image', props.onShare], ['Add to Favorites (F)', props.onToggleFavorite], ['Pin to Top (P)', props.onTogglePin!],
+            ['Remove from Library', props.onDelete!], ['Hide Sidebar (I)', props.onToggleSidebar!], ['Close Viewer (Esc)', props.onClose]
         ];
-        for (const [title, callback] of actions) {
-            fireEvent.click(screen.getByTitle(title));
+        for (const [label, callback] of actions) {
+            fireEvent.click(screen.getByRole('button', { name: label }));
             expect(callback).toHaveBeenCalledTimes(1);
         }
     });
@@ -37,21 +37,21 @@ describe('ViewerToolbar', () => {
     it('renders active favorite, pin, theater, hidden-sidebar, and hidden-control variants', () => {
         const { container } = setup({ image: image({ isFavorite: true, isPinned: true }), showControls: false, isTheaterMode: true, isSidebarOpen: false });
         expect(container.firstElementChild?.className).toContain('opacity-0');
-        expect(screen.getByTitle('Favorite (F) - Remove').querySelector('.fill-red-500')).toBeTruthy();
-        expect(screen.getByTitle('Unpin (P)').className).toContain('text-sage-400');
-        expect(screen.getByTitle('Theater Mode (Z)').className).toContain('text-sage-400');
-        expect(screen.queryByTitle('Show Sidebar (I)')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Remove from Favorites (F)' }).querySelector('.fill-red-500')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Unpin (P)' }).className).toContain('text-sage-400');
+        expect(screen.getByRole('button', { name: 'Exit Theater Mode (Z)' }).className).toContain('text-sage-400');
+        expect(screen.queryByRole('button', { name: 'Show Sidebar (I)' })).toBeNull();
         expect(screen.queryByText(/Version/)).toBeNull();
     });
 
     it('omits optional pin, delete, and sidebar controls and shows the closed sidebar action', () => {
         const first = setup({ isSidebarOpen: false, onTogglePin: undefined, onDelete: undefined });
-        expect(screen.queryByTitle(/Pin to top/)).toBeNull();
-        expect(screen.queryByTitle('Remove from Library')).toBeNull();
-        expect(screen.getByTitle('Show Sidebar (I)')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /Pin to Top/ })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Remove from Library' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Show Sidebar (I)' })).toBeTruthy();
         first.unmount();
 
         setup({ onToggleSidebar: undefined });
-        expect(screen.queryByTitle(/Sidebar/)).toBeNull();
+        expect(screen.queryByRole('button', { name: /Sidebar/ })).toBeNull();
     });
 });

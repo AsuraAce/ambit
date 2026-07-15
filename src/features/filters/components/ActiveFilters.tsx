@@ -154,7 +154,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
             {dateFilterLabel && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
                     <span>{dateFilterLabel}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, dateRange: 'all', dateFrom: undefined, dateTo: undefined }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label="Clear Date Filter" onClick={() => setFilters(f => ({ ...f, dateRange: 'all', dateFrom: undefined, dateTo: undefined }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
@@ -162,84 +162,84 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs border border-red-200">
                     <div className="w-3 h-3 text-red-500">❤️</div>
                     <span>Favorites</span>
-                    <button onClick={() => setFilters(f => ({ ...f, favoritesOnly: false }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label="Clear Favorites Filter" onClick={() => setFilters(f => ({ ...f, favoritesOnly: false }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
             {visibleModels.map(m => (
                 <div key={m} title={m} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 text-xs border border-blue-200 dark:border-blue-500/30">
                     <span className="truncate max-w-[100px]">{m}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, models: f.models.filter(x => x !== m) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Model Filter ${m}`} onClick={() => setFilters(f => ({ ...f, models: f.models.filter(x => x !== m) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleTools.map(t => (
                 <div key={t} title={t} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-200 text-xs border border-amber-200 dark:border-amber-500/30">
                     <span>{t}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, tools: f.tools.filter(x => x !== t) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Tool Filter ${t}`} onClick={() => setFilters(f => ({ ...f, tools: f.tools.filter(x => x !== t) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleLoras.map(l => (
                 <div key={l} title={l} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 text-xs border border-purple-200 dark:border-purple-500/30">
                     <span className="truncate max-w-[100px]">{l}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, loras: f.loras.filter(x => x !== l) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear LoRA Filter ${l}`} onClick={() => setFilters(f => ({ ...f, loras: f.loras.filter(x => x !== l) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleEmbeddings.map(e => (
                 <div key={e} title={e} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200 text-xs border border-emerald-200 dark:border-emerald-500/30">
                     <span className="truncate max-w-[100px]">{e}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, embeddings: f.embeddings.filter(x => x !== e) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Embedding Filter ${e}`} onClick={() => setFilters(f => ({ ...f, embeddings: f.embeddings.filter(x => x !== e) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleHypernetworks.map(h => (
                 <div key={h} title={h} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 text-xs border border-rose-200 dark:border-rose-500/30">
                     <span className="truncate max-w-[100px]">{h}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, hypernetworks: f.hypernetworks.filter(x => x !== h) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Hypernetwork Filter ${h}`} onClick={() => setFilters(f => ({ ...f, hypernetworks: f.hypernetworks.filter(x => x !== h) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleSamplers.map(s => (
                 <div key={s} title={s} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 text-xs border border-indigo-200 dark:border-indigo-500/30">
                     <span className="truncate max-w-[100px]">{s}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, samplers: (f.samplers || []).filter(x => x !== s) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Sampler Filter ${s}`} onClick={() => setFilters(f => ({ ...f, samplers: (f.samplers || []).filter(x => x !== s) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleGenTypes.map(g => (
                 <div key={g} title={g} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 text-xs border border-cyan-200 dark:border-cyan-500/30">
                     <span>{g}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, generationTypes: (f.generationTypes || []).filter(x => x !== g) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear Generation Type Filter ${g}`} onClick={() => setFilters(f => ({ ...f, generationTypes: (f.generationTypes || []).filter(x => x !== g) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleControlNets.map(c => (
                 <div key={c} title={c} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-200 text-xs border border-sky-200 dark:border-sky-500/30">
                     <span className="truncate max-w-[100px]">{c}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, controlNets: (f.controlNets || []).filter(x => x !== c) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear ControlNet Filter ${c}`} onClick={() => setFilters(f => ({ ...f, controlNets: (f.controlNets || []).filter(x => x !== c) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleIpAdapters.map(i => (
                 <div key={i} title={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-200 text-xs border border-teal-200 dark:border-teal-500/30">
                     <span className="truncate max-w-[100px]">{i}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, ipAdapters: (f.ipAdapters || []).filter(x => x !== i) }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label={`Clear IP-Adapter Filter ${i}`} onClick={() => setFilters(f => ({ ...f, ipAdapters: (f.ipAdapters || []).filter(x => x !== i) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {(filters.minSteps !== undefined || filters.maxSteps !== undefined) && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-200 text-xs border border-orange-200 dark:border-orange-500/30">
                     <span>Steps: {filters.minSteps ?? 0}-{filters.maxSteps ?? '∞'}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, minSteps: undefined, maxSteps: undefined }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label="Clear Steps Filter" onClick={() => setFilters(f => ({ ...f, minSteps: undefined, maxSteps: undefined }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
             {(filters.minCfg !== undefined || filters.maxCfg !== undefined) && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-200 text-xs border border-yellow-200 dark:border-yellow-500/30">
                     <span>CFG: {filters.minCfg ?? 0}-{filters.maxCfg ?? '∞'}</span>
-                    <button onClick={() => setFilters(f => ({ ...f, minCfg: undefined, maxCfg: undefined }))}><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label="Clear CFG Filter" onClick={() => setFilters(f => ({ ...f, minCfg: undefined, maxCfg: undefined }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
