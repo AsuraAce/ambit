@@ -518,6 +518,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 onDeleteSelected={handleDeleteSelected}
                                 onPurgeMissing={handlePurgeMissing}
                                 onViewImage={setViewingImageId}
+                                maskedKeywords={maskedKeywords}
                                 scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                 onRangeSelection={handleRangeAdapter}
                                 onBackgroundClick={handleBackgroundClick}

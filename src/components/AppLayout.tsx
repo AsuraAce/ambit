@@ -24,6 +24,7 @@ import type { useAppHandlers } from '../hooks/useAppHandlers';
 import type { useCollectionOperations } from '../hooks/useCollectionOperations';
 import type { useFileOperations } from '../hooks/useFileOperations';
 import type { useModalManager } from '../hooks/useModalManager';
+import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
 
 setupGlobalLogging();
 
@@ -127,6 +128,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     // Stores
     const settings = useSettingsStore(s => s.settings);
     const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
+    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
+    const privacyExposureBlocked = privacyEnabled && privacyMaskIndexStatus !== 'ready';
 
     const allCollections = useCollectionStore(s => s.collections);
 
@@ -339,7 +343,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
                 <div className="flex-1 flex overflow-hidden min-h-0 relative">
                     <div ref={scrollContainerRef} className={`flex-1 ${viewMode === 'grid' ? 'overflow-y-scroll overflow-x-hidden custom-scrollbar' : 'overflow-hidden'}`}>
-                        <ErrorBoundary>
+                        {privacyExposureBlocked ? (
+                            <PrivacyProtectionGate onOpenSettings={() => {
+                                modals.setInitialSettingsTab('privacy');
+                                modals.openModal('settings');
+                            }} />
+                        ) : <ErrorBoundary>
                             {viewMode === 'dashboard' ? (
                                 <React.Suspense fallback={<ViewLoadingFallback />}>
                                     <StatsDashboard images={images} onFilter={(t, v) => {
@@ -502,11 +511,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     )}
                                 </div>
                             )}
-                        </ErrorBoundary>
+                        </ErrorBoundary>}
                     </div>
                 </div>
 
-                <SelectionBar
+                {!privacyExposureBlocked && <SelectionBar
                     selectedIds={selectedIds}
                     filteredImages={images}
                     lastSelectedId={lastSelectedId}
@@ -524,7 +533,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     onCompare={() => modals.openModal('compare')}
                     activeCollectionId={filters.collectionId}
                     onRemoveFromCollection={handleRemoveFromCollection}
-                />
+                />}
 
                 <ActivityDock />
             </main>

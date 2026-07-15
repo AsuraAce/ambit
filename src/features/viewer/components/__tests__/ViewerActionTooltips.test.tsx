@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '../../../../test/testUtils';
 import { GeneratorTool, type AIImage } from '../../../../types';
+import { useSettingsStore } from '../../../../stores/settingsStore';
 import { CompareModal } from '../CompareModal';
 import { SlideshowModal } from '../SlideshowModal';
 
@@ -62,6 +63,13 @@ const CompareFocusHarness = () => {
 };
 
 describe('specialized viewer action tooltips', () => {
+    beforeEach(() => {
+        useSettingsStore.setState({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+        });
+    });
+
     it('returns focus to the slideshow launcher after closing', () => {
         render(<SlideshowFocusHarness />);
         const launcher = screen.getByRole('button', { name: 'Open slideshow' });

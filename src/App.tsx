@@ -34,6 +34,7 @@ import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
+import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
@@ -55,6 +56,7 @@ export default function App() {
     const [gridLayout, setGridLayout] = useState<{ columns: number, rowHeight: number }>({ columns: 1, rowHeight: 200 });
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
     const openImportModal = useCallback(() => setIsImportModalOpen(true), []);
 
     // --- Store Subscriptions ---
@@ -62,6 +64,7 @@ export default function App() {
     const settings = useSettingsStore(s => s.settings);
     const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const setSettings = useSettingsStore(s => s.setSettings);
+    const flushSettings = useSettingsStore(s => s.flushSettings);
 
     const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
     const allCollections = useCollectionStore(s => s.collections);
@@ -439,15 +442,56 @@ export default function App() {
             />
 
             {/* Overlays & Portals */}
-            {!settings.hasCompletedOnboarding ? (
+            {!settings.hasCompletedOnboarding || isCompletingOnboarding ? (
                 <OnboardingWizard
                     isOpen={!modals.modals.settings}
                     preserveBackdropWhenClosed
-                    onComplete={(s) => {
-                        setSettings(p => ({ ...p, ...s }));
-                        openImportModal();
-                        addToast("Setup complete!", "success");
-                    }}
+                    onComplete={(onboardingSettings) => settingsPersistenceCoordinator.run(async (permit) => {
+                        const previousOnboardingSettings = {
+                            enableAI: settings.enableAI,
+                            maskedKeywords: settings.maskedKeywords,
+                            maskingMode: settings.maskingMode,
+                            hasCompletedOnboarding: settings.hasCompletedOnboarding,
+                        };
+                        const nextSettings = { ...settings, ...onboardingSettings };
+                        setIsCompletingOnboarding(true);
+                        setSettings(nextSettings);
+
+                        try {
+                            await flushSettings(nextSettings);
+                            setIsCompletingOnboarding(false);
+                            openImportModal();
+                            addToast("Setup complete!", "success");
+                        } catch (error) {
+                            const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => {
+                                return {
+                                    ...current,
+                                    enableAI: current.enableAI === nextSettings.enableAI
+                                        ? previousOnboardingSettings.enableAI
+                                        : current.enableAI,
+                                    maskedKeywords: current.maskedKeywords === nextSettings.maskedKeywords
+                                        ? previousOnboardingSettings.maskedKeywords
+                                        : current.maskedKeywords,
+                                    maskingMode: current.maskingMode === nextSettings.maskingMode
+                                        ? previousOnboardingSettings.maskingMode
+                                        : current.maskingMode,
+                                    hasCompletedOnboarding: current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
+                                        ? previousOnboardingSettings.hasCompletedOnboarding
+                                        : current.hasCompletedOnboarding,
+                                };
+                            });
+                            if (restoredSettings) {
+                                try {
+                                    await flushSettings(restoredSettings);
+                                } catch (rollbackError) {
+                                    console.error('[Onboarding] Failed to persist settings rollback:', rollbackError);
+                                }
+                            }
+                            setIsCompletingOnboarding(false);
+                            addToast("Setup could not be saved. Please try again.", "error");
+                            throw error;
+                        }
+                    })}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 />
             ) : null}

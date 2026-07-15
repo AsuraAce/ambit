@@ -30,7 +30,7 @@ type OnboardingSettingsTab = 'folders' | 'invokeai' | 'comfyui' | 'a1111';
 interface OnboardingWizardProps {
     isOpen: boolean;
     preserveBackdropWhenClosed?: boolean;
-    onComplete: (settings: Partial<AppSettings>) => void;
+    onComplete: (settings: Partial<AppSettings>) => void | Promise<void>;
     onOpenSettings?: (tab: OnboardingSettingsTab) => void;
 }
 
@@ -64,8 +64,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const [enableAI, setEnableAI] = useState(() => (
         settings.enableAI && (!!geminiApiKey || isEnvKey)
     ));
-    const [blurContent, setBlurContent] = useState(true);
+    const [blurContent, setBlurContent] = useState(() => settings.maskedKeywords.length > 0);
     const [isVerifying, setIsVerifying] = useState(false);
+    const [isCompleting, setIsCompleting] = useState(false);
     const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [verificationError, setVerificationError] = useState<string | null>(null);
 
@@ -81,7 +82,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         : verificationStatus;
     const hasConfiguredAiKey = hasStoredKey || verificationStatus === 'success';
     const needsAiSetup = step === 3 && enableAI && !hasConfiguredAiKey;
-    const canContinue = !needsAiSetup && !isVerifying;
+    const canContinue = !needsAiSetup && !isVerifying && !isCompleting;
 
     useEffect(() => {
         if (!isOpen) return;
@@ -170,19 +171,30 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         }
     };
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (step < TOTAL_STEPS) {
             setStep(current => Math.min(TOTAL_STEPS, current + 1));
             return;
         }
 
-        shouldRestoreFocusRef.current = false;
-        onComplete({
-            enableAI,
-            maskedKeywords: blurContent ? [...DEFAULT_APP_SETTINGS.maskedKeywords] : [],
-            maskingMode: 'blur',
-            hasCompletedOnboarding: true,
-        });
+        setIsCompleting(true);
+        try {
+            await onComplete({
+                enableAI,
+                maskedKeywords: blurContent
+                    ? [...(settings.maskedKeywords.length > 0
+                        ? settings.maskedKeywords
+                        : DEFAULT_APP_SETTINGS.maskedKeywords)]
+                    : [],
+                maskingMode: 'blur',
+                hasCompletedOnboarding: true,
+            });
+            shouldRestoreFocusRef.current = false;
+        } catch {
+            // The owner keeps the wizard open and reports persistence failures.
+        } finally {
+            setIsCompleting(false);
+        }
     };
 
     const handleBack = () => {
@@ -487,7 +499,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                 <button
                                     type="button"
                                     onClick={handleBack}
-                                    disabled={isVerifying}
+                                    disabled={isVerifying || isCompleting}
                                     className="rounded-xl px-4 py-2.5 text-sm font-bold text-gray-400 transition-all hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-white/5 dark:hover:text-white"
                                 >
                                     Back
@@ -497,7 +509,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                 <button
                                     type="button"
                                     onClick={handleSetUpLater}
-                                    disabled={isVerifying}
+                                    disabled={isVerifying || isCompleting}
                                     className="rounded-xl px-4 py-2.5 text-sm font-bold text-sage-600 transition-all hover:bg-sage-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-sage-400"
                                 >
                                     Set up later

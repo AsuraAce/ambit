@@ -23,7 +23,7 @@ vi.mock('../../library/components/VirtualGrid', () => ({
 }));
 
 vi.mock('./MaintenanceItem', () => ({
-    MaintenanceItem: ({ img, isSelected, onClick, overlayActions, children, isMissing, imageClassName }: {
+    MaintenanceItem: ({ img, isSelected, onClick, overlayActions, children, isMissing, imageClassName, maskedKeywords }: {
         img: AIImage;
         isSelected?: boolean;
         onClick: (event: React.MouseEvent) => void;
@@ -31,8 +31,9 @@ vi.mock('./MaintenanceItem', () => ({
         children?: React.ReactNode;
         isMissing?: boolean;
         imageClassName?: string;
+        maskedKeywords: string[];
     }) => (
-        <div data-testid="maintenance-item" data-selected={isSelected} data-missing={isMissing} data-image-class={imageClassName}>
+        <div data-testid="maintenance-item" data-selected={isSelected} data-missing={isMissing} data-image-class={imageClassName} data-masked-keywords={maskedKeywords.join(',')}>
             <button onClick={onClick}>{img.filename}</button>
             {overlayActions}
             {children}
@@ -147,18 +148,19 @@ describe('maintenance content tabs', () => {
         const onDelete = vi.fn();
         const onPurge = vi.fn();
         const onView = vi.fn();
-        const { rerender } = render(<MissingTab {...callbacks} images={[]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} />);
+        const { rerender } = render(<MissingTab {...callbacks} images={[]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
         expect(screen.getByText('No Missing Files')).toBeTruthy();
 
-        rerender(<MissingTab {...callbacks} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} />);
+        rerender(<MissingTab {...callbacks} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
         exerciseGrid(callbacks);
         fireEvent.click(screen.getByRole('button', { name: 'Remove all 1 from Library' }));
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
         expect(onPurge).toHaveBeenCalledOnce();
         expect(onView).toHaveBeenCalledWith('image-1');
         expect(screen.getByTestId('maintenance-item').dataset.missing).toBe('true');
+        expect(screen.getByTestId('maintenance-item').dataset.maskedKeywords).toBe('private');
 
-        rerender(<MissingTab {...callbacks} selectedIds={new Set(['image-1'])} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} />);
+        rerender(<MissingTab {...callbacks} selectedIds={new Set(['image-1'])} images={[image()]} onDeleteSelected={onDelete} onPurgeMissing={onPurge} onViewImage={onView} maskedKeywords={['private']} />);
         fireEvent.click(screen.getByRole('button', { name: /^Remove from Library/ }));
         expect(onDelete).toHaveBeenCalledOnce();
     });

@@ -208,6 +208,7 @@ const persistState = (): void => {
         }));
     } catch (error) {
         console.error('[BrowserMock] Failed to persist mock state', error);
+        throw error;
     }
 };
 
@@ -225,6 +226,29 @@ export class BrowserMockRepository implements IRepository {
         };
         persistState();
     }
+
+    async update(updater: (currentState: AppState) => AppState): Promise<AppState> {
+        const nextState = updater(loadStoredState());
+        state = {
+            ...state,
+            ...nextState,
+            images: state.images,
+            settings: { ...DEFAULT_SETTINGS, ...nextState.settings },
+        };
+        persistState();
+        return state;
+    }
+
+    async schedulePurge(updater: (currentState: AppState) => AppState) {
+        const transactionId = crypto.randomUUID();
+        const nextState = await this.update(updater);
+        return {
+            transactionId,
+            state: nextState,
+            message: 'Browser mock library cleared for this session.'
+        };
+    }
+
 }
 
 export const getBrowserMockImages = (): AIImage[] => loadStoredState().images;
