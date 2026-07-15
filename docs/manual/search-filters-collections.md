@@ -26,7 +26,7 @@ Examples:
 ```text
 sunset portrait
 "dark forest"
-orc OR elf
+forest OR ocean
 dragon -blurry
 model:sdxl lora:detail
 date:2026-04 after:2026-03
@@ -37,7 +37,7 @@ Open Help, then Search Syntax, for the in-app operator list.
 
 ## Search Syntax
 
-Plain terms search positive prompts. Multiple plain terms narrow results. `OR` only groups adjacent positive-prompt terms, such as `orc OR elf`; resource, date, numeric, and other operator filters still combine with the rest of the query.
+Plain terms search positive prompts. Multiple plain terms narrow results. `OR` only groups adjacent positive-prompt terms, such as `forest OR ocean`; resource, date, numeric, and other operator filters still combine with the rest of the query.
 
 Supported operators include:
 
