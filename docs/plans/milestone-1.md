@@ -1,6 +1,6 @@
 # Milestone 1 — Integrate and Simplify Privacy Persistence Hardening
 
-Status: Approved; Work Packages 1-3 complete; milestone integration gate pending
+Status: Complete; milestone integration gate passed
 Approved: 2026-07-15
 Safety snapshot: `fix/privacy-persistence-hardening-snapshot` at `3a1d15a`
 
@@ -162,6 +162,28 @@ After all three packages are independently review-clean:
 - Run the rendered Settings → Privacy → add/remove keyword → close/reopen smoke
   test with no console errors.
 - Retain the safety branch until the integrated result is accepted.
+
+Completion record (2026-07-15):
+
+- Reconciled the integrated branch against safety snapshot `3a1d15a`. Retained
+  serialized/journaled settings persistence, close-time flushing, simplified
+  purge recovery, and fail-closed privacy-index readiness. Confirmed the broad
+  owner leases, global mutation registry, storage lock, and prepare/accept/cancel
+  purge protocol were intentionally removed.
+- Closed three integration gaps: same-profile processes are excluded before SQL
+  opens while development and installed profiles remain independent; Missing
+  maintenance thumbnails receive the active masked keywords; and Privacy saves
+  finish correctly after React Strict Mode replays their lifecycle effect.
+- Full frontend suite: 2,650 passed, 1 skipped across 232 files. Focused Privacy
+  regression suite: 9 passed. Full Rust suite, release Tauri build, production
+  frontend build, binding drift check, typecheck, lint, Cargo formatting/check,
+  and diff checks passed.
+- The combined `verify:release` wrapper exceeded its execution window, so its
+  constituent gates were run independently; all completed successfully.
+- Rendered browser verification passed for Settings -> Privacy -> add/remove
+  keyword -> confirmed persistence toast -> close/reopen. The saved state was
+  correct after reopening, no QA keywords remained, and no browser warnings,
+  errors, or framework overlay were present.
 
 ## Selected Defaults
 

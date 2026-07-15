@@ -14,6 +14,8 @@ use db::reparse::ReparseState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
 #[cfg(not(test))]
+use tauri::Manager;
+#[cfg(not(test))]
 use watcher::WatcherState;
 
 /// Create the Specta builder with all commands registered.
@@ -137,7 +139,23 @@ pub fn run() {
         .parse()
         .unwrap_or(log::LevelFilter::Info);
 
-    tauri::Builder::default()
+    let mut app_builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    {
+        // Development and installed builds have different identifiers, so this
+        // blocks only another process that could mutate the same profile.
+        app_builder = app_builder.plugin(tauri_plugin_single_instance::init(
+            |app, _arguments, _working_directory| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            },
+        ));
+    }
+
+    app_builder
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log_level)
@@ -200,6 +218,25 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod startup_order_tests {
+    #[test]
+    fn same_profile_process_guard_is_registered_before_sql() {
+        let source = include_str!("lib.rs");
+        let single_instance = source
+            .find("tauri_plugin_single_instance::init")
+            .expect("same-profile process guard should be registered");
+        let sql = source
+            .find(".plugin(sql_builder.build())")
+            .expect("SQL plugin should be registered");
+
+        assert!(
+            single_instance < sql,
+            "same-profile process exclusion must be active before SQLite opens"
+        );
+    }
 }
 
 /// Repair historical migration metadata for a known development/mainline collision.

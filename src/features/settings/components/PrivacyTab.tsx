@@ -42,8 +42,11 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         maskingMode: 0,
     });
 
-    React.useEffect(() => () => {
-        mountedRef.current = false;
+    React.useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
     }, []);
 
     const handlePrivacyToggle = () => {

@@ -145,6 +145,25 @@ describe('PrivacyTab', () => {
         await waitFor(() => expect(addToastMock).toHaveBeenCalledWith('Removed "existing" from masked keywords', 'success'));
     });
 
+    it('finishes a persisted keyword edit after the Strict Mode effect replay', async () => {
+        render(
+            <React.StrictMode>
+                <StorePrivacyTab />
+            </React.StrictMode>
+        );
+
+        const input = screen.getByPlaceholderText('Type keyword and press Enter...');
+        fireEvent.change(input, { target: { value: 'sensitive' } });
+        fireEvent.click(screen.getByText('Add'));
+
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(
+            'Added "sensitive" to masked keywords',
+            'success'
+        ));
+        expect((input as HTMLInputElement).disabled).toBe(false);
+        expect((input as HTMLInputElement).value).toBe('');
+    });
+
     it('rolls back a failed keyword save and keeps the input available for retry', async () => {
         useSettingsStore.setState({ flushSettings: vi.fn().mockRejectedValue(new Error('disk full')) });
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
