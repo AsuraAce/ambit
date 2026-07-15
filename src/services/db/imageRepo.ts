@@ -19,6 +19,7 @@ import {
     clearAllCollectionThumbnailCaches,
     clearCollectionThumbnailCacheForCollections,
     clearCollectionThumbnailCacheForImages,
+    clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
 
@@ -444,7 +445,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
         if (ids && ids.length > 0) {
             await clearCollectionThumbnailCacheForImages(ids);
         } else {
-            await clearAllCollectionThumbnailCaches();
+            await clearInvokeBoardThumbnailCaches();
         }
         console.log('[DB] Bulk collection sync complete.');
     });
