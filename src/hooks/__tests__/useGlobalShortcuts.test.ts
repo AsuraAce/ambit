@@ -137,6 +137,19 @@ describe('useGlobalShortcuts', () => {
         expect(mockActions.openCollection).toHaveBeenCalledTimes(1);
     });
 
+    it('preserves copy shortcuts instead of opening the collection modal', () => {
+        renderHook(() => useGlobalShortcuts(defaultProps));
+        const ctrlCopy = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, cancelable: true });
+        const metaCopy = new KeyboardEvent('keydown', { key: 'c', metaKey: true, cancelable: true });
+
+        window.dispatchEvent(ctrlCopy);
+        window.dispatchEvent(metaCopy);
+
+        expect(mockActions.openCollection).not.toHaveBeenCalled();
+        expect(ctrlCopy.defaultPrevented).toBe(false);
+        expect(metaCopy.defaultPrevented).toBe(false);
+    });
+
     it('closes modals with Escape and blocks modal navigation and actions', () => {
         renderHook(() => useGlobalShortcuts({ ...defaultProps, isModalOpen: true }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
