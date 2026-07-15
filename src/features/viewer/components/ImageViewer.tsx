@@ -128,6 +128,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     searchHighlights
 }) => {
     const settings = useSettingsStore(s => s.settings);
+    const privacyExposureBlocked = useSettingsStore(state => (
+        state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
+    ));
     const collections = useCollectionStore(s => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
@@ -142,6 +145,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // Reset local version and/or fetch full metadata when image or version changes
     useEffect(() => {
+        if (privacyExposureBlocked) {
+            setFullImage(null);
+            setIsLoadingFull(false);
+            return;
+        }
         const targetId = activeVersionId || image.id;
         // Optimization: Only clear if it's a completely different image, 
         // keep old one as placeholder if it's just a version switch? 
@@ -153,7 +161,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (res) setFullImage(res);
             setIsLoadingFull(false);
         }).catch(() => setIsLoadingFull(false));
-    }, [image.id, activeVersionId]);
+    }, [image.id, activeVersionId, privacyExposureBlocked]);
 
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
@@ -194,7 +202,9 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
-    const { palette, isLoading: isPaletteLoading } = usePalette(displayImage.url);
+    const { palette, isLoading: isPaletteLoading } = usePalette(
+        privacyExposureBlocked ? null : displayImage.url
+    );
     const { addToast } = useToast();
     const ai = useImageAI({
         aiModel: getEffectiveAiModel(settings),
@@ -301,7 +311,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, ai.modalOpen, isTheaterMode, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onClose]);
 
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (isOpen && privacyExposureBlocked) onClose();
+    }, [isOpen, onClose, privacyExposureBlocked]);
+
+    if (!isOpen || privacyExposureBlocked) return null;
 
     const handleCopyImage = async () => {
         try {

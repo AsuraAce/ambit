@@ -68,6 +68,10 @@ describe('SettingsStore', () => {
         useSettingsStore.setState({
             initializationStatus: 'loading',
             isLoaded: false,
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'pending',
+            privacyMaskIndexError: null,
+            privacyMaskIndexRetryToken: 0,
             geminiApiKey: null,
             settings: {
                 hasCompletedOnboarding: false,
@@ -521,5 +525,41 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().settings.theme).toBe('dark');
         expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retry-loaded']);
         error.mockRestore();
+    });
+
+    it('marks the privacy index stale synchronously when keywords change', () => {
+        useSettingsStore.setState({
+            initializationStatus: 'ready',
+            isLoaded: true,
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+        });
+
+        useSettingsStore.getState().setSettings({ maskedKeywords: ['different'] });
+
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+        expect(useSettingsStore.getState().privacyMaskIndexError).toBeNull();
+    });
+
+    it('unblocks on explicit disable and requires a fresh refresh after re-enable', () => {
+        useSettingsStore.setState({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'failed',
+            privacyMaskIndexError: 'failed',
+        });
+
+        useSettingsStore.getState().setPrivacyEnabled(false);
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            privacyEnabled: false,
+            privacyMaskIndexStatus: 'ready',
+            privacyMaskIndexError: null,
+        }));
+
+        useSettingsStore.getState().setPrivacyEnabled(true);
+        expect(useSettingsStore.getState()).toEqual(expect.objectContaining({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'pending',
+            privacyMaskIndexError: null,
+        }));
     });
 });

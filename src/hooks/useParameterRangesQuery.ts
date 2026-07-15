@@ -8,6 +8,18 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockImages } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
+import { useSettingsStore } from '../stores/settingsStore';
+
+const EMPTY_PARAMETER_RANGES: ParameterRanges = {
+    steps: null,
+    cfg: null,
+    denoisingStrength: null,
+    samplers: [],
+    generationTypes: [],
+    controlNets: [],
+    ipAdapters: [],
+    guidanceSubtypes: {},
+};
 
 /**
  * Hook to fetch parameter ranges for dynamic filter UI.
@@ -21,11 +33,13 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { settings, privacyEnabled } = useSettings();
     const { collections: allCollections } = useCollections();
     const browserMockMode = isBrowserMockMode();
+    const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
+    const privacyBlocked = privacyEnabled && !browserMockMode && privacyMaskIndexStatus !== 'ready';
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const searchQueryKey = sideQueryFilters.searchQuery.trim();
 
-    return useQuery<ParameterRanges>({
+    const query = useQuery<ParameterRanges>({
         // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
         queryKey: [
             'parameterRanges',
@@ -86,8 +100,11 @@ export function useParameterRangesQuery(filters: FilterState) {
             }
             return result.data;
         },
+        enabled: !privacyBlocked,
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 30 * 60 * 1000,   // 30 minutes cache
         placeholderData: (previousData) => previousData, // Smooth transitions
     });
+
+    return privacyBlocked ? { ...query, data: EMPTY_PARAMETER_RANGES } : query;
 }

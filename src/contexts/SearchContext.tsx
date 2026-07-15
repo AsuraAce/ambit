@@ -27,6 +27,8 @@ import { shouldPrefetchResultPages } from '../utils/filterState';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
+import { useSettingsStore } from '../stores/settingsStore';
+import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
 
 interface SearchContextType {
     images: AIImage[];
@@ -90,6 +92,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const { settings, setSettings, privacyEnabled, isLoaded: settingsLoaded } = useSettings();
     const { collections, smartCollections, refreshCollections, isLoaded: collectionsLoaded } = useCollections();
     const queryClient = useQueryClient();
+    const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
+    const privacyMaskIndexRetryToken = useSettingsStore(state => state.privacyMaskIndexRetryToken);
+    const setPrivacyMaskIndexState = useSettingsStore(state => state.setPrivacyMaskIndexState);
 
 
 
@@ -109,11 +114,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             .sort()
     ), [settings.maskedKeywords]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
-    const shouldRefreshPrivacyMaskIndex = settingsLoaded
-        && privacyEnabled
-        && !isBrowserMockMode();
-    const requiresPrivacyMaskIndex = shouldRefreshPrivacyMaskIndex && settings.maskingMode === 'hide';
-    const [privacyMaskReady, setPrivacyMaskReady] = useState(false);
+    const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
@@ -124,49 +125,70 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         setSortOption(nextSortOption);
     }, [setSortOption, sortOption]);
 
-    useEffect(() => {
-        if (!shouldRefreshPrivacyMaskIndex) {
-            setPrivacyMaskReady(false);
+    React.useLayoutEffect(() => {
+        if (!requiresPrivacyMaskIndex) {
+            privacyMaskRefreshCoordinator.discardPending();
+            setPrivacyMaskIndexState('ready');
+            return;
+        }
+
+        if (!settingsLoaded) {
+            setPrivacyMaskIndexState('pending');
             return;
         }
 
         let cancelled = false;
-        setPrivacyMaskReady(false);
+        setPrivacyMaskIndexState('pending');
 
-        void (async () => {
+        privacyMaskRefreshCoordinator.schedule(async () => {
             try {
                 await getDb();
                 const refreshStartedAt = performance.now();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
 
-                setPrivacyMaskReady(true);
                 console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
                     await clearAllCollectionThumbnailCaches();
                     await rebuildThumbnailFacetCache();
+                    if (cancelled) return;
                     console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();
-                    void queryClient.invalidateQueries({ queryKey: ['images'] });
-                    void queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
-                    void queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
-                    void refreshCollections();
+                    await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ['images'] }),
+                        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                        queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+                        refreshCollections(),
+                    ]);
                 }
+                if (!cancelled) setPrivacyMaskIndexState('ready');
             } catch (error) {
                 console.error('[Privacy] Failed to refresh privacy mask index', error);
-                if (!cancelled) setPrivacyMaskReady(true);
+                if (!cancelled) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    setPrivacyMaskIndexState('failed', message);
+                }
             }
-        })();
+        });
 
         return () => {
             cancelled = true;
         };
-    }, [privacyMaskKey, privacyMaskKeywords, queryClient, refreshCollections, shouldRefreshPrivacyMaskIndex]);
+    }, [
+        privacyMaskIndexRetryToken,
+        privacyMaskKey,
+        privacyMaskKeywords,
+        queryClient,
+        refreshCollections,
+        requiresPrivacyMaskIndex,
+        setPrivacyMaskIndexState,
+        settingsLoaded,
+    ]);
 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded
-        && (!requiresPrivacyMaskIndex || privacyMaskReady);
+        && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
     const allCollections = React.useMemo(
         () => [...collections, ...smartCollections],
         [collections, smartCollections]
@@ -189,6 +211,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         allCollections,
         settingsLoaded: databaseQueriesEnabled
     });
+    const privacyExposureBlocked = requiresPrivacyMaskIndex
+        && (!settingsLoaded || privacyMaskIndexStatus !== 'ready' || isPlaceholderData);
 
     // Flatten pages into a single image array
     const queryImages = React.useMemo(() => {
@@ -206,11 +230,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
     useEffect(() => {
-        if (queryData) {
+        if (queryData && !privacyExposureBlocked) {
             const allImgs = queryData.pages.flatMap(p => p.images);
             setImages(allImgs);
         }
-    }, [queryData, setImages]);
+    }, [privacyExposureBlocked, queryData, setImages]);
+
+    React.useLayoutEffect(() => {
+        if (privacyExposureBlocked) setImages([]);
+    }, [privacyExposureBlocked, setImages]);
 
     // Proactive prefetching: Load next page in background after current page loads
     // Only prefetch if we have less than 3 pages and user might scroll soon
@@ -224,8 +252,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters, hasNextPage, isFetchingNextPage, queryData, fetchNextPage]);
 
-    const totalImagesCount = queryData?.pages[0]?.totalCount ?? 0;
-    const globalTotalCount = queryData?.pages[0]?.globalCount ?? 0;
+    const totalImagesCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.totalCount ?? 0;
+    const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
 
     // Stats & Facets Query
     const {
@@ -243,9 +271,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         validFacetsEnabled: facetDrilldownActive
     });
 
-    const activeFacets = statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
-    const activeStats = statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
-    const activeValidNames = facetDrilldownActive ? statsData?.validNames || null : null;
+    const activeFacets = !privacyExposureBlocked && statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
+    const activeStats = !privacyExposureBlocked && statsData?.stats || { totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: [] };
+    const activeValidNames = !privacyExposureBlocked && facetDrilldownActive ? statsData?.validNames || null : null;
 
     // We still need 'activeSqlWhere' for stats compatibility
     const [activeSqlWhere, setActiveSqlWhere] = useState('');
@@ -256,10 +284,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // Track loaded facet types for lazy loading logic handled by facetTypes state above
 
     useEffect(() => {
+        if (privacyExposureBlocked) {
+            setActiveSqlWhere('0 = 1');
+            setActiveSqlParams([]);
+            return;
+        }
         const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections);
         setActiveSqlWhere(where);
         setActiveSqlParams(params);
-    }, [filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections]);
+    }, [filters, privacyEnabled, privacyExposureBlocked, settings.maskingMode, settings.maskedKeywords, allCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
@@ -463,6 +496,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
+        if (privacyExposureBlocked) return;
         if (isLoadMore) {
             await fetchNextPage();
         } else {
@@ -471,13 +505,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
             await queryClient.invalidateQueries({ queryKey: ['images'] });
         }
-    }, [fetchNextPage, queryClient]);
+    }, [fetchNextPage, privacyExposureBlocked, queryClient]);
 
 
 
     return (
         <SearchContext.Provider value={{
-            images,
+            images: privacyExposureBlocked ? [] : images,
             imagesQueryKey,
             setImages,
             filters,
@@ -488,9 +522,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             stats: activeStats,
             totalImages: totalImagesCount,
             globalTotal: globalTotalCount,
-            hasMoreImages: !!hasNextPage,
+            hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
             loadMoreImages: async () => {
-                if (hasNextPage && !isFetchingNextPage) {
+                if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {
                     await fetchNextPage();
                 }
             },
@@ -500,7 +534,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 queryClient.invalidateQueries({ queryKey: ['images'] });
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             },
-            isFiltering: isQueryLoading || isPlaceholderData,
+            isFiltering: !privacyExposureBlocked && (isQueryLoading || isPlaceholderData),
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,

@@ -58,10 +58,28 @@ describe('PrivacyTab', () => {
         useSettingsStore.setState({
             settings: createSettings(),
             privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+            privacyMaskIndexError: null,
+            privacyMaskIndexRetryToken: 0,
             initializationStatus: 'ready',
             isLoaded: true,
             flushSettings: vi.fn().mockResolvedValue(undefined),
         });
+    });
+
+    it('keeps failures visible and allows an explicit privacy-index retry', () => {
+        useSettingsStore.setState({
+            privacyMaskIndexStatus: 'failed',
+            privacyMaskIndexError: 'database unavailable',
+        });
+
+        render(<StorePrivacyTab />);
+
+        expect(screen.getByRole('alert').textContent).toContain('database unavailable');
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+        expect(useSettingsStore.getState().privacyMaskIndexError).toBeNull();
+        expect(useSettingsStore.getState().privacyMaskIndexRetryToken).toBe(1);
     });
 
     it('explains startup-default privacy masking and session-only changes', () => {

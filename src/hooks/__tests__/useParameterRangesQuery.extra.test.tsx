@@ -14,6 +14,9 @@ vi.mock('../../services/browserMockData', () => ({ getBrowserMockImages: mocks.g
 vi.mock('../../contexts/SettingsContext', () => ({ useSettings: () => ({ settings: { maskingMode: 'blur', maskedKeywords: ['secret'] }, privacyEnabled: true }) }));
 vi.mock('../../contexts/CollectionContext', () => ({ useCollections: () => ({ collections: [] }) }));
 vi.mock('../../stores/libraryStore', () => ({ useLibraryStore: (selector: (value: typeof state) => unknown) => selector(state) }));
+vi.mock('../../stores/settingsStore', () => ({
+    useSettingsStore: (selector: (value: { privacyMaskIndexStatus: 'ready' }) => unknown) => selector({ privacyMaskIndexStatus: 'ready' })
+}));
 vi.mock('../useDebouncedSideQueryFilters', () => ({ useDebouncedSideQueryFilters: (filters: unknown) => filters }));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (

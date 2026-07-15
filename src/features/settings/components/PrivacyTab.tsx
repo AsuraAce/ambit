@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Shield, X, Plus } from 'lucide-react';
+import { Loader2, Plus, RotateCcw, Shield, ShieldAlert, X } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { useToast } from '../../../hooks/useToast';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -33,6 +33,9 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const setPrivacyEnabled = useSettingsStore(state => state.setPrivacyEnabled);
     const flushSettings = useSettingsStore(state => state.flushSettings);
     const rollbackSettings = useSettingsStore(state => state.rollbackSettings);
+    const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
+    const privacyMaskIndexError = useSettingsStore(state => state.privacyMaskIndexError);
+    const retryPrivacyMaskIndex = useSettingsStore(state => state.retryPrivacyMaskIndex);
     const mountedRef = React.useRef(true);
     const operationGenerationsRef = React.useRef<Record<PrivacySettingsField, number>>({
         maskedKeywords: 0,
@@ -171,6 +174,46 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </span>
                 </button>
             </section>
+
+            {privacyEnabled && privacyMaskIndexStatus !== 'ready' && (
+                <section
+                    className={`border rounded-xl p-4 ${privacyMaskIndexStatus === 'failed'
+                        ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20'
+                        : 'bg-sage-50 border-sage-200 dark:bg-sage-500/10 dark:border-sage-500/20'}`}
+                    role={privacyMaskIndexStatus === 'failed' ? 'alert' : 'status'}
+                    aria-live="polite"
+                >
+                    <div className="flex items-start gap-3">
+                        {privacyMaskIndexStatus === 'failed'
+                            ? <ShieldAlert className="w-5 h-5 mt-0.5 text-rose-500 shrink-0" />
+                            : <Loader2 className="w-5 h-5 mt-0.5 text-sage-600 animate-spin shrink-0" />}
+                        <div className="flex-1 min-w-0">
+                            <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                {privacyMaskIndexStatus === 'failed'
+                                    ? 'Privacy protection could not be prepared'
+                                    : 'Preparing privacy protection'}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-600 dark:text-gray-400">
+                                {privacyMaskIndexStatus === 'failed'
+                                    ? 'Library content remains hidden until the refresh succeeds or Privacy Mode is disabled for this session.'
+                                    : 'Your library will be available when the latest masking rules are ready.'}
+                            </p>
+                            {privacyMaskIndexStatus === 'failed' && privacyMaskIndexError && (
+                                <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 break-words">{privacyMaskIndexError}</p>
+                            )}
+                        </div>
+                        {privacyMaskIndexStatus === 'failed' && (
+                            <button
+                                type="button"
+                                onClick={retryPrivacyMaskIndex}
+                                className="inline-flex items-center gap-1.5 px-3 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-lg text-xs font-bold"
+                            >
+                                <RotateCcw className="w-3.5 h-3.5" /> Retry
+                            </button>
+                        )}
+                    </div>
+                </section>
+            )}
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Safety Filters</h4>

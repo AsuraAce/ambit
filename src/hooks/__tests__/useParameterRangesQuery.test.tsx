@@ -6,9 +6,16 @@ import { useParameterRangesQuery } from '../useParameterRangesQuery';
 import { createDefaultFilters } from '../../utils/filterState';
 import type { ParameterRanges } from '../../bindings';
 import { SIDE_QUERY_SEARCH_DEBOUNCE_MS } from '../useDebouncedSideQueryFilters';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 const commandMocks = vi.hoisted(() => ({
     getParameterRanges: vi.fn(),
+}));
+const settingsContext = vi.hoisted(() => ({
+    current: {
+        settings: { maskingMode: 'blur', maskedKeywords: [] as string[] },
+        privacyEnabled: false,
+    },
 }));
 
 vi.mock('../../bindings', () => ({
@@ -19,16 +26,11 @@ vi.mock('../../bindings', () => ({
 
 vi.mock('../../services/runtime', () => ({
     isBrowserMockMode: () => false,
+    isTauriRuntime: () => false,
 }));
 
 vi.mock('../../contexts/SettingsContext', () => ({
-    useSettings: () => ({
-        settings: {
-            maskingMode: 'blur',
-            maskedKeywords: [],
-        },
-        privacyEnabled: false,
-    }),
+    useSettings: () => settingsContext.current,
 }));
 
 vi.mock('../../contexts/CollectionContext', () => ({
@@ -72,10 +74,31 @@ describe('useParameterRangesQuery', () => {
             status: 'ok',
             data: emptyParameterRanges,
         });
+        useSettingsStore.setState({ privacyMaskIndexStatus: 'ready' });
+        settingsContext.current = {
+            settings: { maskingMode: 'blur', maskedKeywords: [] },
+            privacyEnabled: false,
+        };
     });
 
     afterEach(() => {
         vi.useRealTimers();
+    });
+
+    it('returns no ranges and does not query while the privacy index is stale', async () => {
+        settingsContext.current = {
+            settings: { maskingMode: 'blur', maskedKeywords: ['face'] },
+            privacyEnabled: true,
+        };
+        useSettingsStore.setState({ privacyMaskIndexStatus: 'pending' });
+
+        const { result } = renderHook(() => useParameterRangesQuery(createDefaultFilters()), {
+            wrapper: createWrapper(),
+        });
+
+        expect(result.current.data).toEqual(emptyParameterRanges);
+        await new Promise(resolve => setTimeout(resolve, 0));
+        expect(commandMocks.getParameterRanges).not.toHaveBeenCalled();
     });
 
     it('refetches parameter ranges when advanced date search syntax changes', async () => {

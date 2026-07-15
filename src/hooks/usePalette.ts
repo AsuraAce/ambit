@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import { repairAssetUrl } from '../utils/pathUtils';
 
-export const usePalette = (imageUrl: string) => {
+export const usePalette = (imageUrl: string | null) => {
   const [palette, setPalette] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let isActive = true;
+    if (!imageUrl) {
+      setPalette([]);
+      setIsLoading(false);
+      return () => { isActive = false; };
+    }
     setIsLoading(true);
 
     const img = new Image();

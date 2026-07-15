@@ -12,6 +12,7 @@ import {
     getAnchorPoint,
     getZoomTransform
 } from '../../../utils/zoomMath';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface CompareModalProps {
     imageA: AIImage;
@@ -232,6 +233,9 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     onToggleFavorite,
     onTogglePin
 }) => {
+    const privacyExposureBlocked = useSettingsStore(state => (
+        state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
+    ));
     // View State
     const [mode, setMode] = useState<CompareMode>('split');
     const [scale, setScale] = useState(1);
@@ -249,6 +253,10 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         width: 0,
         height: 0
     });
+
+    useEffect(() => {
+        if (privacyExposureBlocked) onClose();
+    }, [onClose, privacyExposureBlocked]);
 
     const [panelWidth, setPanelWidth] = useState(400); // Widened for diff view
     const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -271,7 +279,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     }, [activeMediaFrame]);
 
     useEffect(() => {
-        const container = containerRef.current!;
+        const container = containerRef.current;
+        if (privacyExposureBlocked || !container) return;
 
         const updateMediaFrame = () => {
             const rect = container.getBoundingClientRect();
@@ -303,7 +312,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         const observer = new ResizeObserver(updateMediaFrame);
         observer.observe(container);
         return () => observer.disconnect();
-    }, [imageA.width, imageA.height, imageB.width, imageB.height]);
+    }, [imageA.width, imageA.height, imageB.width, imageB.height, privacyExposureBlocked]);
 
     useEffect(() => {
         if (mode !== 'overlay') setIsOverlayHover(false);
@@ -516,6 +525,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     };
     const sliderClipPath = `polygon(${activeMediaFrame.left}px ${activeMediaFrame.top}px, ${sliderTravelX + DIAGONAL_OFFSET_PX}px ${activeMediaFrame.top}px, ${sliderTravelX - DIAGONAL_OFFSET_PX}px ${activeMediaFrame.top + activeMediaFrame.height}px, ${activeMediaFrame.left}px ${activeMediaFrame.top + activeMediaFrame.height}px)`;
     const sliderDividerClipPath = `polygon(calc(50% + ${DIAGONAL_OFFSET_PX}px - ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 0, calc(50% + ${DIAGONAL_OFFSET_PX}px + ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 0, calc(50% - ${DIAGONAL_OFFSET_PX}px + ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 100%, calc(50% - ${DIAGONAL_OFFSET_PX}px - ${DIAGONAL_DIVIDER_WIDTH_PX / 2}px) 100%)`;
+
+    if (privacyExposureBlocked) return null;
 
     return (
         <div

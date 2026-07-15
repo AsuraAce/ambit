@@ -1,6 +1,6 @@
 # Milestone 1 — Integrate and Simplify Privacy Persistence Hardening
 
-Status: Approved; Work Packages 1 and 2 complete
+Status: Approved; Work Packages 1-3 complete; milestone integration gate pending
 Approved: 2026-07-15
 Safety snapshot: `fix/privacy-persistence-hardening-snapshot` at `3a1d15a`
 
@@ -135,6 +135,21 @@ Completion criteria:
 
 - Failure is safe and recoverable without restarting Ambit.
 - The package is committed as `fix: fail closed during privacy index refresh`.
+
+Completion record (2026-07-15):
+
+- Latest-request-wins refreshes keep the shared state `pending` until the native
+  index, thumbnail/facet caches, query invalidations, and collection refresh are
+  complete; failures remain `failed` with an explicit retry.
+- Search queries/results, parameter ranges, thumbnails, gallery/dashboard,
+  maintenance, viewer, comparison, and bulk-selection surfaces fail closed while
+  Privacy Mode is enabled and the index is not ready.
+- Explicitly disabling session Privacy Mode unblocks content; re-enabling it
+  returns to `pending` and schedules a fresh refresh.
+- Focused store, coordinator, Search, range, thumbnail, Privacy, layout,
+  comparison, and viewer suite: 118 tests passed across 10 files.
+- Full frontend suite: 2,648 passed, 1 skipped across 232 files.
+- `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed.
 
 ## Milestone Integration Gate
 

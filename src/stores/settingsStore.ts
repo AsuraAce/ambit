@@ -13,10 +13,20 @@ import {
 } from '../utils/settingsPersistenceCoordinator';
 
 type SettingsInitializationStatus = 'loading' | 'ready' | 'failed';
+export type PrivacyMaskIndexStatus = 'pending' | 'ready' | 'failed';
+
+const normalizePrivacyKeywords = (keywords: string[]): string => keywords
+    .map(keyword => keyword.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join('\u001f');
 
 interface SettingsState {
     settings: AppSettings;
     privacyEnabled: boolean;
+    privacyMaskIndexStatus: PrivacyMaskIndexStatus;
+    privacyMaskIndexError: string | null;
+    privacyMaskIndexRetryToken: number;
     initializationStatus: SettingsInitializationStatus;
     isLoaded: boolean;
     geminiApiKey: string | null;
@@ -29,6 +39,8 @@ interface SettingsState {
     ) => AppSettings | null;
     setGeminiApiKey: (key: string | null) => Promise<void>;
     setPrivacyEnabled: (enabled: boolean) => void;
+    setPrivacyMaskIndexState: (status: PrivacyMaskIndexStatus, error?: string | null) => void;
+    retryPrivacyMaskIndex: () => void;
     flushSettings: (settingsOverride?: AppSettings) => Promise<void>;
     cancelPendingSave: () => void;
     updateFolderLastScanned: (id: string, timestamp: number) => void;
@@ -53,6 +65,9 @@ export const useSettingsStore = create<SettingsState>()(
         (set, get) => ({
             settings: DEFAULT_SETTINGS,
             privacyEnabled: true,
+            privacyMaskIndexStatus: 'pending',
+            privacyMaskIndexError: null,
+            privacyMaskIndexRetryToken: 0,
             initializationStatus: 'loading',
             isLoaded: false,
             geminiApiKey: null,
@@ -106,7 +121,15 @@ export const useSettingsStore = create<SettingsState>()(
                         }, 1000);
                     }
 
-                    return { settings: newSettings };
+                    const privacyKeywordsChanged = normalizePrivacyKeywords(state.settings.maskedKeywords)
+                        !== normalizePrivacyKeywords(newSettings.maskedKeywords);
+                    return {
+                        settings: newSettings,
+                        ...(state.privacyEnabled && privacyKeywordsChanged ? {
+                            privacyMaskIndexStatus: 'pending' as const,
+                            privacyMaskIndexError: null,
+                        } : {})
+                    };
                 });
 
                 const oldFolders = new Set(previousSettings.monitoredFolders.map((folder) => folder.path));
@@ -150,7 +173,25 @@ export const useSettingsStore = create<SettingsState>()(
                 return restoredSettings;
             },
 
-            setPrivacyEnabled: (enabled) => set({ privacyEnabled: enabled }),
+            setPrivacyEnabled: (enabled) => set({
+                privacyEnabled: enabled,
+                privacyMaskIndexStatus: enabled ? 'pending' : 'ready',
+                privacyMaskIndexError: null,
+            }),
+
+            setPrivacyMaskIndexState: (status, error = null) => set({
+                privacyMaskIndexStatus: status,
+                privacyMaskIndexError: error,
+            }),
+
+            retryPrivacyMaskIndex: () => set((state) => {
+                if (!state.privacyEnabled) return state;
+                return {
+                    privacyMaskIndexStatus: 'pending',
+                    privacyMaskIndexError: null,
+                    privacyMaskIndexRetryToken: state.privacyMaskIndexRetryToken + 1,
+                };
+            }),
 
 
             flushSettings: async (settingsOverride) => {

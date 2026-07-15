@@ -114,6 +114,11 @@ vi.mock('../../contexts/SearchContext', () => ({
 describe('AppLayout', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useSettingsStore.setState({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+            privacyMaskIndexError: null,
+        });
         Object.keys(capturedProps).forEach(key => {
             capturedProps[key as keyof typeof capturedProps] = null;
         });
@@ -194,6 +199,19 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-sidebar')).toBeTruthy();
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
+    });
+
+    it('unmounts library surfaces while privacy protection is stale', () => {
+        useSettingsStore.setState({ privacyMaskIndexStatus: 'failed' });
+
+        const view = render(<AppLayout {...defaultProps} viewMode="grid" />);
+
+        expect(screen.getByTestId('privacy-protection-gate')).toBeTruthy();
+        expect(screen.queryByTestId('virtual-grid')).toBeNull();
+        expect(screen.queryByTestId('selection-bar')).toBeNull();
+
+        view.rerender(<AppLayout {...defaultProps} viewMode="maintenance" />);
+        expect(screen.queryByTestId('maintenance-view')).toBeNull();
     });
 
     it('renders VirtualGrid when viewMode is grid', () => {
