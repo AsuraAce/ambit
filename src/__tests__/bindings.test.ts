@@ -32,7 +32,7 @@ const commandCases: CommandCase[] = [
     { name: 'getImageCountForPathPrefix', invokeName: 'get_image_count_for_path_prefix', args: ['C:/library'], payload: { path: 'C:/library' }, returnsResult: true },
     { name: 'refreshPrivacyMaskIndex', invokeName: 'refresh_privacy_mask_index', args: [['nsfw']], payload: { maskedKeywords: ['nsfw'] }, returnsResult: true },
     { name: 'optimizeDatabase', invokeName: 'optimize_database', args: [], returnsResult: true },
-    { name: 'purgeDatabase', invokeName: 'purge_database', args: [], returnsResult: true },
+    { name: 'schedulePurgeTransaction', invokeName: 'schedule_purge_transaction', args: ['purge-1', '{}'], payload: { transactionId: 'purge-1', journalJson: '{}' }, returnsResult: true },
     { name: 'getParameterRanges', invokeName: 'get_parameter_ranges', args: ['WHERE 1', '[]', null, 'lora'], payload: { whereClause: 'WHERE 1', paramsJson: '[]', collectionId: null, loraName: 'lora' }, returnsResult: true },
     { name: 'backfillParameterColumns', invokeName: 'backfill_parameter_columns', args: [], returnsResult: true },
     { name: 'rebuildFacetCache', invokeName: 'rebuild_facet_cache', args: [], returnsResult: true },

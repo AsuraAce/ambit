@@ -1,6 +1,6 @@
 # Milestone 1 — Integrate and Simplify Privacy Persistence Hardening
 
-Status: Approved; Work Package 1 complete; Work Package 2 pending
+Status: Approved; Work Packages 1 and 2 complete
 Approved: 2026-07-15
 Safety snapshot: `fix/privacy-persistence-hardening-snapshot` at `3a1d15a`
 
@@ -92,6 +92,18 @@ Completion criteria:
 
 - Factory purge is crash-recoverable without the broad mutation sweep.
 - The package is committed as `fix: make factory purge crash-recoverable`.
+
+Completion record (2026-07-15):
+
+- Native recovery suite: 31 profile/migration tests passed; full Rust suite:
+  397 passed, 1 ignored.
+- Focused repository/watcher/purge/bindings suite: 84 passed, 1 skipped.
+- Full frontend suite: 2,638 passed, 1 skipped across 231 files.
+- Bindings drift, Cargo formatting/check, TypeScript, lint, and diff checks
+  passed.
+- Packaged kill/restart testing was not run against the shared installed user
+  profile; every journal/marker/receipt interruption boundary and dev/installed
+  profile isolation were exercised with deterministic filesystem tests.
 
 ## Work Package 3 — Fail-Closed Privacy Index With Recovery UX
 

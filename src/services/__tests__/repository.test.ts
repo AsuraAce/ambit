@@ -11,6 +11,10 @@ const fsMocks = vi.hoisted(() => ({
     writeTextFile: vi.fn(),
 }));
 
+const commandMocks = vi.hoisted(() => ({
+    schedulePurgeTransaction: vi.fn(),
+}));
+
 vi.mock('@tauri-apps/plugin-fs', () => ({
     BaseDirectory: {
         AppLocalData: 11,
@@ -20,6 +24,12 @@ vi.mock('@tauri-apps/plugin-fs', () => ({
     readTextFile: fsMocks.readTextFile,
     remove: fsMocks.remove,
     writeTextFile: fsMocks.writeTextFile,
+}));
+
+vi.mock('../../bindings', () => ({
+    commands: {
+        schedulePurgeTransaction: commandMocks.schedulePurgeTransaction,
+    },
 }));
 
 vi.mock('../runtime', () => ({
@@ -166,6 +176,10 @@ describe('TauriFsRepository', () => {
         fsMocks.readTextFile.mockResolvedValue('{}');
         fsMocks.remove.mockResolvedValue(undefined);
         fsMocks.writeTextFile.mockResolvedValue(undefined);
+        commandMocks.schedulePurgeTransaction.mockResolvedValue({
+            status: 'ok',
+            data: 'Factory reset committed.',
+        });
     });
 
     it('returns a fresh SQLite-backed app state when library.json does not exist', async () => {
@@ -178,6 +192,138 @@ describe('TauriFsRepository', () => {
         expect(state.images).toEqual([]);
         expect(state.collections).toEqual([]);
         expect(state.recentSearches).toEqual([]);
+    });
+
+    it('schedules purge from one immutable snapshot without changing committed JSON', async () => {
+        const current = stateFixture();
+        fsMocks.exists.mockImplementation(async (fileName: string) => (
+            fileName === 'library.json' || fileName === 'library.json.bak'
+        ));
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify(current));
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const result = await new TauriFsRepository().schedulePurge(state => ({
+            ...state,
+            recentSearches: [],
+            settings: { ...state.settings, maskedKeywords: ['nsfw', 'blood', 'gore'] },
+        }));
+
+        expect(result.message).toBe('Factory reset committed.');
+        expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
+        const [transactionId, journalJson] = commandMocks.schedulePurgeTransaction.mock.calls[0];
+        const journal = JSON.parse(journalJson);
+        expect(journal).toEqual(expect.objectContaining({
+            version: 1,
+            transactionId,
+            before: expect.objectContaining({ recentSearches: ['portrait'] }),
+            after: expect.objectContaining({
+                recentSearches: [],
+                settings: expect.objectContaining({ maskedKeywords: ['nsfw', 'blood', 'gore'] }),
+            }),
+        }));
+    });
+
+    it('leaves committed JSON unchanged when native purge scheduling rejects', async () => {
+        const current = stateFixture();
+        fsMocks.exists.mockImplementation(async (fileName: string) => (
+            fileName === 'library.json' || fileName === 'library.json.bak'
+        ));
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify(current));
+        commandMocks.schedulePurgeTransaction.mockResolvedValueOnce({
+            status: 'error',
+            error: 'marker unavailable',
+        });
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        await expect(new TauriFsRepository().schedulePurge(state => ({
+            ...state,
+            recentSearches: [],
+        }))).rejects.toThrow('marker unavailable');
+
+        expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
+        expect(fsMocks.remove).not.toHaveBeenCalled();
+    });
+
+    it('materializes a completed native purge through the normal library commit protocol', async () => {
+        const before = stateFixture();
+        const after = {
+            ...before,
+            recentSearches: [],
+            settings: { ...before.settings, maskedKeywords: ['nsfw', 'blood', 'gore'] },
+        };
+        const transactionId = 'purge-completed';
+        fsMocks.exists.mockImplementation(async (fileName: string) => [
+            'library.purge.json',
+            'library.purge.completed',
+            'library.json',
+            'library.json.bak',
+        ].includes(fileName));
+        fsMocks.readTextFile.mockImplementation(async (fileName: string) => {
+            if (fileName === 'library.purge.json') {
+                return JSON.stringify({ version: 1, transactionId, before, after });
+            }
+            if (fileName === 'library.purge.completed') {
+                return JSON.stringify({ version: 1, transactionId });
+            }
+            return JSON.stringify(before);
+        });
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const recovered = await new TauriFsRepository().load();
+
+        expect(recovered.settings.maskedKeywords).toEqual(['nsfw', 'blood', 'gore']);
+        expect(recovered.recentSearches).toEqual([]);
+        expect(fsMocks.writeTextFile).toHaveBeenCalledWith(
+            'library.json',
+            expect.stringContaining('"maskedKeywords": [\n      "nsfw"'),
+            { baseDir: 11 }
+        );
+        expect(fsMocks.remove.mock.calls.slice(-2).map(call => call[0])).toEqual([
+            'library.purge.completed',
+            'library.purge.json',
+        ]);
+    });
+
+    it('fails closed when native purge recovery artifacts are incomplete', async () => {
+        fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.purge.json');
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        await expect(new TauriFsRepository().load()).rejects.toThrow(
+            'Factory reset recovery artifacts are incomplete'
+        );
+        expect(fsMocks.remove).not.toHaveBeenCalled();
+        expect(fsMocks.writeTextFile).not.toHaveBeenCalled();
+    });
+
+    it('retains completed purge artifacts when JSON materialization fails', async () => {
+        const before = stateFixture();
+        const after = { ...before, recentSearches: [] };
+        const transactionId = 'purge-retry';
+        fsMocks.exists.mockImplementation(async (fileName: string) => [
+            'library.purge.json',
+            'library.purge.completed',
+            'library.json',
+            'library.json.bak',
+        ].includes(fileName));
+        fsMocks.readTextFile.mockImplementation(async (fileName: string) => {
+            if (fileName === 'library.purge.json') {
+                return JSON.stringify({ version: 1, transactionId, before, after });
+            }
+            if (fileName === 'library.purge.completed') {
+                return JSON.stringify({ version: 1, transactionId });
+            }
+            return JSON.stringify(before);
+        });
+        fsMocks.writeTextFile.mockImplementation(async (fileName: string) => {
+            if (fileName === 'library.json') throw new Error('main unavailable');
+        });
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        await expect(new TauriFsRepository().load()).rejects.toThrow('main unavailable');
+
+        expect(fsMocks.remove).not.toHaveBeenCalledWith('library.purge.completed', expect.anything());
+        expect(fsMocks.remove).not.toHaveBeenCalledWith('library.purge.json', expect.anything());
     });
 
     it('loads library.json settings but strips legacy image rows from persisted JSON state', async () => {

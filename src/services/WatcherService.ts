@@ -12,6 +12,7 @@ export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
     private isWatching = false;
     private lastPaths: string[] = [];
+    private lastCallback: WatcherCallback | null = null;
     private generation = 0;
     private diagnostic: BackgroundDiagnosticHandle | null = null;
 
@@ -58,6 +59,7 @@ export class WatcherService {
 
             this.isWatching = true;
             this.lastPaths = [...paths];
+            this.lastCallback = onChangeEvent;
             this.diagnostic = startBackgroundDiagnostic('job', 'Native folder watcher', {
                 pathCount: paths.length,
                 paths
@@ -97,6 +99,7 @@ export class WatcherService {
             this.diagnostic = null;
             this.isWatching = false;
             this.lastPaths = [];
+            this.lastCallback = null;
             // Optionally throw here so the UI can display a Toast, or just leave `isWatching = false` 
             // so we can try again later.
         }
@@ -106,6 +109,7 @@ export class WatcherService {
         if (isBrowserMockMode()) {
             this.isWatching = false;
             this.lastPaths = [];
+            this.lastCallback = null;
             return;
         }
 
@@ -116,6 +120,7 @@ export class WatcherService {
 
         this.isWatching = false;
         this.lastPaths = [];
+        this.lastCallback = null;
 
         if (this.unlistenFn) {
             this.unlistenFn();
@@ -135,6 +140,19 @@ export class WatcherService {
 
     async updateWatcher(paths: string[], onChangeEvent: WatcherCallback) {
         await this.startWatching(paths, onChangeEvent);
+    }
+
+    async pauseWatching(): Promise<() => Promise<void>> {
+        const paths = [...this.lastPaths];
+        const callback = this.lastCallback;
+        const shouldResume = this.isWatching && paths.length > 0 && callback !== null;
+        await this.stopWatching();
+
+        return async () => {
+            if (shouldResume && callback) {
+                await this.startWatching(paths, callback);
+            }
+        };
     }
 }
 

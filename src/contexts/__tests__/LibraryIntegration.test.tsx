@@ -27,10 +27,10 @@ const mocks = vi.hoisted(() => ({
     rebuildFacetCacheStrict: vi.fn().mockResolvedValue(0),
     rebuildFacetCacheIncrementalBatchStrict: vi.fn().mockResolvedValue(0),
     refreshFacetCacheForResourcesStrict: vi.fn().mockResolvedValue(0),
-    purgeLibrary: vi.fn().mockResolvedValue('Library purge scheduled.'),
     browserMockMode: false,
     watcherStartWatching: vi.fn().mockResolvedValue({}),
     watcherStopWatching: vi.fn().mockResolvedValue(undefined),
+    watcherResumeWatching: vi.fn().mockResolvedValue(undefined),
     processTargetedFiles: vi.fn().mockResolvedValue({
         handledPaths: ['C:/images/live.png'],
         failedPaths: [],
@@ -82,7 +82,8 @@ const mocks = vi.hoisted(() => ({
             recentSearches: []
         }),
         save: vi.fn().mockResolvedValue({}),
-        update: vi.fn()
+        update: vi.fn(),
+        schedulePurge: vi.fn()
     }
 }));
 
@@ -132,7 +133,6 @@ vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheStrict: (...args: any[]) => mocks.rebuildFacetCacheStrict(...args),
     rebuildFacetCacheIncrementalBatchStrict: (...args: any[]) => mocks.rebuildFacetCacheIncrementalBatchStrict(...args),
     refreshFacetCacheForResourcesStrict: (...args: any[]) => mocks.refreshFacetCacheForResourcesStrict(...args),
-    purgeLibrary: (...args: unknown[]) => mocks.purgeLibrary(...args),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue(false)
 }));
 
@@ -145,7 +145,8 @@ vi.mock('../../services/runtime', () => ({
 vi.mock('../../services/WatcherService', () => ({
     watcherService: {
         startWatching: mocks.watcherStartWatching,
-        stopWatching: mocks.watcherStopWatching
+        stopWatching: mocks.watcherStopWatching,
+        pauseWatching: vi.fn(async () => mocks.watcherResumeWatching)
     }
 }));
 
@@ -239,11 +240,15 @@ describe('Library Integration (Provider Stack)', () => {
         vi.clearAllMocks();
         settingsPersistenceCoordinator.reopenAdmission();
         mocks.browserMockMode = false;
-        mocks.purgeLibrary.mockResolvedValue('Library purge scheduled.');
         mocks.appRepository.save.mockResolvedValue({});
         mocks.appRepository.update.mockImplementation(async (updater: (state: unknown) => unknown) => (
             updater(await mocks.appRepository.load())
         ));
+        mocks.appRepository.schedulePurge.mockImplementation(async (updater: (state: unknown) => unknown) => ({
+            transactionId: 'purge-test',
+            state: updater(await mocks.appRepository.load()),
+            message: 'Library purge scheduled.'
+        }));
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
         useSettingsStore.setState(useSettingsStore.getInitialState(), true);
         useCollectionStore.setState({
@@ -1437,7 +1442,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.syncImages).not.toHaveBeenCalled();
         expect(mocks.processTargetedFiles).not.toHaveBeenCalled();
-        expect(mocks.purgeLibrary).not.toHaveBeenCalled();
+        expect(mocks.appRepository.schedulePurge).not.toHaveBeenCalled();
     });
 
     it('returns immediately for empty targeted paths and delegates cancellation to the store', async () => {
@@ -1592,8 +1597,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await act(async () => syncHook?.cleanLibrary());
 
-        expect(mocks.watcherStopWatching).toHaveBeenCalledOnce();
-        const resetUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as (state: unknown) => {
+        const resetUpdater = mocks.appRepository.schedulePurge.mock.calls.at(-1)?.[0] as (state: unknown) => {
             images: unknown[];
             collections: unknown[];
             smartCollections: unknown[];
@@ -1614,7 +1618,7 @@ describe('Library Integration (Provider Stack)', () => {
                 maskingMode: 'blur',
             }),
         }));
-        expect(mocks.purgeLibrary).toHaveBeenCalledOnce();
+        expect(mocks.appRepository.schedulePurge).toHaveBeenCalledOnce();
     });
 
     it.each([
@@ -1626,11 +1630,12 @@ describe('Library Integration (Provider Stack)', () => {
         let syncHook: SyncHook | undefined;
         renderSyncStack(h => libraryHook = h, h => syncHook = h);
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
-        mocks.purgeLibrary.mockRejectedValueOnce(failure);
+        mocks.appRepository.schedulePurge.mockRejectedValueOnce(failure);
 
         await expect(syncHook?.cleanLibrary()).resolves.toBeUndefined();
 
         expect(consoleError).toHaveBeenCalledWith('[Purge] Purge failed:', failure);
+        expect(mocks.watcherResumeWatching).toHaveBeenCalledOnce();
         consoleError.mockRestore();
     });
 

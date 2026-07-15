@@ -14,11 +14,18 @@ export interface AppState {
   recentSearches: string[];
 }
 
+export interface PurgeScheduleResult {
+  transactionId: string;
+  state: AppState;
+  message: string;
+}
+
 // The Repository Interface: The contract that any storage engine must fulfill
 export interface IRepository {
   load(): Promise<AppState>;
   save(state: AppState): Promise<void>;
   update(updater: (state: AppState) => AppState): Promise<AppState>;
+  schedulePurge(updater: (state: AppState) => AppState): Promise<PurgeScheduleResult>;
 }
 
 // Implementation for Web: Uses LocalStorage
@@ -44,6 +51,16 @@ export class LocalStorageRepository implements IRepository {
       this.saveUnlocked(nextState);
       return nextState;
     });
+  }
+
+  async schedulePurge(updater: (state: AppState) => AppState): Promise<PurgeScheduleResult> {
+    const transactionId = crypto.randomUUID();
+    const state = await this.update(updater);
+    return {
+      transactionId,
+      state,
+      message: 'Browser storage reset completed.'
+    };
   }
 
   private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {

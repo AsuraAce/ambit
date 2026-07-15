@@ -214,7 +214,6 @@ describe('imageRepo batch removal', () => {
             updateFavorite,
             updatePinned,
             updateImagesBoard,
-            purgeLibrary,
             checkHiddenContentAvailability,
             clearAllThumbnailPaths,
             updateThumbnailPath,
@@ -260,7 +259,6 @@ describe('imageRepo batch removal', () => {
         await expect(updatePinned('regular', true)).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], 'board-a')).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], null)).resolves.toBeUndefined();
-        await expect(purgeLibrary()).resolves.toBe('Browser mock library cleared for this session.');
         await expect(checkHiddenContentAvailability()).resolves.toEqual({ hasIntermediates: true, hasGrids: true });
         await expect(clearAllThumbnailPaths()).resolves.toBe(0);
         await expect(updateThumbnailPath('regular', 'thumb.webp')).resolves.toBeUndefined();
@@ -298,7 +296,6 @@ describe('imageRepo batch removal', () => {
             microThumbnail: 'data',
             thumbnailSource: 'ambit',
         });
-        expect(updateBrowserMockImageMock).toHaveBeenCalledWith('deleted', { isDeleted: true });
         expect(getDbMock).not.toHaveBeenCalled();
     });
 
@@ -1338,23 +1335,6 @@ describe('imageRepo batch removal', () => {
             failedIds: ['C:/removed/absent.png'],
             thumbnailWarningIds: [],
         });
-    });
-
-    it('purges the library through the backend command and surfaces backend errors', async () => {
-        const { commands } = await import('../../../bindings');
-        const { purgeLibrary } = await import('../imageRepo');
-
-        vi.mocked(commands.purgeDatabase).mockResolvedValueOnce({
-            status: 'ok',
-            data: 'restart required',
-        });
-        await expect(purgeLibrary()).resolves.toBe('restart required');
-
-        vi.mocked(commands.purgeDatabase).mockResolvedValueOnce({
-            status: 'error',
-            error: 'purge failed',
-        });
-        await expect(purgeLibrary()).rejects.toThrow('purge failed');
     });
 
     it('clears all thumbnail paths with retry and updates collection thumbnail caches only after changes', async () => {

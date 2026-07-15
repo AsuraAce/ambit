@@ -239,6 +239,16 @@ export class BrowserMockRepository implements IRepository {
         return state;
     }
 
+    async schedulePurge(updater: (currentState: AppState) => AppState) {
+        const transactionId = crypto.randomUUID();
+        const nextState = await this.update(updater);
+        return {
+            transactionId,
+            state: nextState,
+            message: 'Browser mock library cleared for this session.'
+        };
+    }
+
 }
 
 export const getBrowserMockImages = (): AIImage[] => loadStoredState().images;

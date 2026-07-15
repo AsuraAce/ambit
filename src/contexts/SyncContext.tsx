@@ -22,7 +22,6 @@ import { createLiveFacetRefreshQueue } from '../utils/liveFacetRefreshQueue';
 import { TouchedFacetResources } from '../utils/touchedFacetTypes';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
 import {
-    purgeLibrary,
     rebuildFacetCache,
     rebuildFacetCacheIncrementalBatchStrict,
     rebuildFacetCacheStrict,
@@ -31,7 +30,7 @@ import {
 import { processTargetedFiles } from '../services/importService';
 import { scanForOrphans } from '../services/invoke/orphanScanner';
 import { syncImages } from '../services/invoke/syncService';
-import { appRepository, type AppState } from '../services/repository';
+import { appRepository } from '../services/repository';
 import { watcherService } from '../services/WatcherService';
 import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
@@ -805,73 +804,70 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 console.log('[Purge] Starting library purge...');
                 console.log('[Purge] Stopping background services...');
 
-                await watcherService.stopWatching();
-                useLibraryStore.getState().cancelThumbnailRegeneration();
-                useLibraryStore.getState().cancelImport();
-                useLibraryStore.getState().setBackgroundHealingPaused(true);
+                const resumeWatcher = await watcherService.pauseWatching();
+                const libraryState = useLibraryStore.getState();
+                const healingWasPaused = libraryState.backgroundHealingPaused;
+                cancelSyncAction();
+                libraryState.cancelThumbnailRegeneration();
+                libraryState.cancelImport();
+                libraryState.setBackgroundHealingPaused(true);
 
-                console.log('[Purge] Resetting settings and legacy storage...');
-                let stateBeforeReset!: AppState;
-                const resetState = await appRepository.update((legacyState) => {
-                    stateBeforeReset = legacyState;
-                    const cleanSettings: AppSettings = {
-                        ...legacyState.settings,
-                        lastSyncedAt: null,
-                        monitoredFolders: [],
-                        invokeAiPath: undefined,
-                        a1111Path: undefined,
-                        comfyUiPath: undefined,
-                        resourceFolders: [],
-                        importIntermediates: false,
-                        enableAutoThumbnailHealing: true,
-                        thumbnailOptimizationProfile: 'balanced',
-                        maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
-                        maskingMode: DEFAULT_APP_SETTINGS.maskingMode,
-                        hasCompletedOnboarding: false
-                    };
-                    return {
-                        ...legacyState,
-                        images: [],
-                        collections: [],
-                        smartCollections: [],
-                        recentSearches: [],
-                        settings: cleanSettings
-                    };
-                });
-
-                let backendMessage: string;
                 try {
-                    console.log('[Purge] Purging backend database...');
-                    backendMessage = await purgeLibrary();
-                } catch (error) {
+                    console.log('[Purge] Committing crash-recoverable factory reset...');
+                    const scheduled = await appRepository.schedulePurge((legacyState) => {
+                        const cleanSettings: AppSettings = {
+                            ...legacyState.settings,
+                            lastSyncedAt: null,
+                            monitoredFolders: [],
+                            invokeAiPath: undefined,
+                            a1111Path: undefined,
+                            comfyUiPath: undefined,
+                            resourceFolders: [],
+                            importIntermediates: false,
+                            enableAutoThumbnailHealing: true,
+                            thumbnailOptimizationProfile: 'balanced',
+                            maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
+                            maskingMode: DEFAULT_APP_SETTINGS.maskingMode,
+                            hasCompletedOnboarding: false
+                        };
+                        return {
+                            ...legacyState,
+                            images: [],
+                            collections: [],
+                            smartCollections: [],
+                            recentSearches: [],
+                            settings: cleanSettings
+                        };
+                    });
+
+                    useSettingsStore.setState({ settings: scheduled.state.settings });
                     try {
-                        await appRepository.save(stateBeforeReset);
-                        useSettingsStore.setState({ settings: stateBeforeReset.settings });
-                    } catch (rollbackError) {
-                        console.error('[Purge] Failed to restore library.json after purge scheduling failed:', rollbackError);
+                        console.log('[Purge] Clearing React Query cache and store...');
+                        await queryClient.resetQueries();
+                        useSearchStore.getState().clearAllFilters();
+                        useSearchStore.getState().setImages([]);
+                    } catch (cleanupError) {
+                        console.error('[Purge] Post-schedule UI cleanup failed; restart is still required:', cleanupError);
+                    }
+
+                    addToast(scheduled.message, 'success');
+                    console.log('[Purge] Factory reset committed; startup recovery will materialize library.json.');
+                } catch (error) {
+                    libraryState.setBackgroundHealingPaused(healingWasPaused);
+                    try {
+                        await resumeWatcher();
+                    } catch (resumeError) {
+                        console.error('[Purge] Failed to resume watcher after scheduling failure:', resumeError);
                     }
                     throw error;
                 }
-
-                useSettingsStore.setState({ settings: resetState.settings });
-                try {
-                    console.log('[Purge] Clearing React Query cache and store...');
-                    await queryClient.resetQueries();
-                    useSearchStore.getState().clearAllFilters();
-                    useSearchStore.getState().setImages([]);
-                } catch (cleanupError) {
-                    console.error('[Purge] Post-schedule UI cleanup failed; restart is still required:', cleanupError);
-                }
-
-                addToast(backendMessage, 'success');
-                console.log('[Purge] Purge complete. User should restart the app.');
             });
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             console.error("[Purge] Purge failed:", e);
             addToast('Purge failed: ' + message, 'error');
         }
-    }, [addToast, queryClient]);
+    }, [addToast, cancelSyncAction, queryClient]);
 
     return (
         <SyncContext.Provider value={{

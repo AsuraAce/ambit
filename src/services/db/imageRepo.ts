@@ -1217,28 +1217,6 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
-/**
- * Purges the entire library database by calling the backend command.
- * Returns the backend's message (e.g., instructions to restart).
- */
-export const purgeLibrary = async (): Promise<string> => {
-    if (isBrowserMockMode()) {
-        getBrowserMockImages().forEach(image => updateBrowserMockImage(image.id, { isDeleted: true }));
-        return 'Browser mock library cleared for this session.';
-    }
-
-    console.log('[Purge] Calling backend to purge database...');
-    const result = await commands.purgeDatabase();
-    console.log('[Purge] Backend response:', result);
-
-    // The result is either { status: 'ok', data: message } or { status: 'error', error: message }
-    if (result.status === 'ok') {
-        return result.data;
-    } else {
-        throw new Error(result.error);
-    }
-};
-
 export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();

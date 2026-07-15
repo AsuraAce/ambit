@@ -1,5 +1,6 @@
 import { BaseDirectory, exists, mkdir, readTextFile, remove, writeTextFile } from '@tauri-apps/plugin-fs';
-import { AppState, IRepository } from './repository';
+import { commands } from '../bindings';
+import { AppState, IRepository, PurgeScheduleResult } from './repository';
 import { INITIAL_COLLECTIONS } from '../constants';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
 import { AppSettings, Collection, FilterState, SmartCollection } from '../types';
@@ -42,6 +43,13 @@ interface PersistedStateJournal {
 interface PersistedCommitMarker {
     version: 1;
     transactionId: string;
+}
+
+interface PersistedPurgeJournal {
+    version: 1;
+    transactionId: string;
+    before: PersistedAppState;
+    after: PersistedAppState;
 }
 
 interface ResolvedStateJournal {
@@ -233,6 +241,8 @@ export class TauriFsRepository implements IRepository {
     private readonly pendingFileName = 'library.json.pending';
     private readonly commitFileName = 'library.json.pending.commit';
     private readonly backupFileName = 'library.json.bak';
+    private readonly purgeJournalFileName = 'library.purge.json';
+    private readonly purgeCompletionFileName = 'library.purge.completed';
     private readonly baseDir = BaseDirectory.AppLocalData;
     private hasLoggedDirectoryError = false;
     private operationQueue: Promise<void> = Promise.resolve();
@@ -257,6 +267,32 @@ export class TauriFsRepository implements IRepository {
         });
     }
 
+    async schedulePurge(updater: (state: AppState) => AppState): Promise<PurgeScheduleResult> {
+        return this.enqueue(async () => {
+            const currentState = await this.loadUnlocked(false);
+            const nextState = updater(currentState);
+            const transactionId = crypto.randomUUID();
+            const journal: PersistedPurgeJournal = {
+                version: 1,
+                transactionId,
+                before: this.createCandidate(currentState).state,
+                after: this.createCandidate(nextState).state
+            };
+            const result = await commands.schedulePurgeTransaction(
+                transactionId,
+                JSON.stringify(journal, null, 2)
+            );
+            if (result.status === 'error') {
+                throw new Error(result.error);
+            }
+            return {
+                transactionId,
+                state: nextState,
+                message: result.data
+            };
+        });
+    }
+
     private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
         const result = this.operationQueue.then(operation, operation);
         this.operationQueue = result.then(() => undefined, () => undefined);
@@ -275,8 +311,11 @@ export class TauriFsRepository implements IRepository {
         }
     }
 
-    private async loadUnlocked(): Promise<AppState> {
+    private async loadUnlocked(cleanupLegacyImages = true): Promise<AppState> {
         await this.ensureDirectory();
+
+        const recoveredPurge = await this.recoverCompletedPurge();
+        if (recoveredPurge) return recoveredPurge;
 
         let journal: ResolvedStateJournal | null = null;
         try {
@@ -299,7 +338,10 @@ export class TauriFsRepository implements IRepository {
             await this.ensureBackupExists(saved.content);
             const preparedState = this.prepareLoadedState(saved.state);
 
-            if (saved.state.images && Array.isArray(saved.state.images) && saved.state.images.length > 0) {
+            if (cleanupLegacyImages
+                && saved.state.images
+                && Array.isArray(saved.state.images)
+                && saved.state.images.length > 0) {
                 console.log('[TauriFsRepository] Detected legacy images in library.json. Cleaning up to improve startup...');
                 try {
                     await this.saveUnlocked(preparedState);
@@ -319,6 +361,55 @@ export class TauriFsRepository implements IRepository {
         }
 
         return this.getDefaultState();
+    }
+
+    private async recoverCompletedPurge(): Promise<AppState | null> {
+        const journalExists = await exists(this.purgeJournalFileName, { baseDir: this.baseDir });
+        const completionExists = await exists(this.purgeCompletionFileName, { baseDir: this.baseDir });
+        if (!journalExists && !completionExists) return null;
+        if (!journalExists || !completionExists) {
+            throw new Error('Factory reset recovery artifacts are incomplete. They were preserved for startup recovery.');
+        }
+
+        let journal: PersistedPurgeJournal;
+        let completion: PersistedCommitMarker;
+        try {
+            const parsedJournal: unknown = JSON.parse(await readTextFile(
+                this.purgeJournalFileName,
+                { baseDir: this.baseDir }
+            ));
+            const parsedCompletion: unknown = JSON.parse(await readTextFile(
+                this.purgeCompletionFileName,
+                { baseDir: this.baseDir }
+            ));
+            if (!isRecord(parsedJournal)
+                || parsedJournal.version !== 1
+                || typeof parsedJournal.transactionId !== 'string'
+                || !this.isPersistedAppState(parsedJournal.before)
+                || !this.isPersistedAppState(parsedJournal.after)
+                || !isRecord(parsedCompletion)
+                || parsedCompletion.version !== 1
+                || parsedCompletion.transactionId !== parsedJournal.transactionId) {
+                throw new Error('Factory reset recovery artifacts do not match.');
+            }
+            journal = parsedJournal as unknown as PersistedPurgeJournal;
+            completion = parsedCompletion as unknown as PersistedCommitMarker;
+        } catch (error) {
+            throw new Error('Failed to validate factory reset recovery artifacts. They were preserved.', { cause: error });
+        }
+
+        const recoveredState = this.prepareLoadedState(journal.after);
+        await this.saveUnlocked(recoveredState);
+        try {
+            await remove(this.purgeCompletionFileName, { baseDir: this.baseDir });
+            await remove(this.purgeJournalFileName, { baseDir: this.baseDir });
+        } catch (error) {
+            console.warn('[TauriFsRepository] Factory reset was materialized, but recovery cleanup was incomplete:', {
+                transactionId: completion.transactionId,
+                error
+            });
+        }
+        return recoveredState;
     }
 
     private async readPendingJournal(): Promise<ResolvedStateJournal | null> {

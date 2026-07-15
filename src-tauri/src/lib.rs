@@ -37,7 +37,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::image_commands::get_image_count_for_path_prefix,
         db::commands::image_commands::refresh_privacy_mask_index,
         db::commands::maintenance::optimize_database,
-        db::commands::maintenance::purge_database,
+        db::commands::maintenance::schedule_purge_transaction,
         db::commands::filter_commands::get_parameter_ranges,
         db::commands::filter_commands::backfill_parameter_columns,
         db::facets::rebuild_facet_cache,
@@ -113,7 +113,10 @@ pub fn run() {
     }
 
     // Check for deferred purge request BEFORE initializing the database.
-    app_data_migration::check_and_execute_deferred_purge();
+    if let Err(error) = app_data_migration::check_and_execute_deferred_purge() {
+        eprintln!("[Purge] {error}");
+        return;
+    }
 
     // Move the production SQLite catalog from Roaming AppData to Local AppData
     // before tauri-plugin-sql can open images.db.
