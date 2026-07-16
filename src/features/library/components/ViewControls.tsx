@@ -240,12 +240,22 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                             <span className="opacity-40">/</span>
                             <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
                         </div>
-                        <span className="text-[8px] opacity-60">{(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}</span>
+                        <span
+                            className="text-[10px] text-gray-500 dark:text-gray-400 tracking-wider max-w-[180px] truncate"
+                            title={(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
+                        >
+                            {(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
+                        </span>
                     </>
                 ) : (
                     <>
                         <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
-                        <span className="text-[8px] opacity-60">{(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}</span>
+                        <span
+                            className="text-[10px] text-gray-500 dark:text-gray-400 tracking-wider max-w-[180px] truncate"
+                            title={(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}
+                        >
+                            {(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}
+                        </span>
                     </>
                 )}
             </div>
