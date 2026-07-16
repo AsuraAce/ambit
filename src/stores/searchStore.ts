@@ -48,6 +48,7 @@ const INITIAL_FILTERS: FilterState = {
     dateFrom: undefined,
     dateTo: undefined,
     favoritesOnly: false,
+    pinnedOnly: false,
     collectionId: null,
     showIntermediates: false,
     showGrids: false
@@ -89,7 +90,13 @@ export const useSearchStore = create<SearchState>()(
             },
 
             clearAllFilters: () => {
-                set({ filters: INITIAL_FILTERS });
+                set((state) => ({
+                    filters: {
+                        ...INITIAL_FILTERS,
+                        showIntermediates: state.filters.showIntermediates,
+                        showGrids: state.filters.showGrids,
+                    }
+                }));
             },
 
             fetchData: async () => {

@@ -20,7 +20,9 @@ vi.mock('../../../hooks/useLibraryContext', () => ({
 }));
 
 vi.mock('../../../features/filters/components/SearchBar', () => ({
-    SearchBar: () => <div data-testid="search-bar" />
+    SearchBar: ({ submitNavigatesToGrid }: { submitNavigatesToGrid: boolean }) => (
+        <div data-testid="search-bar" data-submit-navigates-to-grid={String(submitNavigatesToGrid)} />
+    )
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
@@ -98,7 +100,8 @@ const defaultProps = {
         submitSearch: vi.fn(),
         isFocused: false,
         onFocus: vi.fn(),
-        onBlur: vi.fn()
+        onBlur: vi.fn(),
+        onOpenSearchHelp: vi.fn()
     },
     layoutMode: 'masonry' as const,
     setLayoutMode: vi.fn(),
@@ -308,5 +311,19 @@ describe('AppHeader', () => {
 
         rerender(<AppHeader {...defaultProps} viewMode="dashboard" />);
         expect(screen.getByTestId('view-controls').getAttribute('data-slideshow')).toBe('false');
+    });
+
+    it('marks dashboard and maintenance searches as Grid-bound submissions', () => {
+        const { rerender } = render(<AppHeader {...defaultProps} viewMode="grid" />);
+        expect(screen.getByTestId('search-bar').getAttribute('data-submit-navigates-to-grid')).toBe('false');
+
+        rerender(<AppHeader {...defaultProps} viewMode="timeline" />);
+        expect(screen.getByTestId('search-bar').getAttribute('data-submit-navigates-to-grid')).toBe('false');
+
+        rerender(<AppHeader {...defaultProps} viewMode="dashboard" />);
+        expect(screen.getByTestId('search-bar').getAttribute('data-submit-navigates-to-grid')).toBe('true');
+
+        rerender(<AppHeader {...defaultProps} viewMode="maintenance" />);
+        expect(screen.getByTestId('search-bar').getAttribute('data-submit-navigates-to-grid')).toBe('true');
     });
 });

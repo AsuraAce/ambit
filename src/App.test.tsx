@@ -9,6 +9,7 @@ import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
 type AppLayoutProbe = {
+    viewMode: ViewMode;
     changeViewMode: (mode: ViewMode) => void;
     setLayoutMode: (mode: LayoutMode) => void;
     handleLayoutChange: (columns: number, rowHeight: number) => void;
@@ -23,6 +24,8 @@ type AppLayoutProbe = {
     searchProps: {
         onFocus: () => void;
         onBlur: () => void;
+        submitSearch: (query: string) => void;
+        onOpenSearchHelp: () => void;
     };
     scopeName: string;
     scopeTotal: number;
@@ -611,6 +614,37 @@ describe('App orchestration', () => {
         requireProbe(captured.contextMenu, 'AppContextMenu').onMoveToCollection();
         expect(mocks.modals.setSourceCollectionId).toHaveBeenCalledWith('collection-a');
         requireProbe(captured.contextMenu, 'AppContextMenu').onClose();
+    });
+
+    it('routes committed navbar searches by view and opens syntax help', () => {
+        render(<App />);
+
+        let layout = requireProbe(captured.appLayout, 'AppLayout');
+        expect(layout.viewMode).toBe('grid');
+        act(() => layout.searchProps.submitSearch('grid query'));
+        expect(mocks.submitSearch).toHaveBeenLastCalledWith('grid query');
+        expect(requireProbe(captured.appLayout, 'AppLayout').viewMode).toBe('grid');
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').changeViewMode('timeline'));
+        layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.searchProps.submitSearch('timeline query'));
+        expect(requireProbe(captured.appLayout, 'AppLayout').viewMode).toBe('timeline');
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').changeViewMode('dashboard'));
+        layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.searchProps.submitSearch('dashboard query'));
+        expect(requireProbe(captured.appLayout, 'AppLayout').viewMode).toBe('grid');
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').changeViewMode('maintenance'));
+        layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.searchProps.submitSearch('   '));
+        expect(requireProbe(captured.appLayout, 'AppLayout').viewMode).toBe('maintenance');
+        act(() => requireProbe(captured.appLayout, 'AppLayout').searchProps.submitSearch('maintenance query'));
+        expect(requireProbe(captured.appLayout, 'AppLayout').viewMode).toBe('grid');
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').searchProps.onOpenSearchHelp());
+        expect(mocks.modals.setShortcutsModalTab).toHaveBeenCalledWith('search');
+        expect(mocks.modals.openModal).toHaveBeenCalledWith('shortcuts');
     });
 
     it('completes onboarding and handles browser and native import paths', async () => {

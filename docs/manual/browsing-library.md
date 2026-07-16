@@ -31,6 +31,10 @@ Typical grid actions:
 
 Timeline View is useful when you remember when a batch was generated. It uses the same library data and filters as Grid View, but presents images around time.
 
+## Statistics
+
+Statistics follow the active library filters. Avg. Steps is the rounded mean for currently filtered images with a recorded positive step count; images with missing, zero, or negative steps are excluded. An em dash means no recorded step average is available for the current view.
+
 ## Selection
 
 Ambit supports common selection patterns:
