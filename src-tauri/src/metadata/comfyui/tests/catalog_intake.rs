@@ -66,6 +66,27 @@ const FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const RELATED_VARIANTS: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_anima_preview",
+        source_blob: "80c7cca83a3fed582d4fd1fe20971b60d68336ac",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_preview.chunks.json"),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_lens_turbo_t2i",
+        source_blob: "697cbf0bb04eff2d70750dd9d2f01cc920d76ca5",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 fn git_blob_sha1(bytes: &[u8]) -> String {
     let mut message = format!("blob {}\0", bytes.len()).into_bytes();
     message.extend_from_slice(bytes);
@@ -126,9 +147,8 @@ fn git_blob_sha1(bytes: &[u8]) -> String {
     )
 }
 
-#[test]
-fn pinned_phase22_workflows_have_stable_graph_shape() {
-    for fixture in FIXTURES {
+fn assert_pinned_workflows(fixtures: &[IntakeFixture]) {
+    for fixture in fixtures {
         let chunks: HashMap<String, String> = serde_json::from_str(fixture.chunks_json)
             .unwrap_or_else(|error| {
                 panic!("{} chunks should be valid JSON: {error}", fixture.name)
@@ -182,4 +202,14 @@ fn pinned_phase22_workflows_have_stable_graph_shape() {
             fixture.name
         );
     }
+}
+
+#[test]
+fn pinned_phase22_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(FIXTURES);
+}
+
+#[test]
+fn pinned_phase22_related_variants_have_stable_graph_shape() {
+    assert_pinned_workflows(RELATED_VARIANTS);
 }
