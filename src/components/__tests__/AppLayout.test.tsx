@@ -191,6 +191,7 @@ describe('AppLayout', () => {
         lastSelectedId: null,
         handleRemoveFromCollection: vi.fn(),
         handleOpenCollectionModal: vi.fn(),
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true),
     };
 
     it('renders the main structures: Sidebar, Header, Content Area', () => {
@@ -293,9 +294,17 @@ describe('AppLayout', () => {
         expect(timeline.getAttribute('data-has-load-more')).toBe('true');
     });
 
-    it('renders MaintenanceView when viewMode is maintenance', async () => {
-        render(<AppLayout {...defaultProps} viewMode="maintenance" />);
+    it('forwards collection persistence to MaintenanceView', async () => {
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="maintenance"
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
+        );
         expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
+        expect(capturedProps.maintenance?.onSetCollectionMembership).toBe(onSetCollectionMembership);
     });
 
     it('filters by a dashboard model and returns to the grid', async () => {
