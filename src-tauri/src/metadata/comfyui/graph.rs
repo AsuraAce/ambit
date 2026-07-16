@@ -639,6 +639,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "TextEncodeBooguEdit" && key == "prompt" {
+            return arr.first();
+        }
+
         if t == "StringReplace" {
             match key {
                 "string" => return arr.first(),
