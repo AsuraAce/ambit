@@ -112,8 +112,11 @@ describe('SlideshowModal', () => {
     it('supports keyboard playback, navigation, info, and close controls', () => {
         render(<SlideshowModal isOpen images={images} initialIndex={0} onClose={onClose} />);
 
-        const spaceEvent = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
-        act(() => window.dispatchEvent(spaceEvent));
+        const dialog = screen.getByRole('dialog', { name: 'Slideshow' });
+        expect(document.activeElement).toBe(dialog);
+
+        const spaceEvent = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+        fireEvent(dialog, spaceEvent);
         expect(spaceEvent.defaultPrevented).toBe(true);
         expect(screen.queryByTestId('progress-bar')).toBeNull();
 

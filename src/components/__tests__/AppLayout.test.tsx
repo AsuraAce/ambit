@@ -170,6 +170,8 @@ describe('AppLayout', () => {
         images: [],
         handlers: {} as any,
         setViewingImageId: vi.fn(),
+        onMaintenanceViewerOpenChange: vi.fn(),
+        isViewerShortcutBlocked: false,
         settings: {} as any,
         privacyEnabled: false,
         toggleFavorite: vi.fn(),
@@ -294,8 +296,10 @@ describe('AppLayout', () => {
     });
 
     it('renders MaintenanceView when viewMode is maintenance', async () => {
-        render(<AppLayout {...defaultProps} viewMode="maintenance" />);
+        render(<AppLayout {...defaultProps} viewMode="maintenance" isViewerShortcutBlocked={true} />);
         expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
+        expect(capturedProps.maintenance?.onViewerOpenChange).toBe(defaultProps.onMaintenanceViewerOpenChange);
+        expect(capturedProps.maintenance?.isShortcutBlocked).toBe(true);
     });
 
     it('filters by a dashboard model and returns to the grid', async () => {

@@ -49,6 +49,7 @@ export default function App() {
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
     const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -335,33 +336,37 @@ export default function App() {
         clearSelection();
     }, [filters.collectionId, clearSelection]);
 
+    const isViewerShortcutBlocked = modals.isAnyModalOpen
+        || isImportModalOpen
+        || Boolean(updater.update && updater.isDialogOpen)
+        || !settings.hasCompletedOnboarding
+        || isCompletingOnboarding;
+
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
         viewMode,
         selectedIds,
         filteredImages: images,
         lastSelectedId,
-        selectedImageIndex,
-        isViewerOpen: viewingImageId !== null || selectedImageIndex !== null,
+        isViewerOpen: viewingImageId !== null || selectedImageIndex !== null || isMaintenanceViewerOpen,
         gridRef,
         searchInputRef: inputRef,
         setSelectedImageIndex,
         setSelectedIds,
         setLastSelectedId,
         clearSelection,
-        handleDeleteViewerImage: actions.handleDeleteViewerImage,
         handleBulkDelete: () => settings.confirmDelete ? modals.openModal('deleteConfirm') : actions.executeDelete(),
         togglePrivacyMode: actions.handleTogglePrivacy,
         toggleMasking: () => actions.handleBulkMask(),
         toggleFavorite: actions.handleShortcutFavorite,
         togglePin: actions.handleShortcutPin,
         openCollection: () => handleOpenCollectionModal('add'),
+        openSettings: () => { modals.setInitialSettingsTab('general'); modals.openModal('settings'); },
+        openImport: openImportModal,
         isModalOpen: modals.isAnyModalOpen,
         closeAllModals: modals.closeAllModals,
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
-        onCloseViewer: () => setSelectedImageIndex(null),
-        handleRemoveFromCollection: handleRemoveFromCollection,
     });
 
 
@@ -418,6 +423,8 @@ export default function App() {
                 images={images}
                 handlers={{ ...handlers, setImages, setContextMenu }}
                 setViewingImageId={setViewingImageId}
+                onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
+                isViewerShortcutBlocked={isViewerShortcutBlocked}
 
                 toggleFavorite={toggleFavorite}
                 actions={actions}
@@ -601,6 +608,7 @@ export default function App() {
                             key="image-viewer"
                             image={displayedViewerImage}
                             isOpen={true}
+                            isShortcutBlocked={isViewerShortcutBlocked}
                             onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
                             onNext={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex < images.length - 1) {

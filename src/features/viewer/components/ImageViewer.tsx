@@ -42,6 +42,7 @@ interface ImageViewerProps {
     onOpenSettings: () => void;
     onDelete?: (id: string) => void;
     isOpen: boolean;
+    isShortcutBlocked?: boolean;
     isSidebarOpen?: boolean;
     onToggleSidebar?: () => void;
     searchHighlights?: PromptHighlightSpec;
@@ -123,6 +124,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onOpenSettings,
     onDelete,
     isOpen,
+    isShortcutBlocked = false,
     isSidebarOpen = true,
     onToggleSidebar,
     searchHighlights
@@ -289,7 +291,29 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             // Don't trigger shortcuts if user is typing in a field
             if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
 
+            if (ai.modalOpen) {
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    ai.closeModal();
+                }
+                return;
+            }
+
+            if (isShortcutBlocked) return;
+
             const key = e.key.toLowerCase();
+
+            if (e.key === ' ') {
+                e.preventDefault();
+                onClose();
+                return;
+            }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                e.preventDefault();
+                onDelete?.(displayImage.id);
+                return;
+            }
 
             // Navigation
             if (e.key === 'ArrowRight') onNext();
@@ -301,15 +325,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (key === 'i') onToggleSidebar?.();
 
             if (e.key === 'Escape') {
-                if (ai.modalOpen) ai.closeModal();
-                else if (isTheaterMode) setIsTheaterMode(false);
+                if (isTheaterMode) setIsTheaterMode(false);
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode(p => !p);
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, isTheaterMode, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onClose]);
+    }, [isOpen, ai.modalOpen, ai.closeModal, isShortcutBlocked, isTheaterMode, displayImage.id, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
 
     useEffect(() => {
         if (isOpen && privacyExposureBlocked) onClose();

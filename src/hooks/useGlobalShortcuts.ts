@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useEffect } from 'react';
-import { AIImage, FilterState, ViewMode } from '../types';
+import { AIImage, ViewMode } from '../types';
 import type { VirtualGridHandle } from '../features/library/components/VirtualGrid';
 
 interface GlobalShortcutsProps {
@@ -9,7 +9,6 @@ interface GlobalShortcutsProps {
     selectedIds: Set<string>;
     filteredImages: AIImage[];
     lastSelectedId: string | null;
-    selectedImageIndex: number | null;
     isViewerOpen: boolean;
     gridRef: React.RefObject<VirtualGridHandle | null>;
     searchInputRef: React.RefObject<HTMLInputElement | null>;
@@ -19,21 +18,20 @@ interface GlobalShortcutsProps {
     setSelectedIds: (ids: Set<string>) => void;
     setLastSelectedId: (id: string | null) => void;
     clearSelection: () => void;
-    handleDeleteViewerImage: (id: string) => void;
     handleBulkDelete: () => void;
     togglePrivacyMode: () => void;
     toggleMasking: () => void;
     toggleFavorite: () => void;
     togglePin: () => void;
     openCollection: () => void;
-    handleRemoveFromCollection: () => void;
+    openSettings: () => void;
+    openImport: () => void;
 
     // UI Toggles
     isModalOpen: boolean; // General check if any modal is open
     closeAllModals: () => void;
     toggleShortcuts: () => void;
     toggleCommandPalette: () => void;
-    onCloseViewer: () => void;
 }
 
 export const useGlobalShortcuts = ({
@@ -41,7 +39,6 @@ export const useGlobalShortcuts = ({
     selectedIds,
     filteredImages,
     lastSelectedId,
-    selectedImageIndex,
     isViewerOpen,
     gridRef,
     searchInputRef,
@@ -49,19 +46,18 @@ export const useGlobalShortcuts = ({
     setSelectedIds,
     setLastSelectedId,
     clearSelection,
-    handleDeleteViewerImage,
     handleBulkDelete,
     togglePrivacyMode,
     toggleMasking,
     toggleFavorite,
     togglePin,
     openCollection,
+    openSettings,
+    openImport,
     isModalOpen,
     closeAllModals,
     toggleShortcuts,
     toggleCommandPalette,
-    onCloseViewer,
-    handleRemoveFromCollection,
 }: GlobalShortcutsProps) => {
 
     useEffect(() => {
@@ -72,29 +68,25 @@ export const useGlobalShortcuts = ({
                 return;
             }
 
+            const key = e.key.toLowerCase();
+            const hasPrimaryModifier = e.ctrlKey || e.metaKey;
+
             // 2. Global Toggles (work even if modals are open, sometimes)
             if (e.key === '?') {
                 toggleShortcuts();
                 return;
             }
 
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            if (hasPrimaryModifier && key === 'k') {
                 e.preventDefault();
                 toggleCommandPalette();
                 return;
             }
 
             // Privacy Toggle (Shift + H)
-            if (e.shiftKey && (e.key === 'H' || e.key === 'h')) {
+            if (e.shiftKey && key === 'h') {
                 e.preventDefault();
                 togglePrivacyMode();
-                return;
-            }
-
-            // Masking (M)
-            if (e.key === 'm' || e.key === 'M') {
-                e.preventDefault();
-                toggleMasking();
                 return;
             }
 
@@ -107,61 +99,70 @@ export const useGlobalShortcuts = ({
                     closeAllModals();
                     return;
                 }
-                // We explicitly block 'Delete', 'Space', 'Arrows' etc while modal is open
-                if (['Delete', 'Backspace', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'f'].includes(e.key)) {
-                    return;
-                }
                 return;
             }
 
-            // 4. Escape Handler (Priority: Viewer -> Selection)
+            // Active viewers own all contextual shortcuts.
+            if (isViewerOpen) return;
+
+            if (hasPrimaryModifier && key === ',') {
+                e.preventDefault();
+                openSettings();
+                return;
+            }
+
+            if (hasPrimaryModifier && key === 'o') {
+                e.preventDefault();
+                openImport();
+                return;
+            }
+
+            // 4. Escape Handler
             if (e.key === 'Escape') {
-                if (selectedImageIndex !== null) {
-                    onCloseViewer();
-                } else if (selectedIds.size > 0) {
+                if (selectedIds.size > 0) {
                     clearSelection();
                 }
                 return;
             }
 
-            // 5. Viewer Navigation (Spacebar)
+            // 5. Open Quick View (Spacebar)
             if (e.key === ' ') {
                 e.preventDefault();
-                if (selectedImageIndex !== null) {
-                    onCloseViewer();
-                } else {
-                    let targetId = lastSelectedId;
-                    if (!targetId && selectedIds.size > 0) targetId = Array.from(selectedIds)[0];
-                    if (targetId) {
-                        const index = filteredImages.findIndex(img => img.id === targetId);
-                        if (index !== -1) setSelectedImageIndex(index);
-                    }
+                let targetId = lastSelectedId;
+                if (!targetId && selectedIds.size > 0) targetId = Array.from(selectedIds)[0];
+                if (targetId) {
+                    const index = filteredImages.findIndex(img => img.id === targetId);
+                    if (index !== -1) setSelectedImageIndex(index);
                 }
                 return;
             }
 
             // 6. Action Shortcuts
-            if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            if (hasPrimaryModifier && key === 'f') {
                 e.preventDefault();
                 searchInputRef.current?.focus();
                 return;
             }
 
-            if (e.key === 'f' || e.key === 'F') {
-                if (isViewerOpen) return;
+            if (key === 'f') {
                 e.preventDefault();
                 toggleFavorite();
                 return;
             }
 
-            if (e.key === 'p' || e.key === 'P') {
-                if (isViewerOpen) return;
+            if (key === 'p') {
                 e.preventDefault();
                 togglePin();
                 return;
             }
 
-            if (!e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
+            if (key === 'm') {
+                e.preventDefault();
+                toggleMasking();
+                return;
+            }
+
+            if (!hasPrimaryModifier && !e.altKey && key === 'c') {
                 e.preventDefault();
                 openCollection();
                 return;
@@ -170,7 +171,7 @@ export const useGlobalShortcuts = ({
 
 
             // 7. Selection Shortcuts
-            if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+            if (hasPrimaryModifier && key === 'a') {
                 e.preventDefault();
                 // Prevent bleed into Maintenance Mode or Dashboard which have their own context
                 if (viewMode === 'maintenance' || viewMode === 'dashboard') return;
@@ -182,18 +183,12 @@ export const useGlobalShortcuts = ({
 
             // 8. Delete Actions
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                if (selectedImageIndex !== null) {
-                    if (filteredImages[selectedImageIndex]) {
-                        handleDeleteViewerImage(filteredImages[selectedImageIndex].id);
-                    }
-                } else if (selectedIds.size > 0) {
-                    handleBulkDelete();
-                }
+                if (selectedIds.size > 0) handleBulkDelete();
                 return;
             }
 
             // 9. Grid Navigation (Arrow Keys)
-            if (viewMode === 'grid' && selectedImageIndex === null && gridRef.current) {
+            if (viewMode === 'grid' && gridRef.current) {
                 const isArrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
                 if (isArrow || e.key === 'Enter') {
                     let activeIndex = -1;
@@ -237,19 +232,23 @@ export const useGlobalShortcuts = ({
         filteredImages,
         selectedIds,
         viewMode,
-        selectedImageIndex,
         isViewerOpen,
         lastSelectedId,
         isModalOpen,
+        setSelectedImageIndex,
+        setSelectedIds,
+        setLastSelectedId,
+        clearSelection,
         toggleShortcuts,
         toggleCommandPalette,
-        handleDeleteViewerImage,
         handleBulkDelete,
         togglePrivacyMode,
         toggleMasking,
         toggleFavorite,
         togglePin,
         openCollection,
+        openSettings,
+        openImport,
         closeAllModals
     ]);
 };

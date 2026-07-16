@@ -77,7 +77,7 @@ describe('specialized viewer action tooltips', () => {
 
         fireEvent.click(launcher);
         const closeButton = screen.getByRole('button', { name: 'Close Slideshow' });
-        expect(document.activeElement).toBe(closeButton);
+        expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Slideshow' }));
 
         fireEvent.click(closeButton);
         expect(document.activeElement).toBe(launcher);
@@ -106,7 +106,7 @@ describe('specialized viewer action tooltips', () => {
             />
         );
 
-        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Close Slideshow' }));
+        expect(document.activeElement).toBe(screen.getByRole('dialog', { name: 'Slideshow' }));
         const shuffleButton = screen.getByRole('button', { name: 'Enable Shuffle' });
         expect(shuffleButton.getAttribute('aria-pressed')).toBe('false');
         expect(shuffleButton.getAttribute('title')).toBeNull();
@@ -168,6 +168,7 @@ describe('specialized viewer action tooltips', () => {
         try {
             const closeButton = screen.getByRole('button', { name: 'Close Slideshow' });
             const hud = closeButton.parentElement?.parentElement;
+            closeButton.focus();
             expect(document.activeElement).toBe(closeButton);
 
             act(() => vi.advanceTimersByTime(3500));
