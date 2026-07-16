@@ -573,6 +573,9 @@ export const getBrowserMockFacets = (filters?: FilterState): Facets => {
 export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSummary => {
     const current = loadStoredState();
     const images = filterImages(current.images, filters, getBrowserMockCollections());
+    const recordedSteps = images
+        .map((image) => image.metadata.steps)
+        .filter((steps) => steps > 0);
     const modelCounts = new Map<string, number>();
 
     images.forEach((image) => {
@@ -582,8 +585,8 @@ export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSu
     return {
         totalImages: images.length,
         totalGenerations: images.length,
-        avgSteps: images.length
-            ? Math.round(images.reduce((sum, image) => sum + image.metadata.steps, 0) / images.length)
+        avgSteps: recordedSteps.length
+            ? Math.round(recordedSteps.reduce((sum, steps) => sum + steps, 0) / recordedSteps.length)
             : 0,
         estSizeMB: (images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0) / 1_000_000).toFixed(1),
         modelStats: Array.from(modelCounts.entries())

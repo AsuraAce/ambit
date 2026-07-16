@@ -1316,6 +1316,7 @@ describe('searchRepo scoped stats queries', () => {
         await getLibraryStats('WHERE is_deleted = ?', [0], collectionId, loraName);
 
         const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
+        const [averageSql, averageParams] = findSelectCall(db, (value) => value.includes('AVG(steps) AS avg_steps')) as [string, unknown[]];
         const [keywordSql, keywordParams] = findSelectCall(db, (value) => value.includes('JOIN images_fts')) as [string, unknown[]];
 
         expect(statsSql).toContain('FROM collection_images ci');
@@ -1327,6 +1328,14 @@ describe('searchRepo scoped stats queries', () => {
         expect(statsSql).not.toContain(collectionId);
         expect(statsSql).not.toContain(loraName);
         expect(statsParams).toEqual([collectionId, loraName, 0]);
+
+        expect(averageSql).toContain('FROM collection_images ci');
+        expect(averageSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
+        expect(averageSql).toContain('ci.collection_id = ?');
+        expect(averageSql).toContain('COLLATE NOCASE = ?');
+        expect(averageSql).not.toContain(collectionId);
+        expect(averageSql).not.toContain(loraName);
+        expect(averageParams).toEqual([collectionId, loraName, 0]);
 
         expect(keywordSql).toContain('FROM collection_images ci');
         expect(keywordSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
@@ -1564,6 +1573,77 @@ describe('searchRepo scoped stats queries', () => {
         expect(modelSql).toContain('COLLATE NOCASE = ?');
         expect(modelSql).not.toContain('LIMIT 20');
         expect(modelParams).toEqual(['collection-1', 'Detailer', 0]);
+    });
+
+    it('returns the positive-only average and uses the indexed scoped rowid query', async () => {
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+                if (normalizedSql.includes('count(*) as count')) return [{ count: 4 }];
+                if (normalizedSql.includes('AVG(steps) AS avg_steps')) return [{ avg_steps: 25 }];
+                if (normalizedSql.includes('GROUP BY name')) return [];
+                return [];
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
+        clearLibraryStatsCache();
+
+        const stats = await getLibraryStatsSummary('WHERE is_deleted = ?', [0]);
+
+        expect(stats.avgSteps).toBe(25);
+        const [averageSql, averageParams] = findSelectCall(db, (value) => value.includes('AVG(steps) AS avg_steps')) as [string, unknown[]];
+        expect(averageSql).toContain('WITH scoped_images AS');
+        expect(averageSql).toContain('SELECT images.rowid AS rowid');
+        expect(averageSql).toContain('FROM images INDEXED BY idx_images_steps');
+        expect(averageSql).toContain('WHERE steps > 0');
+        expect(averageSql).toContain('images.rowid IN (SELECT rowid FROM scoped_images)');
+        expect(averageSql).not.toMatch(/json_extract/i);
+        expect(averageParams).toEqual([0]);
+    });
+
+    it.each([
+        { databaseAverage: 25.5, expectedAverage: 26, label: 'rounds a fractional average' },
+        { databaseAverage: null, expectedAverage: 0, label: 'maps an empty positive-step scope to zero' }
+    ])('$label', async ({ databaseAverage, expectedAverage }) => {
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+                if (normalizedSql.includes('count(*) as count')) return [{ count: 2 }];
+                if (normalizedSql.includes('AVG(steps) AS avg_steps')) return [{ avg_steps: databaseAverage }];
+                return [];
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
+        clearLibraryStatsCache();
+
+        await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0]))
+            .resolves.toMatchObject({ avgSteps: expectedAverage });
+    });
+
+    it('forces visibility indexes only for the exact default and privacy scopes', async () => {
+        const db = { select: vi.fn(async (_sql: string, _params: unknown[] = []) => []) };
+        getDbMock.mockResolvedValue(db);
+
+        const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
+        clearLibraryStatsCache();
+
+        const defaultWhere = 'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const privacyWhere = `${defaultWhere} AND privacy_hidden = 0`;
+        await getLibraryStatsSummary(defaultWhere, []);
+        await getLibraryStatsSummary(privacyWhere, []);
+        await getLibraryStatsSummary(`${privacyWhere} AND sampler = ?`, ['Euler']);
+
+        const averageCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('AVG(steps) AS avg_steps'));
+        expect(averageCalls).toHaveLength(3);
+        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
+        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
+        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
+        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
+        expect(averageCalls[2]?.[1]).toEqual(['Euler']);
     });
 
     it('uses the optimized model-stats indexes for unscoped summaries', async () => {

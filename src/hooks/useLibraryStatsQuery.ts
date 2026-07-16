@@ -102,7 +102,7 @@ export const useLibraryStatsQuery = ({
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
 
-    // Stable reference: only track the active collection's smart filter definition.
+    // Stable reference: track the active collection scope that affects generated SQL.
     const activeCollectionId = sideQueryFilters.collectionId;
     const activeCollection = useMemo(() =>
         allCollections.find(c => c.id === activeCollectionId),
@@ -110,8 +110,13 @@ export const useLibraryStatsQuery = ({
     );
 
     const smartFilterHash = useMemo(() =>
-        activeCollection?.filters ? JSON.stringify(activeCollection.filters) : null,
-        [activeCollection?.filters]
+        activeCollection?.filters
+            ? JSON.stringify({
+                filters: activeCollection.filters,
+                manualExclusions: activeCollection.manualExclusions ?? []
+            })
+            : null,
+        [activeCollection?.filters, activeCollection?.manualExclusions]
     );
 
     const ALL_FACET_TYPES: FacetType[] = ['checkpoints', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters', 'tools'];
