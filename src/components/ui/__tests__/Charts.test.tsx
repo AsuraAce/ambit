@@ -94,12 +94,21 @@ describe('StatsDashboard', () => {
 
         expect(screen.getByText('Total Images')).toBeTruthy();
         expect(screen.getByText('28')).toBeTruthy();
+        expect(screen.getByText('Avg. Steps').parentElement?.textContent).toContain('28');
         expect(screen.getByText('4.8 MB')).toBeTruthy();
         expect(screen.getByText('Flux Super Long Model Name')).toBeTruthy();
         expect(screen.getByText('Analyzing Library')).toBeTruthy();
         expect(screen.queryByText('Computing generation summary')).toBeNull();
         expect(screen.queryByText('No keywords found')).toBeNull();
         expect(screen.queryByText('No model stats found')).toBeNull();
+    });
+
+    it.each([0, -1])('shows an em dash when the step average is %i', (avgSteps) => {
+        libraryContextMocks.stats.avgSteps = avgSteps;
+
+        render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
+
+        expect(screen.getByText('Avg. Steps').parentElement?.textContent).toContain('—');
     });
 
     it('shows the analyzing state instead of keyword content during keyword refreshes', () => {

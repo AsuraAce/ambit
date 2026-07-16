@@ -108,6 +108,10 @@ interface BasicStatsRow {
     total: number;
 }
 
+interface AverageStepsRow {
+    avg_steps: number | null;
+}
+
 interface ModelStatsRow {
     name: string | null;
     count: number;
@@ -372,6 +376,7 @@ const getDiskModifiedAtForFacetRow = (
 };
 
 const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const PRIVACY_VISIBLE_WHERE = `${DEFAULT_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const KEYWORD_BATCH_SIZE = 500;
 
 const isDefaultGlobalScope = (
@@ -406,6 +411,18 @@ const selectModelStatsIndex = (whereClause: string): string =>
     hasPrivacyFilter(whereClause) && hasFastSortVisibilityPrefix(whereClause)
         ? 'idx_images_privacy_model_stats_v1'
         : 'idx_images_model_stats_v2';
+
+const selectAverageStepsScopeIndex = (
+    whereClause: string,
+    params: unknown[],
+    collectionId?: string,
+    loraName?: string
+): string | null => {
+    if (collectionId || loraName || params.length > 0) return null;
+    if (whereClause === DEFAULT_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
+    if (whereClause === PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
+    return null;
+};
 
 const appendTrailingPredicate = (whereClause: string, predicate?: string): string => (
     predicate ? `${whereClause} AND ${predicate}` : whereClause
@@ -828,11 +845,12 @@ const getScopedFacetCountMaps = async (
 
 const buildLibraryStatsSummary = (
     total: number,
+    averageSteps: number | null | undefined,
     modelRows: ModelStatsRow[]
 ): LibraryStatsSummary => ({
     totalImages: total,
     totalGenerations: total,
-    avgSteps: 0,
+    avgSteps: Math.round(averageSteps ?? 0),
     estSizeMB: ((total * 2.4)).toFixed(1),
     modelStats: modelRows.map(r => ({
         name: r.name || 'Unknown',
@@ -854,12 +872,14 @@ export const getLibraryStatsSummary = async (
     }
 
     const db = await getDb();
+    const averageScopeIndex = selectAverageStepsScopeIndex(finalWhere, params, collectionId, loraName);
     const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
-        'images.id AS id',
-        'images.rowid AS rowid',
-        'images.resolved_model_name AS resolved_model_name',
-        'images.model_name AS model_name'
-    ], {});
+        'images.rowid AS rowid'
+    ], {
+        defaultFromClause: averageScopeIndex
+            ? `FROM images INDEXED BY ${averageScopeIndex}`
+            : 'FROM images'
+    });
     const modelScopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
@@ -877,6 +897,13 @@ export const getLibraryStatsSummary = async (
     try {
         const total = await countImages(whereClause, params, collectionId, loraName);
 
+        const averageStepsQuery = `
+            ${scopedParts.cteSql}
+            SELECT AVG(steps) AS avg_steps
+            FROM images INDEXED BY idx_images_steps
+            WHERE steps > 0
+              AND images.rowid IN (SELECT rowid FROM scoped_images)
+        `;
         const modelQuery = `
             ${modelScopedParts.cteSql}
             SELECT
@@ -887,8 +914,11 @@ export const getLibraryStatsSummary = async (
             ORDER BY count DESC
         `;
 
-        const modelRows = await timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams));
-        const summary = buildLibraryStatsSummary(total, modelRows);
+        const [averageRows, modelRows] = await Promise.all([
+            timeDbCall('libraryStats.avgSteps', scopedParts.reason, () => db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)),
+            timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams))
+        ]);
+        const summary = buildLibraryStatsSummary(total, averageRows[0]?.avg_steps, modelRows);
 
         if (!whereClause && !collectionId && !loraName) {
             globalStatsSummaryCache = summary;
