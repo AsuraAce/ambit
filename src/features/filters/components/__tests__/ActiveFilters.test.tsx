@@ -43,6 +43,7 @@ const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
     ipAdapters: [],
     dateRange: 'all',
     favoritesOnly: false,
+    pinnedOnly: false,
     collectionId: null,
     ...overrides,
 });
@@ -92,38 +93,86 @@ describe('ActiveFilters', () => {
         expect(container.innerHTML).toBe('');
     });
 
-    it('recognizes every explicit filter category as active', () => {
-        const variants: Partial<FilterState>[] = [
-            { dateRange: 'today' },
-            { favoritesOnly: true },
-            { models: ['model'] },
-            { tools: [GeneratorTool.COMFYUI] },
-            { loras: ['lora'] },
-            { embeddings: ['embedding'] },
-            { hypernetworks: ['hyper'] },
-            { searchQuery: 'query' },
-            { samplers: ['Euler'] },
-            { generationTypes: ['txt2img'] },
-            { minSteps: 1 },
-            { maxSteps: 20 },
-            { minCfg: 1 },
-            { maxCfg: 8 },
-            { controlNets: ['control'] },
-            { ipAdapters: ['adapter'] },
+    it('renders a named chip for every explicit filter category', () => {
+        const variants: Array<{ filters: Partial<FilterState>; label: string | RegExp }> = [
+            { filters: { dateRange: 'today' }, label: 'Date:today' },
+            { filters: { favoritesOnly: true }, label: 'Favorites' },
+            { filters: { pinnedOnly: true }, label: 'Pinned' },
+            { filters: { models: ['model'] }, label: 'model' },
+            { filters: { tools: [GeneratorTool.COMFYUI] }, label: GeneratorTool.COMFYUI },
+            { filters: { loras: ['lora'] }, label: 'lora' },
+            { filters: { embeddings: ['embedding'] }, label: 'embedding' },
+            { filters: { hypernetworks: ['hyper'] }, label: 'hyper' },
+            { filters: { samplers: ['Euler'] }, label: 'Euler' },
+            { filters: { generationTypes: ['txt2img'] }, label: 'txt2img' },
+            { filters: { minSteps: 1 }, label: /Steps: 1-/ },
+            { filters: { maxSteps: 20 }, label: 'Steps: 0-20' },
+            { filters: { minCfg: 1 }, label: /CFG: 1-/ },
+            { filters: { maxCfg: 8 }, label: 'CFG: 0-8' },
+            { filters: { controlNets: ['control'] }, label: 'control' },
+            { filters: { ipAdapters: ['adapter'] }, label: 'adapter' },
         ];
 
         for (const variant of variants) {
             cleanup();
-            searchMocks.state.filters = createFilters(variant);
+            searchMocks.state.filters = createFilters(variant.filters);
             render(<ActiveFiltersUnderTest />);
-            expect(screen.getByRole('button', { name: /clear all/i })).toBeTruthy();
+            expect(screen.getByText(variant.label)).toBeTruthy();
         }
 
         cleanup();
         collectionMocks.state.collections = [createCollection({ id: 'regular' })];
         searchMocks.state.filters = createFilters({ collectionId: 'regular' });
         render(<ActiveFiltersUnderTest />);
-        expect(screen.getByRole('button', { name: /clear all/i })).toBeTruthy();
+        expect(screen.getByText('Collection: Collection')).toBeTruthy();
+    });
+
+    it('clears collection and pinned chips without changing unrelated criteria', () => {
+        const filters = createFilters({
+            searchQuery: 'portrait',
+            collectionId: 'regular',
+            pinnedOnly: true,
+            favoritesOnly: true,
+        });
+        collectionMocks.state.collections = [createCollection({ id: 'regular', name: 'Portraits' })];
+        searchMocks.state.filters = filters;
+        render(<ActiveFiltersUnderTest />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Clear Collection Filter Portraits' }));
+        expect(applyLatestFilterUpdate(filters)).toMatchObject({
+            searchQuery: 'portrait',
+            collectionId: null,
+            pinnedOnly: true,
+            favoritesOnly: true,
+        });
+
+        searchMocks.setFilters.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: 'Clear Pinned Filter' }));
+        expect(applyLatestFilterUpdate(filters)).toMatchObject({
+            searchQuery: 'portrait',
+            collectionId: 'regular',
+            pinnedOnly: false,
+            favoritesOnly: true,
+        });
+    });
+
+    it('keeps stale collection state recoverable and ignores whitespace-only searches', () => {
+        searchMocks.state.filters = createFilters({ collectionId: 'missing' });
+        const { rerender } = render(<ActiveFiltersUnderTest />);
+
+        expect(screen.getByText('Collection unavailable')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Clear Unavailable Collection Filter' }));
+        expect(applyLatestFilterUpdate(searchMocks.state.filters).collectionId).toBeNull();
+
+        searchMocks.state.filters = createFilters({ searchQuery: '   ' });
+        rerender(<ActiveFiltersUnderTest />);
+        expect(screen.queryByRole('button', { name: /clear all/i })).toBeNull();
+    });
+
+    it('does not render a second filter strip for a navbar-query-only search', () => {
+        searchMocks.state.filters = createFilters({ searchQuery: 'query' });
+        const { container } = render(<ActiveFiltersUnderTest />);
+        expect(container.innerHTML).toBe('');
     });
 
     it('renders locked smart rules and deduplicates matching explicit chips', () => {
@@ -139,6 +188,8 @@ describe('ActiveFilters', () => {
             controlNets: ['smart-control'],
             ipAdapters: ['smart-adapter'],
             dateRange: 'week',
+            favoritesOnly: true,
+            pinnedOnly: true,
             minSteps: 2,
             maxSteps: 40,
             minCfg: 3,
@@ -149,6 +200,9 @@ describe('ActiveFilters', () => {
         ];
         searchMocks.state.filters = createFilters({
             collectionId: 'smart',
+            searchQuery: 'smart search',
+            favoritesOnly: true,
+            pinnedOnly: true,
             models: ['smart-model', 'manual-model', 'manual-model'],
             tools: [GeneratorTool.FORGE, GeneratorTool.COMFYUI, GeneratorTool.COMFYUI],
             loras: ['smart-lora', 'manual-lora', 'manual-lora'],
@@ -165,6 +219,11 @@ describe('ActiveFilters', () => {
         expect(screen.getByTitle('Smart Rule: smart-model')).toBeTruthy();
         expect(screen.getByText(/smart search/)).toBeTruthy();
         expect(screen.getByText('Date:week')).toBeTruthy();
+        expect(screen.getByText('Favorites').parentElement?.getAttribute('title')).toBe('Smart Collection Rule');
+        expect(screen.getByText('Pinned').parentElement?.getAttribute('title')).toBe('Smart Collection Rule');
+        expect(screen.queryByRole('button', { name: 'Clear Search Filter' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Clear Favorites Filter' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Clear Pinned Filter' })).toBeNull();
         expect(screen.getByText('Steps: 2-40')).toBeTruthy();
         expect(screen.getByText('CFG: 3-9')).toBeTruthy();
         expect(screen.getAllByText('smart-model')).toHaveLength(1);

@@ -19,7 +19,7 @@ const setup = (activeTab: 'info' | 'edit' | 'workflow', target = image()) => {
         image: target, activeTab, setActiveTab: vi.fn(), collections: [], availableTags: [], notes: '', setNotes: vi.fn(),
         promptValue: 'prompt', setPromptValue: vi.fn(), negativePromptValue: 'negative', setNegativePromptValue: vi.fn(),
         onUpdateNotes: vi.fn(), onUpdatePrompt: vi.fn(), onUpdateNegativePrompt: vi.fn(), onUpdateModel: vi.fn(), onUpdateTool: vi.fn(),
-        onAddToCollection: vi.fn(), onSearch: vi.fn(), onClose: vi.fn(), onRecoverMetadata: vi.fn(), onRevertMetadata: vi.fn(),
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true), onSearch: vi.fn(), onClose: vi.fn(), onRecoverMetadata: vi.fn(), onRevertMetadata: vi.fn(),
         onAIAnalysis: vi.fn(), onGenerateVariations: vi.fn(), isAnalyzing: false, onOpenAIResult: vi.fn(), palette: ['#fff'], isPaletteLoading: false
     };
     const result = render(<MetadataSidebar {...props} />);
@@ -43,7 +43,7 @@ describe('MetadataSidebar', () => {
         const edit = setup('edit', image({ hasWorkflowHint: false }));
         expect(screen.getByText('edit-content')).toBeTruthy();
         expect(screen.queryByText('workflow')).toBeNull();
-        expect(captures.edit).toHaveBeenCalledWith(expect.objectContaining({ notes: '', onAddToCollection: edit.props.onAddToCollection }));
+        expect(captures.edit).toHaveBeenCalledWith(expect.objectContaining({ notes: '', onSetCollectionMembership: edit.props.onSetCollectionMembership }));
         edit.unmount();
 
         const workflow = setup('workflow', image({ hasWorkflowHint: true }));

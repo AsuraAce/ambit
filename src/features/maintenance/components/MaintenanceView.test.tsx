@@ -225,7 +225,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onAddToCollection, onSearch, onOpenSettings, isShortcutBlocked }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -233,7 +233,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onClose: () => void;
         onToggleFavorite: (id: string) => void;
         onTogglePin?: (id: string, pinned: boolean) => void;
-        onAddToCollection: () => void;
+        onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
         isShortcutBlocked?: boolean;
@@ -245,7 +245,8 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             <button onClick={onClose}>Close Viewer</button>
             <button onClick={() => onToggleFavorite(image.id)}>Favorite Viewer</button>
             {onTogglePin && <button onClick={() => onTogglePin(image.id, true)}>Pin Viewer</button>}
-            <button onClick={onAddToCollection}>Viewer Collection</button>
+            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>
+            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
         </div>
@@ -291,7 +292,8 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onToggleFavorite: vi.fn(),
     onTogglePin: vi.fn(),
     onViewerOpenChange: vi.fn(),
-    isShortcutBlocked: false
+    isShortcutBlocked: false,
+    onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });
 
 const renderView = (overrides: Partial<React.ComponentProps<typeof MaintenanceView>> = {}) => {
@@ -587,7 +589,8 @@ describe('MaintenanceView', () => {
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
         const onViewerOpenChange = vi.fn();
-        renderView({ onToggleFavorite, onTogglePin, onViewerOpenChange, isShortcutBlocked: true });
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+        renderView({ onToggleFavorite, onTogglePin, onViewerOpenChange, onSetCollectionMembership, isShortcutBlocked: true });
 
         fireEvent.click(screen.getByText('Select Missing Item'));
         expect(onViewerOpenChange).toHaveBeenLastCalledWith(true);
@@ -602,7 +605,10 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Pin Viewer'));
         expect(onToggleFavorite).toHaveBeenCalledWith('missing-a');
         expect(onTogglePin).toHaveBeenCalledWith('missing-a', true);
-        fireEvent.click(screen.getByText('Viewer Collection'));
+        fireEvent.click(screen.getByText('Add Viewer Collection'));
+        fireEvent.click(screen.getByText('Remove Viewer Collection'));
+        expect(onSetCollectionMembership).toHaveBeenNthCalledWith(1, 'missing-a', 'collection', true);
+        expect(onSetCollectionMembership).toHaveBeenNthCalledWith(2, 'missing-a', 'collection', false);
         fireEvent.click(screen.getByText('Viewer Search'));
         fireEvent.click(screen.getByText('Viewer Settings'));
         fireEvent.click(screen.getByText('Close Viewer'));

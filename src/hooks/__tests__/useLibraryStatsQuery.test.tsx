@@ -469,7 +469,7 @@ describe('useLibraryStatsQuery valid facets', () => {
             .mockResolvedValueOnce({
                 totalImages: 4,
                 totalGenerations: 4,
-                avgSteps: 0,
+                avgSteps: 20,
                 estSizeMB: '12.0',
                 modelStats: []
             })
@@ -501,13 +501,14 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(1);
         expect(result.current.data.stats.keywordStats).toEqual(initialKeywords);
+        expect(result.current.data.stats.avgSteps).toBe(20);
         expect(result.current.isKeywordStatsLoading).toBe(false);
 
         act(() => {
             summaryRefetch.resolve({
                 totalImages: 7,
                 totalGenerations: 7,
-                avgSteps: 0,
+                avgSteps: 40,
                 estSizeMB: '14.0',
                 modelStats: []
             });
@@ -515,6 +516,7 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(2));
         expect(result.current.data.stats.totalGenerations).toBe(7);
+        expect(result.current.data.stats.avgSteps).toBe(40);
         expect(result.current.data.stats.keywordStats).toEqual([]);
         expect(result.current.isKeywordStatsLoading).toBe(true);
 
@@ -729,6 +731,48 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
         expect(searchRepoMocks.getFacets.mock.calls[0][3]).toEqual(expect.objectContaining({ assetScope: 'used' }));
+    });
+
+    it('refetches statistics when active smart collection exclusions change', async () => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const collection: Collection = {
+            id: 'smart',
+            name: 'Smart',
+            imageIds: [],
+            createdAt: 1,
+            filters: createDefaultFilters({ favoritesOnly: true })
+        };
+        const activeFilters = createDefaultFilters({ collectionId: collection.id });
+
+        const { rerender } = renderHook(
+            ({ currentCollections }: { currentCollections: Collection[] }) => useLibraryStatsQuery({
+                filters: activeFilters,
+                settings,
+                privacyEnabled: false,
+                allCollections: currentCollections
+            }),
+            {
+                wrapper,
+                initialProps: { currentCollections: [collection] }
+            }
+        );
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledTimes(1));
+
+        rerender({
+            currentCollections: [{ ...collection, manualExclusions: ['image-1'] }]
+        });
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledTimes(2));
+        expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenLastCalledWith(
+            expect.stringContaining('id NOT IN (?)'),
+            expect.arrayContaining(['image-1']),
+            undefined,
+            undefined
+        );
     });
 
     it('skips scoped count overrides when tools are the only disjunctive facet', async () => {

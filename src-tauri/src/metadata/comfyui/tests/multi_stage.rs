@@ -2161,6 +2161,66 @@ fn sampler_custom_cfg_guider_keeps_strict_prompt_context() {
 }
 
 #[test]
+fn sampler_custom_does_not_treat_split_sigmas_index_as_total_steps() {
+    // SplitSigmas exposes a split position, not the scheduler's total step count.
+    // Until its upstream scheduler is traversed deliberately, that value is unavailable.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "CheckpointLoaderSimple", "widgets_values": ["model.safetensors"] },
+            { "id": 2, "type": "KSamplerSelect", "widgets_values": ["res_multistep"] },
+            { "id": 3, "type": "SplitSigmas", "widgets_values": [3] },
+            { "id": 4, "type": "SamplerCustom", "inputs": [
+                {"name":"model","link":1},{"name":"sampler","link":2},
+                {"name":"sigmas","link":3}
+            ], "widgets_values": [true,42,"fixed",1.0] },
+            { "id": 5, "type": "VAEDecode", "inputs": [{"name":"samples","link":4}] },
+            { "id": 6, "type": "SaveImage", "inputs": [{"name":"images","link":5}] }
+        ],
+        "links": [
+            [1,1,0,4,0,"MODEL"], [2,2,0,4,1,"SAMPLER"],
+            [3,3,0,4,2,"SIGMAS"], [4,4,0,5,0,"LATENT"],
+            [5,5,0,6,0,"IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.sampler, "res_multistep");
+}
+
+#[test]
+fn sampler_custom_preserves_steps_from_direct_karras_scheduler() {
+    // Unlike SplitSigmas, a direct scheduler's step input is the total schedule
+    // length and remains valid metadata for the selected SamplerCustom path.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "CheckpointLoaderSimple", "widgets_values": ["model.safetensors"] },
+            { "id": 2, "type": "KSamplerSelect", "widgets_values": ["res_multistep"] },
+            { "id": 3, "type": "KarrasScheduler", "widgets_values": [20,14.6,0.03,7.0] },
+            { "id": 4, "type": "SamplerCustom", "inputs": [
+                {"name":"model","link":1},{"name":"sampler","link":2},
+                {"name":"sigmas","link":3}
+            ], "widgets_values": [true,42,"fixed",1.0] },
+            { "id": 5, "type": "VAEDecode", "inputs": [{"name":"samples","link":4}] },
+            { "id": 6, "type": "SaveImage", "inputs": [{"name":"images","link":5}] }
+        ],
+        "links": [
+            [1,1,0,4,0,"MODEL"], [2,2,0,4,1,"SAMPLER"],
+            [3,3,0,4,2,"SIGMAS"], [4,4,0,5,0,"LATENT"],
+            [5,5,0,6,0,"IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.sampler, "res_multistep");
+}
+
+#[test]
 fn sampler_custom_conditioning_wrappers_remain_strict_after_first_hop() {
     // A directly connected wrapper may follow its real edge, but an unconnected
     // wrapper cannot adopt a disconnected CLIP node merely because its title matches.

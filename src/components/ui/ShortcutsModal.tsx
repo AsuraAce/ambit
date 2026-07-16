@@ -1,14 +1,26 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Keyboard, Command, Search, ChevronDown, ChevronRight, Monitor, Hash, Puzzle, Sliders, Calendar } from 'lucide-react';
+import { X, Keyboard, Search, ChevronDown, ChevronRight, Monitor, Puzzle, Sliders, Calendar } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
+import { SEARCH_OPERATOR_DEFINITIONS, type SearchOperatorCategory } from '../../constants/searchOperators';
 
 interface ShortcutsModalProps {
     isOpen: boolean;
     onClose: () => void;
     initialTab?: 'shortcuts' | 'search';
 }
+
+const getSearchOperatorIcon = (category: SearchOperatorCategory) => {
+    const className = 'w-3 h-3';
+    switch (category) {
+        case 'content': return <Search className={className} />;
+        case 'resource': return <Puzzle className={className} />;
+        case 'parameter': return <Sliders className={className} />;
+        case 'date': return <Calendar className={className} />;
+        case 'dimension': return <Monitor className={className} />;
+    }
+};
 
 export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, initialTab = 'shortcuts' }) => {
     const [activeTab, setActiveTab] = useState<'shortcuts' | 'search'>(initialTab);
@@ -131,37 +143,6 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         }
     ];
 
-    const searchOperators = [
-        // Content Search
-        { op: 'sunset', desc: 'Search positive prompt (default)', icon: <Search className="w-3 h-3" /> },
-        { op: 'forest OR ocean', desc: 'Match either prompt term', icon: <Search className="w-3 h-3" /> },
-        { op: 'neg:blur', desc: 'Search negative prompt', icon: <Hash className="w-3 h-3" /> },
-        { op: 'file:portrait', desc: 'Search filename/path', icon: <Hash className="w-3 h-3" /> },
-        { op: 'all:anime', desc: 'Search all metadata (legacy)', icon: <Hash className="w-3 h-3" /> },
-
-        // Model & Resources
-        { op: 'model:sdxl', desc: 'Filter by model', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'lora:detail', desc: 'Filter by LoRA', icon: <Puzzle className="w-3 h-3" /> },
-        { op: 'tool:invoke', desc: 'Filter by generator', icon: <Command className="w-3 h-3" /> },
-        { op: 'sampler:euler', desc: 'Filter by sampler', icon: <Sliders className="w-3 h-3" /> },
-
-        // Parameters
-        { op: 'steps:>30', desc: 'Steps greater than 30', icon: <Hash className="w-3 h-3" /> },
-        { op: 'cfg:<7', desc: 'CFG less than 7', icon: <Sliders className="w-3 h-3" /> },
-        { op: 'seed:12345', desc: 'Filter by seed', icon: <Hash className="w-3 h-3" /> },
-
-        // Dates
-        { op: 'date:2025', desc: 'All images from 2025', icon: <Calendar className="w-3 h-3" /> },
-        { op: 'date:2026-04', desc: 'All images from Apr 2026', icon: <Calendar className="w-3 h-3" /> },
-        { op: 'after:2026-04', desc: 'From Apr 2026 onward', icon: <Calendar className="w-3 h-3" /> },
-        { op: 'before:2025', desc: 'Through 2025', icon: <Calendar className="w-3 h-3" /> },
-
-        // Dimensions
-        { op: 'w:>1024', desc: 'Width filter', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'h:<768', desc: 'Height filter', icon: <Monitor className="w-3 h-3" /> },
-        { op: 'upscaled:true', desc: 'Show upscaled only', icon: <Monitor className="w-3 h-3" /> },
-    ];
-
     return (
         <div
             className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300 ease-spring"
@@ -254,12 +235,12 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                         <div className="col-span-7">Description</div>
                                     </div>
                                     <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                                        {searchOperators.map((op, i) => (
-                                            <div key={i} className="grid grid-cols-12 p-2 text-sm border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-white dark:hover:bg-white/5 transition-colors">
+                                        {SEARCH_OPERATOR_DEFINITIONS.map(operator => (
+                                            <div key={operator.example} className="grid grid-cols-12 p-2 text-sm border-b border-gray-100 dark:border-white/5 last:border-0 hover:bg-white dark:hover:bg-white/5 transition-colors">
                                                 <div className="col-span-5 font-mono text-sage-600 dark:text-sage-400 pl-2 flex items-center gap-2 whitespace-nowrap overflow-hidden text-ellipsis">
-                                                    {op.icon} {op.op}
+                                                    {getSearchOperatorIcon(operator.category)} {operator.example}
                                                 </div>
-                                                <div className="col-span-7 text-xs text-gray-600 dark:text-gray-400">{op.desc}</div>
+                                                <div className="col-span-7 text-xs text-gray-600 dark:text-gray-400">{operator.description}</div>
                                             </div>
                                         ))}
                                     </div>

@@ -154,7 +154,7 @@ describe('AppLayout', () => {
         addToast: vi.fn(),
         viewMode: 'grid',
         changeViewMode: vi.fn(),
-        searchProps: {} as any,
+        searchProps: { inputRef: { current: null } } as any,
         layoutMode: 'masonry',
         setLayoutMode: vi.fn(),
         sortOption: 'date-desc',
@@ -193,6 +193,7 @@ describe('AppLayout', () => {
         lastSelectedId: null,
         handleRemoveFromCollection: vi.fn(),
         handleOpenCollectionModal: vi.fn(),
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true),
     };
 
     it('renders the main structures: Sidebar, Header, Content Area', () => {
@@ -302,6 +303,19 @@ describe('AppLayout', () => {
         expect(capturedProps.maintenance?.isShortcutBlocked).toBe(true);
     });
 
+    it('forwards collection persistence to MaintenanceView', async () => {
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+        render(
+            <AppLayout
+                {...defaultProps}
+                viewMode="maintenance"
+                onSetCollectionMembership={onSetCollectionMembership}
+            />
+        );
+        expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
+        expect(capturedProps.maintenance?.onSetCollectionMembership).toBe(onSetCollectionMembership);
+    });
+
     it('filters by a dashboard model and returns to the grid', async () => {
         const setFilters = vi.fn();
         const changeViewMode = vi.fn();
@@ -348,13 +362,20 @@ describe('AppLayout', () => {
 
     it('dismisses the search-focus overlay', () => {
         const setIsSearchFocused = vi.fn();
+        const blur = vi.fn();
         const { container } = render(
-            <AppLayout {...defaultProps} isSearchFocused setIsSearchFocused={setIsSearchFocused} />
+            <AppLayout
+                {...defaultProps}
+                isSearchFocused
+                setIsSearchFocused={setIsSearchFocused}
+                searchProps={{ inputRef: { current: { blur } } } as any}
+            />
         );
 
         const overlay = container.querySelector('.bg-black\\/60');
         expect(overlay).toBeTruthy();
         fireEvent.click(overlay as Element);
+        expect(blur).toHaveBeenCalledOnce();
         expect(setIsSearchFocused).toHaveBeenCalledWith(false);
     });
 

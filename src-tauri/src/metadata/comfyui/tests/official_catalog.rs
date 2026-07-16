@@ -109,6 +109,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/image_ernie_image_turbo.chunks.json"),
     },
     CatalogFixture {
+        name: "image_anima_base_v1",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_newbieimage_exp0_1-t2i",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
@@ -117,6 +121,18 @@ const FIXTURES: &[CatalogFixture] = &[
     CatalogFixture {
         name: "image_lens_t2i",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "video_bernini_r_image_editing",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
+        ),
     },
 ];
 
@@ -778,6 +794,29 @@ fn linked_numeric_switches_and_conditioning_branches_follow_selected_inputs() {
 }
 
 #[test]
+fn anima_base_subgraph_control() {
+    assert_fixture(
+        "image_anima_base_v1",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(875_817_230_929_465),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "er_sde (simple)",
+            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
 fn newbie_deterministic_string_transforms() {
     let positive_prompt = include_str!(
         "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.expected-positive.txt"
@@ -827,5 +866,104 @@ fn lens_connected_sampler_custom_traversal() {
             output_roots: 1,
             output_ambiguous: false,
         },
+    );
+}
+
+#[test]
+fn boogu_edit_custom_conditioning() {
+    assert_fixture(
+        "image_boogu_image_0_1_edit",
+        ExpectedMetadata {
+            model: "boogu_image_edit_fp8_scaled",
+            seed: Some(22),
+            steps: 25,
+            cfg: 3.5,
+            sampler: "dpmpp_2m (simple)",
+            positive_prompt: "remove the hat",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
+    let name = "video_bernini_r_image_editing";
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    let expected = ExpectedMetadata {
+        model: "wan2.2_bernini_r_high_noise_fp8_scaled",
+        seed: Some(283_365_432_432_581),
+        steps: 0,
+        cfg: 1.0,
+        sampler: "res_multistep",
+        positive_prompt: "",
+        negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+        loras: &["lightx2v_t2v_14b_cfg_step_distill_v2_lora_rank64_bf16"],
+        control_nets: &[],
+        source: ComfyParseLayer::SamplerTraversal,
+        graph_node_count: 45,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    };
+
+    assert_metadata(name, &meta, &expected);
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+    assert_eq!(diagnostics.graph_node_count, expected.graph_node_count);
+    assert_eq!(
+        diagnostics.selected_output_candidate_count,
+        expected.output_candidates
+    );
+    assert_eq!(
+        diagnostics.unique_output_root_sampler_count,
+        expected.output_roots
+    );
+    assert_eq!(diagnostics.output_ambiguous, expected.output_ambiguous);
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+        ComfyMetadataField::NegativePrompt,
+        ComfyMetadataField::Loras,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerTraversal),
+            "{name} {field:?} provenance"
+        );
+    }
+    for field in [
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::PositivePrompt,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            None,
+            "{name} {field:?} should remain unavailable"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
     );
 }

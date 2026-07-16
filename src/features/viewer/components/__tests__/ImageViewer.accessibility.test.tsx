@@ -126,7 +126,7 @@ describe('ImageViewer full metadata loading', () => {
         mockGetImageWithFullMetadata.mockResolvedValue(lightImage);
         const viewerProps = {
             image: lightImage,
-            onAddToCollection: vi.fn(),
+            onSetCollectionMembership: vi.fn().mockResolvedValue(true),
             onClose: vi.fn(),
             onNext: vi.fn(),
             onPrev: vi.fn(),

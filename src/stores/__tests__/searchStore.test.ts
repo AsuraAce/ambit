@@ -38,6 +38,7 @@ describe('searchStore', () => {
         const state = useSearchStore.getState();
         state.setImages([]);
         state.setRecentSearches([]);
+        state.setFilters({ showIntermediates: false, showGrids: false });
         state.clearAllFilters();
         state.setSortOption('date_desc');
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -60,7 +61,38 @@ describe('searchStore', () => {
         expect(next.sortOption).toBe('name_asc');
 
         next.clearAllFilters();
-        expect(useSearchStore.getState().filters).toMatchObject({ searchQuery: '', favoritesOnly: false, collectionId: null });
+        expect(useSearchStore.getState().filters).toMatchObject({ searchQuery: '', favoritesOnly: false, pinnedOnly: false, collectionId: null });
+    });
+
+    it('clears result criteria while preserving view options', () => {
+        const state = useSearchStore.getState();
+        state.setFilters({
+            searchQuery: 'portrait',
+            favoritesOnly: true,
+            pinnedOnly: true,
+            collectionId: 'collection-1',
+            models: ['model'],
+            samplers: ['Euler'],
+            generationTypes: ['txt2img'],
+            minSteps: 10,
+            maxCfg: 8,
+            showIntermediates: true,
+            showGrids: true,
+        });
+
+        state.clearAllFilters();
+
+        expect(useSearchStore.getState().filters).toMatchObject({
+            searchQuery: '',
+            favoritesOnly: false,
+            pinnedOnly: false,
+            collectionId: null,
+            models: [],
+            samplers: [],
+            generationTypes: [],
+            showIntermediates: true,
+            showGrids: true,
+        });
     });
 
     it('keeps the deprecated fetch action as a resolved no-op', async () => {

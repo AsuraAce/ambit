@@ -85,6 +85,14 @@ export default function App() {
         recentSearches, setRecentSearches,
         refreshMetadata
     } = useSearch();
+    const activeCollectionIdRef = useRef(filters.collectionId);
+    const imagesRef = useRef(images);
+    const selectedImageIndexRef = useRef(selectedImageIndex);
+    const viewingImageIdRef = useRef(viewingImageId);
+    activeCollectionIdRef.current = filters.collectionId;
+    imagesRef.current = images;
+    selectedImageIndexRef.current = selectedImageIndex;
+    viewingImageIdRef.current = viewingImageId;
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
     // const filters = useSearchStore(s => s.filters);
@@ -278,17 +286,83 @@ export default function App() {
         modals.openModal('addToCollection');
     }, [modals]);
 
+    const handleSetCollectionMembership = useCallback((
+        imageId: string,
+        collectionId: string,
+        shouldBelong: boolean
+    ): Promise<boolean> => shouldBelong
+            ? colOps.addImagesToCollection([imageId], collectionId)
+            : colOps.removeImagesFromCollection([imageId], collectionId), [colOps]);
+
+    const reconcileGlobalViewerAfterRemoval = useCallback((imageId: string, collectionId: string) => {
+        if (activeCollectionIdRef.current !== collectionId) return;
+
+        const previousImages = imagesRef.current;
+        const removedIndex = previousImages.findIndex(candidate => candidate.id === imageId);
+        if (removedIndex === -1) return;
+
+        const selectedIndex = selectedImageIndexRef.current;
+        const viewingId = viewingImageIdRef.current;
+        const displayedImageId = viewingId
+            ?? (selectedIndex !== null ? previousImages[selectedIndex]?.id : undefined);
+        const nextImages = previousImages.filter(candidate => candidate.id !== imageId);
+        imagesRef.current = nextImages;
+
+        if (!displayedImageId) return;
+
+        if (viewingId && viewingId !== imageId) return;
+
+        const nextIndex = displayedImageId === imageId
+            ? (nextImages.length === 0 ? null : Math.min(removedIndex, nextImages.length - 1))
+            : nextImages.findIndex(candidate => candidate.id === displayedImageId);
+        if (nextIndex === -1) return;
+
+        selectedImageIndexRef.current = nextIndex;
+        viewingImageIdRef.current = null;
+        setSelectedImageIndex(nextIndex);
+        setViewingImageId(null);
+    }, []);
+
+    const handleSetViewerCollectionMembership = useCallback((
+        imageId: string,
+        collectionId: string,
+        shouldBelong: boolean
+    ): Promise<boolean> => shouldBelong
+            ? colOps.addImagesToCollection([imageId], collectionId)
+            : colOps.removeImagesFromCollection(
+                [imageId],
+                collectionId,
+                () => reconcileGlobalViewerAfterRemoval(imageId, collectionId)
+            ), [colOps, reconcileGlobalViewerAfterRemoval]);
+    const submitNavbarSearch = useCallback((query: string) => {
+        if (!query.trim()) {
+            void submitSearch(query);
+            return;
+        }
+
+        void submitSearch(query);
+        if (viewMode === 'dashboard' || viewMode === 'maintenance') {
+            changeViewMode('grid');
+        }
+    }, [changeViewMode, submitSearch, viewMode]);
+
+    const openSearchHelp = useCallback(() => {
+        modals.setShortcutsModalTab('search');
+        modals.openModal('shortcuts');
+    }, [modals]);
+
     // --- Derived Memos ---
     const searchProps = React.useMemo(() => ({
         isAiSearchEnabled,
         isSearchingAi,
         inputRef,
         toggleAiSearch,
-        submitSearch,
+        submitSearch: submitNavbarSearch,
         isFocused: isSearchFocused,
         onFocus: () => setIsSearchFocused(true),
-        onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
-    }), [isAiSearchEnabled, isSearchingAi, inputRef, toggleAiSearch, submitSearch, isSearchFocused]);
+        onBlur: () => setIsSearchFocused(false),
+        onOpenSearchHelp: openSearchHelp,
+    }), [isAiSearchEnabled, isSearchingAi, inputRef, isSearchFocused, openSearchHelp, submitNavbarSearch, toggleAiSearch]);
 
     const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
     const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;
@@ -445,6 +519,7 @@ export default function App() {
                 lastSelectedId={lastSelectedId}
                 handleRemoveFromCollection={handleRemoveFromCollection}
                 handleOpenCollectionModal={handleOpenCollectionModal}
+                onSetCollectionMembership={handleSetCollectionMembership}
                 onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
             />
 
@@ -637,7 +712,7 @@ export default function App() {
                             }}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
                             onRecoverMetadata={handleOpenRecovery}
-                            onAddToCollection={(id) => handleOpenCollectionModal('add')}
+                            onSetCollectionMembership={handleSetViewerCollectionMembership}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}

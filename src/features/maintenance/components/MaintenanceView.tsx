@@ -38,6 +38,7 @@ interface MaintenanceViewProps {
     onRecoverMetadata?: () => void;
     onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
+    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     availableTags?: string[];
     onViewerOpenChange: (isOpen: boolean) => void;
     isShortcutBlocked: boolean;
@@ -61,6 +62,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onRecoverMetadata,
     onToggleFavorite,
     onTogglePin,
+    onSetCollectionMembership,
     availableTags,
     onViewerOpenChange,
     isShortcutBlocked
@@ -631,7 +633,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         const idx = list.findIndex(i => i.id === viewingImageId);
                         if (idx > 0) setViewingImageId(list[idx - 1].id);
                     }}
-                    onAddToCollection={() => { }}
+                    onSetCollectionMembership={onSetCollectionMembership}
                     onSearch={() => { }}
                     onToggleFavorite={(id) => onToggleFavorite?.(id)}
                     onTogglePin={onTogglePin}

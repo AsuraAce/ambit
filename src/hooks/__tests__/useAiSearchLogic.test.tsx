@@ -118,6 +118,8 @@ describe('useAiSearchLogic', () => {
 
     it('should call Gemini if AI search is enabled', async () => {
         const { result } = renderHook(() => useAiSearchLogic(props));
+        const blur = vi.fn();
+        result.current.inputRef.current = { blur } as unknown as HTMLInputElement;
 
         // Turn it on first
         act(() => {
@@ -142,8 +144,8 @@ describe('useAiSearchLogic', () => {
             undefined,
             'default'
         );
-        expect(mockSetFilters).toHaveBeenCalledTimes(2); // Local set + AI results set
-        const aiUpdate = mockSetFilters.mock.calls[1][0] as (prev: FilterState) => FilterState;
+        expect(mockSetFilters).toHaveBeenCalledTimes(1);
+        const aiUpdate = mockSetFilters.mock.calls[0][0] as (prev: FilterState) => FilterState;
         expect(aiUpdate(mockFilters)).toMatchObject({
             searchQuery: 'sunset',
             models: ['SDXL'],
@@ -152,6 +154,7 @@ describe('useAiSearchLogic', () => {
             dateTo: '2026-04-30'
         });
         expect(mockAddToast).toHaveBeenCalledWith('Filters updated by AI', 'success');
+        expect(blur).toHaveBeenCalledOnce();
     });
 
     it('should forward the FILTERS prompt override when developer features are enabled', async () => {
@@ -190,6 +193,9 @@ describe('useAiSearchLogic', () => {
 
     it('should handle AI search failure gracefully', async () => {
         const { result } = renderHook(() => useAiSearchLogic(props));
+        const focus = vi.fn();
+        const blur = vi.fn();
+        result.current.inputRef.current = { focus, blur } as unknown as HTMLInputElement;
 
         act(() => {
             result.current.toggleAiSearch();
@@ -202,6 +208,9 @@ describe('useAiSearchLogic', () => {
         });
 
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('failed'), 'error');
+        expect(mockSetFilters).not.toHaveBeenCalled();
+        expect(focus).toHaveBeenCalledOnce();
+        expect(blur).not.toHaveBeenCalled();
     });
 
     it('activates pending AI search after Settings enables the feature and focuses the input', async () => {
@@ -252,13 +261,37 @@ describe('useAiSearchLogic', () => {
 
         await act(async () => result.current.submitSearch('anything'));
 
-        const update = mockSetFilters.mock.calls[1][0] as (filters: FilterState) => FilterState;
+        const update = mockSetFilters.mock.calls[0][0] as (filters: FilterState) => FilterState;
         expect(update({ ...mockFilters, favoritesOnly: true })).toMatchObject({
             searchQuery: '',
             models: [],
             tools: [],
             dateRange: 'all',
             favoritesOnly: false,
+        });
+    });
+
+    it('ignores repeated AI submissions while the first request is active', async () => {
+        let resolveFilters: ((value: Record<string, never>) => void) | undefined;
+        const pendingFilters = new Promise<Record<string, never>>(resolve => {
+            resolveFilters = resolve;
+        });
+        const { result } = renderHook(() => useAiSearchLogic(props));
+        act(() => result.current.toggleAiSearch());
+        mockGenerateFilters.mockReturnValue(pendingFilters);
+
+        let firstRequest: Promise<void> | undefined;
+        await act(async () => {
+            firstRequest = result.current.submitSearch('find portraits');
+            await result.current.submitSearch('find portraits');
+        });
+
+        expect(mockGenerateFilters).toHaveBeenCalledOnce();
+        expect(mockSetRecentSearches).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            resolveFilters?.({});
+            await firstRequest;
         });
     });
 });
