@@ -118,6 +118,18 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_lens_t2i",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
     },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "video_bernini_r_image_editing",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
+        ),
+    },
 ];
 
 struct ExpectedMetadata<'a> {
@@ -827,5 +839,104 @@ fn lens_connected_sampler_custom_traversal() {
             output_roots: 1,
             output_ambiguous: false,
         },
+    );
+}
+
+#[test]
+fn boogu_edit_custom_conditioning() {
+    assert_fixture(
+        "image_boogu_image_0_1_edit",
+        ExpectedMetadata {
+            model: "boogu_image_edit_fp8_scaled",
+            seed: Some(22),
+            steps: 25,
+            cfg: 3.5,
+            sampler: "dpmpp_2m (simple)",
+            positive_prompt: "remove the hat",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
+    let name = "video_bernini_r_image_editing";
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    let expected = ExpectedMetadata {
+        model: "wan2.2_bernini_r_high_noise_fp8_scaled",
+        seed: Some(283_365_432_432_581),
+        steps: 0,
+        cfg: 1.0,
+        sampler: "res_multistep",
+        positive_prompt: "",
+        negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+        loras: &["lightx2v_t2v_14b_cfg_step_distill_v2_lora_rank64_bf16"],
+        control_nets: &[],
+        source: ComfyParseLayer::SamplerTraversal,
+        graph_node_count: 45,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    };
+
+    assert_metadata(name, &meta, &expected);
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+    assert_eq!(diagnostics.graph_node_count, expected.graph_node_count);
+    assert_eq!(
+        diagnostics.selected_output_candidate_count,
+        expected.output_candidates
+    );
+    assert_eq!(
+        diagnostics.unique_output_root_sampler_count,
+        expected.output_roots
+    );
+    assert_eq!(diagnostics.output_ambiguous, expected.output_ambiguous);
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+        ComfyMetadataField::NegativePrompt,
+        ComfyMetadataField::Loras,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerTraversal),
+            "{name} {field:?} provenance"
+        );
+    }
+    for field in [
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::PositivePrompt,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            None,
+            "{name} {field:?} should remain unavailable"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
     );
 }

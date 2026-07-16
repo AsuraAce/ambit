@@ -31,6 +31,10 @@ pub fn find_reachable_prompts(
     input_name: &str,
     strict_connections: bool,
 ) -> String {
+    let prompt_role = match input_name {
+        "cond1" | "conditioning" => "positive",
+        _ => input_name,
+    };
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut prompts = Vec::new();
@@ -40,11 +44,11 @@ pub fn find_reachable_prompts(
         get_conditioning_source_id(graph, start_node_id, node, input_name, strict_connections)
     });
     if let Some(source_id) = source_id {
-        queue.push_back(source_id);
+        queue.push_back((source_id, strict_connections));
     }
 
-    while let Some(current_id) = queue.pop_front() {
-        if !visited.insert(current_id.clone()) {
+    while let Some((current_id, branch_strict_connections)) = queue.pop_front() {
+        if !visited.insert((current_id.clone(), branch_strict_connections)) {
             continue;
         }
 
@@ -53,7 +57,7 @@ pub fn find_reachable_prompts(
             let t_lower = t.to_lowercase();
 
             if t == "Reroute" {
-                let source_id = if strict_connections {
+                let source_id = if branch_strict_connections {
                     get_reroute_source_id(node)
                 } else {
                     ["", "value", "input", "any"]
@@ -61,7 +65,7 @@ pub fn find_reachable_prompts(
                         .find_map(|key| get_source_id(graph, &current_id, key))
                 };
                 if let Some(source_id) = source_id {
-                    queue.push_back(source_id);
+                    queue.push_back((source_id, branch_strict_connections));
                 }
                 continue;
             }
@@ -81,9 +85,13 @@ pub fn find_reachable_prompts(
                 || t.contains("Qwen")
                 || t.contains("LLM")
             {
-                if let Some(text) =
-                    extract_text_from_node(graph, &current_id, node, strict_connections)
-                {
+                if let Some(text) = extract_text_from_node(
+                    graph,
+                    &current_id,
+                    node,
+                    prompt_role,
+                    branch_strict_connections,
+                ) {
                     if !is_missing_prompt_value(&text) {
                         // Filter out A1111 parameter blobs (containing Steps/Model)
                         if text.contains("Steps:")
@@ -97,7 +105,7 @@ pub fn find_reachable_prompts(
                             continue;
                         }
                         // Filter out explicit separate labels if misplaced
-                        if input_name == "positive"
+                        if prompt_role == "positive"
                             && text.trim().to_lowercase().starts_with("negative prompt:")
                         {
                             continue;
@@ -117,15 +125,17 @@ pub fn find_reachable_prompts(
             if t == "ConditioningCombine" || t == "ConditioningAverage" {
                 // Check conditioning_1, conditioning_2, etc. (often just 1 and 2)
                 for branch in ["conditioning_1", "conditioning_2"] {
-                    if strict_connections {
+                    if branch_strict_connections {
                         match get_input_connection(node, branch) {
-                            InputConnection::Connected(source_id) => queue.push_back(source_id),
+                            InputConnection::Connected(source_id) => {
+                                queue.push_back((source_id, branch_strict_connections))
+                            }
                             InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
                                 return String::new()
                             }
                         }
                     } else if let Some(source_id) = get_source_id(graph, &current_id, branch) {
-                        queue.push_back(source_id);
+                        queue.push_back((source_id, branch_strict_connections));
                     }
                 }
                 continue;
@@ -133,10 +143,12 @@ pub fn find_reachable_prompts(
 
             // C. ConditioningConcat
             if t == "ConditioningConcat" {
-                if strict_connections {
+                if branch_strict_connections {
                     for branch in ["conditioning_to", "conditioning_from"] {
                         match get_input_connection(node, branch) {
-                            InputConnection::Connected(source_id) => queue.push_back(source_id),
+                            InputConnection::Connected(source_id) => {
+                                queue.push_back((source_id, branch_strict_connections))
+                            }
                             InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
                                 return String::new()
                             }
@@ -149,18 +161,18 @@ pub fn find_reachable_prompts(
                     &current_id,
                     node,
                     "conditioning_to",
-                    strict_connections,
+                    branch_strict_connections,
                 ) {
-                    queue.push_back(s);
+                    queue.push_back((s, branch_strict_connections));
                 }
                 if let Some(s) = get_conditioning_source_id(
                     graph,
                     &current_id,
                     node,
                     "conditioning_from",
-                    strict_connections,
+                    branch_strict_connections,
                 ) {
-                    queue.push_back(s);
+                    queue.push_back((s, branch_strict_connections));
                 }
                 continue;
             }
@@ -170,15 +182,34 @@ pub fn find_reachable_prompts(
                 continue;
             }
 
+            if t == "BerniniConditioning" {
+                let selected_input = match prompt_role {
+                    "positive" => "positive",
+                    "negative" => "negative",
+                    _ => continue,
+                };
+                match get_input_connection(node, selected_input) {
+                    InputConnection::Connected(source_id) => queue.push_back((source_id, true)),
+                    InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
+                        return String::new();
+                    }
+                }
+                continue;
+            }
+
             // B. Generic / Pass-through
             // We look for common input names that likely carry the conditioning signal upstream.
             // "Text to Conditioning" nodes take 'text' and 'clip' => output conditioning.
             // So we MUST follow 'text'.
             if t == "Text to Conditioning" {
-                if let Some(s) =
-                    get_conditioning_source_id(graph, &current_id, node, "text", strict_connections)
-                {
-                    queue.push_back(s);
+                if let Some(s) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    "text",
+                    branch_strict_connections,
+                ) {
+                    queue.push_back((s, branch_strict_connections));
                 }
                 continue;
             }
@@ -206,13 +237,13 @@ pub fn find_reachable_prompts(
                     if is_broadcaster || relevant_prefixes.iter().any(|&r| input_lower.contains(r))
                     {
                         if !is_broadcaster
-                            && input_name == "positive"
+                            && prompt_role == "positive"
                             && input_lower.contains("negative")
                         {
                             continue;
                         }
                         if !is_broadcaster
-                            && input_name == "negative"
+                            && prompt_role == "negative"
                             && input_lower.contains("positive")
                         {
                             continue;
@@ -220,11 +251,14 @@ pub fn find_reachable_prompts(
 
                         // Handle both single string and array of strings (multiple inputs with same name)
                         if let Some(source_id) = val.as_str() {
-                            queue.push_back(source_id.to_string());
+                            queue.push_back((source_id.to_string(), branch_strict_connections));
                         } else if let Some(arr) = val.as_array() {
                             for item in arr {
                                 if let Some(source_id) = item.as_str() {
-                                    queue.push_back(source_id.to_string());
+                                    queue.push_back((
+                                        source_id.to_string(),
+                                        branch_strict_connections,
+                                    ));
                                 }
                             }
                         }
@@ -241,10 +275,10 @@ pub fn find_reachable_prompts(
                     let is_positive_input = input_lower.contains("positive");
 
                     if is_relevant_prefix {
-                        if input_name == "positive" && is_negative_input {
+                        if prompt_role == "positive" && is_negative_input {
                             continue;
                         }
-                        if input_name == "negative" && is_positive_input {
+                        if prompt_role == "negative" && is_positive_input {
                             continue;
                         }
                         if let Some(s) = get_conditioning_source_id(
@@ -252,9 +286,9 @@ pub fn find_reachable_prompts(
                             &current_id,
                             node,
                             input_key,
-                            strict_connections,
+                            branch_strict_connections,
                         ) {
-                            queue.push_back(s);
+                            queue.push_back((s, branch_strict_connections));
                         }
                     }
                 }
@@ -265,10 +299,10 @@ pub fn find_reachable_prompts(
                     if let Some(name) = input.get("name").and_then(|v| v.as_str()) {
                         let input_lower = name.to_lowercase();
                         if relevant_prefixes.iter().any(|&r| input_lower.contains(r)) {
-                            if input_name == "positive" && input_lower.contains("negative") {
+                            if prompt_role == "positive" && input_lower.contains("negative") {
                                 continue;
                             }
-                            if input_name == "negative" && input_lower.contains("positive") {
+                            if prompt_role == "negative" && input_lower.contains("positive") {
                                 continue;
                             }
                             if input.get("link").and_then(|v| v.as_i64()).is_some() {
@@ -281,8 +315,9 @@ pub fn find_reachable_prompts(
         }
     }
 
-    // Dedup and join
-    prompts.dedup();
+    // Dedup globally while preserving traversal order.
+    let mut seen = HashSet::new();
+    prompts.retain(|prompt| seen.insert(prompt.clone()));
     prompts.join(", ")
 }
 
@@ -507,9 +542,16 @@ fn extract_text_from_node(
     graph: &ComfyGraph,
     node_id: &str,
     node: &Value,
+    requested_input: &str,
     strict_connections: bool,
 ) -> Option<String> {
     let t = get_node_type(node);
+
+    if t == "TextEncodeBooguEdit" {
+        return (requested_input == "positive")
+            .then(|| trace_text_input(graph, node_id, "prompt", true))
+            .flatten();
+    }
 
     // SDXL specific (if we want to combine them specifically)
     if t == "CLIPTextEncodeSDXL" {
@@ -605,6 +647,18 @@ fn evaluate_string_node_with_mode(
     }
     let node = graph.get_node(node_id)?;
     let t = get_node_type(node);
+
+    if strict_connections && t == "Reroute" {
+        let source_id = get_reroute_source_id(node)?;
+        return evaluate_string_node_with_mode(
+            graph,
+            &source_id,
+            visited,
+            depth + 1,
+            mode,
+            strict_connections,
+        );
+    }
 
     // Primitives / String Literals
     // Also include ImpactWildcardProcessor (populated_text) and Qwen (0/text)

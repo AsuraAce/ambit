@@ -2,6 +2,7 @@ import * as React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AIImage, Collection, GeneratorTool } from '../../../../../types';
+import { createDefaultFilters } from '../../../../../utils/filterState';
 import { MetadataEditTab } from '../MetadataEditTab';
 
 const collectionRepoMocks = vi.hoisted(() => ({ getCollectionsForImage: vi.fn() }));
@@ -39,8 +40,9 @@ const collections: Collection[] = [
 
 interface HarnessProps {
     image?: AIImage;
+    collectionItems?: Collection[];
     availableTags?: string[];
-    onAddToCollection?: (imageId: string, collectionId: string) => void;
+    onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNegativePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
@@ -48,8 +50,9 @@ interface HarnessProps {
 
 const EditorHarness = ({
     image = createImage(),
+    collectionItems = collections,
     availableTags = ['cat', 'castle', 'camera', 'candle', 'cape', 'canyon', 'dog'],
-    onAddToCollection = () => undefined,
+    onSetCollectionMembership = async () => true,
     onUpdatePrompt,
     onUpdateNegativePrompt,
     onUpdateNotes,
@@ -61,7 +64,7 @@ const EditorHarness = ({
     return (
         <MetadataEditTab
             image={image}
-            collections={collections}
+            collections={collectionItems}
             availableTags={availableTags}
             notes={notes}
             setNotes={setNotes}
@@ -69,7 +72,7 @@ const EditorHarness = ({
             setPromptValue={setPromptValue}
             negativePromptValue={negativePromptValue}
             setNegativePromptValue={setNegativePromptValue}
-            onAddToCollection={onAddToCollection}
+            onSetCollectionMembership={onSetCollectionMembership}
             onUpdatePrompt={onUpdatePrompt}
             onUpdateNegativePrompt={onUpdateNegativePrompt}
             onUpdateNotes={onUpdateNotes}
@@ -105,9 +108,9 @@ describe('MetadataEditTab', () => {
         }
     });
 
-    it('loads membership, filters collections, and toggles membership optimistically', async () => {
-        const onAddToCollection = vi.fn().mockResolvedValue(undefined);
-        const { container } = render(<EditorHarness onAddToCollection={onAddToCollection} />);
+    it('loads membership, filters collections, and persists the requested membership state', async () => {
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+        const { container } = render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
 
         expect(container.querySelector('.animate-spin')).toBeTruthy();
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
@@ -121,16 +124,32 @@ describe('MetadataEditTab', () => {
         fireEvent.change(search, { target: { value: '' } });
         fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
         expect(screen.getByRole('button', { name: 'Portraits' }).className).not.toContain('bg-sage-100');
-        expect(onAddToCollection).toHaveBeenCalledWith('image-1', 'one');
+        expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('false');
+        expect(onSetCollectionMembership).toHaveBeenCalledWith('image-1', 'one', false);
 
         fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
         expect(screen.getByRole('button', { name: 'Landscapes' }).className).toContain('bg-sage-100');
-        expect(onAddToCollection).toHaveBeenCalledWith('image-1', 'two');
+        expect(screen.getByRole('button', { name: 'Landscapes' }).getAttribute('aria-pressed')).toBe('true');
+        expect(onSetCollectionMembership).toHaveBeenCalledWith('image-1', 'two', true);
     });
 
-    it('rolls collection membership back when persistence rejects', async () => {
-        const onAddToCollection = vi.fn().mockRejectedValue(new Error('write failed'));
-        render(<EditorHarness onAddToCollection={onAddToCollection} />);
+    it('does not offer smart collections as manual assignment targets', async () => {
+        const smartCollection: Collection = {
+            id: 'smart',
+            name: 'Favorite Images',
+            imageIds: [],
+            createdAt: 4,
+            filters: createDefaultFilters({ favoritesOnly: true })
+        };
+        render(<EditorHarness collectionItems={[...collections, smartCollection]} />);
+
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(screen.queryByRole('button', { name: 'Favorite Images' })).toBeNull();
+    });
+
+    it('rolls collection membership back when persistence reports failure', async () => {
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(false);
+        render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
 
         fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
@@ -140,12 +159,170 @@ describe('MetadataEditTab', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Landscapes' }).className).not.toContain('bg-sage-100'));
     });
 
+    it('rolls collection membership back when persistence rejects unexpectedly', async () => {
+        const onSetCollectionMembership = vi.fn().mockRejectedValue(new Error('write failed'));
+        render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Landscapes' })).toBeTruthy());
+
+        fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Landscapes' }).className).not.toContain('bg-sage-100'));
+    });
+
+    it('disables a pending membership row and ignores duplicate clicks', async () => {
+        const pending = deferred<boolean>();
+        const onSetCollectionMembership = vi.fn().mockReturnValue(pending.promise);
+        render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
+
+        const landscapes = screen.getByRole('button', { name: 'Landscapes' });
+        fireEvent.click(landscapes);
+        expect((landscapes as HTMLButtonElement).disabled).toBe(true);
+        expect(landscapes.getAttribute('aria-busy')).toBe('true');
+        fireEvent.click(landscapes);
+        expect(onSetCollectionMembership).toHaveBeenCalledTimes(1);
+
+        await act(async () => pending.resolve(true));
+        await waitFor(() => expect((landscapes as HTMLButtonElement).disabled).toBe(false));
+    });
+
+    it('does not apply a late rollback to a different image', async () => {
+        const pending = deferred<boolean>();
+        const onSetCollectionMembership = vi.fn().mockReturnValue(pending.promise);
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce(['one'])
+            .mockResolvedValueOnce([]);
+        const { rerender } = render(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
+        fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
+
+        rerender(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).not.toContain('bg-sage-100'));
+
+        await act(async () => pending.resolve(false));
+        expect(screen.getByRole('button', { name: 'Portraits' }).className).not.toContain('bg-sage-100');
+    });
+
+    it('preserves a successful membership change across navigation and a stale refetch', async () => {
+        const pendingMembership = deferred<boolean>();
+        const staleRefetch = deferred<string[]>();
+        const onSetCollectionMembership = vi.fn().mockReturnValue(pendingMembership.promise);
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockReturnValueOnce(staleRefetch.promise);
+        const { rerender } = render(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
+
+        rerender(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
+        rerender(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledTimes(3));
+        expect(screen.getByRole('button', { name: 'Landscapes' }).className).toContain('bg-sage-100');
+
+        await act(async () => pendingMembership.resolve(true));
+        expect(screen.getByRole('button', { name: 'Landscapes' }).className).toContain('bg-sage-100');
+
+        await act(async () => staleRefetch.resolve([]));
+        expect(screen.getByRole('button', { name: 'Landscapes' }).className).toContain('bg-sage-100');
+    });
+
+    it('merges opposite membership outcomes by row across navigation', async () => {
+        const failedAdd = deferred<boolean>();
+        const successfulRemoval = deferred<boolean>();
+        const staleRefetch = deferred<string[]>();
+        const onSetCollectionMembership = vi.fn((_: string, collectionId: string) => (
+            collectionId === 'two' ? failedAdd.promise : successfulRemoval.promise
+        ));
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce(['one'])
+            .mockResolvedValueOnce([])
+            .mockReturnValueOnce(staleRefetch.promise);
+        const { rerender } = render(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Portraits' }));
+        rerender(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
+        await act(async () => failedAdd.resolve(false));
+
+        rerender(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} onSetCollectionMembership={onSetCollectionMembership} />,
+        );
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledTimes(3));
+        await act(async () => successfulRemoval.resolve(true));
+        await act(async () => staleRefetch.resolve(['one']));
+
+        expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('false');
+        expect(screen.getByRole('button', { name: 'Landscapes' }).getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('evicts inactive membership snapshots while retaining only active or pending images', async () => {
+        const reloadedMembership = deferred<string[]>();
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce(['one'])
+            .mockResolvedValueOnce([])
+            .mockReturnValueOnce(reloadedMembership.promise);
+        const { rerender } = render(
+            <EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />,
+        );
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('true'));
+
+        rerender(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} />);
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        rerender(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />);
+
+        expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('false');
+        await act(async () => reloadedMembership.resolve(['one']));
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).getAttribute('aria-pressed')).toBe('true'));
+    });
+
+    it('shows a retryable error when membership loading fails after navigation', async () => {
+        const rejectedMembership = deferred<string[]>();
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce(['one'])
+            .mockReturnValueOnce(rejectedMembership.promise)
+            .mockResolvedValueOnce([]);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { rerender } = render(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
+
+        rerender(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} />);
+        await act(async () => rejectedMembership.reject(new Error('read failed')));
+
+        expect(screen.getByRole('alert').textContent).toContain('Could not load collection membership.');
+        expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(true);
+        expect(document.querySelector('.animate-spin')).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenLastCalledWith('image-2');
+        consoleError.mockRestore();
+    });
+
     it('handles membership fetch failures and ignores completion after unmount', async () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         collectionRepoMocks.getCollectionsForImage.mockRejectedValueOnce(new Error('read failed'));
         const first = render(<EditorHarness />);
         await waitFor(() => expect(consoleError).toHaveBeenCalledWith('Failed to fetch image collections', expect.any(Error)));
         expect(first.container.querySelector('.animate-spin')).toBeNull();
+        expect(screen.getByRole('alert').textContent).toContain('Could not load collection membership.');
         first.unmount();
 
         const pending = deferred<string[]>();

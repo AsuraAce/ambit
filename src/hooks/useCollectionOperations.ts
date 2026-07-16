@@ -38,6 +38,25 @@ export const useCollectionOperations = ({
   const maskedKeywords = useSettingsStore(s => s.settings.maskedKeywords);
   const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
   const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+  const activeCollectionIdRef = React.useRef(activeCollectionId);
+  const membershipMutationTailsRef = React.useRef(new Map<string, Promise<void>>());
+  activeCollectionIdRef.current = activeCollectionId;
+
+  const serializeCollectionMembershipMutation = useCallback(<T,>(
+    collectionId: string,
+    mutation: () => Promise<T>
+  ): Promise<T> => {
+    const previous = membershipMutationTailsRef.current.get(collectionId) ?? Promise.resolve();
+    const result = previous.then(mutation);
+    const tail = result.then(() => undefined, () => undefined);
+    membershipMutationTailsRef.current.set(collectionId, tail);
+    void tail.then(() => {
+      if (membershipMutationTailsRef.current.get(collectionId) === tail) {
+        membershipMutationTailsRef.current.delete(collectionId);
+      }
+    });
+    return result;
+  }, []);
 
   const refreshAffectedCollectionThumbnails = useCallback((affectedCollections: Collection[]) => {
     const hasStaticCollection = affectedCollections.some(collection => !collection.filters);
@@ -222,67 +241,103 @@ export const useCollectionOperations = ({
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections]);
 
-  const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string) => {
+  const addImagesToCollection = useCallback(async (imageIds: string[], collectionId: string): Promise<boolean> => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
-    if (!col) return;
+    if (!col) return false;
 
-    // Optimistic Update: Increment count
-    setAllCollections(prev => prev.map(c =>
-      c.id === collectionId ? { ...c, count: (c.count || 0) + imageIds.length } : c
-    ));
+    return serializeCollectionMembershipMutation(collectionId, async () => {
+      let collectionBeforeMutation = col;
 
-    try {
-      await addImgsToCol(collectionId, imageIds);
-      addToast(`Added images to collection`, 'success');
-      // Background refresh for safety and smart collection updates
-      await Promise.all([
-        refreshCollections(),
-        queryClient.invalidateQueries({ queryKey: ['images'] })
-      ]);
-      refreshAffectedCollectionThumbnails([col]);
-    } catch (e) {
-      // Rollback
-      setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
-      addToast("Failed to add to collection", "error");
-    }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
+      // Optimistic Update: Increment count
+      setAllCollections(prev => prev.map(c => {
+        if (c.id !== collectionId) return c;
+        collectionBeforeMutation = c;
+        return { ...c, count: (c.count || 0) + imageIds.length };
+      }));
 
-  const removeImagesFromCollection = useCallback(async (imageIds: string[], collectionId: string) => {
-    const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
-    if (!col) return;
-
-    // Optimistic Update: Decrement count
-    setAllCollections(prev => prev.map(c =>
-      c.id === collectionId ? { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) } : c
-    ));
-
-    // Optimistic Grid Removal: Remove from current view if we are looking at this collection
-    if (activeCollectionId === collectionId) {
-      setImages(prev => prev.filter(img => !imageIds.includes(img.id)));
-    }
-
-    try {
-      // Handle Manual Exclusions for Hybrid Smart Collections
-      if (col.filters) {
-        const currentExclusions = col.manualExclusions || [];
-        const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
-        await upsertCollection({ ...col, manualExclusions: newExclusions });
+      try {
+        await addImgsToCol(collectionId, imageIds);
+      } catch (e) {
+        // Rollback to the state at the start of this serialized mutation.
+        setAllCollections(prev => prev.map(c => c.id === collectionId ? collectionBeforeMutation : c));
+        addToast("Failed to add to collection", "error");
+        return false;
       }
 
-      // Always attempt removal from junction table (handles manual additions)
-      await removeImgsFromCol(collectionId, imageIds);
+      addToast(`Added images to collection`, 'success');
+      try {
+        await Promise.all([
+          refreshCollections(),
+          queryClient.invalidateQueries({ queryKey: ['images'] }),
+          queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
+        ]);
+      } catch (e) {
+        console.error("[Collections] Failed to refresh after adding images", e);
+      }
+
+      refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
+      return true;
+    });
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, serializeCollectionMembershipMutation]);
+
+  const removeImagesFromCollection = useCallback(async (
+    imageIds: string[],
+    collectionId: string,
+    onPersisted?: () => void
+  ): Promise<boolean> => {
+    const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
+    if (!col) return false;
+
+    return serializeCollectionMembershipMutation(collectionId, async () => {
+      let collectionBeforeMutation = col;
+
+      // Optimistic Update: Decrement count
+      setAllCollections(prev => prev.map(c => {
+        if (c.id !== collectionId) return c;
+        collectionBeforeMutation = c;
+        return { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) };
+      }));
+
+      try {
+        // Handle Manual Exclusions for Hybrid Smart Collections
+        if (collectionBeforeMutation.filters) {
+          const currentExclusions = collectionBeforeMutation.manualExclusions || [];
+          const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
+          await upsertCollection({ ...collectionBeforeMutation, manualExclusions: newExclusions });
+        }
+
+        // Always attempt removal from junction table (handles manual additions)
+        await removeImgsFromCol(collectionId, imageIds);
+      } catch (e) {
+        // Rollback to the state at the start of this serialized mutation.
+        setAllCollections(prev => prev.map(c => c.id === collectionId ? collectionBeforeMutation : c));
+        addToast("Failed to remove from collection", "error");
+        return false;
+      }
+
+      onPersisted?.();
+
+      // Keep the active grid stable until persistence succeeds so a failed viewer
+      // edit cannot close or advance away from an image that still belongs here.
+      if (activeCollectionIdRef.current === collectionId) {
+        setImages(prev => prev.filter(img => !imageIds.includes(img.id)));
+      }
+
       addToast("Removed from collection", "info");
-      await Promise.all([
-        refreshCollections(),
-        queryClient.invalidateQueries({ queryKey: ['images'] })
-      ]);
-      refreshAffectedCollectionThumbnails([col]);
-    } catch (e) {
-      // Rollback
-      setAllCollections(prev => prev.map(c => c.id === collectionId ? col : c));
-      addToast("Failed to remove from collection", "error");
-    }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
+      try {
+        await Promise.all([
+          refreshCollections(),
+          queryClient.invalidateQueries({ queryKey: ['images'] }),
+          queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
+        ]);
+      } catch (e) {
+        console.error("[Collections] Failed to refresh after removing images", e);
+      }
+
+      refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
+      return true;
+    });
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, setImages, serializeCollectionMembershipMutation]);
 
   // Deprecated/Aliased for backward compat
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
@@ -321,7 +376,8 @@ export const useCollectionOperations = ({
       addToast(`Moved images to ${targetCol.name}`, 'success');
       await Promise.all([
         refreshCollections(),
-        queryClient.invalidateQueries({ queryKey: ['images'] })
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
       ]);
       refreshAffectedCollectionThumbnails([sourceCol, targetCol]);
     } catch (e) {
@@ -333,7 +389,7 @@ export const useCollectionOperations = ({
       }));
       addToast("Failed to move images", "error");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast]);
 
   const setCollectionThumbnail = useCallback(async (collectionId: string, image: AIImage) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);

@@ -225,7 +225,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onAddToCollection, onSearch, onOpenSettings }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -233,7 +233,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onClose: () => void;
         onToggleFavorite: (id: string) => void;
         onTogglePin?: (id: string, pinned: boolean) => void;
-        onAddToCollection: () => void;
+        onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
     }) => (
@@ -244,7 +244,8 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             <button onClick={onClose}>Close Viewer</button>
             <button onClick={() => onToggleFavorite(image.id)}>Favorite Viewer</button>
             {onTogglePin && <button onClick={() => onTogglePin(image.id, true)}>Pin Viewer</button>}
-            <button onClick={onAddToCollection}>Viewer Collection</button>
+            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>
+            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
         </div>
@@ -288,7 +289,8 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onRegenerateThumbnails: vi.fn().mockResolvedValue(undefined),
     maskedKeywords: [],
     onToggleFavorite: vi.fn(),
-    onTogglePin: vi.fn()
+    onTogglePin: vi.fn(),
+    onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });
 
 const renderView = (overrides: Partial<React.ComponentProps<typeof MaintenanceView>> = {}) => {
@@ -580,7 +582,8 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localMissingImages = [createImage({ id: 'missing-a' }), createImage({ id: 'missing-b' })];
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
-        renderView({ onToggleFavorite, onTogglePin });
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+        renderView({ onToggleFavorite, onTogglePin, onSetCollectionMembership });
 
         fireEvent.click(screen.getByText('Select Missing Item'));
         expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('missing-a');
@@ -593,7 +596,10 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Pin Viewer'));
         expect(onToggleFavorite).toHaveBeenCalledWith('missing-a');
         expect(onTogglePin).toHaveBeenCalledWith('missing-a', true);
-        fireEvent.click(screen.getByText('Viewer Collection'));
+        fireEvent.click(screen.getByText('Add Viewer Collection'));
+        fireEvent.click(screen.getByText('Remove Viewer Collection'));
+        expect(onSetCollectionMembership).toHaveBeenNthCalledWith(1, 'missing-a', 'collection', true);
+        expect(onSetCollectionMembership).toHaveBeenNthCalledWith(2, 'missing-a', 'collection', false);
         fireEvent.click(screen.getByText('Viewer Search'));
         fireEvent.click(screen.getByText('Viewer Settings'));
         fireEvent.click(screen.getByText('Close Viewer'));

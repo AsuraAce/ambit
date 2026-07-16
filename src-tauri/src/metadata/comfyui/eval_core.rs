@@ -89,7 +89,8 @@ pub fn extract_from_sampler(
                 graph.get_node(&sigmas_id)
             };
             if let Some(sigmas_node) = sigmas_node {
-                if meta.steps == 0 {
+                let supports_scheduler_metadata = get_node_type(sigmas_node) != "SplitSigmas";
+                if meta.steps == 0 && supports_scheduler_metadata {
                     let steps = if is_sampler_custom {
                         evaluate_number_link_first(graph, sigmas_node, "steps", 500)
                     } else {
@@ -99,7 +100,7 @@ pub fn extract_from_sampler(
                         meta.steps = v as u32;
                     }
                 }
-                if scheduler.is_empty() {
+                if scheduler.is_empty() && supports_scheduler_metadata {
                     let scheduler_value = if is_sampler_custom {
                         evaluate_string_link_first(graph, sigmas_node, "scheduler")
                     } else {
