@@ -193,6 +193,31 @@ Verification evidence:
 
 Depends on: Work Packages 1-3.
 
+Status: Complete (`fix/comfyui-custom-edit-conditioning`, 2026-07-15)
+
+Evidence:
+
+- `TextEncodeBooguEdit` exposes only its selected literal positive prompt; its
+  negative output remains authoritative empty and connected prompt failures do
+  not reopen stale widget or disconnected fallback text;
+- `BerniniConditioning` follows only its requested `positive` or `negative`
+  input and never interprets image, VAE, dimension, length, or reference inputs
+  as prompt text;
+- `image_boogu_image_0_1_edit` is golden with exact core metadata and
+  `SamplerTraversal` provenance;
+- `video_bernini_r_image_editing` is partial with exact available metadata; its
+  selected system prompt requires source-output-slot-aware `CustomCombo.INDEX`
+  resolution, while the total 6 steps and `simple` scheduler remain behind
+  `SplitSigmas`;
+- unsupported `SplitSigmas` metadata stays unavailable instead of reporting its
+  split index as the sampler's total step count;
+- parser version is 24 and catalog totals are 19 golden, 7 pattern-covered,
+  4 partial, 45 unassessed, and 474 excluded;
+- all targeted prompt, catalog, intake, multi-stage, subgraph, output-selection,
+  full ComfyUI, and reparse tests pass;
+- `cargo fmt --check` and `git diff --check` pass; the independent review cycle
+  follows this uncommitted implementation.
+
 Primary invariant: custom conditioning nodes expose only their selected literal prompt inputs and cannot invent conditioning text.
 
 Scope:
