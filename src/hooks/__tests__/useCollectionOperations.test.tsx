@@ -275,6 +275,7 @@ describe('useCollectionOperations', () => {
     describe('addImagesToCollection', () => {
         it('should increment count optimistically', async () => {
             const { addImagesToCollection: addImgs } = await import('../../services/db/collectionRepo');
+            const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const { result } = renderHook(() => useCollectionOperations(props));
             let didPersist = false;
 
@@ -287,6 +288,9 @@ describe('useCollectionOperations', () => {
             const nextState = updater(mockCollections);
             expect(nextState[0].count).toBe(6); // 5 + 1
             expect(addImgs).toHaveBeenCalledWith('col1', ['img2']);
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+            invalidateSpy.mockRestore();
         });
 
         it('refreshes static collection thumbnails after adding images', async () => {
@@ -372,6 +376,7 @@ describe('useCollectionOperations', () => {
         it('keeps active collection images visible when the DB update fails', async () => {
             const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
             vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('remove failed'));
+            const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const { result } = renderHook(() => useCollectionOperations({
                 ...props,
                 activeCollectionId: 'col1'
@@ -387,6 +392,21 @@ describe('useCollectionOperations', () => {
             expect(mockSetImages).not.toHaveBeenCalled();
             expect(dispatchedImages.map(image => image.id)).toEqual(['img1', 'img2']);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to remove from collection', 'error');
+            expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+            invalidateSpy.mockRestore();
+        });
+
+        it('invalidates image and statistics queries after removing images', async () => {
+            const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
+            const { result } = renderHook(() => useCollectionOperations(props));
+
+            await act(async () => {
+                await result.current.removeImagesFromCollection(['img1'], 'col1');
+            });
+
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+            invalidateSpy.mockRestore();
         });
 
         it('reconciles the active viewer immediately after persistence without waiting for refresh', async () => {
@@ -480,6 +500,7 @@ describe('useCollectionOperations', () => {
 
     describe('moveImagesBetweenCollections', () => {
         it('should transfer counts between source and target', async () => {
+            const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const multiProps = {
                 ...props,
                 collections: [
@@ -501,6 +522,9 @@ describe('useCollectionOperations', () => {
 
             expect(source.count).toBe(4);
             expect(target.count).toBe(1);
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
+            expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+            invalidateSpy.mockRestore();
         });
 
         it('refreshes static collection thumbnails once when moving between static collections', async () => {
@@ -594,6 +618,7 @@ describe('useCollectionOperations', () => {
         it('handles hybrid smart source exclusions and rolls back mixed optimistic state on move failure', async () => {
             const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
             vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('move failed'));
+            const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const sourceSmart: SmartCollection = {
                 id: 'smart-source',
                 name: 'Smart Source',
@@ -620,6 +645,8 @@ describe('useCollectionOperations', () => {
             expect(imageUpdater([makeImage({ id: 'img1' }), makeImage({ id: 'img2' })]).map(image => image.id)).toEqual(['img2']);
             expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
+            expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+            invalidateSpy.mockRestore();
         });
     });
 
@@ -812,6 +839,7 @@ describe('useCollectionOperations', () => {
     it('rolls back failed adds while preserving unrelated collections', async () => {
         const { addImagesToCollection } = await import('../../services/db/collectionRepo');
         vi.mocked(addImagesToCollection).mockRejectedValueOnce(new Error('add failed'));
+        const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
         const zero = { ...mockCollections[0], count: 0 };
         const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
         dispatchedCollections = [zero, extra];
@@ -823,6 +851,8 @@ describe('useCollectionOperations', () => {
         expect(didPersist).toBe(false);
         expect(dispatchedCollections).toEqual([zero, extra]);
         expect(mockAddToast).toHaveBeenCalledWith('Failed to add to collection', 'error');
+        expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
+        invalidateSpy.mockRestore();
     });
 
     it('keeps successful membership results when post-write refresh fails', async () => {

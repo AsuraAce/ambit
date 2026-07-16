@@ -268,7 +268,8 @@ export const useCollectionOperations = ({
       try {
         await Promise.all([
           refreshCollections(),
-          queryClient.invalidateQueries({ queryKey: ['images'] })
+          queryClient.invalidateQueries({ queryKey: ['images'] }),
+          queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
         ]);
       } catch (e) {
         console.error("[Collections] Failed to refresh after adding images", e);
@@ -277,7 +278,7 @@ export const useCollectionOperations = ({
       refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
       return true;
     });
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast, serializeCollectionMembershipMutation]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, serializeCollectionMembershipMutation]);
 
   const removeImagesFromCollection = useCallback(async (
     imageIds: string[],
@@ -326,7 +327,8 @@ export const useCollectionOperations = ({
       try {
         await Promise.all([
           refreshCollections(),
-          queryClient.invalidateQueries({ queryKey: ['images'] })
+          queryClient.invalidateQueries({ queryKey: ['images'] }),
+          queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
         ]);
       } catch (e) {
         console.error("[Collections] Failed to refresh after removing images", e);
@@ -335,7 +337,7 @@ export const useCollectionOperations = ({
       refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
       return true;
     });
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast, setImages, serializeCollectionMembershipMutation]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, setImages, serializeCollectionMembershipMutation]);
 
   // Deprecated/Aliased for backward compat
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
@@ -374,7 +376,8 @@ export const useCollectionOperations = ({
       addToast(`Moved images to ${targetCol.name}`, 'success');
       await Promise.all([
         refreshCollections(),
-        queryClient.invalidateQueries({ queryKey: ['images'] })
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
       ]);
       refreshAffectedCollectionThumbnails([sourceCol, targetCol]);
     } catch (e) {
@@ -386,7 +389,7 @@ export const useCollectionOperations = ({
       }));
       addToast("Failed to move images", "error");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, addToast]);
+  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast]);
 
   const setCollectionThumbnail = useCallback(async (collectionId: string, image: AIImage) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);

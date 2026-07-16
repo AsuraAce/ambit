@@ -125,6 +125,78 @@ describe('browserMockData filtering', () => {
         expect(validNames.tools.length).toBeGreaterThan(0);
     });
 
+    it('excludes zero and negative step values from browser mock averages', () => {
+        const collectionId = 'test_recorded_steps_average';
+        const imageIds = ['mock_2', 'mock_3', 'mock_4', 'mock_5'];
+        const selectedImages = imageIds.map((id) => {
+            const image = getBrowserMockImages().find((candidate) => candidate.id === id);
+            if (!image) throw new Error(`Missing browser mock image ${id}`);
+            return image;
+        });
+        const originalSteps = selectedImages.map((image) => image.metadata.steps);
+
+        try {
+            [20, 0, -10, 30].forEach((steps, index) => {
+                selectedImages[index].metadata.steps = steps;
+            });
+            upsertBrowserMockCollection({
+                id: collectionId,
+                name: 'Recorded Steps Average',
+                imageIds,
+            });
+
+            const summary = getBrowserMockStatsSummary(createDefaultFilters({
+                collectionId,
+                showIntermediates: true,
+                showGrids: true,
+            }));
+
+            expect(summary.totalImages).toBe(4);
+            expect(summary.avgSteps).toBe(25);
+        } finally {
+            originalSteps.forEach((steps, index) => {
+                selectedImages[index].metadata.steps = steps;
+            });
+            deleteBrowserMockCollection(collectionId);
+        }
+    });
+
+    it('returns zero when filtered browser mock images have no recorded positive steps', () => {
+        const collectionId = 'test_unknown_steps_average';
+        const imageIds = ['mock_6', 'mock_7', 'mock_8'];
+        const selectedImages = imageIds.map((id) => {
+            const image = getBrowserMockImages().find((candidate) => candidate.id === id);
+            if (!image) throw new Error(`Missing browser mock image ${id}`);
+            return image;
+        });
+        const originalSteps = selectedImages.map((image) => image.metadata.steps);
+
+        try {
+            [0, -1, 0].forEach((steps, index) => {
+                selectedImages[index].metadata.steps = steps;
+            });
+            upsertBrowserMockCollection({
+                id: collectionId,
+                name: 'Unknown Steps Average',
+                imageIds,
+            });
+
+            const summary = getBrowserMockStatsSummary(createDefaultFilters({
+                collectionId,
+                showIntermediates: true,
+                showGrids: true,
+            }));
+
+            expect(summary.totalImages).toBe(3);
+            expect(summary.avgSteps).toBe(0);
+        } finally {
+            originalSteps.forEach((steps, index) => {
+                selectedImages[index].metadata.steps = steps;
+            });
+            deleteBrowserMockCollection(collectionId);
+        }
+    });
+
     it('creates, updates, and deletes browser mock collections without duplicate image IDs', () => {
         const collectionId = 'test_collection_browser_mock';
 

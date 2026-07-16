@@ -100,7 +100,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         />
                         <StatCard
                             label="Avg. Steps"
-                            value={avgSteps}
+                            value={avgSteps > 0 ? avgSteps : '—'}
                             isLoading={isStatsSummaryLoading}
                             loadingText="Computing generation summary"
                         />
