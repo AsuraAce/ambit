@@ -91,6 +91,150 @@ fn extract_workflow_transform_prompt(
     extract_comfyui_metadata_with_diagnostics(&chunks)
 }
 
+fn extract_custom_conditioning_prompt(
+    conditioning_nodes: Vec<(&str, Value)>,
+) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut graph = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "80": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 4 } },
+        "81": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "90": {
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0],
+                "positive": ["2", 0],
+                "negative": ["2", 1],
+                "sampler": ["81", 0],
+                "sigmas": ["80", 0],
+                "noise_seed": 1,
+                "cfg": 1.0
+            }
+        },
+        "91": { "class_type": "VAEDecode", "inputs": { "samples": ["90", 0] } },
+        "92": { "class_type": "SaveImage", "inputs": { "images": ["91", 0] } }
+    })
+    .as_object()
+    .expect("test graph should be an object")
+    .clone();
+    for (node_id, node) in conditioning_nodes {
+        graph.insert(node_id.to_string(), node);
+    }
+
+    let chunks = HashMap::from([("prompt".to_string(), Value::Object(graph).to_string())]);
+    extract_comfyui_metadata_with_diagnostics(&chunks)
+}
+
+fn extract_workflow_boogu_prompt(
+    boogu_node: Value,
+    extra_nodes: Vec<Value>,
+    extra_links: Vec<Value>,
+) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut nodes = vec![
+        json!({
+            "id": 1,
+            "type": "UNETLoader",
+            "inputs": [],
+            "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [1] }],
+            "widgets_values": ["model.safetensors"]
+        }),
+        boogu_node,
+        json!({
+            "id": 80,
+            "type": "BasicScheduler",
+            "inputs": [],
+            "outputs": [{ "name": "SIGMAS", "type": "SIGMAS", "links": [5] }],
+            "widgets_values": ["simple", 4, 1.0]
+        }),
+        json!({
+            "id": 81,
+            "type": "KSamplerSelect",
+            "inputs": [],
+            "outputs": [{ "name": "SAMPLER", "type": "SAMPLER", "links": [4] }],
+            "widgets_values": ["euler"]
+        }),
+        json!({
+            "id": 90,
+            "type": "SamplerCustom",
+            "inputs": [
+                { "name": "model", "type": "MODEL", "link": 1 },
+                { "name": "positive", "type": "CONDITIONING", "link": 2 },
+                { "name": "negative", "type": "CONDITIONING", "link": 3 },
+                { "name": "sampler", "type": "SAMPLER", "link": 4 },
+                { "name": "sigmas", "type": "SIGMAS", "link": 5 }
+            ],
+            "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [6] }],
+            "widgets_values": [true, 1, "fixed", 1.0]
+        }),
+        json!({
+            "id": 91,
+            "type": "VAEDecode",
+            "inputs": [{ "name": "samples", "type": "LATENT", "link": 6 }],
+            "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [7] }]
+        }),
+        json!({
+            "id": 92,
+            "type": "SaveImage",
+            "inputs": [{ "name": "images", "type": "IMAGE", "link": 7 }]
+        }),
+    ];
+    nodes.extend(extra_nodes);
+
+    let mut links = vec![
+        json!([1, 1, 0, 90, 0, "MODEL"]),
+        json!([2, 2, 0, 90, 1, "CONDITIONING"]),
+        json!([3, 2, 1, 90, 2, "CONDITIONING"]),
+        json!([4, 81, 0, 90, 3, "SAMPLER"]),
+        json!([5, 80, 0, 90, 4, "SIGMAS"]),
+        json!([6, 90, 0, 91, 0, "LATENT"]),
+        json!([7, 91, 0, 92, 0, "IMAGE"]),
+    ];
+    links.extend(extra_links);
+
+    let workflow = json!({ "nodes": nodes, "links": links });
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+    extract_comfyui_metadata_with_diagnostics(&chunks)
+}
+
+fn extract_basic_guider_prompt(
+    conditioning_nodes: Vec<(&str, Value)>,
+) -> (ImageMetadata, ComfyParseDiagnostics) {
+    let mut graph = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "4": {
+            "class_type": "BasicGuider",
+            "inputs": { "model": ["1", 0], "conditioning": ["2", 0] }
+        },
+        "5": { "class_type": "RandomNoise", "inputs": { "noise_seed": 1 } },
+        "6": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "7": {
+            "class_type": "BasicScheduler",
+            "inputs": { "model": ["1", 0], "scheduler": "simple", "steps": 4 }
+        },
+        "8": { "class_type": "EmptyLatentImage", "inputs": { "width": 512, "height": 512 } },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": ["5", 0],
+                "guider": ["4", 0],
+                "sampler": ["6", 0],
+                "sigmas": ["7", 0],
+                "latent_image": ["8", 0]
+            }
+        },
+        "10": { "class_type": "VAEDecode", "inputs": { "samples": ["9", 0] } },
+        "11": { "class_type": "SaveImage", "inputs": { "images": ["10", 0] } }
+    })
+    .as_object()
+    .expect("test graph should be an object")
+    .clone();
+    for (node_id, node) in conditioning_nodes {
+        graph.insert(node_id.to_string(), node);
+    }
+
+    let chunks = HashMap::from([("prompt".to_string(), Value::Object(graph).to_string())]);
+    extract_comfyui_metadata_with_diagnostics(&chunks)
+}
+
 #[test]
 fn test_extract_comfyui_complex_prompt() {
     // User report: CLIPTextEncode text input linked to JoinStringMulti -> ImpactWildcardProcessor
@@ -932,6 +1076,55 @@ fn basic_guider_linked_conditioning_blocks_disconnected_global_prompt_fallback()
 }
 
 #[test]
+fn basic_guider_treats_boogu_conditioning_as_positive() {
+    let (meta, diagnostics) = extract_basic_guider_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "TextEncodeBooguEdit",
+            "inputs": { "prompt": "BasicGuider Boogu prompt" }
+        }),
+    )]);
+
+    assert_eq!(meta.positive_prompt, "BasicGuider Boogu prompt");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn basic_guider_treats_bernini_conditioning_as_positive() {
+    let (meta, diagnostics) = extract_basic_guider_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "BerniniConditioning",
+                "inputs": { "positive": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({
+                "class_type": "CLIPTextEncode",
+                "inputs": { "text": "BasicGuider Bernini prompt" }
+            }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "BasicGuider Bernini prompt");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn unresolved_linked_string_intermediaries_do_not_reopen_stale_literals() {
     let prompt = r#"{
         "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
@@ -1511,4 +1704,557 @@ fn workflow_transform_operands_preserve_short_and_empty_string_primitives() {
         );
         assert_eq!(meta.positive_prompt, "kept");
     }
+}
+
+#[test]
+fn boogu_edit_api_prompt_is_positive_only_and_link_authoritative() {
+    let (meta, _) = extract_custom_conditioning_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "TextEncodeBooguEdit",
+            "inputs": { "prompt": "direct edit prompt" }
+        }),
+    )]);
+    assert_eq!(meta.positive_prompt, "direct edit prompt");
+    assert_eq!(meta.negative_prompt, "");
+
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "TextEncodeBooguEdit",
+                "widgets_values": ["stale widget prompt", ""],
+                "inputs": { "prompt": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "linked edit prompt" } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "linked edit prompt");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::NegativePrompt),
+        None
+    );
+
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "TextEncodeBooguEdit",
+            "widgets_values": ["stale widget prompt", ""],
+            "inputs": { "prompt": ["99", 0] }
+        }),
+    )]);
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn boogu_edit_workflow_prompt_uses_unlinked_widget_and_rejects_stale_links() {
+    let boogu = |prompt_link| {
+        json!({
+            "id": 2,
+            "type": "TextEncodeBooguEdit",
+            "inputs": [{ "name": "prompt", "type": "STRING", "link": prompt_link }],
+            "outputs": [
+                { "name": "positive", "type": "CONDITIONING", "links": [2] },
+                { "name": "negative", "type": "CONDITIONING", "links": [3] }
+            ],
+            "widgets_values": ["workflow edit prompt", ""]
+        })
+    };
+
+    let (meta, _) = extract_workflow_boogu_prompt(boogu(None), vec![], vec![]);
+    assert_eq!(meta.positive_prompt, "workflow edit prompt");
+    assert_eq!(meta.negative_prompt, "");
+
+    let (meta, _) = extract_workflow_boogu_prompt(
+        boogu(Some(10)),
+        vec![json!({
+            "id": 3,
+            "type": "PrimitiveStringMultiline",
+            "inputs": [{ "name": "value", "type": "STRING", "link": null }],
+            "outputs": [{ "name": "STRING", "type": "STRING", "links": [10] }],
+            "widgets_values": ["linked workflow prompt"]
+        })],
+        vec![json!([10, 3, 0, 2, 0, "STRING"])],
+    );
+    assert_eq!(meta.positive_prompt, "linked workflow prompt");
+
+    let (meta, diagnostics) = extract_workflow_boogu_prompt(boogu(Some(99)), vec![], vec![]);
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn boogu_edit_prompt_socket_stays_link_authoritative_for_ordinary_ksampler() {
+    // Boogu's prompt socket owns its link semantics even though ordinary KSampler
+    // keeps best-effort widget recovery for generic text encoders.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors"] },
+            {
+                "id": 2,
+                "type": "TextEncodeBooguEdit",
+                "inputs": [{"name":"prompt","link":99}],
+                "widgets_values": ["stale edit prompt", ""]
+            },
+            {
+                "id": 3,
+                "type": "KSampler",
+                "inputs": [{"name":"model","link":1},{"name":"positive","link":2}],
+                "widgets_values": [42,"fixed",20,5.5,"euler","normal",1]
+            },
+            { "id": 4, "type": "VAEDecode", "inputs": [{"name":"samples","link":3}] },
+            { "id": 5, "type": "SaveImage", "inputs": [{"name":"images","link":4}] }
+        ],
+        "links": [
+            [1,1,0,3,0,"MODEL"], [2,2,0,3,1,"CONDITIONING"],
+            [3,3,0,4,0,"LATENT"], [4,4,0,5,0,"IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn bernini_conditioning_follows_only_selected_literal_prompt_inputs() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "BerniniConditioning",
+                "inputs": {
+                    "positive": ["3", 0],
+                    "negative": ["4", 0],
+                    "source_video": ["5", 0],
+                    "reference_images.reference_image_0": ["6", 0],
+                    "width": 1024,
+                    "height": 1024
+                }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "CLIPTextEncode", "inputs": { "text": ["7", 0] } }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "CLIPTextEncode", "inputs": { "text": "literal negative" } }),
+        ),
+        (
+            "5",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "image input is not a prompt" } }),
+        ),
+        (
+            "6",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "reference input is not a prompt" } }),
+        ),
+        (
+            "7",
+            json!({
+                "class_type": "StringConcatenate",
+                "inputs": { "string_a": ["8", 0], "string_b": "!", "delimiter": "" }
+            }),
+        ),
+        (
+            "8",
+            json!({
+                "class_type": "StringReplace",
+                "inputs": { "string": "make it day", "find": "day", "replace": "night" }
+            }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "make it night!");
+    assert_eq!(meta.negative_prompt, "literal negative");
+    for field in [
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerTraversal)
+        );
+    }
+}
+
+#[test]
+fn bernini_unresolved_or_zeroed_conditioning_blocks_disconnected_fallbacks() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "0",
+            json!({
+                "class_type": "CLIPTextEncode",
+                "_meta": { "title": "Positive Prompt" },
+                "inputs": { "text": "disconnected stale prompt" }
+            }),
+        ),
+        (
+            "2",
+            json!({
+                "class_type": "BerniniConditioning",
+                "inputs": {
+                    "positive": ["99", 0],
+                    "negative": ["3", 0],
+                    "source_video": ["0", 0]
+                }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "ConditioningZeroOut", "inputs": { "conditioning": ["0", 0] } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::NegativePrompt),
+        None
+    );
+}
+
+#[test]
+fn bernini_missing_selected_input_never_uses_wireless_prompt_fallback() {
+    let prompt = r#"{
+        "0": {
+            "class_type": "CLIPTextEncode",
+            "_meta": { "title": "Positive Prompt" },
+            "inputs": { "text": "disconnected wireless prompt" }
+        },
+        "2": { "class_type": "BerniniConditioning", "inputs": {} },
+        "3": {
+            "class_type": "KSampler",
+            "inputs": { "positive": ["2", 0] }
+        }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let graph = super::super::graph::ComfyGraph::from_chunks(&chunks);
+
+    let positive =
+        super::super::conditioning::find_reachable_prompts(&graph, "3", "positive", false);
+
+    assert_eq!(positive, "");
+}
+
+#[test]
+fn mixed_direct_and_bernini_branches_deduplicate_prompts_in_first_seen_order() {
+    let prompt = r#"{
+        "1": { "class_type": "CLIPTextEncode", "inputs": { "text": "A" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "B" } },
+        "3": { "class_type": "BerniniConditioning", "inputs": { "positive": ["1", 0] } },
+        "4": {
+            "class_type": "ConditioningCombine",
+            "inputs": { "conditioning_1": ["2", 0], "conditioning_2": ["3", 0] }
+        },
+        "5": {
+            "class_type": "ConditioningCombine",
+            "inputs": { "conditioning_1": ["1", 0], "conditioning_2": ["4", 0] }
+        },
+        "6": { "class_type": "KSampler", "inputs": { "positive": ["5", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let graph = super::super::graph::ComfyGraph::from_chunks(&chunks);
+
+    let positive =
+        super::super::conditioning::find_reachable_prompts(&graph, "6", "positive", false);
+
+    // Node 1 is reachable directly and through Bernini's strict branch, with B between them.
+    assert_eq!(positive, "A, B");
+}
+
+#[test]
+fn bernini_keeps_upstream_text_links_strict_for_ordinary_ksampler() {
+    // Bernini owns strict prompt semantics even when its consumer keeps ordinary
+    // KSampler's best-effort behavior for generic CLIP encoders.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors"] },
+            {
+                "id": 2,
+                "type": "BerniniConditioning",
+                "inputs": [{ "name": "positive", "link": 2 }]
+            },
+            {
+                "id": 3,
+                "type": "CLIPTextEncode",
+                "inputs": [{ "name": "text", "link": 99 }],
+                "widgets_values": ["stale Bernini prompt"]
+            },
+            {
+                "id": 4,
+                "type": "KSampler",
+                "inputs": [{ "name": "model", "link": 1 }, { "name": "positive", "link": 3 }],
+                "widgets_values": [42, "fixed", 20, 5.5, "euler", "normal", 1.0]
+            },
+            { "id": 5, "type": "VAEDecode", "inputs": [{ "name": "samples", "link": 4 }] },
+            { "id": 6, "type": "SaveImage", "inputs": [{ "name": "images", "link": 5 }] }
+        ],
+        "links": [
+            [1, 1, 0, 4, 0, "MODEL"],
+            [2, 3, 0, 2, 0, "CONDITIONING"],
+            [3, 2, 0, 4, 1, "CONDITIONING"],
+            [4, 4, 0, 5, 0, "LATENT"],
+            [5, 5, 0, 6, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn dual_cfg_cond1_uses_positive_custom_conditioning_semantics() {
+    let prompt = r#"{
+        "2": {
+            "class_type": "TextEncodeBooguEdit",
+            "inputs": { "prompt": "edit through cond1" }
+        },
+        "5": {
+            "class_type": "DualCFGGuider",
+            "inputs": { "cond1": ["2", 0] }
+        }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+    let graph = super::super::graph::ComfyGraph::from_chunks(&chunks);
+
+    let positive = super::super::conditioning::find_reachable_prompts(&graph, "5", "cond1", false);
+
+    assert_eq!(positive, "edit through cond1");
+}
+
+#[test]
+fn sampler_custom_advanced_bernini_cond1_keeps_strict_upstream_context() {
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors"] },
+            {
+                "id": 2,
+                "type": "BerniniConditioning",
+                "inputs": [{ "name": "positive", "link": 2 }]
+            },
+            {
+                "id": 3,
+                "type": "CLIPTextEncode",
+                "inputs": [{ "name": "text", "link": 99 }],
+                "widgets_values": ["stale Bernini guider prompt"]
+            },
+            { "id": 4, "type": "CLIPTextEncode", "widgets_values": ["negative"] },
+            {
+                "id": 5,
+                "type": "DualCFGGuider",
+                "inputs": [
+                    { "name": "model", "link": 1 },
+                    { "name": "cond1", "link": 3 },
+                    { "name": "negative", "link": 4 }
+                ],
+                "widgets_values": [1.0, 2.0, "regular"]
+            },
+            { "id": 6, "type": "RandomNoise", "widgets_values": [42] },
+            { "id": 7, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 8, "type": "BasicScheduler", "widgets_values": ["simple", 4, 1.0] },
+            { "id": 9, "type": "EmptyLatentImage", "widgets_values": [1024, 1024, 1] },
+            {
+                "id": 10,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 6 },
+                    { "name": "guider", "link": 5 },
+                    { "name": "sampler", "link": 7 },
+                    { "name": "sigmas", "link": 8 },
+                    { "name": "latent_image", "link": 9 }
+                ]
+            },
+            { "id": 11, "type": "VAEDecode", "inputs": [{ "name": "samples", "link": 10 }] },
+            { "id": 12, "type": "SaveImage", "inputs": [{ "name": "images", "link": 11 }] }
+        ],
+        "links": [
+            [1, 1, 0, 5, 0, "MODEL"],
+            [2, 3, 0, 2, 0, "CONDITIONING"],
+            [3, 2, 0, 5, 1, "CONDITIONING"],
+            [4, 4, 0, 5, 2, "CONDITIONING"],
+            [5, 5, 0, 10, 1, "GUIDER"],
+            [6, 6, 0, 10, 0, "NOISE"],
+            [7, 7, 0, 10, 2, "SAMPLER"],
+            [8, 8, 0, 10, 3, "SIGMAS"],
+            [9, 9, 0, 10, 4, "LATENT"],
+            [10, 10, 0, 11, 0, "LATENT"],
+            [11, 11, 0, 12, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(meta.negative_prompt, "negative");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn custom_conditioning_prompt_reroutes_reach_connected_literals() {
+    let (meta, _) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "TextEncodeBooguEdit",
+                "inputs": { "prompt": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "Reroute", "inputs": { "input": ["4", 0] } }),
+        ),
+        (
+            "4",
+            json!({
+                "class_type": "PrimitiveStringMultiline",
+                "inputs": { "value": "routed Boogu prompt" }
+            }),
+        ),
+    ]);
+    assert_eq!(meta.positive_prompt, "routed Boogu prompt");
+
+    let (meta, _) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "BerniniConditioning",
+                "inputs": { "positive": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "CLIPTextEncode", "inputs": { "text": ["4", 0] } }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "Reroute", "inputs": { "value": ["5", 0] } }),
+        ),
+        (
+            "5",
+            json!({
+                "class_type": "PrimitiveStringMultiline",
+                "inputs": { "value": "routed Bernini prompt" }
+            }),
+        ),
+    ]);
+    assert_eq!(meta.positive_prompt, "routed Bernini prompt");
+}
+
+#[test]
+fn boogu_unresolved_prompt_reroute_remains_authoritative() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "TextEncodeBooguEdit",
+                "widgets_values": ["stale Boogu prompt", ""],
+                "inputs": { "prompt": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "Reroute", "inputs": { "": ["99", 0] } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn bernini_prompt_reroute_cycle_remains_authoritative() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "BerniniConditioning",
+                "inputs": { "positive": ["3", 0] }
+            }),
+        ),
+        (
+            "3",
+            json!({
+                "class_type": "CLIPTextEncode",
+                "widgets_values": ["stale Bernini prompt"],
+                "inputs": { "text": ["4", 0] }
+            }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "Reroute", "inputs": { "any": ["5", 0] } }),
+        ),
+        (
+            "5",
+            json!({ "class_type": "Reroute", "inputs": { "input": ["4", 0] } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
 }

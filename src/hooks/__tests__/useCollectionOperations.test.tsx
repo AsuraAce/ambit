@@ -40,6 +40,16 @@ vi.mock('../../services/db/collectionRepo', () => ({
     setCollectionCustomThumbnail: vi.fn(),
 }));
 
+const deferred = <T,>() => {
+    let resolve!: (value: T) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
+};
+
 describe('useCollectionOperations', () => {
     const mockSetAllCollections = vi.fn();
     const mockRefreshCollections = vi.fn();
@@ -267,11 +277,13 @@ describe('useCollectionOperations', () => {
             const { addImagesToCollection: addImgs } = await import('../../services/db/collectionRepo');
             const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const { result } = renderHook(() => useCollectionOperations(props));
+            let didPersist = false;
 
             await act(async () => {
-                await result.current.addImagesToCollection(['img2'], 'col1');
+                didPersist = await result.current.addImagesToCollection(['img2'], 'col1');
             });
 
+            expect(didPersist).toBe(true);
             const updater = mockSetAllCollections.mock.calls[0][0];
             const nextState = updater(mockCollections);
             expect(nextState[0].count).toBe(6); // 5 + 1
@@ -294,6 +306,7 @@ describe('useCollectionOperations', () => {
         });
 
         it('refreshes targeted smart summaries after adding images to a smart collection', async () => {
+            const { upsertCollection } = await import('../../services/db/collectionRepo');
             const smartCollection: SmartCollection = {
                 id: 'smart1',
                 name: 'Smart Collection',
@@ -314,6 +327,7 @@ describe('useCollectionOperations', () => {
             });
 
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
+            expect(upsertCollection).not.toHaveBeenCalled();
             expect(mockRefreshSmartCounts).toHaveBeenCalledTimes(1);
             expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
                 collectionIds: ['smart1'],
@@ -322,6 +336,7 @@ describe('useCollectionOperations', () => {
                 markPending: true
             });
         });
+
     });
 
     describe('removeImagesFromCollection', () => {
@@ -343,11 +358,13 @@ describe('useCollectionOperations', () => {
                 smartCollections: [smartCollection],
                 activeCollectionId: 'smart1'
             }));
+            let didPersist = false;
 
             await act(async () => {
-                await result.current.removeImagesFromCollection(['img1'], 'smart1');
+                didPersist = await result.current.removeImagesFromCollection(['img1'], 'smart1');
             });
 
+            expect(didPersist).toBe(true);
             const imageUpdater = mockSetImages.mock.calls[0][0] as (images: AIImage[]) => AIImage[];
             expect(imageUpdater([makeImage({ id: 'img1' }), makeImage({ id: 'img2' })]).map(image => image.id)).toEqual(['img2']);
             expect(vi.mocked(upsertCollection).mock.calls[0][0]).toEqual(expect.objectContaining({
@@ -356,17 +373,24 @@ describe('useCollectionOperations', () => {
             expect(removeImagesFromCollection).toHaveBeenCalledWith('smart1', ['img1']);
         });
 
-        it('rolls back optimistic removal when the DB update fails', async () => {
+        it('keeps active collection images visible when the DB update fails', async () => {
             const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
             vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('remove failed'));
             const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
-            const { result } = renderHook(() => useCollectionOperations(props));
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                activeCollectionId: 'col1'
+            }));
+            let didPersist = true;
 
             await act(async () => {
-                await result.current.removeImagesFromCollection(['img1'], 'col1');
+                didPersist = await result.current.removeImagesFromCollection(['img1'], 'col1');
             });
 
+            expect(didPersist).toBe(false);
             expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
+            expect(mockSetImages).not.toHaveBeenCalled();
+            expect(dispatchedImages.map(image => image.id)).toEqual(['img1', 'img2']);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to remove from collection', 'error');
             expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
@@ -383,6 +407,34 @@ describe('useCollectionOperations', () => {
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
+        });
+
+        it('reconciles the active viewer immediately after persistence without waiting for refresh', async () => {
+            const pendingRefresh = deferred<void>();
+            mockRefreshCollections.mockReturnValueOnce(pendingRefresh.promise);
+            const onPersisted = vi.fn();
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                activeCollectionId: 'col1'
+            }));
+            let removal!: Promise<boolean>;
+            let settled = false;
+
+            await act(async () => {
+                removal = result.current.removeImagesFromCollection(['img1'], 'col1', onPersisted);
+                void removal.then(() => { settled = true; });
+                await Promise.resolve();
+                await Promise.resolve();
+            });
+
+            expect(onPersisted).toHaveBeenCalledTimes(1);
+            expect(dispatchedImages.map(image => image.id)).toEqual(['img2']);
+            expect(settled).toBe(false);
+
+            await act(async () => {
+                pendingRefresh.resolve();
+                expect(await removal).toBe(true);
+            });
         });
 
         it('refreshes targeted smart summaries after removing images from a smart collection', async () => {
@@ -414,6 +466,36 @@ describe('useCollectionOperations', () => {
                 markPending: true
             });
         });
+    });
+
+    it('serializes same-collection add and remove mutations so a late failure cannot stale-rollback a success', async () => {
+        const { addImagesToCollection, removeImagesFromCollection } = await import('../../services/db/collectionRepo');
+        const pendingAdd = deferred<void>();
+        vi.mocked(addImagesToCollection).mockReturnValueOnce(pendingAdd.promise);
+        const { result } = renderHook(() => useCollectionOperations(props));
+        let addResult: Promise<boolean>;
+        let removeResult: Promise<boolean>;
+
+        await act(async () => {
+            addResult = result.current.addImagesToCollection(['img2'], 'col1');
+            await Promise.resolve();
+        });
+        await act(async () => {
+            removeResult = result.current.removeImagesFromCollection(['img1'], 'col1');
+            await Promise.resolve();
+        });
+
+        expect(removeImagesFromCollection).not.toHaveBeenCalled();
+        expect(dispatchedCollections[0].count).toBe(6);
+
+        await act(async () => {
+            pendingAdd.reject(new Error('add failed'));
+            expect(await addResult).toBe(false);
+            expect(await removeResult).toBe(true);
+        });
+
+        expect(removeImagesFromCollection).toHaveBeenCalledWith('col1', ['img1']);
+        expect(dispatchedCollections[0].count).toBe(4);
     });
 
     describe('moveImagesBetweenCollections', () => {
@@ -669,6 +751,8 @@ describe('useCollectionOperations', () => {
 
     it('no-ops every collection mutation when its collection is missing', async () => {
         const { result } = renderHook(() => useCollectionOperations(props));
+        let addResult = true;
+        let removeResult = true;
         await act(async () => {
             await result.current.updateCollectionFilters('missing', smartFilters);
             await result.current.deleteCollection('missing');
@@ -676,11 +760,13 @@ describe('useCollectionOperations', () => {
             await result.current.setCollectionColor('missing', 'red');
             await result.current.toggleArchiveCollection('missing');
             await result.current.togglePinCollection('missing');
-            await result.current.addImagesToCollection(['img1'], 'missing');
-            await result.current.removeImagesFromCollection(['img1'], 'missing');
+            addResult = await result.current.addImagesToCollection(['img1'], 'missing');
+            removeResult = await result.current.removeImagesFromCollection(['img1'], 'missing');
             await result.current.moveImagesBetweenCollections(['img1'], 'missing', 'col1');
             await result.current.moveImagesBetweenCollections(['img1'], 'col1', 'missing');
         });
+        expect(addResult).toBe(false);
+        expect(removeResult).toBe(false);
         expect(mockSetAllCollections).not.toHaveBeenCalled();
     });
 
@@ -758,11 +844,37 @@ describe('useCollectionOperations', () => {
         const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
         dispatchedCollections = [zero, extra];
         const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [zero, extra] }));
-        await act(async () => result.current.addImagesToCollection(['img'], 'col1'));
+        let didPersist = true;
+        await act(async () => {
+            didPersist = await result.current.addImagesToCollection(['img'], 'col1');
+        });
+        expect(didPersist).toBe(false);
         expect(dispatchedCollections).toEqual([zero, extra]);
         expect(mockAddToast).toHaveBeenCalledWith('Failed to add to collection', 'error');
         expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
         invalidateSpy.mockRestore();
+    });
+
+    it('keeps successful membership results when post-write refresh fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => useCollectionOperations(props));
+        let addResult = false;
+        let removeResult = false;
+
+        mockRefreshCollections.mockRejectedValueOnce(new Error('add refresh failed'));
+        await act(async () => {
+            addResult = await result.current.addImagesToCollection(['img'], 'col1');
+        });
+        mockRefreshCollections.mockRejectedValueOnce(new Error('remove refresh failed'));
+        await act(async () => {
+            removeResult = await result.current.removeImagesFromCollection(['img'], 'col1');
+        });
+
+        expect(addResult).toBe(true);
+        expect(removeResult).toBe(true);
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to refresh after adding images', expect.any(Error));
+        expect(errorSpy).toHaveBeenCalledWith('[Collections] Failed to refresh after removing images', expect.any(Error));
+        errorSpy.mockRestore();
     });
 
     it('updates non-self filters and rolls them back alongside unrelated collections', async () => {

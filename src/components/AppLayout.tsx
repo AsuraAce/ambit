@@ -104,6 +104,7 @@ interface AppLayoutProps {
     handleRemoveFromCollection: () => void;
 
     handleOpenCollectionModal: (mode: 'add' | 'move') => void;
+    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onEditCollection: (colId: string) => void;
 }
 
@@ -120,7 +121,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     clearSelection, gridRef, handleLayoutChange,
     isSearchFocused, setIsSearchFocused, lastSelectedId,
 
-    handleRemoveFromCollection, handleOpenCollectionModal, onEditCollection
+    handleRemoveFromCollection, handleOpenCollectionModal, onSetCollectionMembership, onEditCollection
 }) => {
     // Hooks
     useProgressListeners();
@@ -389,6 +390,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         }}
                                         onToggleFavorite={(id) => toggleFavorite(id)}
                                         onTogglePin={actions.handlePinImage}
+                                        onSetCollectionMembership={onSetCollectionMembership}
                                         availableTags={availableTags}
                                     />
                                 </React.Suspense>

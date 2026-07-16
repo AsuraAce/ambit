@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
     Layout, Search, Check, Plus, FileText, ClipboardList, AlertCircle, Save, Code
 } from 'lucide-react';
@@ -18,11 +18,42 @@ interface MetadataEditTabProps {
     negativePromptValue: string;
     setNegativePromptValue: (s: string) => void;
 
-    onAddToCollection: (imageId: string, colId: string) => void;
+    onSetCollectionMembership: (imageId: string, colId: string, shouldBelong: boolean) => Promise<boolean>;
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
 }
+
+type MembershipLoadState = {
+    imageId: string;
+    status: 'loading' | 'ready' | 'error';
+};
+
+const membershipKeySeparator = '\u0000';
+
+const retainRelevantMemberships = (
+    memberships: Map<string, string[]>,
+    activeImageId: string,
+    pendingKeys: Set<string>
+): Map<string, string[]> => {
+    const retainedImageIds = new Set([activeImageId]);
+    pendingKeys.forEach(key => retainedImageIds.add(key.split(membershipKeySeparator, 1)[0]));
+    if (memberships.size <= retainedImageIds.size
+        && [...memberships.keys()].every(imageId => retainedImageIds.has(imageId))) {
+        return memberships;
+    }
+
+    const retained = new Map<string, string[]>();
+    retainedImageIds.forEach(imageId => {
+        const imageMemberships = memberships.get(imageId);
+        if (imageMemberships) retained.set(imageId, imageMemberships);
+    });
+    return retained;
+};
+
+const hasPendingMembershipForImage = (pendingKeys: Set<string>, imageId: string): boolean => (
+    [...pendingKeys].some(key => key.startsWith(`${imageId}${membershipKeySeparator}`))
+);
 
 export const MetadataEditTab = ({
     image,
@@ -34,15 +65,39 @@ export const MetadataEditTab = ({
     setPromptValue,
     negativePromptValue,
     setNegativePromptValue,
-    onAddToCollection,
+    onSetCollectionMembership,
     onUpdatePrompt,
     onUpdateNegativePrompt,
     onUpdateNotes
 }: MetadataEditTabProps) => {
     // Local State
     const [collectionQuery, setCollectionQuery] = useState('');
-    const [imageCollections, setImageCollections] = useState<string[]>([]);
-    const [isLoadingCollections, setIsLoadingCollections] = useState(false);
+    const [membershipsByImage, setMembershipsByImage] = useState<Map<string, string[]>>(
+        () => new Map([[image.id, []]])
+    );
+    const [membershipLoadState, setMembershipLoadState] = useState<MembershipLoadState>({
+        imageId: image.id,
+        status: 'loading'
+    });
+    const [membershipRetryToken, setMembershipRetryToken] = useState(0);
+    const [pendingMembershipKeys, setPendingMembershipKeys] = useState<Set<string>>(() => new Set());
+    const pendingMembershipKeysRef = useRef(new Set<string>());
+    const activeImageIdRef = useRef(image.id);
+    const membershipRequestIdRef = useRef(0);
+    const imageCollections = membershipsByImage.get(image.id) ?? [];
+    const isMembershipLoading = membershipLoadState.imageId !== image.id
+        || membershipLoadState.status === 'loading';
+    const hasMembershipError = membershipLoadState.imageId === image.id
+        && membershipLoadState.status === 'error';
+    const isMembershipReady = membershipLoadState.imageId === image.id
+        && membershipLoadState.status === 'ready';
+
+    useLayoutEffect(() => {
+        activeImageIdRef.current = image.id;
+        setMembershipsByImage(prev => (
+            retainRelevantMemberships(prev, image.id, pendingMembershipKeysRef.current)
+        ));
+    }, [image.id]);
 
     const [isPromptDirty, setIsPromptDirty] = useState(false);
     const [isNegativePromptDirty, setIsNegativePromptDirty] = useState(false);
@@ -53,20 +108,35 @@ export const MetadataEditTab = ({
     // Fetch collections for this image on demand
     useEffect(() => {
         let isCancelled = false;
+        const imageId = image.id;
+        const requestId = membershipRequestIdRef.current + 1;
+        membershipRequestIdRef.current = requestId;
         const fetchImageMembership = async () => {
-            setIsLoadingCollections(true);
+            setMembershipLoadState({ imageId, status: 'loading' });
             try {
-                const colIds = await getCollectionsForImage(image.id);
-                if (!isCancelled) setImageCollections(colIds);
+                const colIds = await getCollectionsForImage(imageId);
+                if (!isCancelled && membershipRequestIdRef.current === requestId) {
+                    setMembershipsByImage(prev => {
+                        const next = new Map(retainRelevantMemberships(
+                            prev,
+                            imageId,
+                            pendingMembershipKeysRef.current
+                        ));
+                        next.set(imageId, colIds);
+                        return next;
+                    });
+                    setMembershipLoadState({ imageId, status: 'ready' });
+                }
             } catch (e) {
                 console.error("Failed to fetch image collections", e);
-            } finally {
-                if (!isCancelled) setIsLoadingCollections(false);
+                if (!isCancelled && membershipRequestIdRef.current === requestId) {
+                    setMembershipLoadState({ imageId, status: 'error' });
+                }
             }
         };
         fetchImageMembership();
         return () => { isCancelled = true; };
-    }, [image.id]);
+    }, [image.id, membershipRetryToken]);
 
     const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setPromptValue(e.target.value);
@@ -112,28 +182,99 @@ export const MetadataEditTab = ({
                     <input type="text" placeholder="Find collection..." value={collectionQuery} onChange={(e) => setCollectionQuery(e.target.value)} className="w-full bg-white dark:bg-zinc-800/50 border border-gray-200 dark:border-white/10 rounded-lg pl-8 pr-2 py-1.5 text-xs text-gray-900 dark:text-white focus:border-sage-500 outline-none" />
                 </div>
                 <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-1 relative">
-                    {isLoadingCollections && (
+                    {isMembershipLoading && (
                         <div className="absolute inset-0 bg-white/50 dark:bg-zinc-900/50 flex items-center justify-center z-10 backdrop-blur-[1px]">
                             <div className="animate-spin rounded-full h-4 w-4 border-2 border-sage-500 border-t-transparent" />
                         </div>
                     )}
-                    {collections.filter(c => c.name.toLowerCase().includes(collectionQuery.toLowerCase())).map(col => {
+                    {hasMembershipError && (
+                        <div role="alert" className="absolute inset-0 bg-white/90 dark:bg-zinc-900/90 flex flex-col items-center justify-center gap-2 z-10 px-4 text-center">
+                            <span className="text-xs text-gray-600 dark:text-gray-300">Could not load collection membership.</span>
+                            <button
+                                type="button"
+                                onClick={() => setMembershipRetryToken(token => token + 1)}
+                                className="text-xs font-medium text-sage-700 dark:text-sage-300 hover:underline"
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    )}
+                    {collections.filter(c => (
+                        !c.filters && c.name.toLowerCase().includes(collectionQuery.toLowerCase())
+                    )).map(col => {
                         const isIn = imageCollections.includes(col.id);
+                        const membershipKey = `${image.id}${membershipKeySeparator}${col.id}`;
+                        const isPending = pendingMembershipKeys.has(membershipKey);
                         return (
                             <button
+                                type="button"
                                 key={col.id}
+                                aria-pressed={isIn}
+                                aria-busy={isPending}
+                                disabled={!isMembershipReady || isPending}
                                 onClick={async () => {
-                                    // Optimistic UI for membership
                                     const wasIn = isIn;
-                                    setImageCollections(prev => wasIn ? prev.filter(id => id !== col.id) : [...prev, col.id]);
+                                    const shouldBelong = !wasIn;
+                                    const imageId = image.id;
+                                    if (pendingMembershipKeysRef.current.has(membershipKey)) return;
+                                    pendingMembershipKeysRef.current.add(membershipKey);
+                                    setPendingMembershipKeys(prev => {
+                                        const next = new Set(prev);
+                                        next.add(membershipKey);
+                                        return next;
+                                    });
+                                    setMembershipsByImage(prev => {
+                                        const memberships = prev.get(imageId) ?? [];
+                                        const next = new Map(retainRelevantMemberships(
+                                            prev,
+                                            activeImageIdRef.current,
+                                            pendingMembershipKeysRef.current
+                                        ));
+                                        next.set(imageId, shouldBelong
+                                            ? (memberships.includes(col.id) ? memberships : [...memberships, col.id])
+                                            : memberships.filter(id => id !== col.id));
+                                        return next;
+                                    });
+
+                                    let didPersist = false;
                                     try {
-                                        await onAddToCollection(image.id, col.id);
-                                    } catch (e) {
-                                        // Rollback if needed (though onAddToCollection is usually reliable)
-                                        setImageCollections(prev => wasIn ? [...prev, col.id] : prev.filter(id => id !== col.id));
+                                        didPersist = await onSetCollectionMembership(imageId, col.id, shouldBelong);
+                                    } catch {
+                                        didPersist = false;
                                     }
+
+                                    const settledMembership = didPersist ? shouldBelong : wasIn;
+                                    pendingMembershipKeysRef.current.delete(membershipKey);
+                                    setMembershipsByImage(prev => {
+                                        const memberships = prev.get(imageId) ?? [];
+                                        const next = new Map(retainRelevantMemberships(
+                                            prev,
+                                            activeImageIdRef.current,
+                                            pendingMembershipKeysRef.current
+                                        ));
+                                        if (
+                                            activeImageIdRef.current === imageId
+                                            || hasPendingMembershipForImage(pendingMembershipKeysRef.current, imageId)
+                                        ) {
+                                            next.set(imageId, settledMembership
+                                                ? (memberships.includes(col.id) ? memberships : [...memberships, col.id])
+                                                : memberships.filter(id => id !== col.id));
+                                        }
+                                        return next;
+                                    });
+
+                                    if (activeImageIdRef.current === imageId) {
+                                        membershipRequestIdRef.current += 1;
+                                        setMembershipLoadState({ imageId, status: 'ready' });
+                                    }
+
+                                    setPendingMembershipKeys(prev => {
+                                        const next = new Set(prev);
+                                        next.delete(membershipKey);
+                                        return next;
+                                    });
                                 }}
-                                className={`w-full text-left px-4 py-3 rounded-xl text-sm flex items-center justify-between border transition-all ${isIn ? 'bg-sage-100 dark:bg-sage-900/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300' : 'bg-white dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                                className={`w-full text-left px-4 py-3 rounded-xl text-sm flex items-center justify-between border transition-all disabled:cursor-wait disabled:opacity-70 ${isIn ? 'bg-sage-100 dark:bg-sage-900/20 border-sage-300 dark:border-sage-500/40 text-sage-700 dark:text-sage-300' : 'bg-white dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                             >
                                 <span className="truncate">{col.name}</span>
                                 {isIn ? <Check className="w-3.5 h-3.5 text-sage-500" /> : <Plus className="w-3.5 h-3.5" />}
