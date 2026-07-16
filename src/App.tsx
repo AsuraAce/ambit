@@ -333,6 +333,22 @@ export default function App() {
                 collectionId,
                 () => reconcileGlobalViewerAfterRemoval(imageId, collectionId)
             ), [colOps, reconcileGlobalViewerAfterRemoval]);
+    const submitNavbarSearch = useCallback((query: string) => {
+        if (!query.trim()) {
+            void submitSearch(query);
+            return;
+        }
+
+        void submitSearch(query);
+        if (viewMode === 'dashboard' || viewMode === 'maintenance') {
+            changeViewMode('grid');
+        }
+    }, [changeViewMode, submitSearch, viewMode]);
+
+    const openSearchHelp = useCallback(() => {
+        modals.setShortcutsModalTab('search');
+        modals.openModal('shortcuts');
+    }, [modals]);
 
     // --- Derived Memos ---
     const searchProps = React.useMemo(() => ({
@@ -340,11 +356,12 @@ export default function App() {
         isSearchingAi,
         inputRef,
         toggleAiSearch,
-        submitSearch,
+        submitSearch: submitNavbarSearch,
         isFocused: isSearchFocused,
         onFocus: () => setIsSearchFocused(true),
-        onBlur: () => setTimeout(() => setIsSearchFocused(false), 200)
-    }), [isAiSearchEnabled, isSearchingAi, inputRef, toggleAiSearch, submitSearch, isSearchFocused]);
+        onBlur: () => setIsSearchFocused(false),
+        onOpenSearchHelp: openSearchHelp,
+    }), [isAiSearchEnabled, isSearchingAi, inputRef, isSearchFocused, openSearchHelp, submitNavbarSearch, toggleAiSearch]);
 
     const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
     const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;

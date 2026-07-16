@@ -101,7 +101,6 @@ describe('ActiveFilters', () => {
             { loras: ['lora'] },
             { embeddings: ['embedding'] },
             { hypernetworks: ['hyper'] },
-            { searchQuery: 'query' },
             { samplers: ['Euler'] },
             { generationTypes: ['txt2img'] },
             { minSteps: 1 },
@@ -124,6 +123,12 @@ describe('ActiveFilters', () => {
         searchMocks.state.filters = createFilters({ collectionId: 'regular' });
         render(<ActiveFiltersUnderTest />);
         expect(screen.getByRole('button', { name: /clear all/i })).toBeTruthy();
+    });
+
+    it('does not render a second filter strip for a navbar-query-only search', () => {
+        searchMocks.state.filters = createFilters({ searchQuery: 'query' });
+        const { container } = render(<ActiveFiltersUnderTest />);
+        expect(container.innerHTML).toBe('');
     });
 
     it('renders locked smart rules and deduplicates matching explicit chips', () => {

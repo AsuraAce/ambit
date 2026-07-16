@@ -22,6 +22,7 @@ const createSearchProps = (overrides: Partial<React.ComponentProps<typeof Search
     isFocused: true,
     onFocus: vi.fn(),
     onBlur: vi.fn(),
+    onOpenSearchHelp: vi.fn(),
     ...overrides,
 });
 
@@ -29,6 +30,10 @@ interface SearchHarnessOptions {
     searchProps?: Partial<React.ComponentProps<typeof SearchBar>['searchProps']>;
     recentSearches?: string[];
     setRecentSearches?: React.Dispatch<React.SetStateAction<string[]>>;
+    scopeName?: string;
+    displayedCount?: number;
+    isFiltering?: boolean;
+    submitNavigatesToGrid?: boolean;
 }
 
 const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), options: SearchHarnessOptions = {}) => {
@@ -53,6 +58,10 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
             searchProps={searchProps}
             recentSearches={options.recentSearches ?? []}
             setRecentSearches={setRecentSearches}
+            scopeName={options.scopeName ?? 'Library'}
+            displayedCount={options.displayedCount ?? 10}
+            isFiltering={options.isFiltering ?? false}
+            submitNavigatesToGrid={options.submitNavigatesToGrid ?? false}
         />
     );
 
@@ -79,7 +88,7 @@ describe('SearchBar advanced date syntax guard', () => {
     it('keeps incomplete date syntax local and shows a hint', () => {
         const harness = renderSearchBar();
 
-        fireEvent.change(screen.getByPlaceholderText('Search prompt...'), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'date:2026-' },
         });
 
@@ -94,7 +103,7 @@ describe('SearchBar advanced date syntax guard', () => {
     it('commits valid date syntax after the main debounce', () => {
         const harness = renderSearchBar();
 
-        fireEvent.change(screen.getByPlaceholderText('Search prompt...'), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'date:2026-04' },
         });
 
@@ -108,7 +117,7 @@ describe('SearchBar advanced date syntax guard', () => {
 
     it('does not submit invalid date syntax on Enter', () => {
         const harness = renderSearchBar();
-        const input = screen.getByPlaceholderText('Search prompt...');
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
 
         fireEvent.change(input, {
             target: { value: 'before:june-2024' },
@@ -122,17 +131,17 @@ describe('SearchBar advanced date syntax guard', () => {
     it('does not commit a date operator suggestion before a value exists', () => {
         const harness = renderSearchBar();
 
-        fireEvent.change(screen.getByPlaceholderText('Search prompt...'), {
+        fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'dat' },
         });
-        fireEvent.mouseDown(screen.getByRole('button', { name: 'date:' }));
+        fireEvent.click(screen.getByRole('option', { name: /date:/ }));
 
         expect(harness.setFilters).not.toHaveBeenCalled();
     });
 
     it('replaces a pending debounce and commits only the latest query', () => {
         const harness = renderSearchBar();
-        const input = screen.getByPlaceholderText('Search prompt...');
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
         fireEvent.change(input, { target: { value: 'first' } });
         fireEvent.change(input, { target: { value: 'second' } });
         act(() => vi.advanceTimersByTime(500));
@@ -150,16 +159,20 @@ describe('SearchBar advanced date syntax guard', () => {
                 searchProps={harness.searchProps}
                 recentSearches={[]}
                 setRecentSearches={harness.setRecentSearches}
+                scopeName="Library"
+                displayedCount={10}
+                isFiltering={false}
+                submitNavigatesToGrid={false}
             />
         );
-        expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('external');
+        expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('external');
     });
 
     it('navigates suggestions with arrows and selects with Enter and Tab', () => {
         const harness = renderSearchBar();
-        const input = screen.getByRole('textbox');
+        const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'to' } });
-        expect(screen.getByRole('button', { name: 'tool:' })).not.toBeNull();
+        expect(screen.getByRole('option', { name: /tool:/ })).not.toBeNull();
         fireEvent.keyDown(input, { key: 'ArrowDown' });
         fireEvent.keyDown(input, { key: 'ArrowUp' });
         fireEvent.keyDown(input, { key: 'ArrowDown' });
@@ -175,7 +188,7 @@ describe('SearchBar advanced date syntax guard', () => {
 
     it('falls through unrelated keys and submits when no suggestion is active', () => {
         const harness = renderSearchBar();
-        const input = screen.getByRole('textbox');
+        const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'to' } });
         fireEvent.keyDown(input, { key: 'Escape' });
         fireEvent.keyDown(input, { key: 'Enter' });
@@ -188,9 +201,9 @@ describe('SearchBar advanced date syntax guard', () => {
 
     it('selects suggestions with the pointer and clears suggestions for blank tokens', () => {
         renderSearchBar();
-        const input = screen.getByRole('textbox');
+        const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'lo' } });
-        fireEvent.mouseDown(screen.getByRole('button', { name: 'lora:' }));
+        fireEvent.click(screen.getByRole('option', { name: /lora:/ }));
         expect((input as HTMLInputElement).value).toBe('lora: ');
         fireEvent.change(input, { target: { value: ' ' } });
         expect(screen.queryByText('Suggestions')).toBeNull();
@@ -198,10 +211,10 @@ describe('SearchBar advanced date syntax guard', () => {
 
     it('submits ordinary searches on Enter', () => {
         const harness = renderSearchBar();
-        const input = screen.getByRole('textbox');
+        const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'portrait' } });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect(harness.getCurrentFilters().searchQuery).toBe('portrait');
+        expect(harness.setFilters).not.toHaveBeenCalled();
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');
     });
 
@@ -209,9 +222,9 @@ describe('SearchBar advanced date syntax guard', () => {
         const inputRef = React.createRef<HTMLInputElement>();
         const focus = vi.spyOn(HTMLInputElement.prototype, 'focus');
         const harness = renderSearchBar(createDefaultFilters({ searchQuery: 'portrait' }), { searchProps: { inputRef } });
-        fireEvent.click(screen.getAllByRole('button')[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Clear Search' }));
         expect(harness.getCurrentFilters().searchQuery).toBe('');
-        expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+        expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('');
         expect(focus).toHaveBeenCalled();
         focus.mockRestore();
     });
@@ -219,25 +232,69 @@ describe('SearchBar advanced date syntax guard', () => {
     it('clears and runs recent searches without blurring', () => {
         const setRecentSearches = vi.fn();
         const harness = renderSearchBar(createDefaultFilters(), { recentSearches: ['sunset'], setRecentSearches });
-        const clear = screen.getByRole('button', { name: 'Clear' });
-        fireEvent.mouseDown(clear);
+        const clear = screen.getByRole('button', { name: 'Clear recent searches' });
+        fireEvent.click(clear);
         expect(setRecentSearches).toHaveBeenCalledWith([]);
-        fireEvent.mouseDown(screen.getByRole('button', { name: /sunset/i }));
+        fireEvent.click(screen.getByRole('option', { name: /sunset/i }));
         act(() => vi.runOnlyPendingTimers());
-        expect(harness.getCurrentFilters().searchQuery).toBe('sunset');
+        expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('sunset');
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('sunset');
     });
 
-    it('forwards focus, blur, and AI toggle behavior in enabled and searching states', () => {
+    it('forwards focus and blur while locking controls during AI analysis', () => {
         const harness = renderSearchBar(createDefaultFilters(), {
             searchProps: { isAiSearchEnabled: true, isSearchingAi: true, isFocused: false },
         });
-        const input = screen.getByPlaceholderText('Ask Ambit...');
+        const input = screen.getByRole('combobox', { name: 'Ask Ambit with AI' });
         fireEvent.focus(input);
         fireEvent.blur(input);
-        fireEvent.click(screen.getByRole('button', { name: 'Disable AI Search' }));
+        const aiButton = screen.getByRole('button', { name: 'Disable AI Search' });
         expect(harness.searchProps.onFocus).toHaveBeenCalledOnce();
         expect(harness.searchProps.onBlur).toHaveBeenCalledOnce();
-        expect(harness.searchProps.toggleAiSearch).toHaveBeenCalledOnce();
+        expect((aiButton as HTMLButtonElement).disabled).toBe(true);
+        expect(input.getAttribute('aria-busy')).toBe('true');
+        expect((input as HTMLInputElement).readOnly).toBe(true);
+        expect(harness.searchProps.toggleAiSearch).not.toHaveBeenCalled();
+    });
+
+    it('keeps dashboard drafts local until Enter routes the submitted query', () => {
+        const harness = renderSearchBar(createDefaultFilters(), {
+            scopeName: 'Statistics',
+            submitNavigatesToGrid: true,
+        });
+        const input = screen.getByRole('combobox', { name: 'Search in Statistics' });
+
+        fireEvent.change(input, { target: { value: 'portrait' } });
+        act(() => vi.advanceTimersByTime(600));
+
+        expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(screen.getByRole('status').textContent).toBe('Press Enter to view matching images in Grid.');
+
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');
+    });
+
+    it('shows scope-aware no-match feedback for an applied query', () => {
+        renderSearchBar(createDefaultFilters({ searchQuery: 'missing' }), {
+            scopeName: 'Collection: Favorites',
+            displayedCount: 0,
+        });
+
+        expect(screen.getByRole('status').textContent).toBe('No matches in Collection: Favorites.');
+    });
+
+    it('keeps AI prompts submit-only', () => {
+        const harness = renderSearchBar(createDefaultFilters({ searchQuery: 'existing' }), {
+            searchProps: { isAiSearchEnabled: true },
+        });
+        const input = screen.getByRole('combobox', { name: 'Ask Ambit with AI' });
+
+        fireEvent.change(input, { target: { value: 'warm portraits from last month' } });
+        act(() => vi.advanceTimersByTime(600));
+
+        expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(screen.queryByRole('listbox')).toBeNull();
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('warm portraits from last month');
     });
 });
