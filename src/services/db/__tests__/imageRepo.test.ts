@@ -800,7 +800,7 @@ describe('imageRepo batch removal', () => {
         );
     });
 
-    it('syncs all board-linked images when no id filter is supplied', async () => {
+    it('syncs all board-linked images without invalidating smart collection thumbnail caches', async () => {
         const db = {
             select: vi.fn(async () => []),
             execute: vi.fn(),
@@ -814,6 +814,11 @@ describe('imageRepo batch removal', () => {
             expect.not.stringContaining('AND id IN'),
             []
         );
+        const cacheUpdateSql = db.execute.mock.calls
+            .map(([query]) => query as string)
+            .find(query => query.includes('UPDATE collections'));
+        expect(cacheUpdateSql).toContain("source = 'invoke'");
+        expect(cacheUpdateSql).toContain('filter_state IS NULL');
         expect(db.select).not.toHaveBeenCalled();
     });
 

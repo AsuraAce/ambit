@@ -809,6 +809,17 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.getDb).not.toHaveBeenCalled();
     });
 
+    it('limits full Invoke reconciliation cache clearing to non-smart Invoke boards', async () => {
+        const { clearInvokeBoardThumbnailCaches } = await import('../collectionRepo');
+
+        await clearInvokeBoardThumbnailCaches();
+
+        const sql = dbMocks.execute.mock.calls[0]?.[0] as string;
+        expect(sql).toContain("source = 'invoke'");
+        expect(sql).toContain('filter_state IS NULL');
+        expect(sql).toContain("custom_thumbnail IS NULL OR custom_thumbnail = ''");
+    });
+
     it('clears selected and all native collection thumbnail caches', async () => {
         const {
             clearAllCollectionThumbnailCaches,
@@ -838,10 +849,12 @@ describe('collectionRepo membership helpers', () => {
             clearAllCollectionThumbnailCaches,
             clearCollectionThumbnailCacheForCollections,
             clearCollectionThumbnailCacheForImages,
+            clearInvokeBoardThumbnailCaches,
         } = await import('../collectionRepo');
 
         await clearCollectionThumbnailCacheForCollections(['c1']);
         await clearCollectionThumbnailCacheForImages(['image-1']);
+        await clearInvokeBoardThumbnailCaches();
         await clearAllCollectionThumbnailCaches();
 
         expect(dbMocks.getDb).not.toHaveBeenCalled();

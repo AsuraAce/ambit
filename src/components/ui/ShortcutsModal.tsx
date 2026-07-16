@@ -111,7 +111,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
     const searchOperators = [
         // Content Search
         { op: 'sunset', desc: 'Search positive prompt (default)', icon: <Search className="w-3 h-3" /> },
-        { op: 'orc OR elf', desc: 'Match either prompt term', icon: <Search className="w-3 h-3" /> },
+        { op: 'forest OR ocean', desc: 'Match either prompt term', icon: <Search className="w-3 h-3" /> },
         { op: 'neg:blur', desc: 'Search negative prompt', icon: <Hash className="w-3 h-3" /> },
         { op: 'file:portrait', desc: 'Search filename/path', icon: <Hash className="w-3 h-3" /> },
         { op: 'all:anime', desc: 'Search all metadata (legacy)', icon: <Hash className="w-3 h-3" /> },
@@ -299,10 +299,10 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                             <div className="p-4 rounded-lg bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10">
                                 <h4 className="text-xs font-bold text-gray-800 dark:text-gray-300 mb-1">Example Query</h4>
                                 <div className="font-mono text-xs bg-white dark:bg-black/40 p-2 rounded border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300 mb-2">
-                                    orc OR "dark elf" model:pony
+                                    forest OR "city skyline" model:flux
                                 </div>
                                 <p className="text-[10px] text-gray-600 dark:text-gray-400 uppercase tracking-tight">
-                                    Finds Pony images whose positive prompt mentions orc or dark elf.
+                                    Finds Flux images whose positive prompt mentions forest or city skyline.
                                 </p>
                             </div>
                         </div>
