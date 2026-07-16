@@ -16,7 +16,10 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const { filters, setFilters, clearAllFilters } = useSearch();
     const { collections, smartCollections } = useCollections();
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
-    const activeSmartCol = filters.collectionId ? allCols.find(sc => sc.id === filters.collectionId) : undefined;
+    const activeCollection = filters.collectionId ? allCols.find(collection => collection.id === filters.collectionId) : undefined;
+    const activeSmartCol = filters.collectionId ? smartCollections.find(collection => collection.id === filters.collectionId) : undefined;
+    const showFavoritesFilter = filters.favoritesOnly && !activeSmartCol?.filters?.favoritesOnly;
+    const showPinnedFilter = !!filters.pinnedOnly && !activeSmartCol?.filters?.pinnedOnly;
     const dateFilterLabel = getDateFilterLabel(filters);
     const smartDateFilterLabel = activeSmartCol?.filters ? getDateFilterLabel(activeSmartCol.filters) : null;
 
@@ -37,7 +40,8 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         filters.maxCfg !== undefined ||
         filters.controlNets.length > 0 ||
         filters.ipAdapters.length > 0 ||
-        !!activeSmartCol;
+        !!filters.pinnedOnly ||
+        !!filters.collectionId;
 
     // Deduplicate logic: Filter out manual chips that are already in the smart collection
     const smartModels = activeSmartCol?.filters?.models || [];
@@ -66,6 +70,24 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         <div className="mt-2 flex items-center gap-2 overflow-x-auto custom-scrollbar px-6 py-2 min-h-[44px] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-500 mx-2 relative z-10">
             {/* Floating style with margin and rounding */}
 
+            {filters.collectionId && (
+                <div
+                    title={activeCollection?.name ?? 'Selected collection is unavailable'}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200 dark:border-sage-500/30"
+                >
+                    <span className="truncate max-w-[160px]">
+                        {activeCollection ? `Collection: ${activeCollection.name}` : 'Collection unavailable'}
+                    </span>
+                    <button
+                        type="button"
+                        aria-label={activeCollection ? `Clear Collection Filter ${activeCollection.name}` : 'Clear Unavailable Collection Filter'}
+                        onClick={() => setFilters(f => ({ ...f, collectionId: null }))}
+                    >
+                        <X className="w-3 h-3" />
+                    </button>
+                </div>
+            )}
+
             {/* Smart Collection Implicit Filters (Locked) */}
             {activeSmartCol && activeSmartCol.filters && (
                 <>
@@ -90,6 +112,18 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     {smartDateFilterLabel && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
                             <span>{smartDateFilterLabel}</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
+                    {activeSmartCol.filters.favoritesOnly && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>Favorites</span>
+                            <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
+                    {activeSmartCol.filters.pinnedOnly && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>Pinned</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}
@@ -157,11 +191,18 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 </div>
             )}
 
-            {filters.favoritesOnly && (
+            {showFavoritesFilter && (
                 <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs border border-red-200">
                     <div className="w-3 h-3 text-red-500">❤️</div>
                     <span>Favorites</span>
                     <button type="button" aria-label="Clear Favorites Filter" onClick={() => setFilters(f => ({ ...f, favoritesOnly: false }))}><X className="w-3 h-3" /></button>
+                </div>
+            )}
+
+            {showPinnedFilter && (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-200 text-xs border border-amber-200 dark:border-amber-500/30">
+                    <span>Pinned</span>
+                    <button type="button" aria-label="Clear Pinned Filter" onClick={() => setFilters(f => ({ ...f, pinnedOnly: false }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
 
@@ -243,8 +284,9 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
             )}
 
             <button
+                type="button"
                 onClick={clearAllFilters}
-                className="ml-auto text-xs text-sage-600 hover:text-sage-800 font-medium flex items-center gap-1"
+                className="ml-auto text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium flex items-center gap-1 transition-colors"
             >
                 <FilterX className="w-3 h-3" /> Clear All
             </button>

@@ -122,7 +122,12 @@ describe('ViewControls', () => {
 
     it('formats match, search, loading, and total counters', () => {
         const { rerender, props } = setup({ displayedCount: 5, totalCount: 20 });
-        expect(screen.getByText('MATCHES IN Library')).toBeTruthy();
+        const matchLabel = screen.getByText('MATCHES IN Library');
+        expect(matchLabel.getAttribute('title')).toBe('MATCHES IN Library');
+        expect(matchLabel.className).toContain('text-[10px]');
+        expect(matchLabel.className).toContain('dark:text-gray-400');
+        expect(matchLabel.className).toContain('truncate');
+        expect(matchLabel.className).not.toContain('opacity-60');
         rerender(<ViewControls {...props} displayedCount={0} totalCount={0} isFiltering />);
         expect(screen.getByText('LOADING...')).toBeTruthy();
         expect(screen.getByText('...')).toBeTruthy();
@@ -131,7 +136,9 @@ describe('ViewControls', () => {
         expect(screen.getByText('20')).toBeTruthy();
         rerender(<ViewControls {...props} displayedCount={5} totalCount={0} isFiltering />);
         expect(screen.getByText('...')).toBeTruthy();
-        rerender(<ViewControls {...props} displayedCount={10} totalCount={10} />);
-        expect(screen.getByText('TOTAL Library')).toBeTruthy();
+        rerender(<ViewControls {...props} displayedCount={10} totalCount={10} scopeName="A Very Long Collection Name" />);
+        const totalLabel = screen.getByText('TOTAL A Very Long Collection Name');
+        expect(totalLabel.getAttribute('title')).toBe('TOTAL A Very Long Collection Name');
+        expect(totalLabel.className).toContain('max-w-[180px]');
     });
 });
