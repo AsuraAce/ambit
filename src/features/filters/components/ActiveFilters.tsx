@@ -29,7 +29,6 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         filters.loras.length > 0 ||
         filters.embeddings.length > 0 ||
         filters.hypernetworks.length > 0 ||
-        filters.searchQuery !== '' ||
         (filters.samplers && filters.samplers.length > 0) ||
         (filters.generationTypes && filters.generationTypes.length > 0) ||
         filters.minSteps !== undefined ||

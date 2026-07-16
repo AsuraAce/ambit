@@ -154,7 +154,7 @@ describe('AppLayout', () => {
         addToast: vi.fn(),
         viewMode: 'grid',
         changeViewMode: vi.fn(),
-        searchProps: {} as any,
+        searchProps: { inputRef: { current: null } } as any,
         layoutMode: 'masonry',
         setLayoutMode: vi.fn(),
         sortOption: 'date-desc',
@@ -353,13 +353,20 @@ describe('AppLayout', () => {
 
     it('dismisses the search-focus overlay', () => {
         const setIsSearchFocused = vi.fn();
+        const blur = vi.fn();
         const { container } = render(
-            <AppLayout {...defaultProps} isSearchFocused setIsSearchFocused={setIsSearchFocused} />
+            <AppLayout
+                {...defaultProps}
+                isSearchFocused
+                setIsSearchFocused={setIsSearchFocused}
+                searchProps={{ inputRef: { current: { blur } } } as any}
+            />
         );
 
         const overlay = container.querySelector('.bg-black\\/60');
         expect(overlay).toBeTruthy();
         fireEvent.click(overlay as Element);
+        expect(blur).toHaveBeenCalledOnce();
         expect(setIsSearchFocused).toHaveBeenCalledWith(false);
     });
 

@@ -33,6 +33,7 @@ export const useAiSearchLogic = ({
   const [pendingAiActivation, setPendingAiActivation] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const isAiRequestActiveRef = useRef(false);
 
   // Sync state: If global setting is disabled, force local state off immediately
   useEffect(() => {
@@ -72,11 +73,10 @@ export const useAiSearchLogic = ({
     const trimmed = query.trim();
     if (!trimmed) return;
 
-    setFilters(f => ({ ...f, searchQuery: trimmed }));
-    setRecentSearches(prev => [trimmed, ...prev.filter(s => s !== trimmed)].slice(0, 8));
-    inputRef.current?.blur();
-
     if (isAiSearchEnabled && settings.enableAI) {
+      if (isAiRequestActiveRef.current) return;
+      isAiRequestActiveRef.current = true;
+      setRecentSearches(prev => [trimmed, ...prev.filter(s => s !== trimmed)].slice(0, 8));
       const apiKey = useSettingsStore.getState().geminiApiKey;
       setIsSearchingAi(true);
       addToast("Gemini is analyzing your request...", "info");
@@ -103,12 +103,20 @@ export const useAiSearchLogic = ({
           favoritesOnly: aiFilters.favoritesOnly || false,
         }));
         addToast("Filters updated by AI", "success");
+        inputRef.current?.blur();
       } catch (error) {
         addToast("AI Search failed. Check API Key.", "error");
+        inputRef.current?.focus();
       } finally {
+        isAiRequestActiveRef.current = false;
         setIsSearchingAi(false);
       }
+      return;
     }
+
+    setFilters(f => ({ ...f, searchQuery: trimmed }));
+    setRecentSearches(prev => [trimmed, ...prev.filter(s => s !== trimmed)].slice(0, 8));
+    inputRef.current?.blur();
   };
 
   return {

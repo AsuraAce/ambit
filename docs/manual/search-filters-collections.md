@@ -6,7 +6,7 @@ Ambit combines search text, metadata filters, asset facets, date ranges, favorit
 
 ## Search Bar
 
-The search bar matches the positive prompt by default. Type plain words to find prompt text; Ambit updates after typing pauses, and pressing Enter applies the current search immediately.
+The search bar matches the positive prompt by default. In Grid and Timeline, Ambit updates after typing pauses, and pressing Enter applies the current search immediately. In Statistics and Maintenance, typing stays in the search field until you press Enter or choose a recent search; Ambit then opens Grid to show the matching images.
 
 Search bar tools include:
 
@@ -18,8 +18,10 @@ Search bar tools include:
 - Clear search to remove the current search text
 - Clear in Recent Searches to remove the recent-search list
 - an ISO-date readiness hint when a date operator is incomplete or invalid
+- current scope and match feedback while the field is focused
+- Search syntax to open the in-app operator reference directly
 
-When AI Search is enabled from the search bar, the placeholder changes to an assistant-style prompt. Network and AI behavior depends on your settings; see [Settings And Privacy](settings-and-privacy.md).
+When AI Search is enabled from the search bar, the placeholder changes to an assistant-style prompt. AI Search waits for Enter instead of applying the natural-language draft as an ordinary prompt search. It keeps the existing filters until analysis succeeds, then applies the generated filters. Network and AI behavior depends on your settings; see [Settings And Privacy](settings-and-privacy.md).
 
 Examples:
 
