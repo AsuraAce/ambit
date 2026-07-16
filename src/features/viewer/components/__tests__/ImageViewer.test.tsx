@@ -159,7 +159,7 @@ const lightImage: AIImage = {
 const renderViewer = (overrides: Partial<React.ComponentProps<typeof ImageViewer>> = {}) => {
     const props: React.ComponentProps<typeof ImageViewer> = {
         image: lightImage,
-        onAddToCollection: vi.fn(),
+        onSetCollectionMembership: vi.fn().mockResolvedValue(true),
         onClose: vi.fn(),
         onNext: vi.fn(),
         onPrev: vi.fn(),
@@ -214,7 +214,7 @@ describe('ImageViewer full metadata loading', () => {
 
         render(<ImageViewer
             image={lightImage}
-            onAddToCollection={vi.fn()}
+            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
             onClose={vi.fn()}
             onNext={vi.fn()}
             onPrev={vi.fn()}
@@ -297,7 +297,7 @@ describe('ImageViewer full metadata loading', () => {
         aiState.value.result = 'analysis result';
         const callbacks = {
             onUpdateNotes: vi.fn(), onUpdatePrompt: vi.fn(), onUpdateNegativePrompt: vi.fn(),
-            onUpdateModel: vi.fn(), onUpdateTool: vi.fn(), onAddToCollection: vi.fn(),
+            onUpdateModel: vi.fn(), onUpdateTool: vi.fn(), onSetCollectionMembership: vi.fn().mockResolvedValue(true),
             onSearch: vi.fn(), onRecoverMetadata: vi.fn(), onRevertMetadata: vi.fn(), onOpenSettings: vi.fn()
         };
         renderViewer(callbacks);
@@ -311,7 +311,7 @@ describe('ImageViewer full metadata loading', () => {
             onUpdateNegativePrompt: (id: string, value: string) => void;
             onUpdateModel: (id: string, value: string) => void;
             onUpdateTool: (id: string, value: GeneratorTool) => void;
-            onAddToCollection: (id: string, collection: string) => void;
+            onSetCollectionMembership: (id: string, collection: string, shouldBelong: boolean) => Promise<boolean>;
             onSearch: (term: string) => void;
             onRecoverMetadata: () => void; onRevertMetadata: (id: string) => void;
             onAIAnalysis: () => void; onGenerateVariations: () => void; onOpenAIResult: () => void;
@@ -327,7 +327,7 @@ describe('ImageViewer full metadata loading', () => {
         sidebar.onUpdateNegativePrompt('id', 'negative');
         sidebar.onUpdateModel('id', 'Flux');
         sidebar.onUpdateTool('id', GeneratorTool.COMFYUI);
-        sidebar.onAddToCollection('id', 'collection');
+        await sidebar.onSetCollectionMembership('id', 'collection', true);
         sidebar.onSearch('term');
         sidebar.onRecoverMetadata();
         sidebar.onRevertMetadata('id');
@@ -339,6 +339,7 @@ describe('ImageViewer full metadata loading', () => {
         expect(callbacks.onUpdateNegativePrompt).toHaveBeenCalledWith('id', 'negative');
         expect(callbacks.onUpdateModel).toHaveBeenCalledWith('id', 'Flux');
         expect(callbacks.onUpdateTool).toHaveBeenCalledWith('id', GeneratorTool.COMFYUI);
+        expect(callbacks.onSetCollectionMembership).toHaveBeenCalledWith('id', 'collection', true);
         expect(aiState.value.analyzePrompt).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.generateVariations).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.openModal).toHaveBeenCalled();
