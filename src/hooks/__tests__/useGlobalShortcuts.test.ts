@@ -11,18 +11,17 @@ describe('useGlobalShortcuts', () => {
         setSelectedIds: vi.fn(),
         setLastSelectedId: vi.fn(),
         clearSelection: vi.fn(),
-        handleDeleteViewerImage: vi.fn(),
         handleBulkDelete: vi.fn(),
         togglePrivacyMode: vi.fn(),
         toggleMasking: vi.fn(),
         toggleFavorite: vi.fn(),
         togglePin: vi.fn(),
         openCollection: vi.fn(),
-        handleRemoveFromCollection: vi.fn(),
+        openSettings: vi.fn(),
+        openImport: vi.fn(),
         closeAllModals: vi.fn(),
         toggleShortcuts: vi.fn(),
         toggleCommandPalette: vi.fn(),
-        onCloseViewer: vi.fn(),
     };
 
     const defaultProps = {
@@ -31,7 +30,6 @@ describe('useGlobalShortcuts', () => {
         selectedIds: new Set<string>(),
         filteredImages: [],
         lastSelectedId: null,
-        selectedImageIndex: null,
         isViewerOpen: false,
         gridRef: { current: null },
         searchInputRef: { current: null },
@@ -59,7 +57,7 @@ describe('useGlobalShortcuts', () => {
     });
 
     it('should let the viewer own favorite and pin shortcuts while open', () => {
-        renderHook(() => useGlobalShortcuts({ ...defaultProps, isViewerOpen: true, selectedImageIndex: 0 }));
+        renderHook(() => useGlobalShortcuts({ ...defaultProps, isViewerOpen: true }));
 
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p' }));
@@ -72,8 +70,12 @@ describe('useGlobalShortcuts', () => {
         renderHook(() => useGlobalShortcuts({ ...defaultProps, isModalOpen: true }));
 
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true }));
 
         expect(mockActions.toggleFavorite).not.toHaveBeenCalled();
+        expect(mockActions.openSettings).not.toHaveBeenCalled();
+        expect(mockActions.openImport).not.toHaveBeenCalled();
     });
 
     it('should trigger select all on "Ctrl+A"', () => {
@@ -137,6 +139,17 @@ describe('useGlobalShortcuts', () => {
         expect(mockActions.openCollection).toHaveBeenCalledTimes(1);
     });
 
+    it('opens settings and import with primary-modifier shortcuts', () => {
+        renderHook(() => useGlobalShortcuts(defaultProps));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', metaKey: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'O', metaKey: true }));
+
+        expect(mockActions.openSettings).toHaveBeenCalledTimes(2);
+        expect(mockActions.openImport).toHaveBeenCalledTimes(2);
+    });
+
     it('preserves copy shortcuts instead of opening the collection modal', () => {
         renderHook(() => useGlobalShortcuts(defaultProps));
         const ctrlCopy = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true, cancelable: true });
@@ -161,11 +174,21 @@ describe('useGlobalShortcuts', () => {
         expect(mockActions.setSelectedImageIndex).not.toHaveBeenCalled();
     });
 
-    it('prioritizes Escape for viewer close, then selection clearing', () => {
-        const viewer = renderHook(() => useGlobalShortcuts({ ...defaultProps, selectedImageIndex: 0, selectedIds: new Set(['1']) }));
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-        expect(mockActions.onCloseViewer).toHaveBeenCalled();
+    it('lets an active viewer own contextual shortcuts, then clears library selection with Escape', () => {
+        const viewer = renderHook(() => useGlobalShortcuts({ ...defaultProps, isViewerOpen: true, selectedIds: new Set(['1']) }));
+        for (const key of ['Escape', ' ', 'Delete', 'Backspace', 'f', 'p', 'm', 'c', 'ArrowRight', 'Enter']) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+        }
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ',', ctrlKey: true }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true }));
         expect(mockActions.clearSelection).not.toHaveBeenCalled();
+        expect(mockActions.handleBulkDelete).not.toHaveBeenCalled();
+        expect(mockActions.toggleFavorite).not.toHaveBeenCalled();
+        expect(mockActions.togglePin).not.toHaveBeenCalled();
+        expect(mockActions.toggleMasking).not.toHaveBeenCalled();
+        expect(mockActions.openCollection).not.toHaveBeenCalled();
+        expect(mockActions.openSettings).not.toHaveBeenCalled();
+        expect(mockActions.openImport).not.toHaveBeenCalled();
         viewer.unmount();
 
         const selection = renderHook(() => useGlobalShortcuts({ ...defaultProps, selectedIds: new Set(['1']) }));
@@ -179,13 +202,8 @@ describe('useGlobalShortcuts', () => {
         expect(mockActions.clearSelection).not.toHaveBeenCalled();
     });
 
-    it('uses Space to close the viewer or open the last and selected image', () => {
+    it('uses Space to open the last and selected image', () => {
         const images = [{ id: '1' }, { id: '2' }] as unknown as AIImage[];
-        const viewer = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, selectedImageIndex: 0 }));
-        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
-        expect(mockActions.onCloseViewer).toHaveBeenCalled();
-        viewer.unmount();
-
         const last = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, lastSelectedId: '2' }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
         expect(mockActions.setSelectedImageIndex).toHaveBeenCalledWith(1);
@@ -207,7 +225,6 @@ describe('useGlobalShortcuts', () => {
         renderHook(() => useGlobalShortcuts(defaultProps));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
         expect(mockActions.setSelectedImageIndex).not.toHaveBeenCalled();
-        expect(mockActions.onCloseViewer).not.toHaveBeenCalled();
     });
 
     it('blocks select-all in maintenance and dashboard and supports Meta+A', () => {
@@ -233,19 +250,15 @@ describe('useGlobalShortcuts', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true }));
     });
 
-    it('routes Delete and Backspace to viewer or bulk targets', () => {
-        const images = [{ id: '1' }] as unknown as AIImage[];
-        const viewer = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, selectedImageIndex: 0 }));
+    it('routes Delete and macOS Backspace to a library selection', () => {
+        const selected = renderHook(() => useGlobalShortcuts({ ...defaultProps, selectedIds: new Set(['1']) }));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
-        expect(mockActions.handleDeleteViewerImage).toHaveBeenCalledWith('1');
-        viewer.unmount();
-
-        mockActions.handleDeleteViewerImage.mockClear();
-        const invalid = renderHook(() => useGlobalShortcuts({ ...defaultProps, filteredImages: images, selectedImageIndex: 4 }));
+        expect(mockActions.handleBulkDelete).toHaveBeenCalledOnce();
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
-        expect(mockActions.handleDeleteViewerImage).not.toHaveBeenCalled();
-        invalid.unmount();
+        expect(mockActions.handleBulkDelete).toHaveBeenCalledTimes(2);
+        selected.unmount();
 
+        mockActions.handleBulkDelete.mockClear();
         renderHook(() => useGlobalShortcuts(defaultProps));
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
         expect(mockActions.handleBulkDelete).not.toHaveBeenCalled();

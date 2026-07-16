@@ -225,7 +225,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -236,8 +236,9 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
+        isShortcutBlocked?: boolean;
     }) => (
-        <div data-testid="maintenance-viewer" data-image-id={image.id}>
+        <div data-testid="maintenance-viewer" data-image-id={image.id} data-shortcuts-blocked={String(isShortcutBlocked)}>
             {onDelete && <button onClick={onDelete}>Viewer Cleanup</button>}
             <button onClick={onNext}>Viewer Next</button>
             <button onClick={onPrev}>Viewer Previous</button>
@@ -290,6 +291,8 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     maskedKeywords: [],
     onToggleFavorite: vi.fn(),
     onTogglePin: vi.fn(),
+    onViewerOpenChange: vi.fn(),
+    isShortcutBlocked: false,
     onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });
 
@@ -527,7 +530,8 @@ describe('MaintenanceView', () => {
         const onResolveDuplicate = vi.fn().mockResolvedValue(undefined);
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
-        const view = renderView({ onResolveDuplicate, onToggleFavorite, onTogglePin });
+        const onViewerOpenChange = vi.fn();
+        const view = renderView({ onResolveDuplicate, onToggleFavorite, onTogglePin, onViewerOpenChange });
 
         fireEvent.click(screen.getByText('Tab duplicates'));
         fireEvent.click(await screen.findByText('Start duplicates Scan'));
@@ -568,6 +572,7 @@ describe('MaintenanceView', () => {
         });
 
         fireEvent.click(screen.getByText('Compare Duplicates'));
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(true);
         fireEvent.click(screen.getByText('Favorite Compare'));
         fireEvent.click(screen.getByText('Pin Compare'));
         fireEvent.click(screen.getByText('Pin Compare B'));
@@ -576,17 +581,21 @@ describe('MaintenanceView', () => {
         expect(onTogglePin).toHaveBeenCalledWith('duplicate-b', true);
         fireEvent.click(screen.getByText('Close Compare'));
         expect(screen.queryByTestId('compare-modal')).toBeNull();
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(false);
     });
 
     it('navigates the active maintenance list and forwards viewer actions', () => {
         maintenanceDataMock.localMissingImages = [createImage({ id: 'missing-a' }), createImage({ id: 'missing-b' })];
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
+        const onViewerOpenChange = vi.fn();
         const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
-        renderView({ onToggleFavorite, onTogglePin, onSetCollectionMembership });
+        renderView({ onToggleFavorite, onTogglePin, onViewerOpenChange, onSetCollectionMembership, isShortcutBlocked: true });
 
         fireEvent.click(screen.getByText('Select Missing Item'));
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(true);
         expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('missing-a');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-shortcuts-blocked')).toBe('true');
         fireEvent.click(screen.getByText('Viewer Next'));
         expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('missing-b');
         fireEvent.click(screen.getByText('Viewer Next'));
@@ -604,6 +613,7 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Viewer Settings'));
         fireEvent.click(screen.getByText('Close Viewer'));
         expect(screen.queryByTestId('maintenance-viewer')).toBeNull();
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(false);
 
         fireEvent.click(screen.getByText('Range Missing'));
         fireEvent.click(screen.getByText('Clear Missing Selection'));

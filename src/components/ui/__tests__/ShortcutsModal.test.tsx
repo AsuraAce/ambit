@@ -15,19 +15,33 @@ describe('ShortcutsModal', () => {
     });
 
     it('loads saved categories, toggles and persists them', async () => {
-        localStorage.setItem('ambit_shortcuts_expanded', JSON.stringify({ Navigation: true }));
+        localStorage.setItem('ambit_shortcuts_expanded', JSON.stringify({ 'Library Navigation': true }));
         render(<ShortcutsModal isOpen onClose={vi.fn()} />);
         expect(await screen.findByText('Navigate grid')).toBeTruthy();
         expect(screen.queryByText('Show this help dialog')).toBeNull();
 
-        fireEvent.click(screen.getByRole('button', { name: /Actions/ }));
-        expect(screen.getByText('Toggle Favorite')).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: /Navigation/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Library Actions/ }));
+        expect(screen.getByText('Toggle selected Favorites')).toBeTruthy();
+        expect(screen.queryByText('Batch Rename')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /Library Navigation/ }));
         expect(screen.queryByText('Navigate grid')).toBeNull();
         await waitFor(() => expect(JSON.parse(localStorage.getItem('ambit_shortcuts_expanded') ?? '{}')).toMatchObject({
-            Navigation: false,
-            Actions: true,
+            'Library Navigation': false,
+            'Library Actions': true,
         }));
+    });
+
+    it('documents system, viewer, and slideshow shortcuts', () => {
+        render(<ShortcutsModal isOpen onClose={vi.fn()} />);
+
+        expect(screen.getByText('Open Settings')).toBeTruthy();
+        expect(screen.getByText('Import images')).toBeTruthy();
+        expect(screen.getByText('Toggle fullscreen (desktop app)')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: /Viewer/ }));
+        expect(screen.getByText('Toggle metadata sidebar')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /Slideshow/ }));
+        expect(screen.getByText('Play / Pause')).toBeTruthy();
     });
 
     it('falls back from corrupt saved state and switches search tabs from props and clicks', async () => {

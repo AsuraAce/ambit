@@ -254,8 +254,9 @@ describe('ImageViewer full metadata loading', () => {
         const onToggleFavorite = vi.fn();
         const onTogglePin = vi.fn();
         const onToggleSidebar = vi.fn();
+        const onDelete = vi.fn();
         const { container } = renderViewer({
-            onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onToggleSidebar
+            onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete
         });
         await waitFor(() => expect(mockMetadataSidebar).toHaveBeenCalled());
 
@@ -268,6 +269,21 @@ describe('ImageViewer full metadata loading', () => {
         expect(onTogglePin).toHaveBeenCalledWith(lightImage.id, true);
         expect(onToggleSidebar).toHaveBeenCalled();
 
+        const spaceEvent = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+        act(() => window.dispatchEvent(spaceEvent));
+        expect(spaceEvent.defaultPrevented).toBe(true);
+        expect(onClose).toHaveBeenCalledOnce();
+
+        const deleteEvent = new KeyboardEvent('keydown', { key: 'Delete', cancelable: true });
+        act(() => window.dispatchEvent(deleteEvent));
+        expect(deleteEvent.defaultPrevented).toBe(true);
+        expect(onDelete).toHaveBeenCalledWith(lightImage.id);
+
+        const backspaceEvent = new KeyboardEvent('keydown', { key: 'Backspace', cancelable: true });
+        act(() => window.dispatchEvent(backspaceEvent));
+        expect(backspaceEvent.defaultPrevented).toBe(true);
+        expect(onDelete).toHaveBeenCalledTimes(2);
+
         act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z' })));
         expect(container.firstElementChild?.className).toContain('bg-black');
         act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
@@ -278,19 +294,53 @@ describe('ImageViewer full metadata loading', () => {
         const input = document.createElement('input');
         document.body.appendChild(input);
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
         expect(onNext).toHaveBeenCalledTimes(1);
+        expect(onDelete).toHaveBeenCalledTimes(2);
+        expect(onClose).toHaveBeenCalledTimes(2);
         input.remove();
     });
 
-    it('closes the AI modal before closing the viewer on Escape', () => {
+    it('lets the AI modal own shortcuts and closes it before the viewer on Escape', () => {
         aiState.value.modalOpen = true;
         const onClose = vi.fn();
-        renderViewer({ onClose });
+        const onDelete = vi.fn();
+        const onNext = vi.fn();
+        const onToggleFavorite = vi.fn();
+        renderViewer({ onClose, onDelete, onNext, onToggleFavorite });
+
+        for (const key of [' ', 'Delete', 'Backspace', 'ArrowRight', 'f', 'z']) {
+            act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key })));
+        }
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(onDelete).not.toHaveBeenCalled();
+        expect(onNext).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
 
         act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
 
         expect(aiState.value.closeModal).toHaveBeenCalled();
         expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('leaves all viewer shortcuts to an external modal while blocked', () => {
+        const onClose = vi.fn();
+        const onDelete = vi.fn();
+        const onNext = vi.fn();
+        const onToggleFavorite = vi.fn();
+        renderViewer({ isShortcutBlocked: true, onClose, onDelete, onNext, onToggleFavorite });
+
+        for (const key of [' ', 'Delete', 'Backspace', 'ArrowRight', 'f', 'z', 'Escape']) {
+            act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key })));
+        }
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(onDelete).not.toHaveBeenCalled();
+        expect(onNext).not.toHaveBeenCalled();
+        expect(onToggleFavorite).not.toHaveBeenCalled();
     });
 
     it('forwards sidebar edits, searches, collections, and AI commands', async () => {

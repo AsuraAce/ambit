@@ -35,7 +35,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
   // Logic
   const hudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shuffledIndicesRef = useRef<number[]>([]);
-  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -43,7 +43,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    closeButtonRef.current?.focus();
+    dialogRef.current?.focus();
 
     return () => {
       if (previousFocus?.isConnected) previousFocus.focus();
@@ -164,6 +164,11 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
 
   return (
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Slideshow"
+      tabIndex={-1}
       className={`fixed inset-0 z-[100] bg-black flex items-center justify-center overflow-hidden ${!showHud ? 'cursor-none' : ''}`}
       onMouseMove={handleMouseMove}
       onClick={() => setIsPlaying(p => !p)}
@@ -222,7 +227,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
         }}
       >
         <div className="absolute top-0 left-0 right-0 p-6 flex justify-end bg-gradient-to-b from-black/60 to-transparent pointer-events-auto z-50">
-          <button ref={closeButtonRef} type="button" aria-label="Close Slideshow" onClick={onClose} className="p-3 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors">
+          <button type="button" aria-label="Close Slideshow" onClick={onClose} className="p-3 hover:bg-white/10 rounded-full text-white/80 hover:text-white transition-colors">
             <X className="w-8 h-8" />
           </button>
         </div>

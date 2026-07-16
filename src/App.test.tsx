@@ -20,6 +20,8 @@ type AppLayoutProbe = {
     onEditCollection: (id: string) => void;
     setExportIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     setViewingImageId: React.Dispatch<React.SetStateAction<string | null>>;
+    onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
+    isViewerShortcutBlocked: boolean;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
     searchProps: {
         onFocus: () => void;
@@ -70,6 +72,7 @@ type ImportModalProbe = {
 
 type ViewerProbe = {
     image: AIImage;
+    isShortcutBlocked: boolean;
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
@@ -95,17 +98,18 @@ type ContextMenuProbe = {
 };
 
 type ShortcutProbe = {
+    isViewerOpen: boolean;
     handleBulkDelete: () => void;
     togglePrivacyMode: () => void;
     toggleMasking: () => void;
     toggleFavorite: () => void;
     togglePin: () => void;
     openCollection: () => void;
+    openSettings: () => void;
+    openImport: () => void;
     closeAllModals: () => void;
     toggleShortcuts: () => void;
     toggleCommandPalette: () => void;
-    onCloseViewer: () => void;
-    handleRemoveFromCollection: () => Promise<void>;
 };
 
 const captured = vi.hoisted(() => ({
@@ -797,6 +801,8 @@ describe('App orchestration', () => {
         act(() => viewer.onNext());
         await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
         viewer = requireProbe(captured.viewer, 'ImageViewer');
+        expect(viewer.isShortcutBlocked).toBe(true);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isViewerShortcutBlocked).toBe(true);
         act(() => viewer.onPrev());
         await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
         viewer = requireProbe(captured.viewer, 'ImageViewer');
@@ -827,6 +833,23 @@ describe('App orchestration', () => {
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
         expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('blocks mounted viewers while the standalone import modal is open', async () => {
+        render(<App />);
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.isShortcutBlocked).toBe(false));
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').onOpenImportModal());
+        await waitFor(() => {
+            expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(true);
+            expect(requireProbe(captured.viewer, 'ImageViewer').isShortcutBlocked).toBe(true);
+            expect(requireProbe(captured.appLayout, 'AppLayout').isViewerShortcutBlocked).toBe(true);
+        });
+
+        act(() => requireProbe(captured.importModal, 'ImportModal').onClose());
+        await waitFor(() => expect(requireProbe(captured.viewer, 'ImageViewer').isShortcutBlocked).toBe(false));
     });
 
     it('closes the viewer after successfully removing its sole image from the active collection', async () => {
@@ -1049,11 +1072,11 @@ describe('App orchestration', () => {
         shortcuts.toggleFavorite();
         shortcuts.togglePin();
         shortcuts.openCollection();
+        shortcuts.openSettings();
+        act(() => shortcuts.openImport());
         shortcuts.closeAllModals();
         shortcuts.toggleShortcuts();
         shortcuts.toggleCommandPalette();
-        shortcuts.onCloseViewer();
-        await shortcuts.handleRemoveFromCollection();
 
         expect(mocks.executeDelete).toHaveBeenCalled();
         expect(mocks.handleTogglePrivacy).toHaveBeenCalled();
@@ -1062,7 +1085,13 @@ describe('App orchestration', () => {
         expect(mocks.handleShortcutPin).toHaveBeenCalled();
         expect(mocks.modals.closeAllModals).toHaveBeenCalled();
         expect(mocks.modals.setShortcutsModalTab).toHaveBeenCalledWith('shortcuts');
+        expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('general');
+        expect(mocks.modals.openModal).toHaveBeenCalledWith('settings');
         expect(mocks.modals.openModal).toHaveBeenCalledWith('commandPalette');
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').onMaintenanceViewerOpenChange(true));
+        const updatedShortcuts = mocks.shortcuts.mock.calls.at(-1)?.[0] as ShortcutProbe;
+        expect(updatedShortcuts.isViewerOpen).toBe(true);
     });
 
     it('falls back to the browser file input when the native picker fails', async () => {

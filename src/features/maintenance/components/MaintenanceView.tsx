@@ -40,6 +40,8 @@ interface MaintenanceViewProps {
     onTogglePin?: (id: string, isPinned: boolean) => void;
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     availableTags?: string[];
+    onViewerOpenChange: (isOpen: boolean) => void;
+    isShortcutBlocked: boolean;
 }
 
 // Lazy load LibraryHealth
@@ -61,7 +63,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onToggleFavorite,
     onTogglePin,
     onSetCollectionMembership,
-    availableTags
+    availableTags,
+    onViewerOpenChange,
+    isShortcutBlocked
 }) => {
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
@@ -89,6 +93,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // Missing Scan Special State
     const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
+
+    useEffect(() => {
+        onViewerOpenChange(viewingImageId !== null || compareImages !== null);
+    }, [viewingImageId, compareImages, onViewerOpenChange]);
+
+    useEffect(() => () => onViewerOpenChange(false), [onViewerOpenChange]);
 
     // --- Data Hooks ---
     const {
@@ -611,6 +621,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 <ImageViewer
                     image={targetImage}
                     isOpen={true}
+                    isShortcutBlocked={isShortcutBlocked}
                     onClose={() => setViewingImageId(null)}
                     onNext={() => {
                         const list = currentList; // Use memoized current list

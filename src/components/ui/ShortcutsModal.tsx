@@ -84,38 +84,61 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
             title: 'General',
             items: [
                 { key: '?', desc: 'Show this help dialog' },
-                { key: 'Ctrl + K', desc: 'Open Command Palette' },
-                { key: 'Ctrl + F', desc: 'Focus search bar' },
+                { key: 'Ctrl/Cmd + K', desc: 'Open Command Palette' },
+                { key: 'Ctrl/Cmd + F', desc: 'Focus search bar' },
+                { key: 'Ctrl/Cmd + ,', desc: 'Open Settings' },
+                { key: 'Ctrl/Cmd + O', desc: 'Import images' },
                 { key: 'Shift + H', desc: 'Toggle Global Privacy Mode' },
                 { key: 'Esc', desc: 'Clear selection / Close dialog' },
+                { key: 'F11', desc: 'Toggle fullscreen (desktop app)' },
             ]
         },
         {
-            title: 'Navigation',
+            title: 'Library Navigation',
             items: [
                 { key: 'Arrow Keys', desc: 'Navigate grid' },
                 { key: 'Enter', desc: 'Open details / Save search' },
-                { key: 'Space', desc: 'Toggle Quick View' },
-                { key: 'Z', desc: 'Toggle Theater Mode (in Viewer)' },
+                { key: 'Space', desc: 'Open Quick View for selection' },
             ]
         },
         {
-            title: 'Actions',
+            title: 'Library Actions',
             items: [
-                { key: 'F', desc: 'Toggle Favorite' },
-                { key: 'P', desc: 'Toggle Pin' },
-                { key: 'M', desc: 'Toggle Content Mask' },
-                { key: 'C', desc: 'Add to Collection' },
-                { key: 'F2', desc: 'Batch Rename' },
-                { key: 'Del', desc: 'Delete selected' },
+                { key: 'F', desc: 'Toggle selected Favorites' },
+                { key: 'P', desc: 'Toggle selected Pins' },
+                { key: 'M', desc: 'Toggle selected Content Masks' },
+                { key: 'C', desc: 'Add selection to Collection' },
+                { key: 'Del', desc: 'Remove selected from Library' },
             ]
         },
         {
             title: 'Selection',
             items: [
-                { key: 'Ctrl + A', desc: 'Select all visible' },
-                { key: 'Ctrl + Click', desc: 'Toggle selection' },
+                { key: 'Ctrl/Cmd + A', desc: 'Select all visible' },
+                { key: 'Ctrl/Cmd + Click', desc: 'Toggle selection' },
                 { key: 'Shift + Click', desc: 'Range selection' },
+            ]
+        },
+        {
+            title: 'Viewer',
+            items: [
+                { key: 'Left / Right', desc: 'Previous / Next image' },
+                { key: 'Space', desc: 'Close Quick View' },
+                { key: 'F', desc: 'Toggle Favorite' },
+                { key: 'P', desc: 'Toggle Pin' },
+                { key: 'I', desc: 'Toggle metadata sidebar' },
+                { key: 'Z', desc: 'Toggle Theater Mode' },
+                { key: 'Del', desc: 'Remove viewed image from Library' },
+                { key: 'Esc', desc: 'Exit Theater Mode / Close Viewer' },
+            ]
+        },
+        {
+            title: 'Slideshow',
+            items: [
+                { key: 'Left / Right', desc: 'Previous / Next image' },
+                { key: 'Space', desc: 'Play / Pause' },
+                { key: 'I', desc: 'Toggle image information' },
+                { key: 'Esc', desc: 'Close slideshow' },
             ]
         }
     ];

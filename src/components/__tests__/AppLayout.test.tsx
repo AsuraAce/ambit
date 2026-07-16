@@ -170,6 +170,8 @@ describe('AppLayout', () => {
         images: [],
         handlers: {} as any,
         setViewingImageId: vi.fn(),
+        onMaintenanceViewerOpenChange: vi.fn(),
+        isViewerShortcutBlocked: false,
         settings: {} as any,
         privacyEnabled: false,
         toggleFavorite: vi.fn(),
@@ -292,6 +294,13 @@ describe('AppLayout', () => {
         expect(timeline.getAttribute('data-has-more-images')).toBe('true');
         expect(timeline.getAttribute('data-is-loading-more')).toBe('false');
         expect(timeline.getAttribute('data-has-load-more')).toBe('true');
+    });
+
+    it('renders MaintenanceView when viewMode is maintenance', async () => {
+        render(<AppLayout {...defaultProps} viewMode="maintenance" isViewerShortcutBlocked={true} />);
+        expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
+        expect(capturedProps.maintenance?.onViewerOpenChange).toBe(defaultProps.onMaintenanceViewerOpenChange);
+        expect(capturedProps.maintenance?.isShortcutBlocked).toBe(true);
     });
 
     it('forwards collection persistence to MaintenanceView', async () => {
