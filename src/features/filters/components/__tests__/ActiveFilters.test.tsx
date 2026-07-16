@@ -103,7 +103,6 @@ describe('ActiveFilters', () => {
             { filters: { loras: ['lora'] }, label: 'lora' },
             { filters: { embeddings: ['embedding'] }, label: 'embedding' },
             { filters: { hypernetworks: ['hyper'] }, label: 'hyper' },
-            { filters: { searchQuery: 'query' }, label: 'Search: "query"' },
             { filters: { samplers: ['Euler'] }, label: 'Euler' },
             { filters: { generationTypes: ['txt2img'] }, label: 'txt2img' },
             { filters: { minSteps: 1 }, label: /Steps: 1-/ },
@@ -128,7 +127,7 @@ describe('ActiveFilters', () => {
         expect(screen.getByText('Collection: Collection')).toBeTruthy();
     });
 
-    it('clears search, collection, and pinned chips without changing unrelated criteria', () => {
+    it('clears collection and pinned chips without changing unrelated criteria', () => {
         const filters = createFilters({
             searchQuery: 'portrait',
             collectionId: 'regular',
@@ -139,15 +138,6 @@ describe('ActiveFilters', () => {
         searchMocks.state.filters = filters;
         render(<ActiveFiltersUnderTest />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Clear Search Filter' }));
-        expect(applyLatestFilterUpdate(filters)).toMatchObject({
-            searchQuery: '',
-            collectionId: 'regular',
-            pinnedOnly: true,
-            favoritesOnly: true,
-        });
-
-        searchMocks.setFilters.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Clear Collection Filter Portraits' }));
         expect(applyLatestFilterUpdate(filters)).toMatchObject({
             searchQuery: 'portrait',
@@ -177,6 +167,12 @@ describe('ActiveFilters', () => {
         searchMocks.state.filters = createFilters({ searchQuery: '   ' });
         rerender(<ActiveFiltersUnderTest />);
         expect(screen.queryByRole('button', { name: /clear all/i })).toBeNull();
+    });
+
+    it('does not render a second filter strip for a navbar-query-only search', () => {
+        searchMocks.state.filters = createFilters({ searchQuery: 'query' });
+        const { container } = render(<ActiveFiltersUnderTest />);
+        expect(container.innerHTML).toBe('');
     });
 
     it('renders locked smart rules and deduplicates matching explicit chips', () => {
@@ -239,26 +235,6 @@ describe('ActiveFilters', () => {
         expect(screen.getAllByTitle('txt2img')).toHaveLength(1);
         expect(screen.getAllByTitle('manual-control')).toHaveLength(1);
         expect(screen.getAllByTitle('manual-adapter')).toHaveLength(1);
-    });
-
-    it('keeps a manual search chip when it adds a different smart-collection criterion', () => {
-        collectionMocks.state.smartCollections = [
-            createCollection({
-                id: 'smart',
-                name: 'Smart',
-                filters: createFilters({ searchQuery: 'smart search' }),
-            }),
-        ];
-        searchMocks.state.filters = createFilters({
-            collectionId: 'smart',
-            searchQuery: 'manual search',
-        });
-
-        render(<ActiveFiltersUnderTest />);
-
-        expect(screen.getByText('"smart search"')).toBeTruthy();
-        expect(screen.getByText('Search: "manual search"')).toBeTruthy();
-        expect(screen.getByRole('button', { name: 'Clear Search Filter' })).toBeTruthy();
     });
 
     it('removes each explicit list filter through a functional state update', () => {

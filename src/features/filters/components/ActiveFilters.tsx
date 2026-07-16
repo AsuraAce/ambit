@@ -18,9 +18,6 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const allCols = React.useMemo(() => [...collections, ...smartCollections], [collections, smartCollections]);
     const activeCollection = filters.collectionId ? allCols.find(collection => collection.id === filters.collectionId) : undefined;
     const activeSmartCol = filters.collectionId ? smartCollections.find(collection => collection.id === filters.collectionId) : undefined;
-    const searchQuery = filters.searchQuery.trim();
-    const smartSearchQuery = activeSmartCol?.filters?.searchQuery?.trim() ?? '';
-    const showSearchFilter = searchQuery !== '' && searchQuery !== smartSearchQuery;
     const showFavoritesFilter = filters.favoritesOnly && !activeSmartCol?.filters?.favoritesOnly;
     const showPinnedFilter = !!filters.pinnedOnly && !activeSmartCol?.filters?.pinnedOnly;
     const dateFilterLabel = getDateFilterLabel(filters);
@@ -35,7 +32,6 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
         filters.loras.length > 0 ||
         filters.embeddings.length > 0 ||
         filters.hypernetworks.length > 0 ||
-        searchQuery !== '' ||
         (filters.samplers && filters.samplers.length > 0) ||
         (filters.generationTypes && filters.generationTypes.length > 0) ||
         filters.minSteps !== undefined ||
@@ -186,13 +182,6 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                         </div>
                     )}
                 </>
-            )}
-
-            {showSearchFilter && (
-                <div title={searchQuery} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-200 text-xs border border-gray-200 dark:border-zinc-700">
-                    <span className="truncate max-w-[180px]">Search: "{searchQuery}"</span>
-                    <button type="button" aria-label="Clear Search Filter" onClick={() => setFilters(f => ({ ...f, searchQuery: '' }))}><X className="w-3 h-3" /></button>
-                </div>
             )}
 
             {dateFilterLabel && (

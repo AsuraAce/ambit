@@ -36,7 +36,11 @@ describe('ShortcutsModal', () => {
         expect(await screen.findByText('Show this help dialog')).toBeTruthy();
 
         fireEvent.click(screen.getByRole('button', { name: 'Search Syntax' }));
-        expect(screen.getByText('Search positive prompt (default)')).toBeTruthy();
+        expect(screen.getByText('Search the positive prompt (default)')).toBeTruthy();
+        expect(screen.getByText('Filter by ControlNet; controlnet: is also supported')).toBeTruthy();
+        expect(screen.getByText('Filter width; width: is also supported')).toBeTruthy();
+        expect(screen.getByText('Filter generation steps with a number, <, or >')).toBeTruthy();
+        expect(screen.getByText('Filter CFG with a number, <, or >')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Keyboard Shortcuts' }));
         expect(screen.getByText('Show this help dialog')).toBeTruthy();
 

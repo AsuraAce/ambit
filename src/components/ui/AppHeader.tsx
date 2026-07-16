@@ -23,6 +23,7 @@ interface AppHeaderProps {
         isFocused: boolean;
         onFocus: () => void;
         onBlur: () => void;
+        onOpenSearchHelp: () => void;
     };
     layoutMode: LayoutMode;
     setLayoutMode: (mode: LayoutMode) => void;
@@ -126,6 +127,10 @@ export const AppHeader = React.memo(({
                         searchProps={searchProps}
                         recentSearches={recentSearches}
                         setRecentSearches={setRecentSearches}
+                        scopeName={scopeName}
+                        displayedCount={displayedCount}
+                        isFiltering={isFiltering ?? false}
+                        submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
                     />
                     {browserMockMode && (
                         <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">

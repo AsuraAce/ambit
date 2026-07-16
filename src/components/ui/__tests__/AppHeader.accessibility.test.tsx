@@ -70,7 +70,8 @@ const defaultProps = {
         submitSearch: vi.fn(),
         isFocused: false,
         onFocus: vi.fn(),
-        onBlur: vi.fn()
+        onBlur: vi.fn(),
+        onOpenSearchHelp: vi.fn()
     },
     layoutMode: 'masonry' as const,
     setLayoutMode: vi.fn(),
