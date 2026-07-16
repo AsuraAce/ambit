@@ -29,8 +29,17 @@ Golden workflows:
 - `image_omnigen2_t2i.chunks.json`
 - `image_chroma1_radiance_text_to_image.chunks.json`
 - `image_firered_image_edit1_1.chunks.json`
+- `image_anima_base_v1.chunks.json`
+- `image_boogu_image_0_1_edit.chunks.json`
 - `image_lens_t2i.chunks.json`
 - `image_newbieimage_exp0_1-t2i.chunks.json`
+
+Pattern-covered workflows:
+
+- `image_anima_preview.chunks.json`: its internal selected path matches the
+  Anima Base golden; exact assertions cover its instance bindings and metadata.
+- `image_lens_turbo_t2i.chunks.json`: its internal custom-sampler path matches
+  Lens, while exact assertions cover its distinct prompt boundary and metadata.
 
 Partial workflows:
 
@@ -42,6 +51,9 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
+- `video_bernini_r_image_editing.chunks.json`: the selected system prompt needs
+  output-slot-aware `CustomCombo.INDEX` resolution, while total steps and the
+  scheduler remain behind `SplitSigmas`.
 
 ## Phase 22 Intake
 
@@ -55,6 +67,13 @@ claims are added package by package only after exact metadata assertions pass.
 | [`image_lens_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_lens_t2i.json) | `8784096ee565f02e20c13c07a0f582cfa9d0692d` | 42959 |
 | [`image_boogu_image_0_1_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_boogu_image_0_1_edit.json) | `35750c20d300a25e6e1f8231c664392accee8abe` | 31677 |
 | [`video_bernini_r_image_editing`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/video_bernini_r_image_editing.json) | `8d6b8327865c9421a0f20244f1f314d8c2818e67` | 98085 |
+
+Related variants captured for structural comparison:
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_anima_preview`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_anima_preview.json) | `80c7cca83a3fed582d4fd1fe20971b60d68336ac` | 28192 |
+| [`image_lens_turbo_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_lens_turbo_t2i.json) | `697cbf0bb04eff2d70750dd9d2f01cc920d76ca5` | 42982 |
 
 Source-authored expectations, recorded without asserting current parser output:
 

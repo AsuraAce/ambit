@@ -252,6 +252,26 @@ Completion criteria:
 
 Depends on: Work Packages 1-4.
 
+Status: Complete (`feat/comfyui-phase22-manifest-reassessment`, 2026-07-16)
+
+Evidence:
+
+- `image_anima_base_v1` is golden with exact model, seed, steps, CFG,
+  sampler, positive and negative prompts, workflow preservation, output
+  diagnostics, and `SamplerTraversal` provenance;
+- pinned `image_anima_preview` and `image_lens_turbo_t2i` fixtures retain
+  their upstream Git blob identities and deterministic graph diagnostics;
+- internal selected-path signatures match Anima Preview to Anima Base and Lens
+  Turbo to Lens, while exact variant assertions cover boundary bindings, final
+  metadata, resources, diagnostics, and provenance;
+- manifest totals are 20 golden, 9 pattern-covered, 4 partial, 42 unassessed,
+  and 474 excluded, with every promotion linked to fixture and test evidence;
+- parser behavior and parser version 24 are unchanged;
+- official catalog, catalog intake, structural pattern, template coverage,
+  full ComfyUI, and reparse tests pass;
+- `cargo fmt --check` and `git diff --check` pass; the independent package
+  review and post-merge milestone integration review remain separate gates.
+
 Primary invariant: coverage status follows executable evidence, not family resemblance.
 
 Scope:

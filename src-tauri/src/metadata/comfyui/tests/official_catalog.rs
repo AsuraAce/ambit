@@ -109,6 +109,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/image_ernie_image_turbo.chunks.json"),
     },
     CatalogFixture {
+        name: "image_anima_base_v1",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_newbieimage_exp0_1-t2i",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
@@ -787,6 +791,29 @@ fn linked_numeric_switches_and_conditioning_branches_follow_selected_inputs() {
             Some(&ComfyParseLayer::SamplerTraversal)
         );
     }
+}
+
+#[test]
+fn anima_base_subgraph_control() {
+    assert_fixture(
+        "image_anima_base_v1",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(875_817_230_929_465),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "er_sde (simple)",
+            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
 }
 
 #[test]
