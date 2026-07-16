@@ -29,7 +29,7 @@ interface MetadataSidebarProps {
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
-    onAddToCollection: (imageId: string, colId: string) => void;
+    onSetCollectionMembership: (imageId: string, colId: string, shouldBelong: boolean) => Promise<boolean>;
     onSearch: (term: string) => void;
     onClose: () => void;
     onRecoverMetadata?: () => void;
@@ -65,7 +65,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
-    onAddToCollection,
+    onSetCollectionMembership,
     onSearch,
     onClose,
     onRecoverMetadata,
@@ -165,7 +165,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         setPromptValue={setPromptValue}
                         negativePromptValue={negativePromptValue}
                         setNegativePromptValue={setNegativePromptValue}
-                        onAddToCollection={onAddToCollection}
+                        onSetCollectionMembership={onSetCollectionMembership}
                         onUpdatePrompt={onUpdatePrompt}
                         onUpdateNegativePrompt={onUpdateNegativePrompt}
                         onUpdateNotes={onUpdateNotes}

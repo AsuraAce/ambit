@@ -15,6 +15,7 @@ type AppLayoutProbe = {
     onOpenImportModal: () => void;
     handleRemoveFromCollection: () => Promise<void>;
     handleOpenCollectionModal: (mode?: 'add' | 'move') => void;
+    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onEditCollection: (id: string) => void;
     setExportIds: React.Dispatch<React.SetStateAction<Set<string>>>;
     setViewingImageId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -81,7 +82,7 @@ type ViewerProbe = {
     onSearch: (term: string) => void;
     onRevertMetadata: (id: string) => void;
     onRecoverMetadata: () => void;
-    onAddToCollection: (id: string) => void;
+    onSetCollectionMembership: (id: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onToggleSidebar: () => void;
 };
 
@@ -155,9 +156,16 @@ const mocks = vi.hoisted(() => ({
     handleImportFolders: vi.fn().mockResolvedValue(undefined),
     importImages: vi.fn(),
     handleInvokeSync: vi.fn(),
-    removeImagesFromCollection: vi.fn().mockResolvedValue(undefined),
+    removeImagesFromCollection: vi.fn(async (
+        _imageIds: string[],
+        _collectionId: string,
+        onPersisted?: () => void
+    ) => {
+        onPersisted?.();
+        return true;
+    }),
     moveImagesBetweenCollections: vi.fn().mockResolvedValue(undefined),
-    addImagesToCollection: vi.fn().mockResolvedValue(undefined),
+    addImagesToCollection: vi.fn().mockResolvedValue(true),
     deleteCollection: vi.fn().mockResolvedValue(undefined),
     updateCollectionFilters: vi.fn().mockResolvedValue(undefined),
     handleExportConfirm: vi.fn(),
@@ -482,6 +490,14 @@ describe('App orchestration', () => {
         mocks.setRecentSearches.mockImplementation((update: React.SetStateAction<string[]>) => {
             if (typeof update === 'function') update(['old']);
         });
+        mocks.removeImagesFromCollection.mockImplementation(async (
+            _imageIds: string[],
+            _collectionId: string,
+            onPersisted?: () => void
+        ) => {
+            onPersisted?.();
+            return true;
+        });
         vi.mocked(open).mockReset();
     });
 
@@ -578,6 +594,12 @@ describe('App orchestration', () => {
         await act(async () => layout.handleRemoveFromCollection());
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
         expect(mocks.addToast).toHaveBeenCalledWith('Removed 1 images from collection', 'info');
+        await act(async () => {
+            expect(await layout.onSetCollectionMembership('one', 'target', true)).toBe(true);
+            expect(await layout.onSetCollectionMembership('one', 'target', false)).toBe(true);
+        });
+        expect(mocks.addImagesToCollection).toHaveBeenCalledWith(['one'], 'target');
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target');
 
         act(() => layout.setExportIds(new Set(['one'])));
         requireProbe(captured.globalModals, 'GlobalModals').onExportConfirm('export', 'C:/out');
@@ -755,7 +777,10 @@ describe('App orchestration', () => {
         viewer.onDelete('one');
         viewer.onRevertMetadata('one');
         viewer.onOpenSettings();
-        viewer.onAddToCollection('one');
+        await act(async () => {
+            expect(await viewer.onSetCollectionMembership('one', 'target', true)).toBe(true);
+            expect(await viewer.onSetCollectionMembership('one', 'target', false)).toBe(true);
+        });
         viewer.onToggleSidebar();
         viewer.onClose();
 
@@ -764,7 +789,110 @@ describe('App orchestration', () => {
         expect(mocks.handleFavoriteImage).toHaveBeenCalledWith('one', { showToast: false });
         expect(mocks.handlePinImage).toHaveBeenCalledWith('one', true, { showToast: false });
         expect(mocks.handleDeleteViewerImage).toHaveBeenCalledWith('one');
+        expect(mocks.addImagesToCollection).toHaveBeenCalledWith(['one'], 'target');
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
+        expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('closes the viewer after successfully removing its sole image from the active collection', async () => {
+        mocks.images = [image('one')];
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setViewingImageId('one'));
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull());
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onSetCollectionMembership('one', 'active', false)).toBe(true);
+        });
+
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+        expect(mocks.shortcuts).toHaveBeenLastCalledWith(expect.objectContaining({ isViewerOpen: false }));
+    });
+
+    it('moves the viewer to the previous image after removing the last image from the active collection', async () => {
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one', 'two'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(1));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onSetCollectionMembership('two', 'active', false)).toBe(true);
+        });
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+    });
+
+    it('does not open the global viewer when Maintenance persists collection membership', async () => {
+        mocks.images = [image('one')];
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        const view = render(<App />);
+
+        await act(async () => {
+            expect(await requireProbe(captured.appLayout, 'AppLayout').onSetCollectionMembership('one', 'active', false)).toBe(true);
+        });
+
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'active');
+    });
+
+    it('keeps deferred active-collection removals on the latest displayed image', async () => {
+        const firstRemoval = createDeferred<boolean>();
+        const secondRemoval = createDeferred<boolean>();
+        const persistenceCallbacks: Array<() => void> = [];
+        let rerenderApp: () => void = () => undefined;
+        mocks.removeImagesFromCollection
+            .mockImplementationOnce((ids, _collectionId, onPersisted?: () => void) => {
+                persistenceCallbacks.push(() => {
+                    onPersisted?.();
+                    mocks.images = mocks.images.filter(candidate => !ids.includes(candidate.id));
+                    rerenderApp();
+                });
+                return firstRemoval.promise;
+            })
+            .mockImplementationOnce((ids, _collectionId, onPersisted?: () => void) => {
+                persistenceCallbacks.push(() => {
+                    onPersisted?.();
+                    mocks.images = mocks.images.filter(candidate => !ids.includes(candidate.id));
+                    rerenderApp();
+                });
+                return secondRemoval.promise;
+            });
+        mocks.images = [image('one'), image('two'), image('three')];
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one', 'two', 'three'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        const view = render(<App />);
+        rerenderApp = () => view.rerender(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let removeOne!: Promise<boolean>;
+        act(() => {
+            removeOne = requireProbe(captured.viewer, 'ImageViewer').onSetCollectionMembership('one', 'active', false);
+        });
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        let removeTwo!: Promise<boolean>;
+        act(() => {
+            removeTwo = requireProbe(captured.viewer, 'ImageViewer').onSetCollectionMembership('two', 'active', false);
+        });
+
+        await act(async () => {
+            persistenceCallbacks[0]();
+            firstRemoval.resolve(true);
+            expect(await removeOne).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+
+        await act(async () => {
+            persistenceCallbacks[1]();
+            secondRemoval.resolve(true);
+            expect(await removeTwo).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('three'));
     });
 
     it('removes viewer and compare/slideshow image exposure when SearchContext fails closed', async () => {

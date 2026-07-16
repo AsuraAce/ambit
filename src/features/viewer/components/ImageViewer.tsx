@@ -25,7 +25,7 @@ import {
 interface ImageViewerProps {
     image: AIImage;
     availableTags?: string[];
-    onAddToCollection: (imageId: string, collectionId: string) => void;
+    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
@@ -106,7 +106,7 @@ const ViewerStatusHud: React.FC<ViewerStatusHudProps> = ({ isFavorite, isPinned,
 export const ImageViewer: React.FC<ImageViewerProps> = ({
     image,
     availableTags = [],
-    onAddToCollection,
+    onSetCollectionMembership,
     onClose,
     onNext,
     onPrev,
@@ -434,7 +434,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onUpdateNegativePrompt={(id, np) => onUpdateNegativePrompt?.(id, np)}
                     onUpdateModel={(id, m) => onUpdateModel?.(id, m)}
                     onUpdateTool={(id, t) => onUpdateTool?.(id, t)}
-                    onAddToCollection={onAddToCollection}
+                    onSetCollectionMembership={onSetCollectionMembership}
                     onSearch={onSearch}
                     onClose={onClose}
                     onRecoverMetadata={onRecoverMetadata}

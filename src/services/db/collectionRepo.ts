@@ -900,16 +900,11 @@ export const getCollectionsForImage = async (imageId: string): Promise<string[]>
     }
 
     const db = await getDb();
-    try {
-        const res = await db.select<{ collection_id: string }[]>(
-            'SELECT collection_id FROM collection_images WHERE image_id = ?',
-            [imageId]
-        );
-        return res.map(r => r.collection_id);
-    } catch (e) {
-        console.error('[DB] Failed to get collections for image', e);
-        return [];
-    }
+    const res = await db.select<{ collection_id: string }[]>(
+        'SELECT collection_id FROM collection_images WHERE image_id = ?',
+        [imageId]
+    );
+    return res.map(r => r.collection_id);
 };
 
 /**

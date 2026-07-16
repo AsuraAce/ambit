@@ -995,7 +995,7 @@ describe('collectionRepo membership helpers', () => {
         errorSpy.mockRestore();
     });
 
-    it('returns collection memberships and falls back safely when membership queries fail', async () => {
+    it('returns collection memberships and propagates failures so callers do not treat them as empty membership', async () => {
         dbMocks.select.mockResolvedValueOnce([{ collection_id: 'c1' }, { collection_id: 'c2' }]);
 
         const { getCollectionsForImage, getCollectionImageIds } = await import('../collectionRepo');
@@ -1006,7 +1006,7 @@ describe('collectionRepo membership helpers', () => {
         await expect(getCollectionImageIds('c1')).resolves.toEqual(['img-1', 'img-2']);
 
         dbMocks.select.mockRejectedValueOnce(new Error('sqlite busy'));
-        await expect(getCollectionsForImage('img-1')).resolves.toEqual([]);
+        await expect(getCollectionsForImage('img-1')).rejects.toThrow('sqlite busy');
     });
 
     it('falls back to no image ids when collection image lookup fails', async () => {
