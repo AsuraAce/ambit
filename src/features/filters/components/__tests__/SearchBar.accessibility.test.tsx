@@ -79,10 +79,10 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.toggleAiSearch).toHaveBeenCalledTimes(1);
     });
 
-    it('connects the combobox to its listbox and exposes keyboard selection', () => {
+    it('connects the combobox to its deferred listbox and exposes keyboard selection', async () => {
         const harness = renderSearchBar(createDefaultFilters(), {}, ['sunset']);
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
-        const listbox = screen.getByRole('listbox', { name: 'Recent searches' });
+        const listbox = await screen.findByRole('listbox', { name: 'Recent searches' });
         const option = screen.getByRole('option', { name: 'sunset' });
 
         expect(input.getAttribute('aria-controls')).toBe(listbox.id);
@@ -94,11 +94,11 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('sunset');
     });
 
-    it('dismisses suggestions with Escape and opens search syntax help directly', () => {
+    it('dismisses deferred suggestions with Escape and opens search syntax help directly', async () => {
         const harness = renderSearchBar();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
         fireEvent.change(input, { target: { value: 'cn' } });
-        expect(screen.getByRole('listbox', { name: 'Search operator suggestions' })).toBeTruthy();
+        expect(await screen.findByRole('listbox', { name: 'Search operator suggestions' })).toBeTruthy();
 
         fireEvent.keyDown(input, { key: 'Escape' });
         expect(screen.queryByRole('listbox')).toBeNull();

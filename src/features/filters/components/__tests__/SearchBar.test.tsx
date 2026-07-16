@@ -75,6 +75,15 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
     };
 };
 
+const flushSearchPopover = async () => {
+    await act(async () => {
+        await Promise.all([
+            import('../SearchBarPopover'),
+            import('../../../../constants/searchOperators'),
+        ]);
+    });
+};
+
 describe('SearchBar advanced date syntax guard', () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -85,8 +94,9 @@ describe('SearchBar advanced date syntax guard', () => {
         vi.useRealTimers();
     });
 
-    it('keeps incomplete date syntax local and shows a hint', () => {
+    it('keeps incomplete date syntax local and shows a hint', async () => {
         const harness = renderSearchBar();
+        await flushSearchPopover();
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'date:2026-' },
@@ -128,8 +138,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).not.toHaveBeenCalled();
     });
 
-    it('does not commit a date operator suggestion before a value exists', () => {
+    it('does not commit a date operator suggestion before a value exists', async () => {
         const harness = renderSearchBar();
+        await flushSearchPopover();
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'dat' },
@@ -168,8 +179,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('external');
     });
 
-    it('navigates suggestions with arrows and selects with Enter and Tab', () => {
+    it('navigates suggestions with arrows and selects with Enter and Tab', async () => {
         const harness = renderSearchBar();
+        await flushSearchPopover();
         const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'to' } });
         expect(screen.getByRole('option', { name: /tool:/ })).not.toBeNull();
@@ -186,8 +198,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect((input as HTMLInputElement).value).toBe('model: x file: ');
     });
 
-    it('falls through unrelated keys and submits when no suggestion is active', () => {
+    it('falls through unrelated keys and submits when no suggestion is active', async () => {
         const harness = renderSearchBar();
+        await flushSearchPopover();
         const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'to' } });
         fireEvent.keyDown(input, { key: 'Escape' });
@@ -199,8 +212,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledTimes(1);
     });
 
-    it('selects suggestions with the pointer and clears suggestions for blank tokens', () => {
+    it('selects suggestions with the pointer and clears suggestions for blank tokens', async () => {
         renderSearchBar();
+        await flushSearchPopover();
         const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'lo' } });
         fireEvent.click(screen.getByRole('option', { name: /lora:/ }));
@@ -229,9 +243,10 @@ describe('SearchBar advanced date syntax guard', () => {
         focus.mockRestore();
     });
 
-    it('clears and runs recent searches without blurring', () => {
+    it('clears and runs recent searches without blurring', async () => {
         const setRecentSearches = vi.fn();
         const harness = renderSearchBar(createDefaultFilters(), { recentSearches: ['sunset'], setRecentSearches });
+        await flushSearchPopover();
         const clear = screen.getByRole('button', { name: 'Clear recent searches' });
         fireEvent.click(clear);
         expect(setRecentSearches).toHaveBeenCalledWith([]);
@@ -257,11 +272,12 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.toggleAiSearch).not.toHaveBeenCalled();
     });
 
-    it('keeps dashboard drafts local until Enter routes the submitted query', () => {
+    it('keeps dashboard drafts local until Enter routes the submitted query', async () => {
         const harness = renderSearchBar(createDefaultFilters(), {
             scopeName: 'Statistics',
             submitNavigatesToGrid: true,
         });
+        await flushSearchPopover();
         const input = screen.getByRole('combobox', { name: 'Search in Statistics' });
 
         fireEvent.change(input, { target: { value: 'portrait' } });
@@ -274,11 +290,12 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');
     });
 
-    it('shows scope-aware no-match feedback for an applied query', () => {
+    it('shows scope-aware no-match feedback for an applied query', async () => {
         renderSearchBar(createDefaultFilters({ searchQuery: 'missing' }), {
             scopeName: 'Collection: Favorites',
             displayedCount: 0,
         });
+        await flushSearchPopover();
 
         expect(screen.getByRole('status').textContent).toBe('No matches in Collection: Favorites.');
     });

@@ -1,11 +1,13 @@
 import * as React from 'react';
-import { BookOpen, History, LoaderCircle, Search, Sparkles, X } from 'lucide-react';
+import { LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { APP_NAME } from '../../../constants/app';
-import { SEARCH_OPERATOR_SUGGESTIONS } from '../../../constants/searchOperators';
 import { useSearch } from '../../../contexts/SearchContext';
 import { getAdvancedDateSearchReadiness } from '../../../utils/dateFilters';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import type { SearchBarOption } from './SearchBarPopover';
+
+const SearchBarPopover = React.lazy(() => import('./SearchBarPopover').then(module => ({ default: module.SearchBarPopover })));
 
 interface SearchBarProps {
     filters: FilterState;
@@ -29,13 +31,6 @@ interface SearchBarProps {
     submitNavigatesToGrid: boolean;
 }
 
-interface SearchOption {
-    id: string;
-    kind: 'operator' | 'recent';
-    value: string;
-    description?: string;
-}
-
 export const SearchBar = React.memo(({
     searchProps,
     recentSearches,
@@ -49,6 +44,7 @@ export const SearchBar = React.memo(({
     const [localValue, setLocalValue] = React.useState(filters.searchQuery);
     const [activeOptionIndex, setActiveOptionIndex] = React.useState(-1);
     const [areOptionsDismissed, setAreOptionsDismissed] = React.useState(false);
+    const [operatorSuggestions, setOperatorSuggestions] = React.useState<readonly { value: string; description: string }[]>([]);
     const listboxId = React.useId();
     const statusId = React.useId();
     const trimmedValue = localValue.trim();
@@ -61,18 +57,31 @@ export const SearchBar = React.memo(({
         : 'Use ISO dates like date:2026-04 or before:2025';
     const liveSearchEnabled = !searchProps.isAiSearchEnabled && !submitNavigatesToGrid;
 
+    React.useEffect(() => {
+        if (!searchProps.isFocused || searchProps.isAiSearchEnabled || operatorSuggestions.length > 0) return;
+
+        let isCurrent = true;
+        void import('../../../constants/searchOperators').then(module => {
+            if (isCurrent) setOperatorSuggestions(module.SEARCH_OPERATOR_SUGGESTIONS);
+        });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, [operatorSuggestions.length, searchProps.isAiSearchEnabled, searchProps.isFocused]);
+
     const matchingOperators = React.useMemo(() => {
         if (searchProps.isAiSearchEnabled) return [];
         const lastToken = localValue.split(' ').pop()?.toLowerCase() || '';
         if (!lastToken) return [];
 
-        return SEARCH_OPERATOR_SUGGESTIONS.filter(operator => {
+        return operatorSuggestions.filter(operator => {
             const normalized = operator.value.toLowerCase();
             return normalized.startsWith(lastToken) && normalized !== lastToken;
         });
-    }, [localValue, searchProps.isAiSearchEnabled]);
+    }, [localValue, operatorSuggestions, searchProps.isAiSearchEnabled]);
 
-    const options = React.useMemo<SearchOption[]>(() => {
+    const options = React.useMemo<SearchBarOption[]>(() => {
         if (areOptionsDismissed) return [];
 
         if (matchingOperators.length > 0) {
@@ -163,7 +172,7 @@ export const SearchBar = React.memo(({
         searchProps.submitSearch(value);
     };
 
-    const selectOption = (option: SearchOption) => {
+    const selectOption = (option: SearchBarOption) => {
         if (option.kind === 'operator') {
             selectOperator(option.value);
         } else {
@@ -289,65 +298,20 @@ export const SearchBar = React.memo(({
                 ) : null}
 
                 {searchProps.isFocused ? (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                        {dateSearchHint ? (
-                            <div id={statusId} role="status" className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-100 dark:border-amber-900/40">
-                                {dateSearchHint}
-                            </div>
-                        ) : statusMessage ? (
-                            <div id={statusId} role="status" aria-live="polite" className="px-4 py-2 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-black/20 border-b border-gray-100 dark:border-white/5">
-                                {statusMessage}
-                            </div>
-                        ) : null}
-
-                        {options.length > 0 ? (
-                            <div className="py-2">
-                                <div className="px-4 py-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider flex justify-between items-center">
-                                    <span>{options[0].kind === 'recent' ? 'Recent Searches' : 'Suggestions'}</span>
-                                    {options[0].kind === 'recent' ? (
-                                        <button
-                                            type="button"
-                                            onClick={clearRecentSearches}
-                                            className="hover:text-red-500 transition-colors uppercase"
-                                        >
-                                            Clear recent searches
-                                        </button>
-                                    ) : null}
-                                </div>
-                                <div id={listboxId} role="listbox" aria-label={listLabel}>
-                                    {options.map((option, index) => (
-                                        <button
-                                            key={`${option.kind}-${option.value}`}
-                                            id={option.id}
-                                            type="button"
-                                            role="option"
-                                            tabIndex={-1}
-                                            aria-selected={activeOptionIndex === index}
-                                            onMouseDown={event => event.preventDefault()}
-                                            onClick={() => selectOption(option)}
-                                            className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2 ${activeOptionIndex === index ? 'bg-sage-100 dark:bg-sage-900/40 text-sage-900 dark:text-sage-100' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`}
-                                        >
-                                            {option.kind === 'recent' ? <History aria-hidden="true" className="w-3 h-3 text-gray-400" /> : null}
-                                            <span className={option.kind === 'operator' ? 'font-mono' : undefined}>{option.value}</span>
-                                            {option.description ? <span className="ml-auto text-xs text-gray-400 truncate">{option.description}</span> : null}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : null}
-
-                        <div className="border-t border-gray-100 dark:border-white/5 px-3 py-2 flex items-center justify-between gap-3">
-                            <span className="text-[10px] text-gray-400">Plain text searches positive prompts.</span>
-                            <button
-                                type="button"
-                                onClick={searchProps.onOpenSearchHelp}
-                                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium text-sage-600 hover:text-sage-800 dark:text-sage-400 dark:hover:text-sage-200"
-                            >
-                                <BookOpen aria-hidden="true" className="w-3 h-3" />
-                                Search syntax
-                            </button>
-                        </div>
-                    </div>
+                    <React.Suspense fallback={null}>
+                        <SearchBarPopover
+                            activeOptionIndex={activeOptionIndex}
+                            dateSearchHint={dateSearchHint}
+                            listboxId={listboxId}
+                            listLabel={listLabel}
+                            options={options}
+                            statusId={statusId}
+                            statusMessage={statusMessage}
+                            onClearRecentSearches={clearRecentSearches}
+                            onOpenSearchHelp={searchProps.onOpenSearchHelp}
+                            onSelectOption={selectOption}
+                        />
+                    </React.Suspense>
                 ) : null}
             </div>
             <TooltipButton
