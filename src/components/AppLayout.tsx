@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { APP_NAME } from '../constants/app';
 import { AppSidebar } from '../features/collections/components/AppSidebar';
 import { AppHeader } from './ui/AppHeader';
 import { SelectionBar } from '../features/library/components/SelectionBar';
@@ -12,10 +11,11 @@ import { VirtualGrid, type VirtualGridHandle } from '../features/library/compone
 import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode } from '../types';
-import { Import, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
+import { useLibraryStore } from '../stores/libraryStore';
 import { useProgressListeners } from '../hooks/useProgressListeners';
 import { setupGlobalLogging } from '../utils/logger';
 import { isCollectionThumbnailImage } from '../utils/thumbnailUtils';
@@ -30,6 +30,7 @@ setupGlobalLogging();
 
 const StatsDashboard = React.lazy(() => import('./ui/Charts').then(module => ({ default: module.StatsDashboard })));
 const MaintenanceView = React.lazy(() => import('../features/maintenance/components/MaintenanceView').then(module => ({ default: module.MaintenanceView })));
+const LibraryEmptyState = React.lazy(() => import('../features/library/components/LibraryEmptyState'));
 const FILTER_PANEL_LAYOUT_TRANSITION_MS = 540;
 
 const ViewLoadingFallback = () => (
@@ -37,6 +38,23 @@ const ViewLoadingFallback = () => (
         <div className="h-8 w-8 rounded-full border-2 border-sage-500/20 border-t-sage-500 animate-spin" />
     </div>
 );
+
+const LibraryEmptyStateContainer = ({ onImport }: { onImport: () => void }) => {
+    // Isolate progress subscriptions so populated virtual grids do not rerender for
+    // every import update while keeping the store in the existing startup chunk.
+    const isImporting = useLibraryStore(state => state.isImporting);
+    const importMessage = useLibraryStore(state => state.importProgress?.message);
+
+    return (
+        <React.Suspense fallback={<ViewLoadingFallback />}>
+            <LibraryEmptyState
+                isImporting={isImporting}
+                importMessage={importMessage}
+                onImport={onImport}
+            />
+        </React.Suspense>
+    );
+};
 
 interface GridLayoutPosition {
     x: number;
@@ -77,6 +95,7 @@ interface AppLayoutProps {
     fileOps: ReturnType<typeof useFileOperations>;
     onOpenImportModal: () => void;
     clearAllFilters: () => void;
+    workspaceRef: React.RefObject<HTMLElement | null>;
 
     // Grid/View Props
     // Grid/View Props
@@ -115,7 +134,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, scopeTotal, scopeName,
-    fileOps, onOpenImportModal, scrollContainerRef,
+    fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
     handlers, setViewingImageId, onMaintenanceViewerOpenChange, isViewerShortcutBlocked,
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
@@ -324,7 +343,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 isVisible={isFilterPanelOpen}
             />
 
-            <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-900/95 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-white/10 overflow-hidden relative">
+            <main
+                ref={workspaceRef}
+                tabIndex={-1}
+                aria-label="Library workspace"
+                className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-900/95 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-white/10 overflow-hidden relative"
+            >
                 <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.08),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.15),transparent_60%)] z-10" />
 
                 {isSearchFocused && (
@@ -491,42 +515,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         </>
                                     )}
                                 </>
+                            ) : globalTotal === 0 ? (
+                                <LibraryEmptyStateContainer onImport={onOpenImportModal} />
                             ) : (
                                 <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
-                                    {globalTotal === 0 ? (
-                                        <>
-                                            <div className="p-6 bg-sage-100 dark:bg-sage-500/10 rounded-full mb-6 border border-sage-200 dark:border-sage-500/20 animate-in zoom-in duration-500">
-                                                <Import className="w-12 h-12 text-sage-600 dark:text-sage-400 opacity-70" />
-                                            </div>
-                                            <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">Your Library is Empty</h3>
-                                            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-                                                Import your images to start organizing, searching, and exploring your AI creations with {APP_NAME}.
-                                            </p>
-                                            <button
-                                                onClick={onOpenImportModal}
-                                                className="px-8 py-3.5 bg-sage-600 hover:bg-sage-500 text-white rounded-2xl font-bold shadow-xl shadow-sage-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                                            >
-                                                <Import className="w-5 h-5" />
-                                                Import Images
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
-                                                <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />
-                                            </div>
-                                            <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">No Matches Found</h3>
-                                            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-                                                We couldn't find any images matching your current filters. Try adjusting your search or clearing filters.
-                                            </p>
-                                            <button
-                                                onClick={clearAllFilters}
-                                                className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-                                            >
-                                                Clear All Filters
-                                            </button>
-                                        </>
-                                    )}
+                                    <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">
+                                        <Search className="w-12 h-12 text-zinc-400 dark:text-zinc-500" />
+                                    </div>
+                                    <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">No Matches Found</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
+                                        We couldn't find any images matching your current filters. Try adjusting your search or clearing filters.
+                                    </p>
+                                    <button
+                                        onClick={clearAllFilters}
+                                        className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                                    >
+                                        Clear All Filters
+                                    </button>
                                 </div>
                             )}
                         </ErrorBoundary>}

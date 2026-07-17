@@ -490,13 +490,13 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
-        } else if t == "ZImageFunControlnet" {
+        } else if t == "ZImageFunControlnet" || t == "QwenImageDiffsynthControlnet" {
             if let Some(patch_id) =
                 get_model_chain_source_id(graph, node, "model_patch", strict_connections)
             {
                 if let Some(patch_node) = graph.get_node(&patch_id) {
                     if get_node_type(patch_node) == "ModelPatchLoader" {
-                        if let Some(name) = extract_model_patch_name(patch_node) {
+                        if let Some(name) = extract_model_patch_name(graph, patch_node) {
                             if !control_nets.contains(&name) {
                                 control_nets.push(name);
                             }
@@ -699,20 +699,33 @@ fn evaluate_loader_model_name(
     }
 }
 
-fn extract_model_patch_name(node: &Value) -> Option<String> {
-    let name = ["model_patch_name", "patch_name", "model_name"]
-        .into_iter()
-        .find_map(|key| get_node_param(node, key).and_then(Value::as_str))
-        .or_else(|| {
-            node.get("widgets_values")
-                .and_then(Value::as_array)
-                .and_then(|values| values.first())
-                .and_then(Value::as_str)
-        })?;
+fn extract_model_patch_name(graph: &ComfyGraph, node: &Value) -> Option<String> {
+    for key in ["name", "model_patch_name", "patch_name", "model_name"] {
+        match get_input_connection(node, key) {
+            InputConnection::Connected(_) | InputConnection::DeclaredUnresolved => {
+                let name = evaluate_string_link_first(graph, node, key)?;
+                let name = crate::metadata::guidance::GuidanceClassifier::clean_name(&name);
+                return (!name.is_empty()).then_some(name);
+            }
+            InputConnection::Unconnected => {
+                if let Some(name) = get_node_param(node, key).and_then(Value::as_str) {
+                    let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+                    if !name.is_empty() {
+                        return Some(name);
+                    }
+                }
+            }
+        }
+    }
 
-    Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
-        name,
-    ))
+    let name = node
+        .get("widgets_values")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(Value::as_str)?;
+
+    let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+    (!name.is_empty()).then_some(name)
 }
 
 fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {

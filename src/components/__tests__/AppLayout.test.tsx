@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from '../../test/testUtils';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AIImage } from '../../types';
 
@@ -128,6 +129,15 @@ describe('AppLayout', () => {
             privacyMaskIndexStatus: 'ready',
             privacyMaskIndexError: null,
         });
+        useLibraryStore.setState({
+            isImporting: false,
+            importProgress: null,
+            importAbortController: null,
+            importRunId: null,
+            importRunOwner: null,
+            isActivityDockDismissed: false,
+            isActivityDockMinimized: false,
+        });
         Object.keys(capturedProps).forEach(key => {
             capturedProps[key as keyof typeof capturedProps] = null;
         });
@@ -175,6 +185,7 @@ describe('AppLayout', () => {
         fileOps: {} as any,
         onOpenImportModal: vi.fn(),
         clearAllFilters: vi.fn(),
+        workspaceRef: { current: null },
         scrollContainerRef: { current: null },
         images: [],
         handlers: {} as any,
@@ -371,15 +382,60 @@ describe('AppLayout', () => {
         expect(capturedProps.header?.isFiltering).toBe(true);
     });
 
-    it('opens import from an empty library', () => {
+    it('opens import from an empty library', async () => {
         const onOpenImportModal = vi.fn();
         searchState.value.images = [];
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 0;
         render(<AppLayout {...defaultProps} onOpenImportModal={onOpenImportModal} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Import Images' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Import Images' }));
         expect(onOpenImportModal).toHaveBeenCalled();
+    });
+
+    it('shows active first-import progress instead of offering another import', async () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 0;
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: { current: 2, total: 10, message: 'Importing images from folder...' },
+        });
+
+        render(<AppLayout {...defaultProps} />);
+
+        expect(await screen.findByRole('heading', { name: 'Building your library…' })).toBeTruthy();
+        expect(screen.getByRole('status').textContent).toContain('Importing images from folder...');
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
+    it('falls back to first-import guidance and restores the empty CTA when importing ends', async () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 0;
+        useLibraryStore.setState({ isImporting: true, importProgress: null });
+
+        render(<AppLayout {...defaultProps} />);
+
+        expect((await screen.findByRole('status')).textContent).toContain('Your first images will appear here as they are imported.');
+        act(() => useLibraryStore.setState({ isImporting: false }));
+        expect(await screen.findByRole('button', { name: 'Import Images' })).toBeTruthy();
+    });
+
+    it('keeps populated and filtered-empty library states authoritative during imports', () => {
+        useLibraryStore.setState({ isImporting: true });
+        const view = render(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Building your library…' })).toBeNull();
+
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
+        view.rerender(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByRole('heading', { name: 'No Matches Found' })).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Building your library…' })).toBeNull();
     });
 
     it('clears filters from the no-matches state', () => {
