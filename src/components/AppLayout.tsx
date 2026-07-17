@@ -1,5 +1,4 @@
 import * as React from 'react';
-import { APP_NAME } from '../constants/app';
 import { AppSidebar } from '../features/collections/components/AppSidebar';
 import { AppHeader } from './ui/AppHeader';
 import { SelectionBar } from '../features/library/components/SelectionBar';
@@ -12,7 +11,7 @@ import { VirtualGrid, type VirtualGridHandle } from '../features/library/compone
 import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
 import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode } from '../types';
-import { Import, Loader2, Search } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
@@ -31,6 +30,7 @@ setupGlobalLogging();
 
 const StatsDashboard = React.lazy(() => import('./ui/Charts').then(module => ({ default: module.StatsDashboard })));
 const MaintenanceView = React.lazy(() => import('../features/maintenance/components/MaintenanceView').then(module => ({ default: module.MaintenanceView })));
+const LibraryEmptyState = React.lazy(() => import('../features/library/components/LibraryEmptyState'));
 const FILTER_PANEL_LAYOUT_TRANSITION_MS = 540;
 
 const ViewLoadingFallback = () => (
@@ -39,43 +39,20 @@ const ViewLoadingFallback = () => (
     </div>
 );
 
-const LibraryEmptyState = ({ onImport }: { onImport: () => void }) => {
-    // Keep progress subscriptions out of AppLayout so populated virtual grids do not
-    // rerender for every import progress update.
+const LibraryEmptyStateContainer = ({ onImport }: { onImport: () => void }) => {
+    // Isolate progress subscriptions so populated virtual grids do not rerender for
+    // every import update while keeping the store in the existing startup chunk.
     const isImporting = useLibraryStore(state => state.isImporting);
     const importMessage = useLibraryStore(state => state.importProgress?.message);
 
-    if (isImporting) {
-        return (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
-                <div className="p-6 bg-sage-100 dark:bg-sage-500/10 rounded-full mb-6 border border-sage-200 dark:border-sage-500/20 animate-in zoom-in duration-500">
-                    <Loader2 className="w-12 h-12 text-sage-600 dark:text-sage-400 opacity-70 animate-spin" aria-hidden="true" />
-                </div>
-                <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">Building your library…</h3>
-                <p role="status" aria-live="polite" className="text-gray-500 dark:text-gray-400 leading-relaxed">
-                    {importMessage || 'Your first images will appear here as they are imported.'}
-                </p>
-            </div>
-        );
-    }
-
     return (
-        <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
-            <div className="p-6 bg-sage-100 dark:bg-sage-500/10 rounded-full mb-6 border border-sage-200 dark:border-sage-500/20 animate-in zoom-in duration-500">
-                <Import className="w-12 h-12 text-sage-600 dark:text-sage-400 opacity-70" aria-hidden="true" />
-            </div>
-            <h3 className="text-2xl font-bold mb-3 text-gray-800 dark:text-gray-100">Your Library is Empty</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">
-                Import your images to start organizing, searching, and exploring your AI creations with {APP_NAME}.
-            </p>
-            <button
-                onClick={onImport}
-                className="px-8 py-3.5 bg-sage-600 hover:bg-sage-500 text-white rounded-2xl font-bold shadow-xl shadow-sage-500/20 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
-            >
-                <Import className="w-5 h-5" aria-hidden="true" />
-                Import Images
-            </button>
-        </div>
+        <React.Suspense fallback={<ViewLoadingFallback />}>
+            <LibraryEmptyState
+                isImporting={isImporting}
+                importMessage={importMessage}
+                onImport={onImport}
+            />
+        </React.Suspense>
     );
 };
 
@@ -535,7 +512,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     )}
                                 </>
                             ) : globalTotal === 0 ? (
-                                <LibraryEmptyState onImport={onOpenImportModal} />
+                                <LibraryEmptyStateContainer onImport={onOpenImportModal} />
                             ) : (
                                 <div className="h-full flex flex-col items-center justify-center text-gray-500 p-8 text-center max-w-md mx-auto">
                                     <div className="p-6 bg-zinc-100 dark:bg-white/5 rounded-full mb-6 border border-zinc-200 dark:border-white/5 opacity-50">

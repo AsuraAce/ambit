@@ -348,18 +348,18 @@ describe('AppLayout', () => {
         expect(screen.queryByTestId('virtual-grid')).toBeNull();
     });
 
-    it('opens import from an empty library', () => {
+    it('opens import from an empty library', async () => {
         const onOpenImportModal = vi.fn();
         searchState.value.images = [];
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 0;
         render(<AppLayout {...defaultProps} onOpenImportModal={onOpenImportModal} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Import Images' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Import Images' }));
         expect(onOpenImportModal).toHaveBeenCalled();
     });
 
-    it('shows active first-import progress instead of offering another import', () => {
+    it('shows active first-import progress instead of offering another import', async () => {
         searchState.value.images = [];
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 0;
@@ -370,12 +370,12 @@ describe('AppLayout', () => {
 
         render(<AppLayout {...defaultProps} />);
 
-        expect(screen.getByRole('heading', { name: 'Building your library…' })).toBeTruthy();
+        expect(await screen.findByRole('heading', { name: 'Building your library…' })).toBeTruthy();
         expect(screen.getByRole('status').textContent).toContain('Importing images from folder...');
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
     });
 
-    it('falls back to first-import guidance and restores the empty CTA when importing ends', () => {
+    it('falls back to first-import guidance and restores the empty CTA when importing ends', async () => {
         searchState.value.images = [];
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 0;
@@ -383,9 +383,9 @@ describe('AppLayout', () => {
 
         render(<AppLayout {...defaultProps} />);
 
-        expect(screen.getByRole('status').textContent).toContain('Your first images will appear here as they are imported.');
+        expect((await screen.findByRole('status')).textContent).toContain('Your first images will appear here as they are imported.');
         act(() => useLibraryStore.setState({ isImporting: false }));
-        expect(screen.getByRole('button', { name: 'Import Images' })).toBeTruthy();
+        expect(await screen.findByRole('button', { name: 'Import Images' })).toBeTruthy();
     });
 
     it('keeps populated and filtered-empty library states authoritative during imports', () => {
