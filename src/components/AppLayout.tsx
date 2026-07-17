@@ -140,6 +140,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     // Local State
     const [showSupportPulse, setShowSupportPulse] = React.useState(true);
     const [isFilterPanelLayoutTransitioning, setIsFilterPanelLayoutTransitioning] = React.useState(false);
+    const [isSearchDraftPending, setIsSearchDraftPending] = React.useState(false);
     const previousFilterPanelOpenRef = React.useRef(isFilterPanelOpen);
     const filterPanelTransitionTimerRef = React.useRef<number | null>(null);
 
@@ -185,6 +186,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         loadMoreImages,
         isLoadingMore
     } = useSearch();
+    const isSearchPending = isFiltering || isSearchDraftPending;
+    const shouldShowSearchSkeleton = isFiltering || (isSearchDraftPending && images.length === 0);
     // const images = useSearchStore(s => s.images); // Images available in context
     // const totalImages = useSearchStore(s => s.totalImages);
     // const isFiltering = useSearchStore(s => s.isFiltering);
@@ -346,7 +349,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     displayedCount={totalImages}
                     totalCount={scopeTotal}
                     scopeName={scopeName}
-                    isFiltering={isFiltering}
+                    isFiltering={isSearchPending}
+                    onSearchDraftPendingChange={setIsSearchDraftPending}
                     onImport={onOpenImportModal}
                     onSlideshow={() => { modals.setSlideshowShuffle(false); modals.openModal('slideshow'); }}
                     clearAllFilters={clearAllFilters}
@@ -406,9 +410,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         isShortcutBlocked={isViewerShortcutBlocked}
                                     />
                                 </React.Suspense>
-                            ) : (images.length > 0 || isFiltering) ? (
+                            ) : (images.length > 0 || isSearchPending) ? (
                                 <>
-                                    {isFiltering ? (
+                                    {shouldShowSearchSkeleton ? (
                                         <GridSkeleton layout={layoutMode} />
                                     ) : viewMode === 'timeline' ? (
                                         <TimelineView

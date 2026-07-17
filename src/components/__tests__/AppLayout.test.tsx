@@ -40,7 +40,16 @@ vi.mock('../../features/collections/components/AppSidebar', () => ({
 vi.mock('../ui/AppHeader', () => ({
     AppHeader: (props: Record<string, unknown>) => {
         capturedProps.header = props;
-        return <div data-testid="app-header" />;
+        return (
+            <div data-testid="app-header">
+                <button
+                    data-testid="search-draft-pending"
+                    onClick={() => (props.onSearchDraftPendingChange as (isPending: boolean) => void)(true)}
+                >
+                    Start Search Draft
+                </button>
+            </div>
+        );
     }
 }));
 vi.mock('../../features/library/components/SelectionBar', () => ({
@@ -335,6 +344,31 @@ describe('AppLayout', () => {
         render(<AppLayout {...defaultProps} />);
         expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
         expect(screen.queryByTestId('virtual-grid')).toBeNull();
+    });
+
+    it('shows loading instead of a false empty state while a valid search draft is pending', () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
+        render(<AppLayout {...defaultProps} />);
+        expect(screen.getByText('No Matches Found')).toBeTruthy();
+
+        fireEvent.click(screen.getByTestId('search-draft-pending'));
+
+        expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
+        expect(screen.queryByText('No Matches Found')).toBeNull();
+        expect(capturedProps.header?.isFiltering).toBe(true);
+    });
+
+    it('preserves existing results while a valid search draft is pending', () => {
+        render(<AppLayout {...defaultProps} />);
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+
+        fireEvent.click(screen.getByTestId('search-draft-pending'));
+
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+        expect(capturedProps.header?.isFiltering).toBe(true);
     });
 
     it('opens import from an empty library', () => {
