@@ -87,6 +87,29 @@ const RELATED_VARIANTS: &[IntakeFixture] = &[
     },
 ];
 
+const PHASE23_RESOURCE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "flux_depth_lora_example",
+        source_blob: "2044353656ee2f44c49fae2547bb75d1590523d4",
+        chunks_json: include_str!("fixtures/official_catalog/flux_depth_lora_example.chunks.json"),
+        graph_node_count: 28,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image_turbo_fun_union_controlnet",
+        source_blob: "c01186242bc8e7a918c275c904be231bc8018504",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_z_image_turbo_fun_union_controlnet.chunks.json"
+        ),
+        graph_node_count: 19,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 fn git_blob_sha1(bytes: &[u8]) -> String {
     let mut message = format!("blob {}\0", bytes.len()).into_bytes();
     message.extend_from_slice(bytes);
@@ -212,4 +235,9 @@ fn pinned_phase22_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_phase22_related_variants_have_stable_graph_shape() {
     assert_pinned_workflows(RELATED_VARIANTS);
+}
+
+#[test]
+fn pinned_phase23_resource_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(PHASE23_RESOURCE_FIXTURES);
 }
