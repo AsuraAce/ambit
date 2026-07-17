@@ -9,6 +9,7 @@ import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
 type AppLayoutProbe = {
+    workspaceRef: React.RefObject<HTMLElement | null>;
     viewMode: ViewMode;
     changeViewMode: (mode: ViewMode) => void;
     setLayoutMode: (mode: LayoutMode) => void;
@@ -399,7 +400,7 @@ vi.mock('./features/viewer/utils/searchHighlights', () => ({ derivePromptHighlig
 vi.mock('./components/AppLayout', () => ({
     AppLayout: (props: AppLayoutProbe) => {
         captured.appLayout = props;
-        return <div data-testid="app-layout" />;
+        return <main ref={props.workspaceRef} tabIndex={-1} data-testid="app-layout" />;
     }
 }));
 vi.mock('./components/GlobalModals', () => ({
@@ -660,6 +661,8 @@ describe('App orchestration', () => {
         expect(mocks.settings.theme).toBe('light');
         expect(mocks.flushSettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' }));
         expect(mocks.addToast).toHaveBeenCalledWith('Setup complete!', 'success');
+        expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
+        expect(document.activeElement).toBe(document.querySelector('[data-testid="app-layout"]'));
         act(() => onboarding.onOpenSettings('privacy'));
         expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('privacy');
 
@@ -703,7 +706,7 @@ describe('App orchestration', () => {
                 durableSettings = restoredSettings;
                 await rollbackFlush.promise;
             });
-        render(<App />);
+        const view = render(<App />);
 
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
         const completion = onboarding.onComplete({
@@ -747,6 +750,7 @@ describe('App orchestration', () => {
             thumbnailSize: 320,
         }));
         expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
+        expect(document.activeElement).not.toBe(view.container.querySelector('[data-testid="app-layout"]'));
         expect(mocks.addToast).not.toHaveBeenCalledWith('Setup complete!', 'success');
         expect(mocks.addToast).toHaveBeenCalledWith('Setup could not be saved. Please try again.', 'error');
     });
