@@ -67,15 +67,17 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     if (!hasActiveFilters) return null;
 
     return (
-        <div className="mt-2 flex items-center gap-2 overflow-x-auto custom-scrollbar px-6 py-2 min-h-[44px] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-500 mx-2 relative z-10">
+        <div className="mt-2 flex items-center gap-3 overflow-hidden px-6 py-2 min-h-[44px] bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-gray-200 dark:border-white/10 rounded-xl shadow-lg animate-in fade-in slide-in-from-top-2 duration-500 mx-2 relative z-10">
             {/* Floating style with margin and rounding */}
+
+            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto custom-scrollbar [container-type:inline-size] [&>*]:shrink-0">
 
             {filters.collectionId && (
                 <div
                     title={activeCollection?.name ?? 'Selected collection is unavailable'}
                     className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200 dark:border-sage-500/30"
                 >
-                    <span className="truncate max-w-[160px]">
+                    <span className="truncate max-w-[min(40ch,calc(100cqw-3rem))]">
                         {activeCollection ? `Collection: ${activeCollection.name}` : 'Collection unavailable'}
                     </span>
                     <button
@@ -93,7 +95,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                 <>
                     {activeSmartCol.filters.models?.map(m => (
                         <div key={`smart-model-${m}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${m}`}>
-                            <span className="truncate max-w-[100px]">{m}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{m}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
@@ -105,7 +107,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     ))}
                     {activeSmartCol.filters.searchQuery && (
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
-                            <span className="truncate max-w-[150px]">"{activeSmartCol.filters.searchQuery}"</span>
+                            <span className="truncate max-w-[min(40ch,calc(100cqw-3rem))]">"{activeSmartCol.filters.searchQuery}"</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     )}
@@ -129,25 +131,25 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     )}
                     {activeSmartCol.filters.loras?.map(l => (
                         <div key={`smart-lora-${l}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${l}`}>
-                            <span className="truncate max-w-[100px]">{l}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{l}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
                     {activeSmartCol.filters.embeddings?.map(e => (
                         <div key={`smart-emb-${e}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${e}`}>
-                            <span className="truncate max-w-[100px]">{e}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{e}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
                     {activeSmartCol.filters.hypernetworks?.map(h => (
                         <div key={`smart-hyper-${h}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${h}`}>
-                            <span className="truncate max-w-[100px]">{h}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{h}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
                     {activeSmartCol.filters.samplers?.map(s => (
                         <div key={`smart-sampler-${s}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${s}`}>
-                            <span className="truncate max-w-[100px]">{s}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{s}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
@@ -159,13 +161,13 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     ))}
                     {activeSmartCol.filters.controlNets?.map(c => (
                         <div key={`smart-cn-${c}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${c}`}>
-                            <span className="truncate max-w-[100px]">{c}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{c}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
                     {activeSmartCol.filters.ipAdapters?.map(i => (
                         <div key={`smart-ip-${i}`} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title={`Smart Rule: ${i}`}>
-                            <span className="truncate max-w-[100px]">{i}</span>
+                            <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{i}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
                         </div>
                     ))}
@@ -208,7 +210,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
 
             {visibleModels.map(m => (
                 <div key={m} title={m} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 text-xs border border-blue-200 dark:border-blue-500/30">
-                    <span className="truncate max-w-[100px]">{m}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{m}</span>
                     <button type="button" aria-label={`Clear Model Filter ${m}`} onClick={() => setFilters(f => ({ ...f, models: f.models.filter(x => x !== m) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
@@ -222,28 +224,28 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
 
             {visibleLoras.map(l => (
                 <div key={l} title={l} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 text-xs border border-purple-200 dark:border-purple-500/30">
-                    <span className="truncate max-w-[100px]">{l}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{l}</span>
                     <button type="button" aria-label={`Clear LoRA Filter ${l}`} onClick={() => setFilters(f => ({ ...f, loras: f.loras.filter(x => x !== l) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleEmbeddings.map(e => (
                 <div key={e} title={e} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200 text-xs border border-emerald-200 dark:border-emerald-500/30">
-                    <span className="truncate max-w-[100px]">{e}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{e}</span>
                     <button type="button" aria-label={`Clear Embedding Filter ${e}`} onClick={() => setFilters(f => ({ ...f, embeddings: f.embeddings.filter(x => x !== e) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleHypernetworks.map(h => (
                 <div key={h} title={h} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 text-xs border border-rose-200 dark:border-rose-500/30">
-                    <span className="truncate max-w-[100px]">{h}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{h}</span>
                     <button type="button" aria-label={`Clear Hypernetwork Filter ${h}`} onClick={() => setFilters(f => ({ ...f, hypernetworks: f.hypernetworks.filter(x => x !== h) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleSamplers.map(s => (
                 <div key={s} title={s} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 text-xs border border-indigo-200 dark:border-indigo-500/30">
-                    <span className="truncate max-w-[100px]">{s}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{s}</span>
                     <button type="button" aria-label={`Clear Sampler Filter ${s}`} onClick={() => setFilters(f => ({ ...f, samplers: (f.samplers || []).filter(x => x !== s) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
@@ -257,14 +259,14 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
 
             {visibleControlNets.map(c => (
                 <div key={c} title={c} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-700 dark:text-sky-200 text-xs border border-sky-200 dark:border-sky-500/30">
-                    <span className="truncate max-w-[100px]">{c}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{c}</span>
                     <button type="button" aria-label={`Clear ControlNet Filter ${c}`} onClick={() => setFilters(f => ({ ...f, controlNets: (f.controlNets || []).filter(x => x !== c) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
 
             {visibleIpAdapters.map(i => (
                 <div key={i} title={i} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-200 text-xs border border-teal-200 dark:border-teal-500/30">
-                    <span className="truncate max-w-[100px]">{i}</span>
+                    <span className="truncate max-w-[min(32ch,calc(100cqw-3rem))]">{i}</span>
                     <button type="button" aria-label={`Clear IP-Adapter Filter ${i}`} onClick={() => setFilters(f => ({ ...f, ipAdapters: (f.ipAdapters || []).filter(x => x !== i) }))}><X className="w-3 h-3" /></button>
                 </div>
             ))}
@@ -282,11 +284,12 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                     <button type="button" aria-label="Clear CFG Filter" onClick={() => setFilters(f => ({ ...f, minCfg: undefined, maxCfg: undefined }))}><X className="w-3 h-3" /></button>
                 </div>
             )}
+            </div>
 
             <button
                 type="button"
                 onClick={clearAllFilters}
-                className="ml-auto text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium flex items-center gap-1 transition-colors"
+                className="shrink-0 whitespace-nowrap text-xs text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 font-medium flex items-center gap-1 transition-colors"
             >
                 <FilterX className="w-3 h-3" /> Clear All
             </button>
