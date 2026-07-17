@@ -55,6 +55,7 @@ const renderSearchBar = (
             displayedCount={10}
             isFiltering={false}
             submitNavigatesToGrid={false}
+            onDraftPendingChange={vi.fn()}
         />
     );
 

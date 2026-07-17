@@ -83,7 +83,8 @@ const defaultProps = {
     onImport: vi.fn(),
     onSlideshow: vi.fn(),
     clearAllFilters: vi.fn(),
-    isFiltering: false
+    isFiltering: false,
+    onSearchDraftPendingChange: vi.fn(),
 };
 
 describe('AppHeader', () => {

@@ -34,6 +34,7 @@ interface SearchHarnessOptions {
     displayedCount?: number;
     isFiltering?: boolean;
     submitNavigatesToGrid?: boolean;
+    onDraftPendingChange?: (isPending: boolean) => void;
 }
 
 const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), options: SearchHarnessOptions = {}) => {
@@ -45,6 +46,7 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
     });
     const searchProps = createSearchProps(options.searchProps);
     const setRecentSearches = options.setRecentSearches ?? vi.fn();
+    const onDraftPendingChange = options.onDraftPendingChange ?? vi.fn();
 
     searchContextMocks.useSearch.mockImplementation(() => ({
         filters: currentFilters,
@@ -62,6 +64,7 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
             displayedCount={options.displayedCount ?? 10}
             isFiltering={options.isFiltering ?? false}
             submitNavigatesToGrid={options.submitNavigatesToGrid ?? false}
+            onDraftPendingChange={onDraftPendingChange}
         />
     );
 
@@ -71,6 +74,7 @@ const renderSearchBar = (initialFilters: FilterState = createDefaultFilters(), o
         searchProps,
         setFilters,
         setRecentSearches,
+        onDraftPendingChange,
         setExternalFilters: (filters: FilterState) => { currentFilters = filters; },
     };
 };
@@ -150,6 +154,25 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.setFilters).not.toHaveBeenCalled();
     });
 
+    it('continues a date operator suggestion without whitespace and commits the completed value', async () => {
+        const onDraftPendingChange = vi.fn();
+        const harness = renderSearchBar(createDefaultFilters(), { onDraftPendingChange });
+        await flushSearchPopover();
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
+
+        fireEvent.change(input, { target: { value: 'aft' } });
+        fireEvent.click(screen.getByRole('option', { name: /after:/ }));
+
+        expect((input as HTMLInputElement).value).toBe('after:');
+        expect(harness.setFilters).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: 'after:2026' } });
+        expect(onDraftPendingChange).toHaveBeenLastCalledWith(true);
+        act(() => vi.advanceTimersByTime(500));
+
+        expect(harness.getCurrentFilters().searchQuery).toBe('after:2026');
+    });
+
     it('replaces a pending debounce and commits only the latest query', () => {
         const harness = renderSearchBar();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
@@ -174,6 +197,7 @@ describe('SearchBar advanced date syntax guard', () => {
                 displayedCount={10}
                 isFiltering={false}
                 submitNavigatesToGrid={false}
+                onDraftPendingChange={harness.onDraftPendingChange}
             />
         );
         expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('external');
@@ -189,13 +213,13 @@ describe('SearchBar advanced date syntax guard', () => {
         fireEvent.keyDown(input, { key: 'ArrowUp' });
         fireEvent.keyDown(input, { key: 'ArrowDown' });
         fireEvent.keyDown(input, { key: 'Enter' });
-        expect((input as HTMLInputElement).value).toBe('tool: ');
-        expect(harness.getCurrentFilters().searchQuery).toBe('tool: ');
+        expect((input as HTMLInputElement).value).toBe('tool:');
+        expect(harness.setFilters).not.toHaveBeenCalled();
 
         fireEvent.change(input, { target: { value: 'model: x fi' } });
         fireEvent.keyDown(input, { key: 'ArrowDown' });
         fireEvent.keyDown(input, { key: 'Tab' });
-        expect((input as HTMLInputElement).value).toBe('model: x file: ');
+        expect((input as HTMLInputElement).value).toBe('model: x file:');
     });
 
     it('falls through unrelated keys and submits when no suggestion is active', async () => {
@@ -218,7 +242,10 @@ describe('SearchBar advanced date syntax guard', () => {
         const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'lo' } });
         fireEvent.click(screen.getByRole('option', { name: /lora:/ }));
-        expect((input as HTMLInputElement).value).toBe('lora: ');
+        expect((input as HTMLInputElement).value).toBe('lora:');
+        fireEvent.change(input, { target: { value: 'o' } });
+        fireEvent.click(screen.getByRole('option', { name: /OR/ }));
+        expect((input as HTMLInputElement).value).toBe('OR ');
         fireEvent.change(input, { target: { value: ' ' } });
         expect(screen.queryByText('Suggestions')).toBeNull();
     });
@@ -284,6 +311,7 @@ describe('SearchBar advanced date syntax guard', () => {
         act(() => vi.advanceTimersByTime(600));
 
         expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(harness.onDraftPendingChange).toHaveBeenLastCalledWith(false);
         expect(screen.getByRole('status').textContent).toBe('Press Enter to view matching images in Grid.');
 
         fireEvent.keyDown(input, { key: 'Enter' });
@@ -310,6 +338,7 @@ describe('SearchBar advanced date syntax guard', () => {
         act(() => vi.advanceTimersByTime(600));
 
         expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(harness.onDraftPendingChange).toHaveBeenLastCalledWith(false);
         expect(screen.queryByRole('listbox')).toBeNull();
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('warm portraits from last month');

@@ -2,6 +2,7 @@
 import { act, fireEvent, render, screen } from '../../test/testUtils';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { AppLayout } from '../AppLayout';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import type { AIImage } from '../../types';
 
@@ -40,7 +41,16 @@ vi.mock('../../features/collections/components/AppSidebar', () => ({
 vi.mock('../ui/AppHeader', () => ({
     AppHeader: (props: Record<string, unknown>) => {
         capturedProps.header = props;
-        return <div data-testid="app-header" />;
+        return (
+            <div data-testid="app-header">
+                <button
+                    data-testid="search-draft-pending"
+                    onClick={() => (props.onSearchDraftPendingChange as (isPending: boolean) => void)(true)}
+                >
+                    Start Search Draft
+                </button>
+            </div>
+        );
     }
 }));
 vi.mock('../../features/library/components/SelectionBar', () => ({
@@ -119,6 +129,15 @@ describe('AppLayout', () => {
             privacyMaskIndexStatus: 'ready',
             privacyMaskIndexError: null,
         });
+        useLibraryStore.setState({
+            isImporting: false,
+            importProgress: null,
+            importAbortController: null,
+            importRunId: null,
+            importRunOwner: null,
+            isActivityDockDismissed: false,
+            isActivityDockMinimized: false,
+        });
         Object.keys(capturedProps).forEach(key => {
             capturedProps[key as keyof typeof capturedProps] = null;
         });
@@ -166,6 +185,7 @@ describe('AppLayout', () => {
         fileOps: {} as any,
         onOpenImportModal: vi.fn(),
         clearAllFilters: vi.fn(),
+        workspaceRef: { current: null },
         scrollContainerRef: { current: null },
         images: [],
         handlers: {} as any,
@@ -337,15 +357,85 @@ describe('AppLayout', () => {
         expect(screen.queryByTestId('virtual-grid')).toBeNull();
     });
 
-    it('opens import from an empty library', () => {
+    it('shows loading instead of a false empty state while a valid search draft is pending', () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
+        render(<AppLayout {...defaultProps} />);
+        expect(screen.getByText('No Matches Found')).toBeTruthy();
+
+        fireEvent.click(screen.getByTestId('search-draft-pending'));
+
+        expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
+        expect(screen.queryByText('No Matches Found')).toBeNull();
+        expect(capturedProps.header?.isFiltering).toBe(true);
+    });
+
+    it('preserves existing results while a valid search draft is pending', () => {
+        render(<AppLayout {...defaultProps} />);
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+
+        fireEvent.click(screen.getByTestId('search-draft-pending'));
+
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+        expect(capturedProps.header?.isFiltering).toBe(true);
+    });
+
+    it('opens import from an empty library', async () => {
         const onOpenImportModal = vi.fn();
         searchState.value.images = [];
         searchState.value.totalImages = 0;
         searchState.value.globalTotal = 0;
         render(<AppLayout {...defaultProps} onOpenImportModal={onOpenImportModal} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Import Images' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Import Images' }));
         expect(onOpenImportModal).toHaveBeenCalled();
+    });
+
+    it('shows active first-import progress instead of offering another import', async () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 0;
+        useLibraryStore.setState({
+            isImporting: true,
+            importProgress: { current: 2, total: 10, message: 'Importing images from folder...' },
+        });
+
+        render(<AppLayout {...defaultProps} />);
+
+        expect(await screen.findByRole('heading', { name: 'Building your library…' })).toBeTruthy();
+        expect(screen.getByRole('status').textContent).toContain('Importing images from folder...');
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
+    it('falls back to first-import guidance and restores the empty CTA when importing ends', async () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 0;
+        useLibraryStore.setState({ isImporting: true, importProgress: null });
+
+        render(<AppLayout {...defaultProps} />);
+
+        expect((await screen.findByRole('status')).textContent).toContain('Your first images will appear here as they are imported.');
+        act(() => useLibraryStore.setState({ isImporting: false }));
+        expect(await screen.findByRole('button', { name: 'Import Images' })).toBeTruthy();
+    });
+
+    it('keeps populated and filtered-empty library states authoritative during imports', () => {
+        useLibraryStore.setState({ isImporting: true });
+        const view = render(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Building your library…' })).toBeNull();
+
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
+        view.rerender(<AppLayout {...defaultProps} />);
+
+        expect(screen.getByRole('heading', { name: 'No Matches Found' })).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Building your library…' })).toBeNull();
     });
 
     it('clears filters from the no-matches state', () => {

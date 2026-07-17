@@ -36,6 +36,7 @@ interface AppHeaderProps {
     onSlideshow: () => void;
     clearAllFilters: () => void;
     isFiltering?: boolean;
+    onSearchDraftPendingChange: (isPending: boolean) => void;
 }
 
 export const AppHeader = React.memo(({
@@ -53,7 +54,8 @@ export const AppHeader = React.memo(({
     onImport,
     onSlideshow,
     clearAllFilters,
-    isFiltering
+    isFiltering,
+    onSearchDraftPendingChange,
 }: AppHeaderProps) => {
     const {
         settings, setSettings,
@@ -131,6 +133,7 @@ export const AppHeader = React.memo(({
                         displayedCount={displayedCount}
                         isFiltering={isFiltering ?? false}
                         submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
+                        onDraftPendingChange={onSearchDraftPendingChange}
                     />
                     {browserMockMode && (
                         <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
