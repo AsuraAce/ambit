@@ -1,7 +1,7 @@
 # Milestone 22: Deterministic ComfyUI Prompt And Custom Sampler Coverage
 
-Status: In Progress
-Branch: `feat/comfyui-deterministic-prompt-coverage`
+Status: Complete (`2026-07-17`)
+Package series: PRs `#214`, `#215`, `#216`, `#222`, and `#226`
 Catalog commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 
 ## Reconciliation
@@ -304,6 +304,24 @@ Completion criteria:
 - the package is independently review-clean.
 
 ## Milestone Acceptance Gate
+
+Status: Complete (`2026-07-17`)
+
+Integration evidence:
+
+- all five dependency-ordered packages are merged into `main` as PRs `#214`,
+  `#215`, `#216`, `#222`, and `#226`;
+- final catalog totals are 20 `golden`, 9 `pattern_covered`, 4 `partial`,
+  42 `unassessed`, and 474 `excluded`;
+- the final parser version is 24, with no public interface, schema, binding,
+  frontend, or `ImageMetadata` shape changes;
+- the combined milestone was reviewed on fresh merged `main`, with no
+  `Cargo.lock` churn or unrelated worktree changes;
+- the focused prompt, official-catalog, template-coverage, multi-stage,
+  workflow-subgraph, and output-selection suites pass;
+- the complete ComfyUI suite passes with 219 passed, 0 failed, and 1 ignored;
+- the reparse suite passes with 10 passed and 0 failed;
+- `cargo fmt --check` and `git diff --check` pass.
 
 After all five packages are complete:
 
