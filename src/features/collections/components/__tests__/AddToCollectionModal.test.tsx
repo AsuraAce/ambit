@@ -177,6 +177,37 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
         expect(names.map(button => button.textContent?.match(/Alpha|Beta/)?.[0])).toEqual(expected);
     });
 
+    it('renders unknown smart counts as uncalculated and sorts them last in both count directions', () => {
+        const unknown = {
+            ...baseCollection,
+            id: 'unknown',
+            name: 'Unknown',
+            count: undefined,
+            imageIds: ['one', 'two', 'three'],
+            filters: createDefaultFilters()
+        };
+        const empty = { ...baseCollection, id: 'empty', name: 'Empty', count: 0 };
+        const full = { ...baseCollection, id: 'full', name: 'Full', count: undefined, imageIds: ['one', 'two'] };
+        renderModal([unknown, empty, full]);
+
+        const unknownCount = screen.getByTitle('Count not calculated');
+        expect(unknownCount.textContent).toBe('\u2014');
+        expect(unknownCount.getAttribute('aria-label')).toBe('Count not calculated');
+        expect(screen.getByText('0 images')).toBeTruthy();
+
+        const collectionOrder = () => screen.getAllByRole('button')
+            .map(button => button.textContent?.match(/Unknown|Empty|Full/)?.[0])
+            .filter((name): name is string => !!name);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Most Images' }));
+        expect(collectionOrder()).toEqual(['Full', 'Empty', 'Unknown']);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Fewest Images' }));
+        expect(collectionOrder()).toEqual(['Empty', 'Full', 'Unknown']);
+    });
+
     it('closes the sort menu from its backdrop and closes the modal from header and overlay', () => {
         const onClose = vi.fn();
         const { container } = renderModal([baseCollection], { onClose });

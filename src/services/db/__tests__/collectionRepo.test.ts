@@ -56,6 +56,7 @@ const makeCollectionRow = (overrides: Record<string, unknown> = {}) => ({
     dynamic_safe_thumbnail_path: null,
     dynamic_thumbnail_is_sensitive: null,
     dynamic_thumbnail_cached_at: null,
+    dynamic_count: null,
     filter_state: null,
     manual_exclusions: null,
     source: 'ambit',
@@ -159,7 +160,7 @@ describe('collectionRepo filter normalization', () => {
         expect(flagParams[7]).toBe('["image-a"]');
     });
 
-    it('backfills missing dynamic thumbnail cache columns from the TypeScript schema guard', async () => {
+    it('backfills missing dynamic collection cache columns from the TypeScript schema guard', async () => {
         dbMocks.select.mockResolvedValue([{ name: 'id' }, { name: 'created_at' }, { name: 'updated_at' }]);
 
         const { ensureCollectionSchema } = await import('../collectionRepo');
@@ -169,6 +170,29 @@ describe('collectionRepo filter normalization', () => {
         expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_safe_thumbnail_path TEXT');
         expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_thumbnail_is_sensitive INTEGER');
         expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_thumbnail_cached_at INTEGER');
+        expect(dbMocks.execute).toHaveBeenCalledWith('ALTER TABLE collections ADD COLUMN dynamic_count INTEGER');
+    });
+
+    it('invalidates cached smart counts and advances their revision when the definition changes', async () => {
+        const { upsertCollection } = await import('../collectionRepo');
+
+        await upsertCollection({
+            id: 'smart-a',
+            name: 'Smart A',
+            updatedAt: 10,
+            filters: makeFilters({ searchQuery: 'portrait' }),
+        });
+
+        const sql = dbMocks.execute.mock.calls[0]?.[0] as string;
+        const params = dbMocks.execute.mock.calls[0]?.[1] as unknown[];
+        expect(sql).toContain('dynamic_count = CASE');
+        expect(sql).toContain('collections.filter_state IS excluded.filter_state');
+        expect(sql).toContain('collections.manual_exclusions IS excluded.manual_exclusions');
+        expect(sql).toContain('THEN collections.dynamic_count');
+        expect(sql).toContain('ELSE NULL');
+        expect(sql).toMatch(/updated_at = CASE[\s\S]*ELSE MAX\(COALESCE\(collections\.updated_at, 0\) \+ 1, \?\)/);
+        expect(params.at(-1)).toEqual(expect.any(Number));
+        expect(params.at(-1)).toBeGreaterThan(10);
     });
 
     it('adds and backfills updated_at when older collection databases lack it', async () => {
@@ -380,7 +404,7 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
-    it('keeps cached smart thumbnails during full collection reloads until smart hydration runs', async () => {
+    it('keeps cached smart thumbnails and counts during full collection reloads', async () => {
         const queries: string[] = [];
         dbMocks.select.mockImplementation(async (query: string) => {
             queries.push(query);
@@ -391,7 +415,8 @@ describe('collectionRepo thumbnail hydration', () => {
                     filter_state: JSON.stringify({ dateRange: 'today' }),
                     dynamic_thumbnail_path: 'C:/thumbs/cached-smart.webp',
                     dynamic_safe_thumbnail_path: 'C:/thumbs/cached-smart-safe.webp',
-                    dynamic_thumbnail_is_sensitive: 0
+                    dynamic_thumbnail_is_sensitive: 0,
+                    dynamic_count: 12
                 })];
             }
             if (query.includes('COUNT(*) as count')) return [];
@@ -403,7 +428,7 @@ describe('collectionRepo thumbnail hydration', () => {
 
         expect(collections[0]).toEqual(expect.objectContaining({
             id: 'smart-1',
-            count: 0,
+            count: 12,
             thumbnail: 'asset://C:/thumbs/cached-smart.webp',
             safeThumbnail: 'asset://C:/thumbs/cached-smart-safe.webp',
             thumbnailIsSensitive: false,
@@ -411,6 +436,32 @@ describe('collectionRepo thumbnail hydration', () => {
         }));
         expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(dbMocks.execute).not.toHaveBeenCalled();
+    });
+
+    it('distinguishes unknown smart counts from a verified zero during collection load', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) {
+                return [
+                    makeCollectionRow({
+                        id: 'smart-unknown',
+                        filter_state: JSON.stringify({ searchQuery: 'unknown' }),
+                        dynamic_count: null,
+                    }),
+                    makeCollectionRow({
+                        id: 'smart-empty',
+                        filter_state: JSON.stringify({ searchQuery: 'empty' }),
+                        dynamic_count: 0,
+                    }),
+                ];
+            }
+            return [];
+        });
+
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        const collections = await getAllCollectionsWithStats({ includeThumbnails: false });
+
+        expect(collections.find(collection => collection.id === 'smart-unknown')?.count).toBeUndefined();
+        expect(collections.find(collection => collection.id === 'smart-empty')?.count).toBe(0);
     });
 
     it('does not display a cached dynamic thumbnail over a custom thumbnail', async () => {
@@ -650,7 +701,14 @@ describe('collectionRepo thumbnail hydration', () => {
         ]);
 
         expect(summaries['smart-empty']).toMatchObject({ count: 0, thumbnail: undefined });
-        expect(dbMocks.execute).toHaveBeenCalledTimes(1);
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(
+            expect.stringContaining('dynamic_count'),
+            expect.anything()
+        );
+        const thumbnailCacheWrites = dbMocks.execute.mock.calls.filter(([query]) =>
+            (query as string).includes('dynamic_thumbnail_path')
+        );
+        expect(thumbnailCacheWrites).toHaveLength(1);
     });
 });
 
@@ -869,7 +927,7 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.getDb).not.toHaveBeenCalled();
     });
 
-    it('can load smart counts without thumbnail hydration when callers only need totals', async () => {
+    it('returns count summaries without persisting before the caller accepts them', async () => {
         dbMocks.select.mockResolvedValue([{ id: 'smart-1', count: 4 }]);
 
         const { getSmartCollectionSummaries } = await import('../collectionRepo');
@@ -882,6 +940,85 @@ describe('collectionRepo membership helpers', () => {
 
         expect(dbMocks.select).toHaveBeenCalledTimes(1);
         expect(dbMocks.execute).not.toHaveBeenCalled();
+    });
+
+    it('guards accepted count cache writes with the collection revision', async () => {
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+
+        await cacheSmartCollectionCount('smart-1', 4, 1);
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            expect.stringMatching(/dynamic_count[\s\S]*updated_at = \?/),
+            [4, 'smart-1', 1]
+        );
+    });
+
+    it('serializes accepted count cache writes for the same collection', async () => {
+        let signalFirstWriteStarted!: () => void;
+        const firstWriteStarted = new Promise<void>(resolve => {
+            signalFirstWriteStarted = resolve;
+        });
+        let releaseFirstWrite!: () => void;
+        const firstWrite = new Promise<void>(resolve => {
+            releaseFirstWrite = resolve;
+        });
+        dbMocks.execute
+            .mockImplementationOnce(() => {
+                signalFirstWriteStarted();
+                return firstWrite;
+            })
+            .mockResolvedValueOnce(undefined);
+
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+        const olderWrite = cacheSmartCollectionCount('smart-1', 4, 1);
+        await firstWriteStarted;
+        const newerWrite = cacheSmartCollectionCount('smart-1', 5, 1);
+
+        await Promise.resolve();
+        expect(dbMocks.execute).toHaveBeenCalledTimes(1);
+
+        releaseFirstWrite();
+        await Promise.all([olderWrite, newerWrite]);
+
+        expect(dbMocks.execute).toHaveBeenNthCalledWith(1, expect.any(String), [4, 'smart-1', 1]);
+        expect(dbMocks.execute).toHaveBeenNthCalledWith(2, expect.any(String), [5, 'smart-1', 1]);
+    });
+
+    it('treats accepted count cache failures as best effort', async () => {
+        dbMocks.execute.mockRejectedValueOnce(new Error('count cache failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        const { cacheSmartCollectionCount } = await import('../collectionRepo');
+        await expect(cacheSmartCollectionCount('smart-1', 4, 1)).resolves.toBeUndefined();
+
+        expect(errorSpy).toHaveBeenCalledWith(
+            '[DB] Failed to cache smart collection count smart-1',
+            expect.any(Error)
+        );
+        errorSpy.mockRestore();
+    });
+
+    it('hydrates smart thumbnails independently from count cache persistence', async () => {
+        dbMocks.select
+            .mockResolvedValueOnce([{ id: 'smart-1', count: 4 }])
+            .mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp', privacy_hidden: 0 }])
+            .mockResolvedValueOnce([{ thumbnail_path: 'C:/thumbs/smart.webp' }]);
+
+        const { getSmartCollectionSummaries } = await import('../collectionRepo');
+        await expect(getSmartCollectionSummaries([makeCollection({
+            id: 'smart-1',
+            filters: makeFilters({ dateRange: 'today' }),
+        })])).resolves.toEqual({
+            'smart-1': expect.objectContaining({
+                count: 4,
+                thumbnail: 'asset://C:/thumbs/smart.webp'
+            })
+        });
+
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            expect.stringContaining('dynamic_thumbnail_path'),
+            expect.any(Array)
+        );
     });
 
     it('returns partial smart summaries when smart thumbnail queries fail', async () => {

@@ -5,6 +5,7 @@ import { appRepository } from '../services/repository';
 import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
 import {
     addImagesToCollection,
+    cacheSmartCollectionCount,
     deleteCollectionFromDb,
     ensureCollectionSchema,
     getAllCollectionsWithStats,
@@ -18,6 +19,7 @@ import { useLibraryStore } from './libraryStore';
 let initPromise: Promise<void> | null = null;
 let collectionRefreshRunId = 0;
 let smartCountRunId = 0;
+const smartCountRunsByCollection = new Map<string, { runId: number; includesPromptSearch: boolean }>();
 let thumbnailRefreshRunId = 0;
 
 const invalidateCollectionRefreshes = () => {
@@ -189,66 +191,84 @@ export const useCollectionStore = create<CollectionState>()(
             },
 
             refreshSmartCounts: async (input = {}) => {
-                const runId = ++smartCountRunId;
                 const collectionsSnapshot = Array.isArray(input) ? input : undefined;
                 const options: RefreshSmartCountsOptions = Array.isArray(input)
                     ? { includePromptSearch: true }
                     : input;
                 const includeThumbnails = options.includeThumbnails !== false;
                 const shouldManagePending = includeThumbnails && options.markPending;
-
-                if (!shouldManagePending) {
-                    set({ smartSummaryPendingIds: {} });
-                }
+                let runId = 0;
+                let smartCols: Collection[] = [];
 
                 try {
                     if (useLibraryStore.getState().isImporting) {
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
-                        if (shouldManagePending && runId === smartCountRunId) {
-                            set({ smartSummaryPendingIds: {} });
-                        }
+                        smartCountRunsByCollection.clear();
+                        set({ smartSummaryPendingIds: {} });
                         return;
-                    }
-
-                    if (options.delayMs && options.delayMs > 0) {
-                        await delay(options.delayMs);
-                        if (runId !== smartCountRunId) return;
                     }
 
                     const currentCols = collectionsSnapshot ?? get().collections;
                     const allowedIds = options.collectionIds ? new Set(options.collectionIds) : null;
-                    const smartCols = currentCols.filter(c =>
+                    const eligibleSmartCols = currentCols.filter(c =>
                         !!c.filters
                         && (!!collectionsSnapshot || options.includeArchived || !c.isArchived)
                         && (!allowedIds || allowedIds.has(c.id))
                         && (options.includePromptSearch || shouldAutoRefreshSmartCollectionSummary(c))
                     );
 
-                    if (smartCols.length === 0) {
-                        if (shouldManagePending) {
-                            set({ smartSummaryPendingIds: {} });
-                        }
-                        return;
-                    }
+                    if (eligibleSmartCols.length === 0) return;
+
+                    runId = ++smartCountRunId;
+                    const includesPromptSearch = !!options.includePromptSearch;
+                    smartCols = eligibleSmartCols.filter(collection => {
+                        const activeRun = smartCountRunsByCollection.get(collection.id);
+                        if (activeRun?.includesPromptSearch && !includesPromptSearch) return false;
+
+                        smartCountRunsByCollection.set(collection.id, { runId, includesPromptSearch });
+                        return true;
+                    });
+
+                    if (smartCols.length === 0) return;
 
                     if (shouldManagePending) {
-                        set({
-                            smartSummaryPendingIds: Object.fromEntries(
-                                smartCols
-                                    .filter(collection => !collection.thumbnail && !collection.customThumbnail)
-                                    .map(collection => [collection.id, true] as const)
-                            )
+                        set((state) => {
+                            const pending = { ...state.smartSummaryPendingIds };
+                            smartCols.forEach(collection => {
+                                delete pending[collection.id];
+                                if (!collection.thumbnail && !collection.customThumbnail) {
+                                    pending[collection.id] = true;
+                                }
+                            });
+                            return { smartSummaryPendingIds: pending };
+                        });
+                    } else {
+                        set((state) => {
+                            const pending = { ...state.smartSummaryPendingIds };
+                            smartCols.forEach(collection => delete pending[collection.id]);
+                            return { smartSummaryPendingIds: pending };
                         });
                     }
 
+                    if (options.delayMs && options.delayMs > 0) {
+                        await delay(options.delayMs);
+                    }
+
                     for (const smartCol of smartCols) {
-                        if (runId !== smartCountRunId) return;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
 
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
-                        if (runId !== smartCountRunId) return;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
                         const summary = summaries[smartCol.id];
 
                         if (summary) {
+                            await cacheSmartCollectionCount(
+                                smartCol.id,
+                                summary.count,
+                                smartCol.updatedAt ?? smartCol.createdAt
+                            );
+                            if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+
                             set((state) => ({
                                 collections: state.collections.map(c =>
                                     c.id === smartCol.id && c.filters
@@ -283,11 +303,25 @@ export const useCollectionStore = create<CollectionState>()(
                             });
                         }
 
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId === runId) {
+                            smartCountRunsByCollection.delete(smartCol.id);
+                        }
+
                         await delay(SMART_COUNT_YIELD_MS);
                     }
                 } catch (e) {
-                    if (runId === smartCountRunId) {
-                        set({ smartSummaryPendingIds: {} });
+                    if (runId > 0) {
+                        const ownedIds = smartCols
+                            .filter(collection => smartCountRunsByCollection.get(collection.id)?.runId === runId)
+                            .map(collection => collection.id);
+                        if (ownedIds.length > 0) {
+                            set((state) => {
+                                const remaining = { ...state.smartSummaryPendingIds };
+                                ownedIds.forEach(id => delete remaining[id]);
+                                return { smartSummaryPendingIds: remaining };
+                            });
+                            ownedIds.forEach(id => smartCountRunsByCollection.delete(id));
+                        }
                     }
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
                 }

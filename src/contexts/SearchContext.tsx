@@ -28,6 +28,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
 
 interface SearchContextType {
@@ -95,6 +96,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
     const privacyMaskIndexRetryToken = useSettingsStore(state => state.privacyMaskIndexRetryToken);
     const setPrivacyMaskIndexState = useSettingsStore(state => state.setPrivacyMaskIndexState);
+    const refreshSmartCounts = useCollectionStore(state => state.refreshSmartCounts);
 
 
 
@@ -312,7 +314,19 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         await Promise.all(refreshTasks);
     }, [queryClient, refreshCollections]);
 
+    const refreshCollectionsAfterImageFlagChange = useCallback(() => {
+        void refreshCollections(true);
 
+        const activeCollectionId = useSearchStore.getState().filters.collectionId;
+        if (!activeCollectionId) return;
+
+        void refreshSmartCounts({
+            collectionIds: [activeCollectionId],
+            includeArchived: true,
+            includePromptSearch: true,
+            markPending: true
+        });
+    }, [refreshCollections, refreshSmartCounts]);
 
     const toggleFavorite = useCallback(async (id: string) => {
         const imgs = useSearchStore.getState().images;
@@ -324,12 +338,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setImages(imgs.map(i => i.id === id ? { ...i, isFavorite: newVal } : i));
             patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newVal });
             await updateFavorite(id, newVal);
+            refreshCollectionsAfterImageFlagChange();
         } catch (e) {
             console.error("Toggle favorite failed", e);
             setImages(imgs);
             restoreImagesInQueryCaches(queryClient, imgs);
         }
-    }, [queryClient, setImages]);
+    }, [queryClient, refreshCollectionsAfterImageFlagChange, setImages]);
 
     const togglePin = useCallback(async (id: string, isPinned?: boolean) => {
         const imgs = useSearchStore.getState().images;
@@ -346,6 +361,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 reorderQueryKey: imagesQueryKey
             });
             await updatePinned(id, newVal);
+            refreshCollectionsAfterImageFlagChange();
         } catch (e) {
             console.error("Toggle pin failed", e);
             setImages(imgs);
@@ -355,7 +371,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 reorderQueryKey: imagesQueryKey
             });
         }
-    }, [filters.collectionId, imagesQueryKey, queryClient, setImages]);
+    }, [filters.collectionId, imagesQueryKey, queryClient, refreshCollectionsAfterImageFlagChange, setImages]);
 
     // ... Missing: setRecentSearches, loadFacet, availableHiddenContent
     // Store doesn't have recentSearches yet.

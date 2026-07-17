@@ -8,6 +8,7 @@ import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbn
 import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { compareCollectionsByCount, getCollectionCount } from '../../../utils/collectionCount';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -77,8 +78,8 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
             switch (sort) {
                 case 'name_asc': return a.name.localeCompare(b.name);
                 case 'name_desc': return b.name.localeCompare(a.name);
-                case 'count_asc': return (a.count ?? a.imageIds.length) - (b.count ?? b.imageIds.length);
-                case 'count_desc': return (b.count ?? b.imageIds.length) - (a.count ?? a.imageIds.length);
+                case 'count_asc': return compareCollectionsByCount(a, b, 'asc');
+                case 'count_desc': return compareCollectionsByCount(a, b, 'desc');
                 case 'date_asc': return a.createdAt - b.createdAt;
                 case 'date_desc': default: return b.createdAt - a.createdAt;
             }
@@ -191,6 +192,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         <div className="grid grid-cols-1 gap-1">
                             {filtered.map(col => {
                                 const showThumbnailSkeleton = (!!thumbnailHydrationPendingIds[col.id] || !!smartSummaryPendingIds[col.id]) && !col.thumbnail;
+                                const count = getCollectionCount(col);
 
                                 return (
                                     <button
@@ -247,7 +249,13 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                                         <span className="text-[8px] bg-gray-200 dark:bg-white/10 text-gray-500 px-1 rounded uppercase tracking-tighter">Archived</span>
                                                     )}
                                                 </div>
-                                                <div className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider">{col.count ?? col.imageIds.length} images</div>
+                                                <div
+                                                    className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider"
+                                                    aria-label={count === undefined ? 'Count not calculated' : undefined}
+                                                    title={count === undefined ? 'Count not calculated' : undefined}
+                                                >
+                                                    {count === undefined ? '\u2014' : `${count} images`}
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0 transition-all text-sage-600">

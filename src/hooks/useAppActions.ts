@@ -71,8 +71,22 @@ export const useAppActions = ({
     const setPrivacyEnabled = useSettingsStore(s => s.setPrivacyEnabled);
 
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
+    const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
 
     const { openModal, closeModal, pendingViewerDeleteId, setPendingViewerDeleteId } = modals;
+
+    const refreshCollectionsAfterImageFlagChange = React.useCallback(() => {
+        void refreshCollections(true);
+
+        if (!filters.collectionId) return;
+
+        void refreshSmartCounts({
+            collectionIds: [filters.collectionId],
+            includeArchived: true,
+            includePromptSearch: true,
+            markPending: true
+        });
+    }, [filters.collectionId, refreshCollections, refreshSmartCounts]);
 
     const persistPinChanges = React.useCallback(async (
         ids: string[],
@@ -83,7 +97,7 @@ export const useAppActions = ({
     ) => {
         try {
             await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
-            void refreshCollections(true);
+            refreshCollectionsAfterImageFlagChange();
         } catch (error) {
             console.error('[Pin] Failed to persist pin state', error);
             setImages(previousImages);
@@ -94,7 +108,7 @@ export const useAppActions = ({
             });
             addToast(errorMessage, 'error');
         }
-    }, [refreshCollections, setImages, addToast, queryClient, imagesQueryKey]);
+    }, [refreshCollectionsAfterImageFlagChange, setImages, addToast, queryClient, imagesQueryKey]);
 
     const persistFavoriteChanges = React.useCallback(async (
         ids: string[],
@@ -103,13 +117,14 @@ export const useAppActions = ({
     ) => {
         try {
             await Promise.all(ids.map(id => toggleImageFavorite(id, isFavorite)));
+            refreshCollectionsAfterImageFlagChange();
         } catch (error) {
             console.error('[Favorite] Failed to persist favorite state', error);
             setImages(previousImages);
             restoreImagesInQueryCaches(queryClient, previousImages);
             addToast('Failed to update favorite state', 'error');
         }
-    }, [addToast, queryClient, setImages]);
+    }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages]);
 
     const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null) => {
         fileOps.deleteImages(ids);

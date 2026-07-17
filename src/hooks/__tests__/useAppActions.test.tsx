@@ -19,6 +19,7 @@ const mockRebuildThumbnailFacetCache = vi.fn();
 const mockBackfillParameterColumns = vi.fn();
 const mockIncrementFacetCacheVersion = vi.fn();
 const mockRefreshCollections = vi.fn();
+const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
 let mockStoreImages = [
     { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
@@ -69,6 +70,7 @@ vi.mock('../../stores/libraryStore', () => ({
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: (selector: any) => selector({
         refreshCollections: mockRefreshCollections,
+        refreshSmartCounts: mockRefreshSmartCounts,
     }),
 }));
 
@@ -178,6 +180,13 @@ describe('useAppActions', () => {
         expect(mockSetImages).toHaveBeenCalled();
         const update = mockSetImages.mock.calls[0][0] as (images: typeof mockStoreImages) => typeof mockStoreImages;
         expect(update(mockStoreImages).map(image => image.isFavorite)).toEqual([true, true]);
+        expect(mockRefreshCollections).toHaveBeenCalledWith(true);
+        expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+            collectionIds: ['col1'],
+            includeArchived: true,
+            includePromptSearch: true,
+            markPending: true
+        });
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Favorited'), 'success');
     });
 
@@ -217,6 +226,12 @@ describe('useAppActions', () => {
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
+        expect(mockRefreshSmartCounts).toHaveBeenCalledWith({
+            collectionIds: ['col1'],
+            includeArchived: true,
+            includePromptSearch: true,
+            markPending: true
+        });
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Pinned'), 'info');
     });
 

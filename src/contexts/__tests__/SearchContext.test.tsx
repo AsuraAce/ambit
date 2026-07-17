@@ -38,7 +38,8 @@ const mocks = vi.hoisted(() => ({
     restoreImagesInQueryCaches: vi.fn(),
     applyOptimisticPinOrder: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
-    shouldPrefetchResultPages: vi.fn()
+    shouldPrefetchResultPages: vi.fn(),
+    refreshSmartCounts: vi.fn()
 }));
 
 vi.mock('../SettingsContext', () => ({ useSettings: () => mocks.settings.current }));
@@ -75,6 +76,10 @@ vi.mock('../../services/db/collectionRepo', () => ({
 }));
 vi.mock('../../stores/libraryStore', () => ({
     useLibraryStore: { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion }) }
+}));
+vi.mock('../../stores/collectionStore', () => ({
+    useCollectionStore: (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
+        selector({ refreshSmartCounts: mocks.refreshSmartCounts })
 }));
 vi.mock('../../utils/imageQueryCache', () => ({
     patchImageFlagsInQueryCaches: mocks.patchImageFlagsInQueryCaches,
@@ -325,6 +330,7 @@ describe('SearchProvider', () => {
         const untouched = image({ id: 'image-2' });
         const pinned = image({ isPinned: true });
         (mocks.searchState.current as SearchValue).images = [original, untouched];
+        (mocks.searchState.current as SearchValue).filters = { ...baseFilters, collectionId: 'smart-prompt' };
         mocks.applyOptimisticPinOrder.mockReturnValue([pinned]);
         renderProvider();
 
@@ -335,6 +341,18 @@ describe('SearchProvider', () => {
 
         expect(mocks.updateFavorite).toHaveBeenCalledWith(original.id, true);
         expect(mocks.updatePinned).toHaveBeenCalledWith(original.id, true);
+        const refreshCollections = (mocks.collections.current as {
+            refreshCollections: ReturnType<typeof vi.fn>;
+        }).refreshCollections;
+        expect(refreshCollections).toHaveBeenCalledTimes(2);
+        expect(refreshCollections).toHaveBeenCalledWith(true);
+        expect(mocks.refreshSmartCounts).toHaveBeenCalledTimes(2);
+        expect(mocks.refreshSmartCounts).toHaveBeenCalledWith({
+            collectionIds: ['smart-prompt'],
+            includeArchived: true,
+            includePromptSearch: true,
+            markPending: true
+        });
         expect(mocks.patchImageFlagsInQueryCaches).toHaveBeenCalledWith(mocks.queryClient, [original.id], { isFavorite: true });
         const optimisticFavoriteImages = ((mocks.searchState.current as SearchValue).setImages as ReturnType<typeof vi.fn>).mock.calls[0][0] as AIImage[];
         expect(optimisticFavoriteImages[1]).toBe(untouched);
@@ -342,7 +360,7 @@ describe('SearchProvider', () => {
             [expect.objectContaining({ id: original.id, isFavorite: true }), untouched],
             [original.id],
             true,
-            false
+            true
         );
     });
 

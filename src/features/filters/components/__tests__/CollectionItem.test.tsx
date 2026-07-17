@@ -143,6 +143,57 @@ describe('CollectionItem thumbnail hydration states', () => {
         expect(screen.queryByTestId('privacy-aware-thumbnail')).toBeNull();
     });
 
+    it('shows an unknown smart count distinctly from a verified zero in both views', () => {
+        const unknownSmart = { ...smartCollection, count: undefined, imageIds: ['one', 'two'] };
+        const view = renderCollectionItem(unknownSmart);
+
+        const listCount = screen.getByTitle('Count not calculated');
+        expect(listCount.textContent).toBe('\u2014');
+        expect(listCount.getAttribute('aria-label')).toBe('Count not calculated');
+
+        view.rerender(
+            <CollectionItem
+                col={unknownSmart}
+                filters={filters}
+                setFilters={() => { }}
+                editingColId={null}
+                editName=""
+                setEditName={() => { }}
+                setEditingColId={() => { }}
+                handleRenameSubmit={() => { }}
+                handleDragEnter={noopDrag}
+                handleDragOver={noopDrag}
+                handleDragLeave={() => { }}
+                handleDrop={noopDrop}
+                handleContextMenu={noopContextMenu}
+                dropTargetId={null}
+                viewMode="grid"
+            />
+        );
+        expect(screen.getByTitle('Count not calculated').textContent).toBe('\u2014');
+
+        view.rerender(
+            <CollectionItem
+                col={{ ...unknownSmart, count: 0 }}
+                filters={filters}
+                setFilters={() => { }}
+                editingColId={null}
+                editName=""
+                setEditName={() => { }}
+                setEditingColId={() => { }}
+                handleRenameSubmit={() => { }}
+                handleDragEnter={noopDrag}
+                handleDragOver={noopDrag}
+                handleDragLeave={() => { }}
+                handleDrop={noopDrop}
+                handleContextMenu={noopContextMenu}
+                dropTargetId={null}
+            />
+        );
+        expect(screen.queryByTitle('Count not calculated')).toBeNull();
+        expect(screen.getByText('0')).toBeTruthy();
+    });
+
     it('routes inline rename changes, submission, and blur cancellation', () => {
         const setEditName = vi.fn();
         const setEditingColId = vi.fn();
@@ -219,7 +270,7 @@ describe('CollectionItem thumbnail hydration states', () => {
             handleRenameSubmit: vi.fn(), handleDragEnter: noopDrag, handleDragOver: noopDrag, handleDragLeave: vi.fn(),
             handleDrop: noopDrop, handleContextMenu: noopContextMenu, dropTargetId: null
         };
-        const { container, rerender } = render(<CollectionItem {...shared} col={{ ...smartCollection, thumbnail: 'thumb', isArchived: true, isPinned: true, color: 'red', count: undefined, imageIds: ['a', 'b'] }} />);
+        const { container, rerender } = render(<CollectionItem {...shared} col={{ ...smartCollection, thumbnail: 'thumb', isArchived: true, isPinned: true, color: 'red', count: 2, imageIds: ['a', 'b'] }} />);
         expect(screen.getByTestId('privacy-aware-thumbnail')).toBeTruthy();
         expect(screen.getByText('2')).toBeTruthy();
         expect(container.querySelector('.bg-red-500')).toBeTruthy();
