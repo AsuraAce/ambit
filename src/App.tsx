@@ -399,6 +399,7 @@ export default function App() {
     }, [images]);
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const workspaceRef = useRef<HTMLElement>(null);
     const gridRef = useRef<VirtualGridHandle>(null);
 
     useEffect(() => {
@@ -493,6 +494,7 @@ export default function App() {
                 fileOps={fileOps}
                 onOpenImportModal={openImportModal}
                 clearAllFilters={clearAllFilters}
+                workspaceRef={workspaceRef}
                 scrollContainerRef={scrollContainerRef}
                 images={images}
                 handlers={{ ...handlers, setImages, setContextMenu }}
@@ -542,7 +544,7 @@ export default function App() {
                         try {
                             await flushSettings(nextSettings);
                             setIsCompletingOnboarding(false);
-                            openImportModal();
+                            workspaceRef.current?.focus();
                             addToast("Setup complete!", "success");
                         } catch (error) {
                             const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => {
