@@ -156,6 +156,31 @@ describe('ActiveFilters', () => {
         });
     });
 
+    it('keeps clear all reachable while long chip labels use the filter strip width', () => {
+        const collectionName = 'Portrait Reference Collection With A Deliberately Long Name';
+        const modelName = 'checkpoint-with-a-deliberately-long-display-name.safetensors';
+        collectionMocks.state.collections = [createCollection({ id: 'regular', name: collectionName })];
+        searchMocks.state.filters = createFilters({
+            collectionId: 'regular',
+            models: [modelName],
+        });
+
+        const { container } = render(<ActiveFiltersUnderTest />);
+
+        const scroller = container.querySelector('.overflow-x-auto');
+        const clearAll = screen.getByRole('button', { name: /clear all/i });
+        const collectionLabel = screen.getByText(`Collection: ${collectionName}`);
+        const modelLabel = screen.getByText(modelName);
+
+        expect(scroller).toBeTruthy();
+        expect(scroller?.className).toContain('[container-type:inline-size]');
+        expect(scroller?.className).toContain('[&>*]:shrink-0');
+        expect(scroller?.contains(clearAll)).toBe(false);
+        expect(collectionLabel.className).toContain('max-w-[min(40ch,calc(100cqw-3rem))]');
+        expect(modelLabel.className).toContain('max-w-[min(32ch,calc(100cqw-3rem))]');
+        expect(clearAll.className).toContain('shrink-0');
+    });
+
     it('keeps stale collection state recoverable and ignores whitespace-only searches', () => {
         searchMocks.state.filters = createFilters({ collectionId: 'missing' });
         const { rerender } = render(<ActiveFiltersUnderTest />);

@@ -232,7 +232,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
             <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
 
-            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
+            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
                 {displayedCount !== totalCount ? (
                     <>
                         <div className="flex items-center gap-1">
@@ -241,7 +241,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                             <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
                         </div>
                         <span
-                            className="text-[10px] text-gray-500 dark:text-gray-400 tracking-wider max-w-[180px] truncate"
+                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
                             title={(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
                         >
                             {(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
@@ -251,10 +251,10 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                     <>
                         <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
                         <span
-                            className="text-[10px] text-gray-500 dark:text-gray-400 tracking-wider max-w-[180px] truncate"
-                            title={(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}
+                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
+                            title={(isFiltering) ? 'LOADING...' : scopeName}
                         >
-                            {(isFiltering) ? 'LOADING...' : `TOTAL ${scopeName}`}
+                            {(isFiltering) ? 'LOADING...' : scopeName}
                         </span>
                     </>
                 )}
