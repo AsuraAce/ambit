@@ -129,6 +129,12 @@ const FIXTURES: &[CatalogFixture] = &[
         ),
     },
     CatalogFixture {
+        name: "image_z_image_turbo_fun_union_controlnet",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_z_image_turbo_fun_union_controlnet.chunks.json"
+        ),
+    },
+    CatalogFixture {
         name: "video_bernini_r_image_editing",
         chunks_json: include_str!(
             "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
@@ -885,6 +891,29 @@ fn boogu_edit_custom_conditioning() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_union_model_patch_controlnet() {
+    assert_fixture(
+        "image_z_image_turbo_fun_union_controlnet",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(729_703_840_979_498),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "Realistic photo, close-up of a latina model peeking through pine branches, dappled sunlight on her face, natural, moody, smooth skin, a little bit film grain.\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &["z_image_turbo_fun_controlnet_union"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

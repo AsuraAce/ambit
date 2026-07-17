@@ -74,7 +74,24 @@ Completion criteria:
 
 Depends on: Work Package 1.
 
-Status: Pending
+Status: Complete (`fix/comfyui-qwen-model-patch-controlnet`, `2026-07-17`)
+
+Evidence:
+
+- `QwenImageDiffsynthControlnet` and `ZImageFunControlnet` collect a connected
+  `ModelPatchLoader` as a ControlNet while continuing to the primary model;
+- canonical `name`, supported aliases, and workflow widgets are covered, with
+  connected names taking precedence over stale widget values;
+- unresolved or empty connected names fail closed, unlinked empty canonical
+  names may continue to supported aliases, and disconnected wrappers cannot
+  contribute a ControlNet;
+- `image_z_image_turbo_fun_union_controlnet` is golden with exact metadata,
+  resource, workflow, output diagnostics, and `SamplerTraversal` provenance;
+- parser version is 25 and manifest totals are 21 `golden`, 9
+  `pattern_covered`, 4 `partial`, 41 `unassessed`, and 474 `excluded`;
+- model, official-catalog, template-coverage, catalog-intake,
+  workflow-subgraph, output-selection, full ComfyUI, and reparse tests pass;
+- `cargo fmt --check` and `git diff --check` pass, with no `Cargo.lock` churn.
 
 Primary invariant: a model patch on the connected sampler model path is a
 ControlNet resource, never the primary model.
