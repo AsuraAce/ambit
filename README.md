@@ -76,6 +76,19 @@ pnpm install
 pnpm run app:dev
 ```
 
+For clean feature-video capture while retaining the development profile and tools, start the app in capture mode from PowerShell:
+
+```powershell
+$env:VITE_CAPTURE_MODE='true'
+pnpm run app:dev
+```
+
+Capture mode hides the React Query control and title-bar `DEV` badge without disabling developer features. Clear the flag before returning to the normal development UI:
+
+```powershell
+$env:VITE_CAPTURE_MODE=$null
+```
+
 For checks, branch expectations, and maintainer workflow notes, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Contributing

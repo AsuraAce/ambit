@@ -104,6 +104,34 @@ Source-authored expectations, recorded without asserting current parser output:
   `lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank64_bf16.safetensors` resource
   is active on the high- and low-noise model stages at strengths 3.0 and 1.5.
 
+## Phase 23 Resource Intake
+
+Captured on `2026-07-17`. These workflows remain `unassessed` until their
+parser packages add exact golden assertions.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`flux_depth_lora_example`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux_depth_lora_example.json) | `2044353656ee2f44c49fae2547bb75d1590523d4` | 61578 |
+| [`image_z_image_turbo_fun_union_controlnet`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_z_image_turbo_fun_union_controlnet.json) | `c01186242bc8e7a918c275c904be231bc8018504` | 42001 |
+
+Source-authored expectations, recorded without asserting current parser output:
+
+- `flux_depth_lora_example`: model `flux1-dev-fp8.safetensors`; seed
+  `229472716717627`; 20 steps; CFG 1; `euler` with `normal`; positive prompt
+  `A cute ghost-shaped desktop ornament, softly glowing with a warm light,
+  placed on a tidy, cozy home table, creating a gentle and sweet atmosphere.`;
+  empty negative conditioning; LoRA `flux1-depth-dev-lora.safetensors`; no
+  ControlNet. The auxiliary `lotus-depth-d-v1-1.safetensors` model is not the
+  generation model, and direct sampler CFG 1 is authoritative over connected
+  Flux guidance 10.
+- `image_z_image_turbo_fun_union_controlnet`: model
+  `z_image_turbo_bf16.safetensors`; seed `729703840979498`; 8 steps; CFG 1;
+  `res_multistep` with `simple`; positive prompt `Realistic photo, close-up of
+  a latina model peeking through pine branches, dappled sunlight on her face,
+  natural, moody, smooth skin, a little bit film grain.` followed by a newline;
+  empty negative conditioning; ControlNet
+  `Z-Image-Turbo-Fun-Controlnet-Union.safetensors`; no LoRAs.
+
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser
 coverage. Refresh it only as an intentional fixture update: fetch the pinned

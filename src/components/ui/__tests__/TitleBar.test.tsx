@@ -4,13 +4,14 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TitleBar } from '../TitleBar';
 
 const runtimeState = vi.hoisted(() => ({ tauri: true }));
-const settingsState = vi.hoisted(() => ({ developer: true }));
+const settingsState = vi.hoisted(() => ({ developer: true, captureMode: false }));
 
 vi.mock('../../../services/runtime', () => ({ isTauriRuntime: () => runtimeState.tauri }));
 vi.mock('../../../stores/settingsStore', () => ({
     useSettingsStore: (selector: (state: { settings: object }) => unknown) => selector({ settings: {} }),
 }));
 vi.mock('../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled: () => settingsState.developer }));
+vi.mock('../../../utils/buildFlags', () => ({ isCaptureMode: () => settingsState.captureMode }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: vi.fn() }));
 
 const mockedGetCurrentWindow = vi.mocked(getCurrentWindow);
@@ -40,6 +41,7 @@ describe('TitleBar', () => {
         vi.clearAllMocks();
         runtimeState.tauri = true;
         settingsState.developer = true;
+        settingsState.captureMode = false;
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     });
 
@@ -68,6 +70,18 @@ describe('TitleBar', () => {
 
         unmount();
         expect(unlisten).toHaveBeenCalledOnce();
+    });
+
+    it('hides the developer badge in capture mode without disabling developer features', async () => {
+        const { win } = createWindow();
+        settingsState.captureMode = true;
+        mockedGetCurrentWindow.mockReturnValue(win as unknown as ReturnType<typeof getCurrentWindow>);
+
+        render(<TitleBar />);
+
+        await screen.findByText('AMBIT');
+        expect(settingsState.developer).toBe(true);
+        expect(screen.queryByText('DEV')).toBeNull();
     });
 
     it('unmaximizes, responds to resize, and toggles fullscreen with F11', async () => {

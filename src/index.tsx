@@ -8,6 +8,7 @@ import { StartupMaintenanceGate } from './components/StartupMaintenanceGate';
 
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { isCaptureMode } from './utils/buildFlags';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,7 +44,7 @@ root.render(
             </ErrorBoundary>
           </LibraryProvider>
         </StartupMaintenanceGate>
-        {import.meta.env.DEV && (
+        {import.meta.env.DEV && !isCaptureMode() && (
           <React.Suspense fallback={null}>
             <ReactQueryDevtools initialIsOpen={false} />
           </React.Suspense>
