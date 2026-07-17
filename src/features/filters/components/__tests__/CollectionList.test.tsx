@@ -272,7 +272,7 @@ describe('CollectionList interactions', () => {
         expect(screen.getByRole('button', { name: 'Hide Archived' })).toBeTruthy();
     });
 
-    it('refreshes a selected smart collection once per id', async () => {
+    it('refreshes once while selected and retries after the same smart collection is reselected', async () => {
         const smart = { ...makeCollection({ id: 'smart', name: 'Smart', createdAt: 1, updatedAt: 1 }), filters: { ...filters } };
         const view = renderList({ collections: [smart], filters: { ...filters, collectionId: 'smart' } });
         await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledWith({
@@ -281,6 +281,12 @@ describe('CollectionList interactions', () => {
         refreshSmartCounts.mockClear();
         view.rerender(<CollectionList {...view.props} />);
         expect(refreshSmartCounts).not.toHaveBeenCalled();
+
+        view.rerender(<CollectionList {...view.props} filters={{ ...filters, collectionId: null }} />);
+        view.rerender(<CollectionList {...view.props} />);
+        await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledWith({
+            collectionIds: ['smart'], includeArchived: true, includePromptSearch: true, markPending: true
+        }));
     });
 
     it('separates pinned collections and forwards pending thumbnail state', () => {
@@ -414,21 +420,23 @@ describe('CollectionList interactions', () => {
         logSpy.mockRestore();
     });
 
-    it('uses image-id counts and created dates when optional sort fields are absent', () => {
+    it('uses static membership counts, sorts unknown smart counts last, and falls back to created dates', () => {
         settingsContextMocks.resourceSortOptions = { collections: 'count_asc' };
         const countAsc = renderList({ collections: [
+            { ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }), count: undefined, imageIds: ['1', '2', '3'], filters: { ...filters } },
             { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
             { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] }
         ] });
-        expectCollectionOrder(['One', 'Two']);
+        expectCollectionOrder(['One', 'Two', 'Unknown']);
         countAsc.unmount();
 
         settingsContextMocks.resourceSortOptions = { collections: 'count_desc' };
         const countDesc = renderList({ collections: [
+            { ...makeCollection({ id: 'unknown', name: 'Unknown', createdAt: 3, updatedAt: 3 }), count: undefined, imageIds: ['1', '2', '3'], filters: { ...filters } },
             { ...makeCollection({ id: 'two', name: 'Two', createdAt: 2, updatedAt: 2 }), count: undefined, imageIds: ['1', '2'] },
             { ...makeCollection({ id: 'one', name: 'One', createdAt: 1, updatedAt: 1 }), count: undefined, imageIds: ['1'] }
         ] });
-        expectCollectionOrder(['Two', 'One']);
+        expectCollectionOrder(['Two', 'One', 'Unknown']);
         countDesc.unmount();
 
         settingsContextMocks.resourceSortOptions = { collections: 'recent_asc' };

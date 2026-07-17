@@ -26,13 +26,24 @@ describe('smartCollectionRefresh', () => {
         expect(shouldAutoRefreshSmartCollectionSummary(smart)).toBe(true);
     });
 
-    it('blocks automatic summaries for prompt-search smart collections', () => {
+    it('blocks automatic summaries for unpinned prompt-search smart collections', () => {
         const smart = collection({
             filters: createDefaultFilters({ searchQuery: 'apple' }),
+            isPinned: false,
         });
 
         expect(hasPromptSearchFilter(smart)).toBe(true);
         expect(shouldAutoRefreshSmartCollectionSummary(smart)).toBe(false);
+    });
+
+    it('allows automatic summaries for pinned prompt-search smart collections', () => {
+        const smart = collection({
+            filters: createDefaultFilters({ searchQuery: 'apple' }),
+            isPinned: true,
+        });
+
+        expect(hasPromptSearchFilter(smart)).toBe(true);
+        expect(shouldAutoRefreshSmartCollectionSummary(smart)).toBe(true);
     });
 
     it('does not treat static collections as automatic smart summaries', () => {

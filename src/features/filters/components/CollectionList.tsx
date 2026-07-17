@@ -10,6 +10,7 @@ import { CollectionItem } from './CollectionItem';
 import { useSettings } from '../../../contexts/SettingsContext';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { compareCollectionsByCount } from '../../../utils/collectionCount';
 
 interface CollectionListProps<T extends Collection> {
     collections: T[];
@@ -108,7 +109,11 @@ export function CollectionList<T extends Collection>({
         const selectedSmartCollection = collections.find(collection =>
             collection.id === filters.collectionId && !!collection.filters
         );
-        if (!selectedSmartCollection || lastSelectedSmartRefresh.current === selectedSmartCollection.id) return;
+        if (!selectedSmartCollection) {
+            lastSelectedSmartRefresh.current = null;
+            return;
+        }
+        if (lastSelectedSmartRefresh.current === selectedSmartCollection.id) return;
 
         lastSelectedSmartRefresh.current = selectedSmartCollection.id;
         void refreshSmartCounts({
@@ -192,8 +197,8 @@ export function CollectionList<T extends Collection>({
             switch (sort) {
                 case 'name_asc': return a.name.localeCompare(b.name);
                 case 'name_desc': return b.name.localeCompare(a.name);
-                case 'count_asc': return (a.count ?? a.imageIds.length) - (b.count ?? b.imageIds.length);
-                case 'count_desc': return (b.count ?? b.imageIds.length) - (a.count ?? a.imageIds.length);
+                case 'count_asc': return compareCollectionsByCount(a, b, 'asc');
+                case 'count_desc': return compareCollectionsByCount(a, b, 'desc');
                 case 'date_asc': return a.createdAt - b.createdAt;
                 case 'date_desc': return b.createdAt - a.createdAt;
                 case 'recent_asc': return (a.updatedAt || a.createdAt) - (b.updatedAt || b.createdAt);

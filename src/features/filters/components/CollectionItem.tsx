@@ -5,6 +5,7 @@ import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbn
 import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { formatCountCompact } from '../../../utils/formatUtils';
 import { createCollectionSelectionFilters } from '../../../utils/filterState';
+import { getCollectionCount } from '../../../utils/collectionCount';
 
 interface CollectionItemProps {
     col: Collection;
@@ -66,6 +67,9 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     const isSelected = filters.collectionId === col.id;
     const thumbUrl = col.thumbnail || '';
     const showThumbnailSkeleton = isThumbnailPending && !thumbUrl;
+    const count = getCollectionCount(col);
+    const countText = count === undefined ? '\u2014' : formatCountCompact(count);
+    const unknownCountLabel = count === undefined ? 'Count not calculated' : undefined;
     return (
         <div
             key={col.id}
@@ -156,8 +160,12 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                     {/* Count Badge - Hover Only for ALL items, always Top Right */}
                     {!isSelected && (
                         <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                            <div className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90 shadow-sm">
-                                {formatCountCompact(col.count ?? col.imageIds.length)}
+                            <div
+                                className="px-1.5 py-0.5 rounded-md bg-black/40 backdrop-blur-sm text-[9px] font-bold text-white/90 shadow-sm"
+                                aria-label={unknownCountLabel}
+                                title={unknownCountLabel}
+                            >
+                                {countText}
                             </div>
                         </div>
                     )}
@@ -223,9 +231,13 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
                         <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-sage-500 dark:bg-sage-400 rounded-r-full" />
                     )}
 
-                    <span className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-md pointer-events-none transition-opacity duration-200 ${isSelected ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 opacity-60 group-hover:opacity-100'
-                        }`}>
-                        {formatCountCompact(col.count ?? col.imageIds.length)}
+                    <span
+                        className={`absolute right-2 text-[10px] px-1.5 py-0.5 rounded-md pointer-events-none transition-opacity duration-200 ${isSelected ? 'bg-gray-300 dark:bg-zinc-600 text-gray-800 dark:text-white' : 'bg-gray-100 dark:bg-zinc-800 text-gray-500 opacity-60 group-hover:opacity-100'
+                            }`}
+                        aria-label={unknownCountLabel}
+                        title={unknownCountLabel}
+                    >
+                        {countText}
                     </span>
                 </div>
             )

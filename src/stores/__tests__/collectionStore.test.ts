@@ -7,6 +7,7 @@ import { createDefaultFilters } from '../../utils/filterState';
 const collectionRepoMocks = vi.hoisted(() => ({
     mockGetAllCollectionsWithStats: vi.fn(),
     mockGetSmartCollectionSummaries: vi.fn(),
+    mockCacheSmartCollectionCount: vi.fn(),
     mockGetCollectionThumbnailSummaries: vi.fn(),
     mockEnsureCollectionSchema: vi.fn(),
     mockUpsertCollection: vi.fn(),
@@ -22,6 +23,7 @@ const libraryStoreMocks = vi.hoisted(() => ({
 const {
     mockGetAllCollectionsWithStats,
     mockGetSmartCollectionSummaries,
+    mockCacheSmartCollectionCount,
     mockGetCollectionThumbnailSummaries
 } = collectionRepoMocks;
 
@@ -36,6 +38,7 @@ vi.mock('../libraryStore', () => ({
 vi.mock('../../services/db/collectionRepo', () => ({
     getAllCollectionsWithStats: collectionRepoMocks.mockGetAllCollectionsWithStats,
     getSmartCollectionSummaries: collectionRepoMocks.mockGetSmartCollectionSummaries,
+    cacheSmartCollectionCount: collectionRepoMocks.mockCacheSmartCollectionCount,
     getCollectionThumbnailSummaries: collectionRepoMocks.mockGetCollectionThumbnailSummaries,
     ensureCollectionSchema: collectionRepoMocks.mockEnsureCollectionSchema,
     upsertCollection: collectionRepoMocks.mockUpsertCollection,
@@ -79,6 +82,7 @@ describe('collectionStore smart count refresh', () => {
         vi.clearAllMocks();
         mockGetAllCollectionsWithStats.mockResolvedValue([]);
         mockGetSmartCollectionSummaries.mockResolvedValue({});
+        mockCacheSmartCollectionCount.mockResolvedValue(undefined);
         mockGetCollectionThumbnailSummaries.mockResolvedValue({});
         collectionRepoMocks.mockEnsureCollectionSchema.mockResolvedValue(undefined);
         collectionRepoMocks.mockUpsertCollection.mockResolvedValue(undefined);
@@ -613,6 +617,8 @@ describe('collectionStore smart count refresh', () => {
             thumbnail: 'asset://replacement-thumb.webp',
             thumbnailSourceKind: 'dynamic'
         }));
+        expect(mockCacheSmartCollectionCount).toHaveBeenCalledTimes(1);
+        expect(mockCacheSmartCollectionCount).toHaveBeenCalledWith('smart-date', 14, 2);
     });
 
     it('clears smart pending ids when an import-skip refresh supersedes thumbnail hydration', async () => {
@@ -704,7 +710,7 @@ describe('collectionStore smart count refresh', () => {
         }));
     });
 
-    it('keeps cached prompt-search smart thumbnails visible during automatic refreshes', async () => {
+    it('keeps cached prompt-search smart counts and thumbnails visible during automatic refreshes', async () => {
         act(() => {
             useCollectionStore.setState({
                 collections: [{
@@ -713,7 +719,7 @@ describe('collectionStore smart count refresh', () => {
                     createdAt: 1,
                     updatedAt: 1,
                     source: 'ambit',
-                    count: 0,
+                    count: 9,
                     imageIds: [],
                     filters: createDefaultFilters({ searchQuery: 'apple' }),
                     thumbnail: 'asset://cached-prompt-thumb.webp',
@@ -728,9 +734,115 @@ describe('collectionStore smart count refresh', () => {
         expect(mockGetSmartCollectionSummaries).not.toHaveBeenCalled();
         expect(useCollectionStore.getState().smartSummaryPendingIds).toEqual({});
         expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            count: 9,
             thumbnail: 'asset://cached-prompt-thumb.webp',
             thumbnailSourceKind: 'dynamic'
         }));
+    });
+
+    it('automatically refreshes pinned prompt-search smart collections', async () => {
+        mockGetSmartCollectionSummaries.mockResolvedValue({
+            'smart-prompt': {
+                count: 11,
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [{
+                    id: 'smart-prompt',
+                    name: 'Pinned Prompt Smart',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    source: 'ambit',
+                    isPinned: true,
+                    count: 9,
+                    imageIds: [],
+                    filters: createDefaultFilters({ searchQuery: 'apple' })
+                }],
+                isLoaded: true
+            });
+        });
+
+        await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
+
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledWith(
+            [expect.objectContaining({ id: 'smart-prompt', isPinned: true })],
+            { includeThumbnails: false }
+        );
+        expect(useCollectionStore.getState().collections[0].count).toBe(11);
+    });
+
+    it('does not let an automatic refresh cancel a selected pinned prompt collection refresh', async () => {
+        let resolvePromptSummary: ((value: Record<string, unknown>) => void) | undefined;
+        mockGetSmartCollectionSummaries
+            .mockImplementationOnce(() => new Promise(resolve => {
+                resolvePromptSummary = resolve;
+            }))
+            .mockResolvedValueOnce({
+                'smart-date': {
+                    count: 12,
+                    thumbnailSourceKind: 'dynamic'
+                }
+            });
+
+        act(() => {
+            useCollectionStore.setState({
+                collections: [
+                    {
+                        id: 'smart-prompt',
+                        name: 'Prompt Smart',
+                        createdAt: 1,
+                        updatedAt: 1,
+                        source: 'ambit',
+                        isPinned: true,
+                        count: 9,
+                        imageIds: [],
+                        filters: createDefaultFilters({ searchQuery: 'apple' })
+                    },
+                    {
+                        id: 'smart-date',
+                        name: 'Date Smart',
+                        createdAt: 2,
+                        updatedAt: 2,
+                        source: 'ambit',
+                        count: 0,
+                        imageIds: [],
+                        filters: createDefaultFilters({ dateRange: 'today' })
+                    }
+                ],
+                isLoaded: true
+            });
+        });
+
+        const selectedRefresh = useCollectionStore.getState().refreshSmartCounts({
+            collectionIds: ['smart-prompt'],
+            includeArchived: true,
+            includePromptSearch: true,
+            includeThumbnails: false
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+
+        await useCollectionStore.getState().refreshSmartCounts({ includeThumbnails: false });
+        resolvePromptSummary?.({
+            'smart-prompt': {
+                count: 5,
+                thumbnailSourceKind: 'dynamic'
+            }
+        });
+        await selectedRefresh;
+
+        expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2);
+        expect(mockGetSmartCollectionSummaries).toHaveBeenNthCalledWith(
+            2,
+            [expect.objectContaining({ id: 'smart-date' })],
+            { includeThumbnails: false }
+        );
+        expect(useCollectionStore.getState().collections).toEqual(expect.arrayContaining([
+            expect.objectContaining({ id: 'smart-prompt', count: 5 }),
+            expect.objectContaining({ id: 'smart-date', count: 12 })
+        ]));
     });
 
     it('hydrates prompt-search smart collections when explicitly selected', async () => {
