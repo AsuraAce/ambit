@@ -394,6 +394,72 @@ fn z_image_model_patch_is_a_controlnet_not_the_primary_model() {
 }
 
 #[test]
+fn qwen_model_patch_reads_the_canonical_api_name() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "z_image_turbo_bf16.safetensors" } },
+        "2": { "class_type": "ModelPatchLoader", "inputs": { "name": "", "model_patch_name": "Qwen-Control.safetensors" } },
+        "3": { "class_type": "QwenImageDiffsynthControlnet", "inputs": { "model": ["1", 0], "model_patch": ["2", 0] } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "control prompt" } },
+        "5": { "class_type": "KSampler", "inputs": { "model": ["3", 0], "positive": ["4", 0], "seed": 42, "steps": 8, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple" } },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "z_image_turbo_bf16");
+    assert_eq!(meta.control_nets, ["qwen_control"]);
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::ControlNets),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn qwen_model_patch_links_override_widgets_and_fail_closed() {
+    let extract = |patch_source: &str, source_value: Option<&str>| {
+        let source = source_value
+            .map(|value| {
+                format!(
+                    r#", "8": {{ "class_type": "String", "inputs": {{ "value": "{value}" }} }}"#
+                )
+            })
+            .unwrap_or_default();
+        let prompt = format!(
+            r#"{{
+                "1": {{ "class_type": "UNETLoader", "inputs": {{ "unet_name": "z_image_turbo_bf16.safetensors" }} }},
+                "2": {{ "class_type": "ModelPatchLoader", "inputs": {{ "name": ["{patch_source}", 0] }}, "widgets_values": ["Stale-Control.safetensors"] }},
+                "3": {{ "class_type": "QwenImageDiffsynthControlnet", "inputs": {{ "model": ["1", 0], "model_patch": ["2", 0] }} }},
+                "4": {{ "class_type": "CLIPTextEncode", "inputs": {{ "text": "control prompt" }} }},
+                "5": {{ "class_type": "KSampler", "inputs": {{ "model": ["3", 0], "positive": ["4", 0], "seed": 42, "steps": 8, "cfg": 1.0, "sampler_name": "euler", "scheduler": "simple" }} }},
+                "6": {{ "class_type": "VAEDecode", "inputs": {{ "samples": ["5", 0] }} }},
+                "7": {{ "class_type": "SaveImage", "inputs": {{ "images": ["6", 0] }} }},
+                "9": {{ "class_type": "ModelPatchLoader", "inputs": {{ "name": "Disconnected-Control.safetensors" }} }},
+                "10": {{ "class_type": "QwenImageDiffsynthControlnet", "inputs": {{ "model": ["1", 0], "model_patch": ["9", 0] }} }}
+                {source}
+            }}"#
+        );
+        let chunks = HashMap::from([("prompt".to_string(), prompt)]);
+        extract_comfyui_metadata(&chunks)
+    };
+
+    let linked = extract("8", Some("Intended-Control.safetensors"));
+    assert_eq!(linked.model, "z_image_turbo_bf16");
+    assert_eq!(linked.control_nets, ["intended_control"]);
+
+    let empty = extract("8", Some(""));
+    assert_eq!(empty.model, "z_image_turbo_bf16");
+    assert!(empty.control_nets.is_empty());
+
+    let unresolved = extract("999", None);
+    assert_eq!(unresolved.model, "z_image_turbo_bf16");
+    assert!(unresolved.control_nets.is_empty());
+}
+
+#[test]
 fn switch_boolean_links_are_authoritative_through_nested_sources() {
     let extract_model = |bool_nodes: Value| {
         let mut prompt = json!({

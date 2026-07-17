@@ -33,6 +33,7 @@ Golden workflows:
 - `image_boogu_image_0_1_edit.chunks.json`
 - `image_lens_t2i.chunks.json`
 - `image_newbieimage_exp0_1-t2i.chunks.json`
+- `image_z_image_turbo_fun_union_controlnet.chunks.json`
 
 Pattern-covered workflows:
 
@@ -106,8 +107,8 @@ Source-authored expectations, recorded without asserting current parser output:
 
 ## Phase 23 Resource Intake
 
-Captured on `2026-07-17`. These workflows remain `unassessed` until their
-parser packages add exact golden assertions.
+Captured on `2026-07-17`. These workflows begin `unassessed` and are promoted
+only after their parser packages add exact golden assertions.
 
 | Workflow | Upstream Git blob | Bytes |
 | --- | --- | ---: |
