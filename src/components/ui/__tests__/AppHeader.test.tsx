@@ -8,6 +8,7 @@ import { ToastContext } from '../../../contexts/ToastContext';
 const mocks = vi.hoisted(() => ({
     browserMode: false,
     setSettings: vi.fn(),
+    searchBarProps: null as Record<string, unknown> | null,
 }));
 
 vi.mock('../../../hooks/useLibraryContext', () => ({
@@ -20,9 +21,10 @@ vi.mock('../../../hooks/useLibraryContext', () => ({
 }));
 
 vi.mock('../../../features/filters/components/SearchBar', () => ({
-    SearchBar: ({ submitNavigatesToGrid }: { submitNavigatesToGrid: boolean }) => (
-        <div data-testid="search-bar" data-submit-navigates-to-grid={String(submitNavigatesToGrid)} />
-    )
+    SearchBar: (props: Record<string, unknown>) => {
+        mocks.searchBarProps = props;
+        return <div data-testid="search-bar" data-submit-navigates-to-grid={String(props.submitNavigatesToGrid)} />;
+    }
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
@@ -113,13 +115,15 @@ const defaultProps = {
     onImport: vi.fn(),
     onSlideshow: vi.fn(),
     clearAllFilters: vi.fn(),
-    isFiltering: false
+    isFiltering: false,
+    onSearchDraftPendingChange: vi.fn(),
 };
 
 describe('AppHeader', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.browserMode = false;
+        mocks.searchBarProps = null;
         resetLibraryStore();
     });
 
@@ -325,5 +329,16 @@ describe('AppHeader', () => {
 
         rerender(<AppHeader {...defaultProps} viewMode="maintenance" />);
         expect(screen.getByTestId('search-bar').getAttribute('data-submit-navigates-to-grid')).toBe('true');
+    });
+
+    it('forwards draft-pending changes from the search bar', () => {
+        const onSearchDraftPendingChange = vi.fn();
+        render(<AppHeader {...defaultProps} onSearchDraftPendingChange={onSearchDraftPendingChange} />);
+
+        const onDraftPendingChange = mocks.searchBarProps?.onDraftPendingChange as ((isPending: boolean) => void) | undefined;
+        expect(onDraftPendingChange).toBeTypeOf('function');
+        onDraftPendingChange?.(true);
+
+        expect(onSearchDraftPendingChange).toHaveBeenCalledWith(true);
     });
 });

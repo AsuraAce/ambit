@@ -29,6 +29,7 @@ interface SearchBarProps {
     displayedCount: number;
     isFiltering: boolean;
     submitNavigatesToGrid: boolean;
+    onDraftPendingChange: (isPending: boolean) => void;
 }
 
 export const SearchBar = React.memo(({
@@ -39,6 +40,7 @@ export const SearchBar = React.memo(({
     displayedCount,
     isFiltering,
     submitNavigatesToGrid,
+    onDraftPendingChange,
 }: SearchBarProps) => {
     const { filters, setFilters } = useSearch();
     const [localValue, setLocalValue] = React.useState(filters.searchQuery);
@@ -56,6 +58,9 @@ export const SearchBar = React.memo(({
         ? null
         : 'Use ISO dates like date:2026-04 or before:2025';
     const liveSearchEnabled = !searchProps.isAiSearchEnabled && !submitNavigatesToGrid;
+    const isDraftPending = liveSearchEnabled
+        && dateSearchReadiness.isReady
+        && localValue !== filters.searchQuery;
 
     React.useEffect(() => {
         if (!searchProps.isFocused || searchProps.isAiSearchEnabled || operatorSuggestions.length > 0) return;
@@ -113,16 +118,22 @@ export const SearchBar = React.memo(({
     }, [filters.searchQuery]);
 
     React.useEffect(() => {
-        if (!liveSearchEnabled) return;
-        if (localValue === filters.searchQuery) return;
-        if (!dateSearchReadiness.isReady) return;
+        if (!isDraftPending) return;
 
         const timer = setTimeout(() => {
             setFilters(previous => ({ ...previous, searchQuery: localValue }));
         }, 500);
 
         return () => clearTimeout(timer);
-    }, [dateSearchReadiness.isReady, filters.searchQuery, liveSearchEnabled, localValue, setFilters]);
+    }, [isDraftPending, localValue, setFilters]);
+
+    React.useEffect(() => {
+        onDraftPendingChange(isDraftPending);
+    }, [isDraftPending, onDraftPendingChange]);
+
+    React.useEffect(() => () => {
+        onDraftPendingChange(false);
+    }, [onDraftPendingChange]);
 
     const statusMessage = React.useMemo(() => {
         if (dateSearchHint) return null;
@@ -130,7 +141,7 @@ export const SearchBar = React.memo(({
         if (!trimmedValue) return null;
         if (searchProps.isAiSearchEnabled) return 'Press Enter to analyze and apply filters.';
         if (submitNavigatesToGrid) return 'Press Enter to view matching images in Grid.';
-        if (localValue !== filters.searchQuery || isFiltering) return `Searching ${scopeName}…`;
+        if (isDraftPending || isFiltering) return `Searching ${scopeName}…`;
         if (displayedCount === 0) return `No matches in ${scopeName}.`;
         return `${displayedCount.toLocaleString()} ${displayedCount === 1 ? 'match' : 'matches'} in ${scopeName}.`;
     }, [
@@ -138,6 +149,7 @@ export const SearchBar = React.memo(({
         displayedCount,
         filters.searchQuery,
         isFiltering,
+        isDraftPending,
         localValue,
         scopeName,
         searchProps.isAiSearchEnabled,
@@ -155,14 +167,10 @@ export const SearchBar = React.memo(({
     const selectOperator = (value: string) => {
         const lastSpace = localValue.lastIndexOf(' ');
         const prefix = lastSpace >= 0 ? localValue.substring(0, lastSpace + 1) : '';
-        const nextValue = `${prefix}${value} `;
+        const nextValue = `${prefix}${value}${value.endsWith(':') ? '' : ' '}`;
         setLocalValue(nextValue);
         setActiveOptionIndex(-1);
         setAreOptionsDismissed(true);
-
-        if (liveSearchEnabled && getAdvancedDateSearchReadiness(nextValue).isReady) {
-            setFilters(previous => ({ ...previous, searchQuery: nextValue }));
-        }
     };
 
     const selectRecentSearch = (value: string) => {
