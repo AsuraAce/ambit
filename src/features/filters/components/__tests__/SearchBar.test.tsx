@@ -107,6 +107,7 @@ describe('SearchBar query readiness and trigger behavior', () => {
     it('keeps incomplete date syntax local and shows a hint', async () => {
         const harness = renderSearchBar();
         await flushSearchPopover();
+        await flushSearchReadiness();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
 
         fireEvent.change(input, {
