@@ -949,7 +949,7 @@ fn z_image_union_model_patch_controlnet() {
 }
 
 #[test]
-fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
+fn bernini_custom_conditioning_resolves_prompt_but_remains_partial_for_schedule() {
     let name = "video_bernini_r_image_editing";
     let chunks = load_chunks(name);
     let workflow = chunks
@@ -962,7 +962,7 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
         steps: 0,
         cfg: 1.0,
         sampler: "res_multistep",
-        positive_prompt: "",
+        positive_prompt: "You are a helpful assistant.make it night",
         negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
         loras: &["lightx2v_t2v_14b_cfg_step_distill_v2_lora_rank64_bf16"],
         control_nets: &[],
@@ -991,6 +991,7 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
         ComfyMetadataField::Seed,
         ComfyMetadataField::Cfg,
         ComfyMetadataField::Sampler,
+        ComfyMetadataField::PositivePrompt,
         ComfyMetadataField::NegativePrompt,
         ComfyMetadataField::Loras,
     ] {
@@ -1000,10 +1001,7 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
             "{name} {field:?} provenance"
         );
     }
-    for field in [
-        ComfyMetadataField::Steps,
-        ComfyMetadataField::PositivePrompt,
-    ] {
+    for field in [ComfyMetadataField::Steps] {
         assert_eq!(
             diagnostics.field_sources.get(&field),
             None,
