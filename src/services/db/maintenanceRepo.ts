@@ -5,6 +5,7 @@ import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
 import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 interface ImagePathRow {
     id: string;
@@ -183,7 +184,11 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 
 export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !image.isDeleted && !image.metadata.positivePrompt);
+        return getBrowserMockImages().filter(image =>
+            !image.isDeleted
+            && !image.metadata.positivePrompt
+            && !isKnownInvokeImageAsset(image.invokeImageCategory)
+        );
     }
 
     const db = await getDb();
@@ -192,6 +197,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
+        AND IFNULL(is_invoke_asset_gen, 0) = 0
     `;
 
     if (whereClause) {
@@ -434,7 +440,11 @@ export const getMaintenanceCounts = async () => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
-            untagged: images.filter(image => !image.metadata.positivePrompt && !image.isDeleted).length,
+            untagged: images.filter(image =>
+                !image.metadata.positivePrompt
+                && !image.isDeleted
+                && !isKnownInvokeImageAsset(image.invokeImageCategory)
+            ).length,
             orphans: 0,
             intermediates: images.filter(image => image.isIntermediate || image.metadata.isIntermediate).length,
             missing: images.filter(image => image.isMissing).length,
@@ -448,7 +458,12 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
+            COUNT(*) FILTER (
+                WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                  AND is_deleted = 0
+                  AND IFNULL(is_intermediate_gen, 0) = 0
+                  AND IFNULL(is_invoke_asset_gen, 0) = 0
+            ) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
             COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
             (SELECT COUNT(*) FROM removed_images) as trash

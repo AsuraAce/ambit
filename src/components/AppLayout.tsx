@@ -252,7 +252,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         filters.favoritesOnly ? 'favorites' : 'all-images',
         filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
         filters.showGrids ? 'show-grids' : 'hide-grids',
-        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates'
+        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates',
+        filters.showInvokeImageAssets ? 'show-invoke-assets' : 'hide-invoke-assets'
     ].join('|'), [
         layoutMode,
         settings.thumbnailSize,
@@ -261,7 +262,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         filters.favoritesOnly,
         filters.pinnedOnly,
         filters.showGrids,
-        filters.showIntermediates
+        filters.showIntermediates,
+        filters.showInvokeImageAssets
     ]);
 
     const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (

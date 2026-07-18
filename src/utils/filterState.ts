@@ -1,6 +1,6 @@
 import { FilterState } from '../types';
 
-type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'sortOption'>;
+type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'showInvokeImageAssets' | 'sortOption'>;
 
 export const createDefaultFilters = (
     overrides: Partial<FilterState> = {}
@@ -27,6 +27,7 @@ export const createDefaultFilters = (
     pinnedOnly: false,
     showIntermediates: false,
     showGrids: false,
+    showInvokeImageAssets: false,
     sortOption: undefined,
     matchModes: undefined,
     assetFilterAliases: undefined,
@@ -55,6 +56,7 @@ export const hasActiveResultFilters = (filters: FilterState): boolean => (
     !!filters.collectionId ||
     !!filters.showIntermediates ||
     !!filters.showGrids ||
+    !!filters.showInvokeImageAssets ||
     hasRangeFilter(filters.minSteps) ||
     hasRangeFilter(filters.maxSteps) ||
     hasRangeFilter(filters.minCfg) ||
@@ -77,6 +79,7 @@ export const shouldPrefetchResultPages = (
 const preserveViewFilters = (filters: FilterState): PreservedViewFilters => ({
     showGrids: filters.showGrids,
     showIntermediates: filters.showIntermediates,
+    showInvokeImageAssets: filters.showInvokeImageAssets,
     sortOption: filters.sortOption,
 });
 

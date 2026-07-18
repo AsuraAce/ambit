@@ -375,7 +375,9 @@ const getDiskModifiedAtForFacetRow = (
     );
 };
 
-const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const BASE_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
+const BASE_PRIVACY_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const PRIVACY_VISIBLE_WHERE = `${DEFAULT_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const KEYWORD_BATCH_SIZE = 500;
 
@@ -390,6 +392,8 @@ const isDefaultGlobalScope = (
 };
 
 const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
+const hasInvokeAssetVisibilityFilter = (whereClause: string) =>
+    whereClause.includes('IFNULL(is_invoke_asset_gen, 0) = 0');
 const hasFastSortVisibilityPrefix = (whereClause: string) =>
     whereClause.includes('is_deleted = 0') &&
     whereClause.includes('IFNULL(is_intermediate_gen, 0) = 0') &&
@@ -399,6 +403,7 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
     if (!hasFastSortVisibilityPrefix(whereClause)) return null;
 
     if (sortField === 'timestamp') {
+        if (hasInvokeAssetVisibilityFilter(whereClause)) return 'idx_images_invoke_asset_fast_sort_v1';
         return hasPrivacyFilter(whereClause) ? 'idx_images_privacy_fast_sort_v1' : 'idx_images_fast_sort_v3';
     }
     if (sortField === 'path') return 'idx_images_name_sort_v1';
@@ -419,8 +424,20 @@ const selectAverageStepsScopeIndex = (
     loraName?: string
 ): string | null => {
     if (collectionId || loraName || params.length > 0) return null;
-    if (whereClause === DEFAULT_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
-    if (whereClause === PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
+    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
+        return 'idx_images_invoke_asset_fast_sort_v1';
+    }
+    if (whereClause === BASE_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
+    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
+    return null;
+};
+
+const selectCountVisibilityIndex = (whereClause: string, params: unknown[]): string | null => {
+    if (params.length > 0) return null;
+    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
+        return 'idx_images_invoke_asset_fast_sort_v1';
+    }
+    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
     return null;
 };
 
@@ -473,9 +490,8 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const fromClause = hasPrivacyFilter(finalWhere) && hasFastSortVisibilityPrefix(finalWhere)
-        ? 'FROM images INDEXED BY idx_images_privacy_fast_sort_v1'
-        : 'FROM images';
+    const countIndex = selectCountVisibilityIndex(finalWhere, params);
+    const fromClause = countIndex ? `FROM images INDEXED BY ${countIndex}` : 'FROM images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));

@@ -86,6 +86,8 @@ Duplicate resolution removes redundant records from Ambit's active library and k
 
 Untagged helps find images without descriptive metadata or positive prompts. Use Global to scan the whole library, or Filtered to inspect only the current filter result set.
 
+Known InvokeAI user, control, mask, and other image assets are excluded from Untagged because missing generation prompts are normal for those source images. They remain available to missing-file, duplicate, thumbnail, and Removed workflows, and can be inspected from the library after enabling `Show InvokeAI Image Assets` in the View menu.
+
 Use View Image to inspect a record before cleanup. Use Remove from Library only when the selected records should leave Ambit's active library while keeping their source files on disk.
 
 ## Intermediates

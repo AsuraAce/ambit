@@ -302,6 +302,10 @@ export const buildSqlWhereClause = (
             // Use indexed is_grid_gen column only - no json_extract needed
             conditions.push("IFNULL(is_grid_gen, 0) = 0");
         }
+        if (!filters.showInvokeImageAssets) {
+            // NULL means missing or unknown InvokeAI category and must remain visible.
+            conditions.push("IFNULL(is_invoke_asset_gen, 0) = 0");
+        }
     }
 
     // 1. Privacy Logic

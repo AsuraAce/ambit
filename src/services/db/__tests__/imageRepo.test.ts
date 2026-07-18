@@ -117,6 +117,9 @@ describe('imageRepo batch removal', () => {
             notes: image.notes,
             boardId: image.boardId,
             groupId: image.groupId,
+            invokeImageName: image.invokeImageName,
+            invokeImageCategory: image.invokeImageCategory,
+            invokeImageOrigin: image.invokeImageOrigin,
         });
         const browserImages = [
             makeBrowserImage({
@@ -184,6 +187,17 @@ describe('imageRepo batch removal', () => {
                 isIntermediate: false,
                 metadata: promptMetadata,
             }),
+            makeBrowserImage({
+                id: 'invoke-control',
+                timestamp: 1,
+                fileSize: 1,
+                isDeleted: false,
+                isIntermediate: false,
+                metadata: promptMetadata,
+                invokeImageName: 'invoke-control.png',
+                invokeImageCategory: 'control',
+                invokeImageOrigin: 'internal',
+            }),
         ];
         getBrowserMockImagesMock.mockReturnValue(browserImages);
 
@@ -238,6 +252,7 @@ describe('imageRepo batch removal', () => {
         await expect(isImageNew('regular')).resolves.toBe(false);
         await expect(isImageNew('new-image')).resolves.toBe(true);
         await expect(getAllImages(2, 0, true)).resolves.toEqual([browserImages[1], browserImages[0]]);
+        await expect(getAllImages(undefined, 0, false, false, false, true)).resolves.toContain(browserImages[7]);
         await expect(getImagesByIds([])).resolves.toEqual([]);
         await expect(getImagesByIds(['regular', 'pinned'])).resolves.toEqual([browserImages[0], browserImages[1]]);
         await expect(getFlatInvokeImageIdsForRoot('D:/Invoke/')).resolves.toEqual(['D:/Invoke/outputs/images/flat.png']);
@@ -259,7 +274,11 @@ describe('imageRepo batch removal', () => {
         await expect(updatePinned('regular', true)).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], 'board-a')).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], null)).resolves.toBeUndefined();
-        await expect(checkHiddenContentAvailability()).resolves.toEqual({ hasIntermediates: true, hasGrids: true });
+        await expect(checkHiddenContentAvailability()).resolves.toEqual({
+            hasIntermediates: true,
+            hasGrids: true,
+            hasInvokeImageAssets: true,
+        });
         await expect(clearAllThumbnailPaths()).resolves.toBe(0);
         await expect(updateThumbnailPath('regular', 'thumb.webp')).resolves.toBeUndefined();
         await expect(updateThumbnailPathsBatch([{ id: 'regular', thumbnailPath: 'thumb.webp', microThumbnail: 'data', thumbnailSource: 'ambit' }])).resolves.toBeUndefined();
@@ -347,6 +366,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
+                if (normalizedSql.includes('select 1 from images where is_invoke_asset_gen')) return [{ 1: 1 }];
                 if (sql.includes('FROM images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
@@ -1134,6 +1154,7 @@ describe('imageRepo batch removal', () => {
         await expect(checkHiddenContentAvailability()).resolves.toEqual({
             hasIntermediates: true,
             hasGrids: false,
+            hasInvokeImageAssets: true,
         });
         await updateThumbnailPath('C:/images/thumb.png', 'C:/thumbs/thumb.webp');
 

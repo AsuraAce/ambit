@@ -58,7 +58,7 @@ interface SearchContextType {
 
     // Transient state moved to useLibraryStore
 
-    availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean };
+    availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean; hasInvokeImageAssets: boolean };
     refreshHiddenAvailability: () => Promise<void>;
 
     isFacetsLoading: boolean;
@@ -379,9 +379,17 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const recentSearchHydrationGenerationRef = useRef(0);
     const recentSearchesHydratedRef = useRef(false);
     const recentSearchesMountedRef = useRef(true);
-    const viewSettingsHydrationTargetRef = useRef<{ showGrids: boolean; showIntermediates: boolean } | null>(null);
+    const viewSettingsHydrationTargetRef = useRef<{
+        showGrids: boolean;
+        showIntermediates: boolean;
+        showInvokeImageAssets: boolean;
+    } | null>(null);
     const [viewSettingsHydrated, setViewSettingsHydrated] = useState(false);
-    const [availableHiddenContent, setAvailableHiddenContent] = useState({ hasIntermediates: false, hasGrids: false });
+    const [availableHiddenContent, setAvailableHiddenContent] = useState({
+        hasIntermediates: false,
+        hasGrids: false,
+        hasInvokeImageAssets: false,
+    });
 
     const setRecentSearches = useCallback<React.Dispatch<React.SetStateAction<string[]>>>((mutation) => {
         recentSearchHydrationGenerationRef.current += 1;
@@ -477,12 +485,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         const target = {
             showGrids: settings.libraryShowGrids ?? filters.showGrids ?? false,
-            showIntermediates: settings.libraryShowIntermediates ?? filters.showIntermediates ?? false
+            showIntermediates: settings.libraryShowIntermediates ?? filters.showIntermediates ?? false,
+            showInvokeImageAssets: settings.libraryShowInvokeImageAssets ?? filters.showInvokeImageAssets ?? false,
         };
         viewSettingsHydrationTargetRef.current = target;
         setFilters(prev => ({ ...prev, ...target }));
         setViewSettingsHydrated(true);
-    }, [filters.showGrids, filters.showIntermediates, settings.libraryShowGrids, settings.libraryShowIntermediates, settingsLoaded, setFilters, viewSettingsHydrated]);
+    }, [
+        filters.showGrids,
+        filters.showIntermediates,
+        filters.showInvokeImageAssets,
+        settings.libraryShowGrids,
+        settings.libraryShowIntermediates,
+        settings.libraryShowInvokeImageAssets,
+        settingsLoaded,
+        setFilters,
+        viewSettingsHydrated,
+    ]);
 
     // 2. Persist Grid Toggle Change to Settings
     useEffect(() => {
@@ -490,12 +509,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
         if (hydrationTarget
             && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates)) return;
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowGrids !== filters.showGrids) {
             setSettings({ libraryShowGrids: filters.showGrids });
         }
-    }, [filters.showGrids, filters.showIntermediates, setSettings, settings.libraryShowGrids, viewSettingsHydrated]);
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowGrids, viewSettingsHydrated]);
 
     // 3. Persist Intermediate Toggle Change to Settings
     useEffect(() => {
@@ -503,12 +523,27 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
         if (hydrationTarget
             && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates)) return;
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowIntermediates !== filters.showIntermediates) {
             setSettings({ libraryShowIntermediates: filters.showIntermediates });
         }
-    }, [filters.showGrids, filters.showIntermediates, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
+
+    // 4. Persist InvokeAI Image Asset Toggle Change to Settings
+    useEffect(() => {
+        if (!viewSettingsHydrated) return;
+        const hydrationTarget = viewSettingsHydrationTargetRef.current;
+        if (hydrationTarget
+            && (filters.showGrids !== hydrationTarget.showGrids
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
+        viewSettingsHydrationTargetRef.current = null;
+        if (settings.libraryShowInvokeImageAssets !== filters.showInvokeImageAssets) {
+            setSettings({ libraryShowInvokeImageAssets: filters.showInvokeImageAssets });
+        }
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowInvokeImageAssets, viewSettingsHydrated]);
 
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {

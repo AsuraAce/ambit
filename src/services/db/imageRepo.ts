@@ -22,6 +22,7 @@ import {
     clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 type PersistableImageRecord = {
     id: string;
@@ -639,13 +640,15 @@ export const getAllImages = async (
     offset: number = 0,
     prioritizePinned: boolean = false,
     showIntermediates: boolean = false,
-    showGrids: boolean = false
+    showGrids: boolean = false,
+    showInvokeImageAssets: boolean = false
 ): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages()
             .filter(image => !image.isDeleted)
             .filter(image => showIntermediates || !(image.isIntermediate || image.metadata.isIntermediate))
             .filter(image => showGrids || !image.metadata.isGrid)
+            .filter(image => showInvokeImageAssets || !isKnownInvokeImageAsset(image.invokeImageCategory))
             .sort((a, b) => prioritizePinned && a.isPinned !== b.isPinned
                 ? (a.isPinned ? -1 : 1)
                 : b.timestamp - a.timestamp);
@@ -662,6 +665,9 @@ export const getAllImages = async (
     }
     if (!showGrids) {
         filterClauses += ' AND IFNULL(is_grid_gen, 0) = 0';
+    }
+    if (!showInvokeImageAssets) {
+        filterClauses += ' AND IFNULL(is_invoke_asset_gen, 0) = 0';
     }
 
     const query = limit
@@ -1232,25 +1238,32 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
-export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
+export const checkHiddenContentAvailability = async (): Promise<{
+    hasIntermediates: boolean;
+    hasGrids: boolean;
+    hasInvokeImageAssets: boolean;
+}> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
             hasIntermediates: images.some(image => image.isIntermediate || image.metadata.isIntermediate),
-            hasGrids: images.some(image => image.metadata.isGrid === true)
+            hasGrids: images.some(image => image.metadata.isGrid === true),
+            hasInvokeImageAssets: images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory)),
         };
     }
 
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
-    const [intermediateCheck, gridCheck] = await Promise.all([
+    const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
         db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
         hasIntermediates: intermediateCheck.length > 0,
-        hasGrids: gridCheck.length > 0
+        hasGrids: gridCheck.length > 0,
+        hasInvokeImageAssets: invokeAssetCheck.length > 0,
     };
 };
 

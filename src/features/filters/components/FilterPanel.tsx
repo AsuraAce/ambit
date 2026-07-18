@@ -192,7 +192,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 // We'll pass it as is, strict type compliance.
                 collectionId: null, // Don't save circular self-ref
                 showGrids: saved.showGrids, // Preserve
-                showIntermediates: saved.showIntermediates // Preserve
+                showIntermediates: saved.showIntermediates, // Preserve
+                showInvokeImageAssets: saved.showInvokeImageAssets // Preserve
             } as FilterState;
 
             onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);

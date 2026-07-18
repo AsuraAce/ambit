@@ -7,6 +7,7 @@ import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { formatModelName } from '../../../utils/formatUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { getInvokeImageAssetLabel } from '../../../utils/invokeImageSource';
 
 interface ImageCardProps {
   image: AIImage;
@@ -45,6 +46,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
   const shouldBlur = isMasked && !isRevealed;
   const isMissing = !!image.isMissing;
+  const invokeAssetLabel = getInvokeImageAssetLabel(image.invokeImageCategory);
 
   // Auto-blur when mouse leaves the card area for privacy
   const handleMouseLeave = () => {
@@ -170,6 +172,15 @@ export const ImageCard: React.FC<ImageCardProps> = ({
           {isSelected && <CheckCircle className="w-3.5 h-3.5 text-white" />}
         </div>
       </button>
+
+      {invokeAssetLabel && (
+        <span
+          className="absolute top-2 left-10 z-20 rounded-md border border-white/20 bg-black/65 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-lg backdrop-blur-md pointer-events-none"
+          title={`InvokeAI image asset: ${invokeAssetLabel}`}
+        >
+          {invokeAssetLabel}
+        </span>
+      )}
 
       {/* Hover Overlay - Only show if not blurred and not missing */}
       {!shouldBlur && !isMissing && (

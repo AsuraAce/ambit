@@ -30,6 +30,7 @@ const activeFilters: FilterState = {
     pinnedOnly: true,
     showIntermediates: true,
     showGrids: true,
+    showInvokeImageAssets: true,
     sortOption: 'name_asc',
     matchModes: {
         loras: 'all',
@@ -78,6 +79,7 @@ describe('filterState', () => {
 
         expect(mergedFilters.showIntermediates).toBe(true);
         expect(mergedFilters.showGrids).toBe(true);
+        expect(mergedFilters.showInvokeImageAssets).toBe(true);
         expect(mergedFilters.sortOption).toBe('name_asc');
         expect(mergedFilters.minSteps).toBeUndefined();
         expect(mergedFilters.maxSteps).toBeUndefined();
@@ -99,6 +101,7 @@ describe('filterState', () => {
         expect(hasActiveResultFilters(createDefaultFilters({ models: ['model-a'] }))).toBe(true);
         expect(hasActiveResultFilters(createDefaultFilters({ dateRange: 'today' }))).toBe(true);
         expect(hasActiveResultFilters(createDefaultFilters({ showGrids: true }))).toBe(true);
+        expect(hasActiveResultFilters(createDefaultFilters({ showInvokeImageAssets: true }))).toBe(true);
     });
 
     it('prefetches only for unfiltered result browsing', () => {

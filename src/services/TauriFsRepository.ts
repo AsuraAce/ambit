@@ -121,7 +121,7 @@ const isPersistedFilterState = (value: unknown): boolean => {
         'controlNets', 'ipAdapters'
     ];
     const numberKeys = ['minSteps', 'maxSteps', 'minCfg', 'maxCfg'];
-    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids'];
+    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids', 'showInvokeImageAssets'];
     const aliasKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
 
     return hasValidOptionalValue(value, 'searchQuery', item => typeof item === 'string')
@@ -202,6 +202,7 @@ const isPersistedSettings = (value: unknown): boolean => {
         'hasCompletedOnboarding', 'autoCheckForUpdates', 'confirmDelete', 'defaultTheaterMode',
         'enableAI', 'syncBoardsToCollections', 'invokeSyncFavorites', 'invokeSyncBoards',
         'importIntermediates', 'importOrphans', 'libraryShowGrids', 'libraryShowIntermediates',
+        'libraryShowInvokeImageAssets',
         'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails'
     ];
     const stringKeys = [
@@ -576,6 +577,8 @@ export class TauriFsRepository implements IRepository {
                 hasCompletedOnboarding: savedSettings.hasCompletedOnboarding ?? true,
                 maskedKeywords: savedSettings.maskedKeywords ?? [],
                 libraryShowGrids: savedSettings.libraryShowGrids ?? false,
+                libraryShowIntermediates: savedSettings.libraryShowIntermediates ?? false,
+                libraryShowInvokeImageAssets: savedSettings.libraryShowInvokeImageAssets ?? false,
                 resourceFolders: savedSettings.resourceFolders ?? [],
                 invokeDbSnapshot
             })

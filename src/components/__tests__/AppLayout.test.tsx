@@ -262,7 +262,7 @@ describe('AppLayout', () => {
         );
 
         expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toBe(
-            `justified|${thumbnailSize}|name_asc|collection-1|favorites|unpinned-scope|show-grids|hide-intermediates`
+            `justified|${thumbnailSize}|name_asc|collection-1|favorites|unpinned-scope|show-grids|hide-intermediates|hide-invoke-assets`
         );
     });
 

@@ -104,7 +104,8 @@ const baseFilters: FilterState = {
     favoritesOnly: false,
     collectionId: null,
     showGrids: false,
-    showIntermediates: false
+    showIntermediates: false,
+    showInvokeImageAssets: false
 };
 
 const image = (overrides: Partial<AIImage> = {}): AIImage => ({
@@ -123,6 +124,7 @@ const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     maskedKeywords: [],
     libraryShowGrids: false,
     libraryShowIntermediates: false,
+    libraryShowInvokeImageAssets: false,
     ...overrides
 } as AppSettings);
 
@@ -191,7 +193,7 @@ describe('SearchProvider', () => {
             settings: settings(),
             recentSearches: ['portrait']
         }));
-        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false });
+        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false });
         mocks.buildSqlWhereClause.mockReturnValue({ where: 'deleted_at IS NULL', params: ['value'] });
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 0 });
         mocks.updateFavorite.mockResolvedValue(undefined);
@@ -392,18 +394,22 @@ describe('SearchProvider', () => {
             settings: {}
         });
         mocks.settings.current = {
-            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            settings: settings({
+                libraryShowGrids: true,
+                libraryShowIntermediates: true,
+                libraryShowInvokeImageAssets: true,
+            }),
             setSettings: vi.fn(),
             privacyEnabled: false,
             isLoaded: true
         };
-        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true });
+        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true });
         renderProvider();
 
         await act(() => Promise.resolve());
         await act(() => Promise.resolve());
         expect(latest.recentSearches).toEqual(['portrait']);
-        expect(latest.availableHiddenContent).toEqual({ hasIntermediates: true, hasGrids: true });
+        expect(latest.availableHiddenContent).toEqual({ hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true });
         expect((mocks.searchState.current as SearchValue).setFilters).toHaveBeenCalled();
 
         act(() => latest.setRecentSearches(['landscape']));
@@ -415,12 +421,16 @@ describe('SearchProvider', () => {
     });
 
     it('hydrates view filters from initialized settings before enabling write-back', async () => {
-        const currentSettings = settings({ libraryShowGrids: false, libraryShowIntermediates: false });
+        const currentSettings = settings({
+            libraryShowGrids: false,
+            libraryShowIntermediates: false,
+            libraryShowInvokeImageAssets: false,
+        });
         const setSettings = vi.fn();
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
-            filters: { ...baseFilters, showGrids: true, showIntermediates: true }
+            filters: { ...baseFilters, showGrids: true, showIntermediates: true, showInvokeImageAssets: true }
         };
         mocks.settings.current = {
             settings: currentSettings,
@@ -434,7 +444,8 @@ describe('SearchProvider', () => {
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(expect.objectContaining({
             showGrids: false,
-            showIntermediates: false
+            showIntermediates: false,
+            showInvokeImageAssets: false,
         }));
         expect(setSettings).not.toHaveBeenCalled();
     });
@@ -469,7 +480,11 @@ describe('SearchProvider', () => {
         expect(setSettings).not.toHaveBeenCalled();
 
         mocks.settings.current = {
-            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            settings: settings({
+                libraryShowGrids: true,
+                libraryShowIntermediates: true,
+                libraryShowInvokeImageAssets: true,
+            }),
             setSettings,
             privacyEnabled: false,
             isLoaded: true

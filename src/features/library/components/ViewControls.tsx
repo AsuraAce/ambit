@@ -157,7 +157,9 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
             </div>
 
             {/* View Options Menu */}
-            {(availableHiddenContent.hasIntermediates || availableHiddenContent.hasGrids) && (
+            {(availableHiddenContent.hasIntermediates
+                || availableHiddenContent.hasGrids
+                || availableHiddenContent.hasInvokeImageAssets) && (
                 <div className="relative" ref={viewMenuRef}>
                     <button
                         type="button"
@@ -171,11 +173,29 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                     </button>
                     {showViewMenu && (
                         <div
-                            className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                            className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
                         >
                             <div className="p-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2">Display</span>
                             </div>
+
+                            {availableHiddenContent.hasInvokeImageAssets && (
+                                <button
+                                    aria-pressed={Boolean(filters.showInvokeImageAssets)}
+                                    onClick={() => {
+                                        setFilters(prev => ({ ...prev, showInvokeImageAssets: !prev.showInvokeImageAssets }));
+                                    }}
+                                    className="w-full text-left px-3 py-2.5 text-xs transition-colors flex justify-between items-center gap-3 group hover:bg-gray-100 dark:hover:bg-white/5"
+                                >
+                                    <div className="flex min-w-0 flex-col">
+                                        <span className="font-medium text-gray-700 dark:text-gray-200">Show InvokeAI Image Assets</span>
+                                        <span className="text-[9px] text-gray-400">Reference, control, mask, and source images</span>
+                                    </div>
+                                    <div className={`w-8 h-4 shrink-0 rounded-full transition-colors relative flex items-center ${filters.showInvokeImageAssets ? 'bg-sage-600' : 'bg-gray-300 dark:bg-zinc-700'}`}>
+                                        <div className={`absolute w-3 h-3 bg-white rounded-full transition-all ${filters.showInvokeImageAssets ? 'right-0.5' : 'left-0.5'}`} />
+                                    </div>
+                                </button>
+                            )}
 
                             {availableHiddenContent.hasIntermediates && (
                                 <button

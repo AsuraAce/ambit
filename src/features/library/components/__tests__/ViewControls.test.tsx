@@ -5,8 +5,8 @@ import type { FilterState, SortOption } from '../../../../types';
 import { ViewControls } from '../ViewControls';
 
 const mocks = vi.hoisted(() => ({
-    availableHiddenContent: { hasIntermediates: false, hasGrids: false },
-    filters: { showIntermediates: false, showGrids: false } as FilterState,
+    availableHiddenContent: { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false },
+    filters: { showIntermediates: false, showGrids: false, showInvokeImageAssets: false } as FilterState,
     sortOption: 'date_desc' as SortOption,
     setSortOption: vi.fn(),
     setFilters: vi.fn()
@@ -24,7 +24,8 @@ vi.mock('../../../../contexts/SearchContext', () => ({
 
 const baseFilters = (): FilterState => ({
     searchQuery: '', models: [], tools: [], loras: [], embeddings: [], hypernetworks: [], samplers: [], generationTypes: [],
-    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null, showIntermediates: false, showGrids: false
+    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null, showIntermediates: false, showGrids: false,
+    showInvokeImageAssets: false
 });
 
 const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {}) => {
@@ -40,7 +41,7 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {
 describe('ViewControls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false };
+        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = baseFilters();
         mocks.sortOption = 'date_desc';
         mocks.setFilters.mockImplementation((update: (previous: FilterState) => FilterState) => { mocks.filters = update(mocks.filters); });
@@ -78,13 +79,14 @@ describe('ViewControls', () => {
         expect(screen.queryByText('Oldest')).toBeNull();
     });
 
-    it('toggles both hidden-content controls and closes only on outside clicks', () => {
-        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: true };
+    it('toggles all hidden-content controls and closes only on outside clicks', () => {
+        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true };
         const { rerender, props } = setup();
         fireEvent.click(screen.getByTitle('View Options'));
         fireEvent.click(screen.getByText('Show Intermediates'));
         fireEvent.click(screen.getByText('Show Image Grids'));
-        expect(mocks.filters).toMatchObject({ showIntermediates: true, showGrids: true });
+        fireEvent.click(screen.getByText('Show InvokeAI Image Assets'));
+        expect(mocks.filters).toMatchObject({ showIntermediates: true, showGrids: true, showInvokeImageAssets: true });
 
         rerender(<ViewControls {...props} />);
         fireEvent.mouseDown(screen.getByText('Display'));
@@ -95,11 +97,12 @@ describe('ViewControls', () => {
         fireEvent.click(screen.getByTitle('View Options'));
         fireEvent.click(screen.getByText('Show Intermediates'));
         fireEvent.click(screen.getByText('Show Image Grids'));
-        expect(mocks.filters).toMatchObject({ showIntermediates: false, showGrids: false });
+        fireEvent.click(screen.getByText('Show InvokeAI Image Assets'));
+        expect(mocks.filters).toMatchObject({ showIntermediates: false, showGrids: false, showInvokeImageAssets: false });
     });
 
     it('renders active layout, sort, and hidden-content variants', () => {
-        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false };
+        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showIntermediates: true };
         mocks.sortOption = 'name_desc';
         const { container, rerender, props } = setup({ layoutMode: 'grid' });
@@ -108,7 +111,7 @@ describe('ViewControls', () => {
         fireEvent.click(screen.getByTitle('View Options'));
         expect(container.querySelector('[class~="right-0.5"]')).toBeTruthy();
 
-        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true };
+        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showGrids: true };
         mocks.sortOption = 'future' as SortOption;
         rerender(<ViewControls {...props} layoutMode="justified" showLayoutSwitcher={false} showSlideshowButton={false} />);

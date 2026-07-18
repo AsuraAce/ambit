@@ -168,4 +168,20 @@ describe('ImageCard', () => {
         rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: null as unknown as string } })} isSelected={false} {...callbacks} />);
         expect(screen.getByText('Model')).toBeTruthy();
     });
+
+    it('labels only known InvokeAI image asset categories', () => {
+        const callbacks = { onClick: vi.fn(), onToggleSelection: vi.fn(), onToggleFavorite: vi.fn() };
+        const { rerender } = render(
+            <ImageCard image={image({ invokeImageCategory: ' CONTROL ' })} isSelected={false} {...callbacks} />
+        );
+
+        expect(screen.getByText('Control').getAttribute('title')).toBe('InvokeAI image asset: Control');
+
+        rerender(<ImageCard image={image({ invokeImageCategory: 'general' })} isSelected={false} {...callbacks} />);
+        expect(screen.queryByText('Control')).toBeNull();
+        expect(screen.queryByText('General')).toBeNull();
+
+        rerender(<ImageCard image={image({ invokeImageCategory: 'future-category' })} isSelected={false} {...callbacks} />);
+        expect(screen.queryByText('future-category')).toBeNull();
+    });
 });

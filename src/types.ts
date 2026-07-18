@@ -163,6 +163,7 @@ export interface FilterState {
   pinnedOnly?: boolean;
   showIntermediates?: boolean;
   showGrids?: boolean;
+  showInvokeImageAssets?: boolean;
   sortOption?: SortOption;
   matchModes?: Record<string, 'any' | 'all'>; // Key: filter key (e.g. 'loras'), Value: 'any' (OR) | 'all' (AND)
   assetFilterAliases?: Partial<Record<'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters', Record<string, string[]>>>;
@@ -288,6 +289,7 @@ export interface AppSettings {
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
+  libraryShowInvokeImageAssets?: boolean; // Persisted InvokeAI image-asset visibility preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
   resourceSortOptions?: Record<string, SidebarSortOption>; // Persisted sort option per sidebar resource or collection section

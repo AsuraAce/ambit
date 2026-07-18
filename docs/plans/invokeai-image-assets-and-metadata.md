@@ -179,7 +179,28 @@ Completion criteria:
 
 Depends on: Work Packages 1 and 2.
 
-Status: Pending
+Status: Complete (`codex/invokeai-image-assets`, `2026-07-18`)
+
+Evidence:
+
+- known `user`, `control`, `mask`, and `other` InvokeAI image assets are hidden
+  by default across normal result queries, while missing and unknown categories
+  remain visible;
+- a persisted View control reveals image assets without changing collection
+  sidebar counts or cached/custom collection thumbnails;
+- revealed cards show known category badges, and the viewer presents every
+  available InvokeAI source fact independently of generation metadata;
+- known assets are excluded only from Untagged maintenance; direct viewer access
+  and missing-file, duplicate, thumbnail, and Removed workflows remain intact;
+- 385 focused tests across 16 frontend files pass, including store/settings
+  persistence, SQL scopes, browser mocks, maintenance behavior, cards, viewer
+  source labels, and a 10,000-item virtual-grid bound;
+- the migration-63 query-plan regression confirms SQLite uses
+  `idx_images_invoke_asset_fast_sort_v1` for the default asset-hidden sort;
+- the complete release gate passes: version and generated-binding checks, lint,
+  typecheck, build guard, 2,814 frontend tests with one skipped, 485 Rust tests,
+  coverage, and the no-bundle Tauri production build; the guarded initial bundle
+  is 433 kB.
 
 Primary invariant: known InvokeAI image assets are hidden from ordinary library
 queries by default and remain directly recoverable.

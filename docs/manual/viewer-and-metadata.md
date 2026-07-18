@@ -63,6 +63,8 @@ The Negative Prompt section appears when negative prompt data exists.
 
 The Color Palette section shows extracted colors when Ambit can derive them from the image. Select a swatch to copy its color value.
 
+For images imported with InvokeAI source facts, Source identifies InvokeAI and can show the original image name, category, and origin. This section is available even when the image has no generation parameters. Unrecognized source categories are displayed as recorded instead of being guessed or discarded.
+
 Generation Data is an expandable section for generation parameters and source-compatible copies. It can show:
 
 - Copy Workflow when workflow JSON exists

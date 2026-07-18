@@ -148,7 +148,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     setRecentSearches: vi.fn() as Dispatch<SetStateAction<string[]>>,
     toggleFavorite: async () => { },
     togglePin: async () => { },
-    availableHiddenContent: { hasIntermediates: false, hasGrids: false },
+    availableHiddenContent: { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false },
     refreshHiddenAvailability: async () => { },
     isFacetsLoading: false,
     isLoadingMore: false,

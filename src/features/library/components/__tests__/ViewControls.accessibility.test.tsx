@@ -11,7 +11,7 @@ vi.mock('../../../../contexts/SearchContext', () => ({
         const [filters, setFilters] = React.useState(initialFilters);
 
         return {
-            availableHiddenContent: { hasIntermediates: true, hasGrids: true },
+            availableHiddenContent: { hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true },
             filters,
             setFilters,
             sortOption: 'date_desc',

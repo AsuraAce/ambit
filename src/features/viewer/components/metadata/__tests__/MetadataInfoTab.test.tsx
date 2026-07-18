@@ -37,7 +37,7 @@ const metadata = (overrides: Partial<ImageMetadata> = {}): ImageMetadata => ({
     ...overrides,
 });
 
-const image = (current: ImageMetadata, original: ImageMetadata): AIImage => ({
+const image = (current: ImageMetadata, original: ImageMetadata, overrides: Partial<AIImage> = {}): AIImage => ({
     id: 'C:/library/image.png',
     url: 'asset://image.png',
     thumbnailUrl: 'asset://thumb.webp',
@@ -48,6 +48,7 @@ const image = (current: ImageMetadata, original: ImageMetadata): AIImage => ({
     isFavorite: false,
     metadata: current,
     originalMetadata: original,
+    ...overrides,
 });
 
 const renderTab = (value: AIImage, overrides: Partial<ComponentProps<typeof MetadataInfoTab>> = {}) => {
@@ -122,6 +123,31 @@ describe('MetadataInfoTab prompt revert control', () => {
 
         const seedItem = screen.getByText('Seed').parentElement?.parentElement;
         expect(seedItem?.textContent).toContain('Unknown');
+    });
+
+    it('shows available InvokeAI source facts and preserves unknown category values', () => {
+        const { rerender, props } = renderTab(image(metadata(), metadata(), {
+            invokeImageName: 'control-source.png',
+            invokeImageCategory: ' CONTROL ',
+            invokeImageOrigin: 'internal',
+        }));
+
+        expect(screen.getByRole('heading', { name: 'Source' })).toBeTruthy();
+        expect(screen.getByText('InvokeAI')).toBeTruthy();
+        expect(screen.getByText('control-source.png')).toBeTruthy();
+        expect(screen.getByText('Control')).toBeTruthy();
+        expect(screen.getByText('internal')).toBeTruthy();
+
+        rerender(<MetadataInfoTab {...props} image={image(metadata(), metadata(), {
+            invokeImageName: 'future.png',
+            invokeImageCategory: 'future-Category',
+        })} />);
+        expect(screen.getByText('future-Category')).toBeTruthy();
+    });
+
+    it('omits Source details for records without InvokeAI source facts', () => {
+        renderTab(image(metadata(), metadata()));
+        expect(screen.queryByRole('heading', { name: 'Source' })).toBeNull();
     });
 
     it('switches between current and original prompts and exposes recovery and revert actions', () => {
