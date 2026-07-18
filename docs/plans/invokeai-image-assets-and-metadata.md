@@ -121,8 +121,9 @@ Evidence:
   and null generation metadata remains a valid import case;
 - a collision-safe two-pass reconciliation resolves canonical image paths and
   only emits a legacy flat-path alias when it belongs to one unambiguous source
-  row; it scans every InvokeAI image row independently of timestamps and the
-  intermediate import preference;
+  row, its canonical file exists, and the legacy path does not; it scans every
+  InvokeAI image row independently of timestamps and the intermediate import
+  preference;
 - the native reconciliation command updates active and Removed source columns
   atomically without touching metadata, notes, favorite/pin, board, removal,
   or generated-classifier state directly;
@@ -133,13 +134,13 @@ Evidence:
 - the Settings/manual rescan route now uses the same managed Sync context as
   startup and Live Watch, and the Invoke sync service is loaded as a separate
   production chunk;
-- 4 source-reconciliation tests, 35 Invoke sync-service tests, 47 Sync-context
+- 8 source-reconciliation tests, 35 Invoke sync-service tests, 47 Sync-context
   integration tests, the generated-command contract, snapshot tests, and App
   orchestration tests pass;
-- the complete release gate passes: 2,790 frontend tests (one skipped), 485
+- the complete release gate passes: 2,795 frontend tests (one skipped), 485
   Rust tests, generated-binding drift, lint, typecheck, coverage, build guard,
   and the no-bundle Tauri release build; the guarded initial bundle is 431 kB
-  with a separate 24.53 kB Invoke sync chunk and no ineffective dynamic import.
+  with a separate 25.16 kB Invoke sync chunk and no ineffective dynamic import.
 
 Primary invariant: InvokeAI database facts are reconciled without overwriting
 Ambit user edits or importing newly excluded intermediates.

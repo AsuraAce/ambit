@@ -770,7 +770,7 @@ describe('App orchestration', () => {
         await global.onCheckForUpdates();
         expect(mocks.updater.checkForUpdates).toHaveBeenCalledWith({ manual: true });
         await act(async () => global.onInvokeSync());
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'manual' });
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'manual', afterTimestamp: 0 });
         global.onOpenUpdatePrompt();
         expect(mocks.updater.openUpdateDialog).toHaveBeenCalled();
         global.onNavigateToMaintenance();

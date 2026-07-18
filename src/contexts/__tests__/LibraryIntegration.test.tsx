@@ -789,6 +789,41 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
     });
 
+    it('keeps a zero full-rescan cursor consistent between settings and the saved snapshot', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
+                lastSyncedAt: 100,
+                importOrphans: false,
+            });
+        });
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            maxTimestamp: 0,
+        });
+        mocks.appRepository.update.mockClear();
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'manual', afterTimestamp: 0 });
+        });
+
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ afterTimestamp: 0 })
+        );
+        await waitFor(() => expect(hook?.settings.lastSyncedAt).toBe(0));
+        const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as
+            (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
+        expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot.lastSyncedAt)
+            .toBe(0);
+    });
+
     it('honors explicit orphan recovery for manual Invoke sync', async () => {
         let hook: ReturnType<typeof useLibraryContext> | undefined;
         renderStack(h => hook = h);

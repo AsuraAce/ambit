@@ -38,6 +38,23 @@ const claimPath = (owners: Map<string, string | null>, path: string, owner: stri
     }
 };
 
+const claimLegacyTarget = (
+    targets: Map<string, string | null>,
+    legacyPath: string,
+    canonicalPath: string
+): void => {
+    const legacyKey = pathKey(legacyPath);
+    if (!targets.has(legacyKey)) {
+        targets.set(legacyKey, canonicalPath);
+        return;
+    }
+
+    const existing = targets.get(legacyKey);
+    if (existing && pathKey(existing) !== pathKey(canonicalPath)) {
+        targets.set(legacyKey, null);
+    }
+};
+
 const throwIfAborted = (signal?: AbortSignal): void => {
     if (signal?.aborted) throw new Error('Aborted');
 };
@@ -59,6 +76,8 @@ export const reconcileInvokeSourceFacts = async ({
     onProgress(0, total, 'Preparing InvokeAI source reconciliation...');
     const canonicalOwners = new Map<string, string | null>();
     const legacyOwners = new Map<string, string | null>();
+    const legacyPaths = new Map<string, string>();
+    const legacyTargets = new Map<string, string | null>();
 
     for (let offset = 0; offset < total; offset += BATCH_SIZE) {
         throwIfAborted(signal);
@@ -82,9 +101,50 @@ export const reconcileInvokeSourceFacts = async ({
             const legacyPath = pathResolver.getLegacyFlatImagePath(row.image_name);
             if (legacyPath && pathKey(legacyPath) !== pathKey(resolved.absolutePath)) {
                 claimPath(legacyOwners, legacyPath, owner);
+                legacyPaths.set(pathKey(legacyPath), legacyPath);
+                claimLegacyTarget(legacyTargets, legacyPath, resolved.absolutePath);
             }
         });
     }
+
+    const aliasCandidates = Array.from(legacyOwners.entries())
+        .map(([legacyKey, owner]) => ({
+            legacyKey,
+            legacyPath: legacyPaths.get(legacyKey),
+            canonicalPath: legacyTargets.get(legacyKey),
+            owner,
+        }))
+        .filter((candidate): candidate is {
+            legacyKey: string;
+            legacyPath: string;
+            canonicalPath: string;
+            owner: string;
+        } => (
+            candidate.owner !== null
+            && !!candidate.legacyPath
+            && !!candidate.canonicalPath
+            && !canonicalOwners.has(candidate.legacyKey)
+        ));
+    const pathsToVerify = Array.from(new Set(aliasCandidates.flatMap(candidate => [
+        candidate.legacyPath,
+        candidate.canonicalPath,
+    ])));
+    const missingPathKeys = new Set<string>();
+
+    for (let offset = 0; offset < pathsToVerify.length; offset += BATCH_SIZE) {
+        throwIfAborted(signal);
+        const missingPaths = await unwrap(commands.verifyImagePaths(
+            pathsToVerify.slice(offset, offset + BATCH_SIZE)
+        ));
+        missingPaths.forEach(path => missingPathKeys.add(pathKey(path)));
+    }
+
+    const safeLegacyAliases = new Set(aliasCandidates
+        .filter(candidate => (
+            missingPathKeys.has(candidate.legacyKey)
+            && !missingPathKeys.has(pathKey(candidate.canonicalPath))
+        ))
+        .map(candidate => candidate.legacyKey));
 
     const categorySelect = columns.has('image_category')
         ? ', i.image_category'
@@ -129,7 +189,7 @@ export const reconcileInvokeSourceFacts = async ({
             const legacyPath = pathResolver.getLegacyFlatImagePath(row.image_name);
             if (!legacyPath || pathKey(legacyPath) === canonicalKey) return;
             const legacyKey = pathKey(legacyPath);
-            if (!canonicalOwners.has(legacyKey) && legacyOwners.get(legacyKey) === owner) {
+            if (safeLegacyAliases.has(legacyKey) && legacyOwners.get(legacyKey) === owner) {
                 updatesById.set(legacyKey, updateFor(legacyPath));
             }
         });

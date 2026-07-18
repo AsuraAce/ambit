@@ -1072,6 +1072,8 @@ mod tests {
             r#"{"positivePrompt":"user edited"}"#,
         );
         active.is_favorite = true;
+        active.is_pinned = true;
+        active.board_id = Some("keep-active-board".to_string());
         active.notes = Some("keep active note".to_string());
         active.invoke_image_name = Some("old-active.png".to_string());
         active.invoke_image_category = Some("control".to_string());
@@ -1080,11 +1082,13 @@ mod tests {
 
         conn.execute(
             "INSERT INTO removed_images (
-                id, path, timestamp, metadata_json, is_favorite, notes, removed_at,
+                id, path, timestamp, metadata_json, is_favorite, is_pinned, board_id,
+                notes, removed_at,
                 invoke_image_name, invoke_image_category, invoke_image_origin
              ) VALUES (
                 'invoke-removed', 'C:/library/invoke-removed.png', 101,
-                '{\"positivePrompt\":\"removed edit\"}', 1, 'keep removed note', 999,
+                '{\"positivePrompt\":\"removed edit\"}', 1, 1, 'keep-removed-board',
+                'keep removed note', 999,
                 'old-removed.png', 'general', 'internal'
              )",
             [],
@@ -1124,11 +1128,14 @@ mod tests {
             Option<i64>,
             String,
             i64,
+            i64,
+            String,
             String,
         ) = conn
             .query_row(
                 "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
-                        is_invoke_asset_gen, metadata_json, is_favorite, notes
+                        is_invoke_asset_gen, metadata_json, is_favorite, is_pinned,
+                        board_id, notes
                  FROM images WHERE id = 'invoke-active'",
                 [],
                 |row| {
@@ -1140,6 +1147,8 @@ mod tests {
                         row.get(4)?,
                         row.get(5)?,
                         row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
                     ))
                 },
             )
@@ -1153,6 +1162,8 @@ mod tests {
                 None,
                 r#"{"positivePrompt":"user edited"}"#.to_string(),
                 1,
+                1,
+                "keep-active-board".to_string(),
                 "keep active note".to_string(),
             )
         );
@@ -1164,12 +1175,15 @@ mod tests {
             Option<i64>,
             String,
             i64,
+            i64,
+            String,
             String,
             i64,
         ) = conn
             .query_row(
                 "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
-                        is_invoke_asset_gen, metadata_json, is_favorite, notes, removed_at
+                        is_invoke_asset_gen, metadata_json, is_favorite, is_pinned,
+                        board_id, notes, removed_at
                  FROM removed_images WHERE id = 'invoke-removed'",
                 [],
                 |row| {
@@ -1182,6 +1196,8 @@ mod tests {
                         row.get(5)?,
                         row.get(6)?,
                         row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
                     ))
                 },
             )
@@ -1195,6 +1211,8 @@ mod tests {
                 Some(1),
                 r#"{"positivePrompt":"removed edit"}"#.to_string(),
                 1,
+                1,
+                "keep-removed-board".to_string(),
                 "keep removed note".to_string(),
                 999,
             )

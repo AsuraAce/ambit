@@ -480,7 +480,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     await queryClient.refetchQueries({ queryKey: ['images'] });
 
                     // Advance cursor IMMEDIATELY so we don't scan the same files if something crashes
-                    if (newTs) {
+                    if (typeof newTs === 'number') {
                         setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
                     }
 
@@ -567,7 +567,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             }
 
             // Fallback for NO CHANGES scenario (hasChanges === false)
-            if (newTs) {
+            if (typeof newTs === 'number') {
                 setSettings(prev => ({ ...prev, lastSyncedAt: newTs }));
             }
             await persistInvokeSnapshot(snapshotCursor);

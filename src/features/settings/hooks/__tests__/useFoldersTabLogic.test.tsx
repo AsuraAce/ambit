@@ -577,12 +577,12 @@ describe('useFoldersTabLogic', () => {
         errorSpy.mockRestore();
     });
 
-    it('runs managed InvokeAI sync and reports managed failures', async () => {
+    it('delegates managed InvokeAI sync status and reports rejected handlers', async () => {
         const onInvokeSync = vi.fn().mockResolvedValue(undefined);
         const success = renderHook(() => useFoldersTabLogic({ settings: baseSettings, setSettings: vi.fn(), onInvokeSync }));
         await act(async () => success.result.current.handleRescan('managed', 'D:/Invoke', GeneratorTool.INVOKEAI, true));
         expect(onInvokeSync).toHaveBeenCalled();
-        expect(addToastMock).toHaveBeenCalledWith('InvokeAI database sync complete', 'success');
+        expect(addToastMock).not.toHaveBeenCalledWith('InvokeAI database sync complete', 'success');
         success.unmount();
 
         onInvokeSync.mockRejectedValueOnce(new Error('sync failed'));
