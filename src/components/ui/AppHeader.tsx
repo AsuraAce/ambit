@@ -3,12 +3,17 @@ import { Import } from 'lucide-react';
 import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../stores/libraryStore';
-import { SearchBar } from '../../features/filters/components/SearchBar';
 import { ViewControls } from '../../features/library/components/ViewControls';
 import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
 import { isBrowserMockMode } from '../../services/runtime';
 import { ToastContext } from '../../contexts/ToastContext';
 import { TooltipButton } from './InfoTooltip';
+
+const SearchBar = React.lazy(() => import('../../features/filters/components/SearchBar').then(module => ({ default: module.SearchBar })));
+
+const SearchBarFallback = () => (
+    <div aria-hidden className="h-10 w-full max-w-lg rounded-xl bg-gray-100 dark:bg-zinc-800/50 animate-pulse" />
+);
 
 interface AppHeaderProps {
     viewMode: ViewMode;
@@ -123,18 +128,20 @@ export const AppHeader = React.memo(({
                 </div>
 
                 <div className="flex items-center gap-4 flex-1">
-                    <SearchBar
-                        filters={filters}
-                        setFilters={setFilters}
-                        searchProps={searchProps}
-                        recentSearches={recentSearches}
-                        setRecentSearches={setRecentSearches}
-                        scopeName={scopeName}
-                        displayedCount={displayedCount}
-                        isFiltering={isFiltering ?? false}
-                        submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
-                        onDraftPendingChange={onSearchDraftPendingChange}
-                    />
+                    <React.Suspense fallback={<SearchBarFallback />}>
+                        <SearchBar
+                            filters={filters}
+                            setFilters={setFilters}
+                            searchProps={searchProps}
+                            recentSearches={recentSearches}
+                            setRecentSearches={setRecentSearches}
+                            scopeName={scopeName}
+                            displayedCount={displayedCount}
+                            isFiltering={isFiltering ?? false}
+                            submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
+                            onDraftPendingChange={onSearchDraftPendingChange}
+                        />
+                    </React.Suspense>
                     {browserMockMode && (
                         <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                             Browser Mock
