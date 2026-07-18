@@ -218,6 +218,39 @@ impl<'a> ComfyEvaluator<'a> {
         }
     }
 
+    fn find_upstream_latent_samplers(
+        &self,
+        start_id: &str,
+        visited: &mut HashSet<String>,
+        depth: u32,
+        sampler_ids: &mut Vec<String>,
+    ) {
+        if depth > 50 || !visited.insert(start_id.to_string()) {
+            return;
+        }
+
+        let Some(node) = self.graph.get_node(start_id) else {
+            return;
+        };
+
+        if is_sampler_node(node) {
+            if !sampler_ids.iter().any(|id| id == start_id) {
+                sampler_ids.push(start_id.to_string());
+            }
+            return;
+        }
+
+        if get_node_type(node).starts_with("VAEEncode") {
+            for source_id in self.image_like_source_ids(start_id, node) {
+                self.find_upstream_samplers(&source_id, visited, depth + 1, sampler_ids);
+            }
+        }
+
+        for source_id in self.latent_source_ids(start_id, node) {
+            self.find_upstream_latent_samplers(&source_id, visited, depth + 1, sampler_ids);
+        }
+    }
+
     fn image_like_source_ids(&self, node_id: &str, node: &Value) -> Vec<String> {
         self.image_like_source_ids_with_wireless(node_id, node, true)
     }
@@ -371,7 +404,12 @@ impl<'a> ComfyEvaluator<'a> {
         let mut upstream_sampler_ids = Vec::new();
         for source_id in source_ids {
             let mut visited = HashSet::new();
-            self.find_upstream_samplers(&source_id, &mut visited, 0, &mut upstream_sampler_ids);
+            self.find_upstream_latent_samplers(
+                &source_id,
+                &mut visited,
+                0,
+                &mut upstream_sampler_ids,
+            );
         }
 
         if let Some(conditioning_id) = get_source_id(self.graph, sampler_id, "positive") {
@@ -398,10 +436,21 @@ impl<'a> ComfyEvaluator<'a> {
     }
 
     fn sampler_latent_source_ids(&self, sampler_id: &str, node: &Value) -> Vec<String> {
+        self.latent_source_ids(sampler_id, node)
+    }
+
+    fn latent_source_ids(&self, node_id: &str, node: &Value) -> Vec<String> {
         let mut sources = Vec::new();
 
+        if get_node_type(node) == "Reroute" {
+            if let Some(source_id) = self.reroute_image_like_source_id(node) {
+                self.push_existing_source(&mut sources, source_id);
+            }
+            return sources;
+        }
+
         for input_name in SAMPLER_LATENT_INPUT_NAMES {
-            for source_id in self.input_source_ids(sampler_id, node, input_name, true) {
+            for source_id in self.input_source_ids(node_id, node, input_name, true) {
                 self.push_existing_source(&mut sources, source_id);
             }
         }
@@ -417,7 +466,7 @@ impl<'a> ComfyEvaluator<'a> {
                 }
 
                 if let Some(input_name) = input.get("name").and_then(Value::as_str) {
-                    for source_id in self.input_source_ids(sampler_id, node, input_name, true) {
+                    for source_id in self.input_source_ids(node_id, node, input_name, true) {
                         self.push_existing_source(&mut sources, source_id);
                     }
                 }

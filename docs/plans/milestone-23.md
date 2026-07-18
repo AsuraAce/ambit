@@ -126,7 +126,26 @@ Completion criteria:
 
 Depends on: Work Packages 1 and 2.
 
-Status: Pending
+Status: Complete (`feat/comfyui-flux-depth-lora-golden`, `2026-07-18`)
+
+Evidence:
+
+- `flux_depth_lora_example` is golden with exact metadata, workflow,
+  diagnostics, resource vectors, and `SamplerTraversal` provenance;
+- the selected Flux path reports `flux1_dev_fp8` and
+  `flux1_depth_dev_lora`, while the auxiliary Lotus depth model is not
+  promoted;
+- sampler-root discovery now follows latent lineage after saved-output
+  discovery, so an auxiliary sampler behind image conditioning cannot become
+  the authoritative generation root;
+- explicit `VAEEncode*` round trips retain upstream base-sampler ancestry;
+- direct sampler CFG 1 remains authoritative over connected Flux guidance 10;
+- parser version is 26 so affected stored metadata is reparsed;
+- manifest totals are 22 `golden`, 9 `pattern_covered`, 4 `partial`, 40
+  `unassessed`, and 474 `excluded`;
+- official-catalog, template-coverage, catalog-intake, workflow-subgraph,
+  output-selection, full ComfyUI, and reparse tests pass;
+- `cargo fmt --check` and `git diff --check` pass, with no `Cargo.lock` churn.
 
 Primary invariant: only the selected Flux generation path contributes the
 primary model, CFG, and LoRA resource.
@@ -137,13 +156,14 @@ Scope:
 - Assert the depth LoRA is collected from the connected model chain.
 - Assert the auxiliary Lotus depth model is not the primary model.
 - Assert direct sampler CFG 1 remains authoritative over Flux guidance 10.
-- Update final manifest totals without changing parser behavior.
+- Keep saved-output discovery broad while restricting sampler-root ancestry to
+  latent edges.
+- Increment parser version from 25 to 26 and update final manifest totals.
 
 Non-goals:
 
 - No model-family-wide promotion or unrelated resource support.
-- No parser-version bump unless a separately planned parser correction is
-  required.
+- No changes to public interfaces or metadata shapes.
 
 Targeted verification:
 
@@ -164,6 +184,6 @@ After all three packages merge:
 2. Run catalog intake, models, official catalog, template coverage,
    workflow-subgraph, output-selection, full ComfyUI, and reparse tests.
 3. Run `cargo fmt --check` and `git diff --check`.
-4. Confirm parser version 25, no `Cargo.lock` churn, and no public interface
+4. Confirm parser version 26, no `Cargo.lock` churn, and no public interface
    changes.
 5. Mark this plan complete with final totals and PR evidence.

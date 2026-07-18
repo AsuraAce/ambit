@@ -31,6 +31,7 @@ Golden workflows:
 - `image_firered_image_edit1_1.chunks.json`
 - `image_anima_base_v1.chunks.json`
 - `image_boogu_image_0_1_edit.chunks.json`
+- `flux_depth_lora_example.chunks.json`
 - `image_lens_t2i.chunks.json`
 - `image_newbieimage_exp0_1-t2i.chunks.json`
 - `image_z_image_turbo_fun_union_controlnet.chunks.json`
@@ -107,8 +108,8 @@ Source-authored expectations, recorded without asserting current parser output:
 
 ## Phase 23 Resource Intake
 
-Captured on `2026-07-17`. These workflows begin `unassessed` and are promoted
-only after their parser packages add exact golden assertions.
+Captured on `2026-07-17`. Both workflows now have exact golden assertions while
+their pinned fixture bytes remain unchanged.
 
 | Workflow | Upstream Git blob | Bytes |
 | --- | --- | ---: |
