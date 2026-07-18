@@ -1,6 +1,6 @@
 # Milestone 23: Connected ComfyUI Resource Paths
 
-Status: In Progress
+Status: Complete (`2026-07-18`)
 Catalog commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 
 ## Reconciliation
@@ -178,7 +178,26 @@ Completion criteria:
 
 ## Milestone Acceptance Gate
 
-After all three packages merge:
+Status: Complete (`2026-07-18`)
+
+Integration evidence:
+
+- the three dependency-ordered packages merged through PRs #230, #233, and
+  #236;
+- combined review on fresh `main` found no integration regressions between
+  model-patch resource traversal and saved-output sampler ancestry;
+- parser version is 26 and final manifest totals are 22 `golden`, 9
+  `pattern_covered`, 4 `partial`, 40 `unassessed`, and 474 `excluded`;
+- focused suites pass with 3 catalog-intake, 12 model, 27 official-catalog, 3
+  template-coverage, 14 workflow-subgraph, and 15 output-selection tests;
+- the full ComfyUI suite passes with 226 passed and 1 intentionally ignored,
+  and the reparse suite passes with 10 tests;
+- `cargo fmt --check` and `git diff --check` pass, the worktree remained clean,
+  and no `Cargo.lock` churn was produced;
+- no public API, database schema, Tauri command, Specta binding, frontend,
+  diagnostics DTO, or `ImageMetadata` changes were introduced.
+
+Completed gate:
 
 1. Review the combined milestone on fresh `main`.
 2. Run catalog intake, models, official catalog, template coverage,
