@@ -3,7 +3,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AIImage, GeneratorTool } from '../../../types';
 import { DuplicateFinder } from './DuplicateFinder';
-import { Loader2 } from 'lucide-react';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { ImageViewer } from '../../../features/viewer/components/ImageViewer';
 import { CompareModal } from '../../../features/viewer/components/CompareModal';
 import { useMaintenanceData, MaintenanceTab } from '../../../hooks/useMaintenanceData';
@@ -12,7 +12,7 @@ import { UntaggedTab } from './UntaggedTab';
 import { MissingTab } from './MissingTab';
 import { ThumbnailsTab } from './ThumbnailsTab';
 import { IntermediatesTab } from './IntermediatesTab';
-import { MaintenanceTabs } from './MaintenanceTabs';
+import { MAINTENANCE_TABS, MaintenanceTabs } from './MaintenanceTabs';
 import { ScanPlaceholder } from './ScanPlaceholder';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
@@ -110,7 +110,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         localMissingImages,
         localIntermediateImages,
         unoptimizedTotalCount,
+        hasActiveLoadError,
+        hasLoadedActiveTab,
         refreshData,
+        retryActiveTab,
         setLocalMissingImages,
         setLocalDuplicateCandidates,
     } = useMaintenanceData(activeTab, thumbnailsScope);
@@ -164,9 +167,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // --- Handlers ---
 
     const setActiveTab = useCallback((tab: MaintenanceTab) => {
+        if (tab === activeTab) return;
         setActiveTabOriginal(tab);
         clearSelection();
-    }, [clearSelection]);
+        scrollContainerRef.current?.scrollTo?.({ top: 0 });
+    }, [activeTab, clearSelection]);
 
     const handleScanComplete = useCallback(async (ids: string[]) => {
         setScanMissingIds(new Set(ids));
@@ -393,6 +398,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         clearSelection();
     }, [clearSelection]);
 
+    const activeTabLabel = MAINTENANCE_TABS.find(tab => tab.id === activeTab)?.label ?? activeTab;
+    const showsScanPlaceholder = activeTab !== 'trash' && activeTab !== 'missing' && !initializedTabs.has(activeTab);
+    const showsInitialLoadError = hasActiveLoadError && !hasLoadedActiveTab;
+    const activePanelState = showsInitialLoadError ? 'error' : showsScanPlaceholder ? 'placeholder' : 'content';
+
 
     return (
         <div className="h-full flex flex-col overflow-hidden">
@@ -401,204 +411,198 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto relative custom-scrollbar px-6 pb-8" ref={scrollContainerRef}>
                 <AnimatePresence mode="wait">
+                    <motion.div
+                        key={`${activeTab}-${activePanelState}`}
+                        id={`maintenance-panel-${activeTab}`}
+                        role="tabpanel"
+                        aria-labelledby={`maintenance-tab-${activeTab}`}
+                        aria-busy={isLoading}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {showsInitialLoadError ? (
+                            <div role="alert" className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
+                                <AlertTriangle className="h-10 w-10 text-amber-500" aria-hidden="true" />
+                                <div>
+                                    <h3 className="font-bold text-gray-900 dark:text-white">Couldn&apos;t load {activeTabLabel} data</h3>
+                                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Your library was not changed. Try loading this section again.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => void retryActiveTab()}
+                                    className="inline-flex items-center gap-2 rounded-lg bg-sage-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-sage-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950"
+                                >
+                                    <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                    Retry
+                                </button>
+                            </div>
+                        ) : (
+                            <div inert={isLoading ? true : undefined}>
+                                {hasActiveLoadError && (
+                                    <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                                        <span className="flex items-center gap-2">
+                                            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                                            Refresh failed. Showing the last loaded {activeTabLabel.toLowerCase()} data.
+                                        </span>
+                                        <button type="button" onClick={() => void retryActiveTab()} className="inline-flex items-center gap-2 font-bold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+                                            <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                                            Retry
+                                        </button>
+                                    </div>
+                                )}
+
+                                {(activeTab === 'thumbnails' && initializedTabs.has('thumbnails')) && (
+                                    <ThumbnailsTab
+                                        images={localUnoptimizedImages}
+                                        totalCount={unoptimizedTotalCount}
+                                        selectedIds={selectedIds}
+                                        onItemClick={handleItemClickAdapter}
+                                        onSelectAll={handleSelectAll}
+                                        onClearSelection={clearSelection}
+                                        onRegenerate={handleRegenerate}
+                                        thumbnailsScope={thumbnailsScope}
+                                        onScopeChange={handleThumbnailsScopeChange}
+                                        maskedKeywords={maskedKeywords}
+                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        onRangeSelection={handleRangeAdapter}
+                                        onBackgroundClick={handleBackgroundClick}
+                                        includeUpgradeable={includeUpgradeable}
+                                        onIncludeUpgradeableChange={handleIncludeUpgradeableChange}
+                                        onRepairComplete={() => refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable })}
+                                    />
+                                )}
+
+                                {(activeTab === 'duplicates' && initializedTabs.has('duplicates')) && (
+                                    <DuplicateFinder
+                                        images={localDuplicateCandidates}
+                                        onResolve={handleResolveDuplicate}
+                                        maskedKeywords={maskedKeywords}
+                                        onRefresh={() => refreshData('duplicates', true, { runHashBackfill: true })}
+                                        isScanning={isScanningDuplicates}
+                                        scanProgress={duplicateScanProgress}
+                                        scanResult={lastDuplicateScanResult}
+                                        onCancelScan={cancelDuplicateScan}
+                                        onViewImage={setViewingImageId}
+                                        onCompareImages={(imageA, imageB) => setCompareImages([imageA, imageB])}
+                                        scrollContainerRef={scrollContainerRef}
+                                        onRangeSelection={handleRangeAdapter}
+                                        onBackgroundClick={handleBackgroundClick}
+                                    />
+                                )}
+
+                                {(activeTab === 'untagged' && initializedTabs.has('untagged')) && (
+                                    <UntaggedTab
+                                        images={localUntaggedImages}
+                                        selectedIds={selectedIds}
+                                        onItemClick={handleItemClickAdapter}
+                                        onSelectAll={handleSelectAll}
+                                        onClearSelection={clearSelection}
+                                        onRemoveFromLibrary={handleDeleteSelected}
+                                        onViewImage={setViewingImageId}
+                                        maskedKeywords={maskedKeywords}
+                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        onRangeSelection={handleRangeAdapter}
+                                        onBackgroundClick={handleBackgroundClick}
+                                        untaggedScope={untaggedScope}
+                                        onScopeChange={handleUntaggedScopeChange}
+                                    />
+                                )}
+
+                                {activeTab === 'missing' && (
+                                    <div className="flex flex-col gap-6">
+                                        <React.Suspense fallback={<div className="h-20 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
+                                            <LibraryHealth onScanComplete={handleScanComplete} />
+                                        </React.Suspense>
+
+                                        <MissingTab
+                                            images={missingImages}
+                                            selectedIds={selectedIds}
+                                            onItemClick={handleItemClickAdapter}
+                                            onSelectAll={handleSelectAll}
+                                            onClearSelection={clearSelection}
+                                            onDeleteSelected={handleDeleteSelected}
+                                            onPurgeMissing={handlePurgeMissing}
+                                            onViewImage={setViewingImageId}
+                                            maskedKeywords={maskedKeywords}
+                                            scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                            onRangeSelection={handleRangeAdapter}
+                                            onBackgroundClick={handleBackgroundClick}
+                                        />
+                                    </div>
+                                )}
+
+                                {activeTab === 'trash' && (
+                                    <TrashTab
+                                        images={localDeletedImages}
+                                        selectedIds={selectedIds}
+                                        onItemClick={handleItemClickAdapter}
+                                        onSelectAll={handleSelectAll}
+                                        onClearSelection={clearSelection}
+                                        onRestoreSelected={handleRestoreSelected}
+                                        onDeleteSelected={handleDeleteSelected}
+                                        maskedKeywords={maskedKeywords}
+                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        onRangeSelection={handleRangeAdapter}
+                                        onBackgroundClick={handleBackgroundClick}
+                                        busyAction={removedAction}
+                                    />
+                                )}
+
+                                {(activeTab === 'intermediates' && initializedTabs.has('intermediates')) && (
+                                    <IntermediatesTab
+                                        images={localIntermediateImages}
+                                        selectedIds={selectedIds}
+                                        onItemClick={handleItemClickAdapter}
+                                        onSelectAll={handleSelectAll}
+                                        onClearSelection={clearSelection}
+                                        onDeleteSelected={handleDeleteSelected}
+                                        onUnmarkSelected={handleUnmarkIntermediates}
+                                        onViewImage={setViewingImageId}
+                                        maskedKeywords={maskedKeywords}
+                                        scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
+                                        onRangeSelection={handleRangeAdapter}
+                                        onBackgroundClick={handleBackgroundClick}
+                                        scope={intermediatesScope}
+                                        onScopeChange={handleIntermediatesScopeChange}
+                                    />
+                                )}
+
+                                {showsScanPlaceholder && (
+                                    <ScanPlaceholder
+                                        tab={activeTab}
+                                        onStartScan={(tab, scope) => {
+                                            refreshData(tab, true, {
+                                                scope: tab === 'duplicates' ? 'global' : scope,
+                                                includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined,
+                                                runHashBackfill: tab === 'duplicates'
+                                            });
+                                        }}
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </motion.div>
+                </AnimatePresence>
+
+                <AnimatePresence>
                     {isLoading && (
                         <motion.div
-                            key="loader"
+                            key={`loader-${activeTab}`}
+                            role="status"
+                            aria-live="polite"
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="absolute inset-0 z-50 flex items-center justify-center bg-white/60 dark:bg-zinc-950/60 backdrop-blur-sm pointer-events-none"
+                            className="absolute inset-0 z-50 flex items-center justify-center bg-white/70 backdrop-blur-sm dark:bg-zinc-950/70"
                         >
                             <div className="flex flex-col items-center gap-4">
-                                <Loader2 className="w-10 h-10 text-sage-600 dark:text-sage-400 animate-spin" />
-                                <p className="text-sm font-bold text-gray-500 dark:text-gray-400 animate-pulse uppercase tracking-widest">
-                                    Loading Tab Data...
+                                <Loader2 className="h-10 w-10 animate-spin text-sage-600 dark:text-sage-400" aria-hidden="true" />
+                                <p className="animate-pulse text-sm font-bold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+                                    Loading {activeTabLabel} data...
                                 </p>
                             </div>
-                        </motion.div>
-                    )}
-
-                    {(activeTab === 'thumbnails' && initializedTabs.has('thumbnails')) && (
-                        <motion.div
-                            key="thumbnails"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <ThumbnailsTab
-                                images={localUnoptimizedImages}
-                                totalCount={unoptimizedTotalCount}
-                                selectedIds={selectedIds}
-                                onItemClick={handleItemClickAdapter}
-                                onSelectAll={handleSelectAll}
-                                onClearSelection={clearSelection}
-                                onRegenerate={handleRegenerate}
-                                thumbnailsScope={thumbnailsScope}
-                                onScopeChange={handleThumbnailsScopeChange}
-                                maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                                includeUpgradeable={includeUpgradeable}
-                                onIncludeUpgradeableChange={handleIncludeUpgradeableChange}
-                                onRepairComplete={() => refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable })}
-                            />
-                        </motion.div>
-                    )}
-
-                    {(activeTab === 'duplicates' && initializedTabs.has('duplicates')) && (
-                        <motion.div
-                            key="duplicates"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <DuplicateFinder
-                                images={localDuplicateCandidates}
-                                onResolve={handleResolveDuplicate}
-                                maskedKeywords={maskedKeywords}
-                                onRefresh={() => refreshData('duplicates', true, { runHashBackfill: true })}
-                                isScanning={isScanningDuplicates}
-                                scanProgress={duplicateScanProgress}
-                                scanResult={lastDuplicateScanResult}
-                                onCancelScan={cancelDuplicateScan}
-                                onViewImage={setViewingImageId}
-                                onCompareImages={(imageA, imageB) => setCompareImages([imageA, imageB])}
-                                scrollContainerRef={scrollContainerRef}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                            />
-                        </motion.div>
-                    )}
-
-                    {(activeTab === 'untagged' && initializedTabs.has('untagged')) && (
-                        <motion.div
-                            key="untagged"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <UntaggedTab
-                                images={localUntaggedImages}
-                                selectedIds={selectedIds}
-                                onItemClick={handleItemClickAdapter}
-                                onSelectAll={handleSelectAll}
-                                onClearSelection={clearSelection}
-                                onRemoveFromLibrary={handleDeleteSelected}
-                                onViewImage={setViewingImageId}
-                                maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                                untaggedScope={untaggedScope}
-                                onScopeChange={handleUntaggedScopeChange}
-                            />
-                        </motion.div>
-                    )}
-
-                    {activeTab === 'missing' && (
-                        <motion.div
-                            key="missing"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                            className="flex flex-col gap-6"
-                        >
-                            <React.Suspense fallback={<div className="h-20 flex items-center justify-center"><Loader2 className="animate-spin" /></div>}>
-                                <LibraryHealth onScanComplete={handleScanComplete} />
-                            </React.Suspense>
-
-                            <MissingTab
-                                images={missingImages}
-                                selectedIds={selectedIds}
-                                onItemClick={handleItemClickAdapter}
-                                onSelectAll={handleSelectAll}
-                                onClearSelection={clearSelection}
-                                onDeleteSelected={handleDeleteSelected}
-                                onPurgeMissing={handlePurgeMissing}
-                                onViewImage={setViewingImageId}
-                                maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                            />
-                        </motion.div>
-                    )}
-
-                    {activeTab === 'trash' && (
-                        <motion.div
-                            key="trash"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <TrashTab
-                                images={localDeletedImages}
-                                selectedIds={selectedIds}
-                                onItemClick={handleItemClickAdapter}
-                                onSelectAll={handleSelectAll}
-                                onClearSelection={clearSelection}
-                                onRestoreSelected={handleRestoreSelected}
-                                onDeleteSelected={handleDeleteSelected}
-                                maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                                busyAction={removedAction}
-                            />
-                        </motion.div>
-                    )}
-
-                    {(activeTab === 'intermediates' && initializedTabs.has('intermediates')) && (
-                        <motion.div
-                            key="intermediates"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <IntermediatesTab
-                                images={localIntermediateImages}
-                                selectedIds={selectedIds}
-                                onItemClick={handleItemClickAdapter}
-                                onSelectAll={handleSelectAll}
-                                onClearSelection={clearSelection}
-                                onDeleteSelected={handleDeleteSelected}
-                                onUnmarkSelected={handleUnmarkIntermediates}
-                                onViewImage={setViewingImageId}
-                                maskedKeywords={maskedKeywords}
-                                scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
-                                onRangeSelection={handleRangeAdapter}
-                                onBackgroundClick={handleBackgroundClick}
-                                scope={intermediatesScope}
-                                onScopeChange={handleIntermediatesScopeChange}
-                            />
-                        </motion.div>
-                    )}
-
-                    {/* Scan Placeholders */}
-                    {activeTab !== 'trash' && activeTab !== 'missing' && !initializedTabs.has(activeTab) && (
-                        <motion.div
-                            key={`${activeTab}-placeholder`}
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                        >
-                            <ScanPlaceholder
-                                tab={activeTab}
-                                onStartScan={(tab, scope) => {
-                                    refreshData(tab, true, {
-                                        scope: tab === 'duplicates' ? 'global' : scope,
-                                        includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined,
-                                        runHashBackfill: tab === 'duplicates'
-                                    });
-                                }}
-                            />
                         </motion.div>
                     )}
                 </AnimatePresence>
