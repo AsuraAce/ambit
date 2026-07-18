@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
@@ -13,6 +13,19 @@ pub struct ComfyGraph {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum InputConnection {
     Connected(String),
+    DeclaredUnresolved,
+    Unconnected,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct InputSource {
+    pub(crate) node_id: String,
+    pub(crate) output_slot: Option<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum InputSourceConnection {
+    Connected(InputSource),
     DeclaredUnresolved,
     Unconnected,
 }
@@ -53,12 +66,20 @@ impl ComfyGraph {
                         for edge in &normalized.edges {
                             incoming.insert(
                                 (edge.target_id.clone(), edge.target_slot),
-                                (edge.source_id.clone(), edge.link_type.clone()),
+                                (
+                                    edge.source_id.clone(),
+                                    edge.source_slot,
+                                    edge.link_type.clone(),
+                                ),
                             );
                             if let Some(link_id) = &edge.link_id {
                                 incoming_by_link.insert(
                                     (edge.target_id.clone(), link_id.clone()),
-                                    (edge.source_id.clone(), edge.link_type.clone()),
+                                    (
+                                        edge.source_id.clone(),
+                                        edge.source_slot,
+                                        edge.link_type.clone(),
+                                    ),
                                 );
                             }
                         }
@@ -78,10 +99,12 @@ impl ComfyGraph {
                             else {
                                 continue;
                             };
-                            if let Some((source_id, link_type)) = incoming.get(&(id, 0)) {
+                            if let Some((source_id, source_slot, link_type)) =
+                                incoming.get(&(id, 0))
+                            {
                                 var_map.insert(
                                     var_name.to_string(),
-                                    (source_id.clone(), link_type.clone()),
+                                    (source_id.clone(), *source_slot, link_type.clone()),
                                 );
                             }
                         }
@@ -92,6 +115,7 @@ impl ComfyGraph {
                             };
                             let node_type = get_node_type(&node).to_string();
                             let mut resolved = serde_json::Map::new();
+                            let mut resolved_sources = serde_json::Map::new();
 
                             if let Some(inputs) = node.get("inputs").and_then(Value::as_array) {
                                 for (slot, input) in inputs.iter().enumerate() {
@@ -106,12 +130,21 @@ impl ComfyGraph {
                                             incoming_by_link.get(&(id.clone(), link_id))
                                         })
                                         .or_else(|| incoming.get(&(id.clone(), slot)));
-                                    if let Some((source_id, _)) = linked_source {
+                                    if let Some((source_id, source_slot, _)) = linked_source {
                                         let value = resolved
                                             .entry(name.to_string())
                                             .or_insert(Value::Array(Vec::new()));
                                         if let Some(values) = value.as_array_mut() {
                                             values.push(Value::String(source_id.clone()));
+                                        }
+                                        let value = resolved_sources
+                                            .entry(name.to_string())
+                                            .or_insert(Value::Array(Vec::new()));
+                                        if let Some(values) = value.as_array_mut() {
+                                            values.push(resolved_source_value(
+                                                source_id,
+                                                *source_slot,
+                                            ));
                                         }
                                     }
                                 }
@@ -123,7 +156,9 @@ impl ComfyGraph {
                                     .and_then(|value| value.get(0))
                                     .and_then(Value::as_str)
                                 {
-                                    if let Some((source_id, link_type)) = var_map.get(var_name) {
+                                    if let Some((source_id, source_slot, link_type)) =
+                                        var_map.get(var_name)
+                                    {
                                         resolved.insert(
                                             var_name.to_string(),
                                             Value::String(source_id.clone()),
@@ -138,6 +173,14 @@ impl ComfyGraph {
                                                 Value::String(source_id.clone()),
                                             );
                                         }
+                                        let source = resolved_source_value(source_id, *source_slot);
+                                        resolved_sources
+                                            .insert(var_name.to_string(), source.clone());
+                                        resolved_sources
+                                            .insert("source".to_string(), source.clone());
+                                        if !link_type.is_empty() && link_type != "*" {
+                                            resolved_sources.insert(link_type.clone(), source);
+                                        }
                                     }
                                 }
                             }
@@ -146,6 +189,10 @@ impl ComfyGraph {
                                 object.insert(
                                     "_resolved_inputs".to_string(),
                                     Value::Object(resolved),
+                                );
+                                object.insert(
+                                    "_resolved_sources".to_string(),
+                                    Value::Object(resolved_sources),
                                 );
                             }
                             nodes_map.insert(id, node);
@@ -195,21 +242,52 @@ pub fn get_node_input_link(node: &Value, key: &str) -> Option<String> {
 }
 
 pub(crate) fn get_input_connection(node: &Value, key: &str) -> InputConnection {
+    match get_input_source(node, key) {
+        InputSourceConnection::Connected(source) => InputConnection::Connected(source.node_id),
+        InputSourceConnection::DeclaredUnresolved => InputConnection::DeclaredUnresolved,
+        InputSourceConnection::Unconnected => InputConnection::Unconnected,
+    }
+}
+
+pub(crate) fn get_input_source(node: &Value, key: &str) -> InputSourceConnection {
+    if let Some(value) = node
+        .get("_resolved_sources")
+        .and_then(|inputs| inputs.get(key))
+    {
+        if let Some(source) = resolved_input_source(value) {
+            return InputSourceConnection::Connected(source);
+        }
+        if let Some(source) = value
+            .as_array()
+            .and_then(|sources| sources.first())
+            .and_then(resolved_input_source)
+        {
+            return InputSourceConnection::Connected(source);
+        }
+        return InputSourceConnection::DeclaredUnresolved;
+    }
+
     if let Some(value) = node
         .get("_resolved_inputs")
         .and_then(|inputs| inputs.get(key))
     {
         if let Some(source_id) = value.as_str() {
-            return InputConnection::Connected(source_id.to_string());
+            return InputSourceConnection::Connected(InputSource {
+                node_id: source_id.to_string(),
+                output_slot: None,
+            });
         }
         if let Some(source_id) = value
             .as_array()
             .and_then(|sources| sources.first())
             .and_then(Value::as_str)
         {
-            return InputConnection::Connected(source_id.to_string());
+            return InputSourceConnection::Connected(InputSource {
+                node_id: source_id.to_string(),
+                output_slot: None,
+            });
         }
-        return InputConnection::DeclaredUnresolved;
+        return InputSourceConnection::DeclaredUnresolved;
     }
 
     if let Some(value) = node
@@ -225,9 +303,12 @@ pub(crate) fn get_input_connection(node: &Value, key: &str) -> InputConnection {
                     .or_else(|| link[0].as_i64().map(|source_id| source_id.to_string()))
                     .or_else(|| link[0].as_u64().map(|source_id| source_id.to_string()))
                 {
-                    return InputConnection::Connected(source_id);
+                    return InputSourceConnection::Connected(InputSource {
+                        node_id: source_id,
+                        output_slot: value_as_usize(&link[1]),
+                    });
                 }
-                return InputConnection::DeclaredUnresolved;
+                return InputSourceConnection::DeclaredUnresolved;
             }
         }
     }
@@ -242,10 +323,32 @@ pub(crate) fn get_input_connection(node: &Value, key: &str) -> InputConnection {
                 && input.get("link").is_some_and(|link| !link.is_null())
         })
     {
-        return InputConnection::DeclaredUnresolved;
+        return InputSourceConnection::DeclaredUnresolved;
     }
 
-    InputConnection::Unconnected
+    InputSourceConnection::Unconnected
+}
+
+fn resolved_source_value(source_id: &str, source_slot: usize) -> Value {
+    json!({
+        "node_id": source_id,
+        "output_slot": source_slot,
+    })
+}
+
+fn resolved_input_source(value: &Value) -> Option<InputSource> {
+    let object = value.as_object()?;
+    Some(InputSource {
+        node_id: object.get("node_id").and_then(value_as_id)?,
+        output_slot: object.get("output_slot").and_then(value_as_usize),
+    })
+}
+
+fn value_as_usize(value: &Value) -> Option<usize> {
+    value
+        .as_u64()
+        .and_then(|value| usize::try_from(value).ok())
+        .or_else(|| value.as_i64().and_then(|value| usize::try_from(value).ok()))
 }
 
 pub(crate) fn get_strict_source_id(node: &Value, key: &str) -> Option<String> {
