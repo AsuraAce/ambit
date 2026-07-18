@@ -4,6 +4,7 @@ pub mod complex_workflows;
 pub mod diagnostics;
 pub mod false_positive_models;
 pub mod general;
+pub mod graph_sources;
 pub mod merge_precedence;
 pub mod models;
 pub mod multi_stage;
