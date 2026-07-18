@@ -1,13 +1,14 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { AIImage } from '../../../types';
-import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, Search, GitCompare, X, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, GitCompare, X, RefreshCw } from 'lucide-react';
 import { useDuplicateFinder, DuplicateGroup } from '../../../hooks/useDuplicateFinder';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { VirtualGrid } from '../../library/components/VirtualGrid';
 import { type SyncProgress } from '../../../stores/libraryStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import type { ExactDuplicateResolution, FileHashBackfillResult } from '../../../bindings';
 
 // --- Sub-Component for Individual Duplicate Image in a Group ---
 const DuplicateItem: React.FC<{
@@ -16,9 +17,10 @@ const DuplicateItem: React.FC<{
     onView: (img: AIImage) => void;
     onCompare: (img: AIImage) => void;
     maskedKeywords: string[];
-    isNewest?: boolean;
+    isLatestModified?: boolean;
     canCompare: boolean;
-}> = ({ img, onKeepOnly, onView, onCompare, maskedKeywords, isNewest, canCompare }) => {
+    disabled?: boolean;
+}> = ({ img, onKeepOnly, onView, onCompare, maskedKeywords, isLatestModified, canCompare, disabled = false }) => {
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
     const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
@@ -51,10 +53,10 @@ const DuplicateItem: React.FC<{
                 {/* Badges Overlay */}
                 <div className="absolute top-2 left-2 right-2 flex justify-between items-start pointer-events-none z-20">
                     <div className="flex flex-col gap-1">
-                        {isNewest && (
+                        {isLatestModified && (
                             <div className="bg-sage-500 text-white text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded shadow-lg flex items-center gap-1">
                                 <Clock className="w-2.5 h-2.5" />
-                                Newest
+                                Latest Modified
                             </div>
                         )}
                     </div>
@@ -87,7 +89,8 @@ const DuplicateItem: React.FC<{
                         </div>
                         <button
                             onClick={() => onKeepOnly(img.id)}
-                            className="px-4 py-2 bg-sage-600 hover:bg-sage-500 text-white rounded-full font-bold text-xs shadow-lg transform hover:scale-105 transition-all flex items-center gap-2"
+                            disabled={disabled}
+                            className="px-4 py-2 bg-sage-600 hover:bg-sage-500 disabled:opacity-50 disabled:hover:scale-100 text-white rounded-full font-bold text-xs shadow-lg transform hover:scale-105 transition-all flex items-center gap-2"
                         >
                             <Check className="w-3 h-3" /> Keep Only This
                         </button>
@@ -111,16 +114,16 @@ const DuplicateItem: React.FC<{
 // --- Sub-Component for a Single Group Card (Memoized for Virtualization) ---
 const DuplicateGroupCard: React.FC<{
     group: DuplicateGroup;
-    newestId?: string;
-    onResolve: (groupId: string, keepId: string, allIds: string[]) => void;
+    latestModifiedId?: string;
+    onResolve: (keepId: string, allIds: string[]) => Promise<void>;
     onViewImage?: (id: string) => void;
     onCompareImages?: (imageA: AIImage, imageB: AIImage) => void;
     maskedKeywords: string[];
+    isResolving: boolean;
     style?: React.CSSProperties;
-}> = React.memo(({ group, newestId, onResolve, onViewImage, onCompareImages, maskedKeywords, style }) => {
-    const isExact = group.kind === 'exact';
+}> = React.memo(({ group, latestModifiedId, onResolve, onViewImage, onCompareImages, maskedKeywords, isResolving, style }) => {
     const getComparePeer = (img: AIImage) => {
-        return group.images.find(candidate => candidate.id === newestId && candidate.id !== img.id)
+        return group.images.find(candidate => candidate.id === latestModifiedId && candidate.id !== img.id)
             || group.images.find(candidate => candidate.id !== img.id);
     };
 
@@ -129,13 +132,9 @@ const DuplicateGroupCard: React.FC<{
             <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl overflow-hidden shadow-lg transition-all hover:shadow-xl flex flex-col h-full">
                 <div className="px-5 py-3 bg-gray-50 dark:bg-slate-950/30 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
                     <div className="flex items-center gap-2">
-                        {isExact ? (
-                            <Fingerprint className="w-4 h-4 text-sage-500" />
-                        ) : (
-                            <Search className="w-4 h-4 text-amber-500" />
-                        )}
+                        <Fingerprint className="w-4 h-4 text-sage-500" />
                         <span className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">
-                            {isExact ? 'Exact Duplicate Group' : 'Likely Duplicate Group'}
+                            Exact Duplicate Group
                         </span>
                     </div>
                     <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${group.images.length > 2 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50' : 'text-gray-400'}`}>
@@ -150,15 +149,18 @@ const DuplicateGroupCard: React.FC<{
                             <DuplicateItem
                                 key={img.id}
                                 img={img}
-                                onKeepOnly={(imgId) => onResolve(group.id, imgId, group.images.map(i => i.id))}
+                                onKeepOnly={(imgId) => {
+                                    void onResolve(imgId, group.images.map(i => i.id)).catch(() => undefined);
+                                }}
                                 onView={(viewImage) => onViewImage?.(viewImage.id)}
                                 onCompare={(compareImage) => {
                                     const peer = getComparePeer(compareImage);
                                     onCompareImages?.(peer!, compareImage);
                                 }}
                                 maskedKeywords={maskedKeywords}
-                                isNewest={img.id === newestId}
+                                isLatestModified={img.id === latestModifiedId}
                                 canCompare={group.images.length > 1 && Boolean(onCompareImages)}
+                                disabled={isResolving}
                             />
                         ))}
                     </div>
@@ -166,14 +168,12 @@ const DuplicateGroupCard: React.FC<{
 
                 {/* Conflict Info Footer */}
                 <div className="mt-auto flex items-center gap-3 p-3 border-t border-gray-100 dark:border-white/5 bg-gray-50/30 dark:bg-slate-950/20">
-                    <div className={`p-2 rounded-full ${isExact ? 'bg-sage-100 dark:bg-sage-900/20 text-sage-600' : 'bg-amber-100 dark:bg-amber-900/20 text-amber-600'}`}>
-                        {isExact ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                    <div className="p-2 rounded-full bg-sage-100 dark:bg-sage-900/20 text-sage-600">
+                        <Check className="w-4 h-4" />
                     </div>
                     <div className="flex-1">
                         <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                            {isExact
-                                ? 'Content hash matches. Keep one record; others are removed from Ambit and kept in the Removed list.'
-                                : 'Dimensions, file size, and metadata match. Review before removing because file content may differ.'}
+                            SHA-256 content hashes match. Other records move to Removed; files stay on disk.
                         </p>
                     </div>
                 </div>
@@ -232,13 +232,13 @@ const DuplicateScanStatus: React.FC<{
 
 interface DuplicateFinderProps {
     images: AIImage[];
-    onResolve: (keepId: string, deleteIds: string[]) => void;
+    onResolve: (resolutions: ExactDuplicateResolution[]) => Promise<void>;
     // Privacy
     maskedKeywords: string[];
-    onRefresh?: (scope: 'global' | 'filtered') => void | Promise<unknown>;
-    scope?: 'global' | 'filtered';
+    onRefresh?: () => void | Promise<unknown>;
     isScanning?: boolean;
     scanProgress?: SyncProgress | null;
+    scanResult?: FileHashBackfillResult | null;
     onCancelScan?: () => void;
     onViewImage?: (id: string) => void;
     onCompareImages?: (imageA: AIImage, imageB: AIImage) => void;
@@ -252,9 +252,9 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     onResolve,
     maskedKeywords,
     onRefresh,
-    scope = 'global',
     isScanning = false,
     scanProgress = null,
+    scanResult = null,
     onCancelScan,
     onViewImage,
     onCompareImages,
@@ -262,9 +262,10 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
     onRangeSelection,
     onBackgroundClick
 }) => {
-    const { groups, totalRedundantCount, exactRedundantCount, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
-    const exactGroupCount = groups.filter(group => group.kind === 'exact').length;
-    const likelyGroupCount = groups.length - exactGroupCount;
+    const { groups, totalRedundantCount, isResolving, handleResolve, handleBulkResolve } = useDuplicateFinder(images, onResolve);
+    const scanIncomplete = !isScanning && Boolean(
+        scanResult && (scanResult.wasCancelled || scanResult.errors > 0 || scanResult.remaining > 0)
+    );
 
     if (groups.length === 0) {
         return (
@@ -277,44 +278,31 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                 <div className="p-6 bg-sage-500/10 rounded-full mb-6 border border-sage-500/20">
                     {isScanning ? (
                         <Fingerprint className="w-16 h-16 text-sage-500" />
+                    ) : scanIncomplete ? (
+                        <AlertTriangle className="w-16 h-16 text-amber-500" />
                     ) : (
                         <Check className="w-16 h-16 text-sage-500" />
                     )}
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">
-                    {isScanning ? 'Scanning for Duplicates' : 'Library is Clean'}
+                    {isScanning ? 'Scanning for Duplicates' : scanIncomplete ? 'Scan Incomplete' : 'Library is Clean'}
                 </h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400 mb-6">
                     {isScanning
-                        ? `Exact duplicate detection is hashing candidate files in the ${scope === 'global' ? 'entire library' : 'current filter results'}.`
-                        : `No exact or likely duplicates detected in the ${scope === 'global' ? 'entire library' : 'current filter results'}.`}
+                        ? 'Exact duplicate detection is hashing candidate files across the entire library.'
+                        : scanIncomplete
+                            ? `Some candidates remain unchecked${scanResult?.errors ? ` (${scanResult.errors} scan ${scanResult.errors === 1 ? 'error' : 'errors'})` : ''}. Run the global scan again to complete exact duplicate detection.`
+                            : 'No exact SHA-256 duplicate groups were found in the entire library.'}
                 </p>
                 {onRefresh && (
                     <div className="flex flex-col items-center gap-4">
                         <button
-                            onClick={() => onRefresh(scope)}
-                            disabled={isScanning}
+                            onClick={() => onRefresh()}
+                            disabled={isScanning || isResolving}
                             className="px-6 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold transition-all shadow-lg shadow-sage-500/20 flex items-center gap-2"
                         >
-                            <Zap className="w-4 h-4" /> Run {scope === 'global' ? 'Global' : 'Filtered'} Scan
+                            <Zap className="w-4 h-4" /> Run Global Scan
                         </button>
-
-                        <div className="flex items-center gap-2 p-1 bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/5">
-                            <button
-                                onClick={() => onRefresh('global')}
-                                disabled={isScanning}
-                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Entire Library
-                            </button>
-                            <button
-                                onClick={() => onRefresh('filtered')}
-                                disabled={isScanning}
-                                className={`px-3 py-1 text-[10px] font-bold rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-500 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                            >
-                                Current Filter
-                            </button>
-                        </div>
                     </div>
                 )}
             </div>
@@ -340,66 +328,54 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                         <div className="flex items-center gap-2">
                             <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200">Duplicate Detection</h3>
                             <span className="px-1.5 py-0.5 bg-sage-500/20 text-sage-600 dark:text-sage-400 rounded text-[9px] font-bold uppercase tracking-tighter">
-                                {scope === 'global' ? 'Global Scan' : 'Filtered Scan'}
+                                Global Scan
                             </span>
                         </div>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Found {exactGroupCount} exact and {likelyGroupCount} likely groups ({totalRedundantCount} redundant items) in your {scope === 'global' ? 'whole library' : 'current filter'}.
+                            Found {groups.length} exact groups ({totalRedundantCount} redundant records) across your library. Files stay on disk.
                         </p>
                     </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                    {/* Scope Toggle */}
-                    <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-xl mr-2">
-                        <button
-                            onClick={() => onRefresh?.('global')}
-                            disabled={isScanning}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'global' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
-                        >
-                            Global
-                        </button>
-                        <button
-                            onClick={() => onRefresh?.('filtered')}
-                            disabled={isScanning}
-                            className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${scope === 'filtered' ? 'bg-white dark:bg-zinc-800 text-sage-600 shadow-sm' : 'text-gray-400'}`}
-                        >
-                            Filtered
-                        </button>
-                    </div>
-
                     {onRefresh && (
                         <button
-                            onClick={() => onRefresh(scope)}
-                            disabled={isScanning}
+                            onClick={() => onRefresh()}
+                            disabled={isScanning || isResolving}
                             className="px-3 py-2 text-xs font-bold text-gray-500 hover:text-sage-500 hover:bg-white dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all border border-transparent hover:border-sage-200/50 flex items-center gap-2"
-                            title={`Rescan ${scope === 'global' ? 'entire library' : 'current filter'}`}
+                            title="Rescan entire library"
                         >
                             <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
                             Rescan
                         </button>
                     )}
 
-                    {exactGroupCount > 0 && exactRedundantCount > 0 && (
+                    {totalRedundantCount > 0 && (
                         <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-sage-200/50 dark:border-white/5 rounded-2xl shadow-sm">
                             <div className="px-3 py-1 flex items-center gap-2 border-r border-sage-200/50 dark:border-white/5 mr-1">
                                 <Zap className="w-3.5 h-3.5 text-sage-500" />
                                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest whitespace-nowrap">Exact Bulk</span>
                             </div>
                             <button
-                                onClick={() => handleBulkResolve('newest')}
-                                className="px-4 py-2 bg-sage-500 hover:bg-sage-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
+                                onClick={() => {
+                                    void handleBulkResolve('latestModified').catch(() => undefined);
+                                }}
+                                disabled={isResolving}
+                                className="px-4 py-2 bg-sage-500 hover:bg-sage-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 group shadow-md shadow-sage-500/20"
                             >
                                 <Clock className="w-3.5 h-3.5 group-hover:rotate-12 transition-transform" />
-                                Keep Newest
-                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{exactRedundantCount}</span>
+                                Keep Latest Modified
+                                <span className="px-1.5 py-0.5 bg-white/20 rounded-md text-[9px]">{totalRedundantCount}</span>
                             </button>
                             <button
-                                onClick={() => handleBulkResolve('oldest')}
-                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
+                                onClick={() => {
+                                    void handleBulkResolve('earliestModified').catch(() => undefined);
+                                }}
+                                disabled={isResolving}
+                                className="px-4 py-2 hover:bg-gray-100 dark:hover:bg-white/5 disabled:opacity-50 text-gray-600 dark:text-gray-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 group"
                             >
                                 <Clock className="w-3.5 h-3.5 opacity-40 group-hover:-rotate-12 transition-transform" />
-                                Keep Oldest
+                                Keep Earliest Modified
                             </button>
                         </div>
                     )}
@@ -421,11 +397,12 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                         <DuplicateGroupCard
                             key={group.id}
                             group={group}
-                            newestId={group.newestId}
+                            latestModifiedId={group.latestModifiedId}
                             onResolve={handleResolve}
                             onViewImage={onViewImage}
                             onCompareImages={onCompareImages}
                             maskedKeywords={maskedKeywords}
+                            isResolving={isResolving}
                             style={style}
                         />
                     )}

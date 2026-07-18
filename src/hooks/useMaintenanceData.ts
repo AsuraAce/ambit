@@ -3,6 +3,7 @@ import { AIImage } from '../types';
 import { useLibraryContext } from './useLibraryContext';
 import { useLibraryStore } from '../stores/libraryStore';
 import * as db from '../services/db/maintenanceRepo';
+import type { FileHashBackfillResult } from '../bindings';
 
 export type MaintenanceTab = 'duplicates' | 'trash' | 'missing' | 'untagged' | 'thumbnails' | 'intermediates';
 
@@ -11,6 +12,15 @@ interface MaintenanceRefreshOptions {
     includeUpgradeable?: boolean;
     runHashBackfill?: boolean;
 }
+
+const FAILED_DUPLICATE_SCAN_RESULT: FileHashBackfillResult = {
+    scanned: 0,
+    updated: 0,
+    missing: 0,
+    errors: 1,
+    remaining: 1,
+    wasCancelled: false,
+};
 
 export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: 'global' | 'filtered') => {
     const {
@@ -33,6 +43,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
 
     const refreshData = useCallback(async (tab: MaintenanceTab, showLoader: boolean = true, options: MaintenanceRefreshOptions = {}) => {
         const useGlobalLoader = showLoader && tab !== 'duplicates';
+        let startedDuplicateScan = false;
         if (useGlobalLoader) setIsLoading(true);
         try {
             if (tab === 'trash') {
@@ -57,16 +68,12 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                 setUnoptimizedTotalCount(count);
                 setLocalUnoptimizedImages(data);
             } else if (tab === 'duplicates') {
-                const scope = options.scope ?? 'global';
-                const where = scope === 'filtered' ? activeSqlWhere : '';
-                const params = scope === 'filtered' ? activeSqlParams : [];
                 const shouldRunHashBackfill = options.runHashBackfill ?? true;
-                let startedHashBackfill = false;
+                setInitializedTabs(prev => new Set(prev).add(tab));
 
                 if (shouldRunHashBackfill) {
                     const store = useLibraryStore.getState();
                     if (!store.isScanningDuplicates) {
-                        store.setDuplicateScanScope(scope);
                         store.setLastDuplicateScanResult(null);
                         store.setIsScanningDuplicates(true);
                         store.setDuplicateScanProgress({
@@ -74,24 +81,24 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
                             total: 0,
                             message: 'Preparing duplicate scan...'
                         });
-                        startedHashBackfill = true;
+                        startedDuplicateScan = true;
                     }
                 }
 
-                const data = await db.getDuplicateCandidates(where, params);
+                const data = await db.getDuplicateCandidates();
                 setLocalDuplicateCandidates(data);
-                setInitializedTabs(prev => new Set(prev).add(tab));
 
-                if (startedHashBackfill && useLibraryStore.getState().isScanningDuplicates) {
+                if (startedDuplicateScan && useLibraryStore.getState().isScanningDuplicates) {
                     const store = useLibraryStore.getState();
                     void db.backfillImageFileHashes()
                         .then(async (result) => {
                             store.setLastDuplicateScanResult(result);
-                            const refreshed = await db.getDuplicateCandidates(where, params);
+                            const refreshed = await db.getDuplicateCandidates();
                             setLocalDuplicateCandidates(refreshed);
                         })
                         .catch((e) => {
-                            console.error("Failed to run duplicate hash scan", e);
+                            console.error("Failed to complete duplicate scan", e);
+                            store.setLastDuplicateScanResult(FAILED_DUPLICATE_SCAN_RESULT);
                         })
                         .finally(() => {
                             store.setIsScanningDuplicates(false);
@@ -110,6 +117,14 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
             setInitializedTabs(prev => new Set(prev).add(tab));
         } catch (e) {
             console.error("Failed to refresh maintenance data", e);
+            if (tab === 'duplicates') {
+                const store = useLibraryStore.getState();
+                store.setLastDuplicateScanResult(FAILED_DUPLICATE_SCAN_RESULT);
+                if (startedDuplicateScan) {
+                    store.setIsScanningDuplicates(false);
+                    store.setDuplicateScanProgress(null);
+                }
+            }
         } finally {
             if (useGlobalLoader) setIsLoading(false);
         }
@@ -128,8 +143,7 @@ export const useMaintenanceData = (activeTab: MaintenanceTab, thumbnailsScope: '
         }
 
         if (isScanningDuplicates || lastDuplicateScanResult) {
-            const scope = useLibraryStore.getState().duplicateScanScope;
-            refreshData('duplicates', false, { scope, runHashBackfill: false });
+            refreshData('duplicates', false, { runHashBackfill: false });
         }
     }, [activeTab, initializedTabs, isScanningDuplicates, lastDuplicateScanResult, refreshData]);
 

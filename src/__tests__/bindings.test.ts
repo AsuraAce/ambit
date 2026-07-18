@@ -26,6 +26,7 @@ const commandCases: CommandCase[] = [
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },
     { name: 'showAppLogFolder', invokeName: 'show_app_log_folder', args: [], returnsResult: true },
+    { name: 'resolveExactDuplicateGroups', invokeName: 'resolve_exact_duplicate_groups', args: [[{ keepId: 'keeper', removeIds: ['copy'] }]], payload: { resolutions: [{ keepId: 'keeper', removeIds: ['copy'] }] }, returnsResult: true },
     { name: 'backfillImageFileHashes', invokeName: 'backfill_image_file_hashes', args: [10], payload: { limit: 10 }, returnsResult: true },
     { name: 'cancelImageFileHashBackfill', invokeName: 'cancel_image_file_hash_backfill', args: [], returnsResult: false },
     { name: 'refreshBoardsNative', invokeName: 'refresh_boards_native', args: [{ board: 'collection' }], payload: { boardMapping: { board: 'collection' } }, returnsResult: true },
