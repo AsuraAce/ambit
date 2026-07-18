@@ -198,8 +198,14 @@ fn save_images_batch_inner(
                     original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
                     is_corrupt=excluded.is_corrupt,
                     invoke_image_name=COALESCE(excluded.invoke_image_name, images.invoke_image_name),
-                    invoke_image_category=COALESCE(excluded.invoke_image_category, images.invoke_image_category),
-                    invoke_image_origin=COALESCE(excluded.invoke_image_origin, images.invoke_image_origin),
+                    invoke_image_category=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_image_category
+                        ELSE images.invoke_image_category
+                    END,
+                    invoke_image_origin=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_image_origin
+                        ELSE images.invoke_image_origin
+                    END,
                     model_hash=excluded.model_hash,
                     model_name=excluded.model_name,
                     tool=excluded.tool,
@@ -222,8 +228,8 @@ fn save_images_batch_inner(
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.board_id IS NOT excluded.board_id
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
-                    OR (excluded.invoke_image_category IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
-                    OR (excluded.invoke_image_origin IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
@@ -1173,12 +1179,33 @@ mod tests {
         assert_eq!(preserved.3, Some(1));
         assert_eq!(preserved.4, r#"{"positivePrompt":"user edited"}"#);
 
+        let mut unclassified = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        unclassified.invoke_image_name = Some("source.png".to_string());
+        super::save_images_batch_inner(&conn, &[unclassified])
+            .expect("authoritative source clearing");
+
+        let unclassified: (Option<String>, Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT invoke_image_category, invoke_image_origin, is_invoke_asset_gen
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("unclassified source fields");
+        assert_eq!(unclassified, (None, None, None));
+
         let mut reclassified = create_image_record(
             "invoke-source",
             101,
             201,
             r#"{"positivePrompt":"user edited"}"#,
         );
+        reclassified.invoke_image_name = Some("source.png".to_string());
         reclassified.invoke_image_category = Some("general".to_string());
         super::save_images_batch_inner(&conn, &[reclassified]).expect("source reclassification");
 

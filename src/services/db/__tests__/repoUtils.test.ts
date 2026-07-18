@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool } from '../../../types';
-import { getImageFieldsFull, getImageFieldsLight, mapRowToImage } from '../repoUtils';
+import { getImageFieldsFull, getImageFieldsLight, mapRowToImage, REMOVED_IMAGE_FIELDS } from '../repoUtils';
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
@@ -67,6 +67,12 @@ describe('repoUtils lightweight image rows', () => {
 
         expect(getImageFieldsLight('')).toContain('id, path');
         expect(getImageFieldsFull('')).toContain('metadata_json');
+    });
+
+    it('keeps InvokeAI source facts in Removed lifecycle selections', () => {
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_name');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_category');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_origin');
     });
 
     it('maps prompt metadata from scalar columns without original metadata JSON', () => {

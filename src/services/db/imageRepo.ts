@@ -3,7 +3,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -124,6 +124,8 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
         : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
     isCorrupt: !!image.isCorrupt,
+    // InvokeAI rows always have a name. Native upsert uses it to distinguish an
+    // authoritative nullable source snapshot from omitted generic-scan fields.
     invokeImageName: image.invokeImageName || null,
     invokeImageCategory: image.invokeImageCategory || null,
     invokeImageOrigin: image.invokeImageOrigin || null
@@ -871,7 +873,7 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                 `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
                         original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
-                        invoke_image_name, invoke_image_category, invoke_image_origin
+                        ${INVOKE_IMAGE_SOURCE_FIELDS}
                  FROM images
                  WHERE id IN (${placeholders})`,
                 chunk
@@ -908,7 +910,7 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                     id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                     is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
                     original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
-                    invoke_image_name, invoke_image_category, invoke_image_origin,
+                    ${INVOKE_IMAGE_SOURCE_FIELDS},
                     removed_at, collection_ids_json
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [

@@ -58,16 +58,19 @@ Evidence:
 - the generated classifier maps `general` to output, maps
   `user`/`control`/`mask`/`other` to asset, and leaves unknown or missing values
   unclassified;
-- the default-visible fast-sort query uses the new covering index in SQLite's
+- the default-visible fast-sort query uses the new index in SQLite's
   query plan;
-- native batch upserts accept authoritative non-null source changes while
-  preserving existing source facts during generic metadata rescans;
+- native batch upserts accept authoritative source snapshots, including a
+  nullable category/origin, while preserving source facts during generic
+  metadata rescans;
 - source facts survive path-identity repair and the TypeScript Removed
   lifecycle;
-- 63 focused repository tests, 11 image-command tests, 4 migration registry
+- 64 focused repository tests, 11 image-command tests, 4 migration registry
   tests, and 3 migration-63 tests pass;
-- Specta binding generation/check, TypeScript checking, focused lint, Rust
-  formatting, and diff checks pass.
+- the release-gate version, binding, lint, type, build-size, coverage, Rust-test,
+  and Tauri production-build checks pass; the Rust steps used an isolated Cargo
+  target because an unrelated process held the default target lock;
+- Rust formatting and diff checks pass.
 
 Primary invariant: InvokeAI source classification survives save, update,
 removal, restoration, and path-identity repair independently of generation

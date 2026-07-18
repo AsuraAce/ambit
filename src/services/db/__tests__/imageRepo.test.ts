@@ -676,6 +676,13 @@ describe('imageRepo batch removal', () => {
         expect(deletedImageIds.size).toBe(ids.length);
         expect(db.select).toHaveBeenCalled();
         expect(db.execute).toHaveBeenCalled();
+        expect(db.select.mock.calls.some(([sql]) =>
+            typeof sql === 'string'
+            && sql.includes('FROM images')
+            && sql.includes('invoke_image_name')
+            && sql.includes('invoke_image_category')
+            && sql.includes('invoke_image_origin')
+        )).toBe(true);
 
         const allSelectParamCounts = db.select.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
         const allExecuteParamCounts = db.execute.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
