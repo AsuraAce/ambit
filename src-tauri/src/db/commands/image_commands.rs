@@ -40,6 +40,22 @@ pub struct ImagePathIdentityMoveResult {
     pub skipped_source_missing: usize,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageSourceUpdate {
+    pub id: String,
+    pub invoke_image_name: String,
+    pub invoke_image_category: Option<String>,
+    pub invoke_image_origin: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageSourceReconcileResult {
+    pub active_updated: usize,
+    pub removed_updated: usize,
+}
+
 fn normalize_privacy_keywords(masked_keywords: &[String]) -> Vec<String> {
     masked_keywords
         .iter()
@@ -424,6 +440,52 @@ fn save_images_batch_inner(
     Ok(images.len())
 }
 
+fn reconcile_invoke_image_sources_inner(
+    conn: &rusqlite::Connection,
+    updates: &[InvokeImageSourceUpdate],
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut result = InvokeImageSourceReconcileResult::default();
+
+    {
+        let update_sql = "SET invoke_image_name = ?1,
+                              invoke_image_category = ?2,
+                              invoke_image_origin = ?3
+                          WHERE id = ?4
+                            AND (invoke_image_name IS NOT ?1
+                                 OR invoke_image_category IS NOT ?2
+                                 OR invoke_image_origin IS NOT ?3)";
+        let mut update_active = tx
+            .prepare_cached(&format!("UPDATE images {update_sql}"))
+            .map_err(|e| e.to_string())?;
+        let mut update_removed = tx
+            .prepare_cached(&format!("UPDATE removed_images {update_sql}"))
+            .map_err(|e| e.to_string())?;
+
+        for update in updates {
+            result.active_updated += update_active
+                .execute(params![
+                    update.invoke_image_name,
+                    update.invoke_image_category,
+                    update.invoke_image_origin,
+                    update.id
+                ])
+                .map_err(|e| e.to_string())?;
+            result.removed_updated += update_removed
+                .execute(params![
+                    update.invoke_image_name,
+                    update.invoke_image_category,
+                    update.invoke_image_origin,
+                    update.id
+                ])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 fn normalize_image_identity_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -679,6 +741,35 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
             }
         }
         Err("Failed to save images after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reconcile_invoke_image_sources(
+    app: AppHandle,
+    updates: Vec<InvokeImageSourceUpdate>,
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = reconcile_invoke_image_sources_inner(conn, &updates);
+
+            match result {
+                Ok(result) => return Ok(result),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to reconcile InvokeAI image sources after max retries".to_string())
     })
     .await
 }
@@ -967,6 +1058,152 @@ mod tests {
             },
         )
         .expect("thumbnail state")
+    }
+
+    #[test]
+    fn reconcile_invoke_sources_updates_only_source_facts_for_active_and_removed_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut active = create_image_record(
+            "invoke-active",
+            100,
+            200,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        active.is_favorite = true;
+        active.notes = Some("keep active note".to_string());
+        active.invoke_image_name = Some("old-active.png".to_string());
+        active.invoke_image_category = Some("control".to_string());
+        active.invoke_image_origin = Some("internal".to_string());
+        super::save_images_batch_inner(&conn, &[active]).expect("insert active row");
+
+        conn.execute(
+            "INSERT INTO removed_images (
+                id, path, timestamp, metadata_json, is_favorite, notes, removed_at,
+                invoke_image_name, invoke_image_category, invoke_image_origin
+             ) VALUES (
+                'invoke-removed', 'C:/library/invoke-removed.png', 101,
+                '{\"positivePrompt\":\"removed edit\"}', 1, 'keep removed note', 999,
+                'old-removed.png', 'general', 'internal'
+             )",
+            [],
+        )
+        .expect("insert removed row");
+
+        let updates = vec![
+            super::InvokeImageSourceUpdate {
+                id: "invoke-active".to_string(),
+                invoke_image_name: "active.png".to_string(),
+                invoke_image_category: None,
+                invoke_image_origin: None,
+            },
+            super::InvokeImageSourceUpdate {
+                id: "invoke-removed".to_string(),
+                invoke_image_name: "removed.png".to_string(),
+                invoke_image_category: Some("mask".to_string()),
+                invoke_image_origin: Some("external".to_string()),
+            },
+            super::InvokeImageSourceUpdate {
+                id: "missing".to_string(),
+                invoke_image_name: "missing.png".to_string(),
+                invoke_image_category: Some("user".to_string()),
+                invoke_image_origin: None,
+            },
+        ];
+
+        let result = super::reconcile_invoke_image_sources_inner(&conn, &updates)
+            .expect("reconcile source facts");
+        assert_eq!(result.active_updated, 1);
+        assert_eq!(result.removed_updated, 1);
+
+        let active_state: (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            String,
+            i64,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json, is_favorite, notes
+                 FROM images WHERE id = 'invoke-active'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .expect("active source state");
+        assert_eq!(
+            active_state,
+            (
+                "active.png".to_string(),
+                None,
+                None,
+                None,
+                r#"{"positivePrompt":"user edited"}"#.to_string(),
+                1,
+                "keep active note".to_string(),
+            )
+        );
+
+        let removed_state: (
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+            i64,
+            String,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json, is_favorite, notes, removed_at
+                 FROM removed_images WHERE id = 'invoke-removed'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .expect("removed source state");
+        assert_eq!(
+            removed_state,
+            (
+                "removed.png".to_string(),
+                "mask".to_string(),
+                "external".to_string(),
+                Some(1),
+                r#"{"positivePrompt":"removed edit"}"#.to_string(),
+                1,
+                "keep removed note".to_string(),
+                999,
+            )
+        );
+
+        let repeated = super::reconcile_invoke_image_sources_inner(&conn, &updates)
+            .expect("repeat reconciliation");
+        assert_eq!(repeated.active_updated, 0);
+        assert_eq!(repeated.removed_updated, 0);
     }
 
     #[test]

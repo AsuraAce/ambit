@@ -187,6 +187,7 @@ const isPersistedInvokeSnapshot = (value: unknown): boolean => {
         && typeof value.importOrphans === 'boolean'
         && typeof value.syncBoardsToCollections === 'boolean'
         && hasValidOptionalValue(value, 'pathRepairVersion', item => typeof item === 'number')
+        && hasValidOptionalValue(value, 'importSchemaVersion', item => typeof item === 'number')
         && value.files.every(file => isRecord(file)
             && typeof file.path === 'string'
             && typeof file.exists === 'boolean'
@@ -561,7 +562,8 @@ export class TauriFsRepository implements IRepository {
         const invokeDbSnapshot = savedSettings.invokeDbSnapshot
             ? {
                 ...savedSettings.invokeDbSnapshot,
-                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0
+                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
+                importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0
             }
             : undefined;
         return {

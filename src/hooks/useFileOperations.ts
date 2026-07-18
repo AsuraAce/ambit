@@ -60,7 +60,6 @@ export const useFileOperations = ({
         handleImportFolders: importOps.handleImportFolders,
         handleImportFiles: importOps.handleWebFiles,
         scanDirectory: importOps.scanDirectory,
-        handleInvokeSync: importOps.handleInvokeSync,
         resyncFolder: importOps.resyncFolder,
 
         // Other Actions

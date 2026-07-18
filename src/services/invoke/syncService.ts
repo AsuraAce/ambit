@@ -33,6 +33,7 @@ import {
 import { upsertCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
+import { reconcileInvokeSourceFacts } from './sourceReconciliation';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
@@ -42,6 +43,7 @@ interface InvokeSyncOptions {
     starredAs?: 'favorite' | 'pin' | 'both' | 'none';
     perfContext?: InvokeLiveWatchPerfContext;
     mode?: 'manual' | 'startup' | 'live';
+    reconcileSourceFacts?: boolean;
 }
 
 interface CountRow {
@@ -61,6 +63,8 @@ interface InvokeImageRow {
     thumbnail_name?: string | null;
     has_workflow?: number | boolean | null;
     is_intermediate?: number | boolean | null;
+    image_category?: string | null;
+    image_origin?: string | null;
 }
 
 interface InvokeRepairCandidate {
@@ -143,6 +147,8 @@ export const syncImages = async (
     const hasHasWorkflow = columns.includes('has_workflow');
     const hasUpdatedAt = columns.includes('updated_at');
     const hasImageSubfolder = columns.includes('image_subfolder');
+    const hasImageCategory = columns.includes('image_category');
+    const hasImageOrigin = columns.includes('image_origin');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -217,6 +223,15 @@ export const syncImages = async (
     const pathResolver = createInvokeImagePathResolver(imagesRoot, async () =>
         unwrap(commands.listInvokeaiImages(imagesRoot))
     );
+    const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
+        ? await reconcileInvokeSourceFacts({
+            db: invokeDb,
+            columns: new Set(columns),
+            pathResolver,
+            onProgress,
+            signal,
+        })
+        : 0;
 
     const resolveThumbnailPathsForRows = async (
         rows: InvokeImageRow[],
@@ -469,11 +484,11 @@ export const syncImages = async (
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
-            updatedCount: repairedExistingCount,
+            updatedCount: repairedExistingCount + reconciledExistingCount,
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: repairedExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let hasBoardsTable = false;
@@ -498,7 +513,7 @@ export const syncImages = async (
 
     let processed = 0;
     let newImportedCount = 0;
-    let totalUpdated = repairedExistingCount;
+    let totalUpdated = repairedExistingCount + reconciledExistingCount;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -509,6 +524,8 @@ export const syncImages = async (
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
     const intermediateCol = hasIsIntermediate ? ', i.is_intermediate' : '';
     const imageSubfolderCol = hasImageSubfolder ? ', i.image_subfolder' : '';
+    const imageCategoryCol = hasImageCategory ? ', i.image_category' : ', NULL AS image_category';
+    const imageOriginCol = hasImageOrigin ? ', i.image_origin' : ', NULL AS image_origin';
 
     const createdBoardIds = new Set<string>();
     let batchCount = 0;
@@ -520,7 +537,7 @@ export const syncImages = async (
         const batchIndex = batchCount + 1;
         const metaSelect = `i.${metaCol} as metadata_blob`;
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol} ${imageCategoryCol} ${imageOriginCol}
             FROM images i
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
@@ -729,6 +746,9 @@ export const syncImages = async (
                     if (isFavorite !== existing.isFavorite) needsUpdate = true;
                     if (isPinned !== (existing.isPinned || false)) needsUpdate = true;
                     if (boardId !== existing.boardId) needsUpdate = true;
+                    if ((existing.invokeImageName ?? null) !== row.image_name) needsUpdate = true;
+                    if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
+                    if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
                 }
 
                 if (!needsUpdate) {
@@ -786,7 +806,10 @@ export const syncImages = async (
                     originalChunks: {
                         'invokeai_metadata': rawInvokeMeta
                     },
-                    originalState: originalState
+                    originalState: originalState,
+                    invokeImageName: row.image_name,
+                    invokeImageCategory: row.image_category ?? undefined,
+                    invokeImageOrigin: row.image_origin ?? undefined,
                 };
 
                 if (!existing) {

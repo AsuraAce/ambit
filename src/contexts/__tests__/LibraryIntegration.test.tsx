@@ -10,7 +10,10 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { QueryClient } from '@tanstack/react-query';
 import type { Collection, InvokeDbSnapshotState } from '../../types';
-import { INVOKE_PATH_REPAIR_SNAPSHOT_VERSION } from '../../services/invoke/dbSnapshot';
+import {
+    INVOKE_IMPORT_SCHEMA_VERSION,
+    INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+} from '../../services/invoke/dbSnapshot';
 import { settingsPersistenceCoordinator } from '../../utils/settingsPersistenceCoordinator';
 
 // --- Extensive Mocks for Integration ---
@@ -395,7 +398,7 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(String),
             expect.any(Function),
             expect.any(AbortSignal),
-            expect.objectContaining({ mode: 'live' })
+            expect.objectContaining({ mode: 'live', reconcileSourceFacts: false })
         );
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
         expect(mocks.searchImages).not.toHaveBeenCalled();
@@ -743,7 +746,8 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.appRepository.update).toHaveBeenCalled();
         const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
         expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot).toEqual(expect.objectContaining({
-            pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION
+            pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+            importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
         }));
 
         await act(async () => {
@@ -805,17 +809,34 @@ describe('Library Integration (Provider Stack)', () => {
 
         mocks.syncImages.mockResolvedValueOnce(createNoopInvokeSyncResult());
         mocks.scanForOrphans.mockClear();
+        mocks.appRepository.update.mockClear();
 
         await act(async () => {
             await hook?.startInvokeSync({ mode: 'manual', importOrphans: true });
         });
 
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                mode: 'manual',
+                reconcileSourceFacts: true,
+            })
+        );
         expect(mocks.scanForOrphans).toHaveBeenCalledWith(
             'D:/AmbitFixtures/InvokeAI/databases',
             expect.any(Set),
             expect.any(Function),
             expect.objectContaining({ importIntermediates: expect.anything() })
         );
+        const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as
+            (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
+        expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot)
+            .toEqual(expect.objectContaining({
+                importOrphans: false,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+            }));
     });
 
     it('uses startup resource-incremental facet refresh for a small known Invoke catch-up', async () => {
@@ -1262,6 +1283,7 @@ describe('Library Integration (Provider Stack)', () => {
                     importOrphans: false,
                     syncBoardsToCollections: false,
                     pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                    importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
                     files
                 }
             });
@@ -1281,7 +1303,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.syncImages).not.toHaveBeenCalled();
     });
 
-    it('runs startup Invoke SQLite sync once when the saved DB snapshot predates path repair', async () => {
+    it('runs and records source reconciliation when an unchanged snapshot predates the import schema', async () => {
         let hook: any;
         renderStack(h => hook = h);
 
@@ -1301,8 +1323,9 @@ describe('Library Integration (Provider Stack)', () => {
             importIntermediates: false,
             importOrphans: false,
             syncBoardsToCollections: false,
+            pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
             files
-        } satisfies Omit<InvokeDbSnapshotState, 'pathRepairVersion'>;
+        } satisfies Omit<InvokeDbSnapshotState, 'importSchemaVersion'>;
 
         mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
             status: 'ok',
@@ -1337,6 +1360,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         mocks.syncImages.mockClear();
+        mocks.appRepository.update.mockClear();
 
         await act(async () => {
             await hook.startInvokeSync({ mode: 'startup' });
@@ -1347,8 +1371,15 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(String),
             expect.any(Function),
             expect.any(AbortSignal),
-            expect.objectContaining({ mode: 'startup' })
+            expect.objectContaining({
+                mode: 'startup',
+                reconcileSourceFacts: true,
+            })
         );
+        const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as
+            (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
+        expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot.importSchemaVersion)
+            .toBe(INVOKE_IMPORT_SCHEMA_VERSION);
     });
 
     it('skips startup Invoke SQLite sync when the DB file is missing', async () => {
@@ -1386,6 +1417,7 @@ describe('Library Integration (Provider Stack)', () => {
                     importOrphans: false,
                     syncBoardsToCollections: false,
                     pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                    importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
                     files: [
                         {
                             path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
@@ -1909,11 +1941,13 @@ describe('Library Integration (Provider Stack)', () => {
         renderStack(h => hook = h);
         await waitFor(() => expect(hook?.isLoaded).toBe(true));
         await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+        mocks.appRepository.update.mockClear();
         mocks.syncImages.mockRejectedValueOnce(failure);
 
         await act(async () => hook?.startInvokeSync({ mode }));
 
         expect(useLibraryStore.getState().syncStatus).toBe(expectedStatus);
+        expect(mocks.appRepository.update).not.toHaveBeenCalled();
         consoleError.mockRestore();
     });
 

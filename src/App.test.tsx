@@ -45,6 +45,7 @@ type GlobalModalsProbe = {
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => Promise<void>;
     onCloseExport: () => void;
     onSettingsSave: React.Dispatch<React.SetStateAction<AppSettings>>;
+    onInvokeSync: () => void | Promise<void>;
     onCheckForUpdates: () => Promise<void>;
     onOpenUpdatePrompt: () => void;
     onNavigateToMaintenance: () => void;
@@ -163,7 +164,6 @@ const mocks = vi.hoisted(() => ({
     handleImportPaths: vi.fn().mockResolvedValue(undefined),
     handleImportFolders: vi.fn().mockResolvedValue(undefined),
     importImages: vi.fn(),
-    handleInvokeSync: vi.fn(),
     removeImagesFromCollection: vi.fn(async (
         _imageIds: string[],
         _collectionId: string,
@@ -357,7 +357,6 @@ vi.mock('./hooks/useFileOperations', () => ({
         handleImportPaths: mocks.handleImportPaths,
         handleImportFolders: mocks.handleImportFolders,
         importImages: mocks.importImages,
-        handleInvokeSync: mocks.handleInvokeSync,
         fileInputRef: mocks.fileInputRef,
         isRecoveringMetadata: false,
         isExporting: false
@@ -770,6 +769,8 @@ describe('App orchestration', () => {
         expect(mocks.moveImagesBetweenCollections).toHaveBeenCalledWith(['two'], 'source', 'target');
         await global.onCheckForUpdates();
         expect(mocks.updater.checkForUpdates).toHaveBeenCalledWith({ manual: true });
+        await act(async () => global.onInvokeSync());
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'manual' });
         global.onOpenUpdatePrompt();
         expect(mocks.updater.openUpdateDialog).toHaveBeenCalled();
         global.onNavigateToMaintenance();

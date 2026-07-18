@@ -650,7 +650,7 @@ export default function App() {
                 collectionToEditId={modals.collectionToEditId}
                 onSaveCollectionFilters={colOps.updateCollectionFilters}
                 onScanFolder={fileOps.handleImportFolders}
-                onInvokeSync={fileOps.handleInvokeSync}
+                onInvokeSync={() => startInvokeSync({ mode: 'manual' })}
                 hasPendingUpdate={Boolean(updater.update)}
                 pendingUpdateVersion={updater.update?.version ?? null}
                 updateErrorMessage={updater.errorMessage}

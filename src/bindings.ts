@@ -37,6 +37,14 @@ async saveImagesBatch(images: ImageRecord[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async reconcileInvokeImageSources(updates: InvokeImageSourceUpdate[]) : Promise<Result<InvokeImageSourceReconcileResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_image_sources", { updates }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<ImagePathIdentityMoveResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_image_path_identities", { moves }) };
@@ -597,6 +605,8 @@ export type ImportResult = { added: number; totalFound: number; message: string 
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
+export type InvokeImageSourceReconcileResult = { activeUpdated: number; removedUpdated: number }
+export type InvokeImageSourceUpdate = { id: string; invokeImageName: string; invokeImageCategory: string | null; invokeImageOrigin: string | null }
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }

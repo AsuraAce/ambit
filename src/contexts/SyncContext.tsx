@@ -8,7 +8,7 @@ import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
 import { AppSettings, FacetType, MetadataRefreshScope } from '../types';
-import { isInvokeDbSnapshotCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
+import { isInvokeDbSnapshotCurrent, isInvokeImportSchemaCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -29,7 +29,6 @@ import {
 } from '../services/db/imageRepo';
 import { processTargetedFiles } from '../services/importService';
 import { scanForOrphans } from '../services/invoke/orphanScanner';
-import { syncImages } from '../services/invoke/syncService';
 import { appRepository } from '../services/repository';
 import { watcherService } from '../services/WatcherService';
 import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
@@ -221,6 +220,9 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             options.mode === 'startup'
             && !!settingsRef.current.invokeAiPath
             && shouldImportOrphans === false;
+        const shouldReconcileSourceFacts =
+            options.mode !== 'live'
+            && !isInvokeImportSchemaCurrent(settingsRef.current.invokeDbSnapshot);
 
         if ((options.mode === 'manual' || options.mode === 'startup') && syncStatus === 'syncing') return;
         if (options.mode === 'live' && (syncStatus === 'syncing' || isLiveSyncingRef.current)) {
@@ -296,14 +298,20 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         const ctrl = new AbortController();
         setSyncAbortController(ctrl);
         const persistInvokeSnapshot = async (lastSyncedAt: number | null | undefined) => {
-            if (!settingsRef.current.invokeAiPath || options.mode === 'live' || shouldImportOrphans) return;
+            if (
+                !settingsRef.current.invokeAiPath
+                || options.mode === 'live'
+                || (shouldImportOrphans && !shouldReconcileSourceFacts)
+            ) return;
 
             try {
                 const snapshot = await readInvokeDbSnapshotState(
                     settingsRef.current.invokeAiPath,
                     {
                         ...effectiveSnapshotConfig,
-                        lastSyncedAt
+                        lastSyncedAt,
+                        // Orphan recovery is manual-only and does not change whether the Invoke DB was synced.
+                        importOrphans: false,
                     }
                 );
                 await settingsPersistenceCoordinator.run(async () => {
@@ -320,6 +328,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
         };
 
         try {
+            const { syncImages } = await import('../services/invoke/syncService');
             const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncImages(
                 settingsRef.current.invokeAiPath!,
                 (c, t, msg) => {
@@ -350,7 +359,8 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                     importIntermediates: effectiveImportIntermediates,
                     starredAs: options.starredAs,
                     perfContext: livePerfContext,
-                    mode: options.mode
+                    mode: options.mode,
+                    reconcileSourceFacts: shouldReconcileSourceFacts
                 }
             );
             const snapshotCursor = typeof newTs === 'number' ? newTs : (effectiveTimestamp ?? null);

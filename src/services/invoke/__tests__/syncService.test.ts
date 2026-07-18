@@ -12,6 +12,7 @@ import {
     syncCollectionImages
 } from '../../db/imageRepo';
 import { syncImages } from '../syncService';
+import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
 import { GeneratorTool, type AIImage } from '../../../types';
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
@@ -52,6 +53,10 @@ vi.mock('../metadataMapper', () => ({
 
 vi.mock('../connection', () => ({
     fetchBoardMappings: vi.fn()
+}));
+
+vi.mock('../sourceReconciliation', () => ({
+    reconcileInvokeSourceFacts: vi.fn()
 }));
 
 vi.mock('../../db', () => ({
@@ -98,6 +103,7 @@ const makeExistingInvokeImage = (filename: string, overrides: Partial<AIImage> =
         metadata,
         originalMetadata: metadata,
         originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) },
+        invokeImageName: filename,
         ...overrides,
     };
 };
@@ -185,6 +191,7 @@ describe('syncImages live mode', () => {
         vi.mocked(moveImagePathIdentity).mockResolvedValue(false);
         vi.mocked(syncCollectionImages).mockResolvedValue(undefined as never);
         vi.mocked(upsertCollection).mockResolvedValue(undefined as never);
+        vi.mocked(reconcileInvokeSourceFacts).mockResolvedValue(0);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map(),
             boards: new Map()
@@ -274,6 +281,7 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(syncCollectionImages).not.toHaveBeenCalled();
         expect(upsertCollection).not.toHaveBeenCalled();
+        expect(reconcileInvokeSourceFacts).not.toHaveBeenCalled();
     });
 
     it('returns early for no-op startup cycles after candidate detection without counting', async () => {
@@ -321,6 +329,54 @@ describe('syncImages live mode', () => {
         infoSpy.mockRestore();
     });
 
+    it('reconciles all source rows before an otherwise empty startup catch-up', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [
+                    { name: 'metadata_json' },
+                    { name: 'updated_at' },
+                    { name: 'is_intermediate' },
+                    { name: 'image_category' },
+                    { name: 'image_origin' },
+                ];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }];
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) return [];
+            throw new Error(`Unexpected query: ${query}`);
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(reconcileInvokeSourceFacts).mockResolvedValueOnce(3);
+
+        const result = await syncImages(
+            'D:/AmbitFixtures/InvokeAI/databases',
+            vi.fn(),
+            undefined,
+            {
+                mode: 'startup',
+                afterTimestamp: 100,
+                importIntermediates: false,
+                syncBoards: false,
+                syncFavorites: false,
+                reconcileSourceFacts: true,
+            }
+        );
+
+        expect(reconcileInvokeSourceFacts).toHaveBeenCalledWith(expect.objectContaining({
+            columns: new Set([
+                'metadata_json',
+                'updated_at',
+                'is_intermediate',
+                'image_category',
+                'image_origin',
+            ]),
+            signal: undefined,
+        }));
+        expect(result).toMatchObject({ imported: 0, updated: 3 });
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
     it('keeps live changed cycles incremental and skips the final full collection sync', async () => {
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
@@ -330,7 +386,9 @@ describe('syncImages live mode', () => {
                     { name: 'is_intermediate' },
                     { name: 'starred' },
                     { name: 'thumbnail_name' },
-                    { name: 'has_workflow' }
+                    { name: 'has_workflow' },
+                    { name: 'image_category' },
+                    { name: 'image_origin' }
                 ];
             }
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
@@ -357,7 +415,9 @@ describe('syncImages live mode', () => {
                         starred: 1,
                         thumbnail_name: 'new-image.webp',
                         has_workflow: 1,
-                        is_intermediate: 0
+                        is_intermediate: 0,
+                        image_category: 'control',
+                        image_origin: 'external'
                     }
                 ];
             }
@@ -397,7 +457,10 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).toHaveBeenCalledTimes(1);
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0][0]).toEqual(expect.objectContaining({
             thumbnailSource: 'invokeai',
-            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/new-image.webp'
+            thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/thumbnails/new-image.webp',
+            invokeImageName: 'new-image.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'external'
         }));
         expect(syncCollectionImages).toHaveBeenCalledTimes(1);
         expect(syncCollectionImages).toHaveBeenCalledWith([
@@ -468,7 +531,8 @@ describe('syncImages live mode', () => {
                 sampler: 'Euler', positivePrompt: 'raw', negativePrompt: ''
             },
             originalState: { isFavorite: false, isPinned: false, boardId: undefined },
-            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) }
+            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'raw' }) },
+            invokeImageName: 'unchanged.png'
         }]);
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
@@ -833,9 +897,17 @@ describe('syncImages live mode', () => {
                 isFavorite: false,
                 isPinned: true,
                 boardId: 'missing-board',
-                originalChunks: { invokeai_metadata: {} }
+                originalChunks: { invokeai_metadata: {} },
+                invokeImageName: 'legacy-schema.png',
+                invokeImageCategory: undefined,
+                invokeImageOrigin: undefined
             })
         ]);
+        const batchQuery = selectMock.mock.calls
+            .map(call => call[0])
+            .find(query => query.includes('FROM images i') && query.includes('OFFSET 0'));
+        expect(batchQuery).toContain('NULL AS image_category');
+        expect(batchQuery).toContain('NULL AS image_origin');
         expect(upsertCollection).not.toHaveBeenCalled();
     });
 
@@ -1157,7 +1229,8 @@ describe('syncImages live mode', () => {
                 loras: [],
                 controlNets: []
             },
-            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'test' }) }
+            originalChunks: { invokeai_metadata: JSON.stringify({ positive_prompt: 'test' }) },
+            invokeImageName: 'date.png'
         }]);
         vi.mocked(moveImagePathIdentity)
             .mockResolvedValueOnce(true)

@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InvokeDbSnapshotState } from '../../../types';
 import {
     buildInvokeDbSnapshotState,
+    INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     isInvokeDbSnapshotCurrent,
+    isInvokeImportSchemaCurrent,
     readInvokeDbSnapshotState,
 } from '../dbSnapshot';
 
@@ -58,6 +60,8 @@ describe('Invoke DB startup snapshot matching', () => {
 
         expect(isInvokeDbSnapshotCurrent(saved, current)).toBe(true);
         expect(current.pathRepairVersion).toBe(INVOKE_PATH_REPAIR_SNAPSHOT_VERSION);
+        expect(current.importSchemaVersion).toBe(INVOKE_IMPORT_SCHEMA_VERSION);
+        expect(isInvokeImportSchemaCurrent(current)).toBe(true);
     });
 
     it('invalidates when sync cursor or import flags change', () => {
@@ -144,6 +148,26 @@ describe('Invoke DB startup snapshot matching', () => {
         expect(isInvokeDbSnapshotCurrent(oldRepairSnapshot, current)).toBe(false);
     });
 
+    it('invalidates snapshots that predate or use an older Invoke import schema', () => {
+        const current = buildInvokeDbSnapshotState(baseSnapshot, {
+            lastSyncedAt: 1000,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false
+        });
+        const legacySaved = { ...current } as Partial<InvokeDbSnapshotState>;
+        delete legacySaved.importSchemaVersion;
+        const oldSchemaSnapshot = {
+            ...current,
+            importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION - 1,
+        };
+
+        expect(isInvokeImportSchemaCurrent(legacySaved as InvokeDbSnapshotState)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(legacySaved as InvokeDbSnapshotState, current)).toBe(false);
+        expect(isInvokeImportSchemaCurrent(oldSchemaSnapshot)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(oldSchemaSnapshot, current)).toBe(false);
+    });
+
     it('reads and normalizes snapshot state through the backend command', async () => {
         getInvokeDbSnapshot.mockResolvedValue({ status: 'ok', data: baseSnapshot });
 
@@ -153,6 +177,7 @@ describe('Invoke DB startup snapshot matching', () => {
             importIntermediates: false,
             importOrphans: false,
             syncBoardsToCollections: false,
+            importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
             files: expect.arrayContaining([
                 expect.objectContaining({ path: 'D:/Invoke/databases/invokeai.db', modifiedMs: 100 }),
             ]),
@@ -186,6 +211,7 @@ describe('Invoke DB startup snapshot matching', () => {
         const legacy = {
             dbPath: current.dbPath,
             pathRepairVersion: current.pathRepairVersion,
+            importSchemaVersion: current.importSchemaVersion,
         } as InvokeDbSnapshotState;
 
         expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(true);
