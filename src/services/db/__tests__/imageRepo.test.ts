@@ -612,9 +612,18 @@ describe('imageRepo batch removal', () => {
             original_parsed_json: null,
             original_state_json: null,
             is_corrupt: 0,
+            invoke_image_name: `${index}.png`,
+            invoke_image_category: 'control',
+            invoke_image_origin: 'internal',
         }]));
         const membershipRowsById = new Map(ids.map(id => [id, [{ image_id: id, collection_id: 'collection-a' }]]));
-        const removedRows = new Map<string, { id: string; collectionIdsJson: string | null }>();
+        const removedRows = new Map<string, {
+            id: string;
+            invokeImageName: string | null;
+            invokeImageCategory: string | null;
+            invokeImageOrigin: string | null;
+            collectionIdsJson: string | null;
+        }>();
         const deletedImageIds = new Set<string>();
 
         const enforceParamLimit = (params: unknown[] = []) => {
@@ -640,7 +649,10 @@ describe('imageRepo batch removal', () => {
                 if (sql.includes('INSERT OR REPLACE INTO removed_images')) {
                     removedRows.set(params[0] as string, {
                         id: params[0] as string,
-                        collectionIdsJson: (params[22] as string | null) ?? null,
+                        invokeImageName: (params[21] as string | null) ?? null,
+                        invokeImageCategory: (params[22] as string | null) ?? null,
+                        invokeImageOrigin: (params[23] as string | null) ?? null,
+                        collectionIdsJson: (params[25] as string | null) ?? null,
                     });
                     return;
                 }
@@ -670,6 +682,11 @@ describe('imageRepo batch removal', () => {
         expect(Math.max(...allSelectParamCounts)).toBeLessThanOrEqual(900);
         expect(Math.max(...allExecuteParamCounts)).toBeLessThanOrEqual(900);
         expect(removedRows.get(ids[0])?.collectionIdsJson).toBe(JSON.stringify(['collection-a']));
+        expect(removedRows.get(ids[0])).toMatchObject({
+            invokeImageName: '0.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'internal',
+        });
     });
 
     it('skips thumbnail trashing when the thumbnail path is the source image path', async () => {
@@ -1254,6 +1271,9 @@ describe('imageRepo batch removal', () => {
                 group_id: null,
                 board_id: null,
                 notes: null,
+                invoke_image_name: 'restore.png',
+                invoke_image_category: 'mask',
+                invoke_image_origin: 'internal',
                 original_metadata_json: null,
                 original_parsed_json: null,
                 original_state_json: null,
@@ -1269,6 +1289,13 @@ describe('imageRepo batch removal', () => {
         await restoreRemovedImages(['C:/removed/restore.png']);
 
         expect(commands.saveImagesBatch).toHaveBeenCalledTimes(1);
+        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                invokeImageName: 'restore.png',
+                invokeImageCategory: 'mask',
+                invokeImageOrigin: 'internal',
+            }),
+        ]);
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('INSERT OR IGNORE INTO collection_images'),
             ['collection-a', 'C:/removed/restore.png', 'collection-a']
@@ -1540,7 +1567,8 @@ describe('imageRepo batch removal', () => {
             fileSize: 0, fileHash: null, thumbnailPath: '', microThumbnail: null,
             thumbnailSource: null, isPinned: false, isDeleted: false, isMissing: false,
             userMasked: null, groupId: null, boardId: null, notes: null,
-            originalMetadataJson: null, originalStateJson: null, isCorrupt: false
+            originalMetadataJson: null, originalStateJson: null, isCorrupt: false,
+            invokeImageName: null, invokeImageCategory: null, invokeImageOrigin: null
         });
         expect(db.execute).not.toHaveBeenCalled();
 

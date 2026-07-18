@@ -129,6 +129,9 @@ export interface AIImage {
   userMasked?: boolean; // Explicit manual mask
   groupId?: string; // ID linking multiple versions/upscales
   boardId?: string; // ID linking to external board/collection
+  invokeImageName?: string; // Stable image name from the InvokeAI database
+  invokeImageCategory?: string; // InvokeAI source category, independent of generation metadata
+  invokeImageOrigin?: string; // Supplementary InvokeAI source provenance
   stack?: AIImage[]; // UI ONLY: List of images collapsed under this one
   notes?: string;
   metadata: ImageMetadata;

@@ -25,6 +25,9 @@ const baseLightRow = {
     group_id: null,
     board_id: null,
     notes: null,
+    invoke_image_name: 'sample.png',
+    invoke_image_category: 'control',
+    invoke_image_origin: 'internal',
     is_intermediate_gen: 0,
     is_grid_gen: 0,
     model_name: 'Fallback Model',
@@ -46,6 +49,7 @@ describe('repoUtils lightweight image rows', () => {
 
         expect(fields).toContain('images.positive_prompt');
         expect(fields).toContain('images.seed');
+        expect(fields).toContain('images.invoke_image_category');
         expect(fields).not.toContain('metadata_json');
         expect(fields).not.toContain('original_metadata_json');
         expect(fields).not.toContain('original_parsed_json');
@@ -74,6 +78,11 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.metadata.steps).toBe(28);
         expect(image.metadata.seed).toBe(0);
         expect(image.originalMetadata).toBeUndefined();
+        expect(image).toMatchObject({
+            invokeImageName: 'sample.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'internal',
+        });
     });
 
     it('keeps an unavailable lightweight seed unknown', () => {

@@ -46,6 +46,9 @@ type PersistableImageRecord = {
     originalMetadataJson: string | null;
     originalStateJson: string | null;
     isCorrupt: boolean;
+    invokeImageName: string | null;
+    invokeImageCategory: string | null;
+    invokeImageOrigin: string | null;
 };
 
 export interface DeleteRemovedImagesResult {
@@ -120,7 +123,10 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
         ? (Object.keys(image.originalChunks).length > 0 ? JSON.stringify(image.originalChunks) : null)
         : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
-    isCorrupt: !!image.isCorrupt
+    isCorrupt: !!image.isCorrupt,
+    invokeImageName: image.invokeImageName || null,
+    invokeImageCategory: image.invokeImageCategory || null,
+    invokeImageOrigin: image.invokeImageOrigin || null
 });
 
 const persistImageRecords = async (
@@ -864,7 +870,8 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
             const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt
+                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                        invoke_image_name, invoke_image_category, invoke_image_origin
                  FROM images
                  WHERE id IN (${placeholders})`,
                 chunk
@@ -900,8 +907,10 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                 `INSERT OR REPLACE INTO removed_images (
                     id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                     is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                    invoke_image_name, invoke_image_category, invoke_image_origin,
+                    removed_at, collection_ids_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     row.id,
                     row.path,
@@ -924,6 +933,9 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                     row.original_parsed_json ?? null,
                     row.original_state_json ?? null,
                     row.is_corrupt ?? 0,
+                    row.invoke_image_name ?? null,
+                    row.invoke_image_category ?? null,
+                    row.invoke_image_origin ?? null,
                     removedAt,
                     memberships[row.id] ? JSON.stringify(memberships[row.id]) : null
                 ]

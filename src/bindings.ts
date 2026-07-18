@@ -591,7 +591,7 @@ microThumbnail: string | null;
 /**
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
-thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null; invokeImageName: string | null; invokeImageCategory: string | null; invokeImageOrigin: string | null }
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }

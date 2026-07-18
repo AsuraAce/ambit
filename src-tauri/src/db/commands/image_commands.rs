@@ -135,10 +135,10 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
-                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25,
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
                     json_extract(?8, '$.tool'),
@@ -148,7 +148,7 @@ fn save_images_batch_inner(
                     CAST(json_extract(?8, '$.cfg') AS REAL),
                     REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
                     json_extract(?8, '$.generationType'),
-                    ?23,
+                    ?26,
                     ?8,
                     COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
                     COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
@@ -197,6 +197,9 @@ fn save_images_batch_inner(
                     original_metadata_json=excluded.original_metadata_json,
                     original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
                     is_corrupt=excluded.is_corrupt,
+                    invoke_image_name=COALESCE(excluded.invoke_image_name, images.invoke_image_name),
+                    invoke_image_category=COALESCE(excluded.invoke_image_category, images.invoke_image_category),
+                    invoke_image_origin=COALESCE(excluded.invoke_image_origin, images.invoke_image_origin),
                     model_hash=excluded.model_hash,
                     model_name=excluded.model_name,
                     tool=excluded.tool,
@@ -218,6 +221,9 @@ fn save_images_batch_inner(
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.board_id IS NOT excluded.board_id
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
+                    OR (excluded.invoke_image_category IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
+                    OR (excluded.invoke_image_origin IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
@@ -353,6 +359,9 @@ fn save_images_batch_inner(
                     img.original_metadata_json,
                     img.original_state_json,
                     img.is_corrupt,
+                    img.invoke_image_name,
+                    img.invoke_image_category,
+                    img.invoke_image_origin,
                     CURRENT_PARSER_VERSION
                 ])
                 .map_err(|e| e.to_string())?;
@@ -906,6 +915,9 @@ mod tests {
             notes: None,
             original_metadata_json: Some(metadata_json.to_string()),
             original_state_json: None,
+            invoke_image_name: None,
+            invoke_image_category: None,
+            invoke_image_origin: None,
         }
     }
 
@@ -1120,6 +1132,68 @@ mod tests {
     }
 
     #[test]
+    fn save_images_batch_updates_invoke_source_without_generation_metadata_ownership() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut invoke_asset = create_image_record("invoke-source", 100, 200, "{}");
+        invoke_asset.invoke_image_name = Some("source.png".to_string());
+        invoke_asset.invoke_image_category = Some("control".to_string());
+        invoke_asset.invoke_image_origin = Some("internal".to_string());
+        super::save_images_batch_inner(&conn, &[invoke_asset]).expect("initial source save");
+
+        let generic_rescan = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        super::save_images_batch_inner(&conn, &[generic_rescan]).expect("generic metadata rescan");
+
+        let preserved: (String, String, String, Option<i64>, String) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("preserved source fields");
+        assert_eq!(preserved.0, "source.png");
+        assert_eq!(preserved.1, "control");
+        assert_eq!(preserved.2, "internal");
+        assert_eq!(preserved.3, Some(1));
+        assert_eq!(preserved.4, r#"{"positivePrompt":"user edited"}"#);
+
+        let mut reclassified = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        reclassified.invoke_image_category = Some("general".to_string());
+        super::save_images_batch_inner(&conn, &[reclassified]).expect("source reclassification");
+
+        let reclassified: (String, Option<i64>) = conn
+            .query_row(
+                "SELECT invoke_image_category, is_invoke_asset_gen
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("reclassified source fields");
+        assert_eq!(reclassified, ("general".into(), Some(0)));
+    }
+
+    #[test]
     fn save_images_batch_preserves_thumbnail_source_when_path_is_unchanged() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -1188,6 +1262,9 @@ mod tests {
         image.path = old_path.to_string();
         image.thumbnail_path = old_thumbnail_path.to_string();
         image.thumbnail_source = Some("invokeai".to_string());
+        image.invoke_image_name = Some("old.png".to_string());
+        image.invoke_image_category = Some("control".to_string());
+        image.invoke_image_origin = Some("internal".to_string());
         super::save_images_batch_inner(&conn, &[image]).expect("initial save");
 
         conn.execute(
@@ -1292,7 +1369,10 @@ mod tests {
 
         let row = conn
             .query_row(
-                "SELECT id, path, thumbnail_path, thumbnail_source, is_missing FROM images WHERE id = ?1",
+                "SELECT id, path, thumbnail_path, thumbnail_source, is_missing,
+                        invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen
+                 FROM images WHERE id = ?1",
                 params![new_id],
                 |row| {
                     Ok((
@@ -1301,6 +1381,10 @@ mod tests {
                         row.get::<_, String>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
                     ))
                 },
             )
@@ -1310,6 +1394,10 @@ mod tests {
         assert_eq!(row.2, new_id);
         assert_eq!(row.3, None);
         assert_eq!(row.4, 0);
+        assert_eq!(row.5, "old.png");
+        assert_eq!(row.6, "control");
+        assert_eq!(row.7, "internal");
+        assert_eq!(row.8, Some(1));
 
         let relation_tables = [
             ("collection_images", "image_id"),

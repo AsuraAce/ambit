@@ -130,6 +130,12 @@ pub struct ImageRecord {
     pub original_metadata_json: Option<String>,
     #[serde(rename = "originalStateJson")]
     pub original_state_json: Option<String>,
+    #[serde(rename = "invokeImageName")]
+    pub invoke_image_name: Option<String>,
+    #[serde(rename = "invokeImageCategory")]
+    pub invoke_image_category: Option<String>,
+    #[serde(rename = "invokeImageOrigin")]
+    pub invoke_image_origin: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
