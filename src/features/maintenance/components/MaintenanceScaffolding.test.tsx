@@ -13,7 +13,6 @@ vi.mock('framer-motion', () => ({
 describe('ScanPlaceholder', () => {
     it.each([
         ['thumbnails', 'Thumbnail Optimization'],
-        ['duplicates', 'Duplicate Finder'],
         ['untagged', 'Untagged Images'],
         ['intermediates', 'Intermediate Images'],
     ] as const)('starts filtered and global scans for %s', (tab, title) => {
@@ -28,6 +27,16 @@ describe('ScanPlaceholder', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Global' }));
         fireEvent.click(screen.getByRole('button', { name: 'Start Maintenance Scan' }));
         expect(onStartScan).toHaveBeenLastCalledWith(tab, 'global');
+    });
+
+    it('runs exact duplicate detection globally without scope controls', () => {
+        const onStartScan = vi.fn();
+        render(<ScanPlaceholder tab="duplicates" onStartScan={onStartScan} />);
+        expect(screen.getByText('Duplicate Finder')).toBeTruthy();
+        expect(screen.getByText(/exact SHA-256 content matches/)).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Current Filter' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Start Maintenance Scan' }));
+        expect(onStartScan).toHaveBeenCalledWith('duplicates', 'global');
     });
 
     it('runs the missing-file scan globally without scope controls', () => {

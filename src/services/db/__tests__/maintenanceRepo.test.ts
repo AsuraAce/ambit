@@ -6,13 +6,16 @@ const mocks = vi.hoisted(() => ({
         verifyImagePaths: vi.fn(),
         backfillImageFileHashes: vi.fn(),
         cancelImageFileHashBackfill: vi.fn(),
+        resolveExactDuplicateGroups: vi.fn(),
     },
     unwrap: vi.fn(),
     getDb: vi.fn(),
     dispatch: vi.fn(),
     isBrowserMockMode: vi.fn(),
     getBrowserMockImages: vi.fn(),
+    getBrowserMockCollections: vi.fn(),
     updateBrowserMockImage: vi.fn(),
+    upsertBrowserMockCollection: vi.fn(),
     mapRowToImage: vi.fn(),
 }));
 
@@ -37,7 +40,9 @@ vi.mock('../../runtime', () => ({
 
 vi.mock('../../browserMockData', () => ({
     getBrowserMockImages: mocks.getBrowserMockImages,
+    getBrowserMockCollections: mocks.getBrowserMockCollections,
     updateBrowserMockImage: mocks.updateBrowserMockImage,
+    upsertBrowserMockCollection: mocks.upsertBrowserMockCollection,
 }));
 
 vi.mock('../repoUtils', () => ({
@@ -54,6 +59,7 @@ describe('maintenanceRepo', () => {
         mocks.unwrap.mockImplementation(async (value: unknown) => value);
         mocks.dispatch.mockImplementation(async (fn: () => Promise<unknown>) => fn());
         mocks.isBrowserMockMode.mockReturnValue(false);
+        mocks.getBrowserMockCollections.mockReturnValue([]);
         mocks.mapRowToImage.mockImplementation((row: { id: string; path?: string }) => ({
             id: row.id,
             url: row.path ?? row.id,
@@ -164,14 +170,14 @@ describe('maintenanceRepo', () => {
             wasCancelled: false,
         });
         await expect(cancelImageFileHashBackfill()).resolves.toBeUndefined();
-        await expect(getDuplicateCandidates()).resolves.toEqual(browserImages);
+        await expect(getDuplicateCandidates()).resolves.toEqual([]);
         await expect(getMaintenanceCounts()).resolves.toEqual({
             untagged: 1,
             orphans: 0,
             intermediates: 2,
             missing: 1,
             trash: 1,
-            duplicates: 6,
+            duplicates: 0,
         });
         expect(progress).toHaveBeenCalledWith(5, 5);
         expect(mocks.updateBrowserMockImage).toHaveBeenCalledWith('missing', { isMissing: true });
@@ -573,7 +579,7 @@ describe('maintenanceRepo', () => {
         expect(mocks.commands.cancelImageFileHashBackfill).toHaveBeenCalledTimes(1);
     });
 
-    it('maps duplicate candidates from the scoped duplicate query', async () => {
+    it('maps duplicate candidates from the global exact-hash query without wrapping the indexed hash column', async () => {
         const db = {
             select: vi.fn().mockResolvedValue([{ id: 'dupe-a', path: 'C:/library/a.png' }]),
             execute: vi.fn(),
@@ -581,20 +587,58 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getDuplicateCandidates } = await import('../maintenanceRepo');
-        await expect(getDuplicateCandidates('WHERE rating >= ?', [4])).resolves.toEqual([{
+        await expect(getDuplicateCandidates()).resolves.toEqual([{
             id: 'dupe-a',
             url: 'C:/library/a.png',
             thumbnailUrl: '',
             metadata: {},
         }]);
 
-        const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
-        expect(query).toContain('FROM images');
-        expect(query).toContain('WHERE rating >= ?');
-        expect(params).toEqual([4]);
+        const [query] = db.select.mock.calls[0] as [string];
+        expect(query).toContain('duplicate_hashes');
+        expect(query).toContain("file_hash != ''");
+        expect(query).not.toContain('LOWER(TRIM(file_hash))');
+        expect(query).toContain('is_missing = 0');
+        expect(query).not.toContain('file_size, width, height');
+        expect(db.select.mock.calls[0]).toHaveLength(1);
     });
 
-    it('returns an empty duplicate list when the scoped duplicate query fails', async () => {
+    it('delegates an exact duplicate batch to the transactional native command', async () => {
+        const resolutions = [{ keepId: 'keeper', removeIds: ['copy'] }];
+        const result = {
+            resolvedGroups: 1,
+            removedIds: ['copy'],
+            keepers: [{ id: 'keeper', isFavorite: true, isPinned: false, userMasked: null }],
+        };
+        mocks.commands.resolveExactDuplicateGroups.mockResolvedValue(result);
+        mocks.unwrap.mockImplementation(async (value: unknown) => value);
+
+        const { resolveExactDuplicateGroups } = await import('../exactDuplicateRepo');
+        await expect(resolveExactDuplicateGroups(resolutions)).resolves.toEqual(result);
+
+        expect(mocks.commands.resolveExactDuplicateGroups).toHaveBeenCalledWith(resolutions);
+    });
+
+    it('validates the entire browser duplicate batch before mutating any records', async () => {
+        mocks.isBrowserMockMode.mockReturnValue(true);
+        mocks.getBrowserMockImages.mockReturnValue([
+            { id: 'keep-a', fileHash: 'hash-a', metadata: {} },
+            { id: 'remove-a', fileHash: 'hash-a', metadata: {} },
+            { id: 'keep-b', fileHash: 'hash-b', metadata: {} },
+            { id: 'remove-b', fileHash: 'changed', metadata: {} },
+        ]);
+
+        const { resolveExactDuplicateGroups } = await import('../exactDuplicateRepo');
+        await expect(resolveExactDuplicateGroups([
+            { keepId: 'keep-a', removeIds: ['remove-a'] },
+            { keepId: 'keep-b', removeIds: ['remove-b'] },
+        ])).rejects.toThrow('Duplicate set changed');
+
+        expect(mocks.updateBrowserMockImage).not.toHaveBeenCalled();
+        expect(mocks.upsertBrowserMockCollection).not.toHaveBeenCalled();
+    });
+
+    it('propagates duplicate query failures so the UI cannot report a false clean result', async () => {
         const db = {
             select: vi.fn().mockRejectedValue(new Error('sqlite busy')),
             execute: vi.fn(),
@@ -602,7 +646,9 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getDuplicateCandidates } = await import('../maintenanceRepo');
-        await expect(getDuplicateCandidates()).resolves.toEqual([]);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        await expect(getDuplicateCandidates()).rejects.toThrow('sqlite busy');
+        error.mockRestore();
     });
 
     it('combines maintenance counters in one query for the dashboard summary', async () => {

@@ -23,6 +23,7 @@ const mockRevertImageMetadata = vi.fn();
 const mockUpdateImageNotesCol = vi.fn();
 const mockRebuildFacetCacheIncremental = vi.fn();
 const mockIncrementFacetCacheVersion = vi.fn();
+const mockResolveExactDuplicateGroups = vi.fn();
 
 vi.mock('../../services/db/imageRepo', () => ({
     updateImageMetadataFields: (...args: any[]) => mockUpdateImageMetadataFields(...args),
@@ -34,6 +35,10 @@ vi.mock('../../services/db/imageRepo', () => ({
     updateImageNotesCol: (...args: any[]) => mockUpdateImageNotesCol(...args),
     rebuildFacetCache: (...args: any[]) => mockRebuildFacetCache(...args),
     rebuildFacetCacheIncremental: (...args: any[]) => mockRebuildFacetCacheIncremental(...args),
+}));
+
+vi.mock('../../services/db/exactDuplicateRepo', () => ({
+    resolveExactDuplicateGroups: (...args: unknown[]) => mockResolveExactDuplicateGroups(...args),
 }));
 
 vi.mock('../../stores/libraryStore', () => ({
@@ -85,6 +90,11 @@ describe('useAppHandlers', () => {
         mockUpdateImageNotesCol.mockResolvedValue(undefined);
         mockRebuildFacetCache.mockResolvedValue(0);
         mockRebuildFacetCacheIncremental.mockResolvedValue(0);
+        mockResolveExactDuplicateGroups.mockResolvedValue({
+            resolvedGroups: 1,
+            removedIds: ['img2'],
+            keepers: [{ id: 'img1', isFavorite: true, isPinned: true, userMasked: null }],
+        });
         mockDeleteRemovedImagesFromDisk.mockResolvedValue({
             deletedIds: ['img1'],
             failedIds: [],
@@ -262,25 +272,81 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
     });
 
-    it('groups only requested images and pluralizes duplicate removal', async () => {
+    it('groups only requested images and applies the transactional duplicate result', async () => {
         dispatchedImages = [mockImages[0], { ...mockImages[0], id: 'img2' }];
         const { result } = renderHandlers();
         act(() => result.current.handleGroupImages(['img1']));
         expect(dispatchedImages[0].groupId).toBeTruthy();
         expect(dispatchedImages[1].groupId).toBeUndefined();
 
-        await act(async () => result.current.handleResolveDuplicate('img1', ['img2', 'img3']));
-        expect(mockRemoveImagesFromLibrary).toHaveBeenCalledWith(['img2', 'img3']);
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 duplicates from the library', 'success');
+        const resolutions = [{ keepId: 'img1', removeIds: ['img2'] }];
+        await act(async () => result.current.handleResolveDuplicate(resolutions));
+        expect(mockResolveExactDuplicateGroups).toHaveBeenCalledWith(resolutions);
+        expect(dispatchedImages).toHaveLength(1);
+        expect(dispatchedImages[0]).toMatchObject({ id: 'img1', isFavorite: true, isPinned: true, userMasked: undefined });
+        expect(mockAddToast).toHaveBeenCalledWith('Moved 1 duplicate to Removed', 'success');
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
     });
 
-    it('uses singular duplicate and removal messages', async () => {
+    it('uses plural duplicate and existing removal messages', async () => {
+        mockResolveExactDuplicateGroups.mockResolvedValueOnce({
+            resolvedGroups: 1,
+            removedIds: ['img2', 'img3'],
+            keepers: [{ id: 'img1', isFavorite: false, isPinned: false, userMasked: false }],
+        });
         const { result } = renderHandlers();
-        await act(async () => result.current.handleResolveDuplicate('img1', ['img2']));
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 1 duplicate from the library', 'success');
+        await act(async () => result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2', 'img3'] }]));
+        expect(mockAddToast).toHaveBeenCalledWith('Moved 2 duplicates to Removed', 'success');
         await act(async () => result.current.handleRemoveFromLibrary(['img1', 'img2']));
         expect(mockAddToast).toHaveBeenCalledWith('Removed 2 images from the library', 'success');
+    });
+
+    it('keeps local images unchanged and reports a failed duplicate transaction', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockResolveExactDuplicateGroups.mockRejectedValueOnce(new Error('stale group'));
+        const { result } = renderHandlers();
+
+        await act(async () => {
+            await expect(result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }]))
+                .rejects.toThrow('stale group');
+        });
+
+        expect(dispatchedImages).toEqual(mockImages);
+        expect(mockAddToast).toHaveBeenCalledWith('Could not resolve duplicates. Run the scan again and retry.', 'error');
+        error.mockRestore();
+    });
+
+    it('keeps a committed duplicate resolution successful when query invalidation fails', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        vi.spyOn(queryClient, 'invalidateQueries').mockRejectedValueOnce(new Error('refresh failed'));
+        const { result } = renderHandlers();
+
+        await act(async () => {
+            await result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }]);
+        });
+
+        expect(dispatchedImages).toEqual([expect.objectContaining({ id: 'img1', isFavorite: true })]);
+        expect(mockAddToast).toHaveBeenCalledWith('Moved 1 duplicate to Removed', 'success');
+        expect(error).toHaveBeenCalledWith(
+            'Failed to refresh image queries after resolving duplicates',
+            expect.any(Error)
+        );
+        error.mockRestore();
+    });
+
+    it('contains facet refresh failures after a committed duplicate resolution', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockRebuildFacetCache.mockRejectedValueOnce(new Error('facet refresh failed'));
+        const { result } = renderHandlers();
+
+        await act(async () => {
+            await result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2'] }]);
+            await Promise.resolve();
+        });
+
+        expect(mockAddToast).toHaveBeenCalledWith('Moved 1 duplicate to Removed', 'success');
+        expect(error).toHaveBeenCalledWith('Failed to refresh facet cache', expect.any(Error));
+        error.mockRestore();
     });
 
     it('prepends only unique restored images and preserves state when all exist', async () => {

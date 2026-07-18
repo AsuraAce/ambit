@@ -14,6 +14,7 @@ import {
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { updateImagesQueryCaches } from '../utils/imageQueryCache';
+import type { ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -27,7 +28,9 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
 
     const refreshFacets = () => {
-        rebuildFacetCache().then(() => incrementFacetCacheVersion());
+        void rebuildFacetCache()
+            .then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh facet cache', error));
     };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
@@ -110,10 +113,36 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         addToast(`Grouped ${ids.length} images into a stack`, 'success');
     };
 
-    const handleResolveDuplicate = async (_keepId: string, deleteIds: string[]) => {
-        await removeImagesFromLibrary(deleteIds);
-        setImages(p => p.filter(i => !deleteIds.includes(i.id)));
-        addToast(`Removed ${deleteIds.length} duplicate${deleteIds.length === 1 ? '' : 's'} from the library`, 'success');
+    const handleResolveDuplicate = async (resolutions: ExactDuplicateResolution[]) => {
+        let result: ExactDuplicateResolutionResult;
+        try {
+            const { resolveExactDuplicateGroups } = await import('../services/db/exactDuplicateRepo');
+            result = await resolveExactDuplicateGroups(resolutions);
+        } catch (error) {
+            console.error('Failed to resolve exact duplicates', error);
+            addToast('Could not resolve duplicates. Run the scan again and retry.', 'error');
+            throw error;
+        }
+
+        const removedIds = new Set(result.removedIds);
+        const keeperStates = new Map(result.keepers.map(keeper => [keeper.id, keeper]));
+        setImages(previous => previous
+            .filter(image => !removedIds.has(image.id))
+            .map(image => {
+                const keeper = keeperStates.get(image.id);
+                return keeper ? {
+                    ...image,
+                    isFavorite: keeper.isFavorite,
+                    isPinned: keeper.isPinned,
+                    userMasked: keeper.userMasked ?? undefined,
+                } : image;
+            }));
+        try {
+            await queryClient.invalidateQueries({ queryKey: ['images'] });
+        } catch (error) {
+            console.error('Failed to refresh image queries after resolving duplicates', error);
+        }
+        addToast(`Moved ${result.removedIds.length} duplicate${result.removedIds.length === 1 ? '' : 's'} to Removed`, 'success');
         refreshMaintenanceCounts();
         refreshFacets();
     };
