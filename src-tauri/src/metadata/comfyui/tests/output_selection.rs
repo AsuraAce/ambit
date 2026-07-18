@@ -181,6 +181,42 @@ fn sampler_chain_through_latent_intermediate_resolves_to_one_root() {
 }
 
 #[test]
+fn sampler_chain_through_vae_round_trip_resolves_to_base_root() {
+    let mut nodes = Map::new();
+    add_sampler_branch(&mut nodes, "2", "base-model");
+    add_sampler_branch(&mut nodes, "10", "refiner-model");
+    nodes.insert(
+        "30".to_string(),
+        json!({
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["2", 0] }
+        }),
+    );
+    nodes.insert(
+        "40".to_string(),
+        json!({
+            "class_type": "VAEEncode",
+            "inputs": { "pixels": ["30", 0] }
+        }),
+    );
+    nodes
+        .get_mut("10")
+        .expect("refiner sampler")
+        .get_mut("inputs")
+        .expect("sampler inputs")["latent_image"] = json!(["40", 0]);
+    add_output(&mut nodes, "20", "SaveImage", Some("10"), None);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks(nodes, None));
+
+    assert_eq!(meta.model, "base_model");
+    assert_eq!(meta.seed, Some(200));
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert!(!diagnostics.output_ambiguous);
+    assert_sampler_source(&diagnostics, ComfyParseLayer::SamplerTraversal);
+}
+
+#[test]
 fn sampler_auxiliary_image_does_not_become_latent_ancestry() {
     let mut nodes = Map::new();
     add_sampler_branch(&mut nodes, "2", "reference-model");
@@ -212,6 +248,46 @@ fn sampler_auxiliary_image_does_not_become_latent_ancestry() {
 
     assert_eq!(meta.model, "primary_model");
     assert_eq!(meta.seed, Some(1_000));
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert!(!diagnostics.output_ambiguous);
+    assert_sampler_source(&diagnostics, ComfyParseLayer::SamplerTraversal);
+}
+
+#[test]
+fn sampler_behind_image_conditioning_does_not_become_latent_ancestry() {
+    let mut nodes = Map::new();
+    add_sampler_branch(&mut nodes, "2", "reference-model");
+    add_sampler_branch(&mut nodes, "10", "primary-model");
+    nodes.insert(
+        "30".to_string(),
+        json!({
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["2", 0] }
+        }),
+    );
+    nodes.insert(
+        "40".to_string(),
+        json!({
+            "class_type": "InstructPixToPixConditioning",
+            "inputs": {
+                "positive": ["1002", 0],
+                "negative": ["1003", 0],
+                "pixels": ["30", 0]
+            }
+        }),
+    );
+    nodes
+        .get_mut("10")
+        .expect("primary sampler")
+        .get_mut("inputs")
+        .expect("sampler inputs")["latent_image"] = json!(["40", 2]);
+    add_output(&mut nodes, "20", "SaveImage", Some("10"), None);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks(nodes, None));
+
+    assert_eq!(meta.model, "primary_model");
+    assert_eq!(meta.seed, Some(1_000));
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
     assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
     assert!(!diagnostics.output_ambiguous);
     assert_sampler_source(&diagnostics, ComfyParseLayer::SamplerTraversal);
