@@ -129,6 +129,10 @@ const FIXTURES: &[CatalogFixture] = &[
         ),
     },
     CatalogFixture {
+        name: "flux_depth_lora_example",
+        chunks_json: include_str!("fixtures/official_catalog/flux_depth_lora_example.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_z_image_turbo_fun_union_controlnet",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_z_image_turbo_fun_union_controlnet.chunks.json"
@@ -891,6 +895,29 @@ fn boogu_edit_custom_conditioning() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_depth_lora_uses_the_selected_generation_path() {
+    assert_fixture(
+        "flux_depth_lora_example",
+        ExpectedMetadata {
+            model: "flux1_dev_fp8",
+            seed: Some(229_472_716_717_627),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (normal)",
+            positive_prompt: "A cute ghost-shaped desktop ornament, softly glowing with a warm light, placed on a tidy, cozy home table, creating a gentle and sweet atmosphere.",
+            negative_prompt: "",
+            loras: &["flux1_depth_dev_lora"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
