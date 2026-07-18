@@ -72,7 +72,7 @@ Verification evidence:
 
 Depends on: Work Package 1.
 
-Status: Pending (`fix/comfyui-custom-combo-resolution`)
+Status: Complete (`fix/comfyui-custom-combo-resolution`, 2026-07-18)
 
 Primary invariant: an output-slot-specific deterministic value is exact or
 unavailable, never guessed.
@@ -107,6 +107,17 @@ Completion criteria:
   selected output path;
 - stale or malformed combo state cannot fabricate an index or prompt;
 - parser version 27 reparses affected rows.
+
+Verification evidence:
+
+- `cargo test metadata::comfyui::tests::prompts`: 50 passed;
+- `cargo test metadata::comfyui::tests::official_catalog`: 27 passed;
+- `cargo test metadata::comfyui::tests::template_coverage`: 3 passed;
+- `cargo test metadata::comfyui::tests::graph_sources`: 4 passed;
+- `cargo test metadata::comfyui::tests::workflow_subgraphs`: 14 passed;
+- `cargo test metadata::comfyui`: 234 passed, 1 ignored;
+- `cargo test metadata::reparse`: 10 passed;
+- `cargo fmt --check` and `git diff --check`: passed.
 
 ## Work Package 3: SplitSigmas Scheduler Ancestry
 

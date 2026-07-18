@@ -1487,6 +1487,175 @@ fn string_concatenate_preserves_empty_sides_but_not_stale_link_fallbacks() {
 }
 
 #[test]
+fn custom_combo_workflow_outputs_selected_value_and_validated_index() {
+    let (meta, diagnostics) = extract_workflow_transform_prompt(
+        vec![
+            json!({
+                "id": 3,
+                "type": "StringConcatenate",
+                "inputs": [
+                    { "name": "string_a", "type": "STRING", "link": 6 },
+                    { "name": "string_b", "type": "STRING", "link": 7 }
+                ],
+                "outputs": [{ "name": "STRING", "type": "STRING", "links": [2] }],
+                "widgets_values": ["", "", ":"]
+            }),
+            json!({
+                "id": 4,
+                "type": "CustomCombo",
+                "inputs": [],
+                "outputs": [
+                    { "name": "STRING", "type": "STRING", "links": [6] },
+                    { "name": "INDEX", "type": "INT", "links": [7] }
+                ],
+                "widgets_values": [
+                    "Image Editing",
+                    3,
+                    "Default",
+                    "Text to Image",
+                    "Text to Video",
+                    "Image Editing",
+                    "Subject to Image"
+                ]
+            }),
+        ],
+        vec![
+            json!([6, 4, 0, 3, 0, "STRING"]),
+            json!([7, 4, 1, 3, 1, "STRING"]),
+        ],
+    );
+
+    assert_eq!(meta.positive_prompt, "Image Editing:3");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn custom_combo_connected_choice_overrides_stale_widgets() {
+    let (meta, _) = extract_transform_prompt(vec![
+        (
+            "3",
+            json!({
+                "class_type": "StringConcatenate",
+                "inputs": {
+                    "string_a": ["4", 0],
+                    "string_b": ["4", 1],
+                    "delimiter": ":"
+                }
+            }),
+        ),
+        (
+            "4",
+            json!({
+                "class_type": "CustomCombo",
+                "inputs": { "choice": ["5", 0] },
+                "widgets_values": ["Default", 0, "Default", "Image Editing"]
+            }),
+        ),
+        (
+            "5",
+            json!({
+                "class_type": "PrimitiveStringMultiline",
+                "inputs": { "value": "Image Editing" }
+            }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "Image Editing:1");
+}
+
+#[test]
+fn custom_combo_direct_api_choice_has_only_a_primary_output() {
+    let (meta, _) = extract_transform_prompt(vec![(
+        "3",
+        json!({ "class_type": "CustomCombo", "inputs": { "choice": "Direct Choice" } }),
+    )]);
+    assert_eq!(meta.positive_prompt, "Direct Choice");
+
+    let (meta, diagnostics) = extract_transform_prompt(vec![
+        (
+            "3",
+            json!({ "class_type": "PreviewAny", "inputs": { "source": ["4", 1] } }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "CustomCombo", "inputs": { "choice": "Direct Choice" } }),
+        ),
+    ]);
+    assert_eq!(meta.positive_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
+fn custom_combo_rejects_unavailable_or_inconsistent_outputs() {
+    let oversized = "x".repeat(64 * 1024 + 1);
+    let cases = [
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 2] } },
+            "4": { "class_type": "CustomCombo", "widgets_values": ["A", 0, "A"] }
+        }),
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 0] } },
+            "4": {
+                "class_type": "CustomCombo",
+                "inputs": { "choice": ["99", 0] },
+                "widgets_values": ["stale", 0, "stale"]
+            }
+        }),
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 1] } },
+            "4": { "class_type": "CustomCombo", "widgets_values": ["B", 0, "A", "B"] }
+        }),
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 1] } },
+            "4": { "class_type": "CustomCombo", "widgets_values": ["A", 5, "A"] }
+        }),
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 1] } },
+            "4": {
+                "class_type": "CustomCombo",
+                "inputs": { "choice": ["5", 0] },
+                "widgets_values": ["stale", 0, "A", "A"]
+            },
+            "5": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "A" } }
+        }),
+        json!({
+            "3": { "class_type": "PreviewAny", "inputs": { "source": ["4", 0] } },
+            "4": { "class_type": "CustomCombo", "inputs": { "choice": ["4", 0] } }
+        }),
+        json!({
+            "3": { "class_type": "CustomCombo", "inputs": { "choice": oversized } }
+        }),
+    ];
+
+    for case in cases {
+        let nodes = case
+            .as_object()
+            .expect("case should be an object")
+            .iter()
+            .map(|(id, node)| (id.as_str(), node.clone()))
+            .collect();
+        let (meta, diagnostics) = extract_transform_prompt(nodes);
+        assert_eq!(meta.positive_prompt, "");
+        assert_eq!(
+            diagnostics
+                .field_sources
+                .get(&ComfyMetadataField::PositivePrompt),
+            None
+        );
+    }
+}
+
+#[test]
 fn transform_cycles_through_preview_or_selected_switch_branch_return_no_prompt() {
     let cases = [
         vec![

@@ -1,7 +1,8 @@
 use super::graph::{
-    get_input_connection, get_node_input_link, get_node_param, get_node_type,
+    get_input_connection, get_input_source, get_node_input_link, get_node_param, get_node_type,
     get_reroute_source_id, get_source_id, get_strict_source_id, get_switch_branch_input,
-    get_switch_branch_input_strict, ComfyGraph, InputConnection,
+    get_switch_branch_input_strict, ComfyGraph, InputConnection, InputSource,
+    InputSourceConnection,
 };
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::{is_missing_prompt_value, is_placeholder_prompt_value};
@@ -577,6 +578,7 @@ fn extract_text_from_node(
     evaluate_string_node_with_mode(
         graph,
         node_id,
+        None,
         &mut visited,
         0,
         StringEvaluationMode::Prompt,
@@ -611,6 +613,7 @@ pub fn evaluate_string_node(
     evaluate_string_node_with_mode(
         graph,
         node_id,
+        None,
         visited,
         depth,
         StringEvaluationMode::Prompt,
@@ -627,6 +630,7 @@ pub(crate) fn evaluate_string_node_strict(
     evaluate_string_node_with_mode(
         graph,
         node_id,
+        None,
         visited,
         depth,
         StringEvaluationMode::Prompt,
@@ -637,6 +641,7 @@ pub(crate) fn evaluate_string_node_strict(
 fn evaluate_string_node_with_mode(
     graph: &ComfyGraph,
     node_id: &str,
+    output_slot: Option<usize>,
     visited: &mut HashSet<String>,
     depth: usize,
     mode: StringEvaluationMode,
@@ -648,11 +653,22 @@ fn evaluate_string_node_with_mode(
     let node = graph.get_node(node_id)?;
     let t = get_node_type(node);
 
-    if strict_connections && t == "Reroute" {
-        let source_id = get_reroute_source_id(node)?;
-        return evaluate_string_node_with_mode(
+    if t == "CustomCombo" {
+        return evaluate_custom_combo(
             graph,
-            &source_id,
+            node,
+            output_slot.unwrap_or(0),
+            visited,
+            depth,
+            strict_connections,
+        );
+    }
+
+    if strict_connections && t == "Reroute" {
+        let source = get_reroute_input_source(node)?;
+        return evaluate_string_source_with_mode(
+            graph,
+            &source,
             visited,
             depth + 1,
             mode,
@@ -672,19 +688,19 @@ fn evaluate_string_node_with_mode(
 
     if t.contains("Qwen") || t.contains("LLM") {
         for input_name in ["0", "text", "prompt"] {
-            match get_input_connection(node, input_name) {
-                InputConnection::Connected(source_id) => {
-                    return evaluate_string_node_with_mode(
+            match get_input_source(node, input_name) {
+                InputSourceConnection::Connected(source) => {
+                    return evaluate_string_source_with_mode(
                         graph,
-                        &source_id,
+                        &source,
                         visited,
                         depth + 1,
                         mode,
                         strict_connections,
                     );
                 }
-                InputConnection::DeclaredUnresolved if strict_connections => return None,
-                InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {}
+                InputSourceConnection::DeclaredUnresolved if strict_connections => return None,
+                InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {}
             }
         }
         for input_name in ["0", "text", "prompt"] {
@@ -728,19 +744,19 @@ fn evaluate_string_node_with_mode(
         || t == "smZ CLIPTextEncode"
     {
         for input_name in ["value", "string", "String", "STRING", "VALUE", "text"] {
-            match get_input_connection(node, input_name) {
-                InputConnection::Connected(source_id) => {
-                    return evaluate_string_node_with_mode(
+            match get_input_source(node, input_name) {
+                InputSourceConnection::Connected(source) => {
+                    return evaluate_string_source_with_mode(
                         graph,
-                        &source_id,
+                        &source,
                         visited,
                         depth + 1,
                         mode,
                         strict_connections,
                     );
                 }
-                InputConnection::DeclaredUnresolved if strict_connections => return None,
-                InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {}
+                InputSourceConnection::DeclaredUnresolved if strict_connections => return None,
+                InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {}
             }
         }
 
@@ -810,19 +826,21 @@ fn evaluate_string_node_with_mode(
     {
         let names = ["text", "string", "value", "STRING", "VALUE"];
         for n in names {
-            if let Some(source_id) =
-                get_conditioning_source_id(graph, node_id, node, n, strict_connections)
-            {
-                if let Some(s) = evaluate_string_node_with_mode(
-                    graph,
-                    &source_id,
-                    visited,
-                    depth + 1,
-                    mode,
-                    strict_connections,
-                ) {
-                    return Some(s);
+            match get_input_source(node, n) {
+                InputSourceConnection::Connected(source) => {
+                    if let Some(s) = evaluate_string_source_with_mode(
+                        graph,
+                        &source,
+                        visited,
+                        depth + 1,
+                        mode,
+                        strict_connections,
+                    ) {
+                        return Some(s);
+                    }
                 }
+                InputSourceConnection::DeclaredUnresolved if strict_connections => return None,
+                InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {}
             }
         }
         if strict_connections {
@@ -1164,19 +1182,21 @@ fn evaluate_string_node_with_mode(
     // Fallback: check all common inputs for links, then widgets
     let names = ["text", "string", "value", "STRING", "VALUE"];
     for n in names {
-        if let Some(source_id) =
-            get_conditioning_source_id(graph, node_id, node, n, strict_connections)
-        {
-            if let Some(s) = evaluate_string_node_with_mode(
-                graph,
-                &source_id,
-                visited,
-                depth + 1,
-                mode,
-                strict_connections,
-            ) {
-                return Some(s);
+        match get_input_source(node, n) {
+            InputSourceConnection::Connected(source) => {
+                if let Some(s) = evaluate_string_source_with_mode(
+                    graph,
+                    &source,
+                    visited,
+                    depth + 1,
+                    mode,
+                    strict_connections,
+                ) {
+                    return Some(s);
+                }
             }
+            InputSourceConnection::DeclaredUnresolved if strict_connections => return None,
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {}
         }
     }
     if strict_connections {
@@ -1195,6 +1215,110 @@ fn evaluate_string_node_with_mode(
     None
 }
 
+fn evaluate_string_source_with_mode(
+    graph: &ComfyGraph,
+    source: &InputSource,
+    visited: &mut HashSet<String>,
+    depth: usize,
+    mode: StringEvaluationMode,
+    strict_connections: bool,
+) -> Option<String> {
+    evaluate_string_node_with_mode(
+        graph,
+        &source.node_id,
+        source.output_slot,
+        visited,
+        depth,
+        mode,
+        strict_connections,
+    )
+}
+
+fn get_reroute_input_source(node: &Value) -> Option<InputSource> {
+    for key in ["", "value", "input", "any"] {
+        match get_input_source(node, key) {
+            InputSourceConnection::Connected(source) => return Some(source),
+            InputSourceConnection::DeclaredUnresolved => return None,
+            InputSourceConnection::Unconnected => {}
+        }
+    }
+    None
+}
+
+fn evaluate_custom_combo(
+    graph: &ComfyGraph,
+    node: &Value,
+    output_slot: usize,
+    visited: &HashSet<String>,
+    depth: usize,
+    strict_connections: bool,
+) -> Option<String> {
+    if output_slot > 1 {
+        return None;
+    }
+
+    let widgets = node.get("widgets_values").and_then(Value::as_array);
+    let connection = get_input_source(node, "choice");
+    let (selected, selected_from_widgets) = match connection {
+        InputSourceConnection::Connected(source) => {
+            let mut branch_visited = visited.clone();
+            let selected = evaluate_string_source_with_mode(
+                graph,
+                &source,
+                &mut branch_visited,
+                depth + 1,
+                StringEvaluationMode::TransformOperand,
+                strict_connections,
+            )?;
+            (selected, false)
+        }
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => {
+            if let Some(selected) = node
+                .get("inputs")
+                .and_then(Value::as_object)
+                .and_then(|inputs| inputs.get("choice"))
+                .and_then(Value::as_str)
+            {
+                (selected.to_string(), false)
+            } else {
+                let selected = widgets?.first()?.as_str()?.to_string();
+                (selected, true)
+            }
+        }
+    };
+
+    if selected.len() > MAX_TRANSFORM_STRING_BYTES {
+        return None;
+    }
+    if output_slot == 0 {
+        return Some(selected);
+    }
+
+    let widgets = widgets?;
+    let index = if selected_from_widgets {
+        let index = widgets
+            .get(1)?
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())?;
+        let option = widgets.get(index.checked_add(2)?)?.as_str()?;
+        (option == selected).then_some(index)?
+    } else {
+        let mut matches = widgets
+            .iter()
+            .skip(2)
+            .enumerate()
+            .filter_map(|(index, option)| (option.as_str()? == selected).then_some(index));
+        let index = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        index
+    };
+
+    Some(index.to_string())
+}
+
 fn trace_text_input_with_state(
     graph: &ComfyGraph,
     node_id: &str,
@@ -1205,20 +1329,20 @@ fn trace_text_input_with_state(
     strict_connections: bool,
 ) -> Option<String> {
     let node = graph.get_node(node_id)?;
-    match get_input_connection(node, input_name) {
-        InputConnection::Connected(source_id) => {
+    match get_input_source(node, input_name) {
+        InputSourceConnection::Connected(source) => {
             let mut branch_visited = visited.clone();
-            evaluate_string_node_with_mode(
+            evaluate_string_source_with_mode(
                 graph,
-                &source_id,
+                &source,
                 &mut branch_visited,
                 depth + 1,
                 mode,
                 strict_connections,
             )
         }
-        InputConnection::DeclaredUnresolved if strict_connections => None,
-        InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
+        InputSourceConnection::DeclaredUnresolved if strict_connections => None,
+        InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {
             get_node_param(node, input_name)
                 .and_then(Value::as_str)
                 .filter(|value| !is_placeholder_prompt_value(value))
@@ -1237,20 +1361,20 @@ fn evaluate_transform_input(
     default: Option<&str>,
     strict_connections: bool,
 ) -> Option<String> {
-    let value = match get_input_connection(node, key) {
-        InputConnection::Connected(source_id) => {
+    let value = match get_input_source(node, key) {
+        InputSourceConnection::Connected(source) => {
             let mut branch_visited = visited.clone();
-            evaluate_string_node_with_mode(
+            evaluate_string_source_with_mode(
                 graph,
-                &source_id,
+                &source,
                 &mut branch_visited,
                 depth + 1,
                 StringEvaluationMode::TransformOperand,
                 strict_connections,
             )?
         }
-        InputConnection::DeclaredUnresolved => return None,
-        InputConnection::Unconnected => {
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => {
             if let Some(value) = get_node_param(node, key).and_then(Value::as_str) {
                 value.to_string()
             } else {
