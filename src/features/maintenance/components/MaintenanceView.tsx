@@ -19,10 +19,11 @@ import { useLibraryStore } from '../../../stores/libraryStore';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
 import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
+import type { ExactDuplicateResolution } from '../../../bindings';
 
 interface MaintenanceViewProps {
     images: AIImage[];
-    onResolveDuplicate: (keepId: string, deleteIds: string[]) => void;
+    onResolveDuplicate: (resolutions: ExactDuplicateResolution[]) => Promise<void>;
     onRestoreImages: (ids: string[]) => void;
     onRemoveFromLibrary: (ids: string[]) => void;
     onDeleteFile: (ids: string[]) => void;
@@ -72,7 +73,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const intermediatesCount = useLibraryStore(s => s.maintenanceCounts.intermediates);
     const isScanningDuplicates = useLibraryStore(s => s.isScanningDuplicates);
     const duplicateScanProgress = useLibraryStore(s => s.duplicateScanProgress);
-    const storedDuplicateScanScope = useLibraryStore(s => s.duplicateScanScope);
     const lastDuplicateScanResult = useLibraryStore(s => s.lastDuplicateScanResult);
     const cancelDuplicateScan = useLibraryStore(s => s.cancelDuplicateScan);
     const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
@@ -81,7 +81,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
     const [untaggedScope, setUntaggedScope] = useState<'global' | 'filtered'>('global');
-    const [duplicatesScope, setDuplicatesScope] = useState<'global' | 'filtered'>('global');
     const [intermediatesScope, setIntermediatesScope] = useState<'global' | 'filtered'>('global');
     const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
@@ -112,7 +111,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         localIntermediateImages,
         unoptimizedTotalCount,
         refreshData,
-        setLocalMissingImages
+        setLocalMissingImages,
+        setLocalDuplicateCandidates,
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
     // --- Computed Data ---
@@ -167,12 +167,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setActiveTabOriginal(tab);
         clearSelection();
     }, [clearSelection]);
-
-    useEffect(() => {
-        if (activeTab === 'duplicates' && (isScanningDuplicates || lastDuplicateScanResult)) {
-            setDuplicatesScope(storedDuplicateScanScope);
-        }
-    }, [activeTab, isScanningDuplicates, lastDuplicateScanResult, storedDuplicateScanScope]);
 
     const handleScanComplete = useCallback(async (ids: string[]) => {
         setScanMissingIds(new Set(ids));
@@ -300,8 +294,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
 
         const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
             activeTab === 'thumbnails' ? thumbnailsScope :
-                activeTab === 'duplicates' ? duplicatesScope :
-                    activeTab === 'intermediates' ? intermediatesScope : 'global';
+                activeTab === 'intermediates' ? intermediatesScope : 'global';
 
         await refreshData(activeTab, false, {
             scope,
@@ -310,7 +303,6 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         });
     }, [
         activeTab,
-        duplicatesScope,
         includeUpgradeable,
         intermediatesScope,
         onRemoveFromLibrary,
@@ -357,10 +349,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         await refreshData('thumbnails', false, { scope: thumbnailsScope, includeUpgradeable });
     };
 
-    const handleResolveDuplicate = useCallback(async (keepId: string, deleteIds: string[]) => {
-        await onResolveDuplicate(keepId, deleteIds);
-        await refreshData('duplicates', false, { scope: duplicatesScope, runHashBackfill: false });
-    }, [onResolveDuplicate, refreshData, duplicatesScope]);
+    const handleResolveDuplicate = useCallback(async (resolutions: ExactDuplicateResolution[]) => {
+        await onResolveDuplicate(resolutions);
+        const removedIds = new Set(resolutions.flatMap(resolution => resolution.removeIds));
+        setLocalDuplicateCandidates(previous => previous.filter(image => !removedIds.has(image.id)));
+        await refreshData('duplicates', false, { runHashBackfill: false });
+    }, [onResolveDuplicate, refreshData, setLocalDuplicateCandidates]);
 
     const handleUnmarkIntermediates = async () => {
         const ids = Array.from(selectedIds);
@@ -465,13 +459,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 images={localDuplicateCandidates}
                                 onResolve={handleResolveDuplicate}
                                 maskedKeywords={maskedKeywords}
-                                onRefresh={(scope) => {
-                                    setDuplicatesScope(scope);
-                                    refreshData('duplicates', true, { scope, runHashBackfill: true });
-                                }}
-                                scope={duplicatesScope}
+                                onRefresh={() => refreshData('duplicates', true, { runHashBackfill: true })}
                                 isScanning={isScanningDuplicates}
                                 scanProgress={duplicateScanProgress}
+                                scanResult={lastDuplicateScanResult}
                                 onCancelScan={cancelDuplicateScan}
                                 onViewImage={setViewingImageId}
                                 onCompareImages={(imageA, imageB) => setCompareImages([imageA, imageB])}
@@ -601,11 +592,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             <ScanPlaceholder
                                 tab={activeTab}
                                 onStartScan={(tab, scope) => {
-                                    if (tab === 'duplicates') {
-                                        setDuplicatesScope(scope);
-                                    }
                                     refreshData(tab, true, {
-                                        scope,
+                                        scope: tab === 'duplicates' ? 'global' : scope,
                                         includeUpgradeable: tab === 'thumbnails' ? includeUpgradeable : undefined,
                                         runHashBackfill: tab === 'duplicates'
                                     });

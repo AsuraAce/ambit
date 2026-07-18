@@ -17,7 +17,8 @@ const maintenanceDataMock = vi.hoisted(() => ({
     localIntermediateImages: [] as AIImage[],
     unoptimizedTotalCount: 0,
     refreshData: vi.fn().mockResolvedValue(undefined),
-    setLocalMissingImages: vi.fn()
+    setLocalMissingImages: vi.fn(),
+    setLocalDuplicateCandidates: vi.fn(),
 }));
 
 const imageRepoMock = vi.hoisted(() => ({
@@ -68,7 +69,8 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         localIntermediateImages: maintenanceDataMock.localIntermediateImages,
         unoptimizedTotalCount: maintenanceDataMock.unoptimizedTotalCount,
         refreshData: maintenanceDataMock.refreshData,
-        setLocalMissingImages: maintenanceDataMock.setLocalMissingImages
+        setLocalMissingImages: maintenanceDataMock.setLocalMissingImages,
+        setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
     })
 }));
 
@@ -200,19 +202,18 @@ vi.mock('./IntermediatesTab', () => ({
 }));
 
 vi.mock('./DuplicateFinder', () => ({
-    DuplicateFinder: ({ images, onResolve, onRefresh, onViewImage, onCompareImages, scope }: {
+    DuplicateFinder: ({ images, onResolve, onRefresh, onViewImage, onCompareImages }: {
         images: AIImage[];
-        onResolve: (keepId: string, deleteIds: string[]) => void;
-        onRefresh: (scope: 'global' | 'filtered') => void;
+        onResolve: (resolutions: Array<{ keepId: string; removeIds: string[] }>) => void;
+        onRefresh: () => void;
         onViewImage: (id: string) => void;
         onCompareImages: (first: AIImage, second: AIImage) => void;
-        scope: 'global' | 'filtered';
     }) => (
-        <div data-testid="duplicate-finder" data-scope={scope}>
+        <div data-testid="duplicate-finder">
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Duplicate Viewer</button>}
             {images.length > 1 && <button onClick={() => onCompareImages(images[0], images[1])}>Compare Duplicates</button>}
-            {images.length > 1 && <button onClick={() => onResolve(images[0].id, [images[1].id])}>Resolve Duplicates</button>}
-            <button onClick={() => onRefresh('filtered')}>Refresh Duplicates</button>
+            {images.length > 1 && <button onClick={() => onResolve([{ keepId: images[0].id, removeIds: [images[1].id] }])}>Resolve Duplicates</button>}
+            <button onClick={onRefresh}>Refresh Duplicates</button>
         </div>
     )
 }));
@@ -536,7 +537,7 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Tab duplicates'));
         fireEvent.click(await screen.findByText('Start duplicates Scan'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
-            scope: 'filtered',
+            scope: 'global',
             includeUpgradeable: undefined,
             runHashBackfill: true
         });
@@ -545,7 +546,6 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localDuplicateCandidates = [duplicateA, duplicateB];
         act(() => {
             useLibraryStore.setState({
-                duplicateScanScope: 'filtered',
                 lastDuplicateScanResult: {
                     scanned: 2,
                     updated: 2,
@@ -558,16 +558,17 @@ describe('MaintenanceView', () => {
         });
         view.rerender(<MaintenanceView {...view.props} />);
 
-        expect((await screen.findByTestId('duplicate-finder')).getAttribute('data-scope')).toBe('filtered');
+        expect(await screen.findByTestId('duplicate-finder')).toBeTruthy();
         fireEvent.click(screen.getByText('Resolve Duplicates'));
-        await waitFor(() => expect(onResolveDuplicate).toHaveBeenCalledWith('duplicate-a', ['duplicate-b']));
+        await waitFor(() => expect(onResolveDuplicate).toHaveBeenCalledWith([{
+            keepId: 'duplicate-a',
+            removeIds: ['duplicate-b'],
+        }]));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', false, {
-            scope: 'filtered',
             runHashBackfill: false
         });
         fireEvent.click(screen.getByText('Refresh Duplicates'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
-            scope: 'filtered',
             runHashBackfill: true
         });
 

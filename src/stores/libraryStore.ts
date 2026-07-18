@@ -170,8 +170,6 @@ export interface MaintenanceCounts {
     duplicates: number;
 }
 
-export type DuplicateScanScope = 'global' | 'filtered';
-
 interface LibraryState {
     // Sync State
     syncStatus: SyncStatus;
@@ -206,7 +204,6 @@ interface LibraryState {
     // Duplicate Scan State
     isScanningDuplicates: boolean;
     duplicateScanProgress: SyncProgress | null;
-    duplicateScanScope: DuplicateScanScope;
     lastDuplicateScanResult: FileHashBackfillResult | null;
 
     // Missing File Audit State
@@ -269,7 +266,6 @@ interface LibraryState {
     cancelDiscoveryScan: () => void;
     setIsScanningDuplicates: (val: boolean) => void;
     setDuplicateScanProgress: (progress: SyncProgress | null) => void;
-    setDuplicateScanScope: (scope: DuplicateScanScope) => void;
     setLastDuplicateScanResult: (result: FileHashBackfillResult | null) => void;
     cancelDuplicateScan: () => void;
     setIsScanningMissingFiles: (val: boolean) => void;
@@ -337,7 +333,6 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     discoveryScanProgress: null,
     isScanningDuplicates: false,
     duplicateScanProgress: null,
-    duplicateScanScope: 'global',
     lastDuplicateScanResult: null,
     isScanningMissingFiles: false,
     missingScanProgress: null,
@@ -547,7 +542,6 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     },
     setIsScanningDuplicates: (val) => set({ isScanningDuplicates: val, isActivityDockDismissed: val ? false : undefined }),
     setDuplicateScanProgress: (progress) => set({ duplicateScanProgress: progress }),
-    setDuplicateScanScope: (scope) => set({ duplicateScanScope: scope }),
     setLastDuplicateScanResult: (result) => set({ lastDuplicateScanResult: result }),
     cancelDuplicateScan: () => {
         commands.cancelImageFileHashBackfill().catch(console.error);

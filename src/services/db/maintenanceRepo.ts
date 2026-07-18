@@ -1,10 +1,20 @@
-import { commands, type FileHashBackfillResult } from '../../bindings';
+import {
+    commands,
+    type ExactDuplicateResolution,
+    type ExactDuplicateResolutionResult,
+    type FileHashBackfillResult,
+} from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import type { AIImage, MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
-import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+import {
+    getBrowserMockCollections,
+    getBrowserMockImages,
+    updateBrowserMockImage,
+    upsertBrowserMockCollection,
+} from '../browserMockData';
 
 interface ImagePathRow {
     id: string;
@@ -374,60 +384,149 @@ export const cancelImageFileHashBackfill = async (): Promise<void> => {
     await commands.cancelImageFileHashBackfill();
 };
 
-export const getDuplicateCandidates = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
+export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().slice(0, 6);
+        const eligible = getBrowserMockImages().filter(image => (
+            !image.isDeleted
+            && !image.isMissing
+            && !image.groupId
+            && !image.isIntermediate
+            && Boolean(image.fileHash?.trim())
+        ));
+        const hashCounts = eligible.reduce<Map<string, number>>((counts, image) => {
+            const hash = image.fileHash?.trim();
+            if (hash) counts.set(hash, (counts.get(hash) ?? 0) + 1);
+            return counts;
+        }, new Map());
+        return eligible.filter(image => (
+            hashCounts.get(image.fileHash?.trim() ?? '') ?? 0
+        ) > 1);
     }
 
     const db = await getDb();
-    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
-
     const query = `
-        WITH scoped AS (
-            SELECT id, file_hash, file_size, width, height
+        WITH eligible AS (
+            SELECT id, file_hash
             FROM images
-            ${baseWhere}
+            WHERE is_deleted = 0
+              AND is_missing = 0
+              AND group_id IS NULL
+              AND IFNULL(is_intermediate_gen, 0) = 0
+              AND file_hash IS NOT NULL
+              AND file_hash != ''
         ),
-        exact_duplicate_ids AS (
-            SELECT id
-            FROM scoped
-            WHERE file_hash IN (
-                SELECT file_hash
-                FROM scoped
-                WHERE file_hash IS NOT NULL AND file_hash != ''
-                GROUP BY file_hash
-                HAVING COUNT(*) > 1
-            )
-        ),
-        likely_duplicate_ids AS (
-            SELECT scoped.id
-            FROM scoped
-            JOIN (
-                SELECT file_size, width, height
-                FROM scoped
-                GROUP BY file_size, width, height
-                HAVING COUNT(*) > 1
-            ) dup ON scoped.file_size = dup.file_size
-                AND scoped.width = dup.width
-                AND scoped.height = dup.height
+        duplicate_hashes AS (
+            SELECT file_hash
+            FROM eligible
+            GROUP BY file_hash
+            HAVING COUNT(*) > 1
         )
         SELECT ${getImageFieldsLight()}
         FROM images
-        WHERE id IN (
-            SELECT id FROM exact_duplicate_ids
-            UNION
-            SELECT id FROM likely_duplicate_ids
-        )
+        WHERE id IN (SELECT id FROM eligible WHERE file_hash IN (SELECT file_hash FROM duplicate_hashes))
         ORDER BY file_hash DESC, file_size DESC, timestamp DESC
     `;
 
     try {
-        const rows = await db.select<ImageRow[]>(query, params);
+        const rows = await db.select<ImageRow[]>(query);
         return rows.map(mapRowToImage);
     } catch (e) {
         console.error('[DB] Failed to get duplicate candidates', e);
-        return [];
+        throw e;
     }
+};
+
+export const resolveExactDuplicateGroups = async (
+    resolutions: ExactDuplicateResolution[]
+): Promise<ExactDuplicateResolutionResult> => {
+    if (resolutions.length === 0) {
+        return { resolvedGroups: 0, removedIds: [], keepers: [] };
+    }
+
+    if (isBrowserMockMode()) {
+        const images = getBrowserMockImages();
+        const imagesById = new Map(images.map(image => [image.id, image]));
+        const seenIds = new Set<string>();
+        const validated = resolutions.map(resolution => {
+            const keeper = imagesById.get(resolution.keepId);
+            const keeperHash = keeper?.fileHash;
+            const keeperIsEligible = Boolean(
+                keeper
+                && !keeper.isDeleted
+                && !keeper.isMissing
+                && !keeper.groupId
+                && !keeper.isIntermediate
+                && keeperHash
+            );
+
+            if (!keeper || !keeperIsEligible || resolution.removeIds.length === 0) {
+                throw new Error('Duplicate set changed; run the scan again');
+            }
+            for (const id of [resolution.keepId, ...resolution.removeIds]) {
+                if (seenIds.has(id)) throw new Error('Duplicate resolution contains overlapping groups');
+                seenIds.add(id);
+            }
+
+            const removedImages = resolution.removeIds.map(id => imagesById.get(id));
+            if (removedImages.some(image => (
+                !image
+                || image.isDeleted
+                || image.isMissing
+                || Boolean(image.groupId)
+                || image.isIntermediate
+                || image.fileHash !== keeperHash
+            ))) {
+                throw new Error('Duplicate set changed; run the scan again');
+            }
+            const eligibleRemovedImages = removedImages.filter((image): image is AIImage => Boolean(image));
+            const explicitMasks = eligibleRemovedImages
+                .map(image => image.userMasked)
+                .filter((value): value is boolean => value !== undefined && value !== null);
+            const inheritedMask = explicitMasks.length > 0 && explicitMasks.every(value => value === explicitMasks[0])
+                ? explicitMasks[0]
+                : undefined;
+            const keeperState = {
+                id: keeper.id,
+                isFavorite: keeper.isFavorite || eligibleRemovedImages.some(image => image.isFavorite),
+                isPinned: Boolean(keeper.isPinned || eligibleRemovedImages.some(image => image.isPinned)),
+                userMasked: keeper.userMasked ?? inheritedMask ?? null,
+            };
+
+            return { resolution, keeper, keeperState };
+        });
+
+        const keepers: ExactDuplicateResolutionResult['keepers'] = [];
+        const removedIds: string[] = [];
+        for (const { resolution, keeper, keeperState } of validated) {
+            updateBrowserMockImage(keeper.id, {
+                isFavorite: keeperState.isFavorite,
+                isPinned: keeperState.isPinned,
+                userMasked: keeperState.userMasked ?? undefined,
+            });
+            resolution.removeIds.forEach(id => updateBrowserMockImage(id, { isDeleted: true }));
+
+            for (const collection of getBrowserMockCollections()) {
+                const imageIds = collection.imageIds ?? [];
+                const containsRemoved = resolution.removeIds.some(id => imageIds.includes(id));
+                const nextImageIds = containsRemoved
+                    ? [...new Set([...imageIds.filter(id => !resolution.removeIds.includes(id)), keeper.id])]
+                    : imageIds;
+                const customThumbnail = resolution.removeIds.includes(collection.customThumbnail ?? '')
+                    ? keeper.id
+                    : collection.customThumbnail;
+                if (nextImageIds !== imageIds || customThumbnail !== collection.customThumbnail) {
+                    upsertBrowserMockCollection({ ...collection, imageIds: nextImageIds, customThumbnail });
+                }
+            }
+
+            keepers.push(keeperState);
+            removedIds.push(...resolution.removeIds);
+        }
+
+        return { resolvedGroups: resolutions.length, removedIds, keepers };
+    }
+
+    return unwrap(commands.resolveExactDuplicateGroups(resolutions));
 };
 
 export const getMaintenanceCounts = async () => {
@@ -439,7 +538,7 @@ export const getMaintenanceCounts = async () => {
             intermediates: images.filter(image => image.isIntermediate || image.metadata.isIntermediate).length,
             missing: images.filter(image => image.isMissing).length,
             trash: images.filter(image => image.isDeleted).length,
-            duplicates: 6
+            duplicates: 0
         };
     }
 
