@@ -88,7 +88,13 @@ const flushSearchPopover = async () => {
     });
 };
 
-describe('SearchBar advanced date syntax guard', () => {
+const flushSearchReadiness = async () => {
+    await act(async () => {
+        await import('../../../../utils/searchQueryReadiness');
+    });
+};
+
+describe('SearchBar query readiness and trigger behavior', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
@@ -101,8 +107,9 @@ describe('SearchBar advanced date syntax guard', () => {
     it('keeps incomplete date syntax local and shows a hint', async () => {
         const harness = renderSearchBar();
         await flushSearchPopover();
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
 
-        fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
+        fireEvent.change(input, {
             target: { value: 'date:2026-' },
         });
 
@@ -111,11 +118,14 @@ describe('SearchBar advanced date syntax guard', () => {
         });
 
         expect(harness.setFilters).not.toHaveBeenCalled();
-        expect(screen.getByRole('status').textContent).toBe('Use ISO dates like date:2026-04 or before:2025');
+        expect(screen.getByRole('status').textContent).toBe('Use ISO dates like date:2026-04 or before:2025.');
+        expect(input.getAttribute('aria-invalid')).toBeNull();
+        expect(input.getAttribute('aria-describedby')?.split(' ')).toHaveLength(2);
     });
 
-    it('commits valid date syntax after the main debounce', () => {
+    it('commits valid date syntax after the main debounce', async () => {
         const harness = renderSearchBar();
+        await flushSearchReadiness();
 
         fireEvent.change(screen.getByRole('combobox', { name: 'Search in Library' }), {
             target: { value: 'date:2026-04' },
@@ -129,8 +139,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.getCurrentFilters().searchQuery).toBe('date:2026-04');
     });
 
-    it('does not submit invalid date syntax on Enter', () => {
+    it('does not submit invalid date syntax on Enter', async () => {
         const harness = renderSearchBar();
+        await flushSearchReadiness();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
 
         fireEvent.change(input, {
@@ -140,6 +151,27 @@ describe('SearchBar advanced date syntax guard', () => {
 
         expect(harness.setFilters).not.toHaveBeenCalled();
         expect(harness.searchProps.submitSearch).not.toHaveBeenCalled();
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+    });
+
+    it('preserves the applied query until an invalid draft is corrected', async () => {
+        const harness = renderSearchBar(createDefaultFilters({ searchQuery: 'portrait' }));
+        await flushSearchReadiness();
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
+
+        fireEvent.change(input, { target: { value: 'steps:many' } });
+        act(() => vi.advanceTimersByTime(600));
+
+        expect(harness.setFilters).not.toHaveBeenCalled();
+        expect(harness.getCurrentFilters().searchQuery).toBe('portrait');
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+
+        fireEvent.change(input, { target: { value: 'steps:30' } });
+        expect(input.getAttribute('aria-invalid')).toBeNull();
+        act(() => vi.advanceTimersByTime(499));
+        expect(harness.setFilters).not.toHaveBeenCalled();
+        act(() => vi.advanceTimersByTime(1));
+        expect(harness.getCurrentFilters().searchQuery).toBe('steps:30');
     });
 
     it('does not commit a date operator suggestion before a value exists', async () => {
@@ -173,8 +205,9 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.getCurrentFilters().searchQuery).toBe('after:2026');
     });
 
-    it('replaces a pending debounce and commits only the latest query', () => {
+    it('replaces a pending debounce and commits only the latest query', async () => {
         const harness = renderSearchBar();
+        await flushSearchReadiness();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
         fireEvent.change(input, { target: { value: 'first' } });
         fireEvent.change(input, { target: { value: 'second' } });
@@ -236,7 +269,7 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledTimes(1);
     });
 
-    it('selects suggestions with the pointer and clears suggestions for blank tokens', async () => {
+    it('suggests OR only after a valid positive-prompt operand', async () => {
         renderSearchBar();
         await flushSearchPopover();
         const input = screen.getByRole('combobox');
@@ -244,19 +277,36 @@ describe('SearchBar advanced date syntax guard', () => {
         fireEvent.click(screen.getByRole('option', { name: /lora:/ }));
         expect((input as HTMLInputElement).value).toBe('lora:');
         fireEvent.change(input, { target: { value: 'o' } });
+        expect(screen.queryByRole('option', { name: /OR/ })).toBeNull();
+        fireEvent.change(input, { target: { value: 'forest o' } });
         fireEvent.click(screen.getByRole('option', { name: /OR/ }));
-        expect((input as HTMLInputElement).value).toBe('OR ');
+        expect((input as HTMLInputElement).value).toBe('forest OR ');
         fireEvent.change(input, { target: { value: ' ' } });
         expect(screen.queryByText('Suggestions')).toBeNull();
     });
 
-    it('submits ordinary searches on Enter', () => {
+    it('submits ordinary searches on Enter', async () => {
         const harness = renderSearchBar();
+        await flushSearchReadiness();
         const input = screen.getByRole('combobox');
         fireEvent.change(input, { target: { value: 'portrait' } });
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(harness.setFilters).not.toHaveBeenCalled();
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');
+    });
+
+    it('expands over the toolbar without scaling and collapses on Escape', () => {
+        const harness = renderSearchBar();
+        const root = harness.container.firstElementChild;
+        const input = screen.getByRole('combobox');
+
+        expect(root?.className).toContain('absolute left-6 right-6');
+        expect(root?.className).toContain('max-w-lg');
+        expect(root?.className).not.toContain('scale-105');
+
+        act(() => input.focus());
+        fireEvent.keyDown(input, { key: 'Escape' });
+        expect(harness.searchProps.onBlur).toHaveBeenCalled();
     });
 
     it('clears the query, suggestions, and focuses the input', () => {
@@ -312,7 +362,7 @@ describe('SearchBar advanced date syntax guard', () => {
 
         expect(harness.setFilters).not.toHaveBeenCalled();
         expect(harness.onDraftPendingChange).toHaveBeenLastCalledWith(false);
-        expect(screen.getByRole('status').textContent).toBe('Press Enter to view matching images in Grid.');
+        expect(screen.getByRole('status').textContent).toBe('Press Enter to show results in Grid.');
 
         fireEvent.keyDown(input, { key: 'Enter' });
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');

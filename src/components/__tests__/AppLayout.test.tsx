@@ -450,7 +450,20 @@ describe('AppLayout', () => {
         expect(clearAllFilters).toHaveBeenCalled();
     });
 
-    it('dismisses the search-focus overlay', () => {
+    it('keeps standard search results unobscured while focused', () => {
+        const { container } = render(
+            <AppLayout
+                {...defaultProps}
+                isSearchFocused
+                searchProps={{ ...defaultProps.searchProps, isAiSearchEnabled: false }}
+            />
+        );
+
+        expect(container.querySelector('.absolute.inset-0.z-40.bg-black\\/60')).toBeNull();
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+    });
+
+    it('dims the workspace for focused AI search and dismisses the overlay', () => {
         const setIsSearchFocused = vi.fn();
         const blur = vi.fn();
         const { container } = render(
@@ -458,11 +471,15 @@ describe('AppLayout', () => {
                 {...defaultProps}
                 isSearchFocused
                 setIsSearchFocused={setIsSearchFocused}
-                searchProps={{ inputRef: { current: { blur } } } as any}
+                searchProps={{
+                    ...defaultProps.searchProps,
+                    inputRef: { current: { blur } },
+                    isAiSearchEnabled: true,
+                }}
             />
         );
 
-        const overlay = container.querySelector('.bg-black\\/60');
+        const overlay = container.querySelector('.absolute.inset-0.z-40.bg-black\\/60');
         expect(overlay).toBeTruthy();
         fireEvent.click(overlay as Element);
         expect(blur).toHaveBeenCalledOnce();
