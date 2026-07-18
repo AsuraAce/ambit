@@ -14,7 +14,6 @@ import {
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { updateImagesQueryCaches } from '../utils/imageQueryCache';
-import { resolveExactDuplicateGroups } from '../services/db/maintenanceRepo';
 import type { ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
 
 interface UseAppHandlersProps {
@@ -117,6 +116,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     const handleResolveDuplicate = async (resolutions: ExactDuplicateResolution[]) => {
         let result: ExactDuplicateResolutionResult;
         try {
+            const { resolveExactDuplicateGroups } = await import('../services/db/exactDuplicateRepo');
             result = await resolveExactDuplicateGroups(resolutions);
         } catch (error) {
             console.error('Failed to resolve exact duplicates', error);

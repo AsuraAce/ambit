@@ -37,7 +37,7 @@ vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheIncremental: (...args: any[]) => mockRebuildFacetCacheIncremental(...args),
 }));
 
-vi.mock('../../services/db/maintenanceRepo', () => ({
+vi.mock('../../services/db/exactDuplicateRepo', () => ({
     resolveExactDuplicateGroups: (...args: unknown[]) => mockResolveExactDuplicateGroups(...args),
 }));
 

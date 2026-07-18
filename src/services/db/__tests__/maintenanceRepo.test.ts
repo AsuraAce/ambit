@@ -613,7 +613,7 @@ describe('maintenanceRepo', () => {
         mocks.commands.resolveExactDuplicateGroups.mockResolvedValue(result);
         mocks.unwrap.mockImplementation(async (value: unknown) => value);
 
-        const { resolveExactDuplicateGroups } = await import('../maintenanceRepo');
+        const { resolveExactDuplicateGroups } = await import('../exactDuplicateRepo');
         await expect(resolveExactDuplicateGroups(resolutions)).resolves.toEqual(result);
 
         expect(mocks.commands.resolveExactDuplicateGroups).toHaveBeenCalledWith(resolutions);
@@ -628,7 +628,7 @@ describe('maintenanceRepo', () => {
             { id: 'remove-b', fileHash: 'changed', metadata: {} },
         ]);
 
-        const { resolveExactDuplicateGroups } = await import('../maintenanceRepo');
+        const { resolveExactDuplicateGroups } = await import('../exactDuplicateRepo');
         await expect(resolveExactDuplicateGroups([
             { keepId: 'keep-a', removeIds: ['remove-a'] },
             { keepId: 'keep-b', removeIds: ['remove-b'] },
