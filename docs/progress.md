@@ -1,6 +1,6 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-07
+Last reviewed: 2026-07-18
 
 ## Current State
 - The repo is currently on package version `0.6.4`; do not infer release publication status from this file alone.
@@ -19,9 +19,9 @@ Last reviewed: 2026-07-07
 - `src/bindings.ts` is generated from Rust command signatures during debug Tauri runs and should not be hand-edited.
 - Desktop persistence is intentionally split: SQLite stores image records and heavy metadata under Local AppData, `library.json` stores lightweight app settings and recent searches, and the OS keyring stores sensitive API keys.
 - `src/services/repository.ts` is not the shipping desktop persistence path; treat it as legacy or fallback code unless a dedicated cleanup task explicitly changes that contract.
-- Duplicate detection now treats same SHA-256 file content as an exact duplicate regardless of filename or path, and keeps metadata/dimensions/filesize matches as lower-confidence likely duplicates.
-- Duplicate maintenance scans backfill missing content hashes in the native backend as a cancellable Activity Dock task; imports are not blocked on content hashing and cancel an active duplicate hash pass.
-- Duplicate cleanup remains conservative: resolving duplicates removes redundant records from the Ambit library/Removed list flow rather than deleting files by default.
+- Duplicate detection treats same SHA-256 file content as an exact duplicate regardless of filename or path; metadata/dimensions/filesize-only “likely” groups are no longer surfaced.
+- Duplicate maintenance is a global scan. It backfills missing hashes in the native backend as a cancellable Activity Dock task without blocking imports, and reports cancelled/error-remnant scans as incomplete.
+- Duplicate cleanup is transactional and conservative: safe keeper state and collection memberships are merged, redundant records move through the Removed flow, and files are not deleted by default.
 
 ## Next Work
 - Add browser smoke tests for lazy-loaded app surfaces: settings, dashboard/statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editor.

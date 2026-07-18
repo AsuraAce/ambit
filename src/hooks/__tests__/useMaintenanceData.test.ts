@@ -91,7 +91,7 @@ describe('useMaintenanceData', () => {
             await result.current.refreshData('duplicates', true, { scope: 'global' });
         });
 
-        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('', []);
+        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith();
         expect(mockBackfillImageFileHashes).toHaveBeenCalled();
     });
 
@@ -168,11 +168,11 @@ describe('useMaintenanceData', () => {
             await result.current.refreshData('duplicates', false, { runHashBackfill: false });
         });
 
-        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('', []);
+        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith();
         expect(mockBackfillImageFileHashes).not.toHaveBeenCalled();
     });
 
-    it('refreshes candidates and clears scan state after hash backfill succeeds', async () => {
+    it('refreshes global candidates and clears scan state after hash backfill succeeds', async () => {
         mockGetDuplicateCandidates
             .mockResolvedValueOnce([{ id: 'before' }])
             .mockResolvedValueOnce([{ id: 'after' }]);
@@ -183,7 +183,7 @@ describe('useMaintenanceData', () => {
             await waitFor(() => expect(mockGetDuplicateCandidates).toHaveBeenCalledTimes(2));
         });
 
-        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('WHERE x=1', [1]);
+        expect(mockGetDuplicateCandidates).toHaveBeenCalledWith();
         expect(result.current.localDuplicateCandidates).toEqual([{ id: 'after' }]);
         expect(useLibraryStore.getState().isScanningDuplicates).toBe(false);
         expect(useLibraryStore.getState().duplicateScanProgress).toBeNull();
@@ -199,7 +199,25 @@ describe('useMaintenanceData', () => {
             await waitFor(() => expect(useLibraryStore.getState().isScanningDuplicates).toBe(false));
         });
 
-        expect(error).toHaveBeenCalledWith('Failed to run duplicate hash scan', expect.any(Error));
+        expect(error).toHaveBeenCalledWith('Failed to complete duplicate scan', expect.any(Error));
+        expect(useLibraryStore.getState().lastDuplicateScanResult).toMatchObject({ errors: 1, remaining: 1 });
+        error.mockRestore();
+    });
+
+    it('marks a duplicate candidate query failure incomplete and releases scan state', async () => {
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockGetDuplicateCandidates.mockRejectedValueOnce(new Error('sqlite busy'));
+        const { result } = renderHook(() => useMaintenanceData('untagged', 'global'));
+
+        await act(async () => {
+            await result.current.refreshData('duplicates');
+        });
+
+        expect(mockBackfillImageFileHashes).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().isScanningDuplicates).toBe(false);
+        expect(useLibraryStore.getState().duplicateScanProgress).toBeNull();
+        expect(useLibraryStore.getState().lastDuplicateScanResult).toMatchObject({ errors: 1, remaining: 1 });
+        expect(error).toHaveBeenCalledWith('Failed to refresh maintenance data', expect.any(Error));
         error.mockRestore();
     });
 
@@ -226,13 +244,12 @@ describe('useMaintenanceData', () => {
                 errors: 0,
                 remaining: 0,
                 wasCancelled: false
-            },
-            duplicateScanScope: 'filtered'
+            }
         });
 
         renderHook(() => useMaintenanceData('duplicates', 'global'));
 
-        await waitFor(() => expect(mockGetDuplicateCandidates).toHaveBeenCalledWith('WHERE x=1', [1]));
+        await waitFor(() => expect(mockGetDuplicateCandidates).toHaveBeenCalledWith());
         expect(mockBackfillImageFileHashes).not.toHaveBeenCalled();
     });
 });
