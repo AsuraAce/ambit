@@ -351,7 +351,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             >
                 <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.08),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.15),transparent_60%)] z-10" />
 
-                {isSearchFocused && (
+                {isSearchFocused && searchProps.isAiSearchEnabled && (
                     <div
                         className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
                         onClick={() => {
