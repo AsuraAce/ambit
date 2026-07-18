@@ -5,6 +5,26 @@ Last reviewed: 2026-07-07
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Maintenance Query Ownership
+Status: Deferred
+
+### Why Cleanup Is Needed
+- `useMaintenanceData` owns six independent async datasets with local state, request identity, retry state, and tab-specific initialization rules.
+- The hook now deduplicates matching pending requests and prevents older responses from replacing newer tab data, but this bookkeeping overlaps with capabilities already used elsewhere through React Query.
+
+### Suggested Future Direction
+- Move maintenance reads to stable React Query keys that include tab, filter scope, SQL parameters, and thumbnail options.
+- Preserve manual-scan semantics for duplicates and other expensive maintenance jobs; a query migration should not make those run automatically.
+- Keep last-successful-data and inline retry behavior while consolidating invalidation after restore, delete, repair, and duplicate-resolution actions.
+
+### Not Part of the Current Task
+- Do not combine tab loading stabilization with a broad async-state migration.
+- Do not change Tauri commands, generated bindings, or thumbnail ownership as part of this cleanup.
+
+### Related Code
+- `src/hooks/useMaintenanceData.ts`
+- `src/features/maintenance/components/MaintenanceView.tsx`
+
 ## Collection and Smart Count Performance
 Status: Deferred
 
