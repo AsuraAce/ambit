@@ -4,6 +4,11 @@ import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
+const BUTTON_BASE_CLASS = "p-2 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50";
+const NEUTRAL_BUTTON_CLASS = `${BUTTON_BASE_CLASS} text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10`;
+const ACTIVE_FAVORITE_BUTTON_CLASS = `${BUTTON_BASE_CLASS} text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20`;
+const ACTIVE_PIN_BUTTON_CLASS = `${BUTTON_BASE_CLASS} text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 hover:bg-sage-50 dark:hover:bg-sage-900/20`;
+
 interface SelectionBarProps {
     selectedIds: Set<string>;
     filteredImages: AIImage[];
@@ -51,6 +56,8 @@ export function SelectionBar({
     const selectedImages = filteredImages.filter(img => selectedIds.has(img.id));
     const allFavorite = selectedImages.length > 0 && selectedImages.every(img => img.isFavorite);
     const allPinned = selectedImages.length > 0 && selectedImages.every(img => img.isPinned);
+    const favoritePressed: boolean | 'mixed' = allFavorite ? true : selectedImages.some(img => img.isFavorite) ? 'mixed' : false;
+    const pinPressed: boolean | 'mixed' = allPinned ? true : selectedImages.some(img => img.isPinned) ? 'mixed' : false;
 
     const allUserMasked = selectedImages.every(img => img.userMasked === true);
     const allUserUnmasked = selectedImages.every(img => img.userMasked === false);
@@ -61,40 +68,36 @@ export function SelectionBar({
 
     let nextState: boolean | null = null;
     let nextLabel = "Reset All to Auto Mask";
-    let nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
-    let buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10";
+    let nextIcon = <EyeOff className="w-5 h-5" />;
+    let buttonClass = NEUTRAL_BUTTON_CLASS;
 
     if (allAuto) {
         // From Auto -> Mask (Skip if already masked by keyword)
         if (allCurrentlyMasked) {
             nextState = false;
             nextLabel = "Force Unmask All Content";
-            nextIcon = <Eye className="w-5 h-5 text-green-400" />;
-            buttonClass = "text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20";
+            nextIcon = <Eye className="w-5 h-5" />;
         } else {
             nextState = true;
             nextLabel = "Force Mask All Content";
-            nextIcon = <EyeOff className="w-5 h-5 text-amethyst-400" />;
-            buttonClass = "text-amethyst-500 hover:bg-amethyst-50 dark:hover:bg-amethyst-900/20";
+            nextIcon = <EyeOff className="w-5 h-5" />;
         }
     } else if (allUserMasked) {
         // From Masked -> Unmasked
         nextState = false;
         nextLabel = "Unmask All Content";
-        nextIcon = <Eye className="w-5 h-5 text-green-400" />;
-        buttonClass = "text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20";
+        nextIcon = <Eye className="w-5 h-5" />;
     } else if (allUserUnmasked) {
         // From Unmasked -> Auto
         nextState = null;
         nextLabel = "Reset All to Auto Mask";
-        nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
-        buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10";
+        nextIcon = <EyeOff className="w-5 h-5" />;
     } else {
         // Mixed State -> Consolidate to Auto first
         nextState = null;
         nextLabel = "Consolidate: Reset All to Auto Mask";
-        nextIcon = <EyeOff className="w-5 h-5 text-gray-400" />;
-        buttonClass = "text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 transition-all border border-dashed border-gray-300 dark:border-white/20";
+        nextIcon = <EyeOff className="w-5 h-5" />;
+        buttonClass = `${NEUTRAL_BUTTON_CLASS} border border-dashed border-gray-300 dark:border-white/20`;
     }
 
     return (
@@ -106,45 +109,45 @@ export function SelectionBar({
                 </div>
 
                 {selectedIds.size === 2 && (
-                    <TooltipButton label="Compare Selected Images" content="Compare Selected Images" onClick={onCompare} className="p-2 text-sage-600 dark:text-sage-400 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
+                    <TooltipButton label="Compare Selected Images" content="Compare Selected Images" onClick={onCompare} className={NEUTRAL_BUTTON_CLASS}>
                         <SplitSquareHorizontal className="w-5 h-5" />
                     </TooltipButton>
                 )}
 
-                <TooltipButton label={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} content={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} aria-pressed={allFavorite} onClick={onToggleFavorite} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors">
-                    <Heart className="w-5 h-5" />
+                <TooltipButton label={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} content={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} aria-pressed={favoritePressed} onClick={onToggleFavorite} className={allFavorite ? ACTIVE_FAVORITE_BUTTON_CLASS : NEUTRAL_BUTTON_CLASS}>
+                    <Heart className={`w-5 h-5 ${allFavorite ? 'fill-current' : ''}`} />
                 </TooltipButton>
-                <TooltipButton label={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} content={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} aria-pressed={allPinned} onClick={onTogglePin} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
-                    <Pin className="w-5 h-5" />
+                <TooltipButton label={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} content={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} aria-pressed={pinPressed} onClick={onTogglePin} className={allPinned ? ACTIVE_PIN_BUTTON_CLASS : NEUTRAL_BUTTON_CLASS}>
+                    <Pin className={`w-5 h-5 ${allPinned ? 'fill-current' : ''}`} />
                 </TooltipButton>
                 <TooltipButton
                     label={nextLabel}
                     content={nextLabel}
                     onClick={() => onToggleMask(undefined, nextState)}
-                    className={`p-2 rounded-full transition-colors ${buttonClass}`}
+                    className={buttonClass}
                 >
                     {nextIcon}
                 </TooltipButton>
 
-                <TooltipButton label="Add Selected to Collection" content="Add Selected to Collection" onClick={onAddToCollection} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors">
+                <TooltipButton label="Add Selected to Collection" content="Add Selected to Collection" onClick={onAddToCollection} className={NEUTRAL_BUTTON_CLASS}>
                     <Folder className="w-5 h-5" />
                 </TooltipButton>
                 {activeCollectionId && onRemoveFromCollection && (
-                    <TooltipButton label="Remove Selected from Collection" content="Remove Selected from Collection" onClick={onRemoveFromCollection} className="p-2 text-red-500/80 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors">
+                    <TooltipButton label="Remove Selected from Collection" content="Remove Selected from Collection" onClick={onRemoveFromCollection} className={NEUTRAL_BUTTON_CLASS}>
                         <FolderMinus className="w-5 h-5" />
                     </TooltipButton>
                 )}
 
 
-                <TooltipButton label="Export Selected Images" content="Export Selected Images" onClick={onExport} disabled={isExporting} className="p-2 text-gray-500 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors disabled:opacity-50">
+                <TooltipButton label="Export Selected Images" content="Export Selected Images" onClick={onExport} disabled={isExporting} className={`${NEUTRAL_BUTTON_CLASS} disabled:opacity-50`}>
                     <Share className="w-5 h-5" />
                 </TooltipButton>
 
-                <TooltipButton label="Remove Selected from Library" content="Remove Selected from Library" onClick={onDelete} className="p-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors">
+                <TooltipButton label="Remove Selected from Library" content="Remove Selected from Library" onClick={onDelete} className="p-2 text-red-500/70 dark:text-red-400/80 hover:text-red-700 dark:hover:text-red-200 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50">
                     <Trash2 className="w-5 h-5" />
                 </TooltipButton>
 
-                <button type="button" aria-label="Clear Selection" onClick={onClearSelection} className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors ml-1">
+                <button type="button" aria-label="Clear Selection" onClick={onClearSelection} className="p-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 ml-1">
                     <X className="w-5 h-5" />
                 </button>
             </div>
