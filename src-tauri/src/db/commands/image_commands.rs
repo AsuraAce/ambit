@@ -1930,6 +1930,61 @@ mod tests {
     }
 
     #[test]
+    fn save_images_batch_routes_reparsed_invoke_t2i_adapters_to_controlnet_junction() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let original = r#"{
+            "t2iAdapters": [
+                { "model": { "name": "t2iadapter_depth_sd15v2.pth" } },
+                "T2I-Adapter-Canny-SDXL-1.0.safetensors"
+            ]
+        }"#;
+        let reparsed = crate::metadata::reparse::reparse_from_json(original, "InvokeAI")
+            .expect("reparse InvokeAI metadata");
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record(
+                "invoke-t2i",
+                100,
+                200,
+                &reparsed.metadata_json,
+            )],
+        )
+        .expect("save reparsed image");
+
+        let controlnet_rows: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT controlnet_name FROM image_controlnets
+                     WHERE image_id = 'invoke-t2i' ORDER BY controlnet_name",
+                )
+                .expect("prepare controlnet query");
+            stmt.query_map([], |row| row.get(0))
+                .expect("query controlnets")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect controlnets")
+        };
+        let ipadapter_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_ipadapters WHERE image_id = 'invoke-t2i'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ip-adapter count");
+
+        assert_eq!(
+            controlnet_rows,
+            vec![
+                "t2i_adapter_canny_sdxl_1.0".to_string(),
+                "t2iadapter_depth_sd15v2".to_string(),
+            ]
+        );
+        assert_eq!(ipadapter_count, 0);
+    }
+
+    #[test]
     fn save_images_batch_replaces_existing_junction_rows_when_metadata_changes() {
         let conn = Connection::open_in_memory().expect("in-memory db");
 

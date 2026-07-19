@@ -125,12 +125,13 @@ pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
             .or_else(|| c.get("model_name").and_then(|v| v.as_str()))
             .or_else(|| {
                 c.get("model").and_then(|m| {
-                    m.get("model_name")
-                        .and_then(|v| v.as_str())
+                    m.as_str()
+                        .or_else(|| m.get("model_name").and_then(|v| v.as_str()))
                         // v5.x: model.name
                         .or_else(|| m.get("name").and_then(|v| v.as_str()))
                 })
             })
+            .or_else(|| c.get("name").and_then(|v| v.as_str()))
             .or_else(|| c.as_str()); // Handle string value direct
 
         if let Some(n) = name {
@@ -163,6 +164,45 @@ pub fn extract_controlnets(val: &serde_json::Value, res: &mut Resources) {
     if let Some(arr) = val.as_array() {
         for c in arr {
             process_item(c, res);
+        }
+    } else {
+        process_item(val, res);
+    }
+}
+
+pub fn extract_t2i_adapters(val: &serde_json::Value, res: &mut Resources) {
+    let process_item = |item: &serde_json::Value, res: &mut Resources| {
+        let name = item
+            .get("t2i_adapter_model")
+            .and_then(|model| {
+                model
+                    .as_str()
+                    .or_else(|| model.get("model_name").and_then(|value| value.as_str()))
+                    .or_else(|| model.get("name").and_then(|value| value.as_str()))
+            })
+            .or_else(|| {
+                item.get("model").and_then(|model| {
+                    model
+                        .as_str()
+                        .or_else(|| model.get("model_name").and_then(|value| value.as_str()))
+                        .or_else(|| model.get("name").and_then(|value| value.as_str()))
+                })
+            })
+            .or_else(|| item.get("model_name").and_then(|value| value.as_str()))
+            .or_else(|| item.get("name").and_then(|value| value.as_str()))
+            .or_else(|| item.as_str());
+
+        if let Some(name) = name {
+            let cleaned = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
+            if !cleaned.is_empty() && !res.control_nets.contains(&cleaned) {
+                res.control_nets.push(cleaned);
+            }
+        }
+    };
+
+    if let Some(items) = val.as_array() {
+        for item in items {
+            process_item(item, res);
         }
     } else {
         process_item(val, res);
@@ -263,6 +303,11 @@ fn scan_for_resources_inner(
             if let Some(cns) = map.get("control_model") {
                 extract_controlnets(cns, res);
             }
+            for key in ["t2iAdapters", "t2i_adapters", "t2i_adapter"] {
+                if let Some(adapters) = map.get(key) {
+                    extract_t2i_adapters(adapters, res);
+                }
+            }
             if let Some(ips) = map.get("ip_adapters") {
                 extract_ipadapters(ips, res);
             }
@@ -354,6 +399,27 @@ mod tests {
         assert!(res
             .control_nets
             .contains(&"control_v11f1p_sd15_depth".to_string()));
+    }
+
+    #[test]
+    fn test_extract_t2i_adapters_always_uses_control_resources() {
+        let mut res = Resources::default();
+        let payload = json!([
+            { "model": { "name": "T2I-Adapter-Face.safetensors" } },
+            { "t2i_adapter_model": "t2iadapter_depth_sd15v2.pth" },
+            "T2I-Adapter-Face.safetensors"
+        ]);
+
+        extract_t2i_adapters(&payload, &mut res);
+
+        assert_eq!(
+            res.control_nets,
+            vec![
+                "t2i_adapter_face".to_string(),
+                "t2iadapter_depth_sd15v2".to_string()
+            ]
+        );
+        assert!(res.ip_adapters.is_empty());
     }
 
     #[test]

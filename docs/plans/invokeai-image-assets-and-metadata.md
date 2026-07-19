@@ -236,7 +236,29 @@ Completion criteria:
 
 Depends on: Work Package 2.
 
-Status: Pending
+Status: Complete (`codex/invokeai-image-assets`, `2026-07-19`)
+
+Evidence:
+
+- the Rust parser and TypeScript mapper now agree on VAE descriptors, open
+  generation-mode strings, numeric-string values, zero-preserving CFG
+  precedence (`cfg_scale`, `guidance`, `cfg`), and denoising precedence
+  (`denoising_strength`, `denoisingStrength`, `hrf_strength`);
+- the metadata worker now reuses the shared InvokeAI mapper and preserves an
+  explicit generation mode instead of replacing it with path inference;
+- camelCase, snake_case, and legacy T2I adapter keys accept string, descriptor,
+  and nested-model forms, normalize and deduplicate their model names, and
+  enter the established control-resource taxonomy without accidental
+  IP-Adapter routing;
+- parser version 26 reparses existing InvokeAI records, and a native database
+  regression confirms reparsed T2I resources populate `image_controlnets` but
+  not `image_ipadapters`;
+- 78 focused frontend mapper/worker tests and focused Rust parser, resource,
+  reparse, guidance, and resource-junction tests pass;
+- the complete release gate passes: version and generated-binding checks,
+  lint, typecheck, build guard, 2,827 frontend tests with one skipped, 492 Rust
+  tests, coverage, and the no-bundle Tauri production build; the guarded
+  initial bundle is 434 kB and the metadata worker is 18.09 kB.
 
 Primary invariant: the Rust parser, frontend mapper, and worker fallback agree
 on high-value InvokeAI generation fields.

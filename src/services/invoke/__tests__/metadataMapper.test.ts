@@ -85,6 +85,60 @@ describe('metadataMapper', () => {
         expect(generationResult).toMatchObject({ isFavorite: true, sampler: 'ddim' });
     });
 
+    it('normalizes high-value generation fields and T2I adapters with stable precedence', () => {
+        const result = mapRawInvokeMetadata({
+            generation: {
+                cfg_scale: '0',
+                guidance: 4.5,
+                cfg: 8,
+                denoising_strength: '0',
+                denoisingStrength: 0.25,
+                hrf_strength: 0.6,
+                generation_mode: 'sdxl_txt2img',
+                vae: { name: 'FLUX.1-schnell_ae', type: 'vae' },
+                t2iAdapters: [
+                    { model: { name: 'T2I-Adapter-Canny-SDXL-1.0.safetensors' } },
+                    't2iadapter_depth_sd15v2.pth'
+                ],
+                t2i_adapters: [
+                    {
+                        t2i_adapter_model: { model_name: 't2iadapter_sketch_sd15v2.ckpt' }
+                    },
+                    't2iadapter_depth_sd15v2.pth'
+                ]
+            }
+        });
+
+        expect(result).toMatchObject({
+            cfg: 0,
+            denoisingStrength: 0,
+            generationType: 'sdxl_txt2img',
+            vae: 'FLUX.1-schnell_ae',
+            controlNets: [
+                't2i_adapter_canny_sdxl_1.0',
+                't2iadapter_depth_sd15v2',
+                't2iadapter_sketch_sd15v2'
+            ],
+            ipAdapters: []
+        });
+    });
+
+    it('falls back through guidance, legacy cfg, hrf strength, and open generation modes', () => {
+        expect(mapRawInvokeMetadata({
+            guidance: '3.5',
+            cfg: 7,
+            hrf_strength: '0.45',
+            generationType: 'flux_txt2img',
+            vae: 'vae-ft-mse-840000-ema-pruned.ckpt'
+        })).toMatchObject({
+            cfg: 3.5,
+            denoisingStrength: 0.45,
+            generationType: 'flux_txt2img',
+            vae: 'vae-ft-mse-840000-ema-pruned.ckpt'
+        });
+        expect(mapRawInvokeMetadata({ cfg: '6.25' }).cfg).toBe(6.25);
+    });
+
     it('discovers workflows and hashes across legacy storage locations', () => {
         expect(mapRawInvokeMetadata({ workflow: 'root-workflow' }).workflowJson).toBe('root-workflow');
         expect(mapRawInvokeMetadata({ graph: { nodes: [] } }).workflowJson).toBe('{"nodes":[]}');

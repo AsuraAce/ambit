@@ -46,6 +46,17 @@ export function cleanModelName(name: string): string {
         .trim();
 }
 
+function cleanGuidanceResourceName(name: string): string {
+    const basename = name.split(/[\\/]/).pop() || name;
+    return basename
+        .replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '')
+        .split('(')[0]
+        .toLowerCase()
+        .replace(/ /g, '_')
+        .replace(/-/g, '_')
+        .trim();
+}
+
 function extractEmbeddingsFromPrompt(text: string): string[] {
     if (!text) return [];
     // Matches: 
@@ -182,6 +193,32 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
                 }
             });
         }
+    });
+
+    // T2I adapters share Ambit's control-resource taxonomy, but retain their
+    // source-aware classification instead of being redirected as IP adapters.
+    const t2iKeys = ['t2iAdapters', 't2i_adapters', 't2i_adapter'];
+    t2iKeys.forEach(key => {
+        const adapters = obj[key];
+        if (!adapters) return;
+
+        const items = Array.isArray(adapters) ? adapters : [adapters];
+        items.forEach(item => {
+            if (!item) return;
+            let name = '';
+            if (typeof item === 'string') {
+                name = item;
+            } else {
+                const record = asRecord(item);
+                const explicitModel = record.t2i_adapter_model;
+                if (typeof explicitModel === 'string') name = explicitModel;
+                else if (isRecord(explicitModel)) name = readResourceName(explicitModel);
+                else name = readResourceName(record);
+            }
+
+            const cleaned = cleanGuidanceResourceName(name);
+            if (cleaned && !res.controlNets.includes(cleaned)) res.controlNets.push(cleaned);
+        });
     });
 
     // Check for IP-Adapters
@@ -363,7 +400,7 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     if (positivePrompt) mapped.positivePrompt = positivePrompt.trim();
     if (negativePrompt) mapped.negativePrompt = negativePrompt.trim();
     mapped.steps = readNumber(actualRoot, 'steps') ?? mapped.steps;
-    mapped.cfg = readNumber(actualRoot, 'cfg_scale', 'cfg') ?? mapped.cfg;
+    mapped.cfg = readNumber(actualRoot, 'cfg_scale', 'guidance', 'cfg') ?? mapped.cfg;
     mapped.seed = readNumber(actualRoot, 'seed') ?? mapped.seed;
     // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
     const sampler = readString(actualRoot, 'scheduler', 'sampler', 'sampler_name');
@@ -382,11 +419,15 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
 
     // Additional fields for parity with Rust ImageMetadata
     mapped.clipSkip = readNumber(actualRoot, 'clip_skip', 'clipSkip') ?? mapped.clipSkip;
-    mapped.denoisingStrength = readNumber(actualRoot, 'hrf_strength', 'denoisingStrength') ?? mapped.denoisingStrength;
+    mapped.denoisingStrength = readNumber(actualRoot, 'denoising_strength', 'denoisingStrength', 'hrf_strength') ?? mapped.denoisingStrength;
     const hiresUpscaler = readString(actualRoot, 'hrf_method', 'hiresUpscaler');
     if (hiresUpscaler) mapped.hiresUpscaler = hiresUpscaler;
     const generationType = readString(actualRoot, 'generation_mode', 'generationType', 'type');
-    if (generationType) mapped.generationType = generationType as ImageMetadata['generationType'];
+    if (generationType) mapped.generationType = generationType;
+
+    const vaeValue = actualRoot.vae;
+    const vae = typeof vaeValue === 'string' ? vaeValue : readResourceName(asRecord(vaeValue));
+    if (vae.trim()) mapped.vae = vae.trim();
 
     // Check for favorite status in legacy formats
     if (actualRoot.subject === 'favorite' || actualRoot.isFavorite) mapped.isFavorite = true;
@@ -409,7 +450,7 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
 
     // Deep scan for resources (LoRAs, ControlNets, IP-Adapters, Embeddings, Hypernets)
     const resources: Resources = { loras: [], controlNets: [], ipAdapters: [], embeddings: [], hypernetworks: [] };
-    scanForResources(actualRoot, resources);
+    scanForResources(rootRecord, resources);
 
     mapped.loras = resources.loras;
     mapped.controlNets = resources.controlNets;

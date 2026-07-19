@@ -395,16 +395,24 @@ describe('Metadata Worker Tests', () => {
             const response = await sendWorkerMessage({
                 requestId: 'invoke-request',
                 filename: 'invoke.png',
-                path: 'D:/Invoke/outputs/images/invoke.png',
+                path: 'D:/Invoke/outputs/txt2img/invoke.png',
                 chunks: {
                     invokeai_metadata: JSON.stringify({
                         positive_prompt: 'invoke prompt',
                         negative_prompt: 'invoke negative',
                         seed: 123,
                         steps: 28,
-                        cfg_scale: 6.5,
+                        cfg_scale: 0,
+                        guidance: 6.5,
+                        cfg: 8,
+                        denoising_strength: 0,
                         sampler_name: 'dpmpp_2m',
                         model: { model_name: 'Invoke Model' },
+                        vae: { name: 'Invoke VAE' },
+                        generation_mode: 'sdxl_txt2img',
+                        t2iAdapters: [
+                            { model: { name: 'T2I-Adapter-Canny-SDXL.safetensors' } }
+                        ],
                         loras: [
                             'string-lora',
                             { model: { name: 'model-lora' } },
@@ -425,11 +433,14 @@ describe('Metadata Worker Tests', () => {
                     negativePrompt: 'invoke negative',
                     seed: 123,
                     steps: 28,
-                    cfg: 6.5,
+                    cfg: 0,
+                    denoisingStrength: 0,
                     sampler: 'dpmpp_2m',
                     model: 'Invoke Model',
+                    vae: 'Invoke VAE',
+                    controlNets: ['t2i_adapter_canny_sdxl'],
                     workflowJson: JSON.stringify({ nodes: [] }),
-                    generationType: 'unknown'
+                    generationType: 'sdxl_txt2img'
                 }
             });
             expect((response.metadata as { loras?: string[] }).loras).toEqual([
@@ -461,7 +472,7 @@ describe('Metadata Worker Tests', () => {
                 metadata: {
                     tool: GeneratorTool.INVOKEAI,
                     model: 'String Model',
-                    loras: ['Unknown LoRA', 'lora-name'],
+                    loras: ['lora-name'],
                     workflowJson: 'graph-json'
                 }
             });
@@ -490,7 +501,7 @@ describe('Metadata Worker Tests', () => {
                 filename: 'invoke.png',
                 chunks: { invokeai_metadata: JSON.stringify({ model: {} }) }
             });
-            expect(unknown).toMatchObject({ metadata: { model: 'Unknown Model' } });
+            expect(unknown).toMatchObject({ metadata: { model: 'Unknown' } });
         });
 
         it('uses a valid default generator and uppercase parameter chunk', async () => {
