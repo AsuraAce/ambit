@@ -53,9 +53,6 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
-- `video_bernini_r_image_editing.chunks.json`: the selected system prompt is
-  recovered through `CustomCombo.INDEX`, while total steps and the scheduler
-  remain behind `SplitSigmas`.
 
 ## Phase 22 Intake
 

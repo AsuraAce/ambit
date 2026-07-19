@@ -123,7 +123,7 @@ Verification evidence:
 
 Depends on: Work Packages 1 and 2.
 
-Status: Pending (`fix/comfyui-split-sigmas-scheduler`)
+Status: Complete (`fix/comfyui-split-sigmas-scheduler`, 2026-07-19)
 
 Primary invariant: a sigma split position controls staging but never
 masquerades as the generation step count.
@@ -158,6 +158,16 @@ Completion criteria:
 - Bernini metadata and provenance are exact;
 - unresolved, cyclic, and disconnected schedule paths fail closed;
 - parser version and manifest totals are correct.
+
+Verification evidence:
+
+- `cargo test metadata::comfyui::tests::multi_stage`: 55 passed;
+- `cargo test metadata::comfyui::tests::official_catalog`: 27 passed;
+- `cargo test metadata::comfyui::tests::template_coverage`: 3 passed;
+- graph-source, workflow-subgraph, and output-selection suites: 33 passed;
+- `cargo test metadata::comfyui`: 239 passed, 1 ignored;
+- `cargo test metadata::reparse`: 10 passed;
+- `cargo fmt --check` and `git diff --check`: passed.
 
 ## Work Package 4: Integration Review and Closure
 
