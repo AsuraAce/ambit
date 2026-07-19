@@ -4,9 +4,9 @@ use super::eval_utils::{
     evaluate_string, evaluate_string_link_first, get_source_id,
 };
 use super::graph::{
-    get_input_connection, get_node_input_link, get_node_param, get_node_type,
+    get_input_connection, get_input_source, get_node_input_link, get_node_param, get_node_type,
     get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
-    get_switch_branch_source, ComfyGraph, InputConnection,
+    get_switch_branch_source, ComfyGraph, InputConnection, InputSource, InputSourceConnection,
 };
 use crate::metadata::utils::{
     extract_explicit_embeddings_from_prompt, extract_hypernets_from_prompt,
@@ -77,40 +77,34 @@ pub fn extract_from_sampler(
     }
 
     if meta.steps == 0 || sampler.is_empty() || scheduler.is_empty() {
-        let sigmas_id = if is_sampler_custom {
-            get_strict_source_id(node, "sigmas")
+        let sigmas_node = if is_sampler_custom {
+            resolve_sampler_custom_scheduler(graph, node)
         } else {
-            get_source_id(graph, node, "sigmas")
+            get_source_id(graph, node, "sigmas").and_then(|sigmas_id| graph.get_node(&sigmas_id))
         };
-        if let Some(sigmas_id) = sigmas_id {
-            let sigmas_node = if is_sampler_custom {
-                resolve_transparent_reroutes(graph, &sigmas_id)
-            } else {
-                graph.get_node(&sigmas_id)
-            };
-            if let Some(sigmas_node) = sigmas_node {
-                let supports_scheduler_metadata = get_node_type(sigmas_node) != "SplitSigmas";
-                if meta.steps == 0 && supports_scheduler_metadata {
-                    let steps = if is_sampler_custom {
-                        evaluate_number_link_first(graph, sigmas_node, "steps", 500)
-                    } else {
-                        evaluate_number(graph, sigmas_node, "steps", 500)
-                    };
-                    if let Some(v) = steps {
-                        meta.steps = v as u32;
-                    }
+        if let Some(sigmas_node) = sigmas_node {
+            let supports_scheduler_metadata =
+                is_sampler_custom || get_node_type(sigmas_node) != "SplitSigmas";
+            if meta.steps == 0 && supports_scheduler_metadata {
+                let steps = if is_sampler_custom {
+                    evaluate_number_link_first(graph, sigmas_node, "steps", 500)
+                } else {
+                    evaluate_number(graph, sigmas_node, "steps", 500)
+                };
+                if let Some(v) = steps {
+                    meta.steps = v as u32;
                 }
-                if scheduler.is_empty() && supports_scheduler_metadata {
-                    let scheduler_value = if is_sampler_custom {
-                        evaluate_string_link_first(graph, sigmas_node, "scheduler")
-                    } else {
-                        evaluate_string(graph, sigmas_node, "scheduler")
-                    };
-                    if let Some(s) = scheduler_value {
-                        scheduler = s;
-                    } else if get_node_type(sigmas_node) == "BetaSamplingScheduler" {
-                        scheduler = "beta".to_string();
-                    }
+            }
+            if scheduler.is_empty() && supports_scheduler_metadata {
+                let scheduler_value = if is_sampler_custom {
+                    evaluate_string_link_first(graph, sigmas_node, "scheduler")
+                } else {
+                    evaluate_string(graph, sigmas_node, "scheduler")
+                };
+                if let Some(s) = scheduler_value {
+                    scheduler = s;
+                } else if get_node_type(sigmas_node) == "BetaSamplingScheduler" {
+                    scheduler = "beta".to_string();
                 }
             }
         }
@@ -297,6 +291,51 @@ fn resolve_transparent_reroute_id(graph: &ComfyGraph, source_id: &str) -> Option
         current_id = get_reroute_source_id(node)?;
     }
 
+    None
+}
+
+fn resolve_sampler_custom_scheduler<'a>(
+    graph: &'a ComfyGraph,
+    sampler_node: &Value,
+) -> Option<&'a Value> {
+    let mut source = match get_input_source(sampler_node, "sigmas") {
+        InputSourceConnection::Connected(source) => source,
+        InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {
+            return None;
+        }
+    };
+    let mut visited = HashSet::new();
+    let mut depth = 0;
+
+    loop {
+        if depth > 16 || !visited.insert(source.node_id.clone()) {
+            return None;
+        }
+        let node = graph.get_node(&source.node_id)?;
+        match get_node_type(node) {
+            "Reroute" => {
+                source = get_first_connected_source(node, &["", "value", "input", "any"])?;
+            }
+            "SplitSigmas" => {
+                if !matches!(source.output_slot, None | Some(0 | 1)) {
+                    return None;
+                }
+                source = get_first_connected_source(node, &["sigmas"])?;
+            }
+            _ => return Some(node),
+        }
+        depth += 1;
+    }
+}
+
+fn get_first_connected_source(node: &Value, keys: &[&str]) -> Option<InputSource> {
+    for key in keys {
+        match get_input_source(node, key) {
+            InputSourceConnection::Connected(source) => return Some(source),
+            InputSourceConnection::DeclaredUnresolved => return None,
+            InputSourceConnection::Unconnected => {}
+        }
+    }
     None
 }
 

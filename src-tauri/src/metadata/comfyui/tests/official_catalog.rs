@@ -949,7 +949,7 @@ fn z_image_union_model_patch_controlnet() {
 }
 
 #[test]
-fn bernini_custom_conditioning_resolves_prompt_but_remains_partial_for_schedule() {
+fn bernini_custom_conditioning_and_split_schedule_are_golden() {
     let name = "video_bernini_r_image_editing";
     let chunks = load_chunks(name);
     let workflow = chunks
@@ -959,9 +959,9 @@ fn bernini_custom_conditioning_resolves_prompt_but_remains_partial_for_schedule(
     let expected = ExpectedMetadata {
         model: "wan2.2_bernini_r_high_noise_fp8_scaled",
         seed: Some(283_365_432_432_581),
-        steps: 0,
+        steps: 6,
         cfg: 1.0,
-        sampler: "res_multistep",
+        sampler: "res_multistep (simple)",
         positive_prompt: "You are a helpful assistant.make it night",
         negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
         loras: &["lightx2v_t2v_14b_cfg_step_distill_v2_lora_rank64_bf16"],
@@ -989,6 +989,7 @@ fn bernini_custom_conditioning_resolves_prompt_but_remains_partial_for_schedule(
     for field in [
         ComfyMetadataField::Model,
         ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
         ComfyMetadataField::Cfg,
         ComfyMetadataField::Sampler,
         ComfyMetadataField::PositivePrompt,
@@ -999,13 +1000,6 @@ fn bernini_custom_conditioning_resolves_prompt_but_remains_partial_for_schedule(
             diagnostics.field_sources.get(&field),
             Some(&ComfyParseLayer::SamplerTraversal),
             "{name} {field:?} provenance"
-        );
-    }
-    for field in [ComfyMetadataField::Steps] {
-        assert_eq!(
-            diagnostics.field_sources.get(&field),
-            None,
-            "{name} {field:?} should remain unavailable"
         );
     }
     assert_eq!(

@@ -18,7 +18,7 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata, scan_webp_metadata};
 /// Current parser version. Increment when any parser logic changes.
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
-pub const CURRENT_PARSER_VERSION: u32 = 27;
+pub const CURRENT_PARSER_VERSION: u32 = 28;
 
 pub(crate) fn is_missing_prompt_value(value: &str) -> bool {
     value.trim().is_empty() || is_placeholder_prompt_value(value)
