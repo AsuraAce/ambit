@@ -718,6 +718,7 @@ fn clear_core_fields(meta: &mut ImageMetadata) {
     meta.seed = None;
     meta.steps = 0;
     meta.cfg = 0.0;
+    meta.cfg_present = false;
     meta.sampler = "Unknown".to_string();
     meta.positive_prompt.clear();
     meta.negative_prompt.clear();

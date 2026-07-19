@@ -144,9 +144,11 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                 let key = key.trim();
                 let val = val.trim().trim_matches('"');
                 if key.eq_ignore_ascii_case("CFG scale") || key.eq_ignore_ascii_case("CFG") {
-                    let c: f32 = val.parse().unwrap_or(0.0);
-                    if c > 0.0 {
-                        meta.cfg = c;
+                    if let Ok(c) = val.parse::<f32>() {
+                        if c.is_finite() {
+                            meta.cfg = c;
+                            meta.cfg_present = true;
+                        }
                     }
                     continue;
                 }
@@ -196,7 +198,10 @@ pub fn extract_a1111_metadata(text: &str, default_tool: Option<String>) -> Image
                     }
                     "VAE" => meta.vae = Some(val.to_string()),
                     "Clip skip" => meta.clip_skip = val.parse().ok(),
-                    "Denoising strength" => meta.denoising_strength = val.parse().ok(),
+                    "Denoising strength" => {
+                        meta.denoising_strength =
+                            val.parse::<f32>().ok().filter(|value| value.is_finite())
+                    }
                     "Hires upscale" => meta.hires_upscale = val.parse().ok(),
                     "Hires steps" => meta.hires_steps = val.parse().ok(),
                     "Hires upscaler" => meta.hires_upscaler = Some(val.to_string()),
@@ -436,6 +441,40 @@ mod tests {
         );
 
         assert_eq!(meta.seed, Some(0));
+    }
+
+    #[test]
+    fn test_extract_a1111_preserves_explicit_zero_cfg_presence() {
+        let meta = extract_a1111_metadata("Prompt\nSteps: 20, CFG scale: 0", None);
+
+        assert_eq!(meta.cfg, 0.0);
+        assert!(meta.cfg_present);
+    }
+
+    #[test]
+    fn test_extract_a1111_rejects_non_finite_f32_generation_values() {
+        let non_finite = extract_a1111_metadata(
+            "Prompt\nSteps: 20, CFG scale: NaN, Denoising strength: 3.4028236e38",
+            None,
+        );
+        let overflow = extract_a1111_metadata(
+            "Prompt\nSteps: 20, CFG scale: 3.4028236e38, Denoising strength: NaN",
+            None,
+        );
+        let zero = extract_a1111_metadata(
+            "Prompt\nSteps: 20, CFG scale: 0, Denoising strength: 0",
+            None,
+        );
+
+        assert_eq!(non_finite.cfg, 0.0);
+        assert!(!non_finite.cfg_present);
+        assert_eq!(non_finite.denoising_strength, None);
+        assert_eq!(overflow.cfg, 0.0);
+        assert!(!overflow.cfg_present);
+        assert_eq!(overflow.denoising_strength, None);
+        assert_eq!(zero.cfg, 0.0);
+        assert!(zero.cfg_present);
+        assert_eq!(zero.denoising_strength, Some(0.0));
     }
 
     #[test]

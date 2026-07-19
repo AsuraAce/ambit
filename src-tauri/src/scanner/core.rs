@@ -433,52 +433,42 @@ mod tests {
         result
     }
 
-    #[test]
-    fn test_scan_image_internal_png_metadata() {
-        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]; // Header
+    fn png_image_with_text_chunks(chunks: &[(&str, &str)]) -> Vec<u8> {
+        let mut png = vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
-        // IHDR
-        let mut ihdr_data = Vec::new();
-        ihdr_data.extend_from_slice(b"IHDR");
-        ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // width
-        ihdr_data.extend_from_slice(&1u32.to_be_bytes()); // height
-        ihdr_data.extend_from_slice(&[1, 0, 0, 0, 0]); // bit depth 1, color type 0 (greyscale)
-
+        let mut ihdr = b"IHDR".to_vec();
+        ihdr.extend_from_slice(&1u32.to_be_bytes());
+        ihdr.extend_from_slice(&1u32.to_be_bytes());
+        ihdr.extend_from_slice(&[1, 0, 0, 0, 0]);
         png.extend_from_slice(&13u32.to_be_bytes());
-        let crc = crc32(&ihdr_data);
-        png.extend_from_slice(&ihdr_data);
-        png.extend_from_slice(&crc.to_be_bytes());
+        png.extend_from_slice(&ihdr);
+        png.extend_from_slice(&crc32(&ihdr).to_be_bytes());
 
-        // tEXt chunk
-        let mut text_data = Vec::new();
-        text_data.extend_from_slice(b"tEXt");
-        text_data.extend_from_slice(b"parameters\0");
-        text_data.extend_from_slice(
-            b"Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: test-model",
-        );
-
-        png.extend_from_slice(&((text_data.len() - 4) as u32).to_be_bytes());
-        let text_crc = crc32(&text_data);
-        png.extend_from_slice(&text_data);
-        png.extend_from_slice(&text_crc.to_be_bytes());
-
-        // IDAT (empty or minimal)
-        let mut idat_data = Vec::new();
-        idat_data.extend_from_slice(b"IDAT");
-        // For a 1x1 1-bit greyscale, we need at least some zlib data.
-        // Easiest is to just use a valid minimal IDAT if we want image crate to load it.
-        // Actually, we don't strictly need it to be LOADABLE by image crate for THIS test
-        // IF we only care about metadata, BUT scan_image_internal calls into_dimensions().
-        // into_dimensions() only needs IHDR!
+        for (keyword, value) in chunks {
+            let mut text = b"tEXt".to_vec();
+            text.extend_from_slice(keyword.as_bytes());
+            text.push(0);
+            text.extend_from_slice(value.as_bytes());
+            png.extend_from_slice(&((text.len() - 4) as u32).to_be_bytes());
+            png.extend_from_slice(&text);
+            png.extend_from_slice(&crc32(&text).to_be_bytes());
+        }
 
         png.extend_from_slice(&0u32.to_be_bytes());
         png.extend_from_slice(b"IDAT");
         png.extend_from_slice(&crc32(b"IDAT").to_be_bytes());
-
-        // IEND
         png.extend_from_slice(&0u32.to_be_bytes());
         png.extend_from_slice(b"IEND");
         png.extend_from_slice(&0xAE426082u32.to_be_bytes());
+        png
+    }
+
+    #[test]
+    fn test_scan_image_internal_png_metadata() {
+        let png = png_image_with_text_chunks(&[(
+            "parameters",
+            "Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 12345, Model: test-model",
+        )]);
 
         let test_path = "test_metadata_fix.png";
         let mut f = File::create(test_path).unwrap();
@@ -490,6 +480,71 @@ mod tests {
         let metadata = result.metadata.expect("Metadata should exist");
         assert_eq!(metadata.steps, 20);
         assert_eq!(metadata.model, "test-model");
+    }
+
+    #[test]
+    fn test_scan_image_internal_preserves_first_explicit_zero_f32_values_across_chunks() {
+        let png = png_image_with_text_chunks(&[
+            (
+                "parameters",
+                "prompt\nSteps: 20, CFG scale: 0, Denoising strength: 0",
+            ),
+            (
+                "invokeai_metadata",
+                r#"{"cfg_scale":7,"denoising_strength":0.6}"#,
+            ),
+        ]);
+        let path = unique_test_path("mixed_a1111_invoke_zero_f32.png");
+        std::fs::write(&path, png).expect("write test png");
+
+        let result =
+            scan_image_internal(path.to_string_lossy().to_string(), None, true, true, None)
+                .expect("scan mixed metadata png");
+        let _ = std::fs::remove_file(&path);
+
+        let metadata = result.metadata.expect("metadata should exist");
+        assert_eq!(metadata.tool, "InvokeAI");
+        assert_eq!(metadata.cfg, 0.0);
+        assert_eq!(metadata.denoising_strength, Some(0.0));
+    }
+
+    #[test]
+    fn test_scan_image_internal_falls_through_invalid_a1111_f32_values() {
+        let cases = [
+            (
+                "nan_cfg_overflow_denoise",
+                "prompt\nSteps: 20, CFG scale: NaN, Denoising strength: 3.4028236e38",
+                r#"{"cfg_scale":7,"denoising_strength":0.45}"#,
+                7.0,
+                0.45,
+            ),
+            (
+                "overflow_cfg_nan_denoise",
+                "prompt\nSteps: 20, CFG scale: 3.4028236e38, Denoising strength: NaN",
+                r#"{"cfg_scale":8,"denoising_strength":0.55}"#,
+                8.0,
+                0.55,
+            ),
+        ];
+
+        for (suffix, parameters, invoke, expected_cfg, expected_denoising) in cases {
+            let png = png_image_with_text_chunks(&[
+                ("parameters", parameters),
+                ("invokeai_metadata", invoke),
+            ]);
+            let path = unique_test_path(&format!("mixed_a1111_invoke_{suffix}.png"));
+            std::fs::write(&path, png).expect("write test png");
+
+            let result =
+                scan_image_internal(path.to_string_lossy().to_string(), None, true, true, None)
+                    .expect("scan mixed metadata png");
+            let _ = std::fs::remove_file(&path);
+
+            let metadata = result.metadata.expect("metadata should exist");
+            assert_eq!(metadata.tool, "InvokeAI");
+            assert_eq!(metadata.cfg, expected_cfg);
+            assert_eq!(metadata.denoising_strength, Some(expected_denoising));
+        }
     }
 
     #[test]

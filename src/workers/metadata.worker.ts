@@ -223,6 +223,9 @@ export const detectGenerationType = (path: string, currentType?: string): string
     return 'unknown';
 };
 
+const isFiniteF32 = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(Math.fround(value));
+
 export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
         base.tool = secondary.tool;
@@ -231,7 +234,8 @@ export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<I
         base.model = secondary.model;
     }
     if (!base.steps && secondary.steps) base.steps = secondary.steps;
-    if ((base.cfg === undefined || base.cfg === 0) && secondary.cfg !== undefined) base.cfg = secondary.cfg;
+    if (base.cfg !== undefined && !isFiniteF32(base.cfg)) delete base.cfg;
+    if (base.cfg === undefined && isFiniteF32(secondary.cfg)) base.cfg = secondary.cfg;
     if (base.seed === undefined && secondary.seed !== undefined) base.seed = secondary.seed;
     if ((!base.sampler || base.sampler === 'Unknown') && secondary.sampler) {
         base.sampler = secondary.sampler;
@@ -288,7 +292,12 @@ export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<I
     // Merge other fields
     if (base.vae === undefined) base.vae = secondary.vae;
     if (base.clipSkip === undefined) base.clipSkip = secondary.clipSkip;
-    if (base.denoisingStrength === undefined) base.denoisingStrength = secondary.denoisingStrength;
+    if (base.denoisingStrength !== undefined && !isFiniteF32(base.denoisingStrength)) {
+        delete base.denoisingStrength;
+    }
+    if (base.denoisingStrength === undefined && isFiniteF32(secondary.denoisingStrength)) {
+        base.denoisingStrength = secondary.denoisingStrength;
+    }
     if (base.hiresUpscale === undefined) base.hiresUpscale = secondary.hiresUpscale;
     if (base.hiresSteps === undefined) base.hiresSteps = secondary.hiresSteps;
     if (base.hiresUpscaler === undefined) base.hiresUpscaler = secondary.hiresUpscaler;

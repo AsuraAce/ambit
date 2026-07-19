@@ -423,6 +423,21 @@ mod tests {
     }
 
     #[test]
+    fn test_scan_legacy_t2i_adapter_accepts_string_model_and_normalizes_its_path() {
+        let mut res = Resources::default();
+        let payload = json!({
+            "t2i_adapter": {
+                "model": "C:\\InvokeAI\\models\\T2I-Adapter-Lineart.SAFETENSORS"
+            }
+        });
+
+        scan_for_resources(&payload, &mut res);
+
+        assert_eq!(res.control_nets, vec!["t2i_adapter_lineart".to_string()]);
+        assert!(res.ip_adapters.is_empty());
+    }
+
+    #[test]
     fn test_scan_for_resources_nested() {
         let mut res = Resources::default();
         let payload = json!({

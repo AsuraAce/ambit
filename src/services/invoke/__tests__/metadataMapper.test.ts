@@ -37,16 +37,18 @@ describe('metadataMapper', () => {
         expect(result.workflowJson).toBe('{"id":1}');
     });
 
-    it('maps null metadata to standard defaults', () => {
+    it('maps null metadata without inventing an explicit CFG value', () => {
         expect(mapRawInvokeMetadata(null)).toEqual(expect.objectContaining({
             tool: GeneratorTool.INVOKEAI,
             model: 'Unknown',
             steps: 0,
-            cfg: 0,
             sampler: 'Unknown',
             hasWorkflowHint: false,
             isIntermediate: false
         }));
+        expect(mapRawInvokeMetadata(null).cfg).toBeUndefined();
+        expect(mapRawInvokeMetadata({ positive_prompt: 'invoke' })).not.toHaveProperty('cfg');
+        expect(mapInvokeMetadata({ metadata_json: '{}' }, 'metadata_json', 0).cfg).toBe(0);
     });
 
     it('unwraps every legacy metadata wrapper including double-encoded and malformed payloads', () => {
@@ -98,14 +100,17 @@ describe('metadataMapper', () => {
                 vae: { name: 'FLUX.1-schnell_ae', type: 'vae' },
                 t2iAdapters: [
                     { model: { name: 'T2I-Adapter-Canny-SDXL-1.0.safetensors' } },
-                    't2iadapter_depth_sd15v2.pth'
+                    'C:\\InvokeAI\\models\\t2iadapter_depth_sd15v2.PTH'
                 ],
                 t2i_adapters: [
                     {
                         t2i_adapter_model: { model_name: 't2iadapter_sketch_sd15v2.ckpt' }
                     },
                     't2iadapter_depth_sd15v2.pth'
-                ]
+                ],
+                t2i_adapter: {
+                    model: 'C:\\InvokeAI\\models\\T2I-Adapter-Lineart.SAFETENSORS'
+                }
             }
         });
 
@@ -117,7 +122,8 @@ describe('metadataMapper', () => {
             controlNets: [
                 't2i_adapter_canny_sdxl_1.0',
                 't2iadapter_depth_sd15v2',
-                't2iadapter_sketch_sd15v2'
+                't2iadapter_sketch_sd15v2',
+                't2i_adapter_lineart'
             ],
             ipAdapters: []
         });
@@ -137,6 +143,33 @@ describe('metadataMapper', () => {
             vae: 'vae-ft-mse-840000-ema-pruned.ckpt'
         });
         expect(mapRawInvokeMetadata({ cfg: '6.25' }).cfg).toBe(6.25);
+    });
+
+    it('uses the same finite decimal numeric-string grammar as the Rust parser', () => {
+        expect(mapRawInvokeMetadata({
+            cfg_scale: '   ',
+            guidance: ' 4.5e0 ',
+            denoising_strength: '\t',
+            denoisingStrength: ' +3.5e-1 '
+        })).toMatchObject({
+            cfg: 4.5,
+            denoisingStrength: 0.35
+        });
+        expect(mapRawInvokeMetadata({ cfg_scale: '0x10', guidance: ' 6.25 ' }).cfg).toBe(6.25);
+    });
+
+    it('rejects values outside the finite f32 range before applying field precedence', () => {
+        expect(mapRawInvokeMetadata({
+            cfg_scale: '1e100',
+            guidance: '6.5',
+            denoising_strength: -1e100,
+            denoisingStrength: '0.4'
+        })).toMatchObject({ cfg: 6.5, denoisingStrength: 0.4 });
+
+        expect(mapRawInvokeMetadata({
+            cfg_scale: '3.4028236e38',
+            guidance: '3.4028235e38'
+        }).cfg).toBe(3.4028235e38);
     });
 
     it('discovers workflows and hashes across legacy storage locations', () => {
@@ -171,10 +204,20 @@ describe('metadataMapper', () => {
             nested: [{ hypernets: 'nested-hyper.pth' }]
         });
         expect(result.loras).toEqual(expect.arrayContaining(['plain', 'default-lora (0.50)', 'named']));
-        expect(result.controlNets).toEqual(expect.arrayContaining(['control', 'nested-control', 'direct-control', 'single-control']));
+        expect(result.controlNets).toEqual(expect.arrayContaining(['control', 'nested_control', 'direct_control', 'single_control']));
         expect(result.ipAdapters).toEqual(expect.arrayContaining(['adapter', 'nested-adapter', 'direct-adapter', 'single-adapter']));
         expect(result.embeddings).toEqual(expect.arrayContaining(['embedding', 'model-embedding', 'single-embedding']));
         expect(result.hypernetworks).toEqual(expect.arrayContaining(['hyper', 'object-hyper', 'single-hyper', 'nested-hyper']));
+    });
+
+    it('canonicalizes and deduplicates guidance resources across generic control and T2I aliases', () => {
+        const result = mapRawInvokeMetadata({
+            control_adapters: ['C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'],
+            t2iAdapters: ['c:/invokeai/models/t2i-adapter-depth.safetensors']
+        });
+
+        expect(result.controlNets).toEqual(['t2i_adapter_depth']);
+        expect(result.ipAdapters).toEqual([]);
     });
 
     it('deduplicates prompt resources and handles default, weighted, and malformed syntax', () => {

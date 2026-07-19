@@ -155,7 +155,8 @@ fn explicit_metadata_overrides_conflicting_flat_fields() {
 #[test]
 fn selected_sampler_custom_replaces_disconnected_explicit_core_fields() {
     // Explicit nodes remain authoritative for ordinary samplers, but a selected
-    // SamplerCustom path owns its core fields, including an unresolved seed.
+    // SamplerCustom path owns its core fields, including an unresolved seed. Its
+    // CFG must replace both the stale explicit value and its presence marker.
     let prompt = r#"{
         "0": { "class_type": "SDParameterGenerator", "inputs": {
             "ckpt_name": "explicit-model.safetensors", "seed": 314,

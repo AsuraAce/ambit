@@ -4,16 +4,21 @@ use super::utils::{
 };
 use super::ImageMetadata;
 
-fn read_number(root: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+fn read_f32(root: &serde_json::Value, keys: &[&str]) -> Option<f32> {
     keys.iter().find_map(|key| {
         let value = root.get(*key)?;
-        value.as_f64().or_else(|| {
-            value
-                .as_str()?
+        let number = value.as_f64().or_else(|| {
+            let normalized = value.as_str()?.trim();
+            if normalized.is_empty() {
+                return None;
+            }
+            normalized
                 .parse::<f64>()
                 .ok()
                 .filter(|number| number.is_finite())
-        })
+        })?;
+        let number = number as f32;
+        number.is_finite().then_some(number)
     })
 }
 
@@ -122,8 +127,9 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     if let Some(steps) = root.get("steps").and_then(|v| v.as_u64()) {
         meta.steps = steps as u32;
     }
-    if let Some(cfg) = read_number(root, &["cfg_scale", "guidance", "cfg"]) {
-        meta.cfg = cfg as f32;
+    if let Some(cfg) = read_f32(root, &["cfg_scale", "guidance", "cfg"]) {
+        meta.cfg = cfg;
+        meta.cfg_present = true;
     }
 
     if let Some(seed) = root.get("seed").and_then(|v| v.as_i64()) {
@@ -193,11 +199,10 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
-    meta.denoising_strength = read_number(
+    meta.denoising_strength = read_f32(
         root,
         &["denoising_strength", "denoisingStrength", "hrf_strength"],
-    )
-    .map(|strength| strength as f32);
+    );
 
     // Hires Fix (v3.x uses hrf_*)
     if let Some(enabled) = root.get("hrf_enabled").and_then(|v| v.as_bool()) {
@@ -537,6 +542,43 @@ mod tests {
 
         let legacy = extract_invokeai_metadata(&json!({ "cfg": "6.25" }));
         assert_eq!(legacy.cfg, 6.25);
+    }
+
+    #[test]
+    fn test_extract_invokeai_finite_decimal_numeric_strings() {
+        let normalized = extract_invokeai_metadata(&json!({
+            "cfg_scale": "   ",
+            "guidance": " 4.5e0 ",
+            "denoising_strength": "\t",
+            "denoisingStrength": " +3.5e-1 "
+        }));
+        assert_eq!(normalized.cfg, 4.5);
+        assert_eq!(normalized.denoising_strength, Some(0.35));
+
+        let no_js_only_forms = extract_invokeai_metadata(&json!({
+            "cfg_scale": "0x10",
+            "guidance": " 6.25 "
+        }));
+        assert_eq!(no_js_only_forms.cfg, 6.25);
+    }
+
+    #[test]
+    fn test_extract_invokeai_rejects_f32_overflow_and_uses_lower_priority_values() {
+        let overflow = extract_invokeai_metadata(&json!({
+            "cfg_scale": "1e100",
+            "guidance": "6.5",
+            "denoising_strength": -1e100,
+            "denoisingStrength": "0.4"
+        }));
+        assert_eq!(overflow.cfg, 6.5);
+        assert_eq!(overflow.denoising_strength, Some(0.4));
+
+        let boundary = extract_invokeai_metadata(&json!({
+            "cfg_scale": "3.4028236e38",
+            "guidance": "3.4028235e38"
+        }));
+        assert!(boundary.cfg.is_finite());
+        assert_eq!(boundary.cfg, f32::MAX);
     }
 
     #[test]
