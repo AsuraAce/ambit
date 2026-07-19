@@ -131,6 +131,28 @@ Source-authored expectations, recorded without asserting current parser output:
   empty negative conditioning; ControlNet
   `Z-Image-Turbo-Fun-Controlnet-Union.safetensors`; no LoRAs.
 
+## Milestone 25 Ideogram Intake
+
+Captured on `2026-07-19`. This workflow remains `unassessed` until the later
+Milestone 25 behavior packages pass exact metadata and provenance assertions.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_ideogram4_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_ideogram4_t2i.json) | `c04018493c60d8d4275f0bdc54acb385f59e7ea5` | 119270 |
+
+Source-authored expectations, recorded without asserting current parser output:
+
+- primary model `ideogram4_fp8_scaled.safetensors`; the separate
+  `ideogram4_unconditional_fp8_scaled.safetensors` model is auxiliary;
+- seed `885894517601261`; selected `Default` profile with 20 steps;
+- base guider CFG 7; `CFGOverride` applies CFG 3 only from 70% through 100% of
+  the schedule and cannot replace the single base CFG metadata value;
+- sampler `euler` with the connected `Ideogram4Scheduler`;
+- exact 3,598-byte positive prompt in
+  `image_ideogram4_t2i.expected-positive.txt`, with SHA-256
+  `dfbe4a1694ca33c124562f3f8f879beb8b5516afa327b342dfae0d9b8f6468af`;
+- authoritative empty negative conditioning and no resources.
+
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser
 coverage. Refresh it only as an intentional fixture update: fetch the pinned
