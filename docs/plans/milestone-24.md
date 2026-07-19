@@ -1,6 +1,6 @@
 # Milestone 24: ComfyUI Output-Slot and Sigma-Lineage Fidelity
 
-Status: In Progress
+Status: Complete (`2026-07-19`)
 Catalog commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 
 ## Reconciliation
@@ -173,7 +173,7 @@ Verification evidence:
 
 Depends on: Work Packages 1-3.
 
-Status: Pending (`docs/comfyui-milestone-24-integration`)
+Status: Complete (`docs/comfyui-milestone-24-integration`, `2026-07-19`)
 
 Primary invariant: the merged packages preserve the last completed milestone
 while closing the Bernini gap without public interface changes.
@@ -189,7 +189,29 @@ Non-goals:
 
 - No parser behavior, fixture, or coverage changes.
 
+Verification evidence:
+
+- the three dependency-ordered behavior packages merged through PRs #240,
+  #242, and #244;
+- combined review on fresh `main` found no integration regressions between
+  source-slot preservation, `CustomCombo.INDEX` resolution, and connected
+  `SplitSigmas` scheduler ancestry;
+- parser version is 28 and final manifest totals are 23 `golden`, 9
+  `pattern_covered`, 3 `partial`, 40 `unassessed`, and 474 `excluded`;
+- focused suites pass with 50 prompt, 55 multi-stage, 27 official-catalog, 3
+  template-coverage, 4 graph-source, 14 workflow-subgraph, and 15
+  output-selection tests;
+- the full ComfyUI suite passes with 239 passed and 1 intentionally ignored,
+  and the reparse suite passes with 10 tests;
+- `cargo fmt --check` and `git diff --check` pass, the worktree remained clean,
+  and no `Cargo.lock` churn was produced;
+- no public API, database schema, Tauri command, Specta binding, frontend,
+  diagnostics DTO, workflow fixture, or `ImageMetadata` changes were
+  introduced by the closure package.
+
 ## Milestone Acceptance Gate
+
+Status: Complete (`2026-07-19`)
 
 After all behavior packages merge:
 
