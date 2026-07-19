@@ -9,7 +9,10 @@ type InfiniteQueryConfig = {
     queryKey: ImagesQueryKey;
     queryFn: (context: { pageParam: PaginationCursor | undefined }) => Promise<QueryPage>;
     getNextPageParam: (lastPage: QueryPage) => PaginationCursor | undefined;
-    placeholderData: (previousData?: { pages: QueryPage[] }) => { pages: QueryPage[] } | undefined;
+    placeholderData: (
+        previousData?: { pages: QueryPage[] },
+        previousQuery?: { queryKey: readonly unknown[] }
+    ) => { pages: QueryPage[] } | undefined;
     enabled: boolean;
 };
 
@@ -232,13 +235,40 @@ describe('useImagesQuery', () => {
         });
     });
 
-    it('retains placeholder data only when its first page has images', () => {
+    it('retains privacy-compatible placeholder data even when the previous result is empty', () => {
         renderImagesHook();
         const populated = { pages: [{ images: [image()], totalCount: 1, globalCount: 1 }] };
-        const empty = { pages: [{ images: [], totalCount: 0, globalCount: 0 }] };
+        const empty = { pages: [{ images: [], totalCount: 0, globalCount: 20 }] };
+        const previousSearchKey: ImagesQueryKey = [
+            'images',
+            createDefaultFilters({ searchQuery: 'previous' }),
+            'date_desc',
+            true,
+            'blur',
+            ['secret'],
+            null
+        ];
+        const previousQuery = { queryKey: previousSearchKey };
 
-        expect(config().placeholderData(populated)).toBe(populated);
-        expect(config().placeholderData(empty)).toBeUndefined();
+        expect(config().placeholderData(populated, previousQuery)).toBe(populated);
+        expect(config().placeholderData(empty, previousQuery)).toBe(empty);
         expect(config().placeholderData()).toBeUndefined();
+    });
+
+    it('rejects placeholder data when the privacy query scope changed or cannot be verified', () => {
+        renderImagesHook();
+        const previousData = { pages: [{ images: [image()], totalCount: 1, globalCount: 20 }] };
+        const key = config().queryKey;
+
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 3), false, ...key.slice(4)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 4), 'hide', ...key.slice(5)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 5), ['different'], ...key.slice(6)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData)).toBeUndefined();
     });
 });

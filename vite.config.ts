@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
-      port: 1421,
+      port: 1422,
       strictPort: true,
       host: '0.0.0.0',
     },

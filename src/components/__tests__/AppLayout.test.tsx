@@ -350,11 +350,54 @@ describe('AppLayout', () => {
         expect(changeViewMode).toHaveBeenCalledWith('grid');
     });
 
-    it('renders a skeleton while filtered images are loading', () => {
+    it('preserves existing results while a filtered query refreshes', () => {
+        searchState.value.isFiltering = true;
+        render(<AppLayout {...defaultProps} />);
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+    });
+
+    it('preserves interactive collection results while a collection search refreshes', () => {
+        searchState.value.isFiltering = true;
+        render(<AppLayout
+            {...defaultProps}
+            filters={{ collectionId: 'collection-a' }}
+            activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: ['1'], createdAt: 1 }}
+            scopeName="Collection A"
+        />);
+
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+        expect(screen.queryByTestId('grid-skeleton')).toBeNull();
+        expect(capturedProps.header?.isFiltering).toBe(true);
+        expect(capturedProps.header?.scopeName).toBe('Collection A');
+    });
+
+    it('renders a neutral skeleton when a filtered query has no previous results', () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
         searchState.value.isFiltering = true;
         render(<AppLayout {...defaultProps} />);
         expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
-        expect(screen.queryByTestId('virtual-grid')).toBeNull();
+        expect(screen.queryByText('No Matches Found')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+    });
+
+    it('uses the neutral skeleton for an empty pending collection search', () => {
+        searchState.value.images = [];
+        searchState.value.totalImages = 0;
+        searchState.value.globalTotal = 4;
+        searchState.value.isFiltering = true;
+        render(<AppLayout
+            {...defaultProps}
+            filters={{ collectionId: 'collection-a' }}
+            activeCollection={{ id: 'collection-a', name: 'Collection A', imageIds: [], createdAt: 1 }}
+            scopeName="Collection A"
+        />);
+
+        expect(screen.getByTestId('grid-skeleton')).toBeTruthy();
+        expect(screen.queryByText('No Matches Found')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
     });
 
     it('shows loading instead of a false empty state while a valid search draft is pending', () => {

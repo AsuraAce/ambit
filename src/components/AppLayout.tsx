@@ -206,7 +206,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isLoadingMore
     } = useSearch();
     const isSearchPending = isFiltering || isSearchDraftPending;
-    const shouldShowSearchSkeleton = isFiltering || (isSearchDraftPending && images.length === 0);
+    const shouldShowSearchSkeleton = isSearchPending && images.length === 0;
     // const images = useSearchStore(s => s.images); // Images available in context
     // const totalImages = useSearchStore(s => s.totalImages);
     // const isFiltering = useSearchStore(s => s.isFiltering);

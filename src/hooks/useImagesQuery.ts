@@ -25,6 +25,21 @@ export type ImagesQueryKey = readonly [
     string | null
 ];
 
+const hasMatchingPrivacyScope = (
+    previousKey: readonly unknown[] | undefined,
+    currentKey: ImagesQueryKey
+): boolean => {
+    if (!previousKey || previousKey.length < 6) return false;
+
+    const previousKeywords = previousKey[5];
+    if (!Array.isArray(previousKeywords)) return false;
+
+    return previousKey[3] === currentKey[3]
+        && previousKey[4] === currentKey[4]
+        && previousKeywords.length === currentKey[5].length
+        && previousKeywords.every((keyword, index) => keyword === currentKey[5][index]);
+};
+
 export const useImagesQuery = ({
     filters,
     sortOption,
@@ -134,11 +149,15 @@ export const useImagesQuery = ({
                 isPinned: lastImage.isPinned ? 1 : 0
             };
         },
-        placeholderData: (previousData) => {
-            // Only use placeholder if previous data has images
-            // Prevents stale empty states when switching from "no results" filters (e.g., favorites with 0 items)
-            const hasImages = (previousData?.pages[0]?.images.length ?? 0) > 0;
-            return hasImages ? previousData : undefined;
+        placeholderData: (previousData, previousQuery) => {
+            if (!previousData) return undefined;
+
+            // Search, sort, and collection changes can safely retain their prior page,
+            // including an empty one. Privacy changes must fail closed until a page
+            // produced with the new privacy scope is ready.
+            return hasMatchingPrivacyScope(previousQuery?.queryKey, imagesQueryKey)
+                ? previousData
+                : undefined;
         },
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries

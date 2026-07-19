@@ -379,6 +379,21 @@ describe('SearchBar query readiness and trigger behavior', () => {
         expect(screen.getByRole('status').textContent).toBe('No matches in Collection: Favorites.');
     });
 
+    it('reports searching instead of no matches while an applied query is fetching', async () => {
+        renderSearchBar(createDefaultFilters({ searchQuery: 'coffee' }), {
+            displayedCount: 0,
+            isFiltering: true,
+        });
+        await flushSearchPopover();
+
+        const input = screen.getByRole('combobox', { name: 'Search in Library' });
+        expect(screen.getByRole('status').textContent).toContain('Searching Library');
+        expect(screen.getByRole('status').textContent).not.toContain('No matches');
+        expect(input.getAttribute('aria-busy')).toBe('true');
+        expect(input.parentElement?.querySelector('.animate-spin')).not.toBeNull();
+        expect(input.parentElement?.className).toContain('shadow-[0_0_18px');
+    });
+
     it('keeps AI prompts submit-only', () => {
         const harness = renderSearchBar(createDefaultFilters({ searchQuery: 'existing' }), {
             searchProps: { isAiSearchEnabled: true },

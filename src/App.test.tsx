@@ -137,6 +137,7 @@ const mocks = vi.hoisted(() => ({
     refreshCollections: vi.fn().mockResolvedValue(undefined),
     refreshCollectionThumbnails: vi.fn().mockResolvedValue(undefined),
     images: [] as AIImage[],
+    privacyExposureBlocked: false,
     filters: null as unknown as FilterState,
     setImages: vi.fn(),
     setFilters: vi.fn(),
@@ -314,6 +315,7 @@ vi.mock('./contexts/SearchContext', () => ({
         totalImages: mocks.images.length,
         globalTotal: mocks.images.length + 5,
         isFiltering: false,
+        privacyExposureBlocked: mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
         clearAllFilters: mocks.clearAllFilters,
         recentSearches: ['old'],
@@ -468,6 +470,7 @@ describe('App orchestration', () => {
         mocks.geminiApiKey = null;
         mocks.collectionsLoaded = true;
         mocks.collections = [];
+        mocks.privacyExposureBlocked = false;
         mocks.images = [image('one'), image('two')];
         mocks.filters = createDefaultFilters();
         mocks.selectedIds = new Set();
@@ -839,6 +842,38 @@ describe('App orchestration', () => {
         expect(mocks.settings.defaultTheaterMode).toBe(true);
     });
 
+    it('keeps the open viewer bound to its original result session when search results are replaced', async () => {
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        mocks.images = [image('replacement-one'), image('replacement-two')];
+        view.rerender(<App />);
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-one'));
+    });
+
+    it('keeps a collection viewer session stable while collection search results are replaced', async () => {
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one', 'two'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(1));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+
+        mocks.images = [image('collection-replacement')];
+        view.rerender(<App />);
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+    });
+
     it('blocks mounted viewers while the standalone import modal is open', async () => {
         render(<App />);
 
@@ -965,6 +1000,7 @@ describe('App orchestration', () => {
         await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull());
 
         mocks.images = [];
+        mocks.privacyExposureBlocked = true;
         captured.viewer = null;
         view.rerender(<App />);
 

@@ -5,7 +5,7 @@
     "identifier": "com.ambit.dev",
     "build": {
         "frontendDist": "../dist",
-        "devUrl": "http://localhost:1421",
+        "devUrl": "http://localhost:1422",
         "beforeDevCommand": "pnpm run dev",
         "beforeBuildCommand": "corepack pnpm run build"
     },

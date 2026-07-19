@@ -170,6 +170,7 @@ describe('SearchProvider', () => {
             data: undefined,
             fetchNextPage: vi.fn().mockResolvedValue(undefined),
             hasNextPage: false,
+            isFetching: false,
             isFetchingNextPage: false,
             isLoading: false,
             isPlaceholderData: false,
@@ -244,6 +245,134 @@ describe('SearchProvider', () => {
         expect(latest.stats.totalGenerations).toBe(3);
         expect(latest.validFacetNames).toBeNull();
         expect(latest.isFacetsLoading).toBe(true);
+    });
+
+    it('keeps privacy-compatible placeholder results visible while the first page refreshes', async () => {
+        const previous = image({ id: 'previous' });
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [previous], totalCount: 1, globalCount: 9 }] },
+            isFetching: true,
+            isPlaceholderData: true
+        };
+        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+        renderProvider();
+
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+        await waitFor(() => expect(latest.images).toEqual([previous]));
+        expect(latest.totalImages).toBe(1);
+        expect(latest.globalTotal).toBe(9);
+        expect(latest.isFiltering).toBe(true);
+    });
+
+    it('clears stored blur results until a hide-mode query returns', async () => {
+        const blurred = image({ id: 'blurred' });
+        const safe = image({ id: 'safe' });
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskingMode: 'blur', maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null] as ImagesQueryKey
+        };
+        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const view = renderProvider();
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+        await waitFor(() => expect(latest.images).toEqual([blurred]));
+
+        mocks.settings.current = {
+            ...mocks.settings.current as object,
+            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] })
+        };
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: undefined,
+            isFetching: true,
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null] as ImagesQueryKey
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        await waitFor(() => expect(latest.images).toEqual([]));
+        expect(latest.globalTotal).toBe(0);
+        expect(latest.isFiltering).toBe(true);
+
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            isFetching: false
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        await waitFor(() => expect(latest.images).toEqual([safe]));
+        expect(latest.globalTotal).toBe(2);
+    });
+
+    it('never exposes stored blur results while switching to cached hide results', async () => {
+        const blurred = image({ id: 'blurred' });
+        const safe = image({ id: 'safe' });
+        const observedImageIds: string[][] = [];
+        const TransitionConsumer = () => {
+            latest = useSearch();
+            observedImageIds.push(latest.images.map(item => item.id));
+            return null;
+        };
+        useSettingsStore.setState({ privacyEnabled: true });
+        mocks.settings.current = {
+            settings: settings({ maskingMode: 'blur', maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null] as ImagesQueryKey
+        };
+        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const view = render(<SearchProvider><TransitionConsumer /></SearchProvider>);
+        await waitFor(() => expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready'));
+        await waitFor(() => expect(latest.images).toEqual([blurred]));
+        observedImageIds.length = 0;
+
+        mocks.settings.current = {
+            ...mocks.settings.current as object,
+            settings: settings({ maskingMode: 'hide', maskedKeywords: ['face'] })
+        };
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null] as ImagesQueryKey
+        };
+        view.rerender(<SearchProvider><TransitionConsumer /></SearchProvider>);
+
+        expect(observedImageIds).not.toContainEqual(['blurred']);
+        await waitFor(() => expect(latest.images).toEqual([safe]));
+    });
+
+    it('reports a cached first-page refresh as filtering without losing the global count', () => {
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [], totalCount: 0, globalCount: 9 }] },
+            isFetching: true
+        };
+
+        renderProvider();
+
+        expect(latest.globalTotal).toBe(9);
+        expect(latest.isFiltering).toBe(true);
     });
 
     it('supports functional sorting, loading, fetch adapters, clearing, and metadata refresh scopes', async () => {
