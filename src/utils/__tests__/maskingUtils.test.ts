@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { isImageMasked } from '../maskingUtils';
+import { getEffectiveMaskedKeywords, isImageMasked } from '../maskingUtils';
 import { AIImage } from '../../types';
 
 describe('maskingUtils', () => {
+    it('returns the stored list only while prompt masking is enabled', () => {
+        const stored = ['private'];
+        expect(getEffectiveMaskedKeywords({ promptMaskingEnabled: true, maskedKeywords: stored })).toBe(stored);
+
+        const firstDisabled = getEffectiveMaskedKeywords({ promptMaskingEnabled: false, maskedKeywords: stored });
+        const secondDisabled = getEffectiveMaskedKeywords({ promptMaskingEnabled: false, maskedKeywords: ['other'] });
+        expect(firstDisabled).toEqual([]);
+        expect(secondDisabled).toBe(firstDisabled);
+        expect(stored).toEqual(['private']);
+    });
+
     const mockImage: AIImage = {
         id: '1',
         url: 'test.png',

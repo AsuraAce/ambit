@@ -75,7 +75,7 @@ const mocks = vi.hoisted(() => ({
     ]),
     appRepository: {
         load: vi.fn().mockResolvedValue({
-            settings: { theme: 'system', privacyEnabled: false, thumbnailSize: 200, confirmDelete: true, defaultTheaterMode: false, monitoredFolders: [], maskedKeywords: ['NSFW'], maskingMode: 'hide' as const, },
+            settings: { theme: 'system', privacyEnabled: false, thumbnailSize: 200, confirmDelete: true, defaultTheaterMode: false, monitoredFolders: [], promptMaskingEnabled: false, maskedKeywords: ['NSFW'], maskingMode: 'hide' as const, },
             collections: [],
             smartCollections: [],
             images: [],
@@ -1614,6 +1614,7 @@ describe('Library Integration (Provider Stack)', () => {
                 lastSyncedAt: null,
                 enableAutoThumbnailHealing: true,
                 hasCompletedOnboarding: false,
+                promptMaskingEnabled: true,
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
             }),

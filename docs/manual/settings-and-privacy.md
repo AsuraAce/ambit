@@ -45,12 +45,15 @@ Open Settings, then Privacy to configure content masking.
 
 You can choose:
 
+- Prompt keyword masking: automatically apply the current masking behavior to prompts containing saved keywords. This preference persists across restarts.
 - Blur Content: keep matching images visible but blurred.
 - Hide Completely: hide matching images from normal browsing.
 
-Masked keywords are matched against prompts. Add only terms you actually want Ambit to use for local masking decisions.
+Masked keywords are matched against prompts only while Prompt keyword masking is enabled. You can continue to view and edit the saved list while it is disabled.
 
-Restarting onboarding preserves a custom masked-keyword list while prompt masking remains enabled. Turning prompt masking off in onboarding clears the list; enabling it from an empty list restores Ambit's standard defaults. Purge Database is a factory reset and always restores the default masked keywords and Blur Content behavior.
+Turning Prompt keyword masking off in Settings or onboarding retains the complete custom keyword list. Restarting Ambit or onboarding keeps both the switch state and saved list. Re-enabling uses that same list; if the list is empty, no prompts match until you add a keyword. Purge Database is a factory reset and restores Prompt keyword masking with Ambit's default keywords and Blur Content behavior.
+
+Prompt keyword masking is separate from the session Privacy Mode switch. Privacy Mode starts enabled each time Ambit launches and also controls explicit manual image masks. Turning automatic prompt matching off does not remove those manual masks.
 
 ## Intelligence Features
 

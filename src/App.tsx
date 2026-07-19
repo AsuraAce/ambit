@@ -595,7 +595,7 @@ export default function App() {
                     onComplete={(onboardingSettings) => settingsPersistenceCoordinator.run(async (permit) => {
                         const previousOnboardingSettings = {
                             enableAI: settings.enableAI,
-                            maskedKeywords: settings.maskedKeywords,
+                            promptMaskingEnabled: settings.promptMaskingEnabled,
                             maskingMode: settings.maskingMode,
                             hasCompletedOnboarding: settings.hasCompletedOnboarding,
                         };
@@ -615,9 +615,9 @@ export default function App() {
                                     enableAI: current.enableAI === nextSettings.enableAI
                                         ? previousOnboardingSettings.enableAI
                                         : current.enableAI,
-                                    maskedKeywords: current.maskedKeywords === nextSettings.maskedKeywords
-                                        ? previousOnboardingSettings.maskedKeywords
-                                        : current.maskedKeywords,
+                                    promptMaskingEnabled: current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
+                                        ? previousOnboardingSettings.promptMaskingEnabled
+                                        : current.promptMaskingEnabled,
                                     maskingMode: current.maskingMode === nextSettings.maskingMode
                                         ? previousOnboardingSettings.maskingMode
                                         : current.maskingMode,

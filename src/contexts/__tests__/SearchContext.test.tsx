@@ -120,6 +120,7 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
 
 const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     maskingMode: 'blur',
+    promptMaskingEnabled: true,
     maskedKeywords: [],
     libraryShowGrids: false,
     libraryShowIntermediates: false,
@@ -632,6 +633,23 @@ describe('SearchProvider', () => {
         expect(mocks.clearAllCollectionThumbnailCaches).toHaveBeenCalledOnce();
         expect(mocks.incrementFacetCacheVersion).toHaveBeenCalledOnce();
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['parameterRanges'] });
+    });
+
+    it('refreshes with an empty effective keyword list when prompt masking is disabled', async () => {
+        useSettingsStore.setState({ privacyEnabled: true });
+        const retainedSettings = settings({ promptMaskingEnabled: false, maskedKeywords: ['retained'] });
+        mocks.settings.current = {
+            settings: retainedSettings,
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true
+        };
+        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+        renderProvider();
+
+        await waitFor(() => expect(mocks.refreshPrivacyMaskIndex).toHaveBeenCalledWith([]));
+        expect(retainedSettings.maskedKeywords).toEqual(['retained']);
     });
 
     it('blocks stale search data and disables database queries while refresh is pending', async () => {

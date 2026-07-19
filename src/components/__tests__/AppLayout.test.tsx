@@ -125,6 +125,11 @@ describe('AppLayout', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         useSettingsStore.setState({
+            settings: {
+                ...useSettingsStore.getState().settings,
+                promptMaskingEnabled: true,
+                maskedKeywords: [],
+            },
             privacyEnabled: true,
             privacyMaskIndexStatus: 'ready',
             privacyMaskIndexError: null,
@@ -240,6 +245,21 @@ describe('AppLayout', () => {
     it('renders VirtualGrid when viewMode is grid', () => {
         render(<AppLayout {...defaultProps} viewMode="grid" images={[{ id: '1' } as any]} />);
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+    });
+
+    it('passes an empty effective keyword list to gallery items while retaining saved keywords', () => {
+        useSettingsStore.setState(state => ({
+            settings: {
+                ...state.settings,
+                promptMaskingEnabled: false,
+                maskedKeywords: ['retained'],
+            },
+        }));
+
+        render(<AppLayout {...defaultProps} viewMode="grid" images={[{ id: '1' } as any]} />);
+
+        expect(capturedProps.gridItem?.maskedKeywords).toEqual([]);
+        expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retained']);
     });
 
     it('passes a gallery transition key to VirtualGrid', () => {

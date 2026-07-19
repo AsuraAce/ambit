@@ -3,7 +3,7 @@ import { AIImage, Collection, SmartCollection, AppSettings } from '../types';
 import { generateMockImages, INITIAL_COLLECTIONS } from '../constants';
 import { BrowserMockRepository } from './browserMockData';
 import { isTauriRuntime } from './runtime';
-import { createDefaultAppSettings } from '../constants/defaultSettings';
+import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
 
 // Define the shape of our entire persisted application state
 export interface AppState {
@@ -74,6 +74,7 @@ export class LocalStorageRepository implements IRepository {
       const serializedState = localStorage.getItem(this.storageKey);
       if (serializedState) {
         const saved = JSON.parse(serializedState);
+        const savedSettings: Partial<AppSettings> = saved.settings ?? {};
         return {
           ...saved,
           settings: createDefaultAppSettings({
@@ -81,7 +82,8 @@ export class LocalStorageRepository implements IRepository {
             maskedKeywords: [],
             libraryShowGrids: false,
             resourceFolders: [],
-            ...saved.settings
+            ...savedSettings,
+            promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings)
           })
         };
       }

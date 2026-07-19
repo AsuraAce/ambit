@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, Collection, SmartCollection, FilterState } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useCollectionStore } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
@@ -35,7 +36,7 @@ export const useCollectionOperations = ({
 }: UseCollectionOperationsProps) => {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
-  const maskedKeywords = useSettingsStore(s => s.settings.maskedKeywords);
+  const maskedKeywords = useSettingsStore(s => getEffectiveMaskedKeywords(s.settings));
   const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
   const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
   const activeCollectionIdRef = React.useRef(activeCollectionId);

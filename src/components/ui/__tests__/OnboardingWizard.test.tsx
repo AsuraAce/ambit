@@ -257,7 +257,7 @@ describe('OnboardingWizard', () => {
         expect(document.querySelector('[data-motion-initial-y="10"]')).toBeNull();
     });
 
-    it('completes with AI disabled and the shared default masking keywords', () => {
+    it('completes with AI disabled and prompt masking enabled by default', () => {
         const { onComplete } = renderWizard();
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -265,7 +265,7 @@ describe('OnboardingWizard', () => {
 
         expect(onComplete).toHaveBeenCalledWith({
             enableAI: false,
-            maskedKeywords: DEFAULT_APP_SETTINGS.maskedKeywords,
+            promptMaskingEnabled: true,
             maskingMode: 'blur',
             hasCompletedOnboarding: true,
         });
@@ -473,7 +473,8 @@ describe('OnboardingWizard', () => {
         expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
         expect(thumb?.className).toContain('translate-x-0');
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
-        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ maskedKeywords: [] }));
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ promptMaskingEnabled: false }));
+        expect(onComplete.mock.calls[0][0]).not.toHaveProperty('maskedKeywords');
     });
 
     it('preserves custom masking keywords when onboarding is restarted with masking enabled', () => {
@@ -485,13 +486,12 @@ describe('OnboardingWizard', () => {
         expect(screen.getByRole('switch', { name: 'Enable prompt keyword masking' }).getAttribute('aria-checked')).toBe('true');
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
 
-        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
-            maskedKeywords: ['custom', 'private']
-        }));
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ promptMaskingEnabled: true }));
+        expect(mocks.state.settings.maskedKeywords).toEqual(['custom', 'private']);
     });
 
-    it('seeds default keywords when masking is enabled from an empty list', () => {
-        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, maskedKeywords: [] };
+    it('enables an empty keyword list without seeding defaults', () => {
+        mocks.state.settings = { ...DEFAULT_APP_SETTINGS, promptMaskingEnabled: false, maskedKeywords: [] };
         const { onComplete } = renderWizard();
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
@@ -501,8 +501,8 @@ describe('OnboardingWizard', () => {
         fireEvent.click(maskingSwitch);
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
 
-        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({
-            maskedKeywords: DEFAULT_APP_SETTINGS.maskedKeywords
-        }));
+        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ promptMaskingEnabled: true }));
+        expect(onComplete.mock.calls[0][0]).not.toHaveProperty('maskedKeywords');
+        expect(mocks.state.settings.maskedKeywords).toEqual([]);
     });
 });

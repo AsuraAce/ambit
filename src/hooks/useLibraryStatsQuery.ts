@@ -7,6 +7,7 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockFacets, getBrowserMockKeywordStats, getBrowserMockStatsSummary, getBrowserMockValidFacetNames } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 interface UseLibraryStatsQueryProps {
     filters: FilterState;
@@ -101,6 +102,7 @@ export const useLibraryStatsQuery = ({
 }: UseLibraryStatsQueryProps) => {
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     // Stable reference: track the active collection scope that affects generated SQL.
     const activeCollectionId = sideQueryFilters.collectionId;
@@ -136,13 +138,13 @@ export const useLibraryStatsQuery = ({
             sideQueryFilters,
             privacyEnabled,
             settings.maskingMode,
-            settings.maskedKeywords,
+            effectiveMaskedKeywords,
             allCollections
         );
     }, [
         allCollections,
         privacyEnabled,
-        settings.maskedKeywords,
+        effectiveMaskedKeywords,
         settings.maskingMode,
         settingsLoaded,
         sideQueryFilters,
@@ -166,7 +168,7 @@ export const useLibraryStatsQuery = ({
                 sideQueryFilters,
                 privacyEnabled,
                 settings.maskingMode,
-                settings.maskedKeywords,
+                effectiveMaskedKeywords,
                 allCollections,
                 false,
                 [getExcludeKeyForFacetType(facetType)]
@@ -185,7 +187,7 @@ export const useLibraryStatsQuery = ({
         allCollections,
         privacyEnabled,
         selfExcludedFacetTypes,
-        settings.maskedKeywords,
+        effectiveMaskedKeywords,
         settings.maskingMode,
         settingsLoaded,
         sideQueryFilters,
@@ -193,7 +195,7 @@ export const useLibraryStatsQuery = ({
     ]);
 
     const facetsQuery = useQuery({
-        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockFacets(sideQueryFilters);
@@ -212,7 +214,7 @@ export const useLibraryStatsQuery = ({
     });
 
     const statsSummaryQuery = useQuery({
-        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockStatsSummary(sideQueryFilters);
@@ -240,7 +242,7 @@ export const useLibraryStatsQuery = ({
         statsSummaryQuery.status
     ]);
     const validNamesQuery = useQuery({
-        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash, validFacetsEnabled],
+        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, validFacetsEnabled],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null;
@@ -262,7 +264,7 @@ export const useLibraryStatsQuery = ({
                         sideQueryFilters,
                         privacyEnabled,
                         settings.maskingMode,
-                        settings.maskedKeywords,
+                        effectiveMaskedKeywords,
                         allCollections,
                         false,
                         [getExcludeKeyForFacetType(cat)]

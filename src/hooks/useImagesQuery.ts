@@ -5,6 +5,7 @@ import { searchImages, countImages, countGlobalImages } from '../services/db/sea
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { searchBrowserMockImages } from '../services/browserMockData';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 interface UseImagesQueryProps {
     filters: FilterState;
@@ -51,6 +52,7 @@ export const useImagesQuery = ({
 
     const PAGE_SIZE = 1000;
     const useBrowserMocks = isBrowserMockMode();
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
@@ -72,9 +74,9 @@ export const useImagesQuery = ({
         sortOption,
         privacyEnabled,
         settings.maskingMode,
-        settings.maskedKeywords,
+        effectiveMaskedKeywords,
         smartFilterHash
-    ], [filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash]);
+    ], [effectiveMaskedKeywords, filters, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]);
 
     const query = useInfiniteQuery({
         queryKey: imagesQueryKey,
@@ -88,7 +90,7 @@ export const useImagesQuery = ({
                 filters,
                 privacyEnabled,
                 settings.maskingMode,
-                settings.maskedKeywords,
+                effectiveMaskedKeywords,
                 allCollections
             );
 

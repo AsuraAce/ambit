@@ -31,6 +31,7 @@ const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
+    promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,
@@ -93,8 +94,45 @@ describe('PrivacyTab', () => {
 
         fireEvent.focus(screen.getByRole('button', { name: 'About privacy masking behavior' }));
 
-        expect(screen.getByRole('tooltip').textContent).toContain('Blur keeps matching images visible');
-        expect(screen.getByRole('tooltip').textContent).toContain('Hide removes matching images from results');
+        expect(screen.getByRole('tooltip').textContent).toContain('Blur keeps automatically or manually masked images visible');
+        expect(screen.getByRole('tooltip').textContent).toContain('Hide removes them from results');
+    });
+
+    it('persists prompt masking independently while retaining an editable keyword list', async () => {
+        const harness = settingsHarness(createSettings({
+            promptMaskingEnabled: true,
+            maskedKeywords: ['retained'],
+        }));
+        const { rerender } = render(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+
+        const promptSwitch = screen.getByRole('switch', { name: 'Prompt keyword masking' });
+        fireEvent.click(promptSwitch);
+
+        expect(harness.current()).toEqual(expect.objectContaining({
+            promptMaskingEnabled: false,
+            maskedKeywords: ['retained'],
+        }));
+        await waitFor(() => expect(addToastMock).toHaveBeenCalledWith(
+            'Prompt keyword masking disabled; saved keywords retained',
+            'success'
+        ));
+
+        rerender(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
+        expect(screen.getByText('retained')).not.toBeNull();
+        expect(screen.getByText('Saved · inactive')).not.toBeNull();
+        const input = screen.getByPlaceholderText('Type keyword and press Enter...');
+        expect((input as HTMLInputElement).disabled).toBe(false);
+        fireEvent.change(input, { target: { value: 'prepared' } });
+        fireEvent.click(screen.getByText('Add'));
+        expect(harness.current().maskedKeywords).toEqual(['retained', 'prepared']);
+        expect(harness.current().promptMaskingEnabled).toBe(false);
+    });
+
+    it('keeps an enabled empty list empty and explains that no prompts match', () => {
+        render(<PrivacyTab settings={createSettings({ promptMaskingEnabled: true, maskedKeywords: [] })} setSettings={vi.fn()} />);
+
+        expect(screen.getByRole('status').textContent).toContain('no keywords are configured');
+        expect(screen.getByText('No keywords added yet')).not.toBeNull();
     });
 
     it('exposes and updates the current session state as an accessible switch', () => {
@@ -189,6 +227,24 @@ describe('PrivacyTab', () => {
         });
         expect((input as HTMLInputElement).value).toBe('sensitive');
         expect(addToastMock).not.toHaveBeenCalledWith('Added "sensitive" to masked keywords', 'success');
+        consoleError.mockRestore();
+    });
+
+    it('rolls back a failed prompt masking toggle without clearing keywords', async () => {
+        useSettingsStore.setState({
+            settings: createSettings({ promptMaskingEnabled: true, maskedKeywords: ['retained'] }),
+            flushSettings: vi.fn().mockRejectedValue(new Error('disk full')),
+        });
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        render(<StorePrivacyTab />);
+
+        fireEvent.click(screen.getByRole('switch', { name: 'Prompt keyword masking' }));
+
+        await waitFor(() => expect(useSettingsStore.getState().settings).toEqual(expect.objectContaining({
+            promptMaskingEnabled: true,
+            maskedKeywords: ['retained'],
+        })));
+        expect(addToastMock).toHaveBeenCalledWith('Failed to save prompt keyword masking', 'error');
         consoleError.mockRestore();
     });
 

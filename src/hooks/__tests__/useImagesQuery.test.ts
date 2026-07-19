@@ -59,6 +59,7 @@ const settings: AppSettings = {
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
+    promptMaskingEnabled: true,
     maskedKeywords: ['secret'],
     maskingMode: 'blur',
     enableAI: false
@@ -77,11 +78,12 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
 const renderImagesHook = (
     sortOption: SortOption = 'date_desc',
     collections: Collection[] = [],
-    settingsLoaded = true
+    settingsLoaded = true,
+    querySettings: AppSettings = settings
 ) => renderHook(() => useImagesQuery({
     filters: createDefaultFilters({ collectionId: collections[0]?.id ?? null }),
     sortOption,
-    settings,
+    settings: querySettings,
     privacyEnabled: true,
     allCollections: collections,
     settingsLoaded
@@ -148,6 +150,22 @@ describe('useImagesQuery', () => {
         }));
 
         expect(config().enabled).toBe(true);
+    });
+
+    it('uses an empty query scope without deleting stored keywords when prompt masking is disabled', async () => {
+        const disabledSettings = {
+            ...settings,
+            promptMaskingEnabled: false,
+            maskedKeywords: ['retained'],
+        };
+        renderImagesHook('date_desc', [], true, disabledSettings);
+
+        expect(config().queryKey[5]).toEqual([]);
+        await config().queryFn({ pageParam: undefined });
+        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
+            expect.any(Object), true, 'blur', [], []
+        );
+        expect(disabledSettings.maskedKeywords).toEqual(['retained']);
     });
 
     it('delegates browser pages using the optional cursor id', async () => {

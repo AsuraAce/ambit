@@ -65,6 +65,7 @@ const stateFixture = (): AppState => ({
         confirmDelete: true,
         defaultTheaterMode: false,
         monitoredFolders: [],
+        promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur',
         enableAI: false,
@@ -106,9 +107,37 @@ describe('LocalStorageRepository', () => {
 
         expect(state.settings.theme).toBe('light');
         expect(state.settings.hasCompletedOnboarding).toBe(true);
+        expect(state.settings.promptMaskingEnabled).toBe(true);
         expect(state.settings.maskedKeywords).toEqual(['private']);
         expect(state.settings.resourceFolders).toEqual([]);
         expect(state.recentSearches).toEqual(['flux']);
+    });
+
+    it('infers legacy prompt masking without overriding an explicit persisted switch', async () => {
+        const { LocalStorageRepository } = await import('../repository');
+        const repository = new LocalStorageRepository();
+        const storedState = {
+            images: [],
+            collections: [],
+            smartCollections: [],
+            recentSearches: [],
+        };
+
+        localStorage.setItem('aigallery_state_v1', JSON.stringify({
+            ...storedState,
+            settings: { maskedKeywords: [] },
+        }));
+        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
+            settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: [] }),
+        }));
+
+        localStorage.setItem('aigallery_state_v1', JSON.stringify({
+            ...storedState,
+            settings: { promptMaskingEnabled: false, maskedKeywords: ['retained'] },
+        }));
+        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
+            settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: ['retained'] }),
+        }));
     });
 
     it('saves browser state to the expected localStorage key', async () => {
@@ -342,6 +371,7 @@ describe('TauriFsRepository', () => {
         expect(state.images).toEqual([]);
         expect(state.settings.theme).toBe('light');
         expect(state.settings.hasCompletedOnboarding).toBe(true);
+        expect(state.settings.promptMaskingEnabled).toBe(false);
         expect(state.settings.resourceFolders).toEqual([]);
         expect(fsMocks.writeTextFile).toHaveBeenCalled();
         const [, serialized] = fsMocks.writeTextFile.mock.calls.find(([fileName]) => fileName === 'library.json') as [string, string, unknown];

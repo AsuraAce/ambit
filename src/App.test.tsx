@@ -693,6 +693,7 @@ describe('App orchestration', () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: false,
             enableAI: false,
+            promptMaskingEnabled: true,
             maskedKeywords: ['existing-private'],
             maskingMode: 'hide',
             thumbnailSize: 200,
@@ -715,7 +716,7 @@ describe('App orchestration', () => {
         const completion = onboarding.onComplete({
             hasCompletedOnboarding: true,
             enableAI: true,
-            maskedKeywords: ['new-private'],
+            promptMaskingEnabled: false,
             maskingMode: 'blur',
         });
         await waitFor(() => expect(mocks.flushSettings).toHaveBeenCalledOnce());
@@ -735,6 +736,7 @@ describe('App orchestration', () => {
         expect(mocks.settings).toEqual(expect.objectContaining({
             hasCompletedOnboarding: false,
             enableAI: false,
+            promptMaskingEnabled: true,
             maskedKeywords: ['existing-private'],
             maskingMode: 'hide',
             thumbnailSize: 320,
@@ -743,12 +745,14 @@ describe('App orchestration', () => {
         expect(mocks.flushSettings).toHaveBeenLastCalledWith(expect.objectContaining({
             hasCompletedOnboarding: false,
             enableAI: false,
+            promptMaskingEnabled: true,
             maskedKeywords: ['existing-private'],
             maskingMode: 'hide',
             thumbnailSize: 320,
         }));
         expect(durableSettings).toEqual(expect.objectContaining({
             hasCompletedOnboarding: false,
+            promptMaskingEnabled: true,
             maskedKeywords: ['existing-private'],
             thumbnailSize: 320,
         }));

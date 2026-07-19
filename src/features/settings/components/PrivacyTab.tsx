@@ -7,7 +7,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 import { settingsPersistenceCoordinator } from '../../../utils/settingsPersistenceCoordinator';
 import { InfoTooltip } from '../../../components/ui/InfoTooltip';
 
-type PrivacySettingsField = 'maskedKeywords' | 'maskingMode';
+type PrivacySettingsField = 'promptMaskingEnabled' | 'maskedKeywords' | 'maskingMode';
 
 const privacyValuesEqual = <Field extends PrivacySettingsField>(
     field: Field,
@@ -38,6 +38,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     const retryPrivacyMaskIndex = useSettingsStore(state => state.retryPrivacyMaskIndex);
     const mountedRef = React.useRef(true);
     const operationGenerationsRef = React.useRef<Record<PrivacySettingsField, number>>({
+        promptMaskingEnabled: 0,
         maskedKeywords: 0,
         maskingMode: 0,
     });
@@ -110,6 +111,20 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             previousMode,
             `Masking mode set to ${mode}`,
             'Failed to save masking mode'
+        );
+    };
+
+    const handlePromptMaskingToggle = async () => {
+        const previousValue = settings.promptMaskingEnabled;
+        const nextValue = !previousValue;
+        await persistPrivacyChange(
+            'promptMaskingEnabled',
+            nextValue,
+            previousValue,
+            nextValue
+                ? 'Prompt keyword masking enabled'
+                : 'Prompt keyword masking disabled; saved keywords retained',
+            'Failed to save prompt keyword masking'
         );
     };
 
@@ -222,6 +237,42 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Safety Filters</h4>
 
                 <div className="space-y-6">
+                    <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
+                        <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-400">
+                            <Shield className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div id="prompt-masking-label" className="text-sm font-bold text-gray-900 dark:text-white">Prompt keyword masking</div>
+                                    <p id="prompt-masking-description" className="mt-1 text-xs leading-relaxed text-gray-500">
+                                        Automatically applies Privacy Mode to prompts matching your saved keywords. Disabling it keeps the list available below.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={settings.promptMaskingEnabled}
+                                    aria-labelledby="prompt-masking-label"
+                                    aria-describedby="prompt-masking-description"
+                                    onClick={() => { void handlePromptMaskingToggle(); }}
+                                    disabled={isSavingPrivacy}
+                                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${settings.promptMaskingEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                                >
+                                    <span
+                                        aria-hidden="true"
+                                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${settings.promptMaskingEnabled ? 'left-6' : 'left-1'}`}
+                                    />
+                                </button>
+                            </div>
+                            <p className={`mt-3 text-xs font-medium ${settings.promptMaskingEnabled ? 'text-sage-600 dark:text-sage-400' : 'text-gray-500'}`}>
+                                {settings.promptMaskingEnabled
+                                    ? 'Active'
+                                    : `${settings.maskedKeywords.length} saved ${settings.maskedKeywords.length === 1 ? 'keyword' : 'keywords'} · inactive`}
+                            </p>
+                        </div>
+                    </div>
+
                     <div className="flex items-start gap-4">
                         <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-400">
                             <Shield className="w-5 h-5" />
@@ -231,7 +282,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 <label className="text-sm font-bold text-gray-900 dark:text-white">Masking Behavior</label>
                                 <InfoTooltip
                                     label="About privacy masking behavior"
-                                    content="Blur keeps matching images visible while obscuring sensitive thumbnails. Hide removes matching images from results while Privacy Mode is active."
+                                    content="Blur keeps automatically or manually masked images visible while obscuring sensitive thumbnails. Hide removes them from results while Privacy Mode is active."
                                 />
                             </div>
                             <div className="flex gap-4 mt-2">
@@ -262,8 +313,18 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
 
                     <div>
-                        <label className="text-sm font-bold text-gray-900 dark:text-white block mb-2">Masked Keywords</label>
-                        <p className="text-xs text-gray-500 mb-3">Images with prompts containing these words will be masked or hidden.</p>
+                        <div className="mb-2 flex items-center gap-2">
+                            <label className="text-sm font-bold text-gray-900 dark:text-white">Masked Keywords</label>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${settings.promptMaskingEnabled ? 'bg-sage-100 text-sage-700 dark:bg-sage-500/20 dark:text-sage-300' : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'}`}>
+                                {settings.promptMaskingEnabled ? 'Active' : 'Saved · inactive'}
+                            </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mb-3">Images with prompts containing these words are masked or hidden while prompt keyword masking is active.</p>
+                        {settings.promptMaskingEnabled && settings.maskedKeywords.length === 0 ? (
+                            <p role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                                Prompt keyword masking is enabled, but no keywords are configured. Add a keyword to activate matching.
+                            </p>
+                        ) : null}
 
                         {/* Chip Input */}
                         <div className="flex gap-2 mb-3">
@@ -294,7 +355,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 settings.maskedKeywords.map((keyword) => (
                                     <span
                                         key={keyword}
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 rounded-full text-xs font-medium group"
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium group ${settings.promptMaskingEnabled ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}
                                     >
                                         {keyword}
                                         <button

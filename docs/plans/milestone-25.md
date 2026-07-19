@@ -67,7 +67,7 @@ Verification evidence:
 
 Depends on: Work Package 1.
 
-Status: Pending (`fix/prompt-masking-toggle`)
+Status: Complete (`fix/prompt-masking-toggle`, 2026-07-19)
 
 Primary invariant: disabling prompt-keyword masking never deletes the configured keyword list.
 
@@ -89,6 +89,17 @@ Targeted verification:
 Completion criteria:
 
 - disabling, restarting, and re-enabling restores the same custom keywords and masking behavior.
+
+Verification evidence:
+
+- fresh installs and factory resets enable prompt-keyword masking with the default keyword list;
+- legacy settings infer the independent toggle from whether the saved keyword list is empty, while an explicit saved toggle always wins;
+- disabling uses an empty effective keyword set without mutating the stored list, and the list remains editable while inactive;
+- re-enabling an empty list keeps it empty instead of silently restoring defaults, while manual image masks remain effective;
+- privacy-index rebuilds occur only when the effective keyword set changes;
+- 339 focused settings, onboarding, persistence, search, query, layout, context-menu, collection-operation, and masking tests passed;
+- `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed;
+- rendered browser QA remains a manual check because the in-app browser kernel failed before it could open Ambit; no user-owned development server was stopped or replaced.
 
 ## Work Package 3: Initial Smart Collection Thumbnail Hydration
 

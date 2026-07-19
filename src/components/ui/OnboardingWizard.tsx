@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
-import { DEFAULT_APP_SETTINGS } from '../../constants/defaultSettings';
 import { useToast } from '../../hooks/useToast';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { ApiKeyInput } from './ApiKeyInput';
@@ -64,7 +63,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const [enableAI, setEnableAI] = useState(() => (
         settings.enableAI && (!!geminiApiKey || isEnvKey)
     ));
-    const [blurContent, setBlurContent] = useState(() => settings.maskedKeywords.length > 0);
+    const [promptMaskingEnabled, setPromptMaskingEnabled] = useState(() => settings.promptMaskingEnabled);
     const [isVerifying, setIsVerifying] = useState(false);
     const [isCompleting, setIsCompleting] = useState(false);
     const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -181,11 +180,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         try {
             await onComplete({
                 enableAI,
-                maskedKeywords: blurContent
-                    ? [...(settings.maskedKeywords.length > 0
-                        ? settings.maskedKeywords
-                        : DEFAULT_APP_SETTINGS.maskedKeywords)]
-                    : [],
+                promptMaskingEnabled,
                 maskingMode: 'blur',
                 hasCompletedOnboarding: true,
             });
@@ -463,20 +458,20 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 <div className="flex-1">
                                                     <h3 className="font-bold text-gray-900 dark:text-white">Prompt keyword masking</h3>
                                                     <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                                                        Blur images whose prompts match your configured sensitive-content keywords. Edit the list in Settings → Privacy.
+                                                        Blur images whose prompts match your configured sensitive-content keywords. Turning this off retains your saved list for later.
                                                     </p>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     role="switch"
                                                     aria-label="Enable prompt keyword masking"
-                                                    aria-checked={blurContent}
-                                                    onClick={() => setBlurContent(current => !current)}
-                                                    className={`relative h-7 w-14 shrink-0 rounded-full shadow-inner transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 ${blurContent ? 'bg-sage-500' : 'bg-gray-300 dark:bg-zinc-700'}`}
+                                                    aria-checked={promptMaskingEnabled}
+                                                    onClick={() => setPromptMaskingEnabled(current => !current)}
+                                                    className={`relative h-7 w-14 shrink-0 rounded-full shadow-inner transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 ${promptMaskingEnabled ? 'bg-sage-500' : 'bg-gray-300 dark:bg-zinc-700'}`}
                                                 >
                                                     <span
                                                         aria-hidden="true"
-                                                        className={`pointer-events-none absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-lg transition-transform duration-300 ${blurContent ? 'translate-x-7' : 'translate-x-0'}`}
+                                                        className={`pointer-events-none absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-lg transition-transform duration-300 ${promptMaskingEnabled ? 'translate-x-7' : 'translate-x-0'}`}
                                                     />
                                                 </button>
                                             </div>

@@ -24,6 +24,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
@@ -111,11 +112,11 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } = useSearchStore();
 
     const privacyMaskKeywords = React.useMemo(() => (
-        settings.maskedKeywords
+        getEffectiveMaskedKeywords(settings)
             .map(keyword => keyword.trim().toLowerCase())
             .filter(Boolean)
             .sort()
-    ), [settings.maskedKeywords]);
+    ), [settings.maskedKeywords, settings.promptMaskingEnabled]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
     const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
     const [lastSyncedPrivacyScope, setLastSyncedPrivacyScope] = useState<string | null>(null);
@@ -298,10 +299,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setActiveSqlParams([]);
             return;
         }
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections);
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, privacyMaskKeywords, allCollections);
         setActiveSqlWhere(where);
         setActiveSqlParams(params);
-    }, [filters, privacyEnabled, privacyExposureBlocked, settings.maskingMode, settings.maskedKeywords, allCollections]);
+    }, [filters, privacyEnabled, privacyExposureBlocked, settings.maskingMode, privacyMaskKeywords, allCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.

@@ -83,6 +83,7 @@ describe('useFileOperations', () => {
         confirmDelete: true,
         defaultTheaterMode: false,
         monitoredFolders: [],
+        promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur' as const,
         enableAI: false,
