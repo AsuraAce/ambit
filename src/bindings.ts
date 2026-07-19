@@ -45,6 +45,14 @@ async reconcileInvokeImageSources(updates: InvokeImageSourceUpdate[]) : Promise<
     else return { status: "error", error: e  as any };
 }
 },
+async replaceInvokeImageReferences(referenceSets: InvokeImageReferenceSet[]) : Promise<Result<InvokeImageReferenceReplaceResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("replace_invoke_image_references", { referenceSets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<ImagePathIdentityMoveResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_image_path_identities", { moves }) };
@@ -605,6 +613,10 @@ export type ImportResult = { added: number; totalFound: number; message: string 
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
+export type InvokeImageReferenceInput = { role: InvokeImageReferenceRole; targetInvokeImageName: string }
+export type InvokeImageReferenceReplaceResult = { sourcesReplaced: number; referencesWritten: number; skippedMissingSources: number }
+export type InvokeImageReferenceRole = "init_image" | "controlnet_image" | "controlnet_processed_image" | "ip_adapter_image" | "t2i_adapter_image" | "t2i_adapter_processed_image"
+export type InvokeImageReferenceSet = { sourceImageId: string; references: InvokeImageReferenceInput[] }
 export type InvokeImageSourceReconcileResult = { activeUpdated: number; removedUpdated: number }
 export type InvokeImageSourceUpdate = { id: string; invokeImageName: string; invokeImageCategory: string | null; invokeImageOrigin: string | null }
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }

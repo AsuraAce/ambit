@@ -297,7 +297,29 @@ Completion criteria:
 
 Depends on: Work Packages 1, 2, and 4.
 
-Status: Pending
+Status: Complete (`codex/invokeai-image-assets`, `2026-07-19`)
+
+Evidence:
+
+- migration 64 adds a strict reference junction with the six supported roles,
+  exact source-name retention, unique exact-name target resolution, and indexes
+  for forward and reverse lookup;
+- lifecycle triggers preserve outgoing references for Removed sources, make
+  removed targets unresolved, retry on restore or later import, repair source
+  and target path identities, and clean up permanent deletions;
+- the InvokeAI extractor accepts canonical and supported legacy adapter keys,
+  string and `{ image_name }` forms, wrapper payloads, and exact role/name
+  deduplication without graph crawling or arbitrary-field inference;
+- normal sync and one-time source reconciliation replace complete valid
+  reference snapshots transactionally, including unchanged and Removed rows;
+  malformed metadata preserves existing references;
+- InvokeAI import-schema version 2 forces existing configured databases through
+  reference reconciliation;
+- generated bindings and their complete command/payload contract are current;
+- 64 focused InvokeAI service tests, 88 sync/integration tests, 2 generated
+  binding contract tests, all 2,848 frontend tests, and all 504 Rust tests pass;
+- lint, typecheck, binding drift, formatting, build-size, coverage, and the
+  optimized no-bundle Tauri production build checks pass.
 
 Primary invariant: every supported reference keeps its source InvokeAI image
 name even when its Ambit target cannot yet be resolved.

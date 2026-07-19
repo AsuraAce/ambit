@@ -41,6 +41,27 @@ const commandCases: CommandCase[] = [
         },
         returnsResult: true,
     },
+    {
+        name: 'replaceInvokeImageReferences',
+        invokeName: 'replace_invoke_image_references',
+        args: [[{
+            sourceImageId: 'C:/invoke/result.png',
+            references: [{
+                role: 't2i_adapter_image',
+                targetInvokeImageName: 'reference.png',
+            }],
+        }]],
+        payload: {
+            referenceSets: [{
+                sourceImageId: 'C:/invoke/result.png',
+                references: [{
+                    role: 't2i_adapter_image',
+                    targetInvokeImageName: 'reference.png',
+                }],
+            }],
+        },
+        returnsResult: true,
+    },
     { name: 'moveImagePathIdentities', invokeName: 'move_image_path_identities', args: [[]], payload: { moves: [] }, returnsResult: true },
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },

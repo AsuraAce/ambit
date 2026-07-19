@@ -4,10 +4,11 @@ import { createInvokeImagePathResolver } from '../pathResolver';
 import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
 
 const reconcileInvokeImageSources = vi.hoisted(() => vi.fn());
+const replaceInvokeImageReferences = vi.hoisted(() => vi.fn());
 const verifyImagePaths = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../bindings', () => ({
-    commands: { reconcileInvokeImageSources, verifyImagePaths },
+    commands: { reconcileInvokeImageSources, replaceInvokeImageReferences, verifyImagePaths },
 }));
 
 const root = 'D:/InvokeAI';
@@ -17,6 +18,7 @@ const createDb = (rows: Array<{
     image_subfolder?: string | null;
     image_category?: string | null;
     image_origin?: string | null;
+    metadata_blob?: unknown;
 }>) => ({
     select: vi.fn(async (query: string) => {
         if (query.includes('SELECT count(*) as count FROM images')) {
@@ -35,6 +37,14 @@ describe('reconcileInvokeSourceFacts', () => {
         reconcileInvokeImageSources.mockImplementation(async (updates: unknown[]) => ({
             status: 'ok',
             data: { activeUpdated: updates.length, removedUpdated: 1 },
+        }));
+        replaceInvokeImageReferences.mockImplementation(async (referenceSets: unknown[]) => ({
+            status: 'ok',
+            data: {
+                sourcesReplaced: referenceSets.length,
+                referencesWritten: 0,
+                skippedMissingSources: 0,
+            },
         }));
         verifyImagePaths.mockResolvedValue({ status: 'ok', data: [] });
     });
@@ -162,6 +172,94 @@ describe('reconcileInvokeSourceFacts', () => {
             .map(call => call[0])
             .find(query => query.includes('NULL AS image_category'));
         expect(factQuery).toContain('NULL AS image_origin');
+    });
+
+    it('reconciles exact references for canonical and safe legacy source identities', async () => {
+        const db = createDb([{
+            image_name: 'result.png',
+            image_subfolder: 'nested',
+            metadata_blob: {
+                init_image: ' Input.PNG ',
+                controlnets: [{ image: { image_name: 'pose.png' } }],
+            },
+        }]);
+        const canonicalPath = `${root}/outputs/images/nested/result.png`;
+        const legacyPath = `${root}/outputs/images/result.png`;
+        verifyImagePaths.mockResolvedValueOnce({ status: 'ok', data: [legacyPath] });
+
+        await reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(['image_subfolder', 'metadata_json']),
+            pathResolver: createInvokeImagePathResolver(root, async () => [
+                'outputs/images/nested/result.png',
+            ]),
+            onProgress: vi.fn(),
+        });
+
+        expect(replaceInvokeImageReferences).toHaveBeenCalledWith([
+            {
+                sourceImageId: canonicalPath,
+                references: [
+                    { role: 'init_image', targetInvokeImageName: ' Input.PNG ' },
+                    { role: 'controlnet_image', targetInvokeImageName: 'pose.png' },
+                ],
+            },
+            {
+                sourceImageId: legacyPath,
+                references: [
+                    { role: 'init_image', targetInvokeImageName: ' Input.PNG ' },
+                    { role: 'controlnet_image', targetInvokeImageName: 'pose.png' },
+                ],
+            },
+        ]);
+        const factQuery = db.select.mock.calls
+            .map(call => call[0])
+            .find(query => query.includes('NULL AS image_category'));
+        expect(factQuery).toContain('i.metadata_json AS metadata_blob');
+    });
+
+    it('uses a valid empty snapshot to clear references but preserves them for malformed metadata', async () => {
+        const pathResolver = createInvokeImagePathResolver(root, async () => [
+            'outputs/images/asset.png',
+        ]);
+
+        await reconcileInvokeSourceFacts({
+            db: createDb([{ image_name: 'asset.png', metadata_blob: null }]) as never,
+            columns: new Set(['metadata_json']),
+            pathResolver,
+            onProgress: vi.fn(),
+        });
+
+        expect(replaceInvokeImageReferences).toHaveBeenCalledWith([{
+            sourceImageId: `${root}/outputs/images/asset.png`,
+            references: [],
+        }]);
+
+        replaceInvokeImageReferences.mockClear();
+        await reconcileInvokeSourceFacts({
+            db: createDb([{ image_name: 'asset.png', metadata_blob: '{bad json' }]) as never,
+            columns: new Set(['metadata_json']),
+            pathResolver,
+            onProgress: vi.fn(),
+        });
+
+        expect(replaceInvokeImageReferences).not.toHaveBeenCalled();
+    });
+
+    it('propagates native reference reconciliation failures', async () => {
+        replaceInvokeImageReferences.mockResolvedValueOnce({
+            status: 'error',
+            error: 'reference write unavailable',
+        });
+
+        await expect(reconcileInvokeSourceFacts({
+            db: createDb([{ image_name: 'asset.png', metadata_blob: null }]) as never,
+            columns: new Set(['metadata_json']),
+            pathResolver: createInvokeImagePathResolver(root, async () => [
+                'outputs/images/asset.png',
+            ]),
+            onProgress: vi.fn(),
+        })).rejects.toBe('reference write unavailable');
     });
 
     it.each([

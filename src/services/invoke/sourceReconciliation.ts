@@ -1,8 +1,13 @@
 import Database from '@tauri-apps/plugin-sql';
-import { commands, type InvokeImageSourceUpdate } from '../../bindings';
+import {
+    commands,
+    type InvokeImageReferenceSet,
+    type InvokeImageSourceUpdate,
+} from '../../bindings';
 import { normalizePath } from '../../utils/pathUtils';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
+import { extractInvokeImageReferences } from './referenceExtractor';
 
 interface InvokeSourceIdentityRow {
     image_name: string;
@@ -12,6 +17,7 @@ interface InvokeSourceIdentityRow {
 interface InvokeSourceFactRow extends InvokeSourceIdentityRow {
     image_category: string | null;
     image_origin: string | null;
+    metadata_blob: unknown;
 }
 
 interface ReconcileInvokeSourceFactsOptions {
@@ -152,13 +158,18 @@ export const reconcileInvokeSourceFacts = async ({
     const originSelect = columns.has('image_origin')
         ? ', i.image_origin'
         : ', NULL AS image_origin';
+    const metadataSelect = columns.has('metadata_json')
+        ? ', i.metadata_json AS metadata_blob'
+        : (columns.has('metadata')
+            ? ', i.metadata AS metadata_blob'
+            : ', NULL AS metadata_blob');
     let processed = 0;
     let updated = 0;
 
     for (let offset = 0; offset < total; offset += BATCH_SIZE) {
         throwIfAborted(signal);
         const rows = await db.select<InvokeSourceFactRow[]>(`
-            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}
+            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${metadataSelect}
             FROM images i
             ORDER BY ${orderBy}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
@@ -169,6 +180,7 @@ export const reconcileInvokeSourceFacts = async ({
             pathResolver.resolveImagePath(row.image_name, row.image_subfolder)
         ));
         const updatesById = new Map<string, InvokeImageSourceUpdate>();
+        const referenceSetsById = new Map<string, InvokeImageReferenceSet>();
 
         rows.forEach((row, index) => {
             const resolved = resolvedPaths[index];
@@ -181,16 +193,26 @@ export const reconcileInvokeSourceFacts = async ({
                 invokeImageCategory: row.image_category ?? null,
                 invokeImageOrigin: row.image_origin ?? null,
             });
+            const extraction = extractInvokeImageReferences(row.metadata_blob);
+            const addUpdate = (key: string, id: string): void => {
+                updatesById.set(key, updateFor(id));
+                if (extraction.status === 'valid') {
+                    referenceSetsById.set(key, {
+                        sourceImageId: id,
+                        references: extraction.references,
+                    });
+                }
+            };
             const canonicalKey = pathKey(resolved.absolutePath);
             if (canonicalOwners.get(canonicalKey) === owner) {
-                updatesById.set(canonicalKey, updateFor(resolved.absolutePath));
+                addUpdate(canonicalKey, resolved.absolutePath);
             }
 
             const legacyPath = pathResolver.getLegacyFlatImagePath(row.image_name);
             if (!legacyPath || pathKey(legacyPath) === canonicalKey) return;
             const legacyKey = pathKey(legacyPath);
             if (safeLegacyAliases.has(legacyKey) && legacyOwners.get(legacyKey) === owner) {
-                updatesById.set(legacyKey, updateFor(legacyPath));
+                addUpdate(legacyKey, legacyPath);
             }
         });
 
@@ -199,6 +221,11 @@ export const reconcileInvokeSourceFacts = async ({
         if (updates.length > 0) {
             const result = await unwrap(commands.reconcileInvokeImageSources(updates));
             updated += result.activeUpdated + result.removedUpdated;
+        }
+        const referenceSets = Array.from(referenceSetsById.values());
+        if (referenceSets.length > 0) {
+            throwIfAborted(signal);
+            await unwrap(commands.replaceInvokeImageReferences(referenceSets));
         }
 
         processed += rows.length;

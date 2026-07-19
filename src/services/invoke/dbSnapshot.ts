@@ -15,7 +15,7 @@ interface InvokeDbSnapshotConfig {
 }
 
 export const INVOKE_PATH_REPAIR_SNAPSHOT_VERSION = 1;
-export const INVOKE_IMPORT_SCHEMA_VERSION = 1;
+export const INVOKE_IMPORT_SCHEMA_VERSION = 2;
 
 const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>
     [...files].sort((a, b) => a.path.localeCompare(b.path));

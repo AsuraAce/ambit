@@ -29,6 +29,7 @@ vi.mock('../../../bindings', () => ({
     commands: {
         getFileSizesBulk: vi.fn(),
         listInvokeaiImages: vi.fn(),
+        replaceInvokeImageReferences: vi.fn(),
         verifyImagePaths: vi.fn()
     }
 }));
@@ -179,6 +180,10 @@ describe('syncImages live mode', () => {
             data: paths.map(() => 123)
         }) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: [] } as never);
+        vi.mocked(commands.replaceInvokeImageReferences).mockResolvedValue({
+            status: 'ok',
+            data: { sourcesReplaced: 0, referencesWritten: 0, skippedMissingSources: 0 },
+        } as never);
         vi.mocked(commands.verifyImagePaths).mockResolvedValue({ status: 'ok', data: [] } as never);
         vi.mocked(insertImagesBatch).mockResolvedValue(undefined as never);
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([]);
@@ -407,7 +412,7 @@ describe('syncImages live mode', () => {
                 return [
                     {
                         image_name: 'new-image.png',
-                        metadata_blob: { positive_prompt: 'test' },
+                        metadata_blob: { positive_prompt: 'test', init_image: 'source.png' },
                         created_at: '2026-04-18 12:00:00',
                         updated_at: '2026-04-18 12:00:05',
                         width: 1024,
@@ -467,6 +472,13 @@ describe('syncImages live mode', () => {
             'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
         expect(upsertCollection).toHaveBeenCalledTimes(1);
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
+            sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
+            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+        }]);
+        expect(vi.mocked(insertImagesBatch).mock.invocationCallOrder[0]).toBeLessThan(
+            vi.mocked(commands.replaceInvokeImageReferences).mock.invocationCallOrder[0]
+        );
     });
 
     it('runs a final collection reconciliation after a manual board sync', async () => {
@@ -511,7 +523,8 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
                 return [{
-                    image_name: 'unchanged.png', metadata_blob: { positive_prompt: 'raw' },
+                    image_name: 'unchanged.png',
+                    metadata_blob: { positive_prompt: 'raw', init_image: { image_name: 'source.png' } },
                     created_at: '2026-04-18T12:00:00Z', width: 512, height: 512
                 }];
             }
@@ -542,6 +555,62 @@ describe('syncImages live mode', () => {
         expect(result).toMatchObject({ imported: 0, updated: 0 });
         expect(result.syncedIds).toContain('unchanged.png');
         expect(insertImagesBatch).not.toHaveBeenCalled();
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
+            sourceImageId: fullPath,
+            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+        }]);
+    });
+
+    it('preserves existing references when an unchanged row has malformed metadata', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'unchanged.png', metadata_blob: '{bad json',
+                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
+            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+        })]);
+
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false,
+        });
+
+        expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('fails the sync batch when transactional reference replacement fails', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'new.png', metadata_blob: { init_image: 'source.png' },
+                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(commands.replaceInvokeImageReferences).mockResolvedValueOnce({
+            status: 'error', error: 'reference transaction failed',
+        } as never);
+
+        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false,
+        })).rejects.toBe('reference transaction failed');
+        expect(insertImagesBatch).toHaveBeenCalledOnce();
     });
 
     it('rewrites an existing image when its stored raw chunk is already mapped', async () => {

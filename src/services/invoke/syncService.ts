@@ -1,6 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands } from '../../bindings';
+import { commands, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
@@ -34,6 +34,7 @@ import { upsertCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
+import { extractInvokeImageReferences } from './referenceExtractor';
 
 interface InvokeSyncOptions {
     syncFavorites?: boolean;
@@ -53,7 +54,7 @@ interface CountRow {
 interface InvokeImageRow {
     image_name: string;
     image_subfolder?: string | null;
-    metadata_blob: string | null;
+    metadata_blob: unknown;
     created_at: string;
     updated_at?: string | null;
     width?: number | null;
@@ -579,6 +580,7 @@ export const syncImages = async (
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
+        const referenceSets: InvokeImageReferenceSet[] = [];
         const batchBuildStartedAt = liveWatchNow();
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
@@ -751,7 +753,16 @@ export const syncImages = async (
                     if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
                 }
 
+                const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
+                const referenceSet = referenceExtraction.status === 'valid'
+                    ? {
+                        sourceImageId: fullPath,
+                        references: referenceExtraction.references,
+                    }
+                    : undefined;
+
                 if (!needsUpdate) {
+                    if (referenceSet) referenceSets.push(referenceSet);
                     if (pathRepaired) totalUpdated++;
                     processed++;
                     syncedIds.add(row.image_name);
@@ -775,10 +786,11 @@ export const syncImages = async (
                 const finalMetadata = existing ? existing.metadata : metadata;
                 const finalOriginalMetadata = existing?.originalMetadata || (existing ? existing.metadata : metadata);
 
-                // Ensure we store the RAW object, not a string, to avoid double-stringification
-                const rawInvokeMeta = row.metadata_blob
+                // Preserve the raw object; the DB adapter serializes the complete chunk map once.
+                const parsedRawInvokeMeta: unknown = row.metadata_blob
                     ? (typeof row.metadata_blob === 'string' ? JSON.parse(row.metadata_blob) : row.metadata_blob)
                     : {};
+                const rawInvokeMeta = isRecord(parsedRawInvokeMeta) ? { ...parsedRawInvokeMeta } : {};
 
                 // Inject the hint status so it survives in original chunks/originalMetadata
                 if (hasHasWorkflow && row.has_workflow !== undefined) {
@@ -804,7 +816,7 @@ export const syncImages = async (
                     metadata: finalMetadata,
                     originalMetadata: finalOriginalMetadata,
                     originalChunks: {
-                        'invokeai_metadata': rawInvokeMeta
+                        'invokeai_metadata': rawInvokeMeta as unknown as string
                     },
                     originalState: originalState,
                     invokeImageName: row.image_name,
@@ -827,6 +839,7 @@ export const syncImages = async (
                 );
 
                 currentBatch.push(newImg);
+                if (referenceSet) referenceSets.push(referenceSet);
                 syncedIds.add(row.image_name);
                 syncedIds.add(resolvedPath.relativePath as string);
                 processed++;
@@ -836,6 +849,7 @@ export const syncImages = async (
 
         let boardCreateMs = 0;
         let insertMs = 0;
+        let referenceWriteMs = 0;
         let collectionSyncMs = 0;
         if (currentBatch.length > 0) {
             // Lazy Board Creation
@@ -868,6 +882,11 @@ export const syncImages = async (
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
             }
         }
+        if (referenceSets.length > 0) {
+            const referenceWriteStartedAt = liveWatchNow();
+            await unwrap(commands.replaceInvokeImageReferences(referenceSets));
+            referenceWriteMs = elapsedMs(referenceWriteStartedAt);
+        }
         logSyncDebug('Invoke sync batch complete', {
             batchIndex,
             rowCount: rows.length,
@@ -878,6 +897,7 @@ export const syncImages = async (
             batchBuildMs,
             boardCreateMs,
             insertMs,
+            referenceWriteMs,
             collectionSyncMs,
             batchMs: elapsedMs(batchStartedAt)
         });

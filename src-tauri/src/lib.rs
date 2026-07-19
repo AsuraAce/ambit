@@ -30,6 +30,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         // db commands
         db::commands::image_commands::save_images_batch,
         db::commands::image_commands::reconcile_invoke_image_sources,
+        db::commands::image_commands::replace_invoke_image_references,
         db::commands::image_commands::move_image_path_identities,
         db::commands::maintenance::get_main_database_url,
         db::commands::maintenance::get_db_diagnostics,

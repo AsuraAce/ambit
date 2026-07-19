@@ -56,6 +56,54 @@ pub struct InvokeImageSourceReconcileResult {
     pub removed_updated: usize,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeImageReferenceRole {
+    InitImage,
+    ControlnetImage,
+    ControlnetProcessedImage,
+    IpAdapterImage,
+    #[serde(rename = "t2i_adapter_image")]
+    T2iAdapterImage,
+    #[serde(rename = "t2i_adapter_processed_image")]
+    T2iAdapterProcessedImage,
+}
+
+impl InvokeImageReferenceRole {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InitImage => "init_image",
+            Self::ControlnetImage => "controlnet_image",
+            Self::ControlnetProcessedImage => "controlnet_processed_image",
+            Self::IpAdapterImage => "ip_adapter_image",
+            Self::T2iAdapterImage => "t2i_adapter_image",
+            Self::T2iAdapterProcessedImage => "t2i_adapter_processed_image",
+        }
+    }
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceInput {
+    pub role: InvokeImageReferenceRole,
+    pub target_invoke_image_name: String,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceSet {
+    pub source_image_id: String,
+    pub references: Vec<InvokeImageReferenceInput>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceReplaceResult {
+    pub sources_replaced: usize,
+    pub references_written: usize,
+    pub skipped_missing_sources: usize,
+}
+
 fn normalize_privacy_keywords(masked_keywords: &[String]) -> Vec<String> {
     masked_keywords
         .iter()
@@ -486,6 +534,81 @@ fn reconcile_invoke_image_sources_inner(
     Ok(result)
 }
 
+fn replace_invoke_image_references_inner(
+    conn: &rusqlite::Connection,
+    reference_sets: &[InvokeImageReferenceSet],
+) -> Result<InvokeImageReferenceReplaceResult, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut result = InvokeImageReferenceReplaceResult::default();
+
+    {
+        let mut source_exists = tx
+            .prepare_cached(
+                "SELECT 1 FROM images WHERE id = ?1
+                 UNION ALL
+                 SELECT 1 FROM removed_images WHERE id = ?1
+                 LIMIT 1",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut delete_existing = tx
+            .prepare_cached("DELETE FROM invoke_image_references WHERE source_image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut insert_reference = tx
+            .prepare_cached(
+                "INSERT OR IGNORE INTO invoke_image_references (
+                    source_image_id,
+                    role,
+                    target_invoke_image_name,
+                    target_image_id
+                 ) VALUES (
+                    ?1,
+                    ?2,
+                    ?3,
+                    (
+                        SELECT CASE WHEN COUNT(*) = 1 THEN MIN(id) ELSE NULL END
+                        FROM images
+                        WHERE invoke_image_name = ?3
+                    )
+                 )",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for reference_set in reference_sets {
+            let source_image_id = normalize_image_identity_path(&reference_set.source_image_id);
+            if !source_exists
+                .exists(params![&source_image_id])
+                .map_err(|e| e.to_string())?
+            {
+                result.skipped_missing_sources += 1;
+                continue;
+            }
+
+            delete_existing
+                .execute(params![&source_image_id])
+                .map_err(|e| e.to_string())?;
+
+            for reference in &reference_set.references {
+                if reference.target_invoke_image_name.trim().is_empty() {
+                    return Err("InvokeAI reference image names cannot be blank".to_string());
+                }
+
+                result.references_written += insert_reference
+                    .execute(params![
+                        &source_image_id,
+                        reference.role.as_str(),
+                        &reference.target_invoke_image_name,
+                    ])
+                    .map_err(|e| e.to_string())?;
+            }
+
+            result.sources_replaced += 1;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
 fn normalize_image_identity_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -770,6 +893,35 @@ pub async fn reconcile_invoke_image_sources(
         }
 
         Err("Failed to reconcile InvokeAI image sources after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn replace_invoke_image_references(
+    app: AppHandle,
+    reference_sets: Vec<InvokeImageReferenceSet>,
+) -> Result<InvokeImageReferenceReplaceResult, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = replace_invoke_image_references_inner(conn, &reference_sets);
+
+            match result {
+                Ok(result) => return Ok(result),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to replace InvokeAI image references after max retries".to_string())
     })
     .await
 }
@@ -1222,6 +1374,117 @@ mod tests {
             .expect("repeat reconciliation");
         assert_eq!(repeated.active_updated, 0);
         assert_eq!(repeated.removed_updated, 0);
+    }
+
+    #[test]
+    fn replace_invoke_references_is_atomic_exact_and_resolution_safe() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut source = create_image_record("source", 100, 200, r#"{"tool":"InvokeAI"}"#);
+        source.invoke_image_name = Some("source.png".to_string());
+        let mut target = create_image_record("target-a", 101, 200, r#"{"tool":"InvokeAI"}"#);
+        target.invoke_image_name = Some("Target.PNG".to_string());
+        super::save_images_batch_inner(&conn, &[source, target]).expect("insert source and target");
+
+        let reference = super::InvokeImageReferenceInput {
+            role: super::InvokeImageReferenceRole::ControlnetImage,
+            target_invoke_image_name: "Target.PNG".to_string(),
+        };
+        let result = super::replace_invoke_image_references_inner(
+            &conn,
+            &[super::InvokeImageReferenceSet {
+                source_image_id: "source".to_string(),
+                references: vec![reference.clone(), reference],
+            }],
+        )
+        .expect("replace references");
+        assert_eq!(result.sources_replaced, 1);
+        assert_eq!(result.references_written, 1);
+        assert_eq!(result.skipped_missing_sources, 0);
+
+        let stored: (String, String, String, Option<String>) = conn
+            .query_row(
+                "SELECT source_image_id, role, target_invoke_image_name, target_image_id
+                 FROM invoke_image_references",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("stored reference");
+        assert_eq!(
+            stored,
+            (
+                "source".to_string(),
+                "controlnet_image".to_string(),
+                "Target.PNG".to_string(),
+                Some("target-a".to_string()),
+            )
+        );
+
+        let blank = super::replace_invoke_image_references_inner(
+            &conn,
+            &[super::InvokeImageReferenceSet {
+                source_image_id: "source".to_string(),
+                references: vec![super::InvokeImageReferenceInput {
+                    role: super::InvokeImageReferenceRole::InitImage,
+                    target_invoke_image_name: "   ".to_string(),
+                }],
+            }],
+        );
+        assert!(blank.is_err());
+        let preserved_after_rollback: i64 = conn
+            .query_row("SELECT COUNT(*) FROM invoke_image_references", [], |row| {
+                row.get(0)
+            })
+            .expect("reference preserved after rollback");
+        assert_eq!(preserved_after_rollback, 1);
+
+        let mut duplicate = create_image_record("target-b", 102, 200, r#"{"tool":"InvokeAI"}"#);
+        duplicate.invoke_image_name = Some("Target.PNG".to_string());
+        super::save_images_batch_inner(&conn, &[duplicate]).expect("insert ambiguous target");
+        let ambiguous: Option<String> = conn
+            .query_row(
+                "SELECT target_image_id FROM invoke_image_references",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ambiguous target");
+        assert_eq!(ambiguous, None);
+
+        conn.execute("DELETE FROM images WHERE id = 'target-b'", [])
+            .expect("delete duplicate target");
+        let resolved_again: Option<String> = conn
+            .query_row(
+                "SELECT target_image_id FROM invoke_image_references",
+                [],
+                |row| row.get(0),
+            )
+            .expect("resolved target");
+        assert_eq!(resolved_again.as_deref(), Some("target-a"));
+
+        let cleared = super::replace_invoke_image_references_inner(
+            &conn,
+            &[
+                super::InvokeImageReferenceSet {
+                    source_image_id: "missing".to_string(),
+                    references: vec![],
+                },
+                super::InvokeImageReferenceSet {
+                    source_image_id: "source".to_string(),
+                    references: vec![],
+                },
+            ],
+        )
+        .expect("clear references");
+        assert_eq!(cleared.sources_replaced, 1);
+        assert_eq!(cleared.references_written, 0);
+        assert_eq!(cleared.skipped_missing_sources, 1);
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM invoke_image_references", [], |row| {
+                row.get(0)
+            })
+            .expect("cleared references");
+        assert_eq!(remaining, 0);
     }
 
     #[test]
