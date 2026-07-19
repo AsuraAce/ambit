@@ -169,6 +169,7 @@ fn best_resource_thumbnail(
                 OR i.resolved_model_name = ?1
              )
              AND i.is_deleted = 0
+             AND IFNULL(i.is_invoke_asset_gen, 0) = 0
              AND i.thumbnail_path IS NOT NULL
              AND i.thumbnail_path != ''
              {safe_clause}
@@ -223,6 +224,7 @@ fn format_resource_thumbnail_query(table: &str, name_col: &str, safe_clause: &st
          JOIN images i ON i.id = jt.image_id
          WHERE jt.{name_col} = ?1
          AND i.is_deleted = 0
+         AND IFNULL(i.is_invoke_asset_gen, 0) = 0
          AND i.thumbnail_path IS NOT NULL
          AND i.thumbnail_path != ''
          {safe_clause}
@@ -832,19 +834,28 @@ mod tests {
         let conn = setup_conn();
 
         conn.execute(
-            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, model_hash, model_name, resolved_model_name)
-             VALUES ('checkpoint-img', 'checkpoint.png', 500, 1, 'checkpoint.webp', 'checkpoint_hash', 'Portrait', 'Portrait')",
+            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, model_hash, model_name, resolved_model_name, invoke_image_category)
+             VALUES
+                ('checkpoint-img', 'checkpoint.png', 500, 0, 'checkpoint.webp', 'checkpoint_hash', 'Portrait', 'Portrait', 'general'),
+                ('checkpoint-asset', 'checkpoint-asset.png', 600, 1, 'checkpoint-asset.webp', 'checkpoint_hash', 'Portrait', 'Portrait', 'control'),
+                ('checkpoint-asset-only', 'checkpoint-asset-only.png', 700, 1, 'checkpoint-asset-only.webp', 'asset-only-hash', 'AssetOnly', 'AssetOnly', 'mask')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path)
-             VALUES ('lora-img', 'lora.png', 100, 0, 'lora.webp')",
+            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, invoke_image_category)
+             VALUES
+                ('lora-img', 'lora.png', 100, 0, 'lora.webp', 'general'),
+                ('lora-asset', 'lora-asset.png', 800, 1, 'lora-asset.webp', 'control'),
+                ('lora-asset-only', 'lora-asset-only.png', 900, 1, 'lora-asset-only.webp', 'mask')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO image_loras (image_id, lora_name) VALUES ('lora-img', 'Portrait')",
+            "INSERT INTO image_loras (image_id, lora_name) VALUES
+                ('lora-img', 'Portrait'),
+                ('lora-asset', 'Portrait'),
+                ('lora-asset-only', 'AssetOnly')",
             [],
         )
         .unwrap();
@@ -860,5 +871,16 @@ mod tests {
         assert_eq!(lora_thumb.image_id.as_deref(), Some("lora-img"));
         assert_eq!(checkpoint_thumb.path, "checkpoint.webp");
         assert_eq!(checkpoint_thumb.image_id.as_deref(), Some("checkpoint-img"));
+        assert!(best_resource_thumbnail(
+            &conn,
+            "AssetOnly",
+            "asset-only-hash",
+            "checkpoint",
+            false
+        )
+        .is_none());
+        assert!(
+            best_resource_thumbnail(&conn, "AssetOnly", "lora_AssetOnly", "loras", false).is_none()
+        );
     }
 }

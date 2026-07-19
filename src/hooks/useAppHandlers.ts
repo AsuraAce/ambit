@@ -19,9 +19,10 @@ interface UseAppHandlersProps {
     images: AIImage[];
     setImages: (update: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
     refreshMaintenanceCounts: () => void;
+    refreshHiddenAvailability: () => Promise<void>;
 }
 
-export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
+export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability }: UseAppHandlersProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
@@ -120,12 +121,12 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
     const handleRestoreImages = async (ids: string[]) => {
         await restoreRemovedImages(ids);
-        const restoredImages = await getImagesByIds(ids);
-        setImages(p => {
-            const existingIds = new Set(p.map(image => image.id));
-            const uniqueRestored = restoredImages.filter(image => !existingIds.has(image.id));
-            return uniqueRestored.length > 0 ? [...uniqueRestored, ...p] : p;
-        });
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['images'] }),
+            refreshHiddenAvailability().catch(error => {
+                console.error('[Restore] Failed to refresh hidden-content availability after restoring images', error);
+            }),
+        ]);
         addToast(`Restored ${ids.length} image${ids.length === 1 ? '' : 's'} to the library`, 'success');
         refreshMaintenanceCounts();
         refreshFacets();

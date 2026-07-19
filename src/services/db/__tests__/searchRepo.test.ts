@@ -35,6 +35,7 @@ const createFacetDb = (
             return diskRows;
         }
         if (normalizedSql.includes('FROM scoped_images')) {
+            if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
             if (normalizedSql.includes('JOIN image_hypernetworks')) return scopedRows.hypernetworks ?? deriveScopedRows(cacheRows, 'hypernetworks');
@@ -245,6 +246,40 @@ describe('searchRepo getFacets', () => {
 
         expect(facets.tools).toEqual(['ComfyUI', 'Unknown']);
         expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides asset-only cached tools by default and restores them when revealed regardless of resource scope', async () => {
+        const db = createFacetDb(
+            [
+                { facet_type: 'tools', resource_name: 'ComfyUI', count: 4 },
+                { facet_type: 'tools', resource_name: 'AssetOnlyTool', count: 0 },
+            ],
+            [],
+            { tools: [
+                { name: 'ComfyUI', count: 4 },
+                { name: 'AssetOnlyTool', count: 1 },
+            ] }
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const hidden = await getFacets('', [], ['tools']);
+        const revealed = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools']
+        );
+        const revealedWithLocalResources = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools'],
+            { assetScope: 'local' }
+        );
+
+        expect(hidden.tools).toEqual(['ComfyUI']);
+        expect(revealed.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(revealedWithLocalResources.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes("COALESCE(tool, 'Unknown') AS name"))).toBe(true);
     });
 
     it('ignores unsupported runtime facet types during scoped counting', async () => {

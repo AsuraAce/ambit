@@ -67,7 +67,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
 // Wrappers to inject cross-context callbacks
 const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { fetchData, refreshMetadata } = useSearch();
+  const { refreshMetadata, refreshHiddenAvailability } = useSearch();
 
   const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope) => {
     // SearchContext owns the scope-aware metadata refresh strategy.
@@ -75,7 +75,10 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshMetadata]);
 
   return (
-    <SyncProvider onSyncComplete={handleSyncComplete}>
+    <SyncProvider
+      onSyncComplete={handleSyncComplete}
+      onInvokeContentChanged={refreshHiddenAvailability}
+    >
       {children}
     </SyncProvider>
   );

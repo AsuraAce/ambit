@@ -348,6 +348,107 @@ describe('browserMockData filtering', () => {
         expect(revealed.totalCount).toBeGreaterThan(hidden.totalCount);
     });
 
+    it('excludes asset-only facets and asset usage from default facet counts', () => {
+        const images = getBrowserMockImages();
+        const asset = images.find((image) => isKnownInvokeImageAsset(image.invokeImageCategory));
+        const visible = images.find((image) => !isKnownInvokeImageAsset(image.invokeImageCategory));
+        expect(asset).toBeDefined();
+        expect(visible).toBeDefined();
+        if (!asset || !visible) return;
+
+        try {
+            updateBrowserMockImage(asset.id, {
+                metadata: {
+                    ...asset.metadata,
+                    tool: GeneratorTool.FORGE,
+                    model: 'SharedAssetModel',
+                    loras: ['SharedAssetLora', 'AssetOnlyLora'],
+                },
+            });
+            updateBrowserMockImage(visible.id, {
+                metadata: {
+                    ...visible.metadata,
+                    model: 'SharedAssetModel',
+                    loras: ['SharedAssetLora'],
+                },
+            });
+
+            const hidden = getBrowserMockFacets(createDefaultFilters({
+                showIntermediates: true,
+                showGrids: true,
+            }));
+            const revealed = getBrowserMockFacets(createDefaultFilters({
+                showIntermediates: true,
+                showGrids: true,
+                showInvokeImageAssets: true,
+            }));
+
+            expect(hidden.tools).not.toContain(GeneratorTool.FORGE);
+            expect(hidden.loras.find((item) => item.name === 'AssetOnlyLora')).toBeUndefined();
+            expect(hidden.loras.find((item) => item.name === 'SharedAssetLora')?.count).toBe(1);
+            expect(revealed.tools).toContain(GeneratorTool.FORGE);
+            expect(revealed.loras.find((item) => item.name === 'AssetOnlyLora')?.count).toBe(1);
+            expect(revealed.loras.find((item) => item.name === 'SharedAssetLora')?.count).toBe(2);
+        } finally {
+            updateBrowserMockImage(asset.id, asset);
+            updateBrowserMockImage(visible.id, visible);
+        }
+    });
+
+    it('applies the current asset visibility after smart-collection membership', () => {
+        const hidden = searchBrowserMockImages(createDefaultFilters({
+            collectionId: 'mock_favorites',
+            showIntermediates: true,
+            showGrids: true,
+        }), 'date_desc', 1000);
+        const revealed = searchBrowserMockImages(createDefaultFilters({
+            collectionId: 'mock_favorites',
+            showIntermediates: true,
+            showGrids: true,
+            showInvokeImageAssets: true,
+        }), 'date_desc', 1000);
+
+        expect(hidden.images.some(image => image.id === 'mock_9')).toBe(false);
+        expect(revealed.images.find(image => image.id === 'mock_9')).toMatchObject({
+            isFavorite: true,
+            invokeImageCategory: 'control',
+        });
+    });
+
+    it('keeps smart collection counts on fixed default visibility regardless of saved toggles', () => {
+        const hiddenId = 'smart-count-hidden-assets';
+        const shownId = 'smart-count-shown-assets';
+        const favoriteFilters = createDefaultFilters({ favoritesOnly: true });
+
+        try {
+            upsertBrowserMockCollection({
+                id: hiddenId,
+                name: 'Hidden Asset Count',
+                filters: { ...favoriteFilters, showInvokeImageAssets: false },
+            });
+            upsertBrowserMockCollection({
+                id: shownId,
+                name: 'Shown Asset Count',
+                filters: { ...favoriteFilters, showInvokeImageAssets: true },
+            });
+
+            const collections = getBrowserMockCollections();
+            const hiddenCount = collections.find(collection => collection.id === hiddenId)?.count;
+            const shownCount = collections.find(collection => collection.id === shownId)?.count;
+            const expectedCount = searchBrowserMockImages(
+                createDefaultFilters({ collectionId: hiddenId }),
+                'date_desc',
+                1000
+            ).totalCount;
+
+            expect(hiddenCount).toBe(expectedCount);
+            expect(shownCount).toBe(expectedCount);
+        } finally {
+            deleteBrowserMockCollection(hiddenId);
+            deleteBrowserMockCollection(shownId);
+        }
+    });
+
     it('supports quoted, bang-negative, date, upscaled, and unknown scoped search tokens', () => {
         const positiveQueries = ['"neon rain"', 'neon !solarpunk', 'upscaled:false'];
         positiveQueries.forEach(searchQuery => {

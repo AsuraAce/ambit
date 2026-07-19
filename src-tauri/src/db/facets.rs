@@ -749,6 +749,7 @@ fn query_checkpoint_stats(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
              WHERE is_deleted = 0
+             AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'",
             [],
             map_row,
@@ -758,6 +759,7 @@ fn query_checkpoint_stats(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
              WHERE is_deleted = 0
+             AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND resolved_model_name = ?1",
             params![name],
             map_row,
@@ -791,6 +793,7 @@ fn query_checkpoint_thumb(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
                  FROM images
                  WHERE is_deleted = 0
+                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
                  AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
                  AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
@@ -806,6 +809,7 @@ fn query_checkpoint_thumb(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
                  FROM images
                  WHERE is_deleted = 0
+                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
                  AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
                  AND resolved_model_name = ?1
@@ -824,17 +828,19 @@ fn query_checkpoint_hash(
     conn: &rusqlite::Connection,
     name: &str,
     is_unknown: bool,
+    allow_asset_hash: bool,
 ) -> Result<Option<String>, String> {
     if is_unknown {
         conn.query_row(
             "SELECT model_hash
              FROM images
              WHERE is_deleted = 0
+             AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
              AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
              ORDER BY timestamp DESC
              LIMIT 1",
-            [],
+            [allow_asset_hash],
             |row| row.get::<_, String>(0),
         )
     } else {
@@ -842,16 +848,45 @@ fn query_checkpoint_hash(
             "SELECT model_hash
              FROM images
              WHERE is_deleted = 0
+             AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
-             AND resolved_model_name = ?1
+             AND resolved_model_name = ?2
              ORDER BY timestamp DESC
              LIMIT 1",
-            params![name],
+            params![allow_asset_hash, name],
             |row| row.get::<_, String>(0),
         )
     }
     .optional()
     .map_err(|e| e.to_string())
+}
+
+fn query_checkpoint_has_images(
+    conn: &rusqlite::Connection,
+    name: &str,
+    is_unknown: bool,
+) -> Result<bool, String> {
+    let result = if is_unknown {
+        conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM images
+                WHERE is_deleted = 0
+                AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
+            )",
+            [],
+            |row| row.get(0),
+        )
+    } else {
+        conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM images
+                WHERE is_deleted = 0 AND resolved_model_name = ?1
+            )",
+            [name],
+            |row| row.get(0),
+        )
+    };
+    result.map_err(|e| e.to_string())
 }
 
 fn refresh_checkpoint_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, String> {
@@ -866,7 +901,8 @@ fn refresh_checkpoint_facet(conn: &rusqlite::Connection, name: &str) -> Result<b
     let stats = query_checkpoint_stats(conn, name, is_unknown)?;
 
     let model = select_model_source(conn, "checkpoint", name)?;
-    if stats.count == 0 && model.is_none() {
+    let has_images = query_checkpoint_has_images(conn, name, is_unknown)?;
+    if !has_images && model.is_none() {
         let elapsed = started_at.elapsed();
         if should_log_resource_refresh(elapsed) {
             println!(
@@ -879,9 +915,14 @@ fn refresh_checkpoint_facet(conn: &rusqlite::Connection, name: &str) -> Result<b
 
     let dynamic_thumb = query_checkpoint_thumb(conn, name, is_unknown, false)?;
     let safe_thumb = query_checkpoint_thumb(conn, name, is_unknown, true)?;
-    let model_hash = query_checkpoint_hash(conn, name, is_unknown)?;
+    let model_hash = query_checkpoint_hash(conn, name, is_unknown, stats.count == 0)?;
+    let fallback_hash = model_hash.or_else(|| Some(format!("orphan_{name}")));
 
-    let source = model.unwrap_or_else(|| fallback_model_source(name, model_hash, None));
+    let mut source =
+        model.unwrap_or_else(|| fallback_model_source(name, fallback_hash.clone(), None));
+    if stats.count > 0 {
+        source.hash = fallback_hash;
+    }
     insert_facet_row(
         conn,
         "checkpoints",
@@ -913,7 +954,9 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
         .query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
-             WHERE is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1",
+             WHERE is_deleted = 0
+             AND IFNULL(is_invoke_asset_gen, 0) = 0
+             AND COALESCE(tool, 'Unknown') = ?1",
             [name],
             |row| {
                 Ok(FacetStats {
@@ -925,7 +968,18 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
         )
         .map_err(|e| e.to_string())?;
 
-    if stats.count == 0 {
+    let has_images = conn
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM images
+                WHERE is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1
+            )",
+            [name],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if !has_images {
         let elapsed = started_at.elapsed();
         if should_log_resource_refresh(elapsed) {
             println!(
@@ -973,10 +1027,12 @@ fn refresh_resource_facet(
             i.timestamp,
             COALESCE(i.is_pinned, 0) AS is_pinned,
             i.thumbnail_path,
-            COALESCE(i.privacy_hidden, 0) AS privacy_hidden
+            COALESCE(i.privacy_hidden, 0) AS privacy_hidden,
+            COALESCE(i.is_invoke_asset_gen, 0) AS is_invoke_asset_gen
          FROM {} jt
          JOIN images i ON i.id = jt.image_id
-         WHERE i.is_deleted = 0 AND jt.{} = ?1",
+         WHERE i.is_deleted = 0
+         AND jt.{} = ?1",
         config.junction_table, config.name_col
     );
     conn.execute(&matches_sql, [name])
@@ -987,7 +1043,8 @@ fn refresh_resource_facet(
     let stats = conn
         .query_row(
             "SELECT COUNT(DISTINCT id), MAX(timestamp), MIN(timestamp)
-             FROM live_resource_matches",
+             FROM live_resource_matches
+             WHERE is_invoke_asset_gen = 0",
             [],
             |row| {
                 Ok(FacetStats {
@@ -1001,7 +1058,15 @@ fn refresh_resource_facet(
     let stats_ms = stats_started_at.elapsed();
 
     let model_started_at = std::time::Instant::now();
-    if stats.count > 0 {
+    let has_images = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM live_resource_matches)",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if has_images {
         conn.execute(
             "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1036,7 +1101,8 @@ fn refresh_resource_facet(
         .query_row(
             "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
          FROM live_resource_matches i
-         WHERE i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+         WHERE i.is_invoke_asset_gen = 0
+         AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
          ORDER BY i.is_pinned DESC, i.timestamp DESC
          LIMIT 1",
             [],
@@ -1055,7 +1121,8 @@ fn refresh_resource_facet(
         .query_row(
             "SELECT i.id, i.thumbnail_path, COALESCE(i.privacy_hidden, 0)
          FROM live_resource_matches i
-         WHERE i.privacy_hidden = 0
+         WHERE i.is_invoke_asset_gen = 0
+         AND i.privacy_hidden = 0
          AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
          ORDER BY i.is_pinned DESC, i.timestamp DESC
          LIMIT 1",
@@ -1751,6 +1818,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 MIN(timestamp) as first_used
             FROM images
             WHERE is_deleted = 0
+            AND IFNULL(is_invoke_asset_gen, 0) = 0
             GROUP BY mh, lmn",
         [],
     )
@@ -1775,7 +1843,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM images i
-                WHERE is_deleted = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                WHERE is_deleted = 0
+                AND IFNULL(is_invoke_asset_gen, 0) = 0
+                AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
             ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
         []
     ).map_err(|e| format!("Failed to create cp_thumbs temp table: {}", e))?;
@@ -1797,7 +1867,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM images i
-                WHERE is_deleted = 0 AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+                WHERE is_deleted = 0
+                AND IFNULL(is_invoke_asset_gen, 0) = 0
+                AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
             ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
         []
     ).map_err(|e| format!("Failed to create cp_safe_thumbs temp table: {}", e))?;
@@ -1815,7 +1887,12 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 last_used_at, created_at, is_manual, has_sidecar, is_user_override,
                 safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive, thumbnail_sensitivity_override
             )
-            SELECT 'checkpoints', m.name, m.hash,
+            SELECT 'checkpoints', m.name,
+                CASE
+                    WHEN COALESCE(cc.total_cnt, 0) > 0
+                    THEN COALESCE(cc.visible_hash, 'orphan_' || m.name)
+                    ELSE m.hash
+                END,
                 COALESCE(cc.total_cnt, 0),
                 CASE
                     WHEN m.thumbnail_path IS NOT NULL THEN m.thumbnail_path
@@ -1863,7 +1940,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 GROUP BY LOWER(name)
             ) m
             LEFT JOIN (
-                SELECT lmn, SUM(cnt) as total_cnt, MAX(last_used) as max_last_used, MIN(first_used) as min_first_used
+                SELECT lmn, MIN(mh) as visible_hash, SUM(cnt) as total_cnt, MAX(last_used) as max_last_used, MIN(first_used) as min_first_used
                 FROM cp_counts
                 GROUP BY lmn
             ) cc ON cc.lmn = LOWER(m.name)
@@ -1897,6 +1974,31 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
         "[FacetCache] Checkpoint orphan rows inserted in {:?}.",
         phase_started.elapsed()
     );
+
+    // Keep asset-only checkpoint names available for the scoped reveal overlay,
+    // without adding their usage or thumbnails to the default-visible cache.
+    conn.execute(
+        "INSERT OR IGNORE INTO facet_cache (facet_type, resource_name, resource_hash, count)
+            SELECT 'checkpoints', candidates.mn,
+                COALESCE(candidates.mh, 'orphan_' || candidates.mn), 0
+            FROM (
+                SELECT
+                    MIN(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS mn,
+                    LOWER(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS lmn,
+                    MIN(NULLIF(model_hash, '')) AS mh
+                FROM images
+                WHERE is_deleted = 0
+                AND IFNULL(is_invoke_asset_gen, 0) = 1
+                GROUP BY lmn
+            ) candidates
+            WHERE NOT EXISTS (
+                SELECT 1 FROM facet_cache fc
+                WHERE fc.facet_type = 'checkpoints'
+                AND LOWER(fc.resource_name) = candidates.lmn
+            )",
+        [],
+    )
+    .map_err(|e| format!("Failed to insert asset-only checkpoint candidates: {}", e))?;
 
     conn.execute("DROP TABLE IF EXISTS cp_counts", []).ok();
     conn.execute("DROP TABLE IF EXISTS cp_thumbs", []).ok();
@@ -1958,6 +2060,7 @@ fn build_resource_facets(
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
                 WHERE i.is_deleted = 0
+                AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 GROUP BY lclean_ref",
             temp_table,
             name_col,
@@ -1999,7 +2102,9 @@ fn build_resource_facets(
                     ) as rn
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
-                WHERE i.is_deleted = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+                WHERE i.is_deleted = 0
+                AND IFNULL(i.is_invoke_asset_gen, 0) = 0
+                AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
              ) WHERE rn = 1",
             temp_thumbs,
             name_col,
@@ -2037,7 +2142,9 @@ fn build_resource_facets(
                     ) as rn
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
-                WHERE i.is_deleted = 0 AND i.privacy_hidden = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+                WHERE i.is_deleted = 0
+                AND IFNULL(i.is_invoke_asset_gen, 0) = 0
+                AND i.privacy_hidden = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
              ) WHERE rn = 1",
             temp_safe_thumbs,
             name_col,
@@ -2172,14 +2279,21 @@ fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
     conn.execute(
         "INSERT INTO facet_cache (facet_type, resource_name, resource_hash, count, last_used_at, created_at)
             SELECT 'tools',
-                COALESCE(tool, 'Unknown'),
+                all_tools.tool,
                 NULL,
-                COUNT(*),
-                MAX(timestamp),
-                MIN(timestamp)
-            FROM images
-            WHERE is_deleted = 0
-            GROUP BY 2",
+                COUNT(visible.id),
+                MAX(visible.timestamp),
+                MIN(visible.timestamp)
+            FROM (
+                SELECT DISTINCT COALESCE(tool, 'Unknown') AS tool
+                FROM images
+                WHERE is_deleted = 0
+            ) all_tools
+            LEFT JOIN images visible
+              ON COALESCE(visible.tool, 'Unknown') = all_tools.tool
+             AND visible.is_deleted = 0
+             AND IFNULL(visible.is_invoke_asset_gen, 0) = 0
+            GROUP BY all_tools.tool",
         []
     ).map_err(|e| e.to_string())?;
     Ok(())
@@ -2631,6 +2745,195 @@ mod tests {
         assert_eq!(
             unknown_count, 3,
             "Unknown facet should count NULL, Empty, and 'Unknown' (3 total)"
+        );
+    }
+
+    #[test]
+    fn default_facet_cache_excludes_invoke_assets() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (
+                id, path, timestamp, tool, thumbnail_path, invoke_image_category,
+                resolved_model_name, model_hash
+             )
+             VALUES
+                ('visible', 'visible.png', 100, 'ComfyUI', 'visible.webp', 'general', 'SharedCheckpoint', 'shared-hash'),
+                ('asset-shared', 'asset-shared.png', 200, 'AssetOnlyTool', 'asset-shared.webp', 'control', 'SharedCheckpoint', 'shared-hash'),
+                ('asset-only', 'asset-only.png', 300, 'AssetOnlyTool', 'asset-only.webp', 'mask', 'AssetOnlyCheckpoint', 'asset-hash'),
+                ('asset-null-hash', 'asset-null-hash.png', 400, 'AssetOnlyTool', 'asset-null-hash.webp', 'control', 'HashlessCheckpoint', NULL),
+                ('asset-unknown', 'asset-unknown.png', 500, 'AssetOnlyTool', 'asset-unknown.webp', 'mask', NULL, NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES
+                ('visible', 'SharedLora'),
+                ('asset-shared', 'SharedLora'),
+                ('asset-only', 'AssetOnlyLora')",
+            [],
+        )
+        .unwrap();
+
+        let touches = FacetResourceTouches {
+            checkpoints: vec!["AssetOnlyCheckpoint".to_string()],
+            loras: vec!["AssetOnlyLora".to_string()],
+            tools: vec!["AssetOnlyTool".to_string()],
+            ..FacetResourceTouches::default()
+        };
+        refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        let incremental_zero_counts: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache
+                 WHERE count = 0 AND (
+                    (facet_type = 'checkpoints' AND resource_name = 'AssetOnlyCheckpoint') OR
+                    (facet_type = 'loras' AND resource_name = 'AssetOnlyLora') OR
+                    (facet_type = 'tools' AND resource_name = 'AssetOnlyTool')
+                 )",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(incremental_zero_counts, 3);
+
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        harvest_models(&conn).unwrap();
+        build_checkpoint_facets(&conn).unwrap();
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+        build_tool_facets(&conn).unwrap();
+
+        let (shared_count, shared_thumbnail): (i64, String) = conn
+            .query_row(
+                "SELECT count, thumbnail_path FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'SharedLora'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let (asset_count, asset_thumbnail): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT count, thumbnail_path FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'AssetOnlyLora'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let asset_tool_count: i64 = conn
+            .query_row(
+                "SELECT count FROM facet_cache
+                 WHERE facet_type = 'tools' AND resource_name = 'AssetOnlyTool'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        for checkpoint in ["AssetOnlyCheckpoint", "HashlessCheckpoint", "Unknown"] {
+            let (count, thumbnail): (i64, Option<String>) = conn
+                .query_row(
+                    "SELECT count, thumbnail_path FROM facet_cache
+                     WHERE facet_type = 'checkpoints' AND resource_name = ?1",
+                    [checkpoint],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(
+                count, 0,
+                "asset checkpoint candidates must not affect hidden counts"
+            );
+            assert_eq!(
+                thumbnail, None,
+                "asset checkpoint candidates must not provide hidden thumbnails"
+            );
+        }
+
+        let hidden = get_valid_facet_names_for_query(
+            &conn,
+            "WHERE is_deleted = 0 AND IFNULL(is_invoke_asset_gen, 0) = 0",
+            vec![],
+            None,
+            None,
+        )
+        .unwrap();
+        let revealed =
+            get_valid_facet_names_for_query(&conn, "WHERE is_deleted = 0", vec![], None, None)
+                .unwrap();
+
+        assert_eq!(shared_count, 1);
+        assert_eq!(shared_thumbnail, "visible.webp");
+        assert_eq!(asset_count, 0);
+        assert_eq!(asset_thumbnail, None);
+        assert_eq!(asset_tool_count, 0);
+        assert!(!hidden
+            .checkpoints
+            .contains(&"HashlessCheckpoint".to_string()));
+        assert!(!hidden.checkpoints.contains(&"Unknown".to_string()));
+        assert!(revealed
+            .checkpoints
+            .contains(&"HashlessCheckpoint".to_string()));
+        assert!(revealed.checkpoints.contains(&"Unknown".to_string()));
+    }
+
+    #[test]
+    fn checkpoint_resource_refresh_matches_full_rebuild_when_only_asset_has_hash() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (
+                id, path, timestamp, thumbnail_path, invoke_image_category,
+                resolved_model_name, model_hash
+             )
+             VALUES
+                ('visible', 'visible.png', 100, 'visible.webp', 'general', 'SharedCheckpoint', NULL),
+                ('asset', 'asset.png', 200, 'asset.webp', 'control', 'SharedCheckpoint', 'asset-hash')",
+            [],
+        )
+        .unwrap();
+
+        let touches = FacetResourceTouches {
+            checkpoints: vec!["SharedCheckpoint".to_string()],
+            ..FacetResourceTouches::default()
+        };
+        refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        let incremental: (Option<String>, i64, Option<String>) = conn
+            .query_row(
+                "SELECT resource_hash, count, thumbnail_path
+                 FROM facet_cache
+                 WHERE facet_type = 'checkpoints' AND resource_name = 'SharedCheckpoint'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        harvest_models(&conn).unwrap();
+        build_checkpoint_facets(&conn).unwrap();
+        let full: (Option<String>, i64, Option<String>) = conn
+            .query_row(
+                "SELECT resource_hash, count, thumbnail_path
+                 FROM facet_cache
+                 WHERE facet_type = 'checkpoints' AND resource_name = 'SharedCheckpoint'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            incremental, full,
+            "a newer hidden asset must not supply identity or thumbnail data for a visible checkpoint"
+        );
+        assert_eq!(
+            full,
+            (
+                Some("orphan_SharedCheckpoint".to_string()),
+                1,
+                Some("visible.webp".to_string())
+            )
         );
     }
 

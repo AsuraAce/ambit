@@ -4,6 +4,7 @@ import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from 
 import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
 import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
+import { createDefaultFilters } from '../utils/filterState';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -267,18 +268,23 @@ export const getBrowserMockImages = (): AIImage[] => loadStoredState().images;
 
 export const getBrowserMockCollections = (): Collection[] => {
     const current = loadStoredState();
-    return [...current.collections, ...current.smartCollections].map((collection) => ({
+    const collections = [...current.collections, ...current.smartCollections];
+    return collections.map((collection) => ({
         ...collection,
-        count: getCollectionCount(collection),
+        count: getCollectionCount(collection, collections),
         thumbnail: collection.customThumbnail
             ? current.images.find((image) => image.id === collection.customThumbnail)?.thumbnailUrl
             : collection.thumbnail,
     }));
 };
 
-const getCollectionCount = (collection: Collection): number => {
+const getCollectionCount = (collection: Collection, collections: Collection[]): number => {
     if (collection.filters) {
-        return filterImages(state.images, collection.filters, state.collections).length;
+        return filterImages(
+            state.images,
+            createDefaultFilters({ collectionId: collection.id }),
+            collections
+        ).length;
     }
 
     return collection.imageIds.length;
@@ -431,7 +437,12 @@ const matchesSearchQuery = (image: AIImage, query: string): boolean => {
     return true;
 };
 
-const filterImages = (images: AIImage[], filters: FilterState, collections: Collection[]): AIImage[] => {
+const filterImages = (
+    images: AIImage[],
+    filters: FilterState,
+    collections: Collection[],
+    applyVisibilityFilters = true
+): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateBounds = getDateFilterBounds(filters);
     const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
@@ -449,14 +460,14 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         }
         : null;
     const smartMatches = smartFilters
-        ? new Set(filterImages(images, smartFilters, collections).map((image) => image.id))
+        ? new Set(filterImages(images, smartFilters, collections, false).map((image) => image.id))
         : null;
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
-        if (!filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
-        if (!filters.showGrids && image.metadata.isGrid) return false;
-        if (!filters.showInvokeImageAssets && isKnownInvokeImageAsset(image.invokeImageCategory)) return false;
+        if (applyVisibilityFilters && !filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
+        if (applyVisibilityFilters && !filters.showGrids && image.metadata.isGrid) return false;
+        if (applyVisibilityFilters && !filters.showInvokeImageAssets && isKnownInvokeImageAsset(image.invokeImageCategory)) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
         if (filters.pinnedOnly && !image.isPinned) return false;
         if (!timestampMatchesDateBounds(image.timestamp, dateBounds)) return false;

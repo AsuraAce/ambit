@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppHandlers } from '../useAppHandlers';
@@ -43,6 +43,7 @@ vi.mock('../../stores/libraryStore', () => ({
 describe('useAppHandlers', () => {
     const mockSetImages = vi.fn();
     const mockRefreshMaintenanceCounts = vi.fn();
+    const mockRefreshHiddenAvailability = vi.fn();
     let queryClient: QueryClient;
     let dispatchedImages: AIImage[];
 
@@ -70,6 +71,7 @@ describe('useAppHandlers', () => {
         images: mockImages,
         setImages: mockSetImages,
         refreshMaintenanceCounts: mockRefreshMaintenanceCounts,
+        refreshHiddenAvailability: mockRefreshHiddenAvailability,
     };
 
     beforeEach(() => {
@@ -85,6 +87,7 @@ describe('useAppHandlers', () => {
         mockUpdateImageNotesCol.mockResolvedValue(undefined);
         mockRebuildFacetCache.mockResolvedValue(0);
         mockRebuildFacetCacheIncremental.mockResolvedValue(0);
+        mockRefreshHiddenAvailability.mockResolvedValue(undefined);
         mockDeleteRemovedImagesFromDisk.mockResolvedValue({
             deletedIds: ['img1'],
             failedIds: [],
@@ -138,16 +141,60 @@ describe('useAppHandlers', () => {
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
     });
 
-    it('should handle restore from removed list', async () => {
-        const { result } = renderHandlers();
+    it.each([false, true])(
+        'refetches restored images through the active query when InvokeAI asset visibility is %s',
+        async (showInvokeImageAssets) => {
+            dispatchedImages = [];
+            const restoredAsset: AIImage = {
+                ...mockImages[0],
+                id: 'invoke-control',
+                invokeImageCategory: 'control',
+            };
+            let isRestored = false;
+            mockRestoreRemovedImages.mockImplementationOnce(async () => {
+                isRestored = true;
+            });
+            const queryKey = ['images', { showInvokeImageAssets }] as const;
+            const emptyResult: {
+                pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+                pageParams: undefined[];
+            } = {
+                pages: [{ images: [], totalCount: 0, globalCount: 0 }],
+                pageParams: [undefined],
+            };
+            const observer = new QueryObserver(queryClient, {
+                queryKey,
+                queryFn: async () => ({
+                    pages: [{
+                        images: isRestored && showInvokeImageAssets ? [restoredAsset] : [],
+                        totalCount: isRestored && showInvokeImageAssets ? 1 : 0,
+                        globalCount: 1,
+                    }],
+                    pageParams: [undefined],
+                }),
+                initialData: emptyResult,
+                staleTime: Infinity,
+            });
+            const unsubscribe = observer.subscribe(() => undefined);
+            const { result } = renderHandlers();
 
-        await act(async () => {
-            await result.current.handleRestoreImages(['img1']);
-        });
+            try {
+                await act(async () => {
+                    await result.current.handleRestoreImages(['invoke-control']);
+                });
 
-        expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['img1']);
-        expect(mockGetImagesByIds).toHaveBeenCalledWith(['img1']);
-    });
+                const refreshed = queryClient.getQueryData<typeof emptyResult>(queryKey);
+                expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['invoke-control']);
+                expect(refreshed?.pages[0].images.map(image => image.id)).toEqual(
+                    showInvokeImageAssets ? ['invoke-control'] : []
+                );
+                expect(mockSetImages).not.toHaveBeenCalled();
+                expect(mockRefreshHiddenAvailability).toHaveBeenCalledOnce();
+            } finally {
+                unsubscribe();
+            }
+        }
+    );
 
     it('should handle delete file for removed items', async () => {
         const { result } = renderHandlers();
@@ -283,19 +330,35 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Removed 2 images from the library', 'success');
     });
 
-    it('prepends only unique restored images and preserves state when all exist', async () => {
-        const restored = { ...mockImages[0], id: 'img2' };
-        mockGetImagesByIds.mockResolvedValueOnce([mockImages[0], restored]);
+    it('refreshes hidden availability when restoring the first active asset', async () => {
+        dispatchedImages = [];
         const { result } = renderHandlers();
-        await act(async () => result.current.handleRestoreImages(['img1', 'img2']));
-        expect(dispatchedImages.map(image => image.id)).toEqual(['img2', 'img1']);
-        expect(mockAddToast).toHaveBeenCalledWith('Restored 2 images to the library', 'success');
-
-        mockGetImagesByIds.mockResolvedValueOnce([mockImages[0]]);
-        const before = dispatchedImages;
         await act(async () => result.current.handleRestoreImages(['img1']));
-        expect(dispatchedImages).toBe(before);
+        expect(mockRefreshHiddenAvailability).toHaveBeenCalledOnce();
+        expect(mockSetImages).not.toHaveBeenCalled();
         expect(mockAddToast).toHaveBeenCalledWith('Restored 1 image to the library', 'success');
+    });
+
+    it('completes restore updates when hidden availability refresh fails', async () => {
+        const refreshError = new Error('availability unavailable');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockRefreshHiddenAvailability.mockRejectedValueOnce(refreshError);
+        const { result } = renderHandlers();
+
+        try {
+            await act(async () => result.current.handleRestoreImages(['img1']));
+
+            expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['img1']);
+            expect(mockAddToast).toHaveBeenCalledWith('Restored 1 image to the library', 'success');
+            expect(mockRefreshMaintenanceCounts).toHaveBeenCalledOnce();
+            expect(mockRebuildFacetCache).toHaveBeenCalledOnce();
+            expect(errorSpy).toHaveBeenCalledWith(
+                '[Restore] Failed to refresh hidden-content availability after restoring images',
+                refreshError
+            );
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('covers successful plural deletion, warning cleanup, and total failure', async () => {

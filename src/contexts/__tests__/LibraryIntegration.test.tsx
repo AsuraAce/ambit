@@ -1,6 +1,6 @@
 
 import * as React from 'react';
-import { render, act, waitFor } from '../../test/testUtils';
+import { render, act, screen, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync } from '../SyncContext';
@@ -15,6 +15,7 @@ import {
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
 } from '../../services/invoke/dbSnapshot';
 import { settingsPersistenceCoordinator } from '../../utils/settingsPersistenceCoordinator';
+import { ViewControls } from '../../features/library/components/ViewControls';
 
 // --- Extensive Mocks for Integration ---
 
@@ -52,6 +53,11 @@ const mocks = vi.hoisted(() => ({
     getSmartCollectionSummaries: vi.fn().mockResolvedValue({}),
     getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
     getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
+    checkHiddenContentAvailability: vi.fn().mockResolvedValue({
+        hasIntermediates: false,
+        hasGrids: false,
+        hasInvokeImageAssets: false,
+    }),
     getAllCollectionsWithStats: vi.fn().mockResolvedValue([
         {
             id: 'smart1',
@@ -136,7 +142,7 @@ vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheStrict: (...args: any[]) => mocks.rebuildFacetCacheStrict(...args),
     rebuildFacetCacheIncrementalBatchStrict: (...args: any[]) => mocks.rebuildFacetCacheIncrementalBatchStrict(...args),
     refreshFacetCacheForResourcesStrict: (...args: any[]) => mocks.refreshFacetCacheForResourcesStrict(...args),
-    checkHiddenContentAvailability: vi.fn().mockResolvedValue(false)
+    checkHiddenContentAvailability: (...args: unknown[]) => mocks.checkHiddenContentAvailability(...args)
 }));
 
 vi.mock('../../services/runtime', () => ({
@@ -243,6 +249,11 @@ describe('Library Integration (Provider Stack)', () => {
         vi.clearAllMocks();
         settingsPersistenceCoordinator.reopenAdmission();
         mocks.browserMockMode = false;
+        mocks.checkHiddenContentAvailability.mockReset().mockResolvedValue({
+            hasIntermediates: false,
+            hasGrids: false,
+            hasInvokeImageAssets: false,
+        });
         mocks.appRepository.save.mockResolvedValue({});
         mocks.appRepository.update.mockImplementation(async (updater: (state: unknown) => unknown) => (
             updater(await mocks.appRepository.load())
@@ -286,6 +297,57 @@ describe('Library Integration (Provider Stack)', () => {
             </ToastProvider>
         );
     };
+
+    const viewControls = (
+        <ViewControls
+            showLayoutSwitcher={false}
+            layoutMode="grid"
+            setLayoutMode={vi.fn()}
+            showSlideshowButton={false}
+            onSlideshow={vi.fn()}
+            sortOption="date_desc"
+            setSortOption={vi.fn()}
+            thumbnailSize={200}
+            setThumbnailSize={vi.fn()}
+            displayedCount={0}
+            totalCount={0}
+            scopeName="Library"
+        />
+    );
+
+    it.each(['manual', 'live', 'startup'] as const)(
+        'reveals the InvokeAI asset toggle after a changed %s sync',
+        async (mode) => {
+            mocks.checkHiddenContentAvailability
+                .mockResolvedValueOnce({
+                    hasIntermediates: false,
+                    hasGrids: false,
+                    hasInvokeImageAssets: false,
+                })
+                .mockResolvedValue({
+                    hasIntermediates: false,
+                    hasGrids: false,
+                    hasInvokeImageAssets: true,
+                });
+            let hook: ReturnType<typeof useLibraryContext> | undefined;
+            render(
+                <ToastProvider>
+                    <LibraryProvider>
+                        <TestConsumer onHook={value => hook = value} />
+                        {viewControls}
+                    </LibraryProvider>
+                </ToastProvider>
+            );
+
+            await waitFor(() => expect(hook?.isLoaded).toBe(true));
+            expect(screen.queryByTitle('View Options')).toBeNull();
+            await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+            await act(async () => hook?.startInvokeSync({ mode }));
+
+            await waitFor(() => expect(screen.getByTitle('View Options')).toBeTruthy());
+            expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledTimes(2);
+        }
+    );
 
     it('does not compute maintenance counts during provider startup', async () => {
         let hook: any;

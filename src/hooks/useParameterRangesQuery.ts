@@ -9,6 +9,7 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockImages } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { useSettingsStore } from '../stores/settingsStore';
+import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
 
 const EMPTY_PARAMETER_RANGES: ParameterRanges = {
     steps: null,
@@ -51,6 +52,7 @@ export function useParameterRangesQuery(filters: FilterState) {
             sideQueryFilters.models,
             sideQueryFilters.tools,
             sideQueryFilters.loras,
+            sideQueryFilters.showInvokeImageAssets,
             facetCacheVersion,
             // Intentionally EXCLUDE samplers and generationTypes from query key
             // so selecting them doesn't cause a refetch (Disjunctive)
@@ -60,7 +62,10 @@ export function useParameterRangesQuery(filters: FilterState) {
         ],
         queryFn: async () => {
             if (browserMockMode) {
-                const images = getBrowserMockImages();
+                const images = getBrowserMockImages().filter(image =>
+                    sideQueryFilters.showInvokeImageAssets
+                    || !isKnownInvokeImageAsset(image.invokeImageCategory)
+                );
                 const steps = images.map(image => image.metadata.steps);
                 const cfg = images.map(image => image.metadata.cfg);
                 return {

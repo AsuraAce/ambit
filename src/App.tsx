@@ -83,7 +83,8 @@ export default function App() {
         toggleFavorite,
         clearAllFilters,
         recentSearches, setRecentSearches,
-        refreshMetadata
+        refreshMetadata,
+        refreshHiddenAvailability
     } = useSearch();
     const activeCollectionIdRef = useRef(filters.collectionId);
     const imagesRef = useRef(images);
@@ -132,7 +133,7 @@ export default function App() {
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const { refreshMaintenanceCounts } = useWatchers();
 
-    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
+    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability });
 
     const [availableTags, setAvailableTags] = useState<string[]>([]);
     const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useAiSearchLogic({

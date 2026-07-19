@@ -120,7 +120,11 @@ export interface TargetedLiveSyncResult {
     importedCount: number;
 }
 
-export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (scope: MetadataRefreshScope) => void | Promise<void> }> = ({ children, onSyncComplete }) => {
+export const SyncProvider: React.FC<{
+    children: ReactNode;
+    onSyncComplete?: (scope: MetadataRefreshScope) => void | Promise<void>;
+    onInvokeContentChanged?: () => void | Promise<void>;
+}> = ({ children, onSyncComplete, onInvokeContentChanged }) => {
     const { settings, settingsRef, setSettings } = useSettings();
     const { addToast } = useToast();
     const queryClient = useQueryClient();
@@ -425,6 +429,11 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
             liveHadChanges = hasChanges;
 
             if (hasChanges) {
+                try {
+                    await onInvokeContentChanged?.();
+                } catch (error) {
+                    console.error('[Sync] Failed to refresh hidden-content availability after Invoke sync', error);
+                }
                 if (options.mode === 'live') {
                     // SILENT, LENIENT ADDITION (Matches native OS logic)
                     // Advance the Live Watch Session Idle Timer and gently refresh grid
@@ -620,7 +629,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                 }
             }
         }
-    }, [syncStatus, addToast, onSyncComplete, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {

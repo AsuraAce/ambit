@@ -160,8 +160,6 @@ export const useLibraryStatsQuery = ({
         const overrides: Partial<Record<FacetType, ScopedFacetCountInput>> = {};
 
         for (const facetType of selfExcludedFacetTypes) {
-            if (facetType === 'tools') continue;
-
             const partial = buildSqlWhereClause(
                 sideQueryFilters,
                 privacyEnabled,

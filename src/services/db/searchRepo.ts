@@ -815,6 +815,13 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
                 GROUP BY ${nameExpr}
             `;
         }
+        case 'tools':
+            return `
+                ${cteSql}
+                SELECT COALESCE(tool, 'Unknown') AS name, count(*) AS count
+                FROM scoped_images
+                GROUP BY name
+            `;
         default:
             return null;
     }
@@ -831,11 +838,11 @@ const getScopedFacetCountMaps = async (
     const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
         'images.id AS id',
         'images.resolved_model_name AS resolved_model_name',
-        'images.model_name AS model_name'
+        'images.model_name AS model_name',
+        'images.tool AS tool'
     ], {});
 
     const queries = cacheTypes
-        .filter(cacheType => cacheType !== 'tools')
         .map(async (cacheType) => {
             const sql = buildScopedFacetCountSql(cacheType, scopedParts.cteSql);
             if (!sql) return [cacheType, new Map<string, number>()] as const;
@@ -1092,14 +1099,12 @@ export const getFacets = async (
         const shouldUseScopedFacetOverlayByCacheType = new Map<string, boolean>();
 
         for (const facetType of types) {
-            if (facetType === 'tools') continue;
-
             const cacheType = cacheTypeMap[facetType];
             const scopedInput = options.scopedCountOverrides?.[facetType] ?? defaultScopedCountInput;
             scopedCountInputsByCacheType.set(cacheType, scopedInput);
             shouldUseScopedFacetOverlayByCacheType.set(
                 cacheType,
-                assetScope !== 'local'
+                (cacheType === 'tools' || assetScope !== 'local')
                     && !isDefaultGlobalScope(
                         scopedInput.whereClause,
                         scopedInput.params,
@@ -1161,7 +1166,12 @@ export const getFacets = async (
 
         for (const row of cacheRows) {
             if (row.facet_type === 'tools') {
-                result.tools.push(row.resource_name || 'Unknown');
+                const name = row.resource_name || 'Unknown';
+                const shouldUseScopedFacetOverlay = shouldUseScopedFacetOverlayByCacheType.get('tools') ?? false;
+                const count = shouldUseScopedFacetOverlay
+                    ? scopedCountMaps.get('tools')?.get(normalizeFacetCountKey(name)) ?? 0
+                    : row.count ?? 0;
+                if (count > 0) result.tools.push(name);
                 continue;
             }
 
