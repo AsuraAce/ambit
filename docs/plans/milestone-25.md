@@ -142,6 +142,8 @@ Verification evidence:
 - the complete frontend suite passed: 256 files, 2,875 tests passed, 1 skipped;
 - `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
 - the full suite exposed and repaired a stale `countGlobalImages` mock in `LibraryIntegration.test.tsx`; no production library-query behavior changed;
+- screenshot follow-up aligned both Privacy switches to fixed track geometry, represented manual masks as a non-toggle source that follows Privacy Mode, and compacted onboarding Step 4 without removing its small-window overflow fallback;
+- the follow-up's 41 focused Privacy/onboarding tests, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
 - desktop smoke against the user's live library was not run to avoid mutating their development profile; the package's interaction paths were exercised through the focused UI tests.
 
 ## Work Package 3: Initial Smart Collection Thumbnail Hydration

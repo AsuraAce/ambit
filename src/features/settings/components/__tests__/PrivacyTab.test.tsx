@@ -88,7 +88,23 @@ describe('PrivacyTab', () => {
 
         expect(screen.getByText(/Privacy Mode starts on whenever Ambit launches/)).not.toBeNull();
         expect(screen.getByText('Masking Sources')).not.toBeNull();
+        expect(screen.getByText('Manual image masks')).not.toBeNull();
+        expect(screen.getByText('Follows Privacy Mode')).not.toBeNull();
         expect(screen.getByText('Prompt keywords')).not.toBeNull();
+    });
+
+    it('keeps both switch tracks fixed-width with their thumbs inside the track', () => {
+        render(<PrivacyTab settings={createSettings({ promptMaskingEnabled: true })} setSettings={vi.fn()} />);
+
+        const privacySwitch = screen.getByRole('switch', { name: 'Privacy Mode' });
+        const privacyTrack = privacySwitch.querySelector('[aria-hidden="true"]');
+        const promptSwitch = screen.getByRole('switch', { name: 'Use prompt keywords' });
+        const promptThumb = promptSwitch.querySelector('[aria-hidden="true"]');
+
+        expect(privacyTrack?.className).toContain('w-14');
+        expect(privacyTrack?.className).toContain('shrink-0');
+        expect(promptSwitch.className).toContain('w-14');
+        expect(promptThumb?.className).toContain('translate-x-7');
     });
 
     it('explains how blur and hide affect matching images', () => {

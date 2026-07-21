@@ -458,23 +458,23 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                                 {step === 4 ? (
                                     <div>
-                                        <div className="mb-5">
+                                        <div className="mb-4">
                                             <h2
                                                 id="onboarding-step-title"
                                                 ref={headingRef}
                                                 tabIndex={-1}
-                                                className="mb-4 text-3xl font-bold tracking-tight text-gray-900 outline-none dark:text-white"
+                                                className="mb-3 text-3xl font-bold tracking-tight text-gray-900 outline-none dark:text-white"
                                             >
                                                 Privacy & control
                                             </h2>
-                                            <div className="space-y-3">
+                                            <div className="space-y-2">
                                                 <PrivacyRow icon={<ServerOff className="h-6 w-6" />} title="Stored locally" description="Your image catalog, metadata, and settings stay on this machine. Ambit does not send telemetry." />
                                                 <PrivacyRow icon={<FileJson className="h-6 w-6" />} title="Gemini requests" description="Images or prompts are sent to Google only when you verify the key or run an AI action." />
                                                 <PrivacyRow icon={<Link2 className="h-6 w-6" />} title="Optional network access" description="Ambit can check GitHub Releases at startup when updates are enabled. CivitAI lookups run only after you confirm Resolve Online." />
                                             </div>
                                         </div>
 
-                                        <div className="rounded-2xl border border-sage-500/10 bg-gradient-to-br from-sage-500/10 to-transparent p-5 dark:border-white/10 dark:from-white/5 dark:to-transparent">
+                                        <div className="rounded-2xl border border-sage-500/10 bg-gradient-to-br from-sage-500/10 to-transparent p-4 dark:border-white/10 dark:from-white/5 dark:to-transparent">
                                             <div className="flex items-center gap-4">
                                                 <div className="shrink-0 rounded-xl border border-gray-100 bg-white p-3 shadow-lg dark:border-white/5 dark:bg-zinc-800">
                                                     <EyeOff className="h-7 w-7 text-sage-500" />
@@ -593,7 +593,7 @@ const CompactFeature = ({ icon, title, description }: { icon: React.ReactNode; t
 );
 
 const PrivacyRow = ({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
-    <div className="flex items-start gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-white/5 dark:bg-white/5">
+    <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3 dark:border-white/5 dark:bg-white/5">
         <span aria-hidden="true" className="mt-1 text-sage-500">{icon}</span>
         <div className="flex-1">
             <h3 className="text-sm font-bold text-gray-900 dark:text-white">{title}</h3>

@@ -193,9 +193,9 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
                     <span
                         aria-hidden="true"
-                        className={`w-12 h-7 rounded-full relative transition-colors ${privacyEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                        className={`relative h-7 w-14 shrink-0 rounded-full transition-colors ${privacyEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                     >
-                        <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow-sm transition-all ${privacyEnabled ? 'left-6' : 'left-1'}`} />
+                        <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${privacyEnabled ? 'translate-x-7' : 'translate-x-0'}`} />
                     </span>
                 </button>
             </section>
@@ -245,6 +245,25 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                 <div className="space-y-6">
                     <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
+                        <div className="rounded-lg bg-sage-50 p-2 text-sage-600 dark:bg-white/10 dark:text-sage-400">
+                            <Shield className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-bold text-gray-900 dark:text-white">Manual image masks</div>
+                                    <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                                        Images you mask directly are protected whenever Privacy Mode is on.
+                                    </p>
+                                </div>
+                                <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:bg-white/10 dark:text-gray-400">
+                                    Follows Privacy Mode
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
                         <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-400">
                             <Shield className="w-5 h-5" />
                         </div>
@@ -264,11 +283,11 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     aria-describedby="prompt-masking-description"
                                     onClick={() => { void handlePromptMaskingToggle(); }}
                                     disabled={isSavingPrivacy}
-                                    className={`relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${settings.promptMaskingEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
+                                    className={`relative h-7 w-14 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${settings.promptMaskingEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                                 >
                                     <span
                                         aria-hidden="true"
-                                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${settings.promptMaskingEnabled ? 'left-6' : 'left-1'}`}
+                                        className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${settings.promptMaskingEnabled ? 'translate-x-7' : 'translate-x-0'}`}
                                     />
                                 </button>
                             </div>
