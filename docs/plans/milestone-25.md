@@ -76,6 +76,8 @@ Verification evidence:
 
 ## Work Package 2: Deterministic JSON and Number Resolution
 
+Status: Complete (`fix/comfyui-deterministic-json-number-resolution`, `2026-07-21`)
+
 Depends on: Work Package 1.
 
 Primary invariant: connected profile values are exact or unavailable.
@@ -102,6 +104,18 @@ Completion criteria:
   numeric scheduler parameters;
 - malformed, oversized, cyclic, or unresolved paths fail closed;
 - the package is independently review-clean.
+
+Verification evidence:
+
+- the pinned `Default` profile resolves 20 steps, `mu = 0.0`, and
+  `std = 1.75` through the connected JSON and converter path;
+- deterministic-value tests pass with 9 tests, prompt tests with 50,
+  graph-source tests with 4, and catalog-intake tests with 5;
+- the full ComfyUI suite passes with 250 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 29, Ideogram remains `unassessed`, and manifest totals
+  remain unchanged;
+- `cargo fmt --check` and `git diff --check` pass with no `Cargo.lock` churn.
 
 ## Work Package 3: Dual-Model Guider Policy
 

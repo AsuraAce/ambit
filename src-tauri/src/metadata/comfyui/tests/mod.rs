@@ -1,6 +1,7 @@
 pub mod catalog_intake;
 pub mod catalog_patterns;
 pub mod complex_workflows;
+pub mod deterministic_values;
 pub mod diagnostics;
 pub mod false_positive_models;
 pub mod general;
