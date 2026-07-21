@@ -86,7 +86,9 @@ describe('PrivacyTab', () => {
     it('explains startup-default privacy masking and session-only changes', () => {
         render(<PrivacyTab settings={createSettings()} setSettings={vi.fn()} />);
 
-        expect(screen.getByText('Privacy masking is enabled by default every time Ambit starts. Turning it off here only affects the current session.')).not.toBeNull();
+        expect(screen.getByText(/Privacy Mode starts on whenever Ambit launches/)).not.toBeNull();
+        expect(screen.getByText('Masking Sources')).not.toBeNull();
+        expect(screen.getByText('Prompt keywords')).not.toBeNull();
     });
 
     it('explains how blur and hide affect matching images', () => {
@@ -94,8 +96,7 @@ describe('PrivacyTab', () => {
 
         fireEvent.focus(screen.getByRole('button', { name: 'About privacy masking behavior' }));
 
-        expect(screen.getByRole('tooltip').textContent).toContain('Blur keeps automatically or manually masked images visible');
-        expect(screen.getByRole('tooltip').textContent).toContain('Hide removes them from results');
+        expect(screen.getByRole('tooltip').textContent).toContain('applies to both manually masked images and prompt-keyword matches');
     });
 
     it('persists prompt masking independently while retaining an editable keyword list', async () => {
@@ -105,7 +106,7 @@ describe('PrivacyTab', () => {
         }));
         const { rerender } = render(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
 
-        const promptSwitch = screen.getByRole('switch', { name: 'Prompt keyword masking' });
+        const promptSwitch = screen.getByRole('switch', { name: 'Use prompt keywords' });
         fireEvent.click(promptSwitch);
 
         expect(harness.current()).toEqual(expect.objectContaining({
@@ -119,7 +120,7 @@ describe('PrivacyTab', () => {
 
         rerender(<PrivacyTab settings={harness.current()} setSettings={harness.setSettings} />);
         expect(screen.getByText('retained')).not.toBeNull();
-        expect(screen.getByText('Saved · inactive')).not.toBeNull();
+        expect(screen.getByText('Disabled · 1 keyword saved')).not.toBeNull();
         const input = screen.getByPlaceholderText('Type keyword and press Enter...');
         expect((input as HTMLInputElement).disabled).toBe(false);
         fireEvent.change(input, { target: { value: 'prepared' } });
@@ -131,7 +132,7 @@ describe('PrivacyTab', () => {
     it('keeps an enabled empty list empty and explains that no prompts match', () => {
         render(<PrivacyTab settings={createSettings({ promptMaskingEnabled: true, maskedKeywords: [] })} setSettings={vi.fn()} />);
 
-        expect(screen.getByRole('status').textContent).toContain('no keywords are configured');
+        expect(screen.getByRole('status').textContent).toContain('protecting manual masks only');
         expect(screen.getByText('No keywords added yet')).not.toBeNull();
     });
 
@@ -140,10 +141,12 @@ describe('PrivacyTab', () => {
 
         const privacySwitch = screen.getByRole('switch', { name: 'Privacy Mode' });
         expect(privacySwitch.getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByText('On for this session · Manual masks only')).not.toBeNull();
 
         fireEvent.click(privacySwitch);
 
         expect(privacySwitch.getAttribute('aria-checked')).toBe('false');
+        expect(screen.getByText('Off for this session · Masking rules saved')).not.toBeNull();
         expect(useSettingsStore.getState().privacyEnabled).toBe(false);
         expect(addToastMock).toHaveBeenCalledWith('Privacy mode disabled for this session', 'success');
     });
@@ -238,7 +241,7 @@ describe('PrivacyTab', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         render(<StorePrivacyTab />);
 
-        fireEvent.click(screen.getByRole('switch', { name: 'Prompt keyword masking' }));
+        fireEvent.click(screen.getByRole('switch', { name: 'Use prompt keywords' }));
 
         await waitFor(() => expect(useSettingsStore.getState().settings).toEqual(expect.objectContaining({
             promptMaskingEnabled: true,

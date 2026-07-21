@@ -55,11 +55,21 @@ describe('ShortcutsModal', () => {
         expect(screen.getByText('Filter width; width: is also supported')).toBeTruthy();
         expect(screen.getByText('Filter generation steps with a number, <, or >')).toBeTruthy();
         expect(screen.getByText('Filter CFG with a number, <, or >')).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: 'Keyboard Shortcuts' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Shortcuts' }));
         expect(screen.getByText('Show this help dialog')).toBeTruthy();
 
         rerender(<ShortcutsModal isOpen onClose={vi.fn()} initialTab="search" />);
         expect(screen.getByText('Example Query')).toBeTruthy();
+    });
+
+    it('offers setup-guide replay without resetting from Help', () => {
+        const onOpenSetupGuide = vi.fn();
+        render(<ShortcutsModal isOpen onClose={vi.fn()} onOpenSetupGuide={onOpenSetupGuide} initialTab="setup" />);
+
+        expect(screen.getByText('Review your setup')).toBeTruthy();
+        expect(screen.getByText(/Only guide controls you change are saved/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Open setup guide' }));
+        expect(onOpenSetupGuide).toHaveBeenCalledOnce();
     });
 
     it('closes from the backdrop and close button but not the panel', () => {
@@ -67,8 +77,7 @@ describe('ShortcutsModal', () => {
         const { container } = render(<ShortcutsModal isOpen onClose={onClose} initialTab="search" />);
         fireEvent.click(screen.getByText('Example Query'));
         expect(onClose).not.toHaveBeenCalled();
-        const closeButtons = screen.getAllByRole('button').filter(button => button.textContent === '');
-        fireEvent.click(closeButtons[0]);
+        fireEvent.click(screen.getByRole('button', { name: 'Close Help & Guide' }));
         expect(onClose).toHaveBeenCalledOnce();
         fireEvent.click(container.firstElementChild as Element);
         expect(onClose).toHaveBeenCalledTimes(2);

@@ -42,6 +42,12 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
         maskedKeywords: 0,
         maskingMode: 0,
     });
+    const promptKeywordCount = settings.maskedKeywords.length;
+    const privacySummary = privacyEnabled
+        ? settings.promptMaskingEnabled && promptKeywordCount > 0
+            ? `On for this session · Manual masks + ${promptKeywordCount} prompt ${promptKeywordCount === 1 ? 'keyword' : 'keywords'}`
+            : 'On for this session · Manual masks only'
+        : 'Off for this session · Masking rules saved';
 
     React.useEffect(() => {
         mountedRef.current = true;
@@ -182,7 +188,8 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                 >
                     <div>
                         <div id="privacy-mode-label" className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Privacy Mode</div>
-                        <div id="privacy-mode-description" className="text-sm text-gray-500">Privacy masking is enabled by default every time Ambit starts. Turning it off here only affects the current session.</div>
+                        <div id="privacy-mode-description" className="text-sm text-gray-500">Applies your saved masking rules for this session. Privacy Mode starts on whenever Ambit launches; turning it off temporarily reveals both manually masked and keyword-matched images.</div>
+                        <div className={`mt-2 text-xs font-medium ${privacyEnabled ? 'text-sage-600 dark:text-sage-400' : 'text-gray-500'}`}>{privacySummary}</div>
                     </div>
                     <span
                         aria-hidden="true"
@@ -234,7 +241,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             )}
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
-                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Safety Filters</h4>
+                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Masking Sources</h4>
 
                 <div className="space-y-6">
                     <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
@@ -244,9 +251,9 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         <div className="min-w-0 flex-1">
                             <div className="flex items-start justify-between gap-4">
                                 <div>
-                                    <div id="prompt-masking-label" className="text-sm font-bold text-gray-900 dark:text-white">Prompt keyword masking</div>
+                                    <div id="prompt-masking-label" className="text-sm font-bold text-gray-900 dark:text-white">Use prompt keywords</div>
                                     <p id="prompt-masking-description" className="mt-1 text-xs leading-relaxed text-gray-500">
-                                        Automatically applies Privacy Mode to prompts matching your saved keywords. Disabling it keeps the list available below.
+                                        While Privacy Mode is on, also mask images whose positive prompts contain a saved keyword. Manual image masks remain protected when this is off.
                                     </p>
                                 </div>
                                 <button
@@ -267,8 +274,8 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                             </div>
                             <p className={`mt-3 text-xs font-medium ${settings.promptMaskingEnabled ? 'text-sage-600 dark:text-sage-400' : 'text-gray-500'}`}>
                                 {settings.promptMaskingEnabled
-                                    ? 'Active'
-                                    : `${settings.maskedKeywords.length} saved ${settings.maskedKeywords.length === 1 ? 'keyword' : 'keywords'} · inactive`}
+                                    ? `Enabled · ${promptKeywordCount} ${promptKeywordCount === 1 ? 'keyword' : 'keywords'}`
+                                    : `Disabled · ${promptKeywordCount} ${promptKeywordCount === 1 ? 'keyword' : 'keywords'} saved`}
                             </p>
                         </div>
                     </div>
@@ -282,7 +289,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 <label className="text-sm font-bold text-gray-900 dark:text-white">Masking Behavior</label>
                                 <InfoTooltip
                                     label="About privacy masking behavior"
-                                    content="Blur keeps automatically or manually masked images visible while obscuring sensitive thumbnails. Hide removes them from results while Privacy Mode is active."
+                                    content="Blur or Hide applies to both manually masked images and prompt-keyword matches while Privacy Mode is on."
                                 />
                             </div>
                             <div className="flex gap-4 mt-2">
@@ -314,15 +321,12 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                     <div>
                         <div className="mb-2 flex items-center gap-2">
-                            <label className="text-sm font-bold text-gray-900 dark:text-white">Masked Keywords</label>
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${settings.promptMaskingEnabled ? 'bg-sage-100 text-sage-700 dark:bg-sage-500/20 dark:text-sage-300' : 'bg-gray-100 text-gray-500 dark:bg-white/10 dark:text-gray-400'}`}>
-                                {settings.promptMaskingEnabled ? 'Active' : 'Saved · inactive'}
-                            </span>
+                            <label className="text-sm font-bold text-gray-900 dark:text-white">Prompt keywords</label>
                         </div>
-                        <p className="text-xs text-gray-500 mb-3">Images with prompts containing these words are masked or hidden while prompt keyword masking is active.</p>
+                        <p className="text-xs text-gray-500 mb-3">Positive prompts containing these words use your selected masking behavior while Privacy Mode and prompt keywords are enabled.</p>
                         {settings.promptMaskingEnabled && settings.maskedKeywords.length === 0 ? (
                             <p role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                                Prompt keyword masking is enabled, but no keywords are configured. Add a keyword to activate matching.
+                                Prompt keywords are enabled, but none are configured. Privacy Mode is protecting manual masks only.
                             </p>
                         ) : null}
 

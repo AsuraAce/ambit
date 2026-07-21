@@ -48,6 +48,8 @@ type GlobalModalsProbe = {
     onCheckForUpdates: () => Promise<void>;
     onOpenUpdatePrompt: () => void;
     onNavigateToMaintenance: () => void;
+    onOpenSetupGuide: () => void;
+    onResetFirstRunOnboarding: () => void;
     commandPaletteProps: {
         onNavigate: (mode: ViewMode) => void;
         onToggleTheme: () => void;
@@ -60,7 +62,9 @@ type GlobalModalsProbe = {
 
 type OnboardingProbe = {
     isOpen: boolean;
-    onComplete: (settings: Partial<AppSettings>) => void | Promise<void>;
+    mode: 'firstRun' | 'replay';
+    onClose?: () => void;
+    onComplete: (settings: Partial<Pick<AppSettings, 'enableAI' | 'promptMaskingEnabled'>>) => void | Promise<void>;
     onOpenSettings: (tab: string) => void;
 };
 
@@ -484,6 +488,7 @@ describe('App orchestration', () => {
         mocks.modals.collectionToDelete = null;
         mocks.modals.collectionToEditId = null;
         mocks.modals.isAnyModalOpen = false;
+        mocks.modals.modals = { settings: false, onboarding: false };
         mocks.setSettings.mockImplementation((update: React.SetStateAction<AppSettings>) => {
             mocks.settings = {
                 ...mocks.settings,
@@ -660,9 +665,12 @@ describe('App orchestration', () => {
         render(<App />);
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
         expect(onboarding.isOpen).toBe(true);
-        await act(async () => onboarding.onComplete({ theme: 'light' }));
-        expect(mocks.settings.theme).toBe('light');
-        expect(mocks.flushSettings).toHaveBeenCalledWith(expect.objectContaining({ theme: 'light' }));
+        expect(onboarding.mode).toBe('firstRun');
+        await act(async () => onboarding.onComplete({ enableAI: true }));
+        expect(mocks.settings.enableAI).toBe(true);
+        expect(mocks.settings.hasCompletedOnboarding).toBe(true);
+        expect(mocks.settings).toEqual(expect.objectContaining({ enableAI: true, hasCompletedOnboarding: true }));
+        expect(mocks.flushSettings).toHaveBeenCalledWith();
         expect(mocks.addToast).toHaveBeenCalledWith('Setup complete!', 'success');
         expect(requireProbe(captured.importModal, 'ImportModal').isOpen).toBe(false);
         expect(document.activeElement).toBe(document.querySelector('[data-testid="app-layout"]'));
@@ -685,6 +693,93 @@ describe('App orchestration', () => {
         vi.mocked(open).mockResolvedValue(['C:/a.png', 'C:/b.webp']);
         await act(async () => requireProbe(captured.importModal, 'ImportModal').onImportFiles());
         expect(mocks.handleImportPaths).toHaveBeenCalledWith(['C:/a.png', 'C:/b.webp']);
+    });
+
+    it('closes an untouched setup-guide replay without rewriting settings', async () => {
+        mocks.modals.modals = { settings: false, onboarding: true };
+        render(<App />);
+
+        const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
+        expect(onboarding.mode).toBe('replay');
+        await act(async () => onboarding.onComplete({}));
+
+        expect(mocks.setSettings).not.toHaveBeenCalled();
+        expect(mocks.flushSettings).not.toHaveBeenCalled();
+        expect(mocks.modals.closeModal).toHaveBeenCalledWith('onboarding');
+        expect(mocks.addToast).not.toHaveBeenCalledWith('Setup guide settings updated', 'success');
+    });
+
+    it('persists only changed replay controls and preserves masking configuration', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            promptMaskingEnabled: true,
+            maskedKeywords: ['custom-private'],
+            maskingMode: 'hide',
+        });
+        mocks.modals.modals = { settings: false, onboarding: true };
+        render(<App />);
+
+        const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
+        await act(async () => onboarding.onComplete({ promptMaskingEnabled: false }));
+
+        expect(mocks.settings).toEqual(expect.objectContaining({
+            hasCompletedOnboarding: true,
+            promptMaskingEnabled: false,
+            maskedKeywords: ['custom-private'],
+            maskingMode: 'hide',
+        }));
+        expect(mocks.flushSettings).toHaveBeenCalledWith();
+        expect(mocks.modals.closeModal).toHaveBeenCalledWith('onboarding');
+        expect(mocks.addToast).toHaveBeenCalledWith('Setup guide settings updated', 'success');
+    });
+
+    it('merges replay changes into the latest settings snapshot', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            promptMaskingEnabled: true,
+            maskingMode: 'blur',
+        });
+        mocks.modals.modals = { settings: false, onboarding: true };
+        render(<App />);
+
+        mocks.settings = {
+            ...mocks.settings,
+            maskingMode: 'hide',
+            maskedKeywords: ['saved-while-guide-open'],
+        };
+        await act(async () => requireProbe(captured.onboarding, 'OnboardingWizard').onComplete({
+            promptMaskingEnabled: false,
+        }));
+
+        expect(mocks.settings).toEqual(expect.objectContaining({
+            promptMaskingEnabled: false,
+            maskingMode: 'hide',
+            maskedKeywords: ['saved-while-guide-open'],
+        }));
+        expect(mocks.flushSettings).toHaveBeenCalledWith();
+    });
+
+    it('routes Help replay atomically and keeps the destructive first-run reset dev-owned', () => {
+        render(<App />);
+        const globalModals = requireProbe(captured.globalModals, 'GlobalModals');
+
+        act(() => globalModals.onOpenSetupGuide());
+        const openReplay = vi.mocked(mocks.modals.setModals).mock.calls.at(-1)?.[0];
+        if (typeof openReplay !== 'function') throw new Error('Expected setup-guide modal updater');
+        expect(openReplay({ shortcuts: true, onboarding: false })).toEqual({
+            shortcuts: false,
+            onboarding: true,
+        });
+
+        act(() => globalModals.onResetFirstRunOnboarding());
+        expect(mocks.settings.hasCompletedOnboarding).toBe(false);
+        const resetFirstRun = vi.mocked(mocks.modals.setModals).mock.calls.at(-1)?.[0];
+        if (typeof resetFirstRun !== 'function') throw new Error('Expected first-run reset modal updater');
+        expect(resetFirstRun({ settings: true, onboarding: true })).toEqual({
+            settings: false,
+            onboarding: false,
+        });
+        expect(mocks.addToast).toHaveBeenCalledWith('First-run onboarding reset', 'info');
     });
 
     it('keeps onboarding open and restores only its fields when the durable flush rejects', async () => {
@@ -714,10 +809,8 @@ describe('App orchestration', () => {
 
         const onboarding = requireProbe(captured.onboarding, 'OnboardingWizard');
         const completion = onboarding.onComplete({
-            hasCompletedOnboarding: true,
             enableAI: true,
             promptMaskingEnabled: false,
-            maskingMode: 'blur',
         });
         await waitFor(() => expect(mocks.flushSettings).toHaveBeenCalledOnce());
         let drainSettled = false;

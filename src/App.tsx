@@ -4,7 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
-import { OnboardingWizard } from './components/ui/OnboardingWizard';
+import { OnboardingWizard, type OnboardingSettingsUpdate } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
@@ -473,6 +473,10 @@ export default function App() {
         clearSelection();
     }, [filters.collectionId, clearSelection]);
 
+    const isOnboardingReplay = modals.modals.onboarding;
+    const shouldRenderOnboarding = !settings.hasCompletedOnboarding
+        || isOnboardingReplay
+        || isCompletingOnboarding;
     const isViewerShortcutBlocked = modals.isAnyModalOpen
         || isImportModalOpen
         || Boolean(updater.update && updater.isDialogOpen)
@@ -505,6 +509,96 @@ export default function App() {
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
     });
+
+    const handleOnboardingComplete = (onboardingSettings: OnboardingSettingsUpdate) => (
+        settingsPersistenceCoordinator.run(async (permit) => {
+            const currentSettings = useSettingsStore.getState().settings;
+            const changedSettings: OnboardingSettingsUpdate = {};
+            if (typeof onboardingSettings.enableAI === 'boolean'
+                && onboardingSettings.enableAI !== currentSettings.enableAI) {
+                changedSettings.enableAI = onboardingSettings.enableAI;
+            }
+            if (typeof onboardingSettings.promptMaskingEnabled === 'boolean'
+                && onboardingSettings.promptMaskingEnabled !== currentSettings.promptMaskingEnabled) {
+                changedSettings.promptMaskingEnabled = onboardingSettings.promptMaskingEnabled;
+            }
+
+            const completesFirstRun = !isOnboardingReplay && !currentSettings.hasCompletedOnboarding;
+            if (Object.keys(changedSettings).length === 0 && !completesFirstRun) {
+                modals.closeModal('onboarding');
+                return;
+            }
+
+            const previousOnboardingSettings = {
+                enableAI: currentSettings.enableAI,
+                promptMaskingEnabled: currentSettings.promptMaskingEnabled,
+                hasCompletedOnboarding: currentSettings.hasCompletedOnboarding,
+            };
+            const nextSettings = {
+                ...currentSettings,
+                ...changedSettings,
+                ...(completesFirstRun ? { hasCompletedOnboarding: true } : {}),
+            };
+            setIsCompletingOnboarding(true);
+            setSettings(nextSettings);
+
+            try {
+                await flushSettings();
+                setIsCompletingOnboarding(false);
+                if (isOnboardingReplay) {
+                    modals.closeModal('onboarding');
+                    addToast('Setup guide settings updated', 'success');
+                } else {
+                    workspaceRef.current?.focus();
+                    addToast('Setup complete!', 'success');
+                }
+            } catch (error) {
+                const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => ({
+                    ...current,
+                    enableAI: changedSettings.enableAI !== undefined
+                        && current.enableAI === nextSettings.enableAI
+                        ? previousOnboardingSettings.enableAI
+                        : current.enableAI,
+                    promptMaskingEnabled: changedSettings.promptMaskingEnabled !== undefined
+                        && current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
+                        ? previousOnboardingSettings.promptMaskingEnabled
+                        : current.promptMaskingEnabled,
+                    hasCompletedOnboarding: completesFirstRun
+                        && current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
+                        ? previousOnboardingSettings.hasCompletedOnboarding
+                        : current.hasCompletedOnboarding,
+                }));
+                if (restoredSettings) {
+                    try {
+                        await flushSettings(restoredSettings);
+                    } catch (rollbackError) {
+                        console.error('[Onboarding] Failed to persist settings rollback:', rollbackError);
+                    }
+                }
+                setIsCompletingOnboarding(false);
+                addToast('Setup could not be saved. Please try again.', 'error');
+                throw error;
+            }
+        })
+    );
+
+    const handleOpenSetupGuide = () => {
+        modals.setModals(previous => ({
+            ...previous,
+            shortcuts: false,
+            onboarding: true,
+        }));
+    };
+
+    const handleResetFirstRunOnboarding = () => {
+        setSettings(previous => ({ ...previous, hasCompletedOnboarding: false }));
+        modals.setModals(previous => ({
+            ...previous,
+            settings: false,
+            onboarding: false,
+        }));
+        addToast('First-run onboarding reset', 'info');
+    };
 
 
 
@@ -588,56 +682,12 @@ export default function App() {
             />
 
             {/* Overlays & Portals */}
-            {!settings.hasCompletedOnboarding || isCompletingOnboarding ? (
+            {shouldRenderOnboarding ? (
                 <OnboardingWizard
                     isOpen={!modals.modals.settings}
-                    preserveBackdropWhenClosed
-                    onComplete={(onboardingSettings) => settingsPersistenceCoordinator.run(async (permit) => {
-                        const previousOnboardingSettings = {
-                            enableAI: settings.enableAI,
-                            promptMaskingEnabled: settings.promptMaskingEnabled,
-                            maskingMode: settings.maskingMode,
-                            hasCompletedOnboarding: settings.hasCompletedOnboarding,
-                        };
-                        const nextSettings = { ...settings, ...onboardingSettings };
-                        setIsCompletingOnboarding(true);
-                        setSettings(nextSettings);
-
-                        try {
-                            await flushSettings(nextSettings);
-                            setIsCompletingOnboarding(false);
-                            workspaceRef.current?.focus();
-                            addToast("Setup complete!", "success");
-                        } catch (error) {
-                            const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => {
-                                return {
-                                    ...current,
-                                    enableAI: current.enableAI === nextSettings.enableAI
-                                        ? previousOnboardingSettings.enableAI
-                                        : current.enableAI,
-                                    promptMaskingEnabled: current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
-                                        ? previousOnboardingSettings.promptMaskingEnabled
-                                        : current.promptMaskingEnabled,
-                                    maskingMode: current.maskingMode === nextSettings.maskingMode
-                                        ? previousOnboardingSettings.maskingMode
-                                        : current.maskingMode,
-                                    hasCompletedOnboarding: current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
-                                        ? previousOnboardingSettings.hasCompletedOnboarding
-                                        : current.hasCompletedOnboarding,
-                                };
-                            });
-                            if (restoredSettings) {
-                                try {
-                                    await flushSettings(restoredSettings);
-                                } catch (rollbackError) {
-                                    console.error('[Onboarding] Failed to persist settings rollback:', rollbackError);
-                                }
-                            }
-                            setIsCompletingOnboarding(false);
-                            addToast("Setup could not be saved. Please try again.", "error");
-                            throw error;
-                        }
-                    })}
+                    mode={isOnboardingReplay ? 'replay' : 'firstRun'}
+                    onClose={isOnboardingReplay ? () => modals.closeModal('onboarding') : undefined}
+                    onComplete={handleOnboardingComplete}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 />
             ) : null}
@@ -694,6 +744,8 @@ export default function App() {
                 slideshowShuffle={modals.slideshowShuffle}
                 initialSettingsTab={modals.initialSettingsTab}
                 shortcutsModalTab={modals.shortcutsModalTab}
+                onOpenSetupGuide={handleOpenSetupGuide}
+                onResetFirstRunOnboarding={handleResetFirstRunOnboarding}
                 commandPaletteProps={{
                     onNavigate: changeViewMode,
                     onToggleTheme: toggleTheme,

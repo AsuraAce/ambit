@@ -73,19 +73,22 @@ vi.mock('../../../services/geminiService', () => ({
     verifyApiKey: mocks.verifyApiKey,
 }));
 
-const renderWizard = () => {
+const renderWizard = (mode: 'firstRun' | 'replay' = 'firstRun') => {
     const onComplete = vi.fn();
     const onOpenSettings = vi.fn();
+    const onClose = vi.fn();
 
     const result = render(
         <OnboardingWizard
             isOpen={true}
+            mode={mode}
             onComplete={onComplete}
+            onClose={mode === 'replay' ? onClose : undefined}
             onOpenSettings={onOpenSettings}
         />
     );
 
-    return { onComplete, onOpenSettings, unmount: result.unmount };
+    return { onComplete, onOpenSettings, onClose, unmount: result.unmount };
 };
 
 const continueToIntelligence = () => {
@@ -169,7 +172,7 @@ describe('OnboardingWizard', () => {
         expect(onOpenSettings.mock.calls).toEqual([['invokeai'], ['comfyui'], ['a1111']]);
 
         unmount();
-        render(<OnboardingWizard isOpen={true} onComplete={vi.fn()} />);
+        render(<OnboardingWizard isOpen={true} mode="firstRun" onComplete={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
         fireEvent.click(screen.getByText('InvokeAI').closest('button')!);
         fireEvent.click(screen.getByText('ComfyUI').closest('button')!);
@@ -177,9 +180,42 @@ describe('OnboardingWizard', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Add another image folder' }));
     });
 
-    it('renders no backdrop when closed unless backdrop preservation is requested', () => {
-        render(<OnboardingWizard isOpen={false} onComplete={vi.fn()} />);
+    it('uses the first-run backdrop during Settings handoff but not during replay', () => {
+        const view = render(<OnboardingWizard isOpen={false} mode="replay" onClose={vi.fn()} onComplete={vi.fn()} />);
         expect(screen.queryByTestId('onboarding-backdrop')).toBeNull();
+
+        view.rerender(<OnboardingWizard isOpen={false} mode="firstRun" onComplete={vi.fn()} />);
+        expect(screen.getByTestId('onboarding-backdrop').getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('lets replay close through its control or Escape without treating the backdrop as dismissal', () => {
+        const priorControl = document.createElement('button');
+        document.body.append(priorControl);
+        priorControl.focus();
+        const { onClose, unmount } = renderWizard('replay');
+        const dialog = screen.getByRole('dialog');
+
+        fireEvent.click(dialog.parentElement!);
+        expect(onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Close setup guide' }));
+        expect(onClose).toHaveBeenCalledOnce();
+
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+        expect(onClose).toHaveBeenCalledTimes(2);
+
+        unmount();
+        expect(document.activeElement).toBe(priorControl);
+        priorControl.remove();
+    });
+
+    it('keeps first-run non-dismissible', () => {
+        renderWizard();
+        const dialog = screen.getByRole('dialog');
+
+        expect(screen.queryByRole('button', { name: 'Close setup guide' })).toBeNull();
+        fireEvent.keyDown(dialog, { key: 'Escape' });
+        expect(screen.getByRole('heading', { name: 'Organize your AI image library' })).not.toBeNull();
     });
 
     it('keeps focus on the dialog when no focusable descendants are available', () => {
@@ -227,9 +263,9 @@ describe('OnboardingWizard', () => {
 
     it('preserves the current step while Settings temporarily hides the wizard', () => {
         const props = {
+            mode: 'firstRun' as const,
             onComplete: vi.fn(),
             onOpenSettings: vi.fn(),
-            preserveBackdropWhenClosed: true,
         };
         const { rerender } = render(
             <OnboardingWizard isOpen={true} {...props} />
@@ -257,18 +293,13 @@ describe('OnboardingWizard', () => {
         expect(document.querySelector('[data-motion-initial-y="10"]')).toBeNull();
     });
 
-    it('completes with AI disabled and prompt masking enabled by default', () => {
+    it('does not emit untouched settings when first-run completes', () => {
         const { onComplete } = renderWizard();
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
 
-        expect(onComplete).toHaveBeenCalledWith({
-            enableAI: false,
-            promptMaskingEnabled: true,
-            maskingMode: 'blur',
-            hasCompletedOnboarding: true,
-        });
+        expect(onComplete).toHaveBeenCalledWith({});
     });
 
     it('requires a new enabled key to verify and save before continuing', async () => {
@@ -444,7 +475,7 @@ describe('OnboardingWizard', () => {
         expect(screen.queryByText(/reads this API key from your environment/)).toBeNull();
     });
 
-    it('does not restore focus behind the next modal after completion', () => {
+    it('does not restore focus behind the next modal after completion', async () => {
         const previousControl = document.createElement('button');
         document.body.append(previousControl);
         previousControl.focus();
@@ -452,18 +483,19 @@ describe('OnboardingWizard', () => {
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+        await Promise.resolve();
 
         unmount();
 
         expect(document.activeElement).not.toBe(previousControl);
     });
 
-    it('exposes prompt keyword masking as a named switch', () => {
+    it('exposes prompt keywords as a named switch', () => {
         const { onComplete } = renderWizard();
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-        const maskingSwitch = screen.getByRole('switch', { name: 'Enable prompt keyword masking' });
+        const maskingSwitch = screen.getByRole('switch', { name: 'Use prompt keywords' });
         const thumb = maskingSwitch.querySelector('[aria-hidden="true"]');
         expect(maskingSwitch.getAttribute('aria-checked')).toBe('true');
         expect(thumb?.className).toContain('left-1');
@@ -477,16 +509,16 @@ describe('OnboardingWizard', () => {
         expect(onComplete.mock.calls[0][0]).not.toHaveProperty('maskedKeywords');
     });
 
-    it('preserves custom masking keywords when onboarding is restarted with masking enabled', () => {
+    it('preserves custom masking keywords when the setup guide is replayed untouched', () => {
         mocks.state.settings = { ...DEFAULT_APP_SETTINGS, maskedKeywords: ['custom', 'private'] };
-        const { onComplete } = renderWizard();
+        const { onComplete } = renderWizard('replay');
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-        expect(screen.getByRole('switch', { name: 'Enable prompt keyword masking' }).getAttribute('aria-checked')).toBe('true');
-        fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+        expect(screen.getByRole('switch', { name: 'Use prompt keywords' }).getAttribute('aria-checked')).toBe('true');
+        fireEvent.click(screen.getByRole('button', { name: 'Done' }));
 
-        expect(onComplete).toHaveBeenCalledWith(expect.objectContaining({ promptMaskingEnabled: true }));
+        expect(onComplete).toHaveBeenCalledWith({});
         expect(mocks.state.settings.maskedKeywords).toEqual(['custom', 'private']);
     });
 
@@ -496,7 +528,7 @@ describe('OnboardingWizard', () => {
         continueToIntelligence();
         fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
-        const maskingSwitch = screen.getByRole('switch', { name: 'Enable prompt keyword masking' });
+        const maskingSwitch = screen.getByRole('switch', { name: 'Use prompt keywords' });
         expect(maskingSwitch.getAttribute('aria-checked')).toBe('false');
         fireEvent.click(maskingSwitch);
         fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));

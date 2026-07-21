@@ -273,22 +273,12 @@ describe('AdvancedTab', () => {
         expect(onClose).toHaveBeenCalled();
     });
 
-    it('restarts onboarding immediately without changing unrelated settings', () => {
-        const settings = createSettings({ confirmDelete: false });
-        const onClose = vi.fn();
-        renderAdvanced(settings, onClose);
-
+    it('does not expose the destructive onboarding reset in public Advanced settings', () => {
+        renderAdvanced();
         fireEvent.click(screen.getByRole('button', { name: 'interface' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Restart onboarding' }));
 
-        expect(libraryContextMock.setSettings).toHaveBeenCalledOnce();
-        const update = libraryContextMock.setSettings.mock.calls[0][0] as (current: AppSettings) => AppSettings;
-        expect(update(settings)).toEqual({
-            ...settings,
-            hasCompletedOnboarding: false,
-        });
-        expect(onClose).toHaveBeenCalledOnce();
-        expect(addToastMock).toHaveBeenCalledWith('Onboarding restarted.', 'info');
+        expect(screen.queryByRole('button', { name: /restart onboarding/i })).toBeNull();
+        expect(screen.queryByRole('button', { name: /reset onboarding/i })).toBeNull();
     });
 
     it('labels destructive database actions as a danger zone', () => {

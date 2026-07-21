@@ -14,7 +14,7 @@ Status: In Progress
 
 Remove the confirmed release-smoke trust failures without broadening search semantics, privacy scope, Smart Collection behavior, or duplicate resolution policy.
 
-The milestone is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
+The milestone is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, replaying the setup guide cannot overwrite untouched privacy settings, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
 
 ## Work Package 1: Stable Search Transitions
 
@@ -101,9 +101,52 @@ Verification evidence:
 - `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed;
 - rendered browser QA remains a manual check because the in-app browser kernel failed before it could open Ambit; no user-owned development server was stopped or replaced.
 
-## Work Package 3: Initial Smart Collection Thumbnail Hydration
+## Work Package 2A: Privacy Clarity and Safe Setup-Guide Replay
 
 Depends on: Work Package 2.
+
+Status: Complete (`fix/prompt-masking-toggle`, 2026-07-21)
+
+Primary invariant: reopening setup changes only controls the user explicitly changes and never resets saved keywords, masking behavior, or unrelated settings.
+
+Scope:
+
+- Present Privacy Mode as the session master over manual masks and the optional prompt-keyword source.
+- Keep prompt keywords editable while disabled and explain that Blur/Hide applies to both masking sources.
+- Add a dismissible setup-guide replay under Help & Guide without changing `hasCompletedOnboarding`.
+- Persist only guide controls explicitly touched; retain immediate saves from linked Settings pages and API-key verification.
+- Remove the public onboarding reset and place the true first-run reset behind development-only Dev Tools confirmation.
+- Preserve fail-closed gallery and collection-thumbnail gates whenever effective privacy rules change.
+
+Non-goals:
+
+- No search, privacy-motion, Smart Collection thumbnail, duplicate-navigation, Rust, SQLite, or persisted-settings schema changes.
+
+Targeted verification:
+
+- onboarding, App persistence, Help, Advanced/Dev settings, Privacy tab, privacy-index, gallery, and collection-thumbnail tests;
+- focused manual replay and masking smoke;
+- `pnpm run test:run`, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check`.
+
+Completion criteria:
+
+- replay is dismissible through Close or Escape, ignores backdrop clicks, and preserves every untouched setting;
+- first-run remains non-dismissible and owns the completion flag;
+- the public UI clearly distinguishes the Privacy Mode master, manual masks, prompt-keyword matching, and shared Blur/Hide behavior;
+- the package is independently review-clean before Work Package 3 begins.
+
+Verification evidence:
+
+- replay Close, Escape, backdrop, focus restoration, untouched-control, latest-settings merge, failure rollback, and first-run completion behavior are covered by focused component and App orchestration tests;
+- Help & Guide routing, development-only reset confirmation, public reset removal, Privacy hierarchy copy, and sidebar accessibility are covered by focused tests;
+- the complete frontend suite passed: 256 files, 2,875 tests passed, 1 skipped;
+- `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
+- the full suite exposed and repaired a stale `countGlobalImages` mock in `LibraryIntegration.test.tsx`; no production library-query behavior changed;
+- desktop smoke against the user's live library was not run to avoid mutating their development profile; the package's interaction paths were exercised through the focused UI tests.
+
+## Work Package 3: Initial Smart Collection Thumbnail Hydration
+
+Depends on: Work Package 2A.
 
 Status: Pending (`fix/smart-collection-initial-thumbnail`)
 

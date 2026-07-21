@@ -101,6 +101,8 @@ const setup = (overrides: Partial<React.ComponentProps<typeof GlobalModals>> = {
         slideshowShuffle: true,
         initialSettingsTab: 'resources',
         shortcutsModalTab: 'search',
+        onOpenSetupGuide: vi.fn(),
+        onResetFirstRunOnboarding: vi.fn(),
         commandPaletteProps: {
             onNavigate: vi.fn(),
             onToggleTheme: vi.fn(),
@@ -145,12 +147,20 @@ describe('GlobalModals', () => {
         await screen.findByText('close-settings');
         expect(Object.keys(captures.props)).toHaveLength(10);
 
-        expect(captures.props.settings).toMatchObject({ initialTab: 'resources', hasPendingUpdate: true, pendingUpdateVersion: '2.0.0' });
+        expect(captures.props.settings).toMatchObject({
+            initialTab: 'resources',
+            hasPendingUpdate: true,
+            pendingUpdateVersion: '2.0.0',
+            onResetFirstRunOnboarding: props.onResetFirstRunOnboarding,
+        });
         expect(captures.props.export).toMatchObject({ count: 2, isExporting: true });
         expect(captures.props.slideshow).toMatchObject({ initialIndex: 0, isShuffleDefault: true });
         expect(captures.props.recovery).toMatchObject({ isProcessing: true });
         expect(captures.props.addToCollection).toMatchObject({ selectedIds: ['a', 'b'], mode: 'move', sourceCollectionId: 'source' });
-        expect(captures.props.shortcuts).toMatchObject({ initialTab: 'search' });
+        expect(captures.props.shortcuts).toMatchObject({
+            initialTab: 'search',
+            onOpenSetupGuide: props.onOpenSetupGuide,
+        });
         expect(captures.props.collectionEditor.collection).toMatchObject({ id: 'smart' });
 
         for (const name of Object.keys(captures.props)) {

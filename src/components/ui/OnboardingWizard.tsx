@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
     ArrowRight,
@@ -17,6 +17,7 @@ import {
     ServerOff,
     Wand2,
     Workflow,
+    X,
 } from 'lucide-react';
 import { AppSettings } from '../../types';
 import { APP_NAME } from '../../constants/app';
@@ -25,11 +26,13 @@ import { useSettingsStore } from '../../stores/settingsStore';
 import { ApiKeyInput } from './ApiKeyInput';
 
 type OnboardingSettingsTab = 'folders' | 'invokeai' | 'comfyui' | 'a1111';
+export type OnboardingSettingsUpdate = Partial<Pick<AppSettings, 'enableAI' | 'promptMaskingEnabled'>>;
 
 interface OnboardingWizardProps {
     isOpen: boolean;
-    preserveBackdropWhenClosed?: boolean;
-    onComplete: (settings: Partial<AppSettings>) => void | Promise<void>;
+    mode: 'firstRun' | 'replay';
+    onComplete: (settings: OnboardingSettingsUpdate) => void | Promise<void>;
+    onClose?: () => void;
     onOpenSettings?: (tab: OnboardingSettingsTab) => void;
 }
 
@@ -47,8 +50,9 @@ const FOCUSABLE_SELECTOR = [
 
 export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     isOpen,
-    preserveBackdropWhenClosed = false,
+    mode,
     onComplete,
+    onClose,
     onOpenSettings,
 }) => {
     const brandGlyphSrc = '/branding/ambit-glyph.svg';
@@ -60,10 +64,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
     const [step, setStep] = useState(1);
     const [apiKey, setApiKey] = useState(() => geminiApiKey || '');
-    const [enableAI, setEnableAI] = useState(() => (
-        settings.enableAI && (!!geminiApiKey || isEnvKey)
-    ));
-    const [promptMaskingEnabled, setPromptMaskingEnabled] = useState(() => settings.promptMaskingEnabled);
+    const [enableAIDraft, setEnableAIDraft] = useState<boolean | undefined>(undefined);
+    const [promptMaskingDraft, setPromptMaskingDraft] = useState<boolean | undefined>(undefined);
     const [isVerifying, setIsVerifying] = useState(false);
     const [isCompleting, setIsCompleting] = useState(false);
     const [verificationStatus, setVerificationStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -74,6 +76,8 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const previousFocusRef = useRef<HTMLElement | null>(null);
     const shouldRestoreFocusRef = useRef(true);
 
+    const enableAI = enableAIDraft ?? settings.enableAI;
+    const promptMaskingEnabled = promptMaskingDraft ?? settings.promptMaskingEnabled;
     const trimmedApiKey = apiKey.trim();
     const hasStoredKey = !isEnvKey && !!geminiApiKey && trimmedApiKey === geminiApiKey;
     const apiKeyInputStatus = verificationStatus === 'idle' && hasStoredKey
@@ -82,13 +86,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     const hasConfiguredAiKey = hasStoredKey || verificationStatus === 'success';
     const needsAiSetup = step === 3 && enableAI && !hasConfiguredAiKey;
     const canContinue = !needsAiSetup && !isVerifying && !isCompleting;
+    const canDismiss = mode === 'replay' && !isVerifying && !isCompleting;
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!isOpen) return;
 
-        previousFocusRef.current = document.activeElement instanceof HTMLElement
+        const activeElement = document.activeElement instanceof HTMLElement
             ? document.activeElement
             : null;
+        if (!activeElement || !dialogRef.current?.contains(activeElement)) {
+            previousFocusRef.current = activeElement;
+        }
 
         return () => {
             if (shouldRestoreFocusRef.current) previousFocusRef.current?.focus();
@@ -100,6 +108,13 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     }, [isOpen, step]);
 
     const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Escape' && canDismiss) {
+            event.preventDefault();
+            event.stopPropagation();
+            onClose?.();
+            return;
+        }
+
         if (event.key !== 'Tab' || !dialogRef.current) return;
 
         const focusableElements = Array.from(
@@ -178,13 +193,11 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
         setIsCompleting(true);
         try {
-            await onComplete({
-                enableAI,
-                promptMaskingEnabled,
-                maskingMode: 'blur',
-                hasCompletedOnboarding: true,
-            });
-            shouldRestoreFocusRef.current = false;
+            const changes: OnboardingSettingsUpdate = {};
+            if (enableAIDraft !== undefined) changes.enableAI = enableAIDraft;
+            if (promptMaskingDraft !== undefined) changes.promptMaskingEnabled = promptMaskingDraft;
+            await onComplete(changes);
+            if (mode === 'firstRun') shouldRestoreFocusRef.current = false;
         } catch {
             // The owner keeps the wizard open and reports persistence failures.
         } finally {
@@ -197,14 +210,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     };
 
     const handleSetUpLater = () => {
-        setEnableAI(false);
+        setEnableAIDraft(false);
         setVerificationStatus('idle');
         setVerificationError(null);
         setStep(4);
     };
 
     if (!isOpen) {
-        return preserveBackdropWhenClosed ? (
+        return mode === 'firstRun' ? (
             <div
                 data-testid="onboarding-backdrop"
                 aria-hidden="true"
@@ -256,6 +269,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
 
                 <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-transparent p-5 sm:p-6 md:p-8 lg:p-10">
                     <div className="pointer-events-none absolute right-0 top-0 h-64 w-64 rounded-full bg-sage-500/5 blur-[100px]" />
+                    {mode === 'replay' ? (
+                        <button
+                            type="button"
+                            aria-label="Close setup guide"
+                            onClick={onClose}
+                            disabled={!canDismiss}
+                            className="absolute right-4 top-4 z-20 rounded-full bg-gray-100 p-2 text-gray-500 transition-colors hover:bg-gray-200 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white/5 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+                        >
+                            <X className="h-5 w-5" aria-hidden="true" />
+                        </button>
+                    ) : null}
 
                     <p className="relative z-10 mb-3 text-xs font-bold uppercase tracking-widest text-sage-500 md:hidden">
                         Step {step} of {TOTAL_STEPS} · {STEP_LABELS[step - 1]}
@@ -383,7 +407,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             aria-label="Enable AI features"
                                             aria-checked={enableAI}
                                             disabled={isVerifying}
-                                            onClick={() => setEnableAI(current => !current)}
+                                            onClick={() => setEnableAIDraft(!enableAI)}
                                             className={`mb-5 flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-not-allowed disabled:opacity-50 ${enableAI ? 'border-sage-500/50 bg-sage-500/5' : 'border-gray-200 dark:border-white/10'}`}
                                         >
                                             <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${enableAI ? 'border-sage-500 bg-sage-500 shadow-lg shadow-sage-500/20' : 'border-gray-400'}`}>
@@ -456,17 +480,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                     <EyeOff className="h-7 w-7 text-sage-500" />
                                                 </div>
                                                 <div className="flex-1">
-                                                    <h3 className="font-bold text-gray-900 dark:text-white">Prompt keyword masking</h3>
+                                                    <h3 className="font-bold text-gray-900 dark:text-white">Use prompt keywords</h3>
                                                     <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
-                                                        Blur images whose prompts match your configured sensitive-content keywords. Turning this off retains your saved list for later.
+                                                        While Privacy Mode is on, also mask images whose positive prompts contain a saved keyword. Manual image masks remain protected when this is off, and the keyword list is retained.
                                                     </p>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     role="switch"
-                                                    aria-label="Enable prompt keyword masking"
+                                                    aria-label="Use prompt keywords"
                                                     aria-checked={promptMaskingEnabled}
-                                                    onClick={() => setPromptMaskingEnabled(current => !current)}
+                                                    onClick={() => setPromptMaskingDraft(!promptMaskingEnabled)}
                                                     className={`relative h-7 w-14 shrink-0 rounded-full shadow-inner transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 ${promptMaskingEnabled ? 'bg-sage-500' : 'bg-gray-300 dark:bg-zinc-700'}`}
                                                 >
                                                     <span
@@ -516,7 +540,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                 disabled={!canContinue}
                                 className="flex items-center gap-3 whitespace-nowrap rounded-2xl bg-gray-900 px-5 py-2.5 text-sm font-black text-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:translate-y-0 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-900 dark:shadow-white/5"
                             >
-                                {step === TOTAL_STEPS ? 'Finish setup' : 'Continue'}
+                                {step === TOTAL_STEPS ? (mode === 'replay' ? 'Done' : 'Finish setup') : 'Continue'}
                                 <ArrowRight className="h-5 w-5 stroke-[2.5]" aria-hidden="true" />
                             </button>
                         </div>

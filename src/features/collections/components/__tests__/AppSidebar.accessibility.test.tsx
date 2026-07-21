@@ -104,12 +104,12 @@ describe('AppSidebar tooltips', () => {
     it('hands focus from the Shortcuts tooltip into its modal and restores it on close', () => {
         render(<SidebarModalHarness />);
 
-        const launcher = screen.getByRole('button', { name: 'Open Keyboard Shortcuts' });
+        const launcher = screen.getByRole('button', { name: 'Open Help & Guide' });
         act(() => launcher.focus());
         expect(screen.getByRole('tooltip')).toBeTruthy();
         fireEvent.click(launcher);
 
-        const closeButton = screen.getByRole('button', { name: 'Close Keyboard Shortcuts' });
+        const closeButton = screen.getByRole('button', { name: 'Close Help & Guide' });
         expect(document.activeElement).toBe(closeButton);
         expect(screen.queryByRole('tooltip')).toBeNull();
 
