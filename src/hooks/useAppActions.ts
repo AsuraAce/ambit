@@ -105,22 +105,29 @@ export const useAppActions = ({
         previousImages: typeof images,
         optimisticImages: typeof images,
         errorMessage: string,
-        previousActiveImage?: AIImage
+        previousActiveImage?: AIImage,
+        restoreGallery = true
     ) => {
         try {
             await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
             refreshCollectionsAfterImageFlagChange();
         } catch (error) {
             console.error('[Pin] Failed to persist pin state', error);
-            setImages(previousImages);
+            if (restoreGallery) {
+                setImages(previousImages);
+                restoreImagesInQueryCaches(queryClient, previousImages, {
+                    previousOrder: optimisticImages,
+                    nextOrder: previousImages,
+                    reorderQueryKey: imagesQueryKey
+                });
+            } else if (previousActiveImage) {
+                patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
+                    isPinned: previousActiveImage.isPinned,
+                });
+            }
             if (previousActiveImage && activeImageState) {
                 activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
             }
-            restoreImagesInQueryCaches(queryClient, previousImages, {
-                previousOrder: optimisticImages,
-                nextOrder: previousImages,
-                reorderQueryKey: imagesQueryKey
-            });
             addToast(errorMessage, 'error');
         }
     }, [refreshCollectionsAfterImageFlagChange, setImages, addToast, queryClient, imagesQueryKey, activeImageState]);
@@ -129,18 +136,25 @@ export const useAppActions = ({
         ids: string[],
         isFavorite: boolean,
         previousImages: typeof images,
-        previousActiveImage?: AIImage
+        previousActiveImage?: AIImage,
+        restoreGallery = true
     ) => {
         try {
             await Promise.all(ids.map(id => toggleImageFavorite(id, isFavorite)));
             refreshCollectionsAfterImageFlagChange();
         } catch (error) {
             console.error('[Favorite] Failed to persist favorite state', error);
-            setImages(previousImages);
+            if (restoreGallery) {
+                setImages(previousImages);
+                restoreImagesInQueryCaches(queryClient, previousImages);
+            } else if (previousActiveImage) {
+                patchImageFlagsInQueryCaches(queryClient, [previousActiveImage.id], {
+                    isFavorite: previousActiveImage.isFavorite,
+                });
+            }
             if (previousActiveImage && activeImageState) {
                 activeImageState.updateImage(previousActiveImage.id, () => previousActiveImage);
             }
-            restoreImagesInQueryCaches(queryClient, previousImages);
             addToast('Failed to update favorite state', 'error');
         }
     }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, activeImageState]);
@@ -211,10 +225,11 @@ export const useAppActions = ({
 
         const newFavorite = !img.isFavorite;
         const previousImages = images;
+        const isInCurrentQuery = images.some(image => image.id === id);
 
         updateImage(id, item => ({ ...item, isFavorite: newFavorite }));
         patchImageFlagsInQueryCaches(queryClient, [id], { isFavorite: newFavorite });
-        void persistFavoriteChanges([id], newFavorite, previousImages, img);
+        void persistFavoriteChanges([id], newFavorite, previousImages, img, isInCurrentQuery);
 
         if (options.showToast) {
             addToast(newFavorite ? "Liked" : "Unliked", newFavorite ? "success" : "info");
@@ -333,27 +348,35 @@ export const useAppActions = ({
     const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
         const previousActiveImage = getImage(id);
         const previousImages = images;
-        const nextImages = applyOptimisticPinOrder(
-            previousImages,
-            [id],
-            newPinned,
-            !!filters.collectionId
-        );
+        const isInCurrentQuery = images.some(image => image.id === id);
+        const nextImages = isInCurrentQuery
+            ? applyOptimisticPinOrder(previousImages, [id], newPinned, !!filters.collectionId)
+            : previousImages;
 
-        setImages(nextImages);
-        if (activeImageState && !images.some(image => image.id === id)) {
+        if (isInCurrentQuery) {
+            setImages(nextImages);
+            patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned }, {
+                previousOrder: previousImages,
+                nextOrder: nextImages,
+                reorderQueryKey: imagesQueryKey
+            });
+        } else if (activeImageState) {
             activeImageState.updateImage(id, image => ({ ...image, isPinned: newPinned }));
+            patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned });
         }
-        patchImageFlagsInQueryCaches(queryClient, [id], { isPinned: newPinned }, {
-            previousOrder: previousImages,
-            nextOrder: nextImages,
-            reorderQueryKey: imagesQueryKey
-        });
 
         if (options.showToast !== false) {
             addToast(newPinned ? "Pinned to top" : "Unpinned", "info");
         }
-        void persistPinChanges([id], newPinned, previousImages, nextImages, 'Failed to update pinned state', previousActiveImage);
+        void persistPinChanges(
+            [id],
+            newPinned,
+            previousImages,
+            nextImages,
+            'Failed to update pinned state',
+            previousActiveImage,
+            isInCurrentQuery
+        );
         // await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
     };
 

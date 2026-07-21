@@ -308,6 +308,37 @@ describe('useAppActions', () => {
         expect(directImage).toEqual(expect.objectContaining({ isFavorite: true, isPinned: true }));
         expect(mockToggleImageFavorite).toHaveBeenCalledWith(directImage.id, true);
         expect(mockToggleImagePin).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockSetImages).not.toHaveBeenCalled();
+    });
+
+    it('rolls back failed direct-asset flags without replacing the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
+        mockToggleImagePin.mockRejectedValueOnce(new Error('pin failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error'));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: false, isPinned: false }));
+        expect(mockSetImages).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
     });
 
     it('closes a directly opened asset when it is deleted', () => {

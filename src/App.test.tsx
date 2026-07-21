@@ -131,6 +131,7 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     settings: null as unknown as AppSettings,
     settingsLoaded: true,
+    privacyEnabled: false,
     geminiApiKey: null as string | null,
     setSettings: vi.fn(),
     rollbackSettings: vi.fn(),
@@ -278,6 +279,7 @@ vi.mock('./stores/settingsStore', () => {
     const storeState = () => ({
         isLoaded: mocks.settingsLoaded,
         settings: mocks.settings,
+        privacyEnabled: mocks.privacyEnabled,
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
@@ -286,6 +288,7 @@ vi.mock('./stores/settingsStore', () => {
     const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) => selector({
         isLoaded: mocks.settingsLoaded,
         settings: mocks.settings,
+        privacyEnabled: mocks.privacyEnabled,
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
@@ -471,6 +474,7 @@ describe('App orchestration', () => {
             defaultTheaterMode: false
         });
         mocks.settingsLoaded = true;
+        mocks.privacyEnabled = false;
         mocks.geminiApiKey = null;
         mocks.collectionsLoaded = true;
         mocks.collections = [];
@@ -907,6 +911,32 @@ describe('App orchestration', () => {
         await act(async () => deferred.resolve(image('hidden-control')));
         await expect(navigation).resolves.toBe(false);
         expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+    });
+
+    it('does not open a referenced image hidden while its lookup is in flight', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+        });
+        const deferred = createDeferred<AIImage | null>();
+        mocks.getImageWithFullMetadata.mockReturnValueOnce(deferred.promise);
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let navigation: Promise<boolean> | undefined;
+        act(() => {
+            navigation = requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('private-reference');
+        });
+        mocks.privacyEnabled = true;
+        await act(async () => deferred.resolve({
+            ...image('private-reference'),
+            userMasked: true,
+        }));
+
+        await expect(navigation).resolves.toBe(false);
+        expect(captured.viewer?.image.id).toBe('one');
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
     });
 
     it('blocks mounted viewers while the standalone import modal is open', async () => {

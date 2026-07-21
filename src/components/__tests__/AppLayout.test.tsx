@@ -191,6 +191,7 @@ describe('AppLayout', () => {
         handlers: {} as any,
         setViewingImageId: vi.fn(),
         onMaintenanceViewerOpenChange: vi.fn(),
+        onOpenReferencedImage: vi.fn().mockResolvedValue(true),
         isViewerShortcutBlocked: false,
         settings: {} as any,
         privacyEnabled: false,
@@ -320,6 +321,7 @@ describe('AppLayout', () => {
         render(<AppLayout {...defaultProps} viewMode="maintenance" isViewerShortcutBlocked={true} />);
         expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
         expect(capturedProps.maintenance?.onViewerOpenChange).toBe(defaultProps.onMaintenanceViewerOpenChange);
+        expect(capturedProps.maintenance?.onOpenReferencedImage).toBe(defaultProps.onOpenReferencedImage);
         expect(capturedProps.maintenance?.isShortcutBlocked).toBe(true);
     });
 

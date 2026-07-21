@@ -104,6 +104,7 @@ interface AppLayoutProps {
     handlers: AppHandlers;
     setViewingImageId: (id: string | null) => void;
     onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
+    onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isViewerShortcutBlocked: boolean;
     toggleFavorite: (id: string) => void | Promise<void>;
     actions: ReturnType<typeof useAppActions>;
@@ -135,7 +136,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, scopeTotal, scopeName,
     fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
-    handlers, setViewingImageId, onMaintenanceViewerOpenChange, isViewerShortcutBlocked,
+    handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, isViewerShortcutBlocked,
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
     activeCollection, activeSmartCollection, handleRangeSelection,
@@ -433,6 +434,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onSetCollectionMembership={onSetCollectionMembership}
                                         availableTags={availableTags}
                                         onViewerOpenChange={onMaintenanceViewerOpenChange}
+                                        onOpenReferencedImage={onOpenReferencedImage}
                                         isShortcutBlocked={isViewerShortcutBlocked}
                                     />
                                 </React.Suspense>
