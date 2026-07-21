@@ -638,6 +638,22 @@ pub(crate) fn evaluate_string_node_strict(
     )
 }
 
+pub(crate) fn evaluate_string_source_strict(
+    graph: &ComfyGraph,
+    source: &InputSource,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<String> {
+    evaluate_string_source_with_mode(
+        graph,
+        source,
+        visited,
+        depth,
+        StringEvaluationMode::TransformOperand,
+        true,
+    )
+}
+
 fn evaluate_string_node_with_mode(
     graph: &ComfyGraph,
     node_id: &str,
@@ -946,6 +962,40 @@ fn evaluate_string_node_with_mode(
             strict_connections,
         )?;
         return replace_string_bounded(&source, &find, &replacement);
+    }
+
+    if t == "JsonExtractString" {
+        if !matches!(output_slot, None | Some(0)) {
+            return None;
+        }
+        let json_string = evaluate_transform_input(
+            graph,
+            node,
+            "json_string",
+            visited,
+            depth,
+            MAX_TRANSFORM_STRING_BYTES,
+            None,
+            strict_connections,
+        )?;
+        let key = evaluate_transform_input(
+            graph,
+            node,
+            "key",
+            visited,
+            depth,
+            MAX_TRANSFORM_PATTERN_BYTES,
+            None,
+            strict_connections,
+        )?;
+        let parsed: Value = serde_json::from_str(&json_string).ok()?;
+        let value = parsed.as_object()?.get(&key);
+        let result = match value {
+            None | Some(Value::Null) => String::new(),
+            Some(Value::String(value)) => value.clone(),
+            Some(value) => serde_json::to_string(value).ok()?,
+        };
+        return (result.len() <= MAX_TRANSFORM_STRING_BYTES).then_some(result);
     }
 
     if t == "RegexExtract" {

@@ -755,6 +755,14 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "JsonExtractString" {
+            match key {
+                "json_string" => return arr.first(),
+                "key" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         if t == "RegexExtract" {
             match key {
                 "string" => return arr.first(),
