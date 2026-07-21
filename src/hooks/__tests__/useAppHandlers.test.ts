@@ -130,6 +130,7 @@ describe('useAppHandlers', () => {
     });
 
     it('should handle remove from library', async () => {
+        const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
         const { result } = renderHandlers();
 
         await act(async () => {
@@ -139,6 +140,7 @@ describe('useAppHandlers', () => {
         expect(mockRemoveImagesFromLibrary).toHaveBeenCalledWith(['img1']);
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockRefreshMaintenanceCounts).toHaveBeenCalled();
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['invoke-image-references'] });
     });
 
     it.each([false, true])(
@@ -307,6 +309,37 @@ describe('useAppHandlers', () => {
         expect(dispatchedImages.map(image => image.notes)).toEqual(['note', undefined]);
         expect(mockUpdateImageNotesCol).toHaveBeenCalledWith('img1', 'note');
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
+    });
+
+    it('applies metadata edits to a directly opened asset outside the gallery', async () => {
+        let directImage: AIImage = {
+            ...mockImages[0],
+            id: 'hidden-control',
+            filename: 'hidden-control.png',
+        };
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => useAppHandlers({ ...props, activeImageState }), {
+            wrapper: ({ children }) => React.createElement(QueryClientProvider, { client: queryClient }, children),
+        });
+
+        await act(async () => result.current.handleUpdatePrompt(directImage.id, 'Direct prompt'));
+        await act(async () => result.current.handleUpdateModel(directImage.id, 'Direct model'));
+        await act(async () => result.current.handleUpdateTool(directImage.id, GeneratorTool.INVOKEAI));
+        await act(async () => result.current.handleUpdateNotes(directImage.id, 'Direct note'));
+
+        expect(directImage.metadata).toEqual(expect.objectContaining({
+            positivePrompt: 'Direct prompt',
+            overrideModel: 'Direct model',
+            tool: GeneratorTool.INVOKEAI,
+        }));
+        expect(directImage.notes).toBe('Direct note');
+        expect(mockSetImages).not.toHaveBeenCalled();
     });
 
     it('groups only requested images and pluralizes duplicate removal', async () => {

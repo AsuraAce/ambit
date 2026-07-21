@@ -5,6 +5,7 @@ import { useImportOps } from './useImportOps';
 import { useExportOps } from './useExportOps';
 import { useThumbnailOps } from './useThumbnailOps';
 import { useMaintenanceOps } from './useMaintenanceOps';
+import type { ActiveImageStateAdapter } from './activeImageState';
 
 interface UseFileOperationsProps {
     images: AIImage[];
@@ -12,6 +13,7 @@ interface UseFileOperationsProps {
     refreshCollections: () => Promise<void>;
     refreshCollectionThumbnails: () => Promise<void>;
     settings: AppSettings;
+    activeImageState?: ActiveImageStateAdapter;
 }
 
 export const useFileOperations = ({
@@ -19,7 +21,8 @@ export const useFileOperations = ({
     setImages,
     refreshCollections,
     refreshCollectionThumbnails,
-    settings
+    settings,
+    activeImageState
 }: UseFileOperationsProps) => {
     const { isImporting, isRegeneratingThumbnails } = useLibraryStore();
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +46,8 @@ export const useFileOperations = ({
         images,
         setImages,
         refreshCollections,
-        settings
+        settings,
+        activeImageState
     });
 
     return {

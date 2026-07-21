@@ -29,6 +29,8 @@ interface ImageViewerProps {
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
+    canNavigateNext?: boolean;
+    canNavigatePrevious?: boolean;
     onSearch: (term: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
@@ -46,6 +48,7 @@ interface ImageViewerProps {
     isSidebarOpen?: boolean;
     onToggleSidebar?: () => void;
     searchHighlights?: PromptHighlightSpec;
+    onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
 
 import { AIResultModal } from './AIResultModal';
@@ -111,6 +114,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onClose,
     onNext,
     onPrev,
+    canNavigateNext = true,
+    canNavigatePrevious = true,
     onSearch,
     onUpdateNotes,
     onUpdatePrompt,
@@ -127,7 +132,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     isShortcutBlocked = false,
     isSidebarOpen = true,
     onToggleSidebar,
-    searchHighlights
+    searchHighlights,
+    onOpenReferencedImage
 }) => {
     const settings = useSettingsStore(s => s.settings);
     const privacyExposureBlocked = useSettingsStore(state => (
@@ -316,8 +322,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             }
 
             // Navigation
-            if (e.key === 'ArrowRight') onNext();
-            if (e.key === 'ArrowLeft') onPrev();
+            if (e.key === 'ArrowRight' && canNavigateNext) onNext();
+            if (e.key === 'ArrowLeft' && canNavigatePrevious) onPrev();
 
             // Actions
             if (key === 'f') handleToggleFavorite();
@@ -332,7 +338,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, ai.closeModal, isShortcutBlocked, isTheaterMode, displayImage.id, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
+    }, [isOpen, ai.modalOpen, ai.closeModal, isShortcutBlocked, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
 
     useEffect(() => {
         if (isOpen && privacyExposureBlocked) onClose();
@@ -410,6 +416,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     showControls={showControls}
                     onPrev={onPrev}
                     onNext={onNext}
+                    canNavigatePrevious={canNavigatePrevious}
+                    canNavigateNext={canNavigateNext}
                     onClose={onClose}
                     onZoomIn={zoomIn}
                     onZoomOut={zoomOut}
@@ -470,6 +478,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     isPaletteLoading={isPaletteLoading}
                     isLoading={isReallyLoading}
                     searchHighlights={searchHighlights}
+                    onOpenReferencedImage={onOpenReferencedImage}
                 />
             </div>
 

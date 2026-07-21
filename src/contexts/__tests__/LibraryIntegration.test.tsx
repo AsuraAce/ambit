@@ -451,6 +451,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         mocks.searchImages.mockClear();
         mocks.getFacets.mockClear();
+        const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
 
         await act(async () => {
             await hook.startInvokeSync({ mode: 'live' });
@@ -465,6 +466,8 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
         expect(mocks.searchImages).not.toHaveBeenCalled();
         expect(mocks.getFacets).not.toHaveBeenCalled();
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['invoke-image-references'] });
+        invalidateSpy.mockRestore();
     });
 
     it.each(['startup', 'live'] as const)('uses persisted Invoke sync choices for %s sync', async (mode) => {

@@ -33,6 +33,7 @@ import { appRepository } from '../services/repository';
 import { watcherService } from '../services/WatcherService';
 import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
+import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -367,6 +368,11 @@ export const SyncProvider: React.FC<{
                     reconcileSourceFacts: shouldReconcileSourceFacts
                 }
             );
+            try {
+                await invalidateInvokeReferenceQueries(queryClient);
+            } catch (error) {
+                console.error('[Sync] Failed to refresh InvokeAI reference links', error);
+            }
             const snapshotCursor = typeof newTs === 'number' ? newTs : (effectiveTimestamp ?? null);
 
             // Sync Boards to Collections

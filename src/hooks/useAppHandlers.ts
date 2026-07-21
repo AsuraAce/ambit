@@ -14,15 +14,18 @@ import {
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { updateImagesQueryCaches } from '../utils/imageQueryCache';
+import type { ActiveImageStateAdapter } from './activeImageState';
+import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 
 interface UseAppHandlersProps {
     images: AIImage[];
     setImages: (update: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
     refreshMaintenanceCounts: () => void;
     refreshHiddenAvailability: () => Promise<void>;
+    activeImageState?: ActiveImageStateAdapter;
 }
 
-export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability }: UseAppHandlersProps) => {
+export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState }: UseAppHandlersProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
@@ -30,9 +33,17 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const refreshFacets = () => {
         rebuildFacetCache().then(() => incrementFacetCacheVersion());
     };
+    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find(image => image.id === id);
+    const updateImage = (id: string, updater: (image: AIImage) => AIImage) => {
+        if (activeImageState) {
+            activeImageState.updateImage(id, updater);
+            return;
+        }
+        setImages(prev => prev.map(image => image.id === id ? updater(image) : image));
+    };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -42,13 +53,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: { ...img.metadata, positivePrompt: prompt }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { positivePrompt: prompt });
         addToast('Updated', 'success');
     };
 
     const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -58,13 +69,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: { ...img.metadata, negativePrompt }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { negativePrompt });
         addToast('Updated', 'success');
     };
 
     const handleUpdateModel = async (id: string, model: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -74,7 +85,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: { ...img.metadata, overrideModel: model }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { overrideModel: model });
 
         // Ensure filter panel is updated
@@ -84,7 +95,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     };
 
     const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -94,7 +105,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             metadata: { ...img.metadata, tool }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { tool });
 
         // Ensure filter panel is updated
@@ -113,6 +124,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
     const handleResolveDuplicate = async (_keepId: string, deleteIds: string[]) => {
         await removeImagesFromLibrary(deleteIds);
+        await invalidateInvokeReferenceQueries(queryClient);
         setImages(p => p.filter(i => !deleteIds.includes(i.id)));
         addToast(`Removed ${deleteIds.length} duplicate${deleteIds.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
@@ -123,6 +135,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         await restoreRemovedImages(ids);
         await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['images'] }),
+            invalidateInvokeReferenceQueries(queryClient),
             refreshHiddenAvailability().catch(error => {
                 console.error('[Restore] Failed to refresh hidden-content availability after restoring images', error);
             }),
@@ -134,6 +147,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
         await removeImagesFromLibrary(ids);
+        await invalidateInvokeReferenceQueries(queryClient);
         setImages(p => p.filter(i => !ids.includes(i.id)));
         addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
@@ -144,6 +158,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         const result = await deleteRemovedImagesFromDisk(ids);
 
         if (result.deletedIds.length > 0) {
+            await invalidateInvokeReferenceQueries(queryClient);
             if (result.failedIds.length === 0 && result.thumbnailWarningIds.length === 0) {
                 addToast(`Moved ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.deletedIds.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
             } else {
@@ -166,11 +181,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     };
 
     const handleUpdateNotes = async (id: string, notes: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const updatedImg = { ...img, notes };
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageNotesCol(id, notes);
         addToast('Saved', 'success');
     };
@@ -188,7 +203,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
                 ? { ...revertedImage, stack: current.stack }
                 : current
         );
-        setImages(prev => prev.map(applyRevertedImage));
+        if (activeImageState) {
+            activeImageState.updateImage(id, applyRevertedImage);
+        } else {
+            setImages(prev => prev.map(applyRevertedImage));
+        }
         updateImagesQueryCaches(queryClient, applyRevertedImage);
 
         // Revert can change tools and models, so we rebuild both incrementally

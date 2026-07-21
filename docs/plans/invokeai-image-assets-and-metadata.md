@@ -355,7 +355,31 @@ Completion criteria:
 
 Depends on: Work Package 5.
 
-Status: Pending
+Status: Complete (`codex/invokeai-image-assets`, `2026-07-21`)
+
+Evidence:
+
+- a dedicated React Query read model loads forward references by the junction
+  primary-key prefix and backlinks by the migration-64 target index, groups
+  repeated targets, and presents the six supported roles in stable order;
+- the viewer shows `Source Images` and `Used By`, keeps unresolved targets and
+  Removed backlinks visible but disabled, and retries the read model after a
+  target disappears during navigation;
+- resolved assets outside the active query open directly in the existing
+  viewer without changing the current search, collection, result list, or
+  InvokeAI asset-visibility setting; Previous and Next are disabled for that
+  direct view;
+- directly opened assets retain normal viewer favorite, pin, removal, prompt,
+  model, tool, notes, revert, and AI-recovery paths through a shared active
+  image-state adapter;
+- the dedicated reference query key is invalidated after every successful
+  InvokeAI sync, including no-op syncs, and after removal, restoration,
+  duplicate resolution, and permanent Removed deletion;
+- 207 focused tests across the viewer, App orchestration, query repository,
+  sync context, and action/maintenance hooks pass with one existing skip;
+- the complete release gate passes: generated-binding drift, lint, typecheck,
+  build-size guard, 2,873 frontend tests with one skipped, coverage, the Rust
+  test suite, and the optimized no-bundle Tauri production build.
 
 Primary invariant: reference navigation never requires assets to be globally
 visible in the gallery.

@@ -91,7 +91,10 @@ type ViewerProbe = {
     onRevertMetadata: (id: string) => void;
     onRecoverMetadata: () => void;
     onSetCollectionMembership: (id: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onOpenReferencedImage: (id: string) => Promise<boolean>;
     onToggleSidebar: () => void;
+    canNavigateNext: boolean;
+    canNavigatePrevious: boolean;
 };
 
 type ContextMenuProbe = {
@@ -195,6 +198,7 @@ const mocks = vi.hoisted(() => ({
         handleRevertMetadata: vi.fn()
     },
     startInvokeSync: vi.fn(),
+    getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
     thumbnailQueue: vi.fn(),
@@ -267,6 +271,9 @@ const createDeferred = <T,>() => {
 vi.mock('./hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
 vi.mock('./hooks/useModalManager', () => ({ useModalManager: () => mocks.modals }));
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
+vi.mock('./services/db/imageRepo', () => ({
+    getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id)
+}));
 vi.mock('./stores/settingsStore', () => {
     const storeState = () => ({
         isLoaded: mocks.settingsLoaded,
@@ -505,6 +512,7 @@ describe('App orchestration', () => {
             onPersisted?.();
             return true;
         });
+        mocks.getImageWithFullMetadata.mockResolvedValue(null);
         vi.mocked(open).mockReset();
     });
 
@@ -838,6 +846,67 @@ describe('App orchestration', () => {
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
         expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('opens a referenced asset outside the current query without changing gallery results', async () => {
+        const hiddenAsset = {
+            ...image('hidden-control'),
+            invokeImageCategory: 'control',
+        } satisfies AIImage;
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce(hiddenAsset);
+        render(<App />);
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage(hiddenAsset.id)).toBe(true);
+        });
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(hiddenAsset.id));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toEqual(expect.objectContaining({
+            canNavigateNext: false,
+            canNavigatePrevious: false,
+        }));
+        expect(mocks.images.map(candidate => candidate.id)).toEqual(['one', 'two']);
+        expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(hiddenAsset.id);
+    });
+
+    it('uses the current gallery for visible reference targets and keeps missing targets disabled', async () => {
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('two')).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('missing')).toBe(false);
+        });
+        expect(captured.viewer?.image.id).toBe('two');
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is no longer available in Ambit.', 'error');
+    });
+
+    it('does not reopen the viewer when a reference lookup finishes after close', async () => {
+        const deferred = createDeferred<AIImage | null>();
+        mocks.getImageWithFullMetadata.mockReturnValueOnce(deferred.promise);
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let navigation: Promise<boolean> | undefined;
+        act(() => {
+            navigation = requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('hidden-control');
+        });
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+
+        await act(async () => deferred.resolve(image('hidden-control')));
+        await expect(navigation).resolves.toBe(false);
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
     });
 
     it('blocks mounted viewers while the standalone import modal is open', async () => {

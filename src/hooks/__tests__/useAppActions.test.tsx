@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
+import type { AIImage } from '../../types';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -282,6 +283,48 @@ describe('useAppActions', () => {
 
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
+    it('applies favorite and pin actions to a directly opened asset outside the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: true, isPinned: true }));
+        expect(mockToggleImageFavorite).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockToggleImagePin).toHaveBeenCalledWith(directImage.id, true);
+    });
+
+    it('closes a directly opened asset when it is deleted', () => {
+        mockSettings = { ...mockSettings, confirmDelete: false };
+        const removeImage = vi.fn();
+        const activeImageState = {
+            getImage: vi.fn(),
+            updateImage: vi.fn(),
+            removeImage,
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.requestDeleteForId('hidden-control'));
+
+        expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['hidden-control']);
+        expect(removeImage).toHaveBeenCalledWith('hidden-control');
+        expect(mockSetSelectedImageIndex).not.toHaveBeenCalled();
     });
 
     it('shows single-image unpin feedback', async () => {

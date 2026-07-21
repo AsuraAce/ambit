@@ -32,6 +32,8 @@ InvokeAI synchronization can:
 
 InvokeAI can also store user uploads, control images, masks, and other source assets. Ambit imports these records so they remain recoverable, but hides known image assets from ordinary library results by default. Use the library View menu's `Show InvokeAI Image Assets` control to reveal them. Revealed assets show category badges, and their viewer Source section shows the recorded InvokeAI image name, category, and origin when available. Unknown or missing categories remain visible.
 
+When InvokeAI generation metadata identifies input images, the viewer also shows forward `Source Images` links and reverse `Used By` links. Available links open in place even when the referenced asset is hidden from ordinary results; this does not enable asset visibility or alter the active search or collection. Unresolved source names and backlinks from Removed images are retained as disabled provenance entries.
+
 Use Initiate Sync to start a manual sync. If a sync fails, Retry Sync starts it again; while a sync is active, Terminate Sync cancels it.
 
 Force Full Resync clears only the InvokeAI sync cursor. The next manual sync scans the full InvokeAI database again, while existing Ambit records, source files, and InvokeAI snapshots stay untouched.

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
@@ -35,12 +36,16 @@ import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
+import { getImageWithFullMetadata } from './services/db/imageRepo';
+import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
+import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
 
 export default function App() {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const modals = useModalManager();
     const appVersion = useAppVersion();
 
@@ -49,6 +54,7 @@ export default function App() {
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
     const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -94,6 +100,35 @@ export default function App() {
     imagesRef.current = images;
     selectedImageIndexRef.current = selectedImageIndex;
     viewingImageIdRef.current = viewingImageId;
+    const activeImageState = React.useMemo<ActiveImageStateAdapter>(() => ({
+        getImage: (imageId) => (
+            images.find(image => image.id === imageId)
+            ?? (directViewerImage?.id === imageId ? directViewerImage : undefined)
+        ),
+        updateImage: (imageId, updater) => {
+            setImages(previous => {
+                let changed = false;
+                const next = previous.map(image => {
+                    if (image.id !== imageId) return image;
+                    changed = true;
+                    return updater(image);
+                });
+                return changed ? next : previous;
+            });
+            setDirectViewerImage(previous => (
+                previous?.id === imageId ? updater(previous) : previous
+            ));
+        },
+        removeImage: (imageId) => {
+            setDirectViewerImage(previous => previous?.id === imageId ? null : previous);
+            if (viewingImageIdRef.current === imageId) {
+                viewingImageIdRef.current = null;
+                selectedImageIndexRef.current = null;
+                setViewingImageId(null);
+                setSelectedImageIndex(null);
+            }
+        },
+    }), [directViewerImage, images, setImages]);
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
     // const filters = useSearchStore(s => s.filters);
@@ -133,7 +168,7 @@ export default function App() {
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const { refreshMaintenanceCounts } = useWatchers();
 
-    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability });
+    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState });
 
     const [availableTags, setAvailableTags] = useState<string[]>([]);
     const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useAiSearchLogic({
@@ -150,7 +185,8 @@ export default function App() {
         setImages,
         refreshCollections,
         refreshCollectionThumbnails,
-        settings
+        settings,
+        activeImageState
     });
 
     const colOps = useCollectionOperations({
@@ -172,7 +208,8 @@ export default function App() {
         setSelectedIds,
         lastSelectedId,
         imagesQueryKey,
-        modalManager: modals
+        modalManager: modals,
+        activeImageState
     });
 
     const handleImportFiles = useCallback((files: FileList) => {
@@ -375,8 +412,42 @@ export default function App() {
     );
 
     const displayedViewerImage = viewingImageId
-        ? images.find(i => i.id === viewingImageId)
+        ? (directViewerImage?.id === viewingImageId
+            ? directViewerImage
+            : images.find(i => i.id === viewingImageId))
         : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
+    const referenceNavigationRequestRef = useRef(0);
+    const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
+        const requestId = referenceNavigationRequestRef.current + 1;
+        referenceNavigationRequestRef.current = requestId;
+        const visibleIndex = images.findIndex(image => image.id === imageId);
+        if (visibleIndex !== -1) {
+            setDirectViewerImage(null);
+            setViewingImageId(null);
+            setSelectedImageIndex(visibleIndex);
+            return true;
+        }
+
+        try {
+            const image = await getImageWithFullMetadata(imageId);
+            if (referenceNavigationRequestRef.current !== requestId) return false;
+            if (!image) {
+                addToast('The referenced image is no longer available in Ambit.', 'error');
+                await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
+                return false;
+            }
+
+            setDirectViewerImage(image);
+            setSelectedImageIndex(null);
+            setViewingImageId(image.id);
+            return true;
+        } catch (error) {
+            console.error('[Viewer] Failed to open referenced image', error);
+            addToast('Failed to open the referenced image.', 'error');
+            await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
+            return false;
+        }
+    }, [addToast, images, queryClient]);
     const searchHighlights = React.useMemo(
         () => derivePromptHighlightSpec(filters.searchQuery),
         [filters.searchQuery]
@@ -687,7 +758,12 @@ export default function App() {
                             image={displayedViewerImage}
                             isOpen={true}
                             isShortcutBlocked={isViewerShortcutBlocked}
-                            onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
+                            onClose={() => {
+                                referenceNavigationRequestRef.current += 1;
+                                setSelectedImageIndex(null);
+                                setViewingImageId(null);
+                                setDirectViewerImage(null);
+                            }}
                             onNext={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex < images.length - 1) {
                                     setSelectedImageIndex(selectedImageIndex + 1);
@@ -698,6 +774,8 @@ export default function App() {
                                     setSelectedImageIndex(selectedImageIndex - 1);
                                 }
                             }}
+                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < images.length - 1}
+                            canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
                             onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
                             onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
                             onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
@@ -720,6 +798,7 @@ export default function App() {
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
                             searchHighlights={searchHighlights}
+                            onOpenReferencedImage={handleOpenReferencedImage}
                         />
                     )}
                 </AnimatePresence>

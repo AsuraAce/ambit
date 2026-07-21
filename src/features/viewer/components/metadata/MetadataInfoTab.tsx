@@ -12,6 +12,7 @@ import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
 import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 import { formatInvokeImageCategory } from '../../../../utils/invokeImageSource';
+import { InvokeReferenceLinks } from './InvokeReferenceLinks';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -32,6 +33,7 @@ interface MetadataInfoTabProps {
     onOpenAIResult?: () => void;
     isLoading?: boolean;
     searchHighlights?: PromptHighlightSpec;
+    onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
 
 export const MetadataInfoTab = ({
@@ -52,7 +54,8 @@ export const MetadataInfoTab = ({
     isAnalyzing,
     onOpenAIResult,
     isLoading,
-    searchHighlights
+    searchHighlights,
+    onOpenReferencedImage
 }: MetadataInfoTabProps) => {
     // Local UI State
     const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
@@ -287,6 +290,10 @@ export const MetadataInfoTab = ({
                                 ) : null}
                             </dl>
                         </section>
+                    ) : null}
+
+                    {onOpenReferencedImage ? (
+                        <InvokeReferenceLinks imageId={image.id} onOpenImage={onOpenReferencedImage} />
                     ) : null}
 
                     {/* Gen Data */}
