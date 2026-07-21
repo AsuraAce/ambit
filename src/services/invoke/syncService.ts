@@ -729,17 +729,19 @@ export const syncImages = async (
                     let formatLooksMapped = false;
                     const rawChunkValue = existing.originalChunks?.invokeai_metadata;
                     if (rawChunkValue) {
-                        const parsedMeta: unknown = typeof rawChunkValue === 'string'
-                            ? JSON.parse(rawChunkValue)
-                            : rawChunkValue;
-                        const meta = isRecord(parsedMeta) ? parsedMeta : {};
+                        try {
+                            const parsedMeta: unknown = typeof rawChunkValue === 'string'
+                                ? JSON.parse(rawChunkValue)
+                                : rawChunkValue;
+                            const meta = isRecord(parsedMeta) ? parsedMeta : {};
 
-                        // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
-                        // Check for both snake_case and camelCase to determine if it's already mapped
-                        if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
-                            (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
-                            formatLooksMapped = true;
-                        }
+                            // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
+                            // Check for both snake_case and camelCase to determine if it's already mapped
+                            if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
+                                (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
+                                formatLooksMapped = true;
+                            }
+                        } catch { }
                     }
 
                     if (isMissingRaw || formatLooksMapped) needsUpdate = true;

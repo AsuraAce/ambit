@@ -19,24 +19,32 @@ const parseJsonValue = (value: unknown): { valid: boolean; value: unknown } => {
     }
 };
 
-const readImageName = (value: unknown): string | undefined => {
+type ImageNameRead =
+    | { status: 'empty' }
+    | { status: 'valid'; imageName: string }
+    | { status: 'invalid' };
+
+const readImageName = (value: unknown): ImageNameRead => {
+    if (value === null || value === undefined) return { status: 'empty' };
     if (typeof value === 'string') {
-        return value.trim().length > 0 ? value : undefined;
+        return value.trim().length > 0
+            ? { status: 'valid', imageName: value }
+            : { status: 'empty' };
     }
-    if (!isRecord(value)) return undefined;
+    if (!isRecord(value) || !('image_name' in value)) return { status: 'invalid' };
 
     const imageName = value.image_name;
-    return typeof imageName === 'string' && imageName.trim().length > 0
-        ? imageName
-        : undefined;
+    if (imageName === null || imageName === undefined) return { status: 'empty' };
+    if (typeof imageName !== 'string') return { status: 'invalid' };
+    return imageName.trim().length > 0
+        ? { status: 'valid', imageName }
+        : { status: 'empty' };
 };
-
-const asItems = (value: unknown): unknown[] => Array.isArray(value) ? value : [value];
 
 export const extractInvokeImageReferences = (
     rawMetadata: unknown
 ): InvokeImageReferenceExtraction => {
-    if (rawMetadata === null || rawMetadata === undefined || rawMetadata === '') {
+    if (rawMetadata === null || rawMetadata === undefined) {
         return { status: 'valid', references: [] };
     }
 
@@ -65,10 +73,16 @@ export const extractInvokeImageReferences = (
     const roots = payload === root ? [root] : [payload, root];
     const references: InvokeImageReferenceInput[] = [];
     const seen = new Set<string>();
+    let hasInvalidReference = false;
 
     const addReference = (role: InvokeImageReferenceRole, value: unknown) => {
-        const targetInvokeImageName = readImageName(value);
-        if (!targetInvokeImageName) return;
+        const imageName = readImageName(value);
+        if (imageName.status === 'invalid') {
+            hasInvalidReference = true;
+            return;
+        }
+        if (imageName.status === 'empty') return;
+        const targetInvokeImageName = imageName.imageName;
 
         const key = `${role}\u0000${targetInvokeImageName}`;
         if (seen.has(key)) return;
@@ -83,9 +97,15 @@ export const extractInvokeImageReferences = (
         processedImageRole?: InvokeImageReferenceRole
     ) => {
         keys.forEach((key) => {
-            if (record[key] === undefined) return;
-            asItems(record[key]).forEach((item) => {
-                if (!isRecord(item)) return;
+            const value = record[key];
+            if (value === null || value === undefined || typeof value === 'string') return;
+            const items = Array.isArray(value) ? value : [value];
+            items.forEach((item) => {
+                if (item === null || item === undefined || typeof item === 'string') return;
+                if (!isRecord(item)) {
+                    hasInvalidReference = true;
+                    return;
+                }
                 addReference(imageRole, item.image);
                 if (processedImageRole) {
                     addReference(processedImageRole, item.processed_image);
@@ -116,5 +136,6 @@ export const extractInvokeImageReferences = (
         );
     });
 
+    if (hasInvalidReference) return { status: 'invalid', references: [] };
     return { status: 'valid', references };
 };

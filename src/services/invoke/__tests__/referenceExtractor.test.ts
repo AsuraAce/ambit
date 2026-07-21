@@ -109,12 +109,52 @@ describe('extractInvokeImageReferences', () => {
         ]);
     });
 
+    it('allows empty optional reference values and model-only adapter entries', () => {
+        expect(extractInvokeImageReferences({
+            init_image: null,
+            controlnets: [
+                null,
+                undefined,
+                'control-model.safetensors',
+                '   ',
+                { model_name: 'record-only-model' },
+                { model_name: 'control-model', image: '   ', processed_image: null },
+            ],
+            ipAdapters: { model_name: 'ip-model', image: { image_name: null } },
+            t2iAdapters: [],
+        })).toEqual({ status: 'valid', references: [] });
+    });
+
+    it.each([
+        ['init_image primitive', { init_image: 42 }],
+        ['init_image object', { init_image: { image_name: 42 } }],
+        ['adapter image', { controlnets: [{ image: false }] }],
+        ['adapter processed_image', { controlnets: [{ processed_image: [] }] }],
+        ['adapter processedImage', { t2iAdapters: [{ processedImage: {} }] }],
+    ])('rejects a malformed present %s reference so it cannot clear stored provenance', (_name, metadata) => {
+        expect(extractInvokeImageReferences(metadata)).toEqual({ status: 'invalid', references: [] });
+    });
+
+    it.each([
+        ['boolean container', { controlnets: false }],
+        ['numeric singleton', { ip_adapter: 42 }],
+        ['numeric array item', { ip_adapters: [42] }],
+        ['boolean array item', { t2i_adapters: [{ model_name: 'valid' }, false] }],
+        ['nested array item', { control_adapters: [[{ model_name: 'nested' }]] }],
+    ])('rejects an unsupported adapter %s so it cannot clear stored provenance', (_name, metadata) => {
+        expect(extractInvokeImageReferences(metadata)).toEqual({ status: 'invalid', references: [] });
+    });
+
     it('distinguishes authoritative empty metadata from malformed metadata', () => {
         expect(extractInvokeImageReferences(null)).toEqual({ status: 'valid', references: [] });
+        expect(extractInvokeImageReferences(undefined)).toEqual({ status: 'valid', references: [] });
+        expect(extractInvokeImageReferences('{}')).toEqual({ status: 'valid', references: [] });
         expect(extractInvokeImageReferences({ positive_prompt: 'no references' })).toEqual({
             status: 'valid',
             references: [],
         });
+        expect(extractInvokeImageReferences('')).toEqual({ status: 'invalid', references: [] });
+        expect(extractInvokeImageReferences('   ')).toEqual({ status: 'invalid', references: [] });
         expect(extractInvokeImageReferences('{bad')).toEqual({ status: 'invalid', references: [] });
         expect(extractInvokeImageReferences({ invokeai_metadata: '{bad' })).toEqual({
             status: 'invalid',

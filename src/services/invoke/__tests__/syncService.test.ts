@@ -561,7 +561,8 @@ describe('syncImages live mode', () => {
         }]);
     });
 
-    it('preserves existing references when an unchanged row has malformed metadata', async () => {
+    it('still snapshots current references when an unchanged image has a malformed stored raw chunk', async () => {
+        const fullPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/unchanged.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
             if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
@@ -569,7 +570,41 @@ describe('syncImages live mode', () => {
             if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
             if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
                 return [{
-                    image_name: 'unchanged.png', metadata_blob: '{bad json',
+                    image_name: 'unchanged.png',
+                    metadata_blob: { init_image: 'source.png' },
+                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
+            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+            originalChunks: { invokeai_metadata: '{bad json' },
+        })]);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false,
+        });
+
+        expect(result.syncedIds).toContain('unchanged.png');
+        expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
+            sourceImageId: fullPath,
+            references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
+        }]);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('preserves stored references when an unchanged row has an empty metadata string', async () => {
+        let storedReferenceNames = ['stored-source.png'];
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'unchanged.png', metadata_blob: '',
                     created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
                 }];
             }
@@ -579,12 +614,60 @@ describe('syncImages live mode', () => {
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
             originalState: { isFavorite: false, isPinned: false, boardId: undefined },
         })]);
+        vi.mocked(commands.replaceInvokeImageReferences).mockImplementation(async (referenceSets) => {
+            storedReferenceNames = referenceSets.flatMap(set =>
+                set.references.map(reference => reference.targetInvokeImageName)
+            );
+            return {
+                status: 'ok',
+                data: { sourcesReplaced: 1, referencesWritten: 0, skippedMissingSources: 0 },
+            } as never;
+        });
 
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'live', syncBoards: false, syncFavorites: false,
         });
 
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
+        expect(storedReferenceNames).toEqual(['stored-source.png']);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
+    it('preserves stored references when an unchanged row has a malformed adapter container', async () => {
+        let storedReferenceNames = ['stored-source.png'];
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT 1 as found FROM images i')) return [{ found: 1 }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'unchanged.png', metadata_blob: { controlnets: false },
+                    created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('unchanged.png', {
+            originalState: { isFavorite: false, isPinned: false, boardId: undefined },
+        })]);
+        vi.mocked(commands.replaceInvokeImageReferences).mockImplementation(async (referenceSets) => {
+            storedReferenceNames = referenceSets.flatMap(set =>
+                set.references.map(reference => reference.targetInvokeImageName)
+            );
+            return {
+                status: 'ok',
+                data: { sourcesReplaced: 1, referencesWritten: 0, skippedMissingSources: 0 },
+            } as never;
+        });
+
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'live', syncBoards: false, syncFavorites: false,
+        });
+
+        expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
+        expect(storedReferenceNames).toEqual(['stored-source.png']);
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
