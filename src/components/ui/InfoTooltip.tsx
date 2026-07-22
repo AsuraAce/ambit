@@ -39,12 +39,20 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     const tooltipId = React.useId();
     const triggerRef = React.useRef<HTMLButtonElement>(null);
     const tooltipRef = React.useRef<HTMLDivElement>(null);
+    const activationWindowRef = React.useRef<number | null>(null);
+    const suppressNextFocusRef = React.useRef(false);
     const [isHovered, setIsHovered] = React.useState(false);
     const [isFocused, setIsFocused] = React.useState(false);
     const [isClickOpen, setIsClickOpen] = React.useState(false);
     const [isDismissed, setIsDismissed] = React.useState(false);
     const [position, setPosition] = React.useState<TooltipPosition | null>(null);
     const isOpen = !isDismissed && (isHovered || isFocused || isClickOpen);
+
+    React.useEffect(() => () => {
+        if (activationWindowRef.current !== null) {
+            window.clearTimeout(activationWindowRef.current);
+        }
+    }, []);
 
     React.useLayoutEffect(() => {
         if (!isOpen) return;
@@ -132,6 +140,7 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 aria-label={label}
                 aria-describedby={[describedBy, isOpen ? tooltipId : null].filter(Boolean).join(' ') || undefined}
                 onMouseEnter={(event) => {
+                    suppressNextFocusRef.current = false;
                     setIsHovered(true);
                     setIsDismissed(false);
                     onMouseEnter?.(event);
@@ -141,11 +150,18 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                     onMouseLeave?.(event);
                 }}
                 onFocus={(event) => {
+                    const shouldRemainDismissed = suppressNextFocusRef.current;
+                    suppressNextFocusRef.current = false;
                     setIsFocused(true);
-                    setIsDismissed(false);
+                    if (!shouldRemainDismissed) setIsDismissed(false);
                     onFocus?.(event);
                 }}
                 onBlur={(event) => {
+                    if (activationWindowRef.current !== null) {
+                        window.clearTimeout(activationWindowRef.current);
+                        activationWindowRef.current = null;
+                        suppressNextFocusRef.current = event.relatedTarget instanceof Element;
+                    }
                     setIsFocused(false);
                     setIsClickOpen(false);
                     onBlur?.(event);
@@ -161,6 +177,14 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                     setIsHovered(false);
                     setIsClickOpen(persistOnClick);
                     setIsDismissed(!persistOnClick);
+                    if (!persistOnClick) {
+                        if (activationWindowRef.current !== null) {
+                            window.clearTimeout(activationWindowRef.current);
+                        }
+                        activationWindowRef.current = window.setTimeout(() => {
+                            activationWindowRef.current = null;
+                        }, 0);
+                    }
                     onClick?.(event);
                 }}
                 className={className}
