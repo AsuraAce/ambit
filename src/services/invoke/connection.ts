@@ -134,10 +134,16 @@ export interface InvokeBoardInfo {
     ownerId?: string;
 }
 
+export interface InvokeBoardMappings {
+    imageToBoardId: Map<string, string>;
+    boards: Map<string, InvokeBoardInfo>;
+    isAuthoritative: boolean;
+}
+
 export async function fetchBoardMappings(
     db: Database,
     scope: InvokeSyncScope
-): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, InvokeBoardInfo> }> {
+): Promise<InvokeBoardMappings> {
     const imageToBoardId = new Map<string, string>();
     const boards = new Map<string, InvokeBoardInfo>();
 
@@ -149,7 +155,7 @@ export async function fetchBoardMappings(
             );
         if (scope.mode === 'owner' && !boardColumns.has('user_id')) {
             console.warn('InvokeAI boards are not owner-scoped because boards.user_id is missing.');
-            return { imageToBoardId, boards };
+            return { imageToBoardId, boards, isAuthoritative: false };
         }
 
         if (scope.mode === 'legacy') {
@@ -165,7 +171,7 @@ export async function fetchBoardMappings(
             images.forEach((image) => {
                 if (image.board_id) imageToBoardId.set(String(image.image_name), image.board_id);
             });
-            return { imageToBoardId, boards };
+            return { imageToBoardId, boards, isAuthoritative: true };
         }
 
         const ownerSelect = boardColumns.has('user_id') ? ', b.user_id' : '';
@@ -197,10 +203,13 @@ export async function fetchBoardMappings(
         for (const img of images) {
             if (img.board_id) imageToBoardId.set(String(img.image_name), img.board_id);
         }
+        return { imageToBoardId, boards, isAuthoritative: true };
     } catch (e) {
         console.warn('Failed to fetch boards/collections mapping:', e);
+        imageToBoardId.clear();
+        boards.clear();
     }
-    return { imageToBoardId, boards };
+    return { imageToBoardId, boards, isAuthoritative: false };
 }
 
 export const testConnection = async (rootPath: string): Promise<{ success: boolean, count: number, message: string }> => {

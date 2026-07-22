@@ -140,6 +140,7 @@ describe('InvokeAI connection helpers', () => {
             name: 'Archive',
             createdAt: new Date('2026-01-02T03:04:05Z').getTime()
         });
+        expect(result.isAuthoritative).toBe(true);
         expect([...result.imageToBoardId.entries()]).toEqual([
             ['first.png', 'board-a'],
             ['123', 'board-b']
@@ -147,7 +148,14 @@ describe('InvokeAI connection helpers', () => {
     });
 
     it('returns empty board mappings when Invoke board tables are unavailable', async () => {
-        const db = createDb(async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'SELECT board_id, board_name, created_at FROM boards') {
+                return [{
+                    board_id: 'partial-board',
+                    board_name: 'Must not leak',
+                    created_at: '2026-01-02T03:04:05Z',
+                }];
+            }
             throw new Error('missing boards');
         });
 
@@ -155,6 +163,7 @@ describe('InvokeAI connection helpers', () => {
 
         expect(result.boards.size).toBe(0);
         expect(result.imageToBoardId.size).toBe(0);
+        expect(result.isAuthoritative).toBe(false);
         expect(console.warn).toHaveBeenCalledWith(
             'Failed to fetch boards/collections mapping:',
             expect.any(Error)
@@ -181,6 +190,7 @@ describe('InvokeAI connection helpers', () => {
         });
 
         expect(result.boards.get('board-a')).toEqual(expect.objectContaining({ ownerId: 'owner-a' }));
+        expect(result.isAuthoritative).toBe(true);
         const calls = db.select.mock.calls as Array<[string, unknown[]?]>;
         expect(calls.find(([sql]) => sql.includes('FROM boards b'))?.[1]).toEqual(['owner-a']);
         expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[0]).toContain('b.user_id = ?');
@@ -200,7 +210,11 @@ describe('InvokeAI connection helpers', () => {
             imagesRoot: 'D:/InvokeAI',
         });
 
-        expect(result).toEqual({ imageToBoardId: new Map(), boards: new Map() });
+        expect(result).toEqual({
+            imageToBoardId: new Map(),
+            boards: new Map(),
+            isAuthoritative: false,
+        });
         expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('boards.user_id is missing'));
     });
 

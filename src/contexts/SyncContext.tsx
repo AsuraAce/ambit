@@ -541,6 +541,20 @@ export const SyncProvider: React.FC<{
         let liveTotalProcessed = 0;
         let liveHadChanges = false;
         let liveOutcome: 'completed' | 'errored' | 'aborted' = 'completed';
+        const startPendingInvokeLiveRerun = () => {
+            if (!pendingInvokeLiveSyncRef.current) return;
+
+            const pendingPerfContext = pendingInvokeLivePerfRef.current;
+            pendingInvokeLiveSyncRef.current = false;
+            pendingInvokeLivePerfRef.current = null;
+            debugLiveWatchPerf('Invoke live rerun starting', {
+                cycleId: pendingPerfContext?.cycleId,
+                eventCount: pendingPerfContext?.eventCount,
+                pathCount: pendingPerfContext?.pathCount,
+                mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
+            });
+            void startInvokeSync({ mode: 'live', perfContext: pendingPerfContext || undefined });
+        };
         const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
         const effectiveImportIntermediates = options.importIntermediates !== undefined
             ? options.importIntermediates
@@ -597,6 +611,7 @@ export const SyncProvider: React.FC<{
                     });
                     if (activeInvokeSyncScopeRef.current === capturedScope) activeInvokeSyncScopeRef.current = null;
                     setIsInvokeSyncActive(false);
+                    startPendingInvokeLiveRerun();
                     return;
                 }
 
@@ -607,6 +622,7 @@ export const SyncProvider: React.FC<{
                     });
                     if (activeInvokeSyncScopeRef.current === capturedScope) activeInvokeSyncScopeRef.current = null;
                     setIsInvokeSyncActive(false);
+                    startPendingInvokeLiveRerun();
                     return;
                 }
 
@@ -984,18 +1000,7 @@ export const SyncProvider: React.FC<{
                 ownerScopeAdmissionRef.current = null;
                 await ensureInvokeOwnerScope(true);
             }
-            if (pendingInvokeLiveSyncRef.current) {
-                const pendingPerfContext = pendingInvokeLivePerfRef.current;
-                pendingInvokeLiveSyncRef.current = false;
-                pendingInvokeLivePerfRef.current = null;
-                debugLiveWatchPerf('Invoke live rerun starting', {
-                    cycleId: pendingPerfContext?.cycleId,
-                    eventCount: pendingPerfContext?.eventCount,
-                    pathCount: pendingPerfContext?.pathCount,
-                    mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
-                });
-                void startInvokeSync({ mode: 'live', perfContext: pendingPerfContext || undefined });
-            }
+            startPendingInvokeLiveRerun();
         }
     }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 

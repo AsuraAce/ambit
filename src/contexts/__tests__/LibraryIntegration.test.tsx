@@ -1446,6 +1446,79 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.syncImages).not.toHaveBeenCalled();
     });
 
+    it('drains a live rerun queued while an unchanged startup snapshot is inspected', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(value => hook = value);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+
+        const files = [{
+            path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+            exists: true,
+            size: 10,
+            modifiedMs: 100,
+        }];
+        await act(async () => {
+            hook?.setSettings({
+                invokeAiPath: 'D:/AmbitFixtures/InvokeAI/databases',
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                invokeDbSnapshot: {
+                    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+                    lastSyncedAt: 100,
+                    importIntermediates: false,
+                    importOrphans: false,
+                    syncBoardsToCollections: false,
+                    scopeMode: 'legacy',
+                    scopeOwnerId: null,
+                    pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                    importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                    files,
+                },
+            });
+        });
+        await waitFor(() => expect(hook?.settings.invokeAiPath)
+            .toBe('D:/AmbitFixtures/InvokeAI/databases'));
+
+        const snapshotDeferred = createDeferred<{
+            status: 'ok';
+            data: { dbPath: string; files: typeof files };
+        }>();
+        mocks.getInvokeDbSnapshot.mockReturnValueOnce(snapshotDeferred.promise);
+        mocks.syncImages.mockClear();
+
+        let startupPromise!: Promise<void>;
+        act(() => {
+            startupPromise = hook!.startInvokeSync({ mode: 'startup' });
+        });
+        await waitFor(() => expect(hook?.isInvokeSyncActive).toBe(true));
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'live' });
+        });
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+
+        await act(async () => {
+            snapshotDeferred.resolve({
+                status: 'ok',
+                data: {
+                    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+                    files,
+                },
+            });
+            await startupPromise;
+        });
+
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(1));
+        expect(mocks.syncImages).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'live' }),
+        );
+    });
+
     it('runs and records source reconciliation when an unchanged snapshot predates the import schema', async () => {
         let hook: any;
         renderStack(h => hook = h);

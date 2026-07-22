@@ -570,6 +570,18 @@ Implementation evidence:
   301 focused frontend tests with one existing skip, and 25 focused Rust
   migration tests. The separate whole-workstream integration review and full
   release gate are recorded below.
+- Final WP8 closure review ledger (`2026-07-22`):
+  - `WP8-CR-1` (blocking, fixed): a Live Watch rerun queued during startup
+    snapshot inspection could be dropped by the unchanged/missing snapshot
+    early returns. All startup exits now use the same pending-rerun drain path.
+  - `WP8-CR-2` (blocking, fixed): an unavailable or partial owner-board query
+    could be mistaken for an authoritative empty mapping and clear untouched
+    board assignments. Board results now declare whether they are authoritative;
+    unavailable results preserve existing board state and never reconcile
+    collections.
+- Closure verification passes 309 focused frontend tests with one existing
+  skip, eight focused owner-scope/migration Rust tests, lint, TypeScript, Rust
+  formatting, whitespace checks, and the complete release gate.
 
 ## Workstream Integration Acceptance
 
@@ -594,7 +606,7 @@ Status: Complete (`2026-07-22`)
   Rust migration, InvokeAI, and reparse tests pass.
 - Generated-binding drift, lint, TypeScript, Rust formatting, and whitespace
   checks pass. `pnpm run verify:release` passes the guarded production build,
-  3,007 frontend tests with one existing skip, 98.43% statement coverage, 556
+  3,009 frontend tests with one existing skip, 98.43% statement coverage, 556
   Rust tests with one ignored test, and the optimized no-bundle Tauri build.
 - The routed user manual already covers the completed asset, source-fact,
   reference-navigation, owner-scope, and synchronization behavior. Acceptance

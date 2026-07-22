@@ -254,7 +254,8 @@ describe('syncImages live mode', () => {
         vi.mocked(reconcileInvokeSourceFacts).mockResolvedValue(0);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map(),
-            boards: new Map()
+            boards: new Map(),
+            isAuthoritative: true,
         });
     });
 
@@ -317,6 +318,61 @@ describe('syncImages live mode', () => {
         expect(selectMock.mock.calls.some(([sql]) => String(sql).includes('SELECT 1 as found'))).toBe(false);
     });
 
+    it('preserves an untouched board assignment when owner board mappings are unavailable', async () => {
+        const fullPath = 'D:/Invoke/outputs/images/owned.png';
+        const selectMock = vi.fn(async (sql: string) => {
+            if (sql.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'user_id' }];
+            }
+            if (sql.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (sql.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (sql.includes("name='boards'")) return [{ name: 'boards' }];
+            if (sql.includes('FROM images i') && sql.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'owned.png',
+                    metadata_blob: { positive_prompt: 'raw' },
+                    created_at: '2026-04-18T12:00:00Z',
+                    width: 512,
+                    height: 512,
+                    user_id: 'owner-a',
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValueOnce({
+            imageToBoardId: new Map(),
+            boards: new Map(),
+            isAuthoritative: false,
+        });
+        vi.mocked(getImagesByIds).mockResolvedValue([
+            makeExistingInvokeImage('owned.png', {
+                id: fullPath,
+                boardId: 'board-a',
+                originalState: { isFavorite: false, isPinned: false, boardId: 'board-a' },
+                invokeOwnerId: 'owner-a',
+            }),
+        ]);
+
+        await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+            },
+            mode: 'manual',
+            syncBoards: true,
+            syncFavorites: false,
+        });
+
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+        expect(syncCollectionImages).not.toHaveBeenCalled();
+        expect(upsertInvokeBoardCollection).not.toHaveBeenCalled();
+    });
+
     it('uses selected-owner filtering during manual stale-path repair', async () => {
         const ownerRepairQueries: Array<{ query: string; params?: unknown[] }> = [];
 
@@ -354,6 +410,7 @@ describe('syncImages live mode', () => {
                 createdAt: 10,
                 ownerId: 'owner-a',
             }]]),
+            isAuthoritative: true,
         });
 
         await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
@@ -606,7 +663,8 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map([['new-image.png', 'board-1']]),
-            boards: new Map([['board-1', { name: 'Board One', createdAt: 123 }]])
+            boards: new Map([['board-1', { name: 'Board One', createdAt: 123 }]]),
+            isAuthoritative: true,
         });
 
         const result = await syncImages(
@@ -676,7 +734,8 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map([['manual-image.png', 'board-1']]),
-            boards: new Map([['board-1', { name: 'Board One', createdAt: 0 }]])
+            boards: new Map([['board-1', { name: 'Board One', createdAt: 0 }]]),
+            isAuthoritative: true,
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
@@ -1121,7 +1180,8 @@ describe('syncImages live mode', () => {
                 ['invoke-legacy', { name: 'Invoke Legacy', createdAt: 1 }],
                 ['invoke-modified', { name: 'Invoke Modified', createdAt: 2 }],
                 ['invoke-untouched', { name: 'Invoke Untouched', createdAt: 3 }],
-            ])
+            ]),
+            isAuthoritative: true,
         });
         vi.mocked(getImagesByIds).mockResolvedValue([
             makeExistingInvokeImage('legacy.png', {
@@ -1204,7 +1264,8 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map([['legacy-schema.png', 'missing-board']]),
-            boards: new Map()
+            boards: new Map(),
+            isAuthoritative: true,
         });
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
@@ -1283,7 +1344,8 @@ describe('syncImages live mode', () => {
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map([['startup-image.png', 'board-1']]),
-            boards: new Map([['board-1', { name: 'Board One', createdAt: 123 }]])
+            boards: new Map([['board-1', { name: 'Board One', createdAt: 123 }]]),
+            isAuthoritative: true,
         });
 
         const result = await syncImages(

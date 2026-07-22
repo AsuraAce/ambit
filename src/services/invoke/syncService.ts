@@ -194,6 +194,7 @@ export const syncImages = async (
     let totalToImport = 0;
     let hasCandidates = true;
     let boards = new Map<string, InvokeBoardInfo>();
+    let shouldApplyBoardMappings = false;
 
     if (options.mode === 'live' || (options.mode === 'startup' && options.afterTimestamp && options.afterTimestamp > 0)) {
         const candidateCheckStartedAt = liveWatchNow();
@@ -531,8 +532,11 @@ export const syncImages = async (
         onProgress(0, 0, 'Fetching board mappings...');
         const boardMappingStartedAt = liveWatchNow();
         const result = await fetchBoardMappings(invokeDb, scope);
-        imageToBoardId = result.imageToBoardId;
-        boards = result.boards;
+        shouldApplyBoardMappings = result.isAuthoritative;
+        if (shouldApplyBoardMappings) {
+            imageToBoardId = result.imageToBoardId;
+            boards = result.boards;
+        }
         logSyncDebug('Invoke board mappings loaded', {
             boardCount: boards.size,
             imageBoardLinks: imageToBoardId.size,
@@ -541,7 +545,7 @@ export const syncImages = async (
     }
 
     const createdBoardIds = new Set<string>();
-    if (shouldReconcileBoardCollections) {
+    if (shouldReconcileBoardCollections && shouldApplyBoardMappings) {
         const usedBoardIds = new Set(imageToBoardId.values());
         for (const boardId of usedBoardIds) {
             const boardInfo = boards.get(boardId);
@@ -732,7 +736,7 @@ export const syncImages = async (
                 }
 
                 // Determine board with smart sync
-                const invokeBoard = options.syncBoards ? imageToBoardId.get(row.image_name) : undefined;
+                const invokeBoard = shouldApplyBoardMappings ? imageToBoardId.get(row.image_name) : undefined;
                 let boardId: string | undefined;
 
                 if (existing) {
@@ -747,7 +751,7 @@ export const syncImages = async (
                         if (userModifiedBoard) {
                             // User explicitly changed it - preserve their choice
                             boardId = existing.boardId;
-                        } else if (options.syncBoards) {
+                        } else if (shouldApplyBoardMappings) {
                             // User hasn't touched it - apply InvokeAI's current value
                             boardId = invokeBoard;
                         } else {
@@ -901,7 +905,7 @@ export const syncImages = async (
         let collectionSyncMs = 0;
         if (currentBatch.length > 0) {
             // Lazy Board Creation
-            if (options.syncBoards) {
+            if (shouldApplyBoardMappings) {
                 const boardCreateStartedAt = liveWatchNow();
                 const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
@@ -924,7 +928,7 @@ export const syncImages = async (
             insertMs = elapsedMs(insertStartedAt);
 
             // Incremental Linking
-            if (options.syncBoards) {
+            if (shouldApplyBoardMappings) {
                 const collectionSyncStartedAt = liveWatchNow();
                 await syncCollectionImages(currentBatch.map(img => img.id));
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
@@ -955,7 +959,7 @@ export const syncImages = async (
     }
 
     // Final cleanup / sync (optional fallback)
-    if (options.syncBoards && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
+    if (shouldApplyBoardMappings && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
         const finalCollectionSyncStartedAt = liveWatchNow();
