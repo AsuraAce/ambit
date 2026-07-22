@@ -1,6 +1,6 @@
 # Milestone 25: ComfyUI Ideogram v4 Metadata
 
-Status: In Progress
+Status: Complete (`2026-07-22`)
 Catalog commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 
 ## Reconciliation
@@ -223,6 +223,8 @@ Verification evidence:
 
 Depends on: Work Packages 1-4.
 
+Status: Complete (`fix/comfyui-milestone-25-closure`, `2026-07-22`)
+
 Primary invariant: all merged packages preserve prior coverage while closing
 the Ideogram gap without public interface changes.
 
@@ -237,7 +239,31 @@ Non-goals:
 
 - No parser, fixture, manifest, or interface changes.
 
+Verification evidence:
+
+- the four dependency-ordered packages merged through PRs #246, #251, #252,
+  and #253;
+- combined review on fresh `main` found no integration regressions between
+  workflow-only subgraph normalization, deterministic JSON/number resolution,
+  dual-model guider selection, and connected Ideogram scheduler traversal;
+- parser version is 31 and final manifest totals are 24 `golden`, 9
+  `pattern_covered`, 3 `partial`, 39 `unassessed`, and 474 `excluded`;
+- focused suites pass with 9 deterministic-value, 50 prompt, 55 multi-stage,
+  28 official-catalog, 3 template-coverage, 5 catalog-intake, 14
+  workflow-subgraph, and 15 output-selection tests;
+- the full ComfyUI suite passes with 261 passed and 1 intentionally ignored,
+  and the reparse suite passes with 10 tests;
+- `cargo fmt --check` and `git diff --check` pass, the worktree remained clean,
+  and no `Cargo.lock` churn was produced;
+- the merged milestone changed only Rust parser internals, tests, pinned
+  fixture evidence, the coverage manifest, and milestone documentation; no
+  frontend, public API, database schema, Tauri command, Specta binding,
+  diagnostics DTO, or `ImageMetadata` shape changed;
+- this closure package changes only this milestone document.
+
 ## Milestone Acceptance Gate
+
+Status: Complete (`2026-07-22`)
 
 After all behavior packages merge:
 
