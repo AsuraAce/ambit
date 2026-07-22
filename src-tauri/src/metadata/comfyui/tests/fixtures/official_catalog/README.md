@@ -35,6 +35,10 @@ Golden workflows:
 - `image_lens_t2i.chunks.json`
 - `image_newbieimage_exp0_1-t2i.chunks.json`
 - `image_z_image_turbo_fun_union_controlnet.chunks.json`
+- `image_longcat_text_to_image.chunks.json`
+- `image_pixeldit_t2i.chunks.json`
+- `image_chrono_edit_14B.chunks.json`
+- `image_netayume_lumina_t2i.chunks.json`
 
 Pattern-covered workflows:
 
@@ -153,6 +157,37 @@ Golden expectations:
   `image_ideogram4_t2i.expected-positive.txt`, with SHA-256
   `dfbe4a1694ca33c124562f3f8f879beb8b5516afa327b342dfae0d9b8f6468af`;
 - authoritative empty negative conditioning and no resources.
+
+## Milestone 26 New-Family Intake
+
+Captured on `2026-07-22`. These workflows extend exact golden coverage to
+LongCat, PixelDiT, ChronoEdit, and NetaYume/Lumina without changing parser
+behavior or parser version 31.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_longcat_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_longcat_text_to_image.json) | `134b4ef684a862eb5d6a579d0e38e15589b6fa79` | 32286 |
+| [`image_pixeldit_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_pixeldit_t2i.json) | `66593d57b3d14b42e137be9d53cf2f90820e7bee` | 28991 |
+| [`image_chrono_edit_14B`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_chrono_edit_14B.json) | `e354fb1ab91240f81458da367216b3ccd544fa03` | 54303 |
+| [`image_netayume_lumina_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_netayume_lumina_t2i.json) | `8d7426f8ca3ada611df2b785ff1cac952a06aa1b` | 39376 |
+
+Golden expectations:
+
+- `image_longcat_text_to_image`: LongCat BF16, seed `284089112874294`, 20
+  steps, CFG 4, `euler` with `simple`, exact positive and negative literals,
+  and no resources.
+- `image_pixeldit_t2i`: PixelDiT 1300M BF16, seed `59233627785266`, 30
+  steps, CFG 4, `er_sde` with `simple`, exact positive and negative literals,
+  and no resources.
+- `image_chrono_edit_14B`: ChronoEdit 14B FP16, seed `164026091171544`, 20
+  steps, CFG 4, `uni_pc` with `simple`, exact positive and Chinese negative
+  literals. The disabled distillation LoRA is not reported.
+- `image_netayume_lumina_t2i`: NetaYume v3.5 all-in-one, seed 0, 30 steps,
+  CFG 4, `res_multistep` with `simple`, and exact nested prompt composition.
+  The independently captured positive prompt is 1,123 bytes with SHA-256
+  `159fb3c5929f60a834a9302f1d5862c620b0df12e77421066cc9c9616b5fefd9`;
+  the negative prompt is 481 bytes with SHA-256
+  `00d0aa5c35231d969700a87b124faf21c4ae8ea940466cd166aa6b56079129e9`.
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser

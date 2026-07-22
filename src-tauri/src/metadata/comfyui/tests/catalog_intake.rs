@@ -120,6 +120,49 @@ const MILESTONE25_IDEOGRAM_FIXTURES: &[IntakeFixture] = &[IntakeFixture {
     output_ambiguous: false,
 }];
 
+const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_longcat_text_to_image",
+        source_blob: "134b4ef684a862eb5d6a579d0e38e15589b6fa79",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
+        ),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_pixeldit_t2i",
+        source_blob: "66593d57b3d14b42e137be9d53cf2f90820e7bee",
+        chunks_json: include_str!("fixtures/official_catalog/image_pixeldit_t2i.chunks.json"),
+        graph_node_count: 12,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_chrono_edit_14B",
+        source_blob: "e354fb1ab91240f81458da367216b3ccd544fa03",
+        chunks_json: include_str!("fixtures/official_catalog/image_chrono_edit_14B.chunks.json"),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_netayume_lumina_t2i",
+        source_blob: "8d7426f8ca3ada611df2b785ff1cac952a06aa1b",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_netayume_lumina_t2i.chunks.json"
+        ),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -258,6 +301,11 @@ fn pinned_phase23_resource_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone25_ideogram_workflow_has_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE25_IDEOGRAM_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone26_new_family_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE26_NEW_FAMILY_FIXTURES);
 }
 
 #[test]

@@ -148,10 +148,34 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_ideogram4_t2i",
         chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
     },
+    CatalogFixture {
+        name: "image_longcat_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_pixeldit_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_pixeldit_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_chrono_edit_14B",
+        chunks_json: include_str!("fixtures/official_catalog/image_chrono_edit_14B.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_netayume_lumina_t2i",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_netayume_lumina_t2i.chunks.json"
+        ),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
+const NETAYUME_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-positive.txt");
+const NETAYUME_EXPECTED_NEGATIVE: &str =
+    include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-negative.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -1039,6 +1063,98 @@ fn ideogram4_scheduler_and_dual_model_policy_are_golden() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 42,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn longcat_text_to_image() {
+    assert_fixture(
+        "image_longcat_text_to_image",
+        ExpectedMetadata {
+            model: "longcat_image_bf16",
+            seed: Some(284_089_112_874_294),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "High-fashion portrait of a man with a shaved head and stubble, head tilted back and gazing upward. His skin and thick-knitted dark green turtleneck sweater are bathed in a monochromatic teal-green light, creating a uniform, matte finish. He wears round, thin-framed sunglasses with reflective amber-orange lenses that catch the light. The background is a solid, vibrant burnt orange, creating a bold, high-contrast color palette. The lighting is hard and directional, casting sharp shadows on his face. Hyper-detailed, photorealistic, sharp focus on facial features and fabric texture, editorial photography, 8K.",
+            negative_prompt: "blurry, low resolution, oversaturated, harsh lighting, messy composition, distorted face, extra fingers, bad anatomy, cheap jewelry, plastic texture, cartoon, illustration, anime, watermark, text, logo",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn pixeldit_text_to_image() {
+    assert_fixture(
+        "image_pixeldit_t2i",
+        ExpectedMetadata {
+            model: "pixeldit_1300m_1024px_bf16",
+            seed: Some(59_233_627_785_266),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "er_sde (simple)",
+            positive_prompt: "A surreal architectural scene featuring a woman in a flowing white dress walking away from the viewer through a narrow canyon of smooth, organic beige rock formations. The architecture resembles fluid sandstone or sculpted clay with undulating curves and soft edges. Bright sunlight streams from above, casting sharp shadows on the ground and illuminating the textured surfaces of the walls. The sky is a clear, deep blue visible at the top of the frame. The composition uses leading lines formed by the canyon walls to draw the eye toward the figure in the distance. High-quality photorealistic rendering with 8k resolution, cinematic lighting, dramatic contrast between light and shadow, and a sense of scale emphasizing the grandeur of the environment.",
+            negative_prompt: "low quality, worst quality, over-saturated, blurry, deformed, watermark",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn chrono_edit_selected_base_path() {
+    assert_fixture(
+        "image_chrono_edit_14B",
+        ExpectedMetadata {
+            model: "chrono_edit_14b_fp16",
+            seed: Some(164_026_091_171_544),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "uni_pc (simple)",
+            positive_prompt: "A bottle of facial cleansing foam and bubble shampoo, surrounded by white, round, foamy bubbles. The bubbles are very fluffy, crystal clear, giving a sense of fluffiness and comfort. There are also several bubbles floating in the air around, and the bottle is floating in the air. The background is light pink. The high-resolution picture creates a professional advertising style with high-definition images and high-quality details.",
+            negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn netayume_lumina_nested_prompt_composition() {
+    assert_fixture(
+        "image_netayume_lumina_t2i",
+        ExpectedMetadata {
+            model: "netayumev35_pretrained_all_in_one",
+            seed: Some(0),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: NETAYUME_EXPECTED_POSITIVE,
+            negative_prompt: NETAYUME_EXPECTED_NEGATIVE,
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
