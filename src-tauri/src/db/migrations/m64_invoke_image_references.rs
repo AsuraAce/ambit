@@ -132,12 +132,14 @@ mod tests {
             "
             CREATE TABLE images (
                 id TEXT PRIMARY KEY,
-                invoke_image_name TEXT
+                invoke_image_name TEXT,
+                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0
             ) STRICT;
 
             CREATE TABLE removed_images (
                 id TEXT PRIMARY KEY,
-                invoke_image_name TEXT
+                invoke_image_name TEXT,
+                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0
             ) STRICT;
             ",
         )
@@ -145,6 +147,15 @@ mod tests {
         conn.execute_batch(migration64().sql)
             .expect("apply migration");
         conn
+    }
+
+    fn query_plan_details(conn: &Connection, sql: &str) -> Vec<String> {
+        conn.prepare(sql)
+            .expect("prepare query plan")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("read query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect query plan")
     }
 
     #[test]
@@ -356,5 +367,66 @@ mod tests {
             })
             .expect("deleted removed outgoing reference");
         assert_eq!(removed_deleted, 0);
+    }
+
+    #[test]
+    fn reference_graph_queries_use_directional_indexes() {
+        let conn = source_schema();
+        conn.execute_batch(
+            "
+            INSERT INTO images (id, invoke_image_name) VALUES
+                ('source', 'source.png'),
+                ('target', 'target.png');
+            INSERT INTO invoke_image_references (
+                source_image_id, role, target_invoke_image_name, target_image_id
+            ) VALUES ('source', 'init_image', 'target.png', 'target');
+            ",
+        )
+        .expect("seed reference graph");
+
+        let forward = query_plan_details(
+            &conn,
+            "EXPLAIN QUERY PLAN
+             SELECT r.role, r.target_invoke_image_name, target.id
+             FROM invoke_image_references r
+             INNER JOIN images visible_source
+                ON visible_source.id = r.source_image_id
+               AND visible_source.invoke_scope_hidden = 0
+             LEFT JOIN images target
+                ON target.id = r.target_image_id
+               AND target.invoke_scope_hidden = 0
+             WHERE r.source_image_id = 'source'",
+        );
+        assert!(
+            forward
+                .iter()
+                .any(|detail| detail.contains("sqlite_autoindex_invoke_image_references_1")),
+            "forward reference lookup should use the primary-key prefix: {forward:?}"
+        );
+
+        let backlinks = query_plan_details(
+            &conn,
+            "EXPLAIN QUERY PLAN
+             SELECT r.role, r.source_image_id,
+                    COALESCE(active_source.invoke_image_name, removed_source.invoke_image_name)
+             FROM invoke_image_references r
+             INNER JOIN images visible_target
+                ON visible_target.id = r.target_image_id
+               AND visible_target.invoke_scope_hidden = 0
+             LEFT JOIN images active_source
+                ON active_source.id = r.source_image_id
+               AND active_source.invoke_scope_hidden = 0
+             LEFT JOIN removed_images removed_source
+                ON removed_source.id = r.source_image_id
+               AND removed_source.invoke_scope_hidden = 0
+             WHERE r.target_image_id = 'target'
+               AND (active_source.id IS NOT NULL OR removed_source.id IS NOT NULL)",
+        );
+        assert!(
+            backlinks
+                .iter()
+                .any(|detail| detail.contains("idx_invoke_image_references_target_image")),
+            "backlink lookup should use the target-image index: {backlinks:?}"
+        );
     }
 }
