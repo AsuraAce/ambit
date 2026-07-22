@@ -291,6 +291,7 @@ export interface AppSettings {
   monitoredFolders: MonitoredFolder[];
 
   // Privacy & AI
+  promptMaskingEnabled: boolean;
   maskedKeywords: string[];
   maskingMode: 'blur' | 'hide';
   enableAI: boolean;

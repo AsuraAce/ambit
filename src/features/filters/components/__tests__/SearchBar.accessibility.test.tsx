@@ -67,7 +67,7 @@ const renderSearchBar = (
     };
 };
 
-describe('SearchBar advanced date syntax guard', () => {
+describe('SearchBar accessibility', () => {
     it('exposes AI search as a dynamic pressed action with accessible help', () => {
         const harness = renderSearchBar();
         const aiButton = screen.getByRole('button', { name: 'Enable AI Search' });
@@ -95,16 +95,48 @@ describe('SearchBar advanced date syntax guard', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('sunset');
     });
 
-    it('dismisses deferred suggestions with Escape and opens search syntax help directly', async () => {
+    it('dismisses deferred suggestions and blurs the search with Escape', async () => {
         const harness = renderSearchBar();
         const input = screen.getByRole('combobox', { name: 'Search in Library' });
+        act(() => input.focus());
         fireEvent.change(input, { target: { value: 'cn' } });
         expect(await screen.findByRole('listbox', { name: 'Search operator suggestions' })).toBeTruthy();
 
         fireEvent.keyDown(input, { key: 'Escape' });
         expect(screen.queryByRole('listbox')).toBeNull();
+        expect(harness.searchProps.onBlur).toHaveBeenCalledOnce();
+    });
 
+    it('opens search syntax help directly', async () => {
+        const harness = renderSearchBar();
+        expect(await screen.findByRole('button', { name: 'Search syntax' })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Search syntax' }));
         expect(harness.searchProps.onOpenSearchHelp).toHaveBeenCalledOnce();
+    });
+
+    it('describes each trigger mode with its visible helper text', async () => {
+        const standard = renderSearchBar();
+        const standardInput = screen.getByRole('combobox', { name: 'Search in Library' });
+        const standardHelper = await screen.findByText('Updates after you pause. Enter finishes.');
+        expect(standardInput.getAttribute('aria-describedby')).toContain(standardHelper.id);
+
+        standard.unmount();
+        renderSearchBar(createDefaultFilters(), { isAiSearchEnabled: true });
+        const aiInput = screen.getByRole('combobox', { name: 'Ask Ambit with AI' });
+        const aiHelper = await screen.findByText('Press Enter to analyze with AI.');
+        expect(aiInput.getAttribute('aria-describedby')).toContain(aiHelper.id);
+    });
+
+    it('does not duplicate Enter-only guidance after a prompt is entered', async () => {
+        renderSearchBar(
+            createDefaultFilters({ searchQuery: 'existing prompt' }),
+            { isAiSearchEnabled: true }
+        );
+        const guidance = await screen.findAllByText('Press Enter to analyze with AI.');
+        const helper = screen.getByText('Search syntax opens standard query operators.');
+        const input = screen.getByRole('combobox', { name: 'Ask Ambit with AI' });
+
+        expect(guidance).toHaveLength(1);
+        expect(input.getAttribute('aria-describedby')).toContain(helper.id);
     });
 });

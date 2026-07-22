@@ -92,7 +92,10 @@ vi.mock('../../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: typeof collectionMock.state) => unknown) => selector(collectionMock.state),
 }));
 
-vi.mock('../../../utils/maskingUtils', () => maskingMocks);
+vi.mock('../../../utils/maskingUtils', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../../utils/maskingUtils')>(),
+    isImageMasked: maskingMocks.isImageMasked,
+}));
 
 vi.mock('../../../services/runtime', () => ({
     isBrowserMockMode: () => runtimeMocks.browserMockMode,
@@ -300,6 +303,23 @@ describe('AppContextMenu', () => {
             { name: 'Control', hash: 'cnet_Control', type: 'control_nets' },
             { name: 'IP Adapter', hash: 'ipad_IP Adapter', type: 'ip_adapters' },
         ]);
+    });
+
+    it('excludes retained prompt keywords from context masking while the feature is disabled', () => {
+        settingsMock.state.settings = {
+            ...settingsMock.state.settings,
+            promptMaskingEnabled: false,
+            maskedKeywords: ['retained'],
+        };
+
+        renderMenu();
+
+        expect(maskingMocks.isImageMasked).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'C:/library/image.png' }),
+            true,
+            [],
+        );
+        expect(settingsMock.state.settings.maskedKeywords).toEqual(['retained']);
     });
 
     it('supports object model names and smart collection labels', () => {

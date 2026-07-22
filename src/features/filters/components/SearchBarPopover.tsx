@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { BookOpen, History } from 'lucide-react';
+import type { SearchQueryIssue } from '../../../utils/searchQueryReadiness';
 
 export interface SearchBarOption {
     id: string;
@@ -10,10 +11,12 @@ export interface SearchBarOption {
 
 interface SearchBarPopoverProps {
     activeOptionIndex: number;
-    dateSearchHint: string | null;
+    helperId: string;
+    helperText: string;
     listboxId: string;
     listLabel: string;
     options: readonly SearchBarOption[];
+    queryIssue: SearchQueryIssue | null;
     statusId: string;
     statusMessage: string | null;
     onClearRecentSearches: () => void;
@@ -23,10 +26,12 @@ interface SearchBarPopoverProps {
 
 export const SearchBarPopover = React.memo(({
     activeOptionIndex,
-    dateSearchHint,
+    helperId,
+    helperText,
     listboxId,
     listLabel,
     options,
+    queryIssue,
     statusId,
     statusMessage,
     onClearRecentSearches,
@@ -34,9 +39,14 @@ export const SearchBarPopover = React.memo(({
     onSelectOption,
 }: SearchBarPopoverProps) => (
     <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-        {dateSearchHint ? (
-            <div id={statusId} role="status" className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-100 dark:border-amber-900/40">
-                {dateSearchHint}
+        {queryIssue ? (
+            <div
+                id={statusId}
+                role="status"
+                aria-live="polite"
+                className={`px-4 py-2 text-xs border-b ${queryIssue.kind === 'invalid' ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/30 border-red-100 dark:border-red-900/40' : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border-amber-100 dark:border-amber-900/40'}`}
+            >
+                {queryIssue.message}
             </div>
         ) : statusMessage ? (
             <div id={statusId} role="status" aria-live="polite" className="px-4 py-2 text-xs text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-black/20 border-b border-gray-100 dark:border-white/5">
@@ -81,7 +91,9 @@ export const SearchBarPopover = React.memo(({
         ) : null}
 
         <div className="border-t border-gray-100 dark:border-white/5 px-3 py-2 flex items-center justify-between gap-3">
-            <span className="text-[10px] text-gray-400">Plain text searches positive prompts.</span>
+            <span id={helperId} className="text-[10px] text-gray-400">
+                {statusMessage === helperText ? 'Search syntax opens standard query operators.' : helperText}
+            </span>
             <button
                 type="button"
                 onClick={onOpenSearchHelp}

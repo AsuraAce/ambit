@@ -22,6 +22,7 @@ import { ViewControls } from '../../features/library/components/ViewControls';
 const mocks = vi.hoisted(() => ({
     searchImages: vi.fn().mockResolvedValue([]),
     countImages: vi.fn().mockResolvedValue(0),
+    countGlobalImages: vi.fn().mockResolvedValue(0),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStatsSummary: vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] }),
     clearLibraryStatsCache: vi.fn(),
@@ -89,7 +90,7 @@ const mocks = vi.hoisted(() => ({
     ]),
     appRepository: {
         load: vi.fn().mockResolvedValue({
-            settings: { theme: 'system', privacyEnabled: false, thumbnailSize: 200, confirmDelete: true, defaultTheaterMode: false, monitoredFolders: [], maskedKeywords: ['NSFW'], maskingMode: 'hide' as const, },
+            settings: { theme: 'system', privacyEnabled: false, thumbnailSize: 200, confirmDelete: true, defaultTheaterMode: false, monitoredFolders: [], promptMaskingEnabled: false, maskedKeywords: ['NSFW'], maskingMode: 'hide' as const, },
             collections: [],
             smartCollections: [],
             images: [],
@@ -120,6 +121,7 @@ vi.mock('../../bindings', () => ({
 vi.mock('../../services/db/searchRepo', () => ({
     searchImages: (...args: any[]) => mocks.searchImages(...args),
     countImages: (...args: any[]) => mocks.countImages(...args),
+    countGlobalImages: () => mocks.countGlobalImages(),
     getFacets: (...args: any[]) => mocks.getFacets(...args),
     getLibraryStatsSummary: (...args: any[]) => mocks.getLibraryStatsSummary(...args),
     getKeywordStats: (...args: any[]) => mocks.getKeywordStats(...args),
@@ -2316,6 +2318,7 @@ describe('Library Integration (Provider Stack)', () => {
                 lastSyncedAt: null,
                 enableAutoThumbnailHealing: true,
                 hasCompletedOnboarding: false,
+                promptMaskingEnabled: true,
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
             }),

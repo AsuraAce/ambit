@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { InfoTooltip, TooltipButton } from '../InfoTooltip';
 
 const ModalLauncherHarness: React.FC = () => {
@@ -8,7 +8,14 @@ const ModalLauncherHarness: React.FC = () => {
     const closeButtonRef = React.useRef<HTMLButtonElement>(null);
 
     React.useEffect(() => {
-        if (isOpen) closeButtonRef.current?.focus();
+        if (!isOpen) return;
+
+        const previousFocus = document.activeElement;
+        closeButtonRef.current?.focus();
+
+        return () => {
+            if (previousFocus instanceof HTMLElement) previousFocus.focus();
+        };
     }, [isOpen]);
 
     return (
@@ -16,13 +23,15 @@ const ModalLauncherHarness: React.FC = () => {
             <TooltipButton
                 label="Open modal"
                 content="Open modal"
-                onClick={() => setIsOpen(true)}
+                onClick={() => {
+                    void Promise.resolve().then(() => setIsOpen(true));
+                }}
             >
                 Open
             </TooltipButton>
             {isOpen && (
                 <div role="dialog" aria-label="Example modal">
-                    <button ref={closeButtonRef}>Close</button>
+                    <button ref={closeButtonRef} onClick={() => setIsOpen(false)}>Close</button>
                 </div>
             )}
         </>
@@ -91,22 +100,101 @@ describe('InfoTooltip', () => {
         fireEvent.click(trigger);
         fireEvent.pointerDown(document.body);
         expect(screen.queryByRole('tooltip')).toBeNull();
+
+        act(() => trigger.focus());
+        fireEvent.click(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+        fireEvent.blur(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
     });
 
-    it('dismisses a hover-open tooltip when its click moves focus into a modal', () => {
+    it('dismisses an action tooltip after activation without suppressing a later keyboard visit', () => {
+        const onClick = vi.fn();
+        render(
+            <TooltipButton label="Run action" content="Run action" onClick={onClick}>
+                Run
+            </TooltipButton>
+        );
+
+        const trigger = screen.getByRole('button', { name: 'Run action' });
+        act(() => trigger.focus());
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+
+        fireEvent.click(trigger);
+
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.keyDown(trigger, { key: 'Tab' });
+        act(() => trigger.blur());
+        act(() => trigger.focus());
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+    });
+
+    it('does not let pointer-created focus keep an action tooltip open after mouse-leave', () => {
+        render(
+            <TooltipButton label="Open action" content="Open action">
+                Open
+            </TooltipButton>
+        );
+
+        const trigger = screen.getByRole('button', { name: 'Open action' });
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+
+        fireEvent.pointerDown(trigger);
+        act(() => trigger.focus());
+        fireEvent.click(trigger);
+
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('keeps an asynchronously mounted modal launcher tooltip dismissed when focus is restored', async () => {
         render(<ModalLauncherHarness />);
 
         const trigger = screen.getByRole('button', { name: 'Open modal' });
         fireEvent.mouseEnter(trigger);
-        trigger.focus();
+        act(() => trigger.focus());
         expect(document.activeElement).toBe(trigger);
         expect(screen.getByRole('tooltip')).toBeTruthy();
 
         fireEvent.click(trigger);
 
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        await act(async () => {
+            await Promise.resolve();
+        });
+
         const closeButton = screen.getByRole('button', { name: 'Close' });
         expect(document.activeElement).toBe(closeButton);
         expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.click(closeButton);
+
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        act(() => trigger.blur());
+        act(() => trigger.focus());
+        expect(screen.getByRole('tooltip')).toBeTruthy();
     });
 
     it('consumes Escape so global shortcuts do not close the surrounding UI', () => {
@@ -196,6 +284,8 @@ describe('InfoTooltip', () => {
             );
 
             const trigger = screen.getByRole('button', { name: 'Run action' });
+            act(() => trigger.focus());
+            expect(screen.getByRole('tooltip')).toBeTruthy();
             const keyDownEvent = new KeyboardEvent('keydown', {
                 key,
                 code,
@@ -210,6 +300,7 @@ describe('InfoTooltip', () => {
             expect(onKeyDown).toHaveBeenCalledTimes(1);
             expect(onWindowKeyDown).not.toHaveBeenCalled();
             expect(onClick).toHaveBeenCalledTimes(1);
+            expect(screen.queryByRole('tooltip')).toBeNull();
         } finally {
             window.removeEventListener('keydown', onWindowKeyDown);
         }

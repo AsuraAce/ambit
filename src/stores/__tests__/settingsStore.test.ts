@@ -80,6 +80,7 @@ describe('SettingsStore', () => {
                 confirmDelete: true,
                 defaultTheaterMode: false,
                 monitoredFolders: [],
+                promptMaskingEnabled: true,
                 maskedKeywords: ['nsfw', 'blood', 'gore'],
                 maskingMode: 'blur',
                 enableAI: false,
@@ -539,6 +540,40 @@ describe('SettingsStore', () => {
 
         expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
         expect(useSettingsStore.getState().privacyMaskIndexError).toBeNull();
+    });
+
+    it('does not stale the privacy index when only inactive saved keywords change', () => {
+        useSettingsStore.setState(state => ({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+            settings: {
+                ...state.settings,
+                promptMaskingEnabled: false,
+                maskedKeywords: ['retained'],
+            },
+        }));
+
+        useSettingsStore.getState().setSettings({ maskedKeywords: ['retained', 'prepared'] });
+
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('ready');
+        expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retained', 'prepared']);
+    });
+
+    it('marks the privacy index stale when prompt masking changes the effective list', () => {
+        useSettingsStore.setState(state => ({
+            privacyEnabled: true,
+            privacyMaskIndexStatus: 'ready',
+            settings: {
+                ...state.settings,
+                promptMaskingEnabled: true,
+                maskedKeywords: ['retained'],
+            },
+        }));
+
+        useSettingsStore.getState().setSettings({ promptMaskingEnabled: false });
+
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+        expect(useSettingsStore.getState().settings.maskedKeywords).toEqual(['retained']);
     });
 
     it('unblocks on explicit disable and requires a fresh refresh after re-enable', () => {

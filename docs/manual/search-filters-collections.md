@@ -6,7 +6,7 @@ Ambit combines search text, metadata filters, asset facets, date ranges, favorit
 
 ## Search Bar
 
-The search bar matches the positive prompt by default. In Grid and Timeline, Ambit updates after typing pauses, and pressing Enter applies the current search immediately. In Statistics and Maintenance, typing stays in the search field until you press Enter or choose a recent search; Ambit then opens Grid to show the matching images.
+The search bar matches the positive prompt by default. In Grid and Timeline, Ambit updates about half a second after typing pauses, while pressing Enter finishes immediately and closes the expanded search. The focused standard search leaves the current results visible. In Statistics and Maintenance, typing stays in the search field until you press Enter or choose a recent search; Ambit then opens Grid to show the matching images.
 
 Search bar tools include:
 
@@ -17,11 +17,11 @@ Search bar tools include:
 - recent searches when the field is focused and empty
 - Clear search to remove the current search text
 - Clear in Recent Searches to remove the recent-search list
-- an ISO-date readiness hint when a date operator is incomplete or invalid
+- readiness guidance when a quote, operator value, date, number, boolean, or `OR` expression is incomplete or invalid
 - current scope and match feedback while the field is focused
 - Search syntax to open the in-app operator reference directly
 
-When AI Search is enabled from the search bar, the placeholder changes to an assistant-style prompt. AI Search waits for Enter instead of applying the natural-language draft as an ordinary prompt search. It keeps the existing filters until analysis succeeds, then applies the generated filters. Network and AI behavior depends on your settings; see [Settings And Privacy](settings-and-privacy.md).
+When AI Search is enabled from the search bar, the placeholder changes to an assistant-style prompt and the workspace is dimmed to emphasize the mode change. AI Search waits for Enter instead of applying the natural-language draft as an ordinary prompt search. It keeps the existing filters until analysis succeeds, then applies the generated filters. Network and AI behavior depends on your settings; see [Settings And Privacy](settings-and-privacy.md).
 
 Examples:
 
@@ -62,7 +62,7 @@ Supported operators include:
 - `w:>1024`, `width:1024`, `h:<768`, or `height:768` filter dimensions.
 - `upscaled:true` shows upscaled images; `upscaled:false` shows images marked not upscaled.
 
-Use ISO dates such as `2026-04-15` to avoid country-specific date ambiguity. If a `date:`, `after:`, or `before:` token is still partial, Ambit waits instead of applying the search.
+Use ISO dates such as `2026-04-15` to avoid country-specific date ambiguity. While structured syntax is unfinished or malformed, Ambit keeps the last applied results visible and does not run the draft. Complete quotes and operator values, use whole numbers for steps and dimensions, a decimal number for CFG, digits for seeds, `true` or `false` for `upscaled:`, and put `OR` between two positive-prompt terms. Correcting the draft restarts the normal half-second update.
 
 ## Date Filters
 

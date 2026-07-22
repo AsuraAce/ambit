@@ -31,7 +31,6 @@ const resetLibraryStore = () => {
         discoveryScanProgress: null,
         isScanningDuplicates: false,
         duplicateScanProgress: null,
-        duplicateScanScope: 'global',
         lastDuplicateScanResult: null,
         isScanningMissingFiles: false,
         missingScanProgress: null,

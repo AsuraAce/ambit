@@ -38,7 +38,9 @@ interface GlobalModalsProps {
     isExporting: boolean;
     slideshowShuffle: boolean;
     initialSettingsTab: 'general' | 'folders' | 'resources' | 'privacy' | 'experiments' | 'intelligence' | 'invokeai' | 'a1111' | 'comfyui' | 'dev';
-    shortcutsModalTab: 'shortcuts' | 'search';
+    shortcutsModalTab: 'shortcuts' | 'search' | 'setup';
+    onOpenSetupGuide?: () => void;
+    onResetFirstRunOnboarding?: () => void;
     commandPaletteProps: {
         onNavigate: (mode: ViewMode) => void;
         onToggleTheme: () => void;
@@ -90,6 +92,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     slideshowShuffle,
     initialSettingsTab,
     shortcutsModalTab,
+    onOpenSetupGuide,
+    onResetFirstRunOnboarding,
     commandPaletteProps,
     collections,
     smartCollections = [],
@@ -133,6 +137,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         onCheckForUpdates={onCheckForUpdates}
                         onOpenUpdatePrompt={onOpenUpdatePrompt}
                         onNavigateToMaintenance={onNavigateToMaintenance}
+                        onResetFirstRunOnboarding={onResetFirstRunOnboarding}
                     />
                 )}
 
@@ -211,6 +216,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         isOpen={modals.shortcuts}
                         onClose={() => closeModal('shortcuts')}
                         initialTab={shortcutsModalTab}
+                        onOpenSetupGuide={onOpenSetupGuide}
                     />
                 )}
 

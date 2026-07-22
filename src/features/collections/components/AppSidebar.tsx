@@ -64,7 +64,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         <TooltipButton label="Support Ambit" content="Support Ambit" onClick={onOpenDonation} className={`w-10 h-10 rounded-xl flex items-center justify-center hover:text-red-500 dark:hover:text-red-400 transition-all mb-2 ${showSupportPulse ? 'animate-pulse hover:animate-none text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10' : 'text-gray-400 dark:text-zinc-500'}`}>
           <Gift className="w-5 h-5" />
         </TooltipButton>
-        <TooltipButton label="Open Keyboard Shortcuts" content="Open Keyboard Shortcuts" onClick={onOpenShortcuts} className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-white mb-2">
+        <TooltipButton label="Open Help & Guide" content="Open Help & Guide" onClick={onOpenShortcuts} className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-white mb-2">
           <HelpCircle className="w-5 h-5" />
         </TooltipButton>
         <NavButton active={false} onClick={onOpenSettings} icon={<Settings />} tooltip="Settings" />

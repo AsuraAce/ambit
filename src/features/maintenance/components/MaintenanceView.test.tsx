@@ -16,8 +16,12 @@ const maintenanceDataMock = vi.hoisted(() => ({
     localMissingImages: [] as AIImage[],
     localIntermediateImages: [] as AIImage[],
     unoptimizedTotalCount: 0,
+    hasActiveLoadError: false,
+    hasLoadedActiveTab: true,
     refreshData: vi.fn().mockResolvedValue(undefined),
-    setLocalMissingImages: vi.fn()
+    retryActiveTab: vi.fn().mockResolvedValue(undefined),
+    setLocalMissingImages: vi.fn(),
+    setLocalDuplicateCandidates: vi.fn(),
 }));
 
 const imageRepoMock = vi.hoisted(() => ({
@@ -67,8 +71,12 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         localMissingImages: maintenanceDataMock.localMissingImages,
         localIntermediateImages: maintenanceDataMock.localIntermediateImages,
         unoptimizedTotalCount: maintenanceDataMock.unoptimizedTotalCount,
+        hasActiveLoadError: maintenanceDataMock.hasActiveLoadError,
+        hasLoadedActiveTab: maintenanceDataMock.hasLoadedActiveTab,
         refreshData: maintenanceDataMock.refreshData,
-        setLocalMissingImages: maintenanceDataMock.setLocalMissingImages
+        retryActiveTab: maintenanceDataMock.retryActiveTab,
+        setLocalMissingImages: maintenanceDataMock.setLocalMissingImages,
+        setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
     })
 }));
 
@@ -77,6 +85,14 @@ vi.mock('../../../contexts/LibraryContext', () => ({
 }));
 
 vi.mock('./MaintenanceTabs', () => ({
+    MAINTENANCE_TABS: [
+        { id: 'missing', label: 'Missing' },
+        { id: 'thumbnails', label: 'Thumbnails' },
+        { id: 'duplicates', label: 'Duplicates' },
+        { id: 'untagged', label: 'Untagged' },
+        { id: 'intermediates', label: 'Intermediates' },
+        { id: 'trash', label: 'Removed' },
+    ],
     MaintenanceTabs: ({ activeTab, onTabChange }: {
         activeTab: MaintenanceTab;
         onTabChange: (tab: MaintenanceTab) => void;
@@ -200,19 +216,18 @@ vi.mock('./IntermediatesTab', () => ({
 }));
 
 vi.mock('./DuplicateFinder', () => ({
-    DuplicateFinder: ({ images, onResolve, onRefresh, onViewImage, onCompareImages, scope }: {
+    DuplicateFinder: ({ images, onResolve, onRefresh, onViewImage, onCompareImages }: {
         images: AIImage[];
-        onResolve: (keepId: string, deleteIds: string[]) => void;
-        onRefresh: (scope: 'global' | 'filtered') => void;
+        onResolve: (resolutions: Array<{ keepId: string; removeIds: string[] }>) => void;
+        onRefresh: () => void;
         onViewImage: (id: string) => void;
         onCompareImages: (first: AIImage, second: AIImage) => void;
-        scope: 'global' | 'filtered';
     }) => (
-        <div data-testid="duplicate-finder" data-scope={scope}>
+        <div data-testid="duplicate-finder">
             {images[0] && <button onClick={() => onViewImage(images[0].id)}>Open Duplicate Viewer</button>}
             {images.length > 1 && <button onClick={() => onCompareImages(images[0], images[1])}>Compare Duplicates</button>}
-            {images.length > 1 && <button onClick={() => onResolve(images[0].id, [images[1].id])}>Resolve Duplicates</button>}
-            <button onClick={() => onRefresh('filtered')}>Refresh Duplicates</button>
+            {images.length > 1 && <button onClick={() => onResolve([{ keepId: images[0].id, removeIds: [images[1].id] }])}>Resolve Duplicates</button>}
+            <button onClick={onRefresh}>Refresh Duplicates</button>
         </div>
     )
 }));
@@ -316,7 +331,10 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localMissingImages = [];
         maintenanceDataMock.localIntermediateImages = [];
         maintenanceDataMock.unoptimizedTotalCount = 0;
+        maintenanceDataMock.hasActiveLoadError = false;
+        maintenanceDataMock.hasLoadedActiveTab = true;
         maintenanceDataMock.refreshData.mockResolvedValue(undefined);
+        maintenanceDataMock.retryActiveTab.mockResolvedValue(undefined);
         maintenanceDataMock.setLocalMissingImages.mockImplementation(update => {
             maintenanceDataMock.localMissingImages = typeof update === 'function'
                 ? update(maintenanceDataMock.localMissingImages)
@@ -539,7 +557,7 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Tab duplicates'));
         fireEvent.click(await screen.findByText('Start duplicates Scan'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
-            scope: 'filtered',
+            scope: 'global',
             includeUpgradeable: undefined,
             runHashBackfill: true
         });
@@ -548,7 +566,6 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localDuplicateCandidates = [duplicateA, duplicateB];
         act(() => {
             useLibraryStore.setState({
-                duplicateScanScope: 'filtered',
                 lastDuplicateScanResult: {
                     scanned: 2,
                     updated: 2,
@@ -561,16 +578,17 @@ describe('MaintenanceView', () => {
         });
         view.rerender(<MaintenanceView {...view.props} />);
 
-        expect((await screen.findByTestId('duplicate-finder')).getAttribute('data-scope')).toBe('filtered');
+        expect(await screen.findByTestId('duplicate-finder')).toBeTruthy();
         fireEvent.click(screen.getByText('Resolve Duplicates'));
-        await waitFor(() => expect(onResolveDuplicate).toHaveBeenCalledWith('duplicate-a', ['duplicate-b']));
+        await waitFor(() => expect(onResolveDuplicate).toHaveBeenCalledWith([{
+            keepId: 'duplicate-a',
+            removeIds: ['duplicate-b'],
+        }]));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', false, {
-            scope: 'filtered',
             runHashBackfill: false
         });
         fireEvent.click(screen.getByText('Refresh Duplicates'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('duplicates', true, {
-            scope: 'filtered',
             runHashBackfill: true
         });
 
@@ -724,6 +742,54 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.isLoading = true;
         renderView();
 
-        expect(screen.getByText('Loading Tab Data...')).toBeTruthy();
+        expect(screen.getByText('Loading Missing data...')).toBeTruthy();
+    });
+
+    it('shows an inline retry when the initial tab load fails', () => {
+        maintenanceDataMock.hasActiveLoadError = true;
+        maintenanceDataMock.hasLoadedActiveTab = false;
+        renderView();
+
+        expect(screen.getByRole('alert').textContent).toContain("Couldn't load Missing data");
+        expect(screen.queryByTestId('library-health')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+        expect(maintenanceDataMock.retryActiveTab).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps last successful content visible when a refresh fails', () => {
+        maintenanceDataMock.hasActiveLoadError = true;
+        maintenanceDataMock.hasLoadedActiveTab = true;
+        renderView();
+
+        expect(screen.getByRole('alert').textContent).toContain('Showing the last loaded missing data');
+        expect(screen.getByTestId('library-health')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+        expect(maintenanceDataMock.retryActiveTab).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps an active-tab click inert and resets scroll on a real tab change', async () => {
+        const scrollTo = vi.fn();
+        Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+            configurable: true,
+            value: scrollTo
+        });
+        renderView();
+
+        fireEvent.click(screen.getByText('Tab missing'));
+        expect(scrollTo).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        await waitFor(() => expect(screen.getByTestId('maintenance-tabs').getAttribute('data-active-tab')).toBe('trash'));
+        expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
+    });
+
+    it('connects the active tab to a busy-aware tab panel', () => {
+        maintenanceDataMock.isLoading = true;
+        renderView();
+
+        const panel = screen.getByRole('tabpanel');
+        expect(panel.id).toBe('maintenance-panel-missing');
+        expect(panel.getAttribute('aria-labelledby')).toBe('maintenance-tab-missing');
+        expect(panel.getAttribute('aria-busy')).toBe('true');
     });
 });

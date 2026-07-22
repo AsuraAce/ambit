@@ -25,6 +25,7 @@ import type { useCollectionOperations } from '../hooks/useCollectionOperations';
 import type { useFileOperations } from '../hooks/useFileOperations';
 import type { useModalManager } from '../hooks/useModalManager';
 import { PrivacyProtectionGate } from './ui/PrivacyProtectionGate';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 setupGlobalLogging();
 
@@ -154,6 +155,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
     const privacyExposureBlocked = privacyEnabled && privacyMaskIndexStatus !== 'ready';
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const allCollections = useCollectionStore(s => s.collections);
 
@@ -207,7 +209,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         isLoadingMore
     } = useSearch();
     const isSearchPending = isFiltering || isSearchDraftPending;
-    const shouldShowSearchSkeleton = isFiltering || (isSearchDraftPending && images.length === 0);
+    const shouldShowSearchSkeleton = isSearchPending && images.length === 0;
     // const images = useSearchStore(s => s.images); // Images available in context
     // const totalImages = useSearchStore(s => s.totalImages);
     // const isFiltering = useSearchStore(s => s.isFiltering);
@@ -276,7 +278,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             index={index + pinnedCount}
             isSelected={selectedIds.has(img.id)}
             selectedIds={selectedIds}
-            maskedKeywords={settings.maskedKeywords}
+            maskedKeywords={effectiveMaskedKeywords}
             setImages={handlers.setImages}
             onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
             onToggleSelection={handleSelectionToggle}
@@ -288,7 +290,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             onContextMenu={(e, id) => handlers.setContextMenu({ x: e.clientX, y: e.clientY, imageId: id })}
             isThumbnail={isActiveThumbnail(img)}
         />
-    ), [pinnedCount, selectedIds, settings.maskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, isActiveThumbnail]);
+    ), [pinnedCount, selectedIds, effectiveMaskedKeywords, handlers, handleImageClick, setSelectedImageIndex, handleSelectionToggle, toggleFavorite, images, actions, isActiveThumbnail]);
 
     return (
         <div className="flex flex-1 overflow-hidden p-3 gap-3">
@@ -354,7 +356,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             >
                 <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.08),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(139,174,124,0.15),transparent_60%)] z-10" />
 
-                {isSearchFocused && (
+                {isSearchFocused && searchProps.isAiSearchEnabled && (
                     <div
                         className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300"
                         onClick={() => {
@@ -415,7 +417,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onGroupImages={handlers.handleGroupImages}
                                         onViewImage={(id) => setViewingImageId(id)}
                                         onRegenerateThumbnails={fileOps.regenerateThumbnails}
-                                        maskedKeywords={settings.maskedKeywords}
+                                        maskedKeywords={effectiveMaskedKeywords}
                                         onUpdatePrompt={handlers.handleUpdatePrompt}
                                         onUpdateModel={handlers.handleUpdateModel}
                                         onUpdateTool={handlers.handleUpdateTool}
@@ -448,7 +450,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             selectedIds={selectedIds}
                                             thumbnailSize={settings.thumbnailSize}
                                             sortOption={sortOption}
-                                            maskedKeywords={settings.maskedKeywords}
+                                            maskedKeywords={effectiveMaskedKeywords}
                                             onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
@@ -471,7 +473,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     isCollapsed={modals.isPinnedShelfCollapsed}
                                                     onToggleCollapse={() => modals.setIsPinnedShelfCollapsed((p: boolean) => !p)}
                                                     selectedIds={selectedIds}
-                                                    maskedKeywords={settings.maskedKeywords}
+                                                    maskedKeywords={effectiveMaskedKeywords}
                                                     setImages={handlers.setImages}
                                                     onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
                                                     onToggleSelection={handleSelectionToggle}
@@ -548,7 +550,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     lastSelectedId={lastSelectedId}
                     isExporting={fileOps.isExporting}
                     confirmDelete={settings.confirmDelete}
-                    maskedKeywords={settings.maskedKeywords}
+                    maskedKeywords={effectiveMaskedKeywords}
                     onClearSelection={clearSelection}
                     onDelete={settings.confirmDelete ? () => modals.openModal('deleteConfirm') : actions.executeDelete}
                     onExport={() => modals.openModal('export')}

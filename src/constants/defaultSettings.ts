@@ -8,6 +8,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   confirmDelete: true,
   defaultTheaterMode: false,
   monitoredFolders: [],
+  promptMaskingEnabled: true,
   maskedKeywords: ['nsfw', 'blood', 'gore'],
   maskingMode: 'blur',
   enableAI: false,
@@ -46,3 +47,8 @@ export const createDefaultAppSettings = (
     : undefined,
   ...overrides,
 });
+
+export const inferPromptMaskingEnabled = (
+  settings: Pick<Partial<AppSettings>, 'promptMaskingEnabled' | 'maskedKeywords'>
+): boolean => settings.promptMaskingEnabled
+  ?? (settings.maskedKeywords?.length ?? 0) > 0;

@@ -24,7 +24,7 @@ Ambit currently exposes these maintenance tabs:
 
 - Missing: audit file links, mark missing paths, and remove records whose source files are gone.
 - Thumbnails: regenerate unoptimized thumbnails, repair broken thumbnail references, and clean up unused thumbnails.
-- Duplicates: scan exact and likely duplicate candidates, compare copies, and remove redundant records.
+- Duplicates: scan the full library for exact SHA-256 content matches, compare copies, and remove redundant records.
 - Untagged: review records with missing or incomplete metadata.
 - Intermediates: review images flagged as intermediates when the tab is visible, move keepers back to the gallery, or delete unwanted files.
 - Removed: restore removed records or delete selected source files from disk.
@@ -69,18 +69,16 @@ Ambit can also heal thumbnails in the background during normal use. If Smart Thu
 
 ## Duplicates
 
-The Duplicates tab scans for exact and likely duplicate groups. Start with a Global scan for full-library cleanup or a Current Filter scan when you only want to inspect the current filtered result set.
-
-Exact duplicate groups have matching content hashes. Likely duplicate groups match dimensions, file size, and metadata, but file content may differ. Review likely groups before removing anything.
+The Duplicates tab scans the entire library for byte-for-byte matches using SHA-256 content hashes. File size is used only to avoid hashing files that cannot be duplicates; matching size, dimensions, or metadata alone does not create a duplicate group.
 
 Use duplicate actions this way:
 
 - Compare: inspect two copies side by side when available.
-- Keep Only This: keep the selected copy and remove the other records from the active library.
-- Keep Newest or Keep Oldest: bulk-resolve exact duplicate groups only.
-- Rescan: rerun duplicate detection for the current Global or Filtered scope.
+- Keep Only This: keep the selected copy, merge safe library state, and move the other records to Removed.
+- Keep Latest Modified or Keep Earliest Modified: bulk-resolve every exact group using filesystem modification time.
+- Rescan: rerun global exact-duplicate detection. A cancelled or partially failed scan is shown as incomplete rather than clean.
 
-Duplicate resolution removes redundant records from Ambit's active library and keeps source files on disk. To delete files later, review the Removed tab and use Delete File intentionally.
+The keeper inherits favorite and pinned state plus manual collection memberships from the removed copies. Its own metadata, notes, and board remain unchanged. Its explicit manual mask setting wins; an automatic setting inherits an override only when the removed copies agree. Duplicate resolution keeps source files on disk. To delete files later, review the Removed tab and use Delete File intentionally.
 
 ## Untagged
 

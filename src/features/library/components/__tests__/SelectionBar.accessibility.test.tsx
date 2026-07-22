@@ -50,6 +50,8 @@ describe('SelectionBar tooltips', () => {
                 onDelete={vi.fn()}
                 onExport={vi.fn()}
                 onAddToCollection={vi.fn()}
+                activeCollectionId="collection-1"
+                onRemoveFromCollection={vi.fn()}
                 onToggleFavorite={onToggleFavorite}
                 onTogglePin={vi.fn()}
                 onToggleMask={vi.fn()}
@@ -68,6 +70,11 @@ describe('SelectionBar tooltips', () => {
         expect(favoriteButton.getAttribute('aria-pressed')).toBe('true');
         fireEvent.click(favoriteButton);
         expect(onToggleFavorite).toHaveBeenCalledTimes(1);
+        expect(screen.getByRole('button', { name: 'Unpin Selected Images' }).getAttribute('aria-pressed')).toBe('true');
+
+        for (const button of screen.getAllByRole('button')) {
+            expect(button.className).toContain('focus-visible:ring-2');
+        }
         expect(screen.getByRole('button', { name: 'Clear Selection' }).getAttribute('title')).toBeNull();
     });
 });

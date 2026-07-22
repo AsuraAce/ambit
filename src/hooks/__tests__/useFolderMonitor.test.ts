@@ -46,6 +46,7 @@ describe('useFolderMonitor', () => {
         confirmDelete: true,
         defaultTheaterMode: false,
         monitoredFolders: [],
+        promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur',
         enableAI: false

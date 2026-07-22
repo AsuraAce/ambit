@@ -1,14 +1,15 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Keyboard, Search, ChevronDown, ChevronRight, Monitor, Puzzle, Sliders, Calendar } from 'lucide-react';
+import { X, Keyboard, Search, ChevronDown, ChevronRight, Monitor, Puzzle, Sliders, Calendar, ListChecks } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
 import { SEARCH_OPERATOR_DEFINITIONS, type SearchOperatorCategory } from '../../constants/searchOperators';
 
 interface ShortcutsModalProps {
     isOpen: boolean;
     onClose: () => void;
-    initialTab?: 'shortcuts' | 'search';
+    initialTab?: 'shortcuts' | 'search' | 'setup';
+    onOpenSetupGuide?: () => void;
 }
 
 const getSearchOperatorIcon = (category: SearchOperatorCategory) => {
@@ -22,8 +23,8 @@ const getSearchOperatorIcon = (category: SearchOperatorCategory) => {
     }
 };
 
-export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, initialTab = 'shortcuts' }) => {
-    const [activeTab, setActiveTab] = useState<'shortcuts' | 'search'>(initialTab);
+export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose, initialTab = 'shortcuts', onOpenSetupGuide }) => {
+    const [activeTab, setActiveTab] = useState<'shortcuts' | 'search' | 'setup'>(initialTab);
     const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
     const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -156,7 +157,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                 {/* Header */}
                 <div className="p-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-black/20">
                     <h2 className="text-lg font-bold text-gray-900 dark:text-white pl-2">{APP_NAME} Help & Guide</h2>
-                    <button ref={closeButtonRef} type="button" aria-label="Close Keyboard Shortcuts" onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                    <button ref={closeButtonRef} type="button" aria-label="Close Help & Guide" onClick={onClose} className="p-1.5 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-lg hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -167,7 +168,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                         onClick={() => setActiveTab('shortcuts')}
                         className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'shortcuts' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-[#09090b]' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
                     >
-                        <Keyboard className="w-4 h-4" /> Keyboard Shortcuts
+                        <Keyboard className="w-4 h-4" /> Shortcuts
                         {activeTab === 'shortcuts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
                     </button>
                     <button
@@ -176,6 +177,13 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                     >
                         <Search className="w-4 h-4" /> Search Syntax
                         {activeTab === 'search' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('setup')}
+                        className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 transition-colors relative ${activeTab === 'setup' ? 'text-sage-600 dark:text-sage-400 bg-white dark:bg-[#09090b]' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5'}`}
+                    >
+                        <ListChecks className="w-4 h-4" /> Setup Guide
+                        {activeTab === 'setup' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-sage-500" />}
                     </button>
                 </div>
 
@@ -309,6 +317,27 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
                                     Finds Flux images whose positive prompt mentions forest or city skyline.
                                 </p>
                             </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'setup' && (
+                        <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <div className="rounded-xl border border-sage-200 bg-sage-50 p-5 dark:border-sage-500/20 dark:bg-sage-500/10">
+                                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-white text-sage-600 shadow-sm dark:bg-white/10 dark:text-sage-300">
+                                    <ListChecks className="h-5 w-5" />
+                                </div>
+                                <h3 className="text-base font-bold text-gray-900 dark:text-white">Review your setup</h3>
+                                <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-300">
+                                    Walk through integrations, Intelligence, and privacy again without resetting your library or existing preferences. Only guide controls you change are saved when you finish.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onOpenSetupGuide}
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-sage-600 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-sage-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#09090b]"
+                            >
+                                <ListChecks className="h-4 w-4" /> Open setup guide
+                            </button>
                         </div>
                     )}
 

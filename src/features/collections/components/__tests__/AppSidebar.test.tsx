@@ -67,7 +67,7 @@ describe('AppSidebar', () => {
         fireEvent.click(button('Disable Favorites Only'));
         fireEvent.click(button('Disable Pinned Only'));
         fireEvent.click(screen.getByRole('button', { name: 'Support Ambit' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Open Keyboard Shortcuts' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Help & Guide' }));
         fireEvent.click(button('Settings'));
 
         expect(panelOpen).toBe(true);

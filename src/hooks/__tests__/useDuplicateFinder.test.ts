@@ -1,237 +1,167 @@
-
-import { renderHook, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ExactDuplicateResolution } from '../../bindings';
+import { GeneratorTool, type AIImage } from '../../types';
 import { useDuplicateFinder } from '../useDuplicateFinder';
-import { AIImage } from '../../types';
+
+const image = (id: string, timestamp: number, fileHash?: string): AIImage => ({
+    id,
+    timestamp,
+    fileSize: 1_000,
+    fileHash,
+    url: `url-${id}`,
+    thumbnailUrl: `thumb-${id}`,
+    filename: `${id}.png`,
+    width: 512,
+    height: 512,
+    isFavorite: false,
+    metadata: {
+        tool: GeneratorTool.UNKNOWN,
+        seed: 12345,
+        positivePrompt: 'same metadata',
+        negativePrompt: 'low quality',
+        steps: 20,
+        cfg: 7,
+        sampler: 'Euler a',
+        model: 'v1.5',
+    },
+});
 
 describe('useDuplicateFinder', () => {
-    const createMockImage = (id: string, seed: number, timestamp: number, fileSize = 1000, fileHash?: string, includeMetadata = true): AIImage => ({
-        id,
-        timestamp,
-        fileSize,
-        fileHash,
-        url: `url-${id}`,
-        thumbnailUrl: `thumb-${id}`,
-        filename: `file-${id}.png`,
-        width: 512,
-        height: 512,
-        isFavorite: false,
-        metadata: includeMetadata ? {
-            seed,
-            positivePrompt: 'A cat holding a taco',
-            negativePrompt: 'low quality',
-            steps: 20,
-            cfg: 7,
-            sampler: 'Euler a',
-            model: 'v1.5'
-        } as any : undefined as any
-    });
-
-    const mockOnResolve = vi.fn();
+    const onResolve = vi.fn<(resolutions: ExactDuplicateResolution[]) => Promise<void>>();
 
     beforeEach(() => {
         vi.clearAllMocks();
+        onResolve.mockResolvedValue(undefined);
     });
 
-    it('should identify direct duplicates (same size, same metadata)', () => {
-        const images = [
-            createMockImage('1', 12345, 1000),
-            createMockImage('2', 12345, 2000), // Same seed, same prompt
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+    it('groups only repeated non-empty SHA-256 values', () => {
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('one', 1, 'same-hash'),
+            image('two', 2, 'same-hash'),
+            image('other', 3, 'other-hash'),
+        ], onResolve));
 
         expect(result.current.groups).toHaveLength(1);
-        expect(result.current.groups[0].kind).toBe('likely');
-        expect(result.current.groups[0].images).toHaveLength(2);
+        expect(result.current.groups[0].id).toBe('exact_same-hash');
+        expect(result.current.groups[0].images.map(candidate => candidate.id)).toEqual(['one', 'two']);
         expect(result.current.totalRedundantCount).toBe(1);
     });
 
-    it('should treat an explicit zero seed as usable metadata', () => {
-        const images = [
-            createMockImage('1', 0, 1000),
-            createMockImage('2', 0, 2000),
-        ];
-        images.forEach(image => {
-            image.metadata.positivePrompt = '';
-            image.metadata.negativePrompt = '';
-        });
+    it('does not group matching metadata, dimensions, and file size without an equal hash', () => {
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('unhashed-one', 1),
+            image('unhashed-two', 2),
+            image('hash-one', 3, 'hash-a'),
+            image('hash-two', 4, 'hash-b'),
+        ], onResolve));
 
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
-        expect(result.current.groups).toHaveLength(1);
-        expect(result.current.groups[0].kind).toBe('likely');
+        expect(result.current.groups).toEqual([]);
     });
 
-    it('should identify exact duplicates by file hash even without metadata', () => {
-        const images = [
-            createMockImage('C:/one/original.png', 0, 1000, 1000, 'abc123', false),
-            createMockImage('C:/two/renamed.png', 0, 2000, 1000, 'abc123', false),
+    it('excludes missing, intermediate, deleted, and pre-grouped records', () => {
+        const candidates = [
+            { ...image('missing', 1, 'same'), isMissing: true },
+            { ...image('intermediate', 2, 'same'), isIntermediate: true },
+            { ...image('deleted', 3, 'same'), isDeleted: true },
+            { ...image('grouped', 4, 'same'), groupId: 'stack' },
+            image('eligible', 5, 'same'),
         ];
 
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+        const { result } = renderHook(() => useDuplicateFinder(candidates, onResolve));
 
-        expect(result.current.groups).toHaveLength(1);
-        expect(result.current.groups[0].kind).toBe('exact');
-        expect(result.current.groups[0].images.map(img => img.id)).toEqual([
-            'C:/one/original.png',
-            'C:/two/renamed.png'
+        expect(result.current.groups).toEqual([]);
+    });
+
+    it('passes the selected keeper mapping for a single group', async () => {
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('one', 1, 'same'),
+            image('two', 2, 'same'),
+        ], onResolve));
+
+        await act(async () => result.current.handleResolve('two', ['one', 'two']));
+
+        expect(onResolve).toHaveBeenCalledWith([{ keepId: 'two', removeIds: ['one'] }]);
+    });
+
+    it('keeps the latest modified record in every exact group during bulk resolution', async () => {
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('old-a', 1, 'hash-a'),
+            image('new-a', 3, 'hash-a'),
+            image('old-b', 2, 'hash-b'),
+            image('new-b', 4, 'hash-b'),
+        ], onResolve));
+
+        await act(async () => result.current.handleBulkResolve('latestModified'));
+
+        expect(onResolve).toHaveBeenCalledWith([
+            { keepId: 'new-a', removeIds: ['old-a'] },
+            { keepId: 'new-b', removeIds: ['old-b'] },
         ]);
     });
 
-    it('should not mark same dimensions and size as exact when hashes differ', () => {
-        const images = [
-            createMockImage('1', 12345, 1000, 1000, 'hash-a'),
-            createMockImage('2', 12345, 2000, 1000, 'hash-b'),
-        ];
+    it('keeps the earliest modified record and uses ID as a deterministic timestamp tie-breaker', async () => {
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('b', 1, 'same'),
+            image('a', 1, 'same'),
+            image('new', 2, 'same'),
+        ], onResolve));
 
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
+        expect(result.current.groups[0].latestModifiedId).toBe('new');
+        await act(async () => result.current.handleBulkResolve('earliestModified'));
 
+        expect(onResolve).toHaveBeenCalledWith([
+            { keepId: 'a', removeIds: ['b', 'new'] },
+        ]);
+    });
+
+    it('stays pending until persistence finishes and leaves canonical groups visible on failure', async () => {
+        let rejectResolution: (reason?: unknown) => void = () => undefined;
+        onResolve.mockImplementation(() => new Promise<void>((_resolve, reject) => {
+            rejectResolution = reject;
+        }));
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('one', 1, 'same'),
+            image('two', 2, 'same'),
+        ], onResolve));
+
+        let pending: Promise<void> | undefined;
+        act(() => {
+            pending = result.current.handleResolve('one', ['one', 'two']);
+        });
+        expect(result.current.isResolving).toBe(true);
+
+        await act(async () => {
+            rejectResolution(new Error('write failed'));
+            await expect(pending).rejects.toThrow('write failed');
+        });
+
+        expect(result.current.isResolving).toBe(false);
         expect(result.current.groups).toHaveLength(1);
-        expect(result.current.groups[0].kind).toBe('likely');
     });
 
-    it('should not group sparse same-size images without a matching hash', () => {
-        const images = [
-            createMockImage('1', 0, 1000, 1000, 'hash-a', false),
-            createMockImage('2', 0, 2000, 1000, 'hash-b', false),
-        ];
+    it('ignores a second resolution while the first transaction is pending', async () => {
+        let finishResolution: () => void = () => undefined;
+        onResolve.mockImplementation(() => new Promise<void>(resolve => {
+            finishResolution = resolve;
+        }));
+        const { result } = renderHook(() => useDuplicateFinder([
+            image('one', 1, 'same'),
+            image('two', 2, 'same'),
+        ], onResolve));
 
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
-        expect(result.current.groups).toHaveLength(0);
-    });
-
-    it('should NOT group images with different seeds', () => {
-        const images = [
-            createMockImage('1', 12345, 1000),
-            createMockImage('2', 67890, 2000), // Different seed
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
-        expect(result.current.groups).toHaveLength(0);
-        expect(result.current.totalRedundantCount).toBe(0);
-    });
-
-    it('should handle bulk resolve (newest strategy)', () => {
-        const images = [
-            createMockImage('old', 123, 1000, 1000, 'bulk-hash'), // Oldest
-            createMockImage('mid', 123, 2000, 1000, 'bulk-hash'),
-            createMockImage('new', 123, 3000, 1000, 'bulk-hash'), // Newest
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
+        let first: Promise<void> | undefined;
+        let second: Promise<void> | undefined;
         act(() => {
-            result.current.handleBulkResolve('newest');
+            first = result.current.handleResolve('one', ['one', 'two']);
+            second = result.current.handleResolve('two', ['one', 'two']);
         });
 
-        // Current implementation calls onResolve('bulk', deleteIds)
-        expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.arrayContaining(['old', 'mid']));
-        expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.not.arrayContaining(['new']));
-    });
-
-    it('should handle bulk resolve (oldest strategy)', () => {
-        const images = [
-            createMockImage('old', 123, 1000, 1000, 'bulk-hash'), // Oldest
-            createMockImage('new', 123, 3000, 1000, 'bulk-hash'), // Newest
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
-        act(() => {
-            result.current.handleBulkResolve('oldest');
+        expect(onResolve).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            finishResolution();
+            await Promise.all([first, second]);
         });
-
-        expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.arrayContaining(['new']));
-        expect(mockOnResolve).toHaveBeenCalledWith('bulk', expect.not.arrayContaining(['old']));
-    });
-
-    it('should exclude likely duplicates from bulk resolve', () => {
-        const images = [
-            createMockImage('old', 123, 1000),
-            createMockImage('new', 123, 3000),
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-
-        act(() => {
-            result.current.handleBulkResolve('oldest');
-        });
-
-        expect(result.current.groups[0].kind).toBe('likely');
-        expect(mockOnResolve).not.toHaveBeenCalled();
-    });
-
-    it('should filter out already resolved groups', () => {
-        const images = [
-            createMockImage('1', 123, 1000),
-            createMockImage('2', 123, 2000),
-        ];
-
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-        expect(result.current.groups).toHaveLength(1);
-
-        act(() => {
-            result.current.handleResolve(result.current.groups[0].id, '1', ['1', '2']);
-        });
-
-        expect(result.current.groups).toHaveLength(0);
-    });
-
-    it('keeps metadata rows without a prompt or seed unverifiable', () => {
-        const first = createMockImage('1', 1, 1000);
-        const second = createMockImage('2', 1, 2000);
-        first.metadata = { ...first.metadata, seed: undefined, positivePrompt: '', negativePrompt: '' };
-        second.metadata = { ...second.metadata, seed: undefined, positivePrompt: '', negativePrompt: '' };
-
-        const { result } = renderHook(() => useDuplicateFinder([first, second], mockOnResolve));
-
-        expect(result.current.groups).toEqual([]);
-    });
-
-    it('ignores deleted and pre-grouped rows in both duplicate passes', () => {
-        const grouped = { ...createMockImage('grouped', 1, 1, 1000, 'same'), groupId: 'stack' };
-        const deleted = { ...createMockImage('deleted', 1, 2, 1000, 'same'), isDeleted: true };
-        const single = createMockImage('single', 1, 3, 2000);
-
-        const { result } = renderHook(() => useDuplicateFinder([grouped, deleted, single], mockOnResolve));
-
-        expect(result.current.groups).toEqual([]);
-    });
-
-    it('does not bulk-resolve an exact group already resolved individually', () => {
-        const images = [
-            createMockImage('one', 1, 1, 1000, 'same'),
-            createMockImage('two', 1, 2, 1000, 'same'),
-        ];
-        const { result } = renderHook(() => useDuplicateFinder(images, mockOnResolve));
-        const group = result.current.groups[0];
-
-        act(() => result.current.handleResolve(group.id, 'two', ['one', 'two']));
-        mockOnResolve.mockClear();
-        act(() => result.current.handleBulkResolve('newest'));
-
-        expect(mockOnResolve).not.toHaveBeenCalled();
-    });
-
-    it('normalizes corrupted prompt values and optional fingerprint arrays', () => {
-        const first = createMockImage('one', 7, 1, 0);
-        const second = createMockImage('two', 7, 2, 0);
-        for (const image of [first, second]) {
-            image.width = 0;
-            image.height = 0;
-            image.metadata.positivePrompt = 42 as unknown as string;
-            image.metadata.negativePrompt = null as unknown as string;
-            image.metadata.loras = ['b', 'a'];
-            image.metadata.controlNets = [];
-            image.metadata.ipAdapters = ['adapter'];
-        }
-
-        const { result } = renderHook(() => useDuplicateFinder([first, second], mockOnResolve));
-
-        expect(result.current.groups).toHaveLength(1);
-        expect(result.current.groups[0].kind).toBe('likely');
+        expect(result.current.isResolving).toBe(false);
     });
 });

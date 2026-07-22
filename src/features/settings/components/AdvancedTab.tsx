@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import { Trash2, History as HistoryIcon, Loader2, Database, AlertTriangle, Monitor, RefreshCw, ExternalLink, FolderOpen, Copy } from 'lucide-react';
+import { Trash2, Loader2, Database, AlertTriangle, Monitor, RefreshCw, ExternalLink, FolderOpen, Copy } from 'lucide-react';
 import { AppSettings, LogLevel } from '../../../types';
 import { commands, type DbDiagnostics } from '../../../bindings';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
@@ -43,7 +43,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
     onNavigateToMaintenance,
     onClose,
 }) => {
-    const { setSettings: updateContextSettings, cleanLibrary } = useLibraryContext();
+    const { cleanLibrary } = useLibraryContext();
     const { addToast } = useToast();
 
     const [isPurging, setIsPurging] = useState(false);
@@ -298,27 +298,6 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             </div>
                         </div>
 
-                        {/* Restart Onboarding */}
-                        <div className="p-6 flex items-center justify-between">
-                            <div>
-                                <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Restart onboarding</div>
-                                <div className="text-xs text-gray-500 mt-1">Close Settings and start the onboarding wizard again.</div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    updateContextSettings((prev: AppSettings) => ({
-                                        ...prev,
-                                        hasCompletedOnboarding: false
-                                    }));
-                                    onClose?.();
-                                    addToast('Onboarding restarted.', 'info');
-                                }}
-                                className="px-3 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
-                            >
-                                <HistoryIcon className="w-3.5 h-3.5" /> Restart onboarding
-                            </button>
-                        </div>
                     </div>
                 </div>
             )}

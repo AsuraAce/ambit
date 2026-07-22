@@ -2161,30 +2161,206 @@ fn sampler_custom_cfg_guider_keeps_strict_prompt_context() {
 }
 
 #[test]
-fn sampler_custom_does_not_treat_split_sigmas_index_as_total_steps() {
+fn sampler_custom_traces_split_sigmas_to_upstream_scheduler() {
     // SplitSigmas exposes a split position, not the scheduler's total step count.
-    // Until its upstream scheduler is traversed deliberately, that value is unavailable.
+    // The selected path must recover schedule metadata from the connected scheduler.
     let workflow = r#"{
         "nodes": [
             { "id": 1, "type": "CheckpointLoaderSimple", "widgets_values": ["model.safetensors"] },
             { "id": 2, "type": "KSamplerSelect", "widgets_values": ["res_multistep"] },
-            { "id": 3, "type": "SplitSigmas", "widgets_values": [3] },
-            { "id": 4, "type": "SamplerCustom", "inputs": [
+            { "id": 3, "type": "BasicScheduler", "widgets_values": ["simple",20,1] },
+            { "id": 4, "type": "SplitSigmas", "inputs": [{"name":"sigmas","link":3}], "widgets_values": [3] },
+            { "id": 5, "type": "SamplerCustom", "inputs": [
                 {"name":"model","link":1},{"name":"sampler","link":2},
-                {"name":"sigmas","link":3}
+                {"name":"sigmas","link":4}
             ], "widgets_values": [true,42,"fixed",1.0] },
-            { "id": 5, "type": "VAEDecode", "inputs": [{"name":"samples","link":4}] },
-            { "id": 6, "type": "SaveImage", "inputs": [{"name":"images","link":5}] }
+            { "id": 6, "type": "VAEDecode", "inputs": [{"name":"samples","link":5}] },
+            { "id": 7, "type": "SaveImage", "inputs": [{"name":"images","link":6}] }
         ],
         "links": [
-            [1,1,0,4,0,"MODEL"], [2,2,0,4,1,"SAMPLER"],
-            [3,3,0,4,2,"SIGMAS"], [4,4,0,5,0,"LATENT"],
-            [5,5,0,6,0,"IMAGE"]
+            [1,1,0,5,0,"MODEL"], [2,2,0,5,1,"SAMPLER"],
+            [3,3,0,4,0,"SIGMAS"], [4,4,0,5,2,"SIGMAS"],
+            [5,5,0,6,0,"LATENT"], [6,6,0,7,0,"IMAGE"]
         ]
     }"#;
     let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
 
     let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.sampler, "res_multistep (simple)");
+}
+
+#[test]
+fn sampler_custom_accepts_both_split_outputs_and_legacy_missing_slot() {
+    let extract = |slot: Option<usize>| {
+        let mut sampler = json!({
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0],
+                "sampler": ["2", 0],
+                "noise_seed": 42,
+                "cfg": 1.0
+            }
+        });
+        if let Some(slot) = slot {
+            sampler["inputs"]["sigmas"] = json!(["4", slot]);
+        } else {
+            sampler["_resolved_inputs"] = json!({ "sigmas": "4" });
+        }
+        let prompt = json!({
+            "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+            "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "res_multistep" } },
+            "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+            "4": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["3", 0], "step": 3 } },
+            "5": sampler,
+            "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+            "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+        });
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string())).0
+    };
+
+    for slot in [Some(0), Some(1), None] {
+        let meta = extract(slot);
+        assert_eq!(meta.steps, 20, "slot {slot:?}");
+        assert_eq!(meta.sampler, "res_multistep (simple)", "slot {slot:?}");
+    }
+
+    let meta = extract(Some(2));
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.sampler, "res_multistep");
+}
+
+#[test]
+fn sampler_custom_traces_nested_split_sigmas_and_reroutes() {
+    let prompt = r#"{
+        "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+        "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "res_multistep" } },
+        "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+        "4": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["3", 0], "step": 2 } },
+        "5": { "class_type": "Reroute", "inputs": { "": ["4", 1] } },
+        "6": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["5", 0], "step": 3 } },
+        "7": { "class_type": "SamplerCustom", "inputs": {
+            "model": ["1", 0], "sampler": ["2", 0], "sigmas": ["6", 0],
+            "noise_seed": 42, "cfg": 1.0
+        } },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["7", 0] } },
+        "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0] } }
+    }"#;
+
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.steps, 20);
+    assert_eq!(meta.sampler, "res_multistep (simple)");
+}
+
+#[test]
+fn sampler_custom_split_sigmas_cycle_fails_closed() {
+    let prompt = r#"{
+        "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+        "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "res_multistep" } },
+        "3": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["4", 0], "step": 2 } },
+        "4": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["3", 1], "step": 3 } },
+        "5": { "class_type": "SamplerCustom", "inputs": {
+            "model": ["1", 0], "sampler": ["2", 0], "sigmas": ["4", 0],
+            "noise_seed": 42, "cfg": 1.0
+        } },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    }"#;
+
+    let (meta, _) = extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.sampler, "res_multistep");
+}
+
+#[test]
+fn sampler_custom_split_scheduler_inputs_remain_link_first() {
+    let mut prompt = json!({
+        "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+        "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "res_multistep" } },
+        "3": {
+            "class_type": "BasicScheduler",
+            "inputs": { "scheduler": ["8", 0], "steps": ["9", 0] },
+            "widgets_values": ["stale", 99, 1.0]
+        },
+        "4": { "class_type": "SplitSigmas", "inputs": { "sigmas": ["3", 0], "step": 3 } },
+        "5": { "class_type": "SamplerCustom", "inputs": {
+            "model": ["1", 0], "sampler": ["2", 0], "sigmas": ["4", 1],
+            "noise_seed": 42, "cfg": 1.0
+        } },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } },
+        "8": { "class_type": "PrimitiveStringMultiline", "inputs": { "value": "simple" } },
+        "9": { "class_type": "PrimitiveInt", "inputs": { "value": 6 } }
+    });
+    let extract = |prompt: &Value| {
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string())).0
+    };
+
+    let meta = extract(&prompt);
+    assert_eq!(meta.steps, 6);
+    assert_eq!(meta.sampler, "res_multistep (simple)");
+
+    prompt["3"]["inputs"]["scheduler"] = json!(["90", 0]);
+    prompt["3"]["inputs"]["steps"] = json!(["91", 0]);
+    let meta = extract(&prompt);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.sampler, "res_multistep");
+
+    prompt["4"]["inputs"] = json!({});
+    let meta = extract(&prompt);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.sampler, "res_multistep");
+}
+
+#[test]
+fn sampler_custom_split_scheduler_depth_limit_fails_closed() {
+    let mut nodes = serde_json::Map::from_iter([
+        (
+            "1".to_string(),
+            json!({ "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } }),
+        ),
+        (
+            "2".to_string(),
+            json!({ "class_type": "KSamplerSelect", "inputs": { "sampler_name": "res_multistep" } }),
+        ),
+        (
+            "3".to_string(),
+            json!({ "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } }),
+        ),
+    ]);
+    let mut previous = "3".to_string();
+    for id in 4..=20 {
+        nodes.insert(
+            id.to_string(),
+            json!({
+                "class_type": "SplitSigmas",
+                "inputs": { "sigmas": [previous, 0], "step": 1 }
+            }),
+        );
+        previous = id.to_string();
+    }
+    nodes.insert(
+        "21".to_string(),
+        json!({ "class_type": "SamplerCustom", "inputs": {
+            "model": ["1", 0], "sampler": ["2", 0], "sigmas": [previous, 0],
+            "noise_seed": 42, "cfg": 1.0
+        } }),
+    );
+    nodes.insert(
+        "22".to_string(),
+        json!({ "class_type": "VAEDecode", "inputs": { "samples": ["21", 0] } }),
+    );
+    nodes.insert(
+        "23".to_string(),
+        json!({ "class_type": "SaveImage", "inputs": { "images": ["22", 0] } }),
+    );
+
+    let prompt = Value::Object(nodes);
+    let (meta, _) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string()));
 
     assert_eq!(meta.steps, 0);
     assert_eq!(meta.sampler, "res_multistep");

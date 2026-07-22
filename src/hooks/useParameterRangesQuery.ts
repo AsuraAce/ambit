@@ -10,6 +10,7 @@ import { getBrowserMockImages } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 const EMPTY_PARAMETER_RANGES: ParameterRanges = {
     steps: null,
@@ -39,6 +40,7 @@ export function useParameterRangesQuery(filters: FilterState) {
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const searchQueryKey = sideQueryFilters.searchQuery.trim();
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const query = useQuery<ParameterRanges>({
         // Refetch when filters or context changes (exclude sampler/genType to reduce rerenders)
@@ -57,7 +59,7 @@ export function useParameterRangesQuery(filters: FilterState) {
             // Intentionally EXCLUDE samplers and generationTypes from query key
             // so selecting them doesn't cause a refetch (Disjunctive)
             settings.maskingMode,
-            settings.maskedKeywords,
+            effectiveMaskedKeywords,
             privacyEnabled
         ],
         queryFn: async () => {
@@ -87,7 +89,7 @@ export function useParameterRangesQuery(filters: FilterState) {
                 sideQueryFilters,
                 privacyEnabled,
                 settings.maskingMode,
-                settings.maskedKeywords,
+                effectiveMaskedKeywords,
                 allCollections,
                 false,
                 ['samplers', 'generationTypes', 'controlNets', 'ipAdapters'] // Exclude these from WHERE clause

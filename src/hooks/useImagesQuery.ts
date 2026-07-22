@@ -5,6 +5,7 @@ import { searchImages, countImages, countGlobalImages } from '../services/db/sea
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { searchBrowserMockImages } from '../services/browserMockData';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 
 interface UseImagesQueryProps {
     filters: FilterState;
@@ -25,6 +26,21 @@ export type ImagesQueryKey = readonly [
     string | null
 ];
 
+const hasMatchingPrivacyScope = (
+    previousKey: readonly unknown[] | undefined,
+    currentKey: ImagesQueryKey
+): boolean => {
+    if (!previousKey || previousKey.length < 6) return false;
+
+    const previousKeywords = previousKey[5];
+    if (!Array.isArray(previousKeywords)) return false;
+
+    return previousKey[3] === currentKey[3]
+        && previousKey[4] === currentKey[4]
+        && previousKeywords.length === currentKey[5].length
+        && previousKeywords.every((keyword, index) => keyword === currentKey[5][index]);
+};
+
 export const useImagesQuery = ({
     filters,
     sortOption,
@@ -36,6 +52,7 @@ export const useImagesQuery = ({
 
     const PAGE_SIZE = 1000;
     const useBrowserMocks = isBrowserMockMode();
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
@@ -57,9 +74,9 @@ export const useImagesQuery = ({
         sortOption,
         privacyEnabled,
         settings.maskingMode,
-        settings.maskedKeywords,
+        effectiveMaskedKeywords,
         smartFilterHash
-    ], [filters, sortOption, privacyEnabled, settings.maskingMode, settings.maskedKeywords, smartFilterHash]);
+    ], [effectiveMaskedKeywords, filters, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]);
 
     const query = useInfiniteQuery({
         queryKey: imagesQueryKey,
@@ -73,7 +90,7 @@ export const useImagesQuery = ({
                 filters,
                 privacyEnabled,
                 settings.maskingMode,
-                settings.maskedKeywords,
+                effectiveMaskedKeywords,
                 allCollections
             );
 
@@ -134,11 +151,15 @@ export const useImagesQuery = ({
                 isPinned: lastImage.isPinned ? 1 : 0
             };
         },
-        placeholderData: (previousData) => {
-            // Only use placeholder if previous data has images
-            // Prevents stale empty states when switching from "no results" filters (e.g., favorites with 0 items)
-            const hasImages = (previousData?.pages[0]?.images.length ?? 0) > 0;
-            return hasImages ? previousData : undefined;
+        placeholderData: (previousData, previousQuery) => {
+            if (!previousData) return undefined;
+
+            // Search, sort, and collection changes can safely retain their prior page,
+            // including an empty one. Privacy changes must fail closed until a page
+            // produced with the new privacy scope is ready.
+            return hasMatchingPrivacyScope(previousQuery?.queryKey, imagesQueryKey)
+                ? previousData
+                : undefined;
         },
         gcTime: 1000 * 60 * 10,
         enabled: settingsLoaded, // Wait for settings to load before fetching to prevent duplicate queries

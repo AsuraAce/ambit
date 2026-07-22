@@ -110,6 +110,19 @@ const PHASE23_RESOURCE_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE25_IDEOGRAM_FIXTURES: &[IntakeFixture] = &[IntakeFixture {
+    name: "image_ideogram4_t2i",
+    source_blob: "c04018493c60d8d4275f0bdc54acb385f59e7ea5",
+    chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
+    graph_node_count: 42,
+    output_candidates: 1,
+    output_roots: 1,
+    output_ambiguous: false,
+}];
+
+const IDEOGRAM_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
+
 fn git_blob_sha1(bytes: &[u8]) -> String {
     let mut message = format!("blob {}\0", bytes.len()).into_bytes();
     message.extend_from_slice(bytes);
@@ -240,4 +253,76 @@ fn pinned_phase22_related_variants_have_stable_graph_shape() {
 #[test]
 fn pinned_phase23_resource_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(PHASE23_RESOURCE_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone25_ideogram_workflow_has_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE25_IDEOGRAM_FIXTURES);
+}
+
+#[test]
+fn pinned_ideogram_source_expectations_are_stable() {
+    let chunks: HashMap<String, String> =
+        serde_json::from_str(MILESTONE25_IDEOGRAM_FIXTURES[0].chunks_json)
+            .expect("Ideogram chunks should be valid JSON");
+    let workflow = chunks
+        .get("workflow")
+        .expect("Ideogram fixture should include a workflow chunk");
+    assert_eq!(workflow.len(), 119_270, "pinned workflow byte length");
+
+    let workflow: serde_json::Value =
+        serde_json::from_str(workflow).expect("Ideogram workflow should be valid JSON");
+    let definition = workflow["definitions"]["subgraphs"]
+        .as_array()
+        .and_then(|definitions| {
+            definitions.iter().find(|definition| {
+                definition["id"].as_str() == Some("83e6e004-48ea-408e-9024-eb49c3d7dc14")
+            })
+        })
+        .expect("Ideogram generation definition");
+    let nodes = definition["nodes"]
+        .as_array()
+        .expect("Ideogram definition nodes");
+    let node = |id| {
+        nodes
+            .iter()
+            .find(|node| node["id"].as_i64() == Some(id))
+            .unwrap_or_else(|| panic!("missing Ideogram node {id}"))
+    };
+
+    assert_eq!(
+        node(23)["widgets_values"][0],
+        "ideogram4_fp8_scaled.safetensors"
+    );
+    assert_eq!(
+        node(154)["widgets_values"][0],
+        "ideogram4_unconditional_fp8_scaled.safetensors"
+    );
+    assert_eq!(node(18)["widgets_values"][0], 885_894_517_601_261_i64);
+    assert_eq!(node(156)["widgets_values"][0], "Default");
+    assert_eq!(node(155)["widgets_values"][0], 7);
+    assert_eq!(node(157)["widgets_values"], serde_json::json!([3, 0.7, 1]));
+    assert_eq!(
+        node(17)["widgets_values"],
+        serde_json::json!([20, 1024, 1024, 0.5, 1.75])
+    );
+    assert_eq!(node(16)["widgets_values"][0], "euler");
+    assert_eq!(node(24)["widgets_values"][0], IDEOGRAM_EXPECTED_POSITIVE);
+    assert_eq!(IDEOGRAM_EXPECTED_POSITIVE.len(), 3_598);
+    assert_eq!(node(10)["type"], "ConditioningZeroOut");
+
+    assert!(
+        nodes.iter().all(|node| {
+            let node_type = node["type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            !node_type.contains("lora")
+                && !node_type.contains("controlnet")
+                && !node_type.contains("ipadapter")
+                && !node_type.contains("hypernetwork")
+                && !node_type.contains("embedding")
+        }),
+        "pinned Ideogram workflow should not declare metadata resources"
+    );
 }

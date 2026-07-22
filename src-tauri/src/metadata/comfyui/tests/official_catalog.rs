@@ -129,6 +129,10 @@ const FIXTURES: &[CatalogFixture] = &[
         ),
     },
     CatalogFixture {
+        name: "flux_depth_lora_example",
+        chunks_json: include_str!("fixtures/official_catalog/flux_depth_lora_example.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_z_image_turbo_fun_union_controlnet",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_z_image_turbo_fun_union_controlnet.chunks.json"
@@ -140,7 +144,14 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_ideogram4_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
+    },
 ];
+
+const IDEOGRAM_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -899,6 +910,29 @@ fn boogu_edit_custom_conditioning() {
 }
 
 #[test]
+fn flux_depth_lora_uses_the_selected_generation_path() {
+    assert_fixture(
+        "flux_depth_lora_example",
+        ExpectedMetadata {
+            model: "flux1_dev_fp8",
+            seed: Some(229_472_716_717_627),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (normal)",
+            positive_prompt: "A cute ghost-shaped desktop ornament, softly glowing with a warm light, placed on a tidy, cozy home table, creating a gentle and sweet atmosphere.",
+            negative_prompt: "",
+            loras: &["flux1_depth_dev_lora"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
 fn z_image_union_model_patch_controlnet() {
     assert_fixture(
         "image_z_image_turbo_fun_union_controlnet",
@@ -922,7 +956,7 @@ fn z_image_union_model_patch_controlnet() {
 }
 
 #[test]
-fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
+fn bernini_custom_conditioning_and_split_schedule_are_golden() {
     let name = "video_bernini_r_image_editing";
     let chunks = load_chunks(name);
     let workflow = chunks
@@ -932,10 +966,10 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
     let expected = ExpectedMetadata {
         model: "wan2.2_bernini_r_high_noise_fp8_scaled",
         seed: Some(283_365_432_432_581),
-        steps: 0,
+        steps: 6,
         cfg: 1.0,
-        sampler: "res_multistep",
-        positive_prompt: "",
+        sampler: "res_multistep (simple)",
+        positive_prompt: "You are a helpful assistant.make it night",
         negative_prompt: "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
         loras: &["lightx2v_t2v_14b_cfg_step_distill_v2_lora_rank64_bf16"],
         control_nets: &[],
@@ -962,8 +996,10 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
     for field in [
         ComfyMetadataField::Model,
         ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
         ComfyMetadataField::Cfg,
         ComfyMetadataField::Sampler,
+        ComfyMetadataField::PositivePrompt,
         ComfyMetadataField::NegativePrompt,
         ComfyMetadataField::Loras,
     ] {
@@ -971,16 +1007,6 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
             diagnostics.field_sources.get(&field),
             Some(&ComfyParseLayer::SamplerTraversal),
             "{name} {field:?} provenance"
-        );
-    }
-    for field in [
-        ComfyMetadataField::Steps,
-        ComfyMetadataField::PositivePrompt,
-    ] {
-        assert_eq!(
-            diagnostics.field_sources.get(&field),
-            None,
-            "{name} {field:?} should remain unavailable"
         );
     }
     assert_eq!(
@@ -994,5 +1020,28 @@ fn bernini_custom_conditioning_is_partial_without_fabricated_fields() {
             .field_sources
             .get(&ComfyMetadataField::WorkflowHint),
         Some(&ComfyParseLayer::WorkflowChunk)
+    );
+}
+
+#[test]
+fn ideogram4_scheduler_and_dual_model_policy_are_golden() {
+    assert_fixture(
+        "image_ideogram4_t2i",
+        ExpectedMetadata {
+            model: "ideogram4_fp8_scaled",
+            seed: Some(885_894_517_601_261),
+            steps: 20,
+            cfg: 7.0,
+            sampler: "euler (ideogram4)",
+            positive_prompt: IDEOGRAM_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 42,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
     );
 }

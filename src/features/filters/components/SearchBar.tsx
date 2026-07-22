@@ -3,11 +3,12 @@ import { LoaderCircle, Search, Sparkles, X } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { APP_NAME } from '../../../constants/app';
 import { useSearch } from '../../../contexts/SearchContext';
-import { getAdvancedDateSearchReadiness } from '../../../utils/dateFilters';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import type { SearchBarOption } from './SearchBarPopover';
 
 const SearchBarPopover = React.lazy(() => import('./SearchBarPopover').then(module => ({ default: module.SearchBarPopover })));
+
+type SearchReadinessApi = typeof import('../../../utils/searchQueryReadiness');
 
 interface SearchBarProps {
     filters: FilterState;
@@ -47,20 +48,43 @@ export const SearchBar = React.memo(({
     const [activeOptionIndex, setActiveOptionIndex] = React.useState(-1);
     const [areOptionsDismissed, setAreOptionsDismissed] = React.useState(false);
     const [operatorSuggestions, setOperatorSuggestions] = React.useState<readonly { value: string; description: string }[]>([]);
+    const [searchReadinessApi, setSearchReadinessApi] = React.useState<SearchReadinessApi | null>(null);
     const listboxId = React.useId();
     const statusId = React.useId();
+    const helperId = React.useId();
     const trimmedValue = localValue.trim();
-    const dateSearchReadiness = React.useMemo(
-        () => getAdvancedDateSearchReadiness(localValue),
-        [localValue]
+    const queryReadiness = React.useMemo(
+        () => searchProps.isAiSearchEnabled
+            ? { isReady: true as const, issue: null }
+            : searchReadinessApi
+                ? searchReadinessApi.getSearchQueryReadiness(localValue)
+                : localValue === filters.searchQuery
+                    ? { isReady: true as const, issue: null }
+                    : {
+                        isReady: false as const,
+                        issue: { kind: 'pending' as const, message: 'Checking syntax...' },
+                    },
+        [filters.searchQuery, localValue, searchProps.isAiSearchEnabled, searchReadinessApi]
     );
-    const dateSearchHint = dateSearchReadiness.isReady
-        ? null
-        : 'Use ISO dates like date:2026-04 or before:2025';
+    const queryIssue = queryReadiness.issue;
     const liveSearchEnabled = !searchProps.isAiSearchEnabled && !submitNavigatesToGrid;
     const isDraftPending = liveSearchEnabled
-        && dateSearchReadiness.isReady
+        && queryReadiness.isReady
         && localValue !== filters.searchQuery;
+    const isStandardSearchPending = !searchProps.isAiSearchEnabled
+        && (isDraftPending || isFiltering);
+    const showLoadingIndicator = searchProps.isSearchingAi || isStandardSearchPending;
+
+    React.useEffect(() => {
+        let isCurrent = true;
+        void import('../../../utils/searchQueryReadiness').then(module => {
+            if (isCurrent) setSearchReadinessApi(module);
+        });
+
+        return () => {
+            isCurrent = false;
+        };
+    }, []);
 
     React.useEffect(() => {
         if (!searchProps.isFocused || searchProps.isAiSearchEnabled || operatorSuggestions.length > 0) return;
@@ -77,14 +101,17 @@ export const SearchBar = React.memo(({
 
     const matchingOperators = React.useMemo(() => {
         if (searchProps.isAiSearchEnabled) return [];
-        const lastToken = localValue.split(' ').pop()?.toLowerCase() || '';
+        const lastSpace = localValue.lastIndexOf(' ');
+        const lastToken = localValue.slice(lastSpace + 1).toLowerCase();
+        const prefix = lastSpace >= 0 ? localValue.slice(0, lastSpace).trimEnd() : '';
         if (!lastToken) return [];
 
         return operatorSuggestions.filter(operator => {
             const normalized = operator.value.toLowerCase();
+            if (operator.value === 'OR' && !searchReadinessApi?.canAppendPromptOr(prefix)) return false;
             return normalized.startsWith(lastToken) && normalized !== lastToken;
         });
-    }, [localValue, operatorSuggestions, searchProps.isAiSearchEnabled]);
+    }, [localValue, operatorSuggestions, searchProps.isAiSearchEnabled, searchReadinessApi]);
 
     const options = React.useMemo<SearchBarOption[]>(() => {
         if (areOptionsDismissed) return [];
@@ -135,17 +162,22 @@ export const SearchBar = React.memo(({
         onDraftPendingChange(false);
     }, [onDraftPendingChange]);
 
+    const triggerGuidance = searchProps.isAiSearchEnabled
+        ? 'Press Enter to analyze with AI.'
+        : submitNavigatesToGrid
+            ? 'Press Enter to show results in Grid.'
+            : 'Updates after you pause. Enter finishes.';
+
     const statusMessage = React.useMemo(() => {
-        if (dateSearchHint) return null;
+        if (queryIssue) return null;
         if (searchProps.isSearchingAi) return 'Analyzing with Gemini…';
         if (!trimmedValue) return null;
-        if (searchProps.isAiSearchEnabled) return 'Press Enter to analyze and apply filters.';
-        if (submitNavigatesToGrid) return 'Press Enter to view matching images in Grid.';
+        if (searchProps.isAiSearchEnabled || submitNavigatesToGrid) return triggerGuidance;
         if (isDraftPending || isFiltering) return `Searching ${scopeName}…`;
         if (displayedCount === 0) return `No matches in ${scopeName}.`;
         return `${displayedCount.toLocaleString()} ${displayedCount === 1 ? 'match' : 'matches'} in ${scopeName}.`;
     }, [
-        dateSearchHint,
+        queryIssue,
         displayedCount,
         filters.searchQuery,
         isFiltering,
@@ -155,6 +187,7 @@ export const SearchBar = React.memo(({
         searchProps.isAiSearchEnabled,
         searchProps.isSearchingAi,
         submitNavigatesToGrid,
+        triggerGuidance,
         trimmedValue,
     ]);
 
@@ -189,11 +222,12 @@ export const SearchBar = React.memo(({
     };
 
     const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-        if (event.key === 'Escape' && options.length > 0) {
+        if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
             setActiveOptionIndex(-1);
             setAreOptionsDismissed(true);
+            searchProps.inputRef.current?.blur();
             return;
         }
 
@@ -221,7 +255,7 @@ export const SearchBar = React.memo(({
         }
 
         if (event.key === 'Enter') {
-            if (!dateSearchReadiness.isReady || searchProps.isSearchingAi) {
+            if (!queryReadiness.isReady || searchProps.isSearchingAi) {
                 event.preventDefault();
                 return;
             }
@@ -262,16 +296,22 @@ export const SearchBar = React.memo(({
     const accessibleName = searchProps.isAiSearchEnabled
         ? `Ask ${APP_NAME} with AI`
         : `Search in ${scopeName}`;
+    const describedBy = searchProps.isFocused
+        ? [queryIssue || statusMessage ? statusId : null, helperId].filter(Boolean).join(' ')
+        : undefined;
 
     return (
         <div
-            className={`relative w-full max-w-lg group flex items-center gap-2 transition-all duration-300 ${searchProps.isFocused ? 'z-[70] scale-105' : 'z-30'}`}
+            className={`group flex items-center gap-2 ${searchProps.isFocused ? 'absolute left-6 right-6 top-1/2 max-w-lg -translate-y-1/2 z-[70]' : 'relative w-full max-w-lg z-30'}`}
             onFocusCapture={handleFocusCapture}
             onBlurCapture={handleBlurCapture}
         >
-            <div className="relative flex-1">
-                {searchProps.isSearchingAi ? (
-                    <LoaderCircle aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amethyst-600 dark:text-amethyst-400 animate-spin" />
+            <div className={`relative flex-1 rounded-xl transition-shadow duration-200 ${isStandardSearchPending ? 'shadow-[0_0_18px_rgba(139,174,124,0.24)] dark:shadow-[0_0_20px_rgba(139,174,124,0.18)]' : ''}`}>
+                {showLoadingIndicator ? (
+                    <LoaderCircle
+                        aria-hidden="true"
+                        className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin ${searchProps.isSearchingAi ? 'text-amethyst-600 dark:text-amethyst-400' : 'text-sage-600 dark:text-sage-400'}`}
+                    />
                 ) : (
                     <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors text-gray-400 dark:text-zinc-500 group-focus-within:text-sage-600 dark:group-focus-within:text-sage-400" />
                 )}
@@ -284,8 +324,9 @@ export const SearchBar = React.memo(({
                     aria-expanded={searchProps.isFocused && options.length > 0}
                     aria-controls={searchProps.isFocused && options.length > 0 ? listboxId : undefined}
                     aria-activedescendant={searchProps.isFocused ? activeOption?.id : undefined}
-                    aria-describedby={searchProps.isFocused && (dateSearchHint || statusMessage) ? statusId : undefined}
-                    aria-busy={searchProps.isSearchingAi}
+                    aria-describedby={describedBy || undefined}
+                    aria-invalid={queryIssue?.kind === 'invalid' ? true : undefined}
+                    aria-busy={showLoadingIndicator}
                     readOnly={searchProps.isSearchingAi}
                     placeholder={searchProps.isAiSearchEnabled ? `Ask ${APP_NAME}...` : `Search in ${scopeName}...`}
                     className={`w-full bg-gray-100 dark:bg-zinc-800/50 border rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none transition-all text-gray-900 dark:text-gray-100 placeholder-gray-500 ${searchProps.isAiSearchEnabled ? 'border-amethyst-300 dark:border-amethyst-800 focus:border-amethyst-500/50 focus:ring-1 focus:ring-amethyst-500/30' : 'border-gray-200 dark:border-white/10 focus:border-sage-500/50 focus:ring-1 focus:ring-sage-500/30'}`}
@@ -309,10 +350,12 @@ export const SearchBar = React.memo(({
                     <React.Suspense fallback={null}>
                         <SearchBarPopover
                             activeOptionIndex={activeOptionIndex}
-                            dateSearchHint={dateSearchHint}
+                            helperId={helperId}
+                            helperText={triggerGuidance}
                             listboxId={listboxId}
                             listLabel={listLabel}
                             options={options}
+                            queryIssue={queryIssue}
                             statusId={statusId}
                             statusMessage={statusMessage}
                             onClearRecentSearches={clearRecentSearches}

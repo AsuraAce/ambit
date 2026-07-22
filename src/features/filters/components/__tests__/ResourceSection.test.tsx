@@ -428,6 +428,7 @@ describe('ResourceSection match mode controls', () => {
 
         fireEvent.click(matchAnyButton);
         expect(nextFilters.matchModes?.loras).toBe('all');
+        expect(screen.queryByRole('tooltip')).toBeNull();
 
         view.rerender(
             <ResourceSection
@@ -445,7 +446,10 @@ describe('ResourceSection match mode controls', () => {
             />
         );
 
-        expect(screen.getByRole('button', { name: /Resources match mode: Match All/i }).getAttribute('aria-pressed')).toBe('true');
+        const matchAllButton = screen.getByRole('button', { name: /Resources match mode: Match All/i });
+        expect(matchAllButton.getAttribute('aria-pressed')).toBe('true');
+        fireEvent.blur(matchAllButton);
+        fireEvent.focus(matchAllButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Match All: Show images containing every selected item.');
     });
 });
@@ -489,6 +493,7 @@ describe('ResourceSection toolbar tooltips', () => {
         const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
         expect(viewButton.getAttribute('title')).toBeNull();
         expect(viewButton.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.keyDown(document, { key: 'Tab' });
         fireEvent.focus(viewButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
         fireEvent.blur(viewButton);

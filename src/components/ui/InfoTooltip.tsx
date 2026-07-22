@@ -9,6 +9,7 @@ interface InfoTooltipProps {
 
 type TooltipButtonProps = InfoTooltipProps & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> & {
     children: React.ReactNode;
+    persistOnClick?: boolean;
 };
 
 interface TooltipPosition {
@@ -25,6 +26,7 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     children,
     className,
     type = 'button',
+    persistOnClick = false,
     'aria-describedby': describedBy,
     onClick,
     onMouseEnter,
@@ -37,12 +39,34 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     const tooltipId = React.useId();
     const triggerRef = React.useRef<HTMLButtonElement>(null);
     const tooltipRef = React.useRef<HTMLDivElement>(null);
+    const awaitingActionFocusExitRef = React.useRef(false);
+    const suppressNextFocusRef = React.useRef(false);
+    const keyboardFocusRef = React.useRef(true);
     const [isHovered, setIsHovered] = React.useState(false);
     const [isFocused, setIsFocused] = React.useState(false);
     const [isClickOpen, setIsClickOpen] = React.useState(false);
     const [isDismissed, setIsDismissed] = React.useState(false);
     const [position, setPosition] = React.useState<TooltipPosition | null>(null);
     const isOpen = !isDismissed && (isHovered || isFocused || isClickOpen);
+
+    React.useEffect(() => {
+        const handlePointerDown = (event: PointerEvent) => {
+            keyboardFocusRef.current = false;
+            if (!triggerRef.current?.contains(event.target as Node)) {
+                awaitingActionFocusExitRef.current = false;
+            }
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Tab') keyboardFocusRef.current = true;
+        };
+
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
 
     React.useLayoutEffect(() => {
         if (!isOpen) return;
@@ -130,6 +154,8 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 aria-label={label}
                 aria-describedby={[describedBy, isOpen ? tooltipId : null].filter(Boolean).join(' ') || undefined}
                 onMouseEnter={(event) => {
+                    awaitingActionFocusExitRef.current = false;
+                    suppressNextFocusRef.current = false;
                     setIsHovered(true);
                     setIsDismissed(false);
                     onMouseEnter?.(event);
@@ -139,16 +165,26 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                     onMouseLeave?.(event);
                 }}
                 onFocus={(event) => {
-                    setIsFocused(true);
-                    setIsDismissed(false);
+                    const shouldRemainDismissed = suppressNextFocusRef.current;
+                    suppressNextFocusRef.current = false;
+                    const shouldShowForFocus = keyboardFocusRef.current && !shouldRemainDismissed;
+                    setIsFocused(shouldShowForFocus);
+                    if (shouldShowForFocus) setIsDismissed(false);
                     onFocus?.(event);
                 }}
                 onBlur={(event) => {
+                    if (awaitingActionFocusExitRef.current) {
+                        awaitingActionFocusExitRef.current = false;
+                        suppressNextFocusRef.current = event.relatedTarget instanceof Element;
+                    }
                     setIsFocused(false);
                     setIsClickOpen(false);
                     onBlur?.(event);
                 }}
                 onKeyDown={(event) => {
+                    if (event.key === 'Tab') {
+                        awaitingActionFocusExitRef.current = false;
+                    }
                     if (event.key === 'Enter' || event.key === ' ') {
                         event.stopPropagation();
                     }
@@ -157,8 +193,11 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 onClick={(event) => {
                     event.stopPropagation();
                     setIsHovered(false);
-                    setIsClickOpen(true);
-                    setIsDismissed(false);
+                    setIsClickOpen(persistOnClick);
+                    setIsDismissed(!persistOnClick);
+                    if (!persistOnClick) {
+                        awaitingActionFocusExitRef.current = true;
+                    }
                     onClick?.(event);
                 }}
                 className={className}
@@ -174,6 +213,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ label, content }) => (
     <TooltipButton
         label={label}
         content={content}
+        persistOnClick
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-gray-500 dark:hover:text-sage-400"
     >
         <Info aria-hidden="true" className="h-3.5 w-3.5" />

@@ -1,6 +1,7 @@
 use super::graph::{
-    get_input_connection, get_node_id, get_node_param, get_node_type,
+    get_input_connection, get_input_source, get_node_id, get_node_param, get_node_type,
     get_switch_branch_input_strict, get_switch_branch_source, ComfyGraph, InputConnection,
+    InputSource, InputSourceConnection,
 };
 use serde_json::Value;
 use std::collections::HashSet;
@@ -130,52 +131,234 @@ fn first_declared_connection(node: &Value, keys: &[&str]) -> InputConnection {
     InputConnection::Unconnected
 }
 
+fn first_declared_source(node: &Value, keys: &[&str]) -> InputSourceConnection {
+    for key in keys {
+        match get_input_source(node, key) {
+            InputSourceConnection::Unconnected => {}
+            connection => return connection,
+        }
+    }
+    InputSourceConnection::Unconnected
+}
+
+enum NumericScalar {
+    Boolean(bool),
+    Integer(i64),
+    Unsigned(u64),
+    Float(f64),
+    String(String),
+}
+
+fn numeric_scalar_from_value(value: &Value) -> Option<NumericScalar> {
+    if let Some(value) = value.as_bool() {
+        return Some(NumericScalar::Boolean(value));
+    }
+    if let Some(value) = value.as_i64() {
+        return Some(NumericScalar::Integer(value));
+    }
+    if let Some(value) = value.as_u64() {
+        return Some(NumericScalar::Unsigned(value));
+    }
+    if let Some(value) = value.as_f64() {
+        return value.is_finite().then_some(NumericScalar::Float(value));
+    }
+    value
+        .as_str()
+        .map(|value| NumericScalar::String(value.to_string()))
+}
+
+fn numeric_scalar_as_i64(value: NumericScalar) -> Option<i64> {
+    match value {
+        NumericScalar::Boolean(value) => Some(i64::from(value)),
+        NumericScalar::Integer(value) => Some(value),
+        NumericScalar::Unsigned(value) => i64::try_from(value).ok(),
+        NumericScalar::Float(value) => finite_float_as_i64(value),
+        NumericScalar::String(value) => {
+            let value = value.trim();
+            if value.is_empty() {
+                return None;
+            }
+            value
+                .parse::<i64>()
+                .ok()
+                .or_else(|| {
+                    value
+                        .parse::<u64>()
+                        .ok()
+                        .and_then(|value| i64::try_from(value).ok())
+                })
+                .or_else(|| value.parse::<f64>().ok().and_then(finite_float_as_i64))
+        }
+    }
+}
+
+fn numeric_scalar_as_f64(value: NumericScalar) -> Option<f64> {
+    let value = match value {
+        NumericScalar::Boolean(value) => {
+            if value {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        NumericScalar::Integer(value) => value as f64,
+        NumericScalar::Unsigned(value) => value as f64,
+        NumericScalar::Float(value) => value,
+        NumericScalar::String(value) => value.trim().parse::<f64>().ok()?,
+    };
+    value.is_finite().then_some(value)
+}
+
+fn finite_float_as_i64(value: f64) -> Option<i64> {
+    const I64_UPPER_EXCLUSIVE: f64 = 9_223_372_036_854_775_808.0;
+
+    if !value.is_finite() {
+        return None;
+    }
+    let value = value.trunc();
+    if value < i64::MIN as f64 || value >= I64_UPPER_EXCLUSIVE {
+        return None;
+    }
+    Some(value as i64)
+}
+
+fn evaluate_numeric_scalar_source(
+    graph: &ComfyGraph,
+    source: &InputSource,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<NumericScalar> {
+    if depth > 16 || !visited.insert(source.node_id.clone()) {
+        return None;
+    }
+    let node = graph.get_node(&source.node_id)?;
+    let node_type = get_node_type(node);
+
+    if node_type == "ComfySwitchNode" {
+        let branch = get_switch_branch_input_strict(graph, node)?;
+        return match get_input_source(node, branch) {
+            InputSourceConnection::Connected(source) => {
+                evaluate_numeric_scalar_source(graph, &source, visited, depth + 1)
+            }
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => None,
+        };
+    }
+
+    if node_type == "Reroute" {
+        return match first_declared_source(node, &["", "value", "input", "any"]) {
+            InputSourceConnection::Connected(source) => {
+                evaluate_numeric_scalar_source(graph, &source, visited, depth + 1)
+            }
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => None,
+        };
+    }
+
+    if node_type == "ComfyNumberConvert" {
+        return evaluate_comfy_number_convert(graph, node, source.output_slot, visited, depth);
+    }
+
+    match first_declared_source(node, &["value", "int", "float"]) {
+        InputSourceConnection::Connected(source) => {
+            return evaluate_numeric_scalar_source(graph, &source, visited, depth + 1);
+        }
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => {}
+    }
+
+    for key in ["value", "int", "float"] {
+        if let Some(value) = get_node_param(node, key).and_then(numeric_scalar_from_value) {
+            return Some(value);
+        }
+    }
+
+    if let Some(value) =
+        super::conditioning::evaluate_string_source_strict(graph, source, &mut HashSet::new(), 0)
+    {
+        return Some(NumericScalar::String(value));
+    }
+
+    if let Some(value) = node
+        .get("widgets_values")
+        .and_then(Value::as_array)
+        .and_then(|values| values.first())
+        .and_then(numeric_scalar_from_value)
+    {
+        return Some(value);
+    }
+
+    None
+}
+
+fn evaluate_comfy_number_convert(
+    graph: &ComfyGraph,
+    node: &Value,
+    output_slot: Option<usize>,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<NumericScalar> {
+    let value = match get_input_source(node, "value") {
+        InputSourceConnection::Connected(source) => {
+            evaluate_numeric_scalar_source(graph, &source, visited, depth + 1)?
+        }
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected => {
+            get_node_param(node, "value").and_then(numeric_scalar_from_value)?
+        }
+    };
+
+    match output_slot {
+        Some(0) => numeric_scalar_as_f64(value).map(NumericScalar::Float),
+        Some(1) => numeric_scalar_as_i64(value).map(NumericScalar::Integer),
+        _ => None,
+    }
+}
+
 fn evaluate_linked_number_strict(
     graph: &ComfyGraph,
-    node_id: &str,
+    source: &InputSource,
     param: &str,
     max_limit: i64,
     visited: &mut HashSet<String>,
     depth: usize,
 ) -> Option<i64> {
-    if depth > 16 || !visited.insert(node_id.to_string()) {
+    if depth > 16 || !visited.insert(source.node_id.clone()) {
         return None;
     }
-    let node = graph.get_node(node_id)?;
-    if get_node_type(node) == "ComfySwitchNode" {
+    let node = graph.get_node(&source.node_id)?;
+    let node_type = get_node_type(node);
+    if node_type == "ComfyNumberConvert" {
+        let value = evaluate_comfy_number_convert(graph, node, source.output_slot, visited, depth)?;
+        return numeric_scalar_as_i64(value).filter(|value| *value < max_limit);
+    }
+    if node_type == "ComfySwitchNode" {
         let branch = get_switch_branch_input_strict(graph, node)?;
-        return match get_input_connection(node, branch) {
-            InputConnection::Connected(source_id) => evaluate_linked_number_strict(
-                graph,
-                &source_id,
-                param,
-                max_limit,
-                visited,
-                depth + 1,
-            ),
-            InputConnection::DeclaredUnresolved | InputConnection::Unconnected => None,
+        return match get_input_source(node, branch) {
+            InputSourceConnection::Connected(source) => {
+                evaluate_linked_number_strict(graph, &source, param, max_limit, visited, depth + 1)
+            }
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => None,
         };
     }
 
-    let input_keys: &[&str] = if get_node_type(node) == "Reroute" {
+    let input_keys: &[&str] = if node_type == "Reroute" {
         &["", "value", "input", "any"]
     } else {
         &["value", "int", param]
     };
-    match first_declared_connection(node, input_keys) {
-        InputConnection::Connected(source_id) => {
+    match first_declared_source(node, input_keys) {
+        InputSourceConnection::Connected(source) => {
             return evaluate_linked_number_strict(
                 graph,
-                &source_id,
+                &source,
                 param,
                 max_limit,
                 visited,
                 depth + 1,
             );
         }
-        InputConnection::DeclaredUnresolved => return None,
-        InputConnection::Unconnected if get_node_type(node) == "Reroute" => return None,
-        InputConnection::Unconnected => {}
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected if node_type == "Reroute" => return None,
+        InputSourceConnection::Unconnected => {}
     }
 
     for key in ["value", "int", param] {
@@ -192,50 +375,50 @@ fn evaluate_linked_number_strict(
 
 fn evaluate_linked_float_strict(
     graph: &ComfyGraph,
-    node_id: &str,
+    source: &InputSource,
     param: &str,
     max_limit: f64,
     visited: &mut HashSet<String>,
     depth: usize,
 ) -> Option<f64> {
-    if depth > 16 || !visited.insert(node_id.to_string()) {
+    if depth > 16 || !visited.insert(source.node_id.clone()) {
         return None;
     }
-    let node = graph.get_node(node_id)?;
-    if get_node_type(node) == "ComfySwitchNode" {
+    let node = graph.get_node(&source.node_id)?;
+    let node_type = get_node_type(node);
+    if node_type == "ComfyNumberConvert" {
+        let value = evaluate_comfy_number_convert(graph, node, source.output_slot, visited, depth)?;
+        return numeric_scalar_as_f64(value).filter(|value| *value < max_limit);
+    }
+    if node_type == "ComfySwitchNode" {
         let branch = get_switch_branch_input_strict(graph, node)?;
-        return match get_input_connection(node, branch) {
-            InputConnection::Connected(source_id) => evaluate_linked_float_strict(
-                graph,
-                &source_id,
-                param,
-                max_limit,
-                visited,
-                depth + 1,
-            ),
-            InputConnection::DeclaredUnresolved | InputConnection::Unconnected => None,
+        return match get_input_source(node, branch) {
+            InputSourceConnection::Connected(source) => {
+                evaluate_linked_float_strict(graph, &source, param, max_limit, visited, depth + 1)
+            }
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => None,
         };
     }
 
-    let input_keys: &[&str] = if get_node_type(node) == "Reroute" {
+    let input_keys: &[&str] = if node_type == "Reroute" {
         &["", "value", "input", "any"]
     } else {
         &["value", "float", param]
     };
-    match first_declared_connection(node, input_keys) {
-        InputConnection::Connected(source_id) => {
+    match first_declared_source(node, input_keys) {
+        InputSourceConnection::Connected(source) => {
             return evaluate_linked_float_strict(
                 graph,
-                &source_id,
+                &source,
                 param,
                 max_limit,
                 visited,
                 depth + 1,
             );
         }
-        InputConnection::DeclaredUnresolved => return None,
-        InputConnection::Unconnected if get_node_type(node) == "Reroute" => return None,
-        InputConnection::Unconnected => {}
+        InputSourceConnection::DeclaredUnresolved => return None,
+        InputSourceConnection::Unconnected if node_type == "Reroute" => return None,
+        InputSourceConnection::Unconnected => {}
     }
 
     for key in ["value", "float", param] {
@@ -323,17 +506,12 @@ pub(crate) fn evaluate_number_link_first(
     param: &str,
     max_limit: i64,
 ) -> Option<i64> {
-    match get_input_connection(node, param) {
-        InputConnection::Connected(source_id) => evaluate_linked_number_strict(
-            graph,
-            &source_id,
-            param,
-            max_limit,
-            &mut HashSet::new(),
-            0,
-        ),
-        InputConnection::DeclaredUnresolved => None,
-        InputConnection::Unconnected => get_node_param(node, param)
+    match get_input_source(node, param) {
+        InputSourceConnection::Connected(source) => {
+            evaluate_linked_number_strict(graph, &source, param, max_limit, &mut HashSet::new(), 0)
+        }
+        InputSourceConnection::DeclaredUnresolved => None,
+        InputSourceConnection::Unconnected => get_node_param(node, param)
             .and_then(value_as_i64)
             .filter(|value| *value < max_limit),
     }
@@ -345,17 +523,12 @@ pub(crate) fn evaluate_float_link_first(
     param: &str,
     max_limit: f64,
 ) -> Option<f64> {
-    match get_input_connection(node, param) {
-        InputConnection::Connected(source_id) => evaluate_linked_float_strict(
-            graph,
-            &source_id,
-            param,
-            max_limit,
-            &mut HashSet::new(),
-            0,
-        ),
-        InputConnection::DeclaredUnresolved => None,
-        InputConnection::Unconnected => get_node_param(node, param)
+    match get_input_source(node, param) {
+        InputSourceConnection::Connected(source) => {
+            evaluate_linked_float_strict(graph, &source, param, max_limit, &mut HashSet::new(), 0)
+        }
+        InputSourceConnection::DeclaredUnresolved => None,
+        InputSourceConnection::Unconnected => get_node_param(node, param)
             .and_then(value_as_f64)
             .filter(|value| *value < max_limit),
     }
