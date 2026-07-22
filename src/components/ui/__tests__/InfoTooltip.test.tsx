@@ -23,7 +23,9 @@ const ModalLauncherHarness: React.FC = () => {
             <TooltipButton
                 label="Open modal"
                 content="Open modal"
-                onClick={() => setIsOpen(true)}
+                onClick={() => {
+                    void Promise.resolve().then(() => setIsOpen(true));
+                }}
             >
                 Open
             </TooltipButton>
@@ -107,36 +109,31 @@ describe('InfoTooltip', () => {
     });
 
     it('dismisses an action tooltip after activation without suppressing a later keyboard visit', () => {
-        vi.useFakeTimers();
         const onClick = vi.fn();
-        try {
-            render(
-                <TooltipButton label="Run action" content="Run action" onClick={onClick}>
-                    Run
-                </TooltipButton>
-            );
+        render(
+            <TooltipButton label="Run action" content="Run action" onClick={onClick}>
+                Run
+            </TooltipButton>
+        );
 
-            const trigger = screen.getByRole('button', { name: 'Run action' });
-            act(() => trigger.focus());
-            fireEvent.mouseEnter(trigger);
-            expect(screen.getByRole('tooltip')).toBeTruthy();
+        const trigger = screen.getByRole('button', { name: 'Run action' });
+        act(() => trigger.focus());
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
 
-            fireEvent.click(trigger);
+        fireEvent.click(trigger);
 
-            expect(onClick).toHaveBeenCalledTimes(1);
-            expect(document.activeElement).toBe(trigger);
-            expect(screen.queryByRole('tooltip')).toBeNull();
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
 
-            act(() => vi.runOnlyPendingTimers());
-            act(() => trigger.blur());
-            act(() => trigger.focus());
-            expect(screen.getByRole('tooltip')).toBeTruthy();
-        } finally {
-            vi.useRealTimers();
-        }
+        fireEvent.keyDown(trigger, { key: 'Tab' });
+        act(() => trigger.blur());
+        act(() => trigger.focus());
+        expect(screen.getByRole('tooltip')).toBeTruthy();
     });
 
-    it('keeps a modal launcher tooltip dismissed when focus is restored', () => {
+    it('keeps an asynchronously mounted modal launcher tooltip dismissed when focus is restored', async () => {
         render(<ModalLauncherHarness />);
 
         const trigger = screen.getByRole('button', { name: 'Open modal' });
@@ -146,6 +143,13 @@ describe('InfoTooltip', () => {
         expect(screen.getByRole('tooltip')).toBeTruthy();
 
         fireEvent.click(trigger);
+
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        await act(async () => {
+            await Promise.resolve();
+        });
 
         const closeButton = screen.getByRole('button', { name: 'Close' });
         expect(document.activeElement).toBe(closeButton);

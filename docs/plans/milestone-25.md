@@ -150,7 +150,7 @@ Verification evidence:
 
 Depends on: Work Package 2A.
 
-Status: Complete (`fix/prompt-masking-toggle`, focus-restoration follow-up, 2026-07-22)
+Status: Complete (`fix/prompt-masking-toggle`, asynchronous focus-restoration correction, 2026-07-22)
 
 Primary invariant: activating an ordinary action never leaves its tooltip obscuring the resulting interface state.
 
@@ -185,6 +185,8 @@ Verification evidence:
 - click persistence is opt-in: ordinary tooltip buttons dismiss on pointer, Enter, or Space activation while dedicated information tooltips retain click persistence;
 - an action that transfers focus into a modal suppresses the first restored-focus tooltip, while a later hover or keyboard visit shows it normally;
 - actions that retain focus do not carry stale suppression into a later keyboard visit;
+- manual Settings smoke showed that the initial zero-delay transfer window expired before the lazy-loaded modal moved focus; the correction must remain pending across asynchronous modal loading and rely on actual focus/navigation events instead of elapsed time;
+- the corrected shared state remains pending through lazy loading, suppresses restored focus after the launched surface takes focus, and cancels cleanly when the user instead navigates away with Tab or a pointer;
 - focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
 - the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
 - the complete frontend suite passed: 256 files, 2,877 tests passed, 1 skipped;
