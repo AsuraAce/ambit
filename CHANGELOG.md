@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.9.0](https://github.com/AsuraAce/ambit/compare/v0.8.0...v0.9.0) (2026-07-22)
+
+
+### Features
+
+* add capture mode for clean recordings ([#231](https://github.com/AsuraAce/ambit/issues/231)) ([7cd1f6e](https://github.com/AsuraAce/ambit/commit/7cd1f6ea848400b629000e9bc161387c29146e89))
+* add comfyui ideogram scheduler coverage ([#253](https://github.com/AsuraAce/ambit/issues/253)) ([acf5254](https://github.com/AsuraAce/ambit/commit/acf52549408aeb4bf8f78660bdad0f5ebc335a56))
+* add state-aware onboarding landing ([#232](https://github.com/AsuraAce/ambit/issues/232)) ([4073f32](https://github.com/AsuraAce/ambit/commit/4073f3204e0fb009704b8bbef50ecc6727b8e5d6))
+* expand comfyui catalog metadata coverage ([#200](https://github.com/AsuraAce/ambit/issues/200)) ([101737c](https://github.com/AsuraAce/ambit/commit/101737cac34cd8eb675c589be4e04adc92e83c81))
+* expand comfyui guidance and scheduler coverage ([#211](https://github.com/AsuraAce/ambit/issues/211)) ([5c3380b](https://github.com/AsuraAce/ambit/commit/5c3380bdfb8128249b3e0768c01a9f28cd1232ff))
+* expand comfyui transform and resource coverage ([#203](https://github.com/AsuraAce/ambit/issues/203)) ([08cd0f8](https://github.com/AsuraAce/ambit/commit/08cd0f8a25fa91625d3c1fb90e51987f8cdf1fbb))
+* improve hotkey ownership and coverage ([#227](https://github.com/AsuraAce/ambit/issues/227)) ([252535a](https://github.com/AsuraAce/ambit/commit/252535a47caaeed24a0ee93398bb80fbeed2a003))
+* improve navbar search navigation ([#224](https://github.com/AsuraAce/ambit/issues/224)) ([2b69355](https://github.com/AsuraAce/ambit/commit/2b69355d232f1b02c2e04703875464e68ada933f))
+* **library:** neutralize selection action colors ([#241](https://github.com/AsuraAce/ambit/issues/241)) ([c893d53](https://github.com/AsuraAce/ambit/commit/c893d53a0f26d021e910fcb5567a1f6c4b046d58))
+* make duplicate cleanup exact-only ([#238](https://github.com/AsuraAce/ambit/issues/238)) ([41f04b8](https://github.com/AsuraAce/ambit/commit/41f04b81fee3c3a2e52f7750223fc4155f4a979c))
+* **release:** add metadata refresh notice ([#198](https://github.com/AsuraAce/ambit/issues/198)) ([f0c4515](https://github.com/AsuraAce/ambit/commit/f0c4515023e3441ab803cfa22c37552315d8a369))
+* **search:** use hybrid search triggers ([#239](https://github.com/AsuraAce/ambit/issues/239)) ([35cb26d](https://github.com/AsuraAce/ambit/commit/35cb26dae63c6eeb84cf25a3a11b62fcc00297c7))
+* support deterministic comfyui string transforms ([#215](https://github.com/AsuraAce/ambit/issues/215)) ([e2de2b6](https://github.com/AsuraAce/ambit/commit/e2de2b61175ac8ebc9df8971de8b11e8682b9f0b))
+* **ui:** standardize accessible tooltips ([#213](https://github.com/AsuraAce/ambit/issues/213)) ([81ef3c1](https://github.com/AsuraAce/ambit/commit/81ef3c146273ebf12a277229093c5615d1845db6))
+
+
+### Bug Fixes
+
+* clarify active filter state ([#225](https://github.com/AsuraAce/ambit/issues/225)) ([73cb6be](https://github.com/AsuraAce/ambit/commit/73cb6be2aff13d0231e4861dd8b1be896eb1f234))
+* enforce comfyui prompt authority ([#212](https://github.com/AsuraAce/ambit/issues/212)) ([0e8a2b4](https://github.com/AsuraAce/ambit/commit/0e8a2b475b1d7c2f3e74fdcf03dd960bf4642891))
+* extract comfyui custom edit conditioning ([#222](https://github.com/AsuraAce/ambit/issues/222)) ([fa7d14e](https://github.com/AsuraAce/ambit/commit/fa7d14ed5ee58f2a3791e3aaa593fab4c594b0f5))
+* extract comfyui dual model guider metadata ([#252](https://github.com/AsuraAce/ambit/issues/252)) ([4587a75](https://github.com/AsuraAce/ambit/commit/4587a7562e7586fb4ff30132d2fb6f48f5dd3dbc))
+* extract comfyui model patch controlnets ([#233](https://github.com/AsuraAce/ambit/issues/233)) ([81f0271](https://github.com/AsuraAce/ambit/commit/81f02715850e9588e1479de60ab654c30d05b364))
+* extract connected comfyui sampler custom metadata ([#216](https://github.com/AsuraAce/ambit/issues/216)) ([521028d](https://github.com/AsuraAce/ambit/commit/521028de11c54321b41e845b851331bba7457b0f))
+* harden privacy persistence and fail closed ([#217](https://github.com/AsuraAce/ambit/issues/217)) ([1f7374b](https://github.com/AsuraAce/ambit/commit/1f7374b9ee8d58eed47b762384ae1999640cdf71))
+* **import:** always show import options ([#201](https://github.com/AsuraAce/ambit/issues/201)) ([c116ca6](https://github.com/AsuraAce/ambit/commit/c116ca69fc0b8f4f79673e83db67c2634b528d08))
+* improve active filter label layout ([#235](https://github.com/AsuraAce/ambit/issues/235)) ([559480a](https://github.com/AsuraAce/ambit/commit/559480acc91747af2c7bafce2a9f5fad94851e66))
+* make viewer collection membership reliable ([#221](https://github.com/AsuraAce/ambit/issues/221)) ([54bc0f2](https://github.com/AsuraAce/ambit/commit/54bc0f2ad89e87db89401e1e3aab75594453bdb2))
+* persist smart collection counts ([#229](https://github.com/AsuraAce/ambit/issues/229)) ([6493e5d](https://github.com/AsuraAce/ambit/commit/6493e5d41d438c8aeab24f3d159f6b97f5bd1283))
+* preserve comfyui generation path ancestry ([#236](https://github.com/AsuraAce/ambit/issues/236)) ([faf76c7](https://github.com/AsuraAce/ambit/commit/faf76c7fd1ed577beddf0b218bb1d9eae38dd7b4))
+* preserve comfyui source output slots ([#240](https://github.com/AsuraAce/ambit/issues/240)) ([c66aeca](https://github.com/AsuraAce/ambit/commit/c66aeca2019a29d3b6f05f94107847de87201013))
+* preserve native copy shortcut ([#218](https://github.com/AsuraAce/ambit/issues/218)) ([a6c288d](https://github.com/AsuraAce/ambit/commit/a6c288d5aed25eb601a8ba8dd9a3fa0862e62c31))
+* preserve smart collection thumbnails ([#220](https://github.com/AsuraAce/ambit/issues/220)) ([4c79ba7](https://github.com/AsuraAce/ambit/commit/4c79ba7808f6b1b4306f4ace31b626c2988f677b))
+* resolve comfyui custom combo outputs ([#242](https://github.com/AsuraAce/ambit/issues/242)) ([7d50a03](https://github.com/AsuraAce/ambit/commit/7d50a0315e085b63012d3ae77288c0592f5b9729))
+* resolve deterministic comfyui json numbers ([#251](https://github.com/AsuraAce/ambit/issues/251)) ([1945152](https://github.com/AsuraAce/ambit/commit/19451521f7ee0c3925e32d6c433a2bd301f56ce6))
+* restore average step statistics ([#223](https://github.com/AsuraAce/ambit/issues/223)) ([bdb4a56](https://github.com/AsuraAce/ambit/commit/bdb4a568b232bda987231c5db7a83c379a36ae0d))
+* **search:** preserve pending results and compact syntax ([#234](https://github.com/AsuraAce/ambit/issues/234)) ([6d41341](https://github.com/AsuraAce/ambit/commit/6d413415afbde4504268408a5e8f731212b42446))
+* stabilize maintenance tab loading ([#243](https://github.com/AsuraAce/ambit/issues/243)) ([e23e838](https://github.com/AsuraAce/ambit/commit/e23e838bea882b8e633688acada37371dd22ecd8))
+* stabilize search transitions and prompt masking controls ([#255](https://github.com/AsuraAce/ambit/issues/255)) ([b3dd6c4](https://github.com/AsuraAce/ambit/commit/b3dd6c4f190354eab005db0b6496be586dfd18bf))
+* trace comfyui split sigma schedulers ([#244](https://github.com/AsuraAce/ambit/issues/244)) ([3c83608](https://github.com/AsuraAce/ambit/commit/3c83608d136026fcb4bef0b3e047df518aa203a7))
+* **ui:** use neutral search examples ([#219](https://github.com/AsuraAce/ambit/issues/219)) ([2d45a57](https://github.com/AsuraAce/ambit/commit/2d45a575836243720457c5038b406749227515b1))
+
 ## [0.8.0](https://github.com/AsuraAce/ambit/compare/v0.7.0...v0.8.0) (2026-07-11)
 
 
