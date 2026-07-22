@@ -676,6 +676,13 @@ fn extract_comfyui_graph_with_diagnostics(
     if meta.is_incomplete() {
         diagnostics.attempt(ComfyParseLayer::SamplerFallback);
         let mut sampler_meta = evaluator.extract_from_all_samplers();
+        if output_diagnostics.authoritative_model {
+            sampler_meta.model = "Unknown".to_string();
+            sampler_meta.model_hash = None;
+        }
+        if output_diagnostics.authoritative_cfg {
+            sampler_meta.cfg = 0.0;
+        }
         if output_diagnostics.authoritative_positive_prompt {
             sampler_meta.positive_prompt.clear();
         }
@@ -695,6 +702,13 @@ fn extract_comfyui_graph_with_diagnostics(
     if meta.is_incomplete() {
         diagnostics.attempt(ComfyParseLayer::GlobalScan);
         let mut scan_meta = global_scan(&graph);
+        if output_diagnostics.authoritative_model {
+            scan_meta.model = "Unknown".to_string();
+            scan_meta.model_hash = None;
+        }
+        if output_diagnostics.authoritative_cfg {
+            scan_meta.cfg = 0.0;
+        }
         if output_diagnostics.authoritative_positive_prompt {
             scan_meta.positive_prompt.clear();
         }
