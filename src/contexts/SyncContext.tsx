@@ -8,7 +8,12 @@ import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
 import { AppSettings, FacetType, InvokeOwnerDiscovery, InvokeOwnerSelection, MetadataRefreshScope } from '../types';
-import { isInvokeDbSnapshotCurrent, isInvokeImportSchemaCurrent, readInvokeDbSnapshotState } from '../services/invoke/dbSnapshot';
+import {
+    isInvokeDbSnapshotCurrent,
+    isInvokeDbSnapshotScopeCurrent,
+    isInvokeImportSchemaCurrent,
+    readInvokeDbSnapshotState,
+} from '../services/invoke/dbSnapshot';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -40,6 +45,7 @@ import { clearCollectionOwnerScopeCaches } from '../services/db/collectionRepo';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
 import { clearLibraryStatsCache } from '../services/db/searchRepo';
 import {
+    isInvokeSyncScopeSelectionCurrent,
     resolveInvokeSyncScope,
     type InvokeSyncScope,
 } from '../services/invoke/syncScope';
@@ -335,8 +341,17 @@ export const SyncProvider: React.FC<{
             ownerScopeAdmissionRef.current = null;
             return { rootPath: '', allowed: false, reason: 'Configure an InvokeAI path before syncing.' };
         }
-        if (!force && ownerScopeAdmissionRef.current?.rootPath === rootPath) {
-            return ownerScopeAdmissionRef.current;
+        const cachedAdmission = ownerScopeAdmissionRef.current;
+        if (!force && cachedAdmission?.rootPath === rootPath) {
+            if (cachedAdmission.scope
+                ? isInvokeSyncScopeSelectionCurrent(
+                    cachedAdmission.scope,
+                    settingsRef.current.invokeOwnerSelection
+                )
+                : !settingsRef.current.invokeOwnerSelection) {
+                return cachedAdmission;
+            }
+            ownerScopeAdmissionRef.current = null;
         }
         const runningScope = ownerScopePromiseRef.current;
         if (runningScope?.rootPath === rootPath) return runningScope.promise;
@@ -372,6 +387,17 @@ export const SyncProvider: React.FC<{
                         mode: 'owner',
                         ownerId: discovery.owners[0].ownerId,
                     };
+                    shouldPersistSelection = true;
+                }
+
+                const resolvedScope = resolveInvokeSyncScope(discovery, selection);
+                const hasPersistedSyncState = settingsRef.current.lastSyncedAt != null
+                    || settingsRef.current.invokeDbSnapshot !== undefined;
+                if (hasPersistedSyncState
+                    && !isInvokeDbSnapshotScopeCurrent(
+                        settingsRef.current.invokeDbSnapshot,
+                        resolvedScope
+                    )) {
                     shouldPersistSelection = true;
                 }
 
@@ -496,11 +522,10 @@ export const SyncProvider: React.FC<{
         const capturedRootPath = ownerAdmission.rootPath;
         const isCapturedScopeCurrent = (): boolean => {
             if (settingsRef.current.invokeAiPath?.trim() !== capturedRootPath) return false;
-            if (capturedScope.mode === 'legacy') return true;
-            const selection = settingsRef.current.invokeOwnerSelection;
-            if (!selection || selection.dbPath !== capturedScope.dbPath) return false;
-            if (capturedScope.mode === 'all') return selection.mode === 'all';
-            return selection.mode === 'owner' && selection.ownerId === capturedScope.ownerId;
+            return isInvokeSyncScopeSelectionCurrent(
+                capturedScope,
+                settingsRef.current.invokeOwnerSelection
+            );
         };
         const isStartupMode = options.mode === 'startup';
         let startupSyncVisible = false;
@@ -954,24 +979,22 @@ export const SyncProvider: React.FC<{
                 });
                 isLiveSyncingRef.current = false;
                 setIsLiveSyncing(false);
-                if (pendingInvokeLiveSyncRef.current) {
-                    const pendingPerfContext = pendingInvokeLivePerfRef.current;
-                    pendingInvokeLiveSyncRef.current = false;
-                    pendingInvokeLivePerfRef.current = null;
-                    debugLiveWatchPerf('Invoke live rerun starting', {
-                        cycleId: pendingPerfContext?.cycleId,
-                        eventCount: pendingPerfContext?.eventCount,
-                        pathCount: pendingPerfContext?.pathCount,
-                        mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
-                    });
-                    void startInvokeSync({ mode: 'live', perfContext: pendingPerfContext || undefined });
-                }
             }
             if (!isCapturedScopeCurrent()) {
                 ownerScopeAdmissionRef.current = null;
-                void ensureInvokeOwnerScope(true).catch(() => {
-                    // Scope state already records and reports discovery/application failures.
+                await ensureInvokeOwnerScope(true);
+            }
+            if (pendingInvokeLiveSyncRef.current) {
+                const pendingPerfContext = pendingInvokeLivePerfRef.current;
+                pendingInvokeLiveSyncRef.current = false;
+                pendingInvokeLivePerfRef.current = null;
+                debugLiveWatchPerf('Invoke live rerun starting', {
+                    cycleId: pendingPerfContext?.cycleId,
+                    eventCount: pendingPerfContext?.eventCount,
+                    pathCount: pendingPerfContext?.pathCount,
+                    mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
                 });
+                void startInvokeSync({ mode: 'live', perfContext: pendingPerfContext || undefined });
             }
         }
     }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);

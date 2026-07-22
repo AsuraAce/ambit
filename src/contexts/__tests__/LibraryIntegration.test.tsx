@@ -2058,6 +2058,19 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => libraryHook?.setSettings({
             invokeAiPath: 'D:/Invoke',
             importOrphans: true,
+            lastSyncedAt: 777,
+            invokeDbSnapshot: {
+                dbPath: discovery.dbPath,
+                lastSyncedAt: 777,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: 'owner',
+                scopeOwnerId: 'owner-a',
+                pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                files: [],
+            },
             invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
         }));
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
@@ -2071,6 +2084,9 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => libraryHook?.setSettings({
             invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-b' },
         }));
+        await act(async () => {
+            await syncHook?.startInvokeSync({ mode: 'live' });
+        });
 
         await act(async () => {
             deferred.resolve({ ...createNoopInvokeSyncResult(), maxTimestamp: 999 });
@@ -2078,10 +2094,22 @@ describe('Library Integration (Provider Stack)', () => {
         });
 
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(2));
         expect(mocks.applyInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
             selection: expect.objectContaining({ mode: 'owner', ownerId: 'owner-b' }),
         }));
-        expect(libraryHook?.settings.lastSyncedAt).not.toBe(999);
+        expect(mocks.syncImages).toHaveBeenLastCalledWith(
+            'D:/Invoke',
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                mode: 'live',
+                afterTimestamp: null,
+                scope: expect.objectContaining({ mode: 'owner', ownerId: 'owner-b' }),
+            }),
+        );
+        expect(libraryHook?.settings.lastSyncedAt).toBe(100);
+        expect(libraryHook?.settings.invokeDbSnapshot).toBeUndefined();
         expect(mocks.getInvokeDbSnapshot).not.toHaveBeenCalled();
         expect(mocks.scanForOrphans).not.toHaveBeenCalled();
     });
@@ -2392,6 +2420,43 @@ describe('Library Integration (Provider Stack)', () => {
                     mergedCycleCount: 2,
                 }),
             }),
+        );
+    });
+
+    it('drains an Invoke live rerun queued during a quiet startup catch-up', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => {
+            hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' });
+        });
+
+        const startupDeferred = createDeferred<ReturnType<typeof createNoopInvokeSyncResult>>();
+        mocks.syncImages
+            .mockReturnValueOnce(startupDeferred.promise)
+            .mockResolvedValueOnce(createNoopInvokeSyncResult());
+        let startupPromise!: Promise<void>;
+        act(() => {
+            startupPromise = hook!.startInvokeSync({ mode: 'startup' });
+        });
+        await waitFor(() => expect(hook?.isInvokeSyncActive).toBe(true));
+
+        await act(async () => {
+            await hook?.startInvokeSync({ mode: 'live' });
+        });
+        expect(mocks.syncImages).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+            startupDeferred.resolve(createNoopInvokeSyncResult());
+            await startupPromise;
+        });
+
+        await waitFor(() => expect(mocks.syncImages).toHaveBeenCalledTimes(2));
+        expect(mocks.syncImages).toHaveBeenLastCalledWith(
+            expect.any(String),
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({ mode: 'live' }),
         );
     });
 

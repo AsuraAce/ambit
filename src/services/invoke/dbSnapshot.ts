@@ -1,6 +1,7 @@
 import { commands } from '../../bindings';
 import { InvokeDbSnapshotFile, InvokeDbSnapshotState } from '../../types';
 import { unwrap } from '../../utils/spectaUtils';
+import type { InvokeSyncScope } from './syncScope';
 
 interface InvokeDbSnapshotCommandResult {
     dbPath: string;
@@ -73,6 +74,17 @@ export const isInvokeDbSnapshotCurrent = (
 
 export const isInvokeImportSchemaCurrent = (saved: InvokeDbSnapshotState | undefined): boolean =>
     (saved?.importSchemaVersion ?? 0) === INVOKE_IMPORT_SCHEMA_VERSION;
+
+export const isInvokeDbSnapshotScopeCurrent = (
+    saved: InvokeDbSnapshotState | undefined,
+    scope: InvokeSyncScope | null
+): boolean => {
+    if (!saved || !scope || !isInvokeImportSchemaCurrent(saved)) return false;
+    if (saved.dbPath !== scope.dbPath || saved.scopeMode !== scope.mode) return false;
+
+    const ownerId = scope.mode === 'owner' ? scope.ownerId : null;
+    return (saved.scopeOwnerId ?? null) === ownerId;
+};
 
 export const readInvokeDbSnapshotState = async (
     rootPath: string,

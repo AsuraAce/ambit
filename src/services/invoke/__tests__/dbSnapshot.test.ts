@@ -5,6 +5,7 @@ import {
     INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     isInvokeDbSnapshotCurrent,
+    isInvokeDbSnapshotScopeCurrent,
     isInvokeImportSchemaCurrent,
     readInvokeDbSnapshotState as readInvokeDbSnapshotStateImpl,
 } from '../dbSnapshot';
@@ -122,6 +123,24 @@ describe('Invoke DB startup snapshot matching', () => {
         expect(isInvokeDbSnapshotCurrent(ownerA, ownerA)).toBe(true);
         expect(isInvokeDbSnapshotCurrent(ownerA, ownerB)).toBe(false);
         expect(isInvokeDbSnapshotCurrent(ownerA, allUsers)).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(true);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-b',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/Other/invokeai.db',
+            imagesRoot: 'D:/Other',
+        })).toBe(false);
     });
 
     it('invalidates when a missing WAL appears', () => {
@@ -196,6 +215,11 @@ describe('Invoke DB startup snapshot matching', () => {
         expect(isInvokeDbSnapshotCurrent(legacySaved as InvokeDbSnapshotState, current)).toBe(false);
         expect(isInvokeImportSchemaCurrent(oldSchemaSnapshot)).toBe(false);
         expect(isInvokeDbSnapshotCurrent(oldSchemaSnapshot, current)).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(oldSchemaSnapshot, {
+            mode: 'legacy',
+            dbPath: current.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(false);
     });
 
     it('reads and normalizes snapshot state through the backend command', async () => {

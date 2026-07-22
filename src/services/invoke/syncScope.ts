@@ -52,3 +52,14 @@ export const invokeOwnerPredicate = (
     const column = tableAlias ? `${tableAlias}.user_id` : 'user_id';
     return { clause: `${column} = ?`, params: [scope.ownerId] };
 };
+
+export const isInvokeSyncScopeSelectionCurrent = (
+    scope: InvokeSyncScope,
+    selection?: InvokeOwnerSelection
+): boolean => {
+    if (scope.mode === 'legacy') return true;
+    if (!selection || selection.dbPath !== scope.dbPath) return false;
+    if (scope.mode === 'all') return selection.mode === 'all';
+
+    return selection.mode === 'owner' && selection.ownerId.trim() === scope.ownerId;
+};

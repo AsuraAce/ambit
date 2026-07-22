@@ -556,6 +556,9 @@ Implementation evidence:
 - `src/contexts/SyncContext.tsx` owns admission, concurrency, stale-completion
   rejection, snapshot scope, and owner-mode orphan gating for all three sync
   modes.
+- Follow-up review hardening drains Live Watch work queued behind manual or
+  quiet-startup syncs, reapplies a programmatically changed scope before that
+  rerun starts, and clears a cursor/snapshot that belongs to a different scope.
 - `src-tauri/src/db/migrations/m66_invoke_collection_owner.rs` and the
   collection repository persist and enforce board-owner visibility without
   deleting out-of-scope data.
@@ -563,8 +566,8 @@ Implementation evidence:
   missing ownership columns, owned boards, snapshots, collections, orphan
   gating, active-sync locking, and programmatic owner drift. The migration test
   verifies fail-closed collection visibility and indexed owner lookup.
-- WP8 package gates pass: lint, TypeScript, Rust formatting, whitespace checks,
-  274 focused frontend tests with one existing skip, and 25 focused Rust
+- WP8 review gates pass: lint, TypeScript, Rust formatting, whitespace checks,
+  301 focused frontend tests with one existing skip, and 25 focused Rust
   migration tests. The separate whole-workstream integration review and full
   release gate remain the next phase.
 
