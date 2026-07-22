@@ -1,6 +1,6 @@
 # InvokeAI Image Assets and Metadata Roadmap
 
-Status: In Progress
+Status: Complete (`2026-07-22`, 8 of 8 work packages accepted)
 
 ## Reconciliation
 
@@ -569,7 +569,36 @@ Implementation evidence:
 - WP8 review gates pass: lint, TypeScript, Rust formatting, whitespace checks,
   301 focused frontend tests with one existing skip, and 25 focused Rust
   migration tests. The separate whole-workstream integration review and full
-  release gate remain the next phase.
+  release gate are recorded below.
+
+## Workstream Integration Acceptance
+
+Status: Complete (`2026-07-22`)
+
+- Current `origin/main` at `b3dd6c4` was merged in `b9c4e84` without changing
+  the scope or status of any numbered ComfyUI milestone.
+- Migration-64 acceptance coverage in `051cb84` confirms forward reference
+  lookup uses the junction primary-key prefix and backlink lookup uses
+  `idx_invoke_image_references_target_image`. Existing migration-63, -65, and
+  -66 regressions cover the asset-hidden and owner-scope query plans.
+- The integrated review in `8871d9f` made exact-duplicate resolution reject
+  owner-hidden records and preserve all InvokeAI source facts in Removed state;
+  moved reference navigation onto the current gallery session; and applied the
+  effective prompt-masking setting to direct reference access.
+- The combined parser version is 32. This advances beyond main's independent
+  version 31 so records already parsed by that version still receive the
+  InvokeAI parser changes from this workstream.
+- Focused acceptance passes 631 frontend tests with one existing skip across
+  InvokeAI sync, mapping, snapshots, repositories, settings, maintenance,
+  viewer behavior, and a bounded 10,000-image virtual grid. Seventy-two focused
+  Rust migration, InvokeAI, and reparse tests pass.
+- Generated-binding drift, lint, TypeScript, Rust formatting, and whitespace
+  checks pass. `pnpm run verify:release` passes the guarded production build,
+  3,007 frontend tests with one existing skip, 98.43% statement coverage, 556
+  Rust tests with one ignored test, and the optimized no-bundle Tauri build.
+- The routed user manual already covers the completed asset, source-fact,
+  reference-navigation, owner-scope, and synchronization behavior. Acceptance
+  used automated fixtures and query plans; no user InvokeAI database was read.
 
 ## Stage Acceptance Gates
 
