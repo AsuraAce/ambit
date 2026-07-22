@@ -59,6 +59,7 @@ Verification evidence:
 - `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed;
 - browser-mock QA confirmed retained gallery and collection results stay interactive with an accessible spinner, subtle search-field glow, and `SEARCHING...` count state;
 - a viewer opened from retained collection results stayed bound to its original image and navigation session after the replacement query settled with no matches;
+- a collection-membership write that settles after its viewer closes cannot seed a stale viewer session for the next search result set;
 - Settings lazy-loaded successfully from `http://localhost:1422` with no console errors while Yomikata retained its 1421 extension bridge;
 - the populated desktop-library smoke is reserved for the combined Work Package 5 gate so this package does not launch against the user's live profile.
 - Ambit development uses port 1422 so it can run alongside Yomikata's fixed 1421 extension bridge.
@@ -189,6 +190,7 @@ Verification evidence:
 - the corrected shared state remains pending through lazy loading, suppresses restored focus after the launched surface takes focus, and cancels cleanly when the user instead navigates away with Tab or a pointer;
 - manual sidebar smoke clarified the remaining defect: a pointer click leaves the action button DOM-focused, and that pointer-created focus must not keep its tooltip visible after mouse-leave;
 - pointer-created focus now contributes no persistent tooltip state, while an actual Tab transition still opens the same help for keyboard users;
+- restored action focus remains non-tooltip focus after re-hover, so leaving the button dismisses the tooltip without requiring an explicit blur;
 - focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
 - the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
 - the complete frontend suite passed: 256 files, 2,878 tests passed, 1 skipped;

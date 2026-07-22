@@ -346,12 +346,14 @@ export default function App() {
     const reconcileGlobalViewerAfterRemoval = useCallback((imageId: string, collectionId: string) => {
         if (activeCollectionIdRef.current !== collectionId) return;
 
+        const selectedIndex = selectedImageIndexRef.current;
+        const viewingId = viewingImageIdRef.current;
+        if (selectedIndex === null && viewingId === null) return;
+
         const previousImages = viewerSessionImagesRef.current ?? imagesRef.current;
         const removedIndex = previousImages.findIndex(candidate => candidate.id === imageId);
         if (removedIndex === -1) return;
 
-        const selectedIndex = selectedImageIndexRef.current;
-        const viewingId = viewingImageIdRef.current;
         const displayedImageId = viewingId
             ?? (selectedIndex !== null ? previousImages[selectedIndex]?.id : undefined);
         const nextImages = previousImages.filter(candidate => candidate.id !== imageId);

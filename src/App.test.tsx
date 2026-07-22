@@ -1088,6 +1088,38 @@ describe('App orchestration', () => {
         await waitFor(() => expect(captured.viewer?.image.id).toBe('three'));
     });
 
+    it('does not leave a stale viewer session when a deferred collection removal finishes after close', async () => {
+        const removal = createDeferred<boolean>();
+        let onPersisted: (() => void) | undefined;
+        mocks.removeImagesFromCollection.mockImplementationOnce((_ids, _collectionId, callback?: () => void) => {
+            onPersisted = callback;
+            return removal.promise;
+        });
+        mocks.collections = [{ id: 'active', name: 'Active', imageIds: ['one', 'two'], createdAt: 1 }];
+        mocks.filters = createDefaultFilters({ collectionId: 'active' });
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let removeOne!: Promise<boolean>;
+        act(() => {
+            removeOne = requireProbe(captured.viewer, 'ImageViewer').onSetCollectionMembership('one', 'active', false);
+        });
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+
+        await act(async () => {
+            onPersisted?.();
+            removal.resolve(true);
+            expect(await removeOne).toBe(true);
+        });
+
+        mocks.images = [image('replacement-one'), image('replacement-two')];
+        view.rerender(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-one'));
+    });
+
     it('removes viewer and compare/slideshow image exposure when SearchContext fails closed', async () => {
         mocks.selectedIds = new Set(['one', 'two']);
         mocks.modals.modals = { ...mocks.modals.modals, compare: true, slideshow: true };
