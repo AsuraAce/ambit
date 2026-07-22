@@ -189,11 +189,10 @@ describe('InfoTooltip', () => {
 
         fireEvent.mouseEnter(trigger);
         expect(screen.getByRole('tooltip')).toBeTruthy();
-
-        act(() => trigger.blur());
         fireEvent.mouseLeave(trigger);
         expect(screen.queryByRole('tooltip')).toBeNull();
 
+        act(() => trigger.blur());
         act(() => trigger.focus());
         expect(screen.getByRole('tooltip')).toBeTruthy();
     });

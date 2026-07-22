@@ -167,8 +167,9 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 onFocus={(event) => {
                     const shouldRemainDismissed = suppressNextFocusRef.current;
                     suppressNextFocusRef.current = false;
-                    setIsFocused(keyboardFocusRef.current);
-                    if (keyboardFocusRef.current && !shouldRemainDismissed) setIsDismissed(false);
+                    const shouldShowForFocus = keyboardFocusRef.current && !shouldRemainDismissed;
+                    setIsFocused(shouldShowForFocus);
+                    if (shouldShowForFocus) setIsDismissed(false);
                     onFocus?.(event);
                 }}
                 onBlur={(event) => {
