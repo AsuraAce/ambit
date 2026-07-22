@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench, RefreshCw } from 'lucide-react';
+import { Database, Zap, Loader2, BrainCircuit, Undo2, Save, Wrench, RefreshCw, History } from 'lucide-react';
 import { APP_NAME } from '../../../constants/app';
 import { generateStressTestData } from '../../../utils/dev/dataGenerator';
 import { useLibraryContext } from '../../../hooks/useLibraryContext';
@@ -15,10 +15,15 @@ import { cn } from '../../../utils/cn';
 import { listenWithCleanup } from '../../../utils/tauriListener';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { rebuildFacetCache } from '../../../services/db/imageRepo';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 
 type DevTabId = 'prompts' | 'tools';
 
-export const DevTab: React.FC = () => {
+interface DevTabProps {
+    onResetFirstRunOnboarding?: () => void;
+}
+
+export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => {
     const { fetchData } = useLibraryContext();
     const { settings, setSettings } = useSettingsStore();
     const { addToast } = useToast();
@@ -28,6 +33,7 @@ export const DevTab: React.FC = () => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isOptimizing, setIsOptimizing] = useState(false);
     const [isRebuilding, setIsRebuilding] = useState(false);
+    const [isResetOnboardingConfirmOpen, setIsResetOnboardingConfirmOpen] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [targetCount, setTargetCount] = useState(10000);
 
@@ -322,6 +328,22 @@ export const DevTab: React.FC = () => {
                             <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
                                 <div className="flex items-center justify-between gap-4">
                                     <div>
+                                        <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Reset first-run onboarding</div>
+                                        <div className="text-xs text-gray-500 mt-1">Test the non-dismissible first-run flow without deleting application settings or library data.</div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsResetOnboardingConfirmOpen(true)}
+                                        className="px-4 py-2 bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/20 text-gray-700 dark:text-gray-200 rounded-lg text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap"
+                                    >
+                                        <History className="w-3.5 h-3.5" /> Reset onboarding
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-4">
+                                <div className="flex items-center justify-between gap-4">
+                                    <div>
                                         <div className="text-sm font-bold text-gray-900 dark:text-gray-200">Rebuild Facet Cache</div>
                                         <div className="text-xs text-gray-500 mt-1">Recalculate metadata facets if filters look stale after low-level changes.</div>
                                     </div>
@@ -419,6 +441,18 @@ export const DevTab: React.FC = () => {
                     </div>
                 )}
             </div>
+            <ConfirmDialog
+                isOpen={isResetOnboardingConfirmOpen}
+                title="Reset First-Run Onboarding?"
+                message="This opens the non-dismissible first-run wizard. It does not delete library data, prompt keywords, masking behavior, API keys, or other settings."
+                confirmLabel="Reset & Open"
+                onConfirm={() => {
+                    setIsResetOnboardingConfirmOpen(false);
+                    onResetFirstRunOnboarding?.();
+                }}
+                onCancel={() => setIsResetOnboardingConfirmOpen(false)}
+                zIndex={220}
+            />
         </>
     );
 };

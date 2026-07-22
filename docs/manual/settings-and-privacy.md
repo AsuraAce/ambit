@@ -45,12 +45,16 @@ Open Settings, then Privacy to configure content masking.
 
 You can choose:
 
+- Privacy Mode: the session master switch for every masking source. It starts enabled whenever Ambit launches.
+- Use prompt keywords: add positive-prompt keyword matches as an optional masking source. This preference persists across restarts.
 - Blur Content: keep matching images visible but blurred.
 - Hide Completely: hide matching images from normal browsing.
 
-Masked keywords are matched against prompts. Add only terms you actually want Ambit to use for local masking decisions.
+Manual image masks are always a masking source while Privacy Mode is on. Prompt keywords are matched against positive prompts only while Use prompt keywords is enabled. Blur Content or Hide Completely applies to both sources. Turning Privacy Mode off temporarily reveals both sources for the current session.
 
-Restarting onboarding preserves a custom masked-keyword list while prompt masking remains enabled. Turning prompt masking off in onboarding clears the list; enabling it from an empty list restores Ambit's standard defaults. Purge Database is a factory reset and always restores the default masked keywords and Blur Content behavior.
+You can continue to view and edit the saved keyword list while Use prompt keywords is disabled. Turning it off in Settings or the setup guide retains the complete custom list. Restarting Ambit or replaying setup keeps both the switch state and saved list. Re-enabling uses that same list; if the list is empty, no prompts match until you add a keyword. Purge Database is a factory reset and restores prompt keywords with Ambit's default list and Blur Content behavior.
+
+Reopen setup through **Help & Guide > Setup Guide**. Replay is dismissible and saves only guide controls you explicitly change. It does not reset masking behavior, keywords, or unrelated preferences.
 
 ## Intelligence Features
 
@@ -68,9 +72,10 @@ Advanced includes:
 
 - backup settings
 - automatic update controls
-- Restart onboarding, which closes Settings and immediately opens a fresh wizard at Step 1
 - support diagnostics, including the active library database and app log locations
 - database reset tools
+
+Development builds provide **Reset first-run onboarding** under Dev Tools for testing the non-dismissible first-run experience. It changes only the onboarding completion state and is not exposed in release builds.
 
 The database location shown in Support Diagnostics is the local catalog path, not the Ambit installer path. On Windows, Ambit stores the catalog under Local AppData and may show a legacy Roaming AppData fallback only for older installs that could not be moved automatically.
 

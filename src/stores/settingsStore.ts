@@ -7,6 +7,7 @@ import { ensureAssetPathAccessible, ensureConfiguredAssetPathsAccessible } from 
 import { normalizeInvokeRoot } from '../utils/pathUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { createDefaultAppSettings } from '../constants/defaultSettings';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import {
     settingsPersistenceCoordinator,
     type SettingsPersistencePermit,
@@ -121,8 +122,8 @@ export const useSettingsStore = create<SettingsState>()(
                         }, 1000);
                     }
 
-                    const privacyKeywordsChanged = normalizePrivacyKeywords(state.settings.maskedKeywords)
-                        !== normalizePrivacyKeywords(newSettings.maskedKeywords);
+                    const privacyKeywordsChanged = normalizePrivacyKeywords(getEffectiveMaskedKeywords(state.settings))
+                        !== normalizePrivacyKeywords(getEffectiveMaskedKeywords(newSettings));
                     return {
                         settings: newSettings,
                         ...(state.privacyEnabled && privacyKeywordsChanged ? {

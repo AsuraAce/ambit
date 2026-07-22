@@ -110,6 +110,7 @@ describe('CollectionList toolbar tooltips', () => {
         const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
         expect(viewButton.getAttribute('title')).toBeNull();
         expect(viewButton.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.keyDown(document, { key: 'Tab' });
         fireEvent.focus(viewButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
         fireEvent.blur(viewButton);
@@ -121,9 +122,12 @@ describe('CollectionList toolbar tooltips', () => {
         expect(archivedButton.getAttribute('title')).toBeNull();
         expect(archivedButton.getAttribute('aria-pressed')).toBe('false');
         fireEvent.click(archivedButton);
-        expect(screen.getByRole('button', { name: 'Hide Archived' }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        const hideArchivedButton = screen.getByRole('button', { name: 'Hide Archived' });
+        expect(hideArchivedButton.getAttribute('aria-pressed')).toBe('true');
+        fireEvent.mouseEnter(hideArchivedButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Hide Archived');
-        fireEvent.pointerDown(document.body);
+        fireEvent.mouseLeave(hideArchivedButton);
 
         const searchButton = screen.getByRole('button', { name: 'Search Collections' });
         expect(searchButton.getAttribute('title')).toBeNull();

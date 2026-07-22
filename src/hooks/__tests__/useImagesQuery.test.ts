@@ -9,7 +9,10 @@ type InfiniteQueryConfig = {
     queryKey: ImagesQueryKey;
     queryFn: (context: { pageParam: PaginationCursor | undefined }) => Promise<QueryPage>;
     getNextPageParam: (lastPage: QueryPage) => PaginationCursor | undefined;
-    placeholderData: (previousData?: { pages: QueryPage[] }) => { pages: QueryPage[] } | undefined;
+    placeholderData: (
+        previousData?: { pages: QueryPage[] },
+        previousQuery?: { queryKey: readonly unknown[] }
+    ) => { pages: QueryPage[] } | undefined;
     enabled: boolean;
 };
 
@@ -56,6 +59,7 @@ const settings: AppSettings = {
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
+    promptMaskingEnabled: true,
     maskedKeywords: ['secret'],
     maskingMode: 'blur',
     enableAI: false
@@ -74,11 +78,12 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
 const renderImagesHook = (
     sortOption: SortOption = 'date_desc',
     collections: Collection[] = [],
-    settingsLoaded = true
+    settingsLoaded = true,
+    querySettings: AppSettings = settings
 ) => renderHook(() => useImagesQuery({
     filters: createDefaultFilters({ collectionId: collections[0]?.id ?? null }),
     sortOption,
-    settings,
+    settings: querySettings,
     privacyEnabled: true,
     allCollections: collections,
     settingsLoaded
@@ -145,6 +150,22 @@ describe('useImagesQuery', () => {
         }));
 
         expect(config().enabled).toBe(true);
+    });
+
+    it('uses an empty query scope without deleting stored keywords when prompt masking is disabled', async () => {
+        const disabledSettings = {
+            ...settings,
+            promptMaskingEnabled: false,
+            maskedKeywords: ['retained'],
+        };
+        renderImagesHook('date_desc', [], true, disabledSettings);
+
+        expect(config().queryKey[5]).toEqual([]);
+        await config().queryFn({ pageParam: undefined });
+        expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
+            expect.any(Object), true, 'blur', [], []
+        );
+        expect(disabledSettings.maskedKeywords).toEqual(['retained']);
     });
 
     it('delegates browser pages using the optional cursor id', async () => {
@@ -232,13 +253,40 @@ describe('useImagesQuery', () => {
         });
     });
 
-    it('retains placeholder data only when its first page has images', () => {
+    it('retains privacy-compatible placeholder data even when the previous result is empty', () => {
         renderImagesHook();
         const populated = { pages: [{ images: [image()], totalCount: 1, globalCount: 1 }] };
-        const empty = { pages: [{ images: [], totalCount: 0, globalCount: 0 }] };
+        const empty = { pages: [{ images: [], totalCount: 0, globalCount: 20 }] };
+        const previousSearchKey: ImagesQueryKey = [
+            'images',
+            createDefaultFilters({ searchQuery: 'previous' }),
+            'date_desc',
+            true,
+            'blur',
+            ['secret'],
+            null
+        ];
+        const previousQuery = { queryKey: previousSearchKey };
 
-        expect(config().placeholderData(populated)).toBe(populated);
-        expect(config().placeholderData(empty)).toBeUndefined();
+        expect(config().placeholderData(populated, previousQuery)).toBe(populated);
+        expect(config().placeholderData(empty, previousQuery)).toBe(empty);
         expect(config().placeholderData()).toBeUndefined();
+    });
+
+    it('rejects placeholder data when the privacy query scope changed or cannot be verified', () => {
+        renderImagesHook();
+        const previousData = { pages: [{ images: [image()], totalCount: 1, globalCount: 20 }] };
+        const key = config().queryKey;
+
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 3), false, ...key.slice(4)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 4), 'hide', ...key.slice(5)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData, {
+            queryKey: [...key.slice(0, 5), ['different'], ...key.slice(6)]
+        })).toBeUndefined();
+        expect(config().placeholderData(previousData)).toBeUndefined();
     });
 });

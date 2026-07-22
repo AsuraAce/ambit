@@ -4,7 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
-import { OnboardingWizard } from './components/ui/OnboardingWizard';
+import { OnboardingWizard, type OnboardingSettingsUpdate } from './components/ui/OnboardingWizard';
 import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
@@ -47,8 +47,9 @@ export default function App() {
     // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(true);
-    const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
-    const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [selectedImageIndex, setSelectedImageIndexState] = useState<number | null>(null);
+    const [viewingImageId, setViewingImageIdState] = useState<string | null>(null);
+    const [viewerSessionImages, setViewerSessionImages] = useState<AIImage[] | null>(null);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -79,7 +80,7 @@ export default function App() {
         filters, setFilters,
         sortOption, setSortOption,
         totalImages, globalTotal,
-        isFiltering,
+        isFiltering, privacyExposureBlocked,
         toggleFavorite,
         clearAllFilters,
         recentSearches, setRecentSearches,
@@ -89,10 +90,56 @@ export default function App() {
     const imagesRef = useRef(images);
     const selectedImageIndexRef = useRef(selectedImageIndex);
     const viewingImageIdRef = useRef(viewingImageId);
+    const viewerSessionImagesRef = useRef(viewerSessionImages);
     activeCollectionIdRef.current = filters.collectionId;
     imagesRef.current = images;
     selectedImageIndexRef.current = selectedImageIndex;
     viewingImageIdRef.current = viewingImageId;
+    viewerSessionImagesRef.current = viewerSessionImages;
+    const setSelectedImageIndex = useCallback<React.Dispatch<React.SetStateAction<number | null>>>((value) => {
+        const nextIndex = typeof value === 'function'
+            ? value(selectedImageIndexRef.current)
+            : value;
+        selectedImageIndexRef.current = nextIndex;
+        setSelectedImageIndexState(nextIndex);
+
+        if (nextIndex === null) {
+            if (viewingImageIdRef.current === null) {
+                viewerSessionImagesRef.current = null;
+                setViewerSessionImages(null);
+            }
+            return;
+        }
+
+        setViewerSessionImages(current => {
+            if (current) return current;
+            const snapshot = imagesRef.current;
+            viewerSessionImagesRef.current = snapshot;
+            return snapshot;
+        });
+    }, []);
+    const setViewingImageId = useCallback<React.Dispatch<React.SetStateAction<string | null>>>((value) => {
+        const nextId = typeof value === 'function'
+            ? value(viewingImageIdRef.current)
+            : value;
+        viewingImageIdRef.current = nextId;
+        setViewingImageIdState(nextId);
+
+        if (nextId === null) {
+            if (selectedImageIndexRef.current === null) {
+                viewerSessionImagesRef.current = null;
+                setViewerSessionImages(null);
+            }
+            return;
+        }
+
+        setViewerSessionImages(current => {
+            if (current) return current;
+            const snapshot = imagesRef.current;
+            viewerSessionImagesRef.current = snapshot;
+            return snapshot;
+        });
+    }, []);
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
     // const filters = useSearchStore(s => s.filters);
@@ -166,6 +213,8 @@ export default function App() {
         viewingImageId,
         selectedImageIndex,
         setSelectedImageIndex,
+        viewerImages: viewerSessionImages ?? images,
+        setViewerSessionImages,
         fileOps,
         selectedIds,
         setSelectedIds,
@@ -297,16 +346,20 @@ export default function App() {
     const reconcileGlobalViewerAfterRemoval = useCallback((imageId: string, collectionId: string) => {
         if (activeCollectionIdRef.current !== collectionId) return;
 
-        const previousImages = imagesRef.current;
+        const selectedIndex = selectedImageIndexRef.current;
+        const viewingId = viewingImageIdRef.current;
+        if (selectedIndex === null && viewingId === null) return;
+
+        const previousImages = viewerSessionImagesRef.current ?? imagesRef.current;
         const removedIndex = previousImages.findIndex(candidate => candidate.id === imageId);
         if (removedIndex === -1) return;
 
-        const selectedIndex = selectedImageIndexRef.current;
-        const viewingId = viewingImageIdRef.current;
         const displayedImageId = viewingId
             ?? (selectedIndex !== null ? previousImages[selectedIndex]?.id : undefined);
         const nextImages = previousImages.filter(candidate => candidate.id !== imageId);
         imagesRef.current = nextImages;
+        viewerSessionImagesRef.current = nextImages;
+        setViewerSessionImages(nextImages);
 
         if (!displayedImageId) return;
 
@@ -373,15 +426,26 @@ export default function App() {
         totalImages
     );
 
-    const displayedViewerImage = viewingImageId
-        ? images.find(i => i.id === viewingImageId)
-        : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
+    const viewerImages = viewerSessionImages ?? images;
+    const sessionViewerImage = viewingImageId
+        ? viewerImages.find(i => i.id === viewingImageId) ?? images.find(i => i.id === viewingImageId)
+        : (selectedImageIndex !== null ? viewerImages[selectedImageIndex] : null);
+    const displayedViewerImage = sessionViewerImage
+        && !privacyExposureBlocked
+        ? images.find(i => i.id === sessionViewerImage.id) ?? sessionViewerImage
+        : null;
     const searchHighlights = React.useMemo(
         () => derivePromptHighlightSpec(filters.searchQuery),
         [filters.searchQuery]
     );
 
     // --- Effects ---
+    useEffect(() => {
+        if (!privacyExposureBlocked) return;
+        setSelectedImageIndex(null);
+        setViewingImageId(null);
+    }, [privacyExposureBlocked, setSelectedImageIndex, setViewingImageId]);
+
     useEffect(() => {
         const timer = setTimeout(() => {
             const tags = new Set<string>();
@@ -411,6 +475,10 @@ export default function App() {
         clearSelection();
     }, [filters.collectionId, clearSelection]);
 
+    const isOnboardingReplay = modals.modals.onboarding;
+    const shouldRenderOnboarding = !settings.hasCompletedOnboarding
+        || isOnboardingReplay
+        || isCompletingOnboarding;
     const isViewerShortcutBlocked = modals.isAnyModalOpen
         || isImportModalOpen
         || Boolean(updater.update && updater.isDialogOpen)
@@ -443,6 +511,96 @@ export default function App() {
         toggleShortcuts: () => { modals.setShortcutsModalTab('shortcuts'); modals.openModal('shortcuts'); },
         toggleCommandPalette: () => modals.openModal('commandPalette'),
     });
+
+    const handleOnboardingComplete = (onboardingSettings: OnboardingSettingsUpdate) => (
+        settingsPersistenceCoordinator.run(async (permit) => {
+            const currentSettings = useSettingsStore.getState().settings;
+            const changedSettings: OnboardingSettingsUpdate = {};
+            if (typeof onboardingSettings.enableAI === 'boolean'
+                && onboardingSettings.enableAI !== currentSettings.enableAI) {
+                changedSettings.enableAI = onboardingSettings.enableAI;
+            }
+            if (typeof onboardingSettings.promptMaskingEnabled === 'boolean'
+                && onboardingSettings.promptMaskingEnabled !== currentSettings.promptMaskingEnabled) {
+                changedSettings.promptMaskingEnabled = onboardingSettings.promptMaskingEnabled;
+            }
+
+            const completesFirstRun = !isOnboardingReplay && !currentSettings.hasCompletedOnboarding;
+            if (Object.keys(changedSettings).length === 0 && !completesFirstRun) {
+                modals.closeModal('onboarding');
+                return;
+            }
+
+            const previousOnboardingSettings = {
+                enableAI: currentSettings.enableAI,
+                promptMaskingEnabled: currentSettings.promptMaskingEnabled,
+                hasCompletedOnboarding: currentSettings.hasCompletedOnboarding,
+            };
+            const nextSettings = {
+                ...currentSettings,
+                ...changedSettings,
+                ...(completesFirstRun ? { hasCompletedOnboarding: true } : {}),
+            };
+            setIsCompletingOnboarding(true);
+            setSettings(nextSettings);
+
+            try {
+                await flushSettings();
+                setIsCompletingOnboarding(false);
+                if (isOnboardingReplay) {
+                    modals.closeModal('onboarding');
+                    addToast('Setup guide settings updated', 'success');
+                } else {
+                    workspaceRef.current?.focus();
+                    addToast('Setup complete!', 'success');
+                }
+            } catch (error) {
+                const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => ({
+                    ...current,
+                    enableAI: changedSettings.enableAI !== undefined
+                        && current.enableAI === nextSettings.enableAI
+                        ? previousOnboardingSettings.enableAI
+                        : current.enableAI,
+                    promptMaskingEnabled: changedSettings.promptMaskingEnabled !== undefined
+                        && current.promptMaskingEnabled === nextSettings.promptMaskingEnabled
+                        ? previousOnboardingSettings.promptMaskingEnabled
+                        : current.promptMaskingEnabled,
+                    hasCompletedOnboarding: completesFirstRun
+                        && current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
+                        ? previousOnboardingSettings.hasCompletedOnboarding
+                        : current.hasCompletedOnboarding,
+                }));
+                if (restoredSettings) {
+                    try {
+                        await flushSettings(restoredSettings);
+                    } catch (rollbackError) {
+                        console.error('[Onboarding] Failed to persist settings rollback:', rollbackError);
+                    }
+                }
+                setIsCompletingOnboarding(false);
+                addToast('Setup could not be saved. Please try again.', 'error');
+                throw error;
+            }
+        })
+    );
+
+    const handleOpenSetupGuide = () => {
+        modals.setModals(previous => ({
+            ...previous,
+            shortcuts: false,
+            onboarding: true,
+        }));
+    };
+
+    const handleResetFirstRunOnboarding = () => {
+        setSettings(previous => ({ ...previous, hasCompletedOnboarding: false }));
+        modals.setModals(previous => ({
+            ...previous,
+            settings: false,
+            onboarding: false,
+        }));
+        addToast('First-run onboarding reset', 'info');
+    };
 
 
 
@@ -526,56 +684,12 @@ export default function App() {
             />
 
             {/* Overlays & Portals */}
-            {!settings.hasCompletedOnboarding || isCompletingOnboarding ? (
+            {shouldRenderOnboarding ? (
                 <OnboardingWizard
                     isOpen={!modals.modals.settings}
-                    preserveBackdropWhenClosed
-                    onComplete={(onboardingSettings) => settingsPersistenceCoordinator.run(async (permit) => {
-                        const previousOnboardingSettings = {
-                            enableAI: settings.enableAI,
-                            maskedKeywords: settings.maskedKeywords,
-                            maskingMode: settings.maskingMode,
-                            hasCompletedOnboarding: settings.hasCompletedOnboarding,
-                        };
-                        const nextSettings = { ...settings, ...onboardingSettings };
-                        setIsCompletingOnboarding(true);
-                        setSettings(nextSettings);
-
-                        try {
-                            await flushSettings(nextSettings);
-                            setIsCompletingOnboarding(false);
-                            workspaceRef.current?.focus();
-                            addToast("Setup complete!", "success");
-                        } catch (error) {
-                            const restoredSettings = useSettingsStore.getState().rollbackSettings(permit, current => {
-                                return {
-                                    ...current,
-                                    enableAI: current.enableAI === nextSettings.enableAI
-                                        ? previousOnboardingSettings.enableAI
-                                        : current.enableAI,
-                                    maskedKeywords: current.maskedKeywords === nextSettings.maskedKeywords
-                                        ? previousOnboardingSettings.maskedKeywords
-                                        : current.maskedKeywords,
-                                    maskingMode: current.maskingMode === nextSettings.maskingMode
-                                        ? previousOnboardingSettings.maskingMode
-                                        : current.maskingMode,
-                                    hasCompletedOnboarding: current.hasCompletedOnboarding === nextSettings.hasCompletedOnboarding
-                                        ? previousOnboardingSettings.hasCompletedOnboarding
-                                        : current.hasCompletedOnboarding,
-                                };
-                            });
-                            if (restoredSettings) {
-                                try {
-                                    await flushSettings(restoredSettings);
-                                } catch (rollbackError) {
-                                    console.error('[Onboarding] Failed to persist settings rollback:', rollbackError);
-                                }
-                            }
-                            setIsCompletingOnboarding(false);
-                            addToast("Setup could not be saved. Please try again.", "error");
-                            throw error;
-                        }
-                    })}
+                    mode={isOnboardingReplay ? 'replay' : 'firstRun'}
+                    onClose={isOnboardingReplay ? () => modals.closeModal('onboarding') : undefined}
+                    onComplete={handleOnboardingComplete}
                     onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 />
             ) : null}
@@ -632,6 +746,8 @@ export default function App() {
                 slideshowShuffle={modals.slideshowShuffle}
                 initialSettingsTab={modals.initialSettingsTab}
                 shortcutsModalTab={modals.shortcutsModalTab}
+                onOpenSetupGuide={handleOpenSetupGuide}
+                onResetFirstRunOnboarding={handleResetFirstRunOnboarding}
                 commandPaletteProps={{
                     onNavigate: changeViewMode,
                     onToggleTheme: toggleTheme,
@@ -688,7 +804,7 @@ export default function App() {
                             isShortcutBlocked={isViewerShortcutBlocked}
                             onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
                             onNext={() => {
-                                if (selectedImageIndex !== null && selectedImageIndex < images.length - 1) {
+                                if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) {
                                     setSelectedImageIndex(selectedImageIndex + 1);
                                 }
                             }}

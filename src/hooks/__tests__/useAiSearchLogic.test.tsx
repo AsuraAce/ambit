@@ -38,6 +38,7 @@ describe('useAiSearchLogic', () => {
         hasCompletedOnboarding: true,
         defaultTheaterMode: false,
         monitoredFolders: [],
+        promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur'
     };

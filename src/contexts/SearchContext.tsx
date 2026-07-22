@@ -24,6 +24,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
 import { shouldPrefetchResultPages } from '../utils/filterState';
+import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
 import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
@@ -47,6 +48,7 @@ interface SearchContextType {
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
     isFiltering: boolean;
+    privacyExposureBlocked: boolean;
     activeSqlWhere: string;
     activeSqlParams: unknown[];
     refreshMetadata: (scope?: MetadataRefreshScope) => Promise<void>;
@@ -110,12 +112,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     } = useSearchStore();
 
     const privacyMaskKeywords = React.useMemo(() => (
-        settings.maskedKeywords
+        getEffectiveMaskedKeywords(settings)
             .map(keyword => keyword.trim().toLowerCase())
             .filter(Boolean)
             .sort()
-    ), [settings.maskedKeywords]);
+    ), [settings.maskedKeywords, settings.promptMaskingEnabled]);
     const privacyMaskKey = privacyMaskKeywords.join('\u001f');
+    const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
+    const [lastSyncedPrivacyScope, setLastSyncedPrivacyScope] = useState<string | null>(null);
     const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
@@ -201,6 +205,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         data: queryData,
         fetchNextPage,
         hasNextPage,
+        isFetching,
         isFetchingNextPage,
         isLoading: isQueryLoading,
         isPlaceholderData,
@@ -213,8 +218,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         allCollections,
         settingsLoaded: databaseQueriesEnabled
     });
-    const privacyExposureBlocked = requiresPrivacyMaskIndex
-        && (!settingsLoaded || privacyMaskIndexStatus !== 'ready' || isPlaceholderData);
+    const privacyScopeTransitionBlocked = privacyEnabled
+        && lastSyncedPrivacyScope !== privacyQueryScopeKey;
+    const privacyIndexBlocked = requiresPrivacyMaskIndex
+        && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
+    const privacyExposureBlocked = privacyIndexBlocked || privacyScopeTransitionBlocked;
+    const isFirstPageFetching = isFetching && !isFetchingNextPage;
 
     // Flatten pages into a single image array
     const queryImages = React.useMemo(() => {
@@ -231,16 +240,15 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     // For now, let's allow setImages to override, OR sync Query -> Store.
 
     // SYNC PATTERN: When query data changes, update Store. This keeps store as "Source of Truth" for UI.
-    useEffect(() => {
-        if (queryData && !privacyExposureBlocked) {
+    React.useLayoutEffect(() => {
+        if (queryData && !privacyIndexBlocked) {
             const allImgs = queryData.pages.flatMap(p => p.images);
             setImages(allImgs);
+            setLastSyncedPrivacyScope(privacyQueryScopeKey);
+        } else if (privacyExposureBlocked) {
+            setImages([]);
         }
-    }, [privacyExposureBlocked, queryData, setImages]);
-
-    React.useLayoutEffect(() => {
-        if (privacyExposureBlocked) setImages([]);
-    }, [privacyExposureBlocked, setImages]);
+    }, [privacyExposureBlocked, privacyIndexBlocked, privacyQueryScopeKey, queryData, setImages]);
 
     // Proactive prefetching: Load next page in background after current page loads
     // Only prefetch if we have less than 3 pages and user might scroll soon
@@ -291,10 +299,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             setActiveSqlParams([]);
             return;
         }
-        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, settings.maskedKeywords, allCollections);
+        const { where, params } = buildSqlWhereClause(filters, privacyEnabled, settings.maskingMode, privacyMaskKeywords, allCollections);
         setActiveSqlWhere(where);
         setActiveSqlParams(params);
-    }, [filters, privacyEnabled, privacyExposureBlocked, settings.maskingMode, settings.maskedKeywords, allCollections]);
+    }, [filters, privacyEnabled, privacyExposureBlocked, settings.maskingMode, privacyMaskKeywords, allCollections]);
 
     // We still need to react to filter changes to update SQL and trigger store fetch
     // But store handles fetch on explicit call.
@@ -550,7 +558,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 queryClient.invalidateQueries({ queryKey: ['images'] });
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
             },
-            isFiltering: !privacyExposureBlocked && (isQueryLoading || isPlaceholderData),
+            isFiltering: !privacyIndexBlocked
+                && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
+            privacyExposureBlocked,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,

@@ -1,4 +1,11 @@
-import { AIImage } from '../types';
+import { AIImage, AppSettings } from '../types';
+
+const EMPTY_MASKED_KEYWORDS: string[] = [];
+
+export const getEffectiveMaskedKeywords = (
+    settings: Pick<AppSettings, 'promptMaskingEnabled' | 'maskedKeywords'>
+): string[] => settings.promptMaskingEnabled
+    === false ? EMPTY_MASKED_KEYWORDS : settings.maskedKeywords;
 
 /**
  * Determines if an image should be masked (blurred/hidden) based on:

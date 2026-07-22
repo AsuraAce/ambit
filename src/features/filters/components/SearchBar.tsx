@@ -71,6 +71,9 @@ export const SearchBar = React.memo(({
     const isDraftPending = liveSearchEnabled
         && queryReadiness.isReady
         && localValue !== filters.searchQuery;
+    const isStandardSearchPending = !searchProps.isAiSearchEnabled
+        && (isDraftPending || isFiltering);
+    const showLoadingIndicator = searchProps.isSearchingAi || isStandardSearchPending;
 
     React.useEffect(() => {
         let isCurrent = true;
@@ -303,9 +306,12 @@ export const SearchBar = React.memo(({
             onFocusCapture={handleFocusCapture}
             onBlurCapture={handleBlurCapture}
         >
-            <div className="relative flex-1">
-                {searchProps.isSearchingAi ? (
-                    <LoaderCircle aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amethyst-600 dark:text-amethyst-400 animate-spin" />
+            <div className={`relative flex-1 rounded-xl transition-shadow duration-200 ${isStandardSearchPending ? 'shadow-[0_0_18px_rgba(139,174,124,0.24)] dark:shadow-[0_0_20px_rgba(139,174,124,0.18)]' : ''}`}>
+                {showLoadingIndicator ? (
+                    <LoaderCircle
+                        aria-hidden="true"
+                        className={`absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin ${searchProps.isSearchingAi ? 'text-amethyst-600 dark:text-amethyst-400' : 'text-sage-600 dark:text-sage-400'}`}
+                    />
                 ) : (
                     <Search aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors text-gray-400 dark:text-zinc-500 group-focus-within:text-sage-600 dark:group-focus-within:text-sage-400" />
                 )}
@@ -320,7 +326,7 @@ export const SearchBar = React.memo(({
                     aria-activedescendant={searchProps.isFocused ? activeOption?.id : undefined}
                     aria-describedby={describedBy || undefined}
                     aria-invalid={queryIssue?.kind === 'invalid' ? true : undefined}
-                    aria-busy={searchProps.isSearchingAi}
+                    aria-busy={showLoadingIndicator}
                     readOnly={searchProps.isSearchingAi}
                     placeholder={searchProps.isAiSearchEnabled ? `Ask ${APP_NAME}...` : `Search in ${scopeName}...`}
                     className={`w-full bg-gray-100 dark:bg-zinc-800/50 border rounded-xl py-2 pl-10 pr-10 text-sm focus:outline-none transition-all text-gray-900 dark:text-gray-100 placeholder-gray-500 ${searchProps.isAiSearchEnabled ? 'border-amethyst-300 dark:border-amethyst-800 focus:border-amethyst-500/50 focus:ring-1 focus:ring-amethyst-500/30' : 'border-gray-200 dark:border-white/10 focus:border-sage-500/50 focus:ring-1 focus:ring-sage-500/30'}`}

@@ -19,6 +19,7 @@ const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
+    promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,
@@ -33,6 +34,7 @@ const settingsStoreMock = vi.hoisted(() => ({
         confirmDelete: true,
         defaultTheaterMode: false,
         monitoredFolders: [],
+        promptMaskingEnabled: true,
         maskedKeywords: [],
         maskingMode: 'blur',
         enableAI: false,
@@ -115,6 +117,21 @@ describe('DevTab', () => {
 
         expect(screen.getByText('Optimize Database')).not.toBeNull();
         expect(screen.getByText('Rebuild Facet Cache')).not.toBeNull();
+    });
+
+    it('confirms the development-only first-run onboarding reset', () => {
+        const onResetFirstRunOnboarding = vi.fn();
+        render(<DevTab onResetFirstRunOnboarding={onResetFirstRunOnboarding} />);
+        fireEvent.click(screen.getByRole('button', { name: /tools/i }));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }));
+        expect(screen.getByText(/does not delete library data, prompt keywords, masking behavior, API keys, or other settings/i)).not.toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(onResetFirstRunOnboarding).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reset onboarding' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset & Open' }));
+        expect(onResetFirstRunOnboarding).toHaveBeenCalledOnce();
     });
 
     it('toggles developer mode through the settings store', () => {

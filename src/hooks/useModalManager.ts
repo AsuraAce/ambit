@@ -7,6 +7,7 @@ export type ModalKey =
     | 'deleteCollection'
     | 'compare'
     | 'shortcuts'
+    | 'onboarding'
     | 'recovery'
     | 'slideshow'
     | 'donation'
@@ -22,6 +23,7 @@ export const useModalManager = () => {
         deleteCollection: false,
         compare: false,
         shortcuts: false,
+        onboarding: false,
         recovery: false,
         slideshow: false,
         donation: false,
@@ -33,7 +35,7 @@ export const useModalManager = () => {
     const [pendingViewerDeleteId, setPendingViewerDeleteId] = useState<string | null>(null);
     const [collectionToDelete, setCollectionToDelete] = useState<string | null>(null);
     const [initialSettingsTab, setInitialSettingsTab] = useState<'general' | 'experiments' | 'intelligence' | 'invokeai' | 'comfyui' | 'a1111' | 'folders' | 'resources' | 'privacy' | 'dev'>('general');
-    const [shortcutsModalTab, setShortcutsModalTab] = useState<'shortcuts' | 'search'>('shortcuts');
+    const [shortcutsModalTab, setShortcutsModalTab] = useState<'shortcuts' | 'search' | 'setup'>('shortcuts');
     const [slideshowShuffle, setSlideshowShuffle] = useState(false);
     const [isPinnedShelfCollapsed, setIsPinnedShelfCollapsed] = useState(true);
     const [addToCollectionMode, setAddToCollectionMode] = useState<'add' | 'move'>('add');
@@ -49,6 +51,7 @@ export const useModalManager = () => {
         deleteCollection: false,
         compare: false,
         shortcuts: false,
+        onboarding: false,
         recovery: false,
         slideshow: false,
         donation: false,

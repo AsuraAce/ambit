@@ -79,6 +79,7 @@ const settings: AppSettings = {
     defaultTheaterMode: false,
     monitoredFolders: [],
     maskingMode: 'blur',
+    promptMaskingEnabled: true,
     maskedKeywords: [],
     enableAI: false,
 };

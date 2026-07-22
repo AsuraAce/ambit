@@ -826,6 +826,7 @@ export const SyncProvider: React.FC<{ children: ReactNode; onSyncComplete?: (sco
                             importIntermediates: false,
                             enableAutoThumbnailHealing: true,
                             thumbnailOptimizationProfile: 'balanced',
+                            promptMaskingEnabled: DEFAULT_APP_SETTINGS.promptMaskingEnabled,
                             maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
                             maskingMode: DEFAULT_APP_SETTINGS.maskingMode,
                             hasCompletedOnboarding: false

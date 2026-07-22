@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { ContextMenu } from './ContextMenu';
 import { useToast } from '../../hooks/useToast';
-import { isImageMasked } from '../../utils/maskingUtils';
+import { getEffectiveMaskedKeywords, isImageMasked } from '../../utils/maskingUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { AIImage, ContextMenuState, FilterState } from '../../types';
@@ -43,6 +43,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const allCollections = useCollectionStore(s => s.collections);
     const queryClient = useQueryClient();
+    const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters), [allCollections]);
@@ -62,7 +63,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             y={contextMenu.y}
             isPinned={activeImage?.isPinned}
             isFavorite={activeImage?.isFavorite}
-            isMasked={activeImage ? isImageMasked(activeImage, privacyEnabled, settings.maskedKeywords) : false}
+            isMasked={activeImage ? isImageMasked(activeImage, privacyEnabled, effectiveMaskedKeywords) : false}
             userMasked={activeImage?.userMasked}
             isIntermediate={activeImage?.metadata?.isIntermediate}
             enableAI={settings.enableAI}

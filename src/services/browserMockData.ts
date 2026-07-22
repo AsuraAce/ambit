@@ -2,7 +2,7 @@ import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
-import { createDefaultAppSettings } from '../constants/defaultSettings';
+import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -179,12 +179,17 @@ const loadStoredState = (): AppState => {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (!saved) return state;
         const parsed = JSON.parse(saved) as Partial<AppState>;
+        const savedSettings = parsed.settings ?? {};
 
         state = {
             ...state,
             ...parsed,
             images: state.images,
-            settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
+            settings: {
+                ...DEFAULT_SETTINGS,
+                ...savedSettings,
+                promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
+            },
             collections: parsed.collections?.length ? parsed.collections : state.collections,
             smartCollections: parsed.smartCollections ?? [],
             recentSearches: parsed.recentSearches ?? state.recentSearches,

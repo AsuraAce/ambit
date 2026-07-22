@@ -37,6 +37,7 @@ const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     confirmDelete: true,
     defaultTheaterMode: false,
     monitoredFolders: [],
+    promptMaskingEnabled: true,
     maskedKeywords: [],
     maskingMode: 'blur',
     enableAI: false,

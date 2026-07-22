@@ -5,6 +5,7 @@ import { useCollectionOperations } from '../useCollectionOperations';
 import { AIImage, Collection, FilterState, SmartCollection } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { QueryClient } from '@tanstack/react-query';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 // --- Mocks ---
 
@@ -98,6 +99,13 @@ describe('useCollectionOperations', () => {
 
     beforeEach(async () => {
         vi.clearAllMocks();
+        useSettingsStore.setState(state => ({
+            settings: {
+                ...state.settings,
+                promptMaskingEnabled: true,
+                maskedKeywords: [],
+            },
+        }));
         dispatchedCollections = [...mockCollections];
         dispatchedFilters = createDefaultFilters();
         dispatchedImages = [makeImage({ id: 'img1' }), makeImage({ id: 'img2' })];
@@ -712,6 +720,35 @@ describe('useCollectionOperations', () => {
             expect(setCollectionCustomThumbnail).toHaveBeenCalledWith('col1', 'img2');
             expect(mockRefreshCollections).toHaveBeenCalledWith(true);
             expect(mockAddToast).toHaveBeenCalledWith('Thumbnail updated', 'success');
+        });
+
+        it('keeps prompt-matched thumbnails inactive while preserving manual masks', async () => {
+            useSettingsStore.setState(state => ({
+                settings: {
+                    ...state.settings,
+                    promptMaskingEnabled: false,
+                    maskedKeywords: ['private'],
+                },
+            }));
+            const { result } = renderHook(() => useCollectionOperations(props));
+
+            await act(async () => {
+                await result.current.setCollectionThumbnail('col1', makeImage({
+                    metadata: {
+                        ...makeImage().metadata,
+                        positivePrompt: 'private portrait',
+                    },
+                }));
+            });
+            let updater = mockSetAllCollections.mock.calls[0][0];
+            expect(updater(mockCollections)[0].thumbnailIsSensitive).toBe(false);
+
+            vi.clearAllMocks();
+            await act(async () => {
+                await result.current.setCollectionThumbnail('col1', makeImage({ userMasked: true }));
+            });
+            updater = mockSetAllCollections.mock.calls[0][0];
+            expect(updater(mockCollections)[0].thumbnailIsSensitive).toBe(true);
         });
 
         it('does not wait for collection refresh before completing thumbnail update', async () => {

@@ -473,4 +473,25 @@ describe('browserMockData filtering', () => {
         }
         expect(getBrowserMockStatsSummary(createDefaultFilters({ showIntermediates: true, showGrids: true })).estSizeMB).toMatch(/^\d+\.\d$/);
     });
+
+    it('infers the prompt masking switch for legacy browser-mock settings', async () => {
+        localStorage.setItem('ambit_browser_mock_state_v1', JSON.stringify({
+            settings: { maskedKeywords: ['legacy-private'] },
+        }));
+        const repository = new BrowserMockRepository();
+
+        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
+            settings: expect.objectContaining({
+                promptMaskingEnabled: true,
+                maskedKeywords: ['legacy-private'],
+            }),
+        }));
+
+        localStorage.setItem('ambit_browser_mock_state_v1', JSON.stringify({
+            settings: { maskedKeywords: [] },
+        }));
+        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
+            settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: [] }),
+        }));
+    });
 });

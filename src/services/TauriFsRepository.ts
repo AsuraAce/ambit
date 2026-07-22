@@ -2,7 +2,7 @@ import { BaseDirectory, exists, mkdir, readTextFile, remove, writeTextFile } fro
 import { commands } from '../bindings';
 import { AppState, IRepository, PurgeScheduleResult } from './repository';
 import { INITIAL_COLLECTIONS } from '../constants';
-import { createDefaultAppSettings } from '../constants/defaultSettings';
+import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
 import { AppSettings, Collection, FilterState, SmartCollection } from '../types';
 import { createDefaultFilters } from '../utils/filterState';
 import { isValidGeneratorTool } from '../utils/validation';
@@ -201,7 +201,8 @@ const isPersistedSettings = (value: unknown): boolean => {
         'hasCompletedOnboarding', 'autoCheckForUpdates', 'confirmDelete', 'defaultTheaterMode',
         'enableAI', 'syncBoardsToCollections', 'invokeSyncFavorites', 'invokeSyncBoards',
         'importIntermediates', 'importOrphans', 'libraryShowGrids', 'libraryShowIntermediates',
-        'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails'
+        'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails',
+        'promptMaskingEnabled'
     ];
     const stringKeys = [
         'googleGeminiApiKey', 'aiModel', 'invokeAiPath', 'a1111Path', 'comfyUiPath'
@@ -572,6 +573,7 @@ export class TauriFsRepository implements IRepository {
             settings: createDefaultAppSettings({
                 ...savedSettings,
                 hasCompletedOnboarding: savedSettings.hasCompletedOnboarding ?? true,
+                promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
                 maskedKeywords: savedSettings.maskedKeywords ?? [],
                 libraryShowGrids: savedSettings.libraryShowGrids ?? false,
                 resourceFolders: savedSettings.resourceFolders ?? [],

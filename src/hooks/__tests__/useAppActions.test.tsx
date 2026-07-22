@@ -3,6 +3,7 @@ import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
+import type { AIImage } from '../../types';
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -76,6 +77,7 @@ vi.mock('../../stores/collectionStore', () => ({
 
 describe('useAppActions', () => {
     const mockSetSelectedImageIndex = vi.fn();
+    const mockSetViewerSessionImages = vi.fn();
     const mockSetSelectedIds = vi.fn();
     const mockFileOps = {
         deleteImages: vi.fn(),
@@ -93,6 +95,8 @@ describe('useAppActions', () => {
         viewingImageId: null,
         selectedImageIndex: null,
         setSelectedImageIndex: mockSetSelectedImageIndex,
+        get viewerImages() { return mockStoreImages as unknown as AIImage[]; },
+        setViewerSessionImages: mockSetViewerSessionImages,
         fileOps: mockFileOps,
         selectedIds: new Set(['1']),
         setSelectedIds: mockSetSelectedIds,
@@ -317,6 +321,7 @@ describe('useAppActions', () => {
         const { result } = renderHook(() => useAppActions({ ...props, selectedImageIndex: 1 }));
         act(() => result.current.requestDeleteForId('2'));
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['2']);
+        expect(mockSetViewerSessionImages).toHaveBeenCalledWith([mockStoreImages[0]]);
         expect(mockSetSelectedImageIndex).toHaveBeenCalledWith(0);
         expect(mockModalManager.openModal).not.toHaveBeenCalled();
     });
