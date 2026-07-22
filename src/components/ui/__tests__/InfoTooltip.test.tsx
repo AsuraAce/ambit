@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { InfoTooltip, TooltipButton } from '../InfoTooltip';
 
 const ModalLauncherHarness: React.FC = () => {
@@ -91,6 +91,36 @@ describe('InfoTooltip', () => {
         fireEvent.click(trigger);
         fireEvent.pointerDown(document.body);
         expect(screen.queryByRole('tooltip')).toBeNull();
+
+        act(() => trigger.focus());
+        fireEvent.click(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+        fireEvent.blur(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
+    it('dismisses an action tooltip after activation while the trigger retains focus', () => {
+        const onClick = vi.fn();
+        render(
+            <TooltipButton label="Run action" content="Run action" onClick={onClick}>
+                Run
+            </TooltipButton>
+        );
+
+        const trigger = screen.getByRole('button', { name: 'Run action' });
+        act(() => trigger.focus());
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+
+        fireEvent.click(trigger);
+
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseLeave(trigger);
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
     });
 
     it('dismisses a hover-open tooltip when its click moves focus into a modal', () => {
@@ -98,7 +128,7 @@ describe('InfoTooltip', () => {
 
         const trigger = screen.getByRole('button', { name: 'Open modal' });
         fireEvent.mouseEnter(trigger);
-        trigger.focus();
+        act(() => trigger.focus());
         expect(document.activeElement).toBe(trigger);
         expect(screen.getByRole('tooltip')).toBeTruthy();
 
@@ -196,6 +226,8 @@ describe('InfoTooltip', () => {
             );
 
             const trigger = screen.getByRole('button', { name: 'Run action' });
+            act(() => trigger.focus());
+            expect(screen.getByRole('tooltip')).toBeTruthy();
             const keyDownEvent = new KeyboardEvent('keydown', {
                 key,
                 code,
@@ -210,6 +242,7 @@ describe('InfoTooltip', () => {
             expect(onKeyDown).toHaveBeenCalledTimes(1);
             expect(onWindowKeyDown).not.toHaveBeenCalled();
             expect(onClick).toHaveBeenCalledTimes(1);
+            expect(screen.queryByRole('tooltip')).toBeNull();
         } finally {
             window.removeEventListener('keydown', onWindowKeyDown);
         }

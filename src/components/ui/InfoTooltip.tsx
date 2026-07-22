@@ -9,6 +9,7 @@ interface InfoTooltipProps {
 
 type TooltipButtonProps = InfoTooltipProps & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label' | 'children'> & {
     children: React.ReactNode;
+    persistOnClick?: boolean;
 };
 
 interface TooltipPosition {
@@ -25,6 +26,7 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     children,
     className,
     type = 'button',
+    persistOnClick = false,
     'aria-describedby': describedBy,
     onClick,
     onMouseEnter,
@@ -157,8 +159,8 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 onClick={(event) => {
                     event.stopPropagation();
                     setIsHovered(false);
-                    setIsClickOpen(true);
-                    setIsDismissed(false);
+                    setIsClickOpen(persistOnClick);
+                    setIsDismissed(!persistOnClick);
                     onClick?.(event);
                 }}
                 className={className}
@@ -174,6 +176,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ label, content }) => (
     <TooltipButton
         label={label}
         content={content}
+        persistOnClick
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-gray-500 dark:hover:text-sage-400"
     >
         <Info aria-hidden="true" className="h-3.5 w-3.5" />

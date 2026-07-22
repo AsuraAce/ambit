@@ -121,9 +121,12 @@ describe('CollectionList toolbar tooltips', () => {
         expect(archivedButton.getAttribute('title')).toBeNull();
         expect(archivedButton.getAttribute('aria-pressed')).toBe('false');
         fireEvent.click(archivedButton);
-        expect(screen.getByRole('button', { name: 'Hide Archived' }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.queryByRole('tooltip')).toBeNull();
+        const hideArchivedButton = screen.getByRole('button', { name: 'Hide Archived' });
+        expect(hideArchivedButton.getAttribute('aria-pressed')).toBe('true');
+        fireEvent.mouseEnter(hideArchivedButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Hide Archived');
-        fireEvent.pointerDown(document.body);
+        fireEvent.mouseLeave(hideArchivedButton);
 
         const searchButton = screen.getByRole('button', { name: 'Search Collections' });
         expect(searchButton.getAttribute('title')).toBeNull();

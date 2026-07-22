@@ -14,7 +14,7 @@ Status: In Progress
 
 Remove the confirmed release-smoke trust failures without broadening search semantics, privacy scope, Smart Collection behavior, or duplicate resolution policy.
 
-The milestone is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, replaying the setup guide cannot overwrite untouched privacy settings, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
+The milestone is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, replaying the setup guide cannot overwrite untouched privacy settings, action tooltips dismiss after activation, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
 
 ## Work Package 1: Stable Search Transitions
 
@@ -146,9 +146,49 @@ Verification evidence:
 - the follow-up's 41 focused Privacy/onboarding tests, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
 - desktop smoke against the user's live library was not run to avoid mutating their development profile; the package's interaction paths were exercised through the focused UI tests.
 
-## Work Package 3: Initial Smart Collection Thumbnail Hydration
+## Work Package 2B: Context-Aware Tooltip Dismissal
 
 Depends on: Work Package 2A.
+
+Status: Complete (`fix/prompt-masking-toggle`, 2026-07-22)
+
+Primary invariant: activating an ordinary action never leaves its tooltip obscuring the resulting interface state.
+
+Scope:
+
+- Make click persistence opt-in for the shared tooltip button.
+- Dismiss ordinary action tooltips after pointer or keyboard activation, even while the trigger retains focus.
+- Keep dedicated information tooltips click-persistent until blur, outside click, or Escape.
+- Preserve hover, focus, positioning, accessibility association, event propagation, and modal focus behavior.
+
+Non-goals:
+
+- No dismissal timers, tooltip visual redesign, dependency changes, or individual action call-site migration.
+
+Targeted verification:
+
+- shared tooltip pointer, keyboard, information, modal, positioning, and accessibility tests;
+- representative sidebar and action-control smoke;
+- `pnpm run test:run`, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check`.
+
+Completion criteria:
+
+- pointer, Enter, and Space activation execute an action once and close its tooltip;
+- information icons remain click-persistent and dismiss through the established accessible paths;
+- the package is independently review-clean before Work Package 3 begins.
+
+Verification evidence:
+
+- click persistence is opt-in: ordinary tooltip buttons dismiss on pointer, Enter, or Space activation while dedicated information tooltips retain click persistence;
+- focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
+- the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
+- the complete frontend suite passed: 256 files, 2,877 tests passed, 1 skipped;
+- `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
+- rendered Browser smoke remains manual because the in-app browser-control runtime failed before connection with `failed to write kernel assets: The system cannot find the path specified`.
+
+## Work Package 3: Initial Smart Collection Thumbnail Hydration
+
+Depends on: Work Package 2B.
 
 Status: Pending (`fix/smart-collection-initial-thumbnail`)
 
