@@ -58,6 +58,24 @@ describe('InvokeAITab', () => {
         expect(screen.getByText('sync-section')).toBeTruthy();
     });
 
+    it('locks the configured root while owner visibility is changing', () => {
+        mocks.ownerScopeState = {
+            status: 'applying',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', imageCount: 1 }],
+                unassignedImageCount: 0,
+            },
+        };
+        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+
+        expect((screen.getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
+        expect((screen.getByText('Browse').closest('button') as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
     it('shows display names with stable IDs and requires confirmation for All users', async () => {
         mocks.ownerScopeState = {
             status: 'selection_required',

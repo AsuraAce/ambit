@@ -445,9 +445,18 @@ Evidence:
   the sync cursor/snapshot when changed; selected-owner synchronization remains
   deliberately blocked for Work Package 8, with legacy and confirmed All users
   modes retaining their established behavior;
+- follow-up review hardening serializes discovery and selection across root
+  changes, rejects rapid competing selections, rolls native visibility back
+  when persistence or the configured root changes, and commits owner settings
+  only after their durable write succeeds;
+- gallery/viewer state stays fail-closed while owner visibility is unsettled,
+  and owner scope now covers destructive Removed actions, thumbnail and model
+  caches, online model-resolution inputs, diagnostics, integrity scans, and
+  native open/reveal/trash authorization;
 - generated-binding drift, lint, typecheck, the production frontend build,
-  2,889 frontend tests with one existing skip, 506 Rust tests with one ignored,
-  Rust formatting, and whitespace validation pass.
+  2,898 frontend tests with one existing skip, 512 Rust tests with one ignored,
+  98.78% statement coverage, the optimized no-bundle Tauri build, Rust
+  formatting, and whitespace validation pass.
 
 Primary invariant: changing owner scope never deletes out-of-scope Ambit rows.
 

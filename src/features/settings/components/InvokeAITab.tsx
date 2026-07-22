@@ -121,6 +121,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <input
                                     type="text"
                                     value={settings.invokeAiPath || ''}
+                                    disabled={ownerScopeBusy}
                                     onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
                                     placeholder="e.g. C:\\AI\\invokeai"
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
@@ -130,6 +131,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <button
                                 type="button"
                                 onClick={handleBrowse}
+                                disabled={ownerScopeBusy}
                                 className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
                             >
                                 Browse
@@ -143,7 +145,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
                         <button
                             onClick={handleTestConnection}
-                            disabled={isTesting || !settings.invokeAiPath}
+                            disabled={ownerScopeBusy || isTesting || !settings.invokeAiPath}
                             className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.invokeAiPath
                                 ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
                                 : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'

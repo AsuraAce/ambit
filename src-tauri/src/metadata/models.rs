@@ -122,27 +122,39 @@ fn resolve_thumbnail_candidate(
 ) -> Result<ThumbnailCandidate, String> {
     let image_match = conn
         .query_row(
-            "SELECT id, COALESCE(NULLIF(thumbnail_path, ''), path), privacy_hidden
+            "SELECT id, COALESCE(NULLIF(thumbnail_path, ''), path), privacy_hidden, invoke_scope_hidden
              FROM images
              WHERE id = ?1 OR path = ?1 OR thumbnail_path = ?1
              LIMIT 1",
             params![requested_path],
             |row| {
-                Ok(ThumbnailCandidate {
-                    image_id: Some(row.get(0)?),
-                    path: row.get(1)?,
-                    privacy_hidden: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                })
+                Ok((
+                    ThumbnailCandidate {
+                        image_id: Some(row.get(0)?),
+                        path: row.get(1)?,
+                        privacy_hidden: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    },
+                    row.get::<_, i64>(3)?,
+                ))
             },
         )
         .optional()
         .map_err(|e| e.to_string())?;
 
-    Ok(image_match.unwrap_or_else(|| ThumbnailCandidate {
-        path: requested_path.to_string(),
-        image_id: None,
-        privacy_hidden: 1,
-    }))
+    if matches!(image_match.as_ref(), Some((_, owner_hidden)) if *owner_hidden != 0) {
+        return Err(
+            "Cannot use an image outside the active InvokeAI owner scope as a model thumbnail."
+                .to_string(),
+        );
+    }
+
+    Ok(image_match
+        .map(|(candidate, _)| candidate)
+        .unwrap_or_else(|| ThumbnailCandidate {
+            path: requested_path.to_string(),
+            image_id: None,
+            privacy_hidden: 1,
+        }))
 }
 
 fn best_resource_thumbnail(
@@ -764,6 +776,21 @@ mod tests {
             conn.execute_batch(&migration.sql).expect("apply migration");
         }
         conn
+    }
+
+    #[test]
+    fn manual_thumbnail_rejects_images_outside_the_active_owner_scope() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, thumbnail_path, invoke_scope_hidden)
+             VALUES ('hidden-image', 'hidden.png', 1, 'hidden.webp', 1)",
+            [],
+        )
+        .unwrap();
+
+        let error = resolve_thumbnail_candidate(&conn, "hidden-image").unwrap_err();
+
+        assert!(error.contains("outside the active InvokeAI owner scope"));
     }
 
     #[test]

@@ -887,17 +887,19 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                         original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
                         ${INVOKE_IMAGE_SOURCE_FIELDS}, invoke_scope_hidden
                  FROM images
-                 WHERE id IN (${placeholders})`,
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
         }
 
         if (rows.length === 0) return;
+        const removableIds = rows.map(row => row.id);
 
         const membershipRows: { image_id: string; collection_id: string }[] = [];
-        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
+        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: removableIds.length });
+        for (const chunk of chunkItems(removableIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkMembershipRows = await db.select<{ image_id: string; collection_id: string }[]>(
                 `SELECT image_id, collection_id
@@ -958,9 +960,9 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
             );
         }
 
-        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: normalizedIds.length });
-        await clearCollectionThumbnailCacheForImages(normalizedIds);
-        for (const chunk of chunkItems(normalizedIds)) {
+        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: removableIds.length });
+        await clearCollectionThumbnailCacheForImages(removableIds);
+        for (const chunk of chunkItems(removableIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, chunk);
             await db.execute(`DELETE FROM image_loras WHERE image_id IN (${placeholders})`, chunk);
@@ -983,7 +985,10 @@ export const restoreRemovedImages = async (ids: string[]) => {
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
+                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json
+                 FROM removed_images
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
@@ -1024,7 +1029,7 @@ export const restoreRemovedImages = async (ids: string[]) => {
         }
 
         await clearCollectionThumbnailCacheForCollections(restoredCollectionIds);
-        await removeTombstones(db, normalizedIds);
+        await removeTombstones(db, rows.map(row => row.id));
     });
 };
 
@@ -1082,7 +1087,10 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, thumbnail_path FROM removed_images WHERE id IN (${placeholders})`,
+                `SELECT id, path, thumbnail_path
+                 FROM removed_images
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
@@ -1288,7 +1296,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {

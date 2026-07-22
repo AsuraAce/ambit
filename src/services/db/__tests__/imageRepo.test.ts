@@ -699,6 +699,7 @@ describe('imageRepo batch removal', () => {
         expect(db.select.mock.calls.some(([sql]) =>
             typeof sql === 'string'
             && sql.includes('FROM images')
+            && sql.includes('invoke_scope_hidden = 0')
             && sql.includes('invoke_image_name')
             && sql.includes('invoke_image_category')
             && sql.includes('invoke_image_origin')
@@ -714,6 +715,42 @@ describe('imageRepo batch removal', () => {
             invokeImageCategory: 'control',
             invokeImageOrigin: 'internal',
         });
+    });
+
+    it('never removes requested ids that are outside the active owner scope', async () => {
+        const visibleId = 'C:/images/visible.png';
+        const hiddenId = 'C:/images/hidden.png';
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.includes('FROM images')) {
+                    return [{
+                        id: visibleId,
+                        path: visibleId,
+                        timestamp: 1,
+                        metadata_json: '{}',
+                        invoke_scope_hidden: 0,
+                    }];
+                }
+                return [];
+            }),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { removeImagesFromLibrary } = await import('../imageRepo');
+        await removeImagesFromLibrary([visibleId, hiddenId]);
+
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            [visibleId, hiddenId]
+        );
+        const destructiveCalls = db.execute.mock.calls.filter(([sql]) =>
+            typeof sql === 'string' && sql.startsWith('DELETE FROM')
+        );
+        expect(destructiveCalls.length).toBeGreaterThan(0);
+        for (const [, params] of destructiveCalls) {
+            expect(params).toEqual([visibleId]);
+        }
     });
 
     it('skips thumbnail trashing when the thumbnail path is the source image path', async () => {
@@ -1317,6 +1354,10 @@ describe('imageRepo batch removal', () => {
         await restoreRemovedImages(['C:/removed/restore.png']);
 
         expect(commands.saveImagesBatch).toHaveBeenCalledTimes(1);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            ['C:/removed/restore.png']
+        );
         expect(commands.saveImagesBatch).toHaveBeenCalledWith([
             expect.objectContaining({
                 invokeImageName: 'restore.png',
@@ -1384,6 +1425,15 @@ describe('imageRepo batch removal', () => {
             thumbnailWarningIds: ['C:/removed/ok.png'],
         });
         expect(commands.deleteThumbnail).toHaveBeenCalledTimes(1);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            [
+                'C:/removed/ok.png',
+                'C:/removed/source-thumb.png',
+                'C:/removed/fail.png',
+                'C:/removed/missing.png',
+            ]
+        );
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('DELETE FROM removed_images WHERE id IN (?,?)'),
             ['C:/removed/ok.png', 'C:/removed/source-thumb.png']
@@ -1410,7 +1460,7 @@ describe('imageRepo batch removal', () => {
         await expect(clearAllThumbnailPaths()).resolves.toBe(4);
 
         expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('UPDATE images SET thumbnail_path = NULL')
+            expect.stringContaining('WHERE invoke_scope_hidden = 0')
         );
     });
 

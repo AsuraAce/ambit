@@ -126,11 +126,15 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         let app_log_dir = app_clone.path().app_log_dir().map_err(|e| e.to_string())?;
         let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
         let deleted_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE is_deleted = 1",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
                 [],
                 |r| r.get(0),
             )
@@ -143,7 +147,7 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             .unwrap_or(0);
         let tool_null_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
                 [],
                 |r| r.get(0),
             )

@@ -20,6 +20,30 @@ export interface ApplyInvokeOwnerScopeResult {
     mode: InvokeOwnerScopeMode;
 }
 
+const resolveOwnerScope = (
+    discovery: InvokeOwnerDiscovery,
+    selection?: InvokeOwnerSelection
+): { mode: InvokeOwnerScopeMode; ownerId: string | null } => ({
+    mode: discovery.schemaMode === 'legacy'
+        ? 'legacy'
+        : (selection?.mode ?? 'unselected'),
+    ownerId: selection?.mode === 'owner' ? selection.ownerId : null,
+});
+
+export const refreshInvokeOwnerVisibility = async (
+    discovery: InvokeOwnerDiscovery,
+    selection?: InvokeOwnerSelection
+) => {
+    const { mode, ownerId } = resolveOwnerScope(discovery, selection);
+    const visibility = await unwrap(commands.refreshInvokeOwnerScope({
+        dbPath: discovery.dbPath,
+        imagesRoot: discovery.imagesRoot,
+        mode,
+        ownerId,
+    }));
+    return { mode, visibility };
+};
+
 export const applyInvokeOwnerScope = async ({
     discovery,
     selection,
@@ -46,16 +70,7 @@ export const applyInvokeOwnerScope = async ({
         signal,
     });
 
-    const mode: InvokeOwnerScopeMode = discovery.schemaMode === 'legacy'
-        ? 'legacy'
-        : (selection?.mode ?? 'unselected');
-    const ownerId = selection?.mode === 'owner' ? selection.ownerId : null;
-    const visibility = await unwrap(commands.refreshInvokeOwnerScope({
-        dbPath: discovery.dbPath,
-        imagesRoot: discovery.imagesRoot,
-        mode,
-        ownerId,
-    }));
+    const { mode, visibility } = await refreshInvokeOwnerVisibility(discovery, selection);
 
     return {
         changed: visibility.changed || sourceFactsUpdated > 0,

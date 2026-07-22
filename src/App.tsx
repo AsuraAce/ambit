@@ -15,7 +15,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection } from './types';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, GeneratorTool } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -56,6 +56,7 @@ export default function App() {
     const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
     const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
+    const referenceNavigationRequestRef = useRef(0);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -222,7 +223,34 @@ export default function App() {
         onImportFiles: handleImportFiles
     });
 
-    const { startInvokeSync } = useSync();
+    const { startInvokeSync, invokeOwnerScopeState } = useSync();
+    const isInvokeOwnerScopeApplying = invokeOwnerScopeState.status === 'applying';
+    const shouldHideOwnerScopedImages = isInvokeOwnerScopeApplying
+        || invokeOwnerScopeState.status === 'discovering'
+        || invokeOwnerScopeState.status === 'error';
+    const ownerScopedDisplayImages = shouldHideOwnerScopedImages
+        ? images.filter(image => (
+            !image.invokeImageName
+            && !image.invokeOwnerId
+            && image.metadata.tool !== GeneratorTool.INVOKEAI
+        ))
+        : images;
+
+    useEffect(() => {
+        if (!isInvokeOwnerScopeApplying) return;
+
+        referenceNavigationRequestRef.current += 1;
+        selectedImageIndexRef.current = null;
+        viewingImageIdRef.current = null;
+        setSelectedImageIndex(null);
+        setViewingImageId(null);
+        setDirectViewerImage(null);
+        setContextMenu(null);
+        setExportIds(new Set());
+        setAvailableTags([]);
+        clearAllFilters();
+        clearSelection();
+    }, [clearAllFilters, clearSelection, isInvokeOwnerScopeApplying]);
 
     const handleSelectFilesImport = useCallback(async () => {
         const isTauriEnv = typeof window !== 'undefined' && !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -412,12 +440,13 @@ export default function App() {
         totalImages
     );
 
-    const displayedViewerImage = viewingImageId
-        ? (directViewerImage?.id === viewingImageId
-            ? directViewerImage
-            : images.find(i => i.id === viewingImageId))
-        : (selectedImageIndex !== null ? images[selectedImageIndex] : null);
-    const referenceNavigationRequestRef = useRef(0);
+    const displayedViewerImage = shouldHideOwnerScopedImages
+        ? null
+        : (viewingImageId
+            ? (directViewerImage?.id === viewingImageId
+                ? directViewerImage
+                : images.find(i => i.id === viewingImageId))
+            : (selectedImageIndex !== null ? images[selectedImageIndex] : null));
     const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
         const requestId = referenceNavigationRequestRef.current + 1;
         referenceNavigationRequestRef.current = requestId;
@@ -470,6 +499,10 @@ export default function App() {
 
     // --- Effects ---
     useEffect(() => {
+        if (shouldHideOwnerScopedImages) {
+            setAvailableTags([]);
+            return;
+        }
         const timer = setTimeout(() => {
             const tags = new Set<string>();
             images.slice(0, 500).forEach(img => {
@@ -483,7 +516,7 @@ export default function App() {
             setAvailableTags(Array.from(tags).sort());
         }, 1000);
         return () => clearTimeout(timer);
-    }, [images]);
+    }, [images, shouldHideOwnerScopedImages]);
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const workspaceRef = useRef<HTMLElement>(null);
@@ -508,7 +541,7 @@ export default function App() {
     useGlobalShortcuts({
         viewMode,
         selectedIds,
-        filteredImages: images,
+        filteredImages: ownerScopedDisplayImages,
         lastSelectedId,
         isViewerOpen: viewingImageId !== null || selectedImageIndex !== null || isMaintenanceViewerOpen,
         gridRef,
@@ -574,8 +607,8 @@ export default function App() {
                 setLayoutMode={setLayoutMode}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
-                totalImages={totalImages}
-                scopeTotal={scopeTotal}
+                totalImages={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : totalImages}
+                scopeTotal={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : scopeTotal}
                 scopeName={scopeName}
                 isFiltering={isFiltering}
                 fileOps={fileOps}
@@ -583,7 +616,7 @@ export default function App() {
                 clearAllFilters={clearAllFilters}
                 workspaceRef={workspaceRef}
                 scrollContainerRef={scrollContainerRef}
-                images={images}
+                images={ownerScopedDisplayImages}
                 handlers={{ ...handlers, setImages, setContextMenu }}
                 setViewingImageId={setViewingImageId}
                 onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
@@ -687,7 +720,7 @@ export default function App() {
                 modals={modals.modals}
                 setModals={modals.setModals}
                 selectedIds={selectedIds}
-                filteredImages={images}
+                filteredImages={ownerScopedDisplayImages}
                 canCheckForUpdates={updater.canCheckForUpdates}
                 onSettingsSave={setSettings}
                 onExportConfirm={(name, folder) => {
@@ -781,7 +814,7 @@ export default function App() {
                                 setDirectViewerImage(null);
                             }}
                             onNext={() => {
-                                if (selectedImageIndex !== null && selectedImageIndex < images.length - 1) {
+                                if (selectedImageIndex !== null && selectedImageIndex < ownerScopedDisplayImages.length - 1) {
                                     setSelectedImageIndex(selectedImageIndex + 1);
                                 }
                             }}
@@ -790,7 +823,7 @@ export default function App() {
                                     setSelectedImageIndex(selectedImageIndex - 1);
                                 }
                             }}
-                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < images.length - 1}
+                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < ownerScopedDisplayImages.length - 1}
                             canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
                             onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
                             onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
@@ -823,7 +856,7 @@ export default function App() {
             <AppContextMenu
                 contextMenu={contextMenu}
                 onClose={() => setContextMenu(null)}
-                images={images}
+                images={ownerScopedDisplayImages}
                 actions={actions}
                 fileOps={fileOps}
                 colOps={colOps}

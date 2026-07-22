@@ -1126,7 +1126,8 @@ pub async fn get_image_count_for_path_prefix(app: AppHandle, path: String) -> Re
         let normalized = path.trim_end_matches(['/', '\\']);
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
+                "SELECT COUNT(*) FROM images
+                 WHERE invoke_scope_hidden = 0 AND (path LIKE ? OR path LIKE ?)",
                 params![format!("{}/%", normalized), format!("{}\\%", normalized)],
                 |r| r.get(0),
             )
@@ -1212,22 +1213,29 @@ pub struct IntegrityResult {
     pub broken_thumbs: usize,
 }
 
+fn load_visible_integrity_images(
+    conn: &Connection,
+) -> Result<Vec<(String, String, Option<String>)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path, thumbnail_path
+             FROM images
+             WHERE invoke_scope_hidden = 0",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult, String> {
     run_blocking(app, move |conn| {
-        let images: Vec<(String, String, Option<String>)> = {
-            let mut stmt = conn
-                .prepare("SELECT id, path, thumbnail_path FROM images")
-                .map_err(|e| e.to_string())?;
-            let items = stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| e.to_string())?;
-            drop(stmt);
-            items
-        };
+        let images = load_visible_integrity_images(conn)?;
 
         if images.is_empty() {
             return Ok(IntegrityResult {
@@ -1340,6 +1348,27 @@ mod tests {
             conn.execute_batch(&migration.sql)
                 .expect("apply migrations");
         }
+    }
+
+    #[test]
+    fn integrity_scan_excludes_images_outside_the_active_owner_scope() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, invoke_scope_hidden)
+             VALUES
+                ('visible', 'visible.png', 1, 0),
+                ('owner-hidden', 'hidden.png', 2, 1)",
+            [],
+        )
+        .expect("insert images");
+
+        let rows = super::load_visible_integrity_images(&conn).expect("load integrity rows");
+
+        assert_eq!(
+            rows,
+            vec![("visible".to_string(), "visible.png".to_string(), None)]
+        );
     }
 
     fn fetch_thumbnail_state(

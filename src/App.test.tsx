@@ -9,6 +9,7 @@ import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
 type AppLayoutProbe = {
+    images: AIImage[];
     workspaceRef: React.RefObject<HTMLElement | null>;
     viewMode: ViewMode;
     changeViewMode: (mode: ViewMode) => void;
@@ -199,6 +200,7 @@ const mocks = vi.hoisted(() => ({
         handleRevertMetadata: vi.fn()
     },
     startInvokeSync: vi.fn(),
+    invokeOwnerScopeState: { status: 'ready' } as { status: string },
     getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
@@ -401,7 +403,12 @@ vi.mock('./hooks/useDragDrop', () => ({
         return { isDraggingExternal: true };
     }
 }));
-vi.mock('./contexts/SyncContext', () => ({ useSync: () => ({ startInvokeSync: mocks.startInvokeSync }) }));
+vi.mock('./contexts/SyncContext', () => ({
+    useSync: () => ({
+        startInvokeSync: mocks.startInvokeSync,
+        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
+    })
+}));
 vi.mock('./hooks/useFolderMonitor', () => ({ useFolderMonitor: mocks.folderMonitor }));
 vi.mock('./hooks/useGlobalShortcuts', () => ({ useGlobalShortcuts: mocks.shortcuts }));
 vi.mock('./features/viewer/utils/searchHighlights', () => ({ derivePromptHighlightSpec: vi.fn(() => ({ terms: ['sunset'] })) }));
@@ -479,6 +486,7 @@ describe('App orchestration', () => {
         mocks.collectionsLoaded = true;
         mocks.collections = [];
         mocks.images = [image('one'), image('two')];
+        mocks.invokeOwnerScopeState = { status: 'ready' };
         mocks.filters = createDefaultFilters();
         mocks.selectedIds = new Set();
         mocks.aiSearchOptions = null;
@@ -874,6 +882,35 @@ describe('App orchestration', () => {
         }));
         expect(mocks.images.map(candidate => candidate.id)).toEqual(['one', 'two']);
         expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(hiddenAsset.id);
+    });
+
+    it('closes direct and gallery viewers before owner visibility changes', async () => {
+        const localImage = image('local-image');
+        const ownerGalleryImage = {
+            ...image('owner-a-gallery'),
+            invokeImageName: 'owner-a-gallery.png',
+        };
+        const referencedAsset = {
+            ...image('owner-a-control'),
+            invokeImageName: 'owner-a-control.png',
+        };
+        mocks.images = [localImage, ownerGalleryImage];
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce(referencedAsset);
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(localImage.id));
+        await act(async () => {
+            await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage(referencedAsset.id);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(referencedAsset.id));
+
+        mocks.invokeOwnerScopeState = { status: 'applying' };
+        view.rerender(<App />);
+
+        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([localImage]);
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+        expect(mocks.clearSelection).toHaveBeenCalled();
+        expect(mocks.clearAllFilters).toHaveBeenCalled();
     });
 
     it('uses the current gallery for visible reference targets and keeps missing targets disabled', async () => {

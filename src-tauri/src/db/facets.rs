@@ -160,6 +160,8 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             );
             build_resource_facets(&tx, "ip_adapters", "ip_adapters")?;
 
+            sanitize_owner_hidden_facet_thumbnails(&tx)?;
+
             tx.commit().map_err(|e| e.to_string())?;
 
             // Return total cache entries
@@ -533,10 +535,10 @@ fn privacy_keyword_matches(conn: &rusqlite::Connection, name: &str) -> Result<bo
 fn manual_thumbnail_image(
     conn: &rusqlite::Connection,
     thumbnail_path: &str,
-) -> Result<Option<(String, i64)>, String> {
+) -> Result<Option<(String, i64, i64)>, String> {
     for column in ["id", "path", "thumbnail_path"] {
         let query = if column == "thumbnail_path" {
-            "SELECT id, COALESCE(privacy_hidden, 0)
+            "SELECT id, COALESCE(privacy_hidden, 0), invoke_scope_hidden
              FROM images
              WHERE thumbnail_path = ?1
              AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
@@ -544,7 +546,7 @@ fn manual_thumbnail_image(
                 .to_string()
         } else {
             format!(
-                "SELECT id, COALESCE(privacy_hidden, 0)
+                "SELECT id, COALESCE(privacy_hidden, 0), invoke_scope_hidden
                  FROM images
                  WHERE {column} = ?1
                  LIMIT 1"
@@ -552,7 +554,7 @@ fn manual_thumbnail_image(
         };
         let result = conn
             .query_row(&query, [thumbnail_path], |row| {
-                Ok((row.get(0)?, row.get(1)?))
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .optional()
             .map_err(|e| e.to_string())?;
@@ -586,7 +588,14 @@ fn compute_thumbnail_fields(
     let dynamic_path = dynamic_thumb.map(|thumb| thumb.thumbnail_path.as_str());
     let thumbnail_mode = model.thumbnail_mode.as_deref();
 
-    let thumbnail_path = if let Some(path) = manual_thumb {
+    let manual_image = match manual_thumb {
+        Some(path) => manual_thumbnail_image(conn, path)?,
+        None => None,
+    };
+    let usable_manual_thumb = manual_thumb.filter(
+        |_| !matches!(manual_image.as_ref(), Some((_, _, owner_hidden)) if *owner_hidden != 0),
+    );
+    let thumbnail_path = if let Some(path) = usable_manual_thumb {
         Some(path.to_string())
     } else if thumbnail_mode == Some("dynamic") {
         dynamic_path.or(preview_url).map(str::to_string)
@@ -596,13 +605,8 @@ fn compute_thumbnail_fields(
             .or(preview_url)
             .map(str::to_string)
     };
-
-    let manual_image = match manual_thumb {
-        Some(path) => manual_thumbnail_image(conn, path)?,
-        None => None,
-    };
-    let thumbnail_image_id = if manual_thumb.is_some() {
-        manual_image.as_ref().map(|(id, _)| id.clone())
+    let thumbnail_image_id = if usable_manual_thumb.is_some() {
+        manual_image.as_ref().map(|(id, _, _)| id.clone())
     } else {
         dynamic_thumb.map(|thumb| thumb.image_id.clone())
     };
@@ -613,8 +617,8 @@ fn compute_thumbnail_fields(
         1
     } else if privacy_keyword_matches(conn, &model.name)? {
         1
-    } else if manual_thumb.is_some() {
-        manual_image.map(|(_, hidden)| hidden).unwrap_or(1)
+    } else if usable_manual_thumb.is_some() {
+        manual_image.map(|(_, hidden, _)| hidden).unwrap_or(1)
     } else if thumbnail_mode == Some("dynamic") {
         dynamic_thumb.map(|thumb| thumb.privacy_hidden).unwrap_or(0)
     } else if sidecar_thumb.is_some() || preview_url.is_some() {
@@ -629,6 +633,35 @@ fn compute_thumbnail_fields(
         thumbnail_image_id,
         sensitive,
     ))
+}
+
+fn sanitize_owner_hidden_facet_thumbnails(conn: &rusqlite::Connection) -> Result<usize, String> {
+    conn.execute(
+        "UPDATE facet_cache
+         SET thumbnail_path = safe_thumbnail_path,
+             thumbnail_image_id = NULL,
+             thumbnail_is_sensitive = CASE
+                 WHEN safe_thumbnail_path IS NOT NULL AND safe_thumbnail_path != '' THEN 0
+                 ELSE 1
+             END
+         WHERE EXISTS (
+             SELECT 1
+             FROM images owner_hidden
+             WHERE owner_hidden.invoke_scope_hidden = 1
+               AND (
+                   owner_hidden.id = facet_cache.thumbnail_image_id
+                   OR owner_hidden.id = facet_cache.thumbnail_path
+                   OR owner_hidden.path = facet_cache.thumbnail_path
+                   OR (
+                       owner_hidden.thumbnail_path IS NOT NULL
+                       AND owner_hidden.thumbnail_path != ''
+                       AND owner_hidden.thumbnail_path = facet_cache.thumbnail_path
+                   )
+               )
+         )",
+        [],
+    )
+    .map_err(|e| e.to_string())
 }
 
 fn insert_facet_row(
@@ -1343,6 +1376,8 @@ fn rebuild_incremental_facet_types(
         );
     }
 
+    sanitize_owner_hidden_facet_thumbnails(&tx)?;
+
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(normalized_types)
@@ -1729,7 +1764,8 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
             ?1,
             'checkpoint'
             FROM images
-            WHERE model_hash IS NOT NULL
+            WHERE invoke_scope_hidden = 0
+            AND model_hash IS NOT NULL
             AND resolved_model_name IS NOT NULL",
         params![now],
     )
@@ -1791,8 +1827,10 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
                 '{}',
                 ?1,
                 '{}'
-                FROM {}
-                WHERE {} IS NOT NULL AND {} != ''",
+                FROM {} jt
+                INNER JOIN images i ON i.id = jt.image_id
+                WHERE i.invoke_scope_hidden = 0
+                AND jt.{} IS NOT NULL AND jt.{} != ''",
                 prefix, col,
                 col,
                 source,
@@ -1939,7 +1977,12 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 END,
                 m.thumbnail_sensitivity_override
             FROM (
-                SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(thumbnail_sensitivity_override) as thumbnail_sensitivity_override
+                SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(thumbnail_sensitivity_override) as thumbnail_sensitivity_override,
+                    MAX(CASE
+                        WHEN filename IS NOT NULL AND filename != '' THEN 1
+                        WHEN lookup_source = 'disk_scan' OR lookup_source LIKE 'local_cache%' THEN 1
+                        ELSE 0
+                    END) as has_local_inventory
                 FROM models
                 WHERE resource_type = 'checkpoint'
                 GROUP BY LOWER(name)
@@ -1950,7 +1993,8 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 GROUP BY lmn
             ) cc ON cc.lmn = LOWER(m.name)
             LEFT JOIN cp_thumbs ct ON ct.lmn = LOWER(m.name)
-            LEFT JOIN cp_safe_thumbs st ON st.lmn = LOWER(m.name)",
+            LEFT JOIN cp_safe_thumbs st ON st.lmn = LOWER(m.name)
+            WHERE COALESCE(cc.total_cnt, 0) > 0 OR m.has_local_inventory = 1",
         []
     ).map_err(|e| format!("Failed to insert checkpoints into facet_cache: {}", e))?;
     println!(
@@ -2217,7 +2261,12 @@ fn build_resource_facets(
                     END,
                     m.thumbnail_sensitivity_override
                 FROM (
-                    SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(guidance_subtype) as guidance_subtype, MAX(thumbnail_sensitivity_override) as thumbnail_sensitivity_override
+                    SELECT MIN(name) as name, MIN(hash) as hash, MAX(thumbnail_path) as thumbnail_path, MAX(sidecar_thumbnail_path) as sidecar_thumbnail_path, MAX(preview_url) as preview_url, MAX(thumbnail_mode) as thumbnail_mode, MAX(guidance_subtype) as guidance_subtype, MAX(thumbnail_sensitivity_override) as thumbnail_sensitivity_override,
+                        MAX(CASE
+                            WHEN filename IS NOT NULL AND filename != '' THEN 1
+                            WHEN lookup_source = 'disk_scan' OR lookup_source LIKE 'local_cache%' THEN 1
+                            ELSE 0
+                        END) as has_local_inventory
                     FROM models
                     WHERE resource_type = '{}'
                     GROUP BY LOWER(name)
@@ -2225,6 +2274,16 @@ fn build_resource_facets(
                 LEFT JOIN {} rc ON rc.lclean_ref = LOWER(m.name)
                 LEFT JOIN {} rt ON rt.lclean_ref = LOWER(m.name)
                 LEFT JOIN {} rst ON rst.lclean_ref = LOWER(m.name)
+                WHERE COALESCE(rc.cnt, 0) > 0
+                   OR m.has_local_inventory = 1
+                   OR EXISTS (
+                        SELECT 1
+                        FROM {junction_table} visible_jt
+                        INNER JOIN images visible_image ON visible_image.id = visible_jt.{image_id_col}
+                        WHERE visible_image.invoke_scope_hidden = 0
+                          AND visible_image.is_deleted = 0
+                          AND LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(visible_jt.{name_col}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')) = LOWER(m.name)
+                   )
                 GROUP BY LOWER(m.name)",
             facet_type, facet_type, temp_table, temp_thumbs, temp_safe_thumbs
         ),
@@ -3311,6 +3370,103 @@ mod tests {
         assert_eq!(dynamic_thumb, "unsafe.webp");
         assert_eq!(safe_thumb, "safe.webp");
         assert_eq!(sensitive, 1);
+    }
+
+    #[test]
+    fn bulk_facets_exclude_hidden_owner_metadata_but_keep_local_inventory() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, model_hash, resolved_model_name, invoke_scope_hidden)
+             VALUES ('hidden-img', 'hidden.png', 1, 'hidden-checkpoint', 'HiddenCheckpoint', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('hidden-img', 'HiddenLora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
+             VALUES
+                ('hidden-checkpoint', 'HiddenCheckpoint', NULL, 'civitai', 1, 'checkpoint'),
+                ('lora_HiddenLora', 'HiddenLora', NULL, 'harvest_lora', 1, 'loras'),
+                ('local-checkpoint', 'LocalCheckpoint', 'local.safetensors', 'disk_scan', 1, 'checkpoint'),
+                ('lora_LocalLora', 'LocalLora', 'local-lora.safetensors', 'disk_scan', 1, 'loras')",
+            [],
+        )
+        .unwrap();
+
+        harvest_models(&conn).unwrap();
+        build_checkpoint_facets(&conn).unwrap();
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+
+        let hidden_facet_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache
+                 WHERE resource_name IN ('HiddenCheckpoint', 'HiddenLora')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let local_facet_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM facet_cache
+                 WHERE resource_name IN ('LocalCheckpoint', 'LocalLora')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(hidden_facet_count, 0);
+        assert_eq!(local_facet_count, 2);
+    }
+
+    #[test]
+    fn bulk_facet_rebuild_replaces_manual_thumbnails_from_hidden_owners() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, thumbnail_path, invoke_scope_hidden)
+             VALUES
+                ('visible-img', 'visible.png', 100, 'visible.webp', 0),
+                ('hidden-img', 'hidden.png', 200, 'hidden.webp', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name) VALUES ('visible-img', 'SharedLora')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type, thumbnail_path)
+             VALUES ('lora_SharedLora', 'SharedLora', 'manual_thumbnail', 1, 'loras', 'hidden-img')",
+            [],
+        )
+        .unwrap();
+
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+        sanitize_owner_hidden_facet_thumbnails(&conn).unwrap();
+
+        let (thumbnail_path, thumbnail_image_id): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT thumbnail_path, thumbnail_image_id
+                 FROM facet_cache
+                 WHERE facet_type = 'loras' AND resource_name = 'SharedLora'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(thumbnail_path.as_deref(), Some("visible.webp"));
+        assert_eq!(thumbnail_image_id, None);
     }
 
     #[test]

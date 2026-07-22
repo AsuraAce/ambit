@@ -9,7 +9,7 @@ import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
 import { QueryClient } from '@tanstack/react-query';
-import type { Collection, InvokeDbSnapshotState } from '../../types';
+import type { Collection, InvokeDbSnapshotState, InvokeOwnerDiscovery } from '../../types';
 import {
     INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
     countImages: vi.fn().mockResolvedValue(0),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStatsSummary: vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] }),
+    clearLibraryStatsCache: vi.fn(),
     getKeywordStats: vi.fn().mockResolvedValue([]),
     syncImages: vi.fn().mockResolvedValue({ imported: 5, updated: 0, maxTimestamp: 100, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] } }),
     scanForOrphans: vi.fn().mockResolvedValue(0),
@@ -53,6 +54,9 @@ const mocks = vi.hoisted(() => ({
     getSmartCollectionSummaries: vi.fn().mockResolvedValue({}),
     getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
     clearCollectionOwnerScopeCaches: vi.fn().mockResolvedValue(undefined),
+    discoverInvokeOwners: vi.fn(),
+    applyInvokeOwnerScope: vi.fn(),
+    refreshInvokeOwnerVisibility: vi.fn(),
     getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue({
         hasIntermediates: false,
@@ -119,6 +123,7 @@ vi.mock('../../services/db/searchRepo', () => ({
     getFacets: (...args: any[]) => mocks.getFacets(...args),
     getLibraryStatsSummary: (...args: any[]) => mocks.getLibraryStatsSummary(...args),
     getKeywordStats: (...args: any[]) => mocks.getKeywordStats(...args),
+    clearLibraryStatsCache: (...args: unknown[]) => mocks.clearLibraryStatsCache(...args),
 }));
 
 vi.mock('../../services/db/collectionRepo', () => ({
@@ -166,23 +171,12 @@ vi.mock('../../services/invoke/syncService', () => ({
 }));
 
 vi.mock('../../services/invoke/connection', () => ({
-    discoverInvokeOwners: vi.fn(async (rootPath: string) => ({
-        schemaMode: 'legacy',
-        dbPath: `${rootPath.replace(/\\/g, '/').replace(/\/databases$/, '')}/databases/invokeai.db`,
-        imagesRoot: rootPath.replace(/\\/g, '/').replace(/\/databases$/, ''),
-        owners: [],
-        unassignedImageCount: 0,
-    })),
+    discoverInvokeOwners: (...args: unknown[]) => mocks.discoverInvokeOwners(...args),
 }));
 
 vi.mock('../../services/invoke/ownerScope', () => ({
-    applyInvokeOwnerScope: vi.fn(async () => ({
-        changed: false,
-        sourceFactsUpdated: 0,
-        activeVisibilityUpdated: 0,
-        removedVisibilityUpdated: 0,
-        mode: 'legacy',
-    })),
+    applyInvokeOwnerScope: (...args: unknown[]) => mocks.applyInvokeOwnerScope(...args),
+    refreshInvokeOwnerVisibility: (...args: unknown[]) => mocks.refreshInvokeOwnerVisibility(...args),
 }));
 
 vi.mock('../../services/invoke/orphanScanner', () => ({
@@ -271,6 +265,29 @@ describe('Library Integration (Provider Stack)', () => {
         vi.clearAllMocks();
         settingsPersistenceCoordinator.reopenAdmission();
         mocks.browserMockMode = false;
+        mocks.discoverInvokeOwners.mockImplementation(async (rootPath: string) => ({
+            schemaMode: 'legacy',
+            dbPath: `${rootPath.replace(/\\/g, '/').replace(/\/databases$/, '')}/databases/invokeai.db`,
+            imagesRoot: rootPath.replace(/\\/g, '/').replace(/\/databases$/, ''),
+            owners: [],
+            unassignedImageCount: 0,
+        }));
+        mocks.applyInvokeOwnerScope.mockResolvedValue({
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            mode: 'legacy',
+        });
+        mocks.refreshInvokeOwnerVisibility.mockResolvedValue({
+            mode: 'unselected',
+            visibility: {
+                changed: true,
+                sourceFactsUpdated: 0,
+                activeVisibilityUpdated: 1,
+                removedVisibilityUpdated: 0,
+            },
+        });
         mocks.checkHiddenContentAvailability.mockReset().mockResolvedValue({
             hasIntermediates: false,
             hasGrids: false,
@@ -1564,6 +1581,385 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('discards stale owner discovery when the InvokeAI root changes in flight', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const oldDiscovery = createDeferred<InvokeOwnerDiscovery>();
+        const newDiscovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/InvokeNew/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeNew',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockImplementation((rootPath: string) => (
+            rootPath === 'D:/InvokeOld' ? oldDiscovery.promise : Promise.resolve(newDiscovery)
+        ));
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: { selection?: { mode: 'owner' | 'all' } }) => ({
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeOld' }));
+        await waitFor(() => expect(libraryHook?.settings.invokeAiPath).toBe('D:/InvokeOld'));
+        await waitFor(() => expect(mocks.discoverInvokeOwners).toHaveBeenCalledWith('D:/InvokeOld'));
+        let oldSync!: Promise<void>;
+        act(() => {
+            oldSync = syncHook!.startInvokeSync({ mode: 'manual' });
+        });
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeNew' }));
+        let newSync!: Promise<void>;
+        act(() => {
+            newSync = syncHook!.startInvokeSync({ mode: 'manual' });
+        });
+        oldDiscovery.resolve({
+            schemaMode: 'legacy',
+            dbPath: 'D:/InvokeOld/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeOld',
+            owners: [],
+            unassignedImageCount: 0,
+        });
+        await act(async () => Promise.all([oldSync, newSync]));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledTimes(1);
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({ discovery: newDiscovery }));
+    });
+
+    it('does not authorize sync when the InvokeAI root changes during scope application', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const oldApplication = createDeferred<{
+            changed: boolean;
+            sourceFactsUpdated: number;
+            activeVisibilityUpdated: number;
+            removedVisibilityUpdated: number;
+            mode: 'legacy';
+        }>();
+        const oldDiscovery: InvokeOwnerDiscovery = {
+            schemaMode: 'legacy',
+            dbPath: 'D:/InvokeOld/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeOld',
+            owners: [],
+            unassignedImageCount: 0,
+        };
+        const newDiscovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/InvokeNew/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeNew',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockImplementation((rootPath: string) => Promise.resolve(
+            rootPath === 'D:/InvokeOld' ? oldDiscovery : newDiscovery
+        ));
+        mocks.applyInvokeOwnerScope.mockImplementation(({ discovery }: { discovery: InvokeOwnerDiscovery }) => (
+            discovery.dbPath === oldDiscovery.dbPath
+                ? oldApplication.promise
+                : Promise.resolve({
+                    changed: false,
+                    sourceFactsUpdated: 0,
+                    activeVisibilityUpdated: 0,
+                    removedVisibilityUpdated: 0,
+                    mode: 'unselected' as const,
+                })
+        ));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeOld' }));
+        await waitFor(() => expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(
+            expect.objectContaining({ discovery: oldDiscovery })
+        ));
+        let oldSync!: Promise<void>;
+        act(() => {
+            oldSync = syncHook!.startInvokeSync({ mode: 'manual' });
+        });
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeNew' }));
+        oldApplication.resolve({
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            mode: 'legacy',
+        });
+        await act(async () => oldSync);
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenLastCalledWith(
+            expect.objectContaining({ discovery: newDiscovery })
+        );
+    });
+
+    it('serializes owner selection against a concurrent InvokeAI root change', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const ownerApplication = createDeferred<{
+            changed: boolean;
+            sourceFactsUpdated: number;
+            activeVisibilityUpdated: number;
+            removedVisibilityUpdated: number;
+            mode: 'owner';
+        }>();
+        const oldDiscovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/InvokeOld/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeOld',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        const newDiscovery: InvokeOwnerDiscovery = {
+            ...oldDiscovery,
+            dbPath: 'D:/InvokeNew/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeNew',
+        };
+        mocks.discoverInvokeOwners.mockImplementation((rootPath: string) => Promise.resolve(
+            rootPath === 'D:/InvokeOld' ? oldDiscovery : newDiscovery
+        ));
+        mocks.applyInvokeOwnerScope.mockImplementation(({
+            discovery,
+            selection,
+        }: {
+            discovery: InvokeOwnerDiscovery;
+            selection?: { mode: 'owner' | 'all' };
+        }) => (
+            discovery.dbPath === oldDiscovery.dbPath && selection?.mode === 'owner'
+                ? ownerApplication.promise
+                : Promise.resolve({
+                    changed: false,
+                    sourceFactsUpdated: 0,
+                    activeVisibilityUpdated: 0,
+                    removedVisibilityUpdated: 0,
+                    mode: selection?.mode ?? 'unselected',
+                })
+        ));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeOld' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+
+        let selectionPromise!: Promise<boolean>;
+        act(() => {
+            selectionPromise = syncHook!.selectInvokeOwnerScope({
+                dbPath: oldDiscovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            });
+        });
+        await waitFor(() => expect(mocks.applyInvokeOwnerScope).toHaveBeenLastCalledWith(
+            expect.objectContaining({ selection: expect.objectContaining({ ownerId: 'owner-a' }) })
+        ));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/InvokeNew' }));
+        ownerApplication.resolve({
+            changed: true,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 1,
+            removedVisibilityUpdated: 0,
+            mode: 'owner',
+        });
+
+        await expect(selectionPromise).resolves.toBe(false);
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+        expect(mocks.refreshInvokeOwnerVisibility).toHaveBeenCalledWith(oldDiscovery, undefined);
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenLastCalledWith(
+            expect.objectContaining({ discovery: newDiscovery })
+        );
+        expect(libraryHook?.settings.invokeOwnerSelection).toBeUndefined();
+    });
+
+    it('ignores a second owner selection while the first application is in flight', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const ownerApplication = createDeferred<{
+            changed: boolean;
+            sourceFactsUpdated: number;
+            activeVisibilityUpdated: number;
+            removedVisibilityUpdated: number;
+            mode: 'owner';
+        }>();
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(({
+            selection,
+        }: {
+            selection?: { mode: 'owner' | 'all' };
+        }) => (
+            selection?.mode === 'owner'
+                ? ownerApplication.promise
+                : Promise.resolve({
+                    changed: false,
+                    sourceFactsUpdated: 0,
+                    activeVisibilityUpdated: 0,
+                    removedVisibilityUpdated: 0,
+                    mode: 'unselected' as const,
+                })
+        ));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+
+        let firstSelection!: Promise<boolean>;
+        let secondSelection!: Promise<boolean>;
+        act(() => {
+            firstSelection = syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            });
+            secondSelection = syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-b',
+            });
+        });
+
+        await expect(secondSelection).resolves.toBe(false);
+        const ownerApplications = mocks.applyInvokeOwnerScope.mock.calls.filter(([
+            request,
+        ]) => request.selection?.mode === 'owner');
+        expect(ownerApplications).toHaveLength(1);
+        expect(ownerApplications[0][0].selection.ownerId).toBe('owner-a');
+
+        ownerApplication.resolve({
+            changed: true,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 1,
+            removedVisibilityUpdated: 0,
+            mode: 'owner',
+        });
+        await expect(firstSelection).resolves.toBe(true);
+    });
+
+    it('rolls native visibility back when owner-selection persistence fails', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: { selection?: { mode: 'owner' | 'all' } }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+        await waitFor(() => expect(libraryHook?.settings.invokeAiPath).toBe('D:/Invoke'));
+        await act(async () => syncHook?.startInvokeSync({ mode: 'manual' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+        mocks.appRepository.update.mockRejectedValueOnce(new Error('disk full'));
+
+        let selected = true;
+        await act(async () => {
+            selected = await syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            });
+        });
+
+        expect(selected).toBe(false);
+        expect(mocks.refreshInvokeOwnerVisibility).toHaveBeenCalledWith(discovery, undefined);
+        expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalled();
+        expect(mocks.clearLibraryStatsCache).toHaveBeenCalled();
+        expect(useSettingsStore.getState().settings.invokeOwnerSelection).toBeUndefined();
+        expect(syncHook?.invokeOwnerScopeState.status).toBe('error');
+    });
+
+    it('does not reuse all-users sync admission after a failed owner-scope refresh', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: { selection?: { mode: 'owner' | 'all' } }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'all' },
+        }));
+        await act(async () => syncHook?.startInvokeSync({ mode: 'manual' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        mocks.syncImages.mockClear();
+        mocks.rebuildFacetCacheStrict.mockRejectedValueOnce(new Error('cache rebuild failed'));
+
+        let selected = true;
+        await act(async () => {
+            selected = await syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            });
+        });
+        expect(selected).toBe(false);
+
+        await act(async () => syncHook?.startInvokeSync({ mode: 'manual' }));
+
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+        expect(syncHook?.invokeOwnerScopeState.status).toBe('ready');
+        expect(libraryHook?.settings.invokeOwnerSelection).toEqual({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
     });
 
     it('rejects useSync outside its provider', () => {

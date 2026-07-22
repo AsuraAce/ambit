@@ -150,10 +150,12 @@ fn path_is_known_media_file(
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
                 UNION ALL
                 SELECT 1 FROM removed_images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
             )",
             params![requested, canonical],
             |row| row.get(0),
@@ -248,10 +250,14 @@ mod tests {
         fs::create_dir_all(&temp_root).unwrap();
         let image = temp_root.join("image.png");
         let removed = temp_root.join("removed.png");
+        let owner_hidden = temp_root.join("owner-hidden.png");
+        let removed_owner_hidden = temp_root.join("removed-owner-hidden.png");
         let untracked = temp_root.join("untracked.png");
         let directory = temp_root.join("directory");
         fs::write(&image, b"image").unwrap();
         fs::write(&removed, b"removed").unwrap();
+        fs::write(&owner_hidden, b"owner hidden").unwrap();
+        fs::write(&removed_owner_hidden, b"removed owner hidden").unwrap();
         fs::write(&untracked, b"untracked").unwrap();
         fs::create_dir_all(&directory).unwrap();
 
@@ -268,6 +274,19 @@ mod tests {
             [&removed_path],
         )
         .unwrap();
+        let owner_hidden_path = normalize(&fs::canonicalize(&owner_hidden).unwrap());
+        let removed_owner_hidden_path =
+            normalize(&fs::canonicalize(&removed_owner_hidden).unwrap());
+        conn.execute(
+            "INSERT INTO images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            [&owner_hidden_path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO removed_images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            [&removed_owner_hidden_path],
+        )
+        .unwrap();
 
         assert_eq!(
             resolve_known_media_file_target(&conn, &image.to_string_lossy()).unwrap(),
@@ -276,6 +295,11 @@ mod tests {
         assert_eq!(
             resolve_known_media_file_target(&conn, &removed.to_string_lossy()).unwrap(),
             fs::canonicalize(&removed).unwrap()
+        );
+        assert!(resolve_known_media_file_target(&conn, &owner_hidden.to_string_lossy()).is_err());
+        assert!(
+            resolve_known_media_file_target(&conn, &removed_owner_hidden.to_string_lossy())
+                .is_err()
         );
         assert!(resolve_known_media_file_target(&conn, &untracked.to_string_lossy()).is_err());
         assert!(resolve_known_media_file_target(&conn, &directory.to_string_lossy()).is_err());
@@ -382,9 +406,15 @@ mod tests {
 
     fn media_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
-        conn.execute("CREATE TABLE removed_images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE removed_images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
         conn
     }

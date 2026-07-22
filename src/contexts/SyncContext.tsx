@@ -35,8 +35,10 @@ import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 import { discoverInvokeOwners } from '../services/invoke/connection';
-import { applyInvokeOwnerScope } from '../services/invoke/ownerScope';
+import { applyInvokeOwnerScope, refreshInvokeOwnerVisibility } from '../services/invoke/ownerScope';
 import { clearCollectionOwnerScopeCaches } from '../services/db/collectionRepo';
+import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
+import { clearLibraryStatsCache } from '../services/db/searchRepo';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -166,7 +168,10 @@ export const SyncProvider: React.FC<{
     const pendingTargetedPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
     const [invokeOwnerScopeState, setInvokeOwnerScopeState] = useState<InvokeOwnerScopeState>({ status: 'idle' });
-    const ownerScopePromiseRef = useRef<Promise<{ allowed: boolean; reason?: string }> | null>(null);
+    const ownerScopePromiseRef = useRef<{
+        rootPath: string;
+        promise: Promise<{ allowed: boolean; reason?: string }>;
+    } | null>(null);
     const ownerScopeAdmissionRef = useRef<{ rootPath: string; allowed: boolean; reason?: string } | null>(null);
     const incrementFacetCacheVersion = useCallback(() => {
         useLibraryStore.getState().incrementFacetCacheVersion();
@@ -197,37 +202,56 @@ export const SyncProvider: React.FC<{
     }, []);
 
     const refreshAfterOwnerScopeChange = useCallback(async () => {
+        clearLibraryStatsCache();
         await clearCollectionOwnerScopeCaches();
         await rebuildFacetCacheStrict();
         incrementFacetCacheVersion();
-        await Promise.all([
+        const [, , , , , , maintenanceCounts] = await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['images'] }),
             queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+            queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
             invalidateInvokeReferenceQueries(queryClient),
             refreshCollections(true),
             onInvokeContentChanged?.(),
+            getMaintenanceCounts(),
         ]);
+        useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
         await refreshCollectionThumbnails(true);
     }, [incrementFacetCacheVersion, onInvokeContentChanged, queryClient, refreshCollectionThumbnails, refreshCollections]);
 
-    const persistOwnerSelection = useCallback(async (selection?: InvokeOwnerSelection) => {
-        await settingsPersistenceCoordinator.run(async () => {
+    const persistOwnerSelection = useCallback(async (
+        selection: InvokeOwnerSelection | undefined,
+        expectedRootPath: string
+    ) => {
+        await settingsPersistenceCoordinator.run(async (permit) => {
             const current = useSettingsStore.getState().settings;
+            if (current.invokeAiPath?.trim() !== expectedRootPath) {
+                throw new Error('InvokeAI path changed before owner selection could be saved.');
+            }
             const nextSettings: AppSettings = {
                 ...current,
                 invokeOwnerSelection: selection,
                 lastSyncedAt: null,
                 invokeDbSnapshot: undefined,
             };
-            setSettings(nextSettings);
             await useSettingsStore.getState().flushSettings(nextSettings);
+            const committed = useSettingsStore.getState().rollbackSettings(permit, {
+                invokeOwnerSelection: selection,
+                lastSyncedAt: null,
+                invokeDbSnapshot: undefined,
+            });
+            if (!committed) {
+                throw new Error('Owner selection persistence permit expired before commit.');
+            }
         });
-    }, [setSettings]);
+    }, []);
 
     const applyDiscoveredOwnerScope = useCallback(async (
         discovery: InvokeOwnerDiscovery,
         requestedSelection?: InvokeOwnerSelection,
-        persistSelection: boolean = false
+        persistSelection: boolean = false,
+        rootPath: string = discovery.imagesRoot,
+        forceRefresh: boolean = false
     ): Promise<{ allowed: boolean; reason?: string }> => {
         const selection = requestedSelection?.dbPath === discovery.dbPath
             ? requestedSelection
@@ -243,10 +267,38 @@ export const SyncProvider: React.FC<{
             }
             : discovery;
 
+        ownerScopeAdmissionRef.current = null;
         setInvokeOwnerScopeState({ status: 'applying', discovery: discoveryWithStaleOwner });
+        const previousSelection = settingsRef.current.invokeOwnerSelection?.dbPath === discovery.dbPath
+            ? settingsRef.current.invokeOwnerSelection
+            : undefined;
         const result = await applyInvokeOwnerScope({ discovery, selection });
-        if (persistSelection) await persistOwnerSelection(selection);
-        if (result.changed) await refreshAfterOwnerScopeChange();
+        if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+            await refreshInvokeOwnerVisibility(discovery, previousSelection);
+            await refreshAfterOwnerScopeChange();
+            throw new Error('InvokeAI path changed while owner scope was loading.');
+        }
+        if (persistSelection) {
+            try {
+                await persistOwnerSelection(selection, rootPath);
+            } catch (persistError) {
+                try {
+                    await refreshInvokeOwnerVisibility(discovery, previousSelection);
+                    await refreshAfterOwnerScopeChange();
+                } catch (rollbackError) {
+                    throw new AggregateError(
+                        [persistError, rollbackError],
+                        'Owner selection could not be saved and visibility rollback failed.'
+                    );
+                }
+                throw persistError;
+            }
+        }
+        if (result.changed || forceRefresh) await refreshAfterOwnerScopeChange();
+
+        if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+            return { allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
+        }
 
         const allowed = result.mode === 'legacy' || result.mode === 'all';
         const reason = result.mode === 'owner'
@@ -256,7 +308,7 @@ export const SyncProvider: React.FC<{
             status: result.mode === 'unselected' ? 'selection_required' : 'ready',
             discovery: discoveryWithStaleOwner,
         });
-        ownerScopeAdmissionRef.current = { rootPath: settingsRef.current.invokeAiPath || '', allowed, reason };
+        ownerScopeAdmissionRef.current = { rootPath, allowed, reason };
         return { allowed, reason };
     }, [persistOwnerSelection, refreshAfterOwnerScopeChange, settingsRef]);
 
@@ -270,12 +322,27 @@ export const SyncProvider: React.FC<{
         if (!force && ownerScopeAdmissionRef.current?.rootPath === rootPath) {
             return ownerScopeAdmissionRef.current;
         }
-        if (ownerScopePromiseRef.current) return ownerScopePromiseRef.current;
+        const runningScope = ownerScopePromiseRef.current;
+        if (runningScope?.rootPath === rootPath) return runningScope.promise;
+        const precedingScope = runningScope?.promise;
 
         const promise = (async () => {
+            if (precedingScope) {
+                try {
+                    await precedingScope;
+                } catch {
+                    // A newer root still needs its own discovery after an older scope fails.
+                }
+            }
+            if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+                return { allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
+            }
             setInvokeOwnerScopeState({ status: 'discovering' });
             try {
                 const discovery = await discoverInvokeOwners(rootPath);
+                if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+                    return { allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
+                }
                 const saved = settingsRef.current.invokeOwnerSelection;
                 let selection = saved?.dbPath === discovery.dbPath ? saved : undefined;
                 let shouldPersistSelection = !!saved && !selection;
@@ -292,7 +359,20 @@ export const SyncProvider: React.FC<{
                     shouldPersistSelection = true;
                 }
 
-                return await applyDiscoveredOwnerScope(discovery, selection, shouldPersistSelection);
+                const admission = await applyDiscoveredOwnerScope(
+                    discovery,
+                    selection,
+                    shouldPersistSelection,
+                    rootPath,
+                    force
+                );
+                if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+                    if (ownerScopeAdmissionRef.current?.rootPath === rootPath) {
+                        ownerScopeAdmissionRef.current = null;
+                    }
+                    return { allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
+                }
+                return admission;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 setInvokeOwnerScopeState({ status: 'error', error: message });
@@ -300,22 +380,48 @@ export const SyncProvider: React.FC<{
                 return { allowed: false, reason: message };
             }
         })();
-        ownerScopePromiseRef.current = promise;
+        ownerScopePromiseRef.current = { rootPath, promise };
         try {
             return await promise;
         } finally {
-            ownerScopePromiseRef.current = null;
+            if (ownerScopePromiseRef.current?.promise === promise) {
+                ownerScopePromiseRef.current = null;
+            }
         }
     }, [applyDiscoveredOwnerScope, settingsRef]);
 
     const selectInvokeOwnerScope = useCallback(async (selection: InvokeOwnerSelection): Promise<boolean> => {
         const discovery = invokeOwnerScopeState.discovery;
-        if (!discovery || discovery.dbPath !== selection.dbPath) {
+        const currentRoot = settingsRef.current.invokeAiPath?.trim();
+        if (!discovery
+            || discovery.dbPath !== selection.dbPath
+            || !currentRoot
+            || ownerScopeAdmissionRef.current?.rootPath !== currentRoot) {
             addToast('Refresh the InvokeAI owner list before changing scope.', 'warning');
             return false;
         }
+        if (ownerScopePromiseRef.current) return false;
+        const currentSelection = settingsRef.current.invokeOwnerSelection;
+        if (invokeOwnerScopeState.status === 'ready'
+            && ownerScopeAdmissionRef.current?.rootPath === currentRoot
+            && currentSelection?.dbPath === selection.dbPath
+            && currentSelection.mode === selection.mode
+            && (selection.mode === 'all'
+                || (currentSelection.mode === 'owner' && currentSelection.ownerId === selection.ownerId))) {
+            return true;
+        }
+        const promise = applyDiscoveredOwnerScope(
+            discovery,
+            selection,
+            true,
+            currentRoot
+        );
+        ownerScopePromiseRef.current = { rootPath: currentRoot, promise };
         try {
-            await applyDiscoveredOwnerScope(discovery, selection, true);
+            await promise;
+            if (settingsRef.current.invokeAiPath?.trim() !== currentRoot) {
+                return false;
+            }
             addToast(selection.mode === 'all' ? 'Showing images from all InvokeAI users.' : 'InvokeAI owner scope updated.', 'success');
             return true;
         } catch (error) {
@@ -323,8 +429,12 @@ export const SyncProvider: React.FC<{
             setInvokeOwnerScopeState({ status: 'error', discovery, error: message });
             addToast(`Could not update InvokeAI owner scope: ${message}`, 'error');
             return false;
+        } finally {
+            if (ownerScopePromiseRef.current?.promise === promise) {
+                ownerScopePromiseRef.current = null;
+            }
         }
-    }, [addToast, applyDiscoveredOwnerScope, invokeOwnerScopeState.discovery]);
+    }, [addToast, applyDiscoveredOwnerScope, invokeOwnerScopeState.discovery, invokeOwnerScopeState.status, settingsRef]);
 
     const retryInvokeOwnerScope = useCallback(async () => {
         ownerScopeAdmissionRef.current = null;
@@ -334,7 +444,7 @@ export const SyncProvider: React.FC<{
     useEffect(() => {
         if (!settingsLoaded) return;
         ownerScopeAdmissionRef.current = null;
-        void ensureInvokeOwnerScope(true);
+        void ensureInvokeOwnerScope();
     }, [ensureInvokeOwnerScope, settings.invokeAiPath, settingsLoaded]);
 
     const startInvokeSync = useCallback(async (optionsInput?: StartInvokeSyncOptions) => {
