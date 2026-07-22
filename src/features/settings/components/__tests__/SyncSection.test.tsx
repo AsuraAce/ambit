@@ -26,6 +26,7 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
         startInvokeSync: mocks.startInvokeSync,
         cancelSync: mocks.cancelSync,
         isLiveSyncing: mocks.isLiveSyncing,
+        isInvokeSyncActive: mocks.syncStatus === 'syncing' || mocks.isLiveSyncing,
         invokeOwnerScopeState: mocks.invokeOwnerScopeState,
     })
 }));
@@ -68,7 +69,7 @@ describe('SyncSection', () => {
         mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
     });
 
-    it('blocks synchronization for a selected owner until owner-filtered sync ships', () => {
+    it('enables selected-owner sync while disabling orphan recovery without erasing its preference', () => {
         mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
         render(<SyncSection settings={createSettings({
             invokeOwnerSelection: {
@@ -79,10 +80,13 @@ describe('SyncSection', () => {
         })} setSettings={vi.fn()} />);
 
         const syncButton = screen.getByRole('button', { name: /initiate sync/i }) as HTMLButtonElement;
-        expect(syncButton.disabled).toBe(true);
-        expect(screen.getByText(/selected-owner synchronization is intentionally gated/i)).toBeTruthy();
+        expect(syncButton.disabled).toBe(false);
+        const orphanRecovery = screen.getByLabelText(/orphan recovery/i) as HTMLInputElement;
+        expect(orphanRecovery.disabled).toBe(true);
+        expect(orphanRecovery.checked).toBe(false);
+        expect(screen.getByText(/saved preference is preserved/i)).toBeTruthy();
         fireEvent.click(syncButton);
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({ importOrphans: true }));
     });
 
     it('starts manual sync from the saved cursor so stale repair does not force a full resync', () => {

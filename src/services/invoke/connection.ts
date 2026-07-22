@@ -1,10 +1,12 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { InvokeOwnerDiscovery, InvokeOwnerSummary } from '../../types';
+import type { InvokeSyncScope } from './syncScope';
 
 interface BoardRow {
     board_id: string;
     board_name: string;
     created_at: string;
+    user_id?: string | null;
 }
 
 interface BoardImageRow {
@@ -126,19 +128,72 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
     };
 };
 
-export async function fetchBoardMappings(db: Database): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, { name: string, createdAt: number }> }> {
+export interface InvokeBoardInfo {
+    name: string;
+    createdAt: number;
+    ownerId?: string;
+}
+
+export async function fetchBoardMappings(
+    db: Database,
+    scope: InvokeSyncScope
+): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, InvokeBoardInfo> }> {
     const imageToBoardId = new Map<string, string>();
-    const boards = new Map<string, { name: string, createdAt: number }>();
+    const boards = new Map<string, InvokeBoardInfo>();
 
     try {
-        const boardsRows = await db.select<BoardRow[]>("SELECT board_id, board_name, created_at FROM boards");
+        const boardColumns = scope.mode === 'legacy'
+            ? new Set<string>()
+            : new Set(
+                (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
+            );
+        if (scope.mode === 'owner' && !boardColumns.has('user_id')) {
+            console.warn('InvokeAI boards are not owner-scoped because boards.user_id is missing.');
+            return { imageToBoardId, boards };
+        }
+
+        if (scope.mode === 'legacy') {
+            const boardsRows = await db.select<BoardRow[]>('SELECT board_id, board_name, created_at FROM boards');
+            boardsRows.forEach((board) => {
+                const timeRaw = board.created_at.includes('Z') ? board.created_at : board.created_at + ' Z';
+                boards.set(board.board_id, {
+                    name: board.board_name,
+                    createdAt: new Date(timeRaw).getTime(),
+                });
+            });
+            const images = await db.select<BoardImageRow[]>('SELECT image_name, board_id FROM board_images');
+            images.forEach((image) => {
+                if (image.board_id) imageToBoardId.set(String(image.image_name), image.board_id);
+            });
+            return { imageToBoardId, boards };
+        }
+
+        const ownerSelect = boardColumns.has('user_id') ? ', b.user_id' : '';
+        const ownerWhere = scope.mode === 'owner' ? 'WHERE b.user_id = ?' : '';
+        const ownerParams = scope.mode === 'owner' ? [scope.ownerId] : [];
+        const boardsRows = await db.select<BoardRow[]>(`
+            SELECT b.board_id, b.board_name, b.created_at${ownerSelect}
+            FROM boards b
+            ${ownerWhere}
+        `, ownerParams);
         boardsRows.forEach((b) => {
             const timeRaw = b.created_at.includes('Z') ? b.created_at : b.created_at + ' Z';
             const timestamp = new Date(timeRaw).getTime();
-            boards.set(b.board_id, { name: b.board_name, createdAt: timestamp });
+            boards.set(b.board_id, {
+                name: b.board_name,
+                createdAt: timestamp,
+                ownerId: b.user_id?.trim() || undefined,
+            });
         });
 
-        const images = await db.select<BoardImageRow[]>("SELECT image_name, board_id FROM board_images");
+        const mappingJoin = scope.mode === 'owner'
+            ? 'INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?'
+            : '';
+        const images = await db.select<BoardImageRow[]>(`
+            SELECT bi.image_name, bi.board_id
+            FROM board_images bi
+            ${mappingJoin}
+        `, ownerParams);
         for (const img of images) {
             if (img.board_id) imageToBoardId.set(String(img.image_name), img.board_id);
         }

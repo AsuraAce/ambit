@@ -441,6 +441,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
             SELECT board_id, id 
             FROM images 
             WHERE board_id IS NOT NULL
+              AND invoke_scope_hidden = 0
         `;
 
         const params: unknown[] = [];

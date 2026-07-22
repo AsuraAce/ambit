@@ -1,13 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { InvokeDbSnapshotState } from '../../../types';
 import {
-    buildInvokeDbSnapshotState,
+    buildInvokeDbSnapshotState as buildInvokeDbSnapshotStateImpl,
     INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     isInvokeDbSnapshotCurrent,
     isInvokeImportSchemaCurrent,
-    readInvokeDbSnapshotState,
+    readInvokeDbSnapshotState as readInvokeDbSnapshotStateImpl,
 } from '../dbSnapshot';
+
+type SnapshotConfig = Parameters<typeof buildInvokeDbSnapshotStateImpl>[1];
+const withLegacyScope = (config: Partial<SnapshotConfig>): SnapshotConfig => ({
+    scopeMode: 'legacy',
+    ...config,
+});
+const buildInvokeDbSnapshotState = (
+    snapshot: Parameters<typeof buildInvokeDbSnapshotStateImpl>[0],
+    config: Partial<SnapshotConfig> = {}
+) => buildInvokeDbSnapshotStateImpl(snapshot, withLegacyScope(config));
+const readInvokeDbSnapshotState = (
+    rootPath: string,
+    config: Partial<SnapshotConfig> = {}
+) => readInvokeDbSnapshotStateImpl(rootPath, withLegacyScope(config));
 
 const getInvokeDbSnapshot = vi.hoisted(() => vi.fn());
 
@@ -92,6 +106,22 @@ describe('Invoke DB startup snapshot matching', () => {
             importOrphans: true,
             syncBoardsToCollections: false
         }))).toBe(false);
+    });
+
+    it('invalidates when owner mode or selected owner changes', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+        });
+        const ownerB = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-b',
+        });
+        const allUsers = buildInvokeDbSnapshotState(baseSnapshot, { scopeMode: 'all' });
+
+        expect(isInvokeDbSnapshotCurrent(ownerA, ownerA)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(ownerA, ownerB)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(ownerA, allUsers)).toBe(false);
     });
 
     it('invalidates when a missing WAL appears', () => {
@@ -206,7 +236,7 @@ describe('Invoke DB startup snapshot matching', () => {
         }
     });
 
-    it('matches legacy omitted options against current false defaults', () => {
+    it('invalidates snapshots that omit the captured owner scope', () => {
         const current = buildInvokeDbSnapshotState({ dbPath: 'invoke.db', files: [] }, {});
         const legacy = {
             dbPath: current.dbPath,
@@ -214,6 +244,6 @@ describe('Invoke DB startup snapshot matching', () => {
             importSchemaVersion: current.importSchemaVersion,
         } as InvokeDbSnapshotState;
 
-        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(false);
     });
 });

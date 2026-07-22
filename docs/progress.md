@@ -11,6 +11,7 @@ Last reviewed: 2026-07-07
 - The latest manual InvokeAI run showed the resource incremental path working as intended: browser logs emitted `mode:"resource-incremental"`, Rust resource refresh completed in about `452ms`, and the previously slow `caradhras-mix_style` LoRA refresh was about `106ms` instead of multi-second.
 - Asset drill-down now uses standard disjunctive faceting semantics: selected Match Any values keep sibling alternatives visible by counting that facet against all other active filters, while Match All keeps narrowed co-occurrence counts. Checkpoints remain multi-select but Any-only because each image has one checkpoint/model, and generator tools remain Any-only in the UI.
 - Maintenance currently exposes Missing, Thumbnails, Duplicates, Untagged, conditional Intermediates, and Removed tabs. Thumbnail optimization remains a visible maintenance surface as well as a background healing path.
+- InvokeAI synchronization now applies one durable legacy, All users, or selected-owner scope across manual, startup, and Live Watch queries. Selected-owner mode includes owned boards and collections, disables filesystem-only orphan recovery without erasing its preference, and preserves hidden rows for later scope changes.
 
 ## Current Constraints
 - `package.json` defines dev, build, lint, typecheck, one-shot frontend test, coverage, Rust test, Tauri no-bundle check, and release verification scripts.

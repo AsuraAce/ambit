@@ -190,6 +190,7 @@ export interface Collection {
   filters?: FilterState; // Added for Smart/Hybrid logic
   manualExclusions?: string[]; // Added for Hybrid override logic
   source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
+  invokeOwnerId?: string; // Owner of an InvokeAI board; omitted for Ambit collections and legacy schemas
 }
 
 export interface SmartCollection extends Collection {
@@ -254,6 +255,8 @@ export interface InvokeDbSnapshotState {
   importIntermediates: boolean;
   importOrphans: boolean;
   syncBoardsToCollections: boolean;
+  scopeMode: 'legacy' | 'all' | 'owner';
+  scopeOwnerId: string | null;
   pathRepairVersion: number;
   importSchemaVersion: number;
   files: InvokeDbSnapshotFile[];

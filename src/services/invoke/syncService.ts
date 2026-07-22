@@ -3,7 +3,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
-import { fetchBoardMappings } from './connection';
+import { fetchBoardMappings, type InvokeBoardInfo } from './connection';
 import { resolveInvokePaths } from './connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage, FacetType } from '../../types';
@@ -31,13 +31,15 @@ import {
     moveImagePathIdentity,
     syncCollectionImages
 } from '../db/imageRepo';
-import { upsertCollection } from '../db/collectionRepo';
+import { upsertInvokeBoardCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
 import { extractInvokeImageReferences } from './referenceExtractor';
+import { invokeOwnerPredicate, type InvokeSyncScope } from './syncScope';
 
-interface InvokeSyncOptions {
+export interface InvokeSyncOptions {
+    scope: InvokeSyncScope;
     syncFavorites?: boolean;
     syncBoards?: boolean;
     afterTimestamp?: number | null;
@@ -82,9 +84,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number, message?: string) => void,
-    signal?: AbortSignal,
-    options: InvokeSyncOptions = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
+    signal: AbortSignal | undefined,
+    options: InvokeSyncOptions
+): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, InvokeBoardInfo>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
@@ -102,7 +104,13 @@ export const syncImages = async (
     };
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
-    const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
+    const resolvedPaths = resolveInvokePaths(rootPath);
+    const scope = options.scope;
+    if (normalizePath(resolvedPaths.dbPath) !== normalizePath(scope.dbPath)
+        || normalizePath(resolvedPaths.imagesRoot) !== normalizePath(scope.imagesRoot)) {
+        throw new Error('InvokeAI sync scope does not match the configured database and image root.');
+    }
+    const { dbPath, imagesRoot } = scope;
     const connectionString = `sqlite:${dbPath}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
@@ -145,6 +153,9 @@ export const syncImages = async (
     const hasImageCategory = columns.includes('image_category');
     const hasImageOrigin = columns.includes('image_origin');
     const hasUserId = columns.includes('user_id');
+    if (scope.mode === 'owner' && !hasUserId) {
+        throw new Error('This InvokeAI database cannot enforce the selected owner because images.user_id is missing.');
+    }
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -153,6 +164,13 @@ export const syncImages = async (
     }
 
     const conditions: string[] = [];
+    const queryParams: string[] = [];
+
+    const ownerPredicate = invokeOwnerPredicate(scope, 'i');
+    if (ownerPredicate.clause) {
+        conditions.push(ownerPredicate.clause);
+        queryParams.push(...ownerPredicate.params);
+    }
 
     // Filter out intermediates unless explicitly enabled
     if (!options.importIntermediates && hasIsIntermediate) {
@@ -162,22 +180,27 @@ export const syncImages = async (
     if (options.afterTimestamp && options.afterTimestamp > 0) {
         const bufferedTimestamp = options.afterTimestamp;
         const isoDate = new Date(bufferedTimestamp).toISOString().replace('T', ' ').replace('Z', '');
-        const timeCond = `i.created_at > '${isoDate}'`;
+        const timeCond = 'i.created_at > ?';
         if (hasUpdatedAt) {
-            conditions.push(`(${timeCond} OR i.updated_at > '${isoDate}')`);
+            conditions.push(`(${timeCond} OR i.updated_at > ?)`);
+            queryParams.push(isoDate, isoDate);
         } else {
             conditions.push(timeCond);
+            queryParams.push(isoDate);
         }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
     let totalToImport = 0;
     let hasCandidates = true;
-    let boards = new Map<string, { name: string, createdAt: number }>();
+    let boards = new Map<string, InvokeBoardInfo>();
 
     if (options.mode === 'live' || (options.mode === 'startup' && options.afterTimestamp && options.afterTimestamp > 0)) {
         const candidateCheckStartedAt = liveWatchNow();
-        const candidateRes = await invokeDb.select<Array<{ found: number }>>(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
+        const candidateRes = await invokeDb.select<Array<{ found: number }>>(
+            `SELECT 1 as found FROM images i ${whereClause} LIMIT 1`,
+            queryParams
+        );
         hasCandidates = candidateRes.length > 0;
         logSyncDebug('Invoke candidate detection complete', {
             mode: options.mode,
@@ -194,7 +217,10 @@ export const syncImages = async (
 
     if (hasCandidates) {
         const countStartedAt = liveWatchNow();
-        const countRes = await invokeDb.select<CountRow[]>(`SELECT count(*) as count FROM images i ${whereClause} `);
+        const countRes = await invokeDb.select<CountRow[]>(
+            `SELECT count(*) as count FROM images i ${whereClause} `,
+            queryParams
+        );
         totalToImport = countRes[0]?.count || 0;
         logSyncDebug('Invoke sync candidate count computed', {
             totalToImport,
@@ -224,6 +250,7 @@ export const syncImages = async (
             db: invokeDb,
             columns: new Set(columns),
             pathResolver,
+            scope,
             onProgress,
             signal,
         })
@@ -276,6 +303,11 @@ export const syncImages = async (
         });
 
         const repairConditions: string[] = [];
+        const repairParams: string[] = [];
+        if (ownerPredicate.clause) {
+            repairConditions.push(ownerPredicate.clause);
+            repairParams.push(...ownerPredicate.params);
+        }
         if (!options.importIntermediates && hasIsIntermediate) {
             repairConditions.push('i.is_intermediate = 0');
         }
@@ -322,7 +354,7 @@ export const syncImages = async (
                 FROM images i
                 WHERE ${repairWhereClause}
                 ORDER BY i.created_at ASC, i.image_name ASC
-            `, nameChunk);
+            `, [...nameChunk, ...repairParams]);
             addRepairRows(repairRows);
         }
 
@@ -336,7 +368,7 @@ export const syncImages = async (
                 FROM images i
                 WHERE ${relativeRepairWhereClause}
                 ORDER BY i.created_at ASC, i.image_name ASC
-            `);
+            `, repairParams);
             relativeRowsScanned = relativeRepairRows.length;
             addRepairRows(relativeRepairRows);
         }
@@ -476,7 +508,8 @@ export const syncImages = async (
         repairedExistingCount = await repairStaleInvokeImagePaths();
     }
 
-    if (totalToImport === 0) {
+    const shouldReconcileBoardCollections = options.reconcileSourceFacts === true && options.syncBoards === true;
+    if (totalToImport === 0 && !shouldReconcileBoardCollections) {
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
@@ -497,7 +530,7 @@ export const syncImages = async (
     if (options.syncBoards && hasBoardsTable) {
         onProgress(0, 0, 'Fetching board mappings...');
         const boardMappingStartedAt = liveWatchNow();
-        const result = await fetchBoardMappings(invokeDb);
+        const result = await fetchBoardMappings(invokeDb, scope);
         imageToBoardId = result.imageToBoardId;
         boards = result.boards;
         logSyncDebug('Invoke board mappings loaded', {
@@ -505,6 +538,22 @@ export const syncImages = async (
             imageBoardLinks: imageToBoardId.size,
             boardMappingMs: elapsedMs(boardMappingStartedAt)
         });
+    }
+
+    const createdBoardIds = new Set<string>();
+    if (shouldReconcileBoardCollections) {
+        const usedBoardIds = new Set(imageToBoardId.values());
+        for (const boardId of usedBoardIds) {
+            const boardInfo = boards.get(boardId);
+            if (!boardInfo) continue;
+            await upsertInvokeBoardCollection({
+                id: boardId,
+                name: boardInfo.name,
+                createdAt: boardInfo.createdAt || Date.now(),
+                invokeOwnerId: boardInfo.ownerId,
+            });
+            createdBoardIds.add(boardId);
+        }
     }
 
     let processed = 0;
@@ -524,7 +573,6 @@ export const syncImages = async (
     const imageOriginCol = hasImageOrigin ? ', i.image_origin' : ', NULL AS image_origin';
     const ownerCol = hasUserId ? ', CAST(i.user_id AS TEXT) AS user_id' : ', NULL AS user_id';
 
-    const createdBoardIds = new Set<string>();
     let batchCount = 0;
 
     while (true) {
@@ -542,7 +590,7 @@ export const syncImages = async (
 `;
 
         const batchQueryStartedAt = liveWatchNow();
-        const rows = await invokeDb.select<InvokeImageRow[]>(query);
+        const rows = await invokeDb.select<InvokeImageRow[]>(query, queryParams);
         const batchQueryMs = elapsedMs(batchQueryStartedAt);
         if (rows.length === 0) break;
         batchCount++;
@@ -859,11 +907,11 @@ export const syncImages = async (
                 for (const bId of batchBoardIds) {
                     const boardInfo = boards.get(bId!);
                     if (boardInfo) {
-                        await upsertCollection({
+                        await upsertInvokeBoardCollection({
                             id: bId!,
                             name: boardInfo.name,
                             createdAt: boardInfo.createdAt || Date.now(),
-                            source: 'invoke'
+                            invokeOwnerId: boardInfo.ownerId,
                         });
                         createdBoardIds.add(bId!);
                     }

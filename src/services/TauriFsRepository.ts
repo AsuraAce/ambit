@@ -186,6 +186,8 @@ const isPersistedInvokeSnapshot = (value: unknown): boolean => {
         && typeof value.importIntermediates === 'boolean'
         && typeof value.importOrphans === 'boolean'
         && typeof value.syncBoardsToCollections === 'boolean'
+        && hasValidOptionalValue(value, 'scopeMode', item => isEnumValue(item, ['legacy', 'all', 'owner']))
+        && hasValidOptionalValue(value, 'scopeOwnerId', item => item === null || typeof item === 'string')
         && hasValidOptionalValue(value, 'pathRepairVersion', item => typeof item === 'number')
         && hasValidOptionalValue(value, 'importSchemaVersion', item => typeof item === 'number')
         && value.files.every(file => isRecord(file)
@@ -563,6 +565,8 @@ export class TauriFsRepository implements IRepository {
         const invokeDbSnapshot = savedSettings.invokeDbSnapshot
             ? {
                 ...savedSettings.invokeDbSnapshot,
+                scopeMode: savedSettings.invokeDbSnapshot.scopeMode ?? 'legacy',
+                scopeOwnerId: savedSettings.invokeDbSnapshot.scopeOwnerId ?? null,
                 pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
                 importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0
             }

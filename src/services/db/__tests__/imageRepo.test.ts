@@ -875,6 +875,7 @@ describe('imageRepo batch removal', () => {
             expect.stringContaining('AND id IN (?,?)'),
             ['C:/images/a.png', 'C:/images/b.png']
         );
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_scope_hidden = 0');
         expect(db.select).toHaveBeenCalledWith(
             expect.stringContaining('FROM collection_images'),
             ['C:/images/a.png', 'C:/images/b.png']

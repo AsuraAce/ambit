@@ -39,7 +39,7 @@ interface InvokeDiagnostics {
 }
 
 export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
-    const { invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope } = useLibrary();
+    const { invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope, isInvokeSyncActive } = useLibrary();
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
@@ -51,6 +51,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         ? settings.invokeOwnerSelection
         : undefined;
     const ownerScopeBusy = invokeOwnerScopeState.status === 'discovering' || invokeOwnerScopeState.status === 'applying';
+    const scopeControlsBusy = ownerScopeBusy || isInvokeSyncActive;
 
     const runDiagnostics = async () => {
         setIsDiagLoading(true);
@@ -121,7 +122,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <input
                                     type="text"
                                     value={settings.invokeAiPath || ''}
-                                    disabled={ownerScopeBusy}
+                                    disabled={scopeControlsBusy}
                                     onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
                                     placeholder="e.g. C:\\AI\\invokeai"
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
@@ -131,7 +132,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <button
                                 type="button"
                                 onClick={handleBrowse}
-                                disabled={ownerScopeBusy}
+                                disabled={scopeControlsBusy}
                                 className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
                             >
                                 Browse
@@ -140,6 +141,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         <p className="text-[10px] text-gray-500 mt-3 flex items-center gap-1.5 opacity-80">
                             <Info className="w-3 h-3" /> Select the folder containing <code>databases/invokeai.db</code>.
                         </p>
+                        {isInvokeSyncActive && (
+                            <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-2">
+                                The InvokeAI path and owner scope are locked until synchronization finishes.
+                            </p>
+                        )}
                     </div>
 
                     <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
@@ -217,7 +223,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <button
                                         key={owner.ownerId}
                                         type="button"
-                                        disabled={ownerScopeBusy}
+                                        disabled={scopeControlsBusy}
                                         onClick={() => void selectInvokeOwnerScope({ dbPath: ownerDiscovery.dbPath, mode: 'owner', ownerId: owner.ownerId })}
                                         className={`w-full text-left p-3 rounded-xl border transition-colors ${selected ? 'border-sage-500 bg-sage-500/10' : 'border-gray-200 dark:border-white/10 hover:border-sage-500/50'}`}
                                     >
@@ -243,6 +249,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <button
                                 type="button"
                                 onClick={() => setIsAllUsersConfirmOpen(true)}
+                                disabled={scopeControlsBusy}
                                 className={`w-full p-3 rounded-xl border text-left transition-colors ${ownerSelection?.mode === 'all' ? 'border-amber-500 bg-amber-500/10' : 'border-gray-200 dark:border-white/10 hover:border-amber-500/50'}`}
                             >
                                 <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>

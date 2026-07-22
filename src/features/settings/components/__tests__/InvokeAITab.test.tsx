@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     diagnoseInvokeAI: vi.fn(),
     selectInvokeOwnerScope: vi.fn(),
     retryInvokeOwnerScope: vi.fn(),
+    isInvokeSyncActive: false,
     ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
 }));
 
@@ -26,6 +27,7 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
         invokeOwnerScopeState: mocks.ownerScopeState,
         selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
         retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+        isInvokeSyncActive: mocks.isInvokeSyncActive,
     }),
 }));
 
@@ -42,6 +44,7 @@ describe('InvokeAITab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.developerFeatures = true;
+        mocks.isInvokeSyncActive = false;
         mocks.ownerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
         mocks.open.mockResolvedValue(null);
         mocks.testConnection.mockResolvedValue({ success: true, message: 'Connected' });
@@ -74,6 +77,32 @@ describe('InvokeAITab', () => {
         expect((screen.getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
         expect((screen.getByText('Browse').closest('button') as HTMLButtonElement).disabled).toBe(true);
         expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('locks root and owner controls during quiet startup synchronization', () => {
+        mocks.isInvokeSyncActive = true;
+        mocks.ownerScopeState = {
+            status: 'ready',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', imageCount: 1 }],
+                unassignedImageCount: 0,
+            },
+        };
+        render(<InvokeAITab settings={{
+            ...settings('D:/Invoke'),
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        }} setSettings={vi.fn()} />);
+
+        expect((screen.getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
+        expect((screen.getByRole('button', { name: /unnamed owner/i }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByText(/locked until synchronization finishes/i)).toBeTruthy();
     });
 
     it('shows display names with stable IDs and requires confirmation for All users', async () => {

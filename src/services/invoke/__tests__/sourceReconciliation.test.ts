@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../../bindings';
 import { createInvokeImagePathResolver } from '../pathResolver';
-import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
+import { reconcileInvokeSourceFacts as reconcileInvokeSourceFactsImpl } from '../sourceReconciliation';
 
 const reconcileInvokeImageSources = vi.hoisted(() => vi.fn());
 const replaceInvokeImageReferences = vi.hoisted(() => vi.fn());
@@ -12,6 +12,16 @@ vi.mock('../../../bindings', () => ({
 }));
 
 const root = 'D:/InvokeAI';
+const reconcileInvokeSourceFacts = (
+    options: Omit<Parameters<typeof reconcileInvokeSourceFactsImpl>[0], 'scope'>
+) => reconcileInvokeSourceFactsImpl({
+    scope: {
+        mode: 'legacy',
+        dbPath: `${root}/databases/invokeai.db`,
+        imagesRoot: root,
+    },
+    ...options,
+});
 
 const createDb = (rows: Array<{
     image_name: string;
@@ -48,6 +58,40 @@ describe('reconcileInvokeSourceFacts', () => {
             },
         }));
         verifyImagePaths.mockResolvedValue({ status: 'ok', data: [] });
+    });
+
+    it('scopes both reconciliation passes to the selected owner', async () => {
+        const rows = [{ image_name: 'owned.png', user_id: 'owner-a', metadata_blob: {} }];
+        const queries: Array<{ sql: string; params?: unknown[] }> = [];
+        const db = {
+            select: vi.fn(async (sql: string, params?: unknown[]) => {
+                queries.push({ sql, params });
+                if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
+                if (sql.includes('FROM images i')) return rows;
+                return [];
+            }),
+        };
+        const pathResolver = createInvokeImagePathResolver(root, async () => ['outputs/images/owned.png']);
+
+        await reconcileInvokeSourceFactsImpl({
+            db: db as never,
+            columns: new Set(['user_id']),
+            pathResolver,
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: `${root}/databases/invokeai.db`,
+                imagesRoot: root,
+            },
+            onProgress: vi.fn(),
+        });
+
+        const imageQueries = queries.filter(({ sql }) => sql.includes('FROM images i'));
+        expect(imageQueries.length).toBeGreaterThanOrEqual(3);
+        imageQueries.forEach(({ sql, params }) => {
+            expect(sql).toContain('i.user_id = ?');
+            expect(params).toEqual(['owner-a']);
+        });
     });
 
     it('lets canonical paths win and only emits an unclaimed unique legacy alias', async () => {

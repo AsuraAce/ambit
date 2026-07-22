@@ -8,6 +8,7 @@ import { normalizePath } from '../../utils/pathUtils';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
 import { extractInvokeImageReferences } from './referenceExtractor';
+import { invokeOwnerPredicate, type InvokeSyncScope } from './syncScope';
 
 interface InvokeSourceIdentityRow {
     image_name: string;
@@ -25,6 +26,7 @@ interface ReconcileInvokeSourceFactsOptions {
     db: Database;
     columns: ReadonlySet<string>;
     pathResolver: ReturnType<typeof createInvokeImagePathResolver>;
+    scope: InvokeSyncScope;
     onProgress: (current: number, total: number, message?: string) => void;
     signal?: AbortSignal;
 }
@@ -70,13 +72,22 @@ export const reconcileInvokeSourceFacts = async ({
     db,
     columns,
     pathResolver,
+    scope,
     onProgress,
     signal,
 }: ReconcileInvokeSourceFactsOptions): Promise<number> => {
+    if (scope.mode === 'owner' && !columns.has('user_id')) {
+        throw new Error('This InvokeAI database cannot enforce the selected owner because images.user_id is missing.');
+    }
     const hasImageSubfolder = columns.has('image_subfolder');
     const subfolderSelect = hasImageSubfolder ? ', i.image_subfolder' : '';
     const orderBy = `i.image_name ASC${hasImageSubfolder ? ', i.image_subfolder ASC' : ''}`;
-    const countRows = await db.select<Array<{ count: number }>>('SELECT count(*) as count FROM images');
+    const ownerPredicate = invokeOwnerPredicate(scope, 'i');
+    const whereClause = ownerPredicate.clause ? `WHERE ${ownerPredicate.clause}` : '';
+    const countRows = await db.select<Array<{ count: number }>>(
+        `SELECT count(*) as count FROM images i ${whereClause}`,
+        ownerPredicate.params
+    );
     const total = countRows[0]?.count ?? 0;
     if (total === 0) return 0;
 
@@ -91,9 +102,10 @@ export const reconcileInvokeSourceFacts = async ({
         const rows = await db.select<InvokeSourceIdentityRow[]>(`
             SELECT i.image_name${subfolderSelect}
             FROM images i
+            ${whereClause}
             ORDER BY ${orderBy}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
-        `);
+        `, ownerPredicate.params);
         if (rows.length === 0) break;
 
         const resolvedPaths = await Promise.all(rows.map(row =>
@@ -175,9 +187,10 @@ export const reconcileInvokeSourceFacts = async ({
         const rows = await db.select<InvokeSourceFactRow[]>(`
             SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${ownerSelect}${metadataSelect}
             FROM images i
+            ${whereClause}
             ORDER BY ${orderBy}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
-        `);
+        `, ownerPredicate.params);
         if (rows.length === 0) break;
 
         const resolvedPaths = await Promise.all(rows.map(row =>

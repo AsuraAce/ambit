@@ -442,9 +442,9 @@ Evidence:
   thumbnail, direct-read, Removed, and reference paths consistently exclude
   owner-hidden rows, while internal reconciliation can still recover them;
 - saved owner scope is bound to its canonical InvokeAI database path and clears
-  the sync cursor/snapshot when changed; selected-owner synchronization remains
-  deliberately blocked for Work Package 8, with legacy and confirmed All users
-  modes retaining their established behavior;
+  the sync cursor/snapshot when changed; the WP7 gate deliberately left
+  selected-owner synchronization blocked for WP8, which now enables it through
+  the scope-aware contract below;
 - follow-up review hardening serializes discovery and selection across root
   changes, rejects rapid competing selections, rolls native visibility back
   when persistence or the configured root changes, and commits owner settings
@@ -492,7 +492,7 @@ Completion criteria:
 
 Depends on: Work Package 7.
 
-Status: Pending
+Status: Complete
 
 Primary invariant: every InvokeAI-derived query observes the same selected
 owner scope.
@@ -507,6 +507,30 @@ Scope:
   assigned safely.
 - Refresh the equality-friendly indexed scope-hidden field transactionally.
 - Include scope and schema version in snapshot validity.
+
+Approved boundary and decisions:
+
+- A sync receives one immutable `InvokeSyncScope` containing the canonical
+  database path, images root, and `legacy`, `all`, or exact `owner` mode.
+  Unselected multi-user state cannot create a sync scope.
+- Manual, startup, and Live Watch entry points capture that same scope. Owner
+  or root controls remain locked until the active Invoke sync finishes; a
+  programmatic change rejects stale completion, cursor, and snapshot writes.
+- Owner filtering uses parameterized `images.user_id = ?` predicates for
+  candidate detection, counts, batches, path repair, favorites, and source
+  reconciliation. Missing `images.user_id` fails selected-owner sync closed.
+- Owner mode imports only directly owned boards and mappings through
+  `boards.user_id = ?`. Missing board ownership suppresses board mapping with a
+  warning while image sync continues. Shared/public board semantics remain out
+  of scope.
+- Migration 66 stores nullable `collections.invoke_owner_id`. Invoke collection
+  listing is fail-closed against the durable owner-scope state, while all rows,
+  memberships, and Ambit customizations remain stored for later scope changes.
+- Orphan Recovery is operationally disabled in owner mode because filesystem
+  files have no trustworthy owner. Its saved preference is preserved and
+  becomes active again in All users or legacy mode.
+- Invoke import snapshot schema version 3 records scope mode and owner ID, so
+  Owner A, Owner B, All users, and legacy snapshots are not interchangeable.
 
 Non-goals:
 
@@ -523,6 +547,26 @@ Completion criteria:
 - all InvokeAI sync paths enforce the selected scope consistently;
 - switching scope is deterministic, recoverable, and does not duplicate or
   delete records.
+
+Implementation evidence:
+
+- `src/services/invoke/syncScope.ts` owns scope construction and exact owner
+  predicates; `syncService.ts`, `sourceReconciliation.ts`, and `connection.ts`
+  require and apply the captured scope.
+- `src/contexts/SyncContext.tsx` owns admission, concurrency, stale-completion
+  rejection, snapshot scope, and owner-mode orphan gating for all three sync
+  modes.
+- `src-tauri/src/db/migrations/m66_invoke_collection_owner.rs` and the
+  collection repository persist and enforce board-owner visibility without
+  deleting out-of-scope data.
+- Focused frontend verification covers owner/all/legacy scope contracts,
+  missing ownership columns, owned boards, snapshots, collections, orphan
+  gating, active-sync locking, and programmatic owner drift. The migration test
+  verifies fail-closed collection visibility and indexed owner lookup.
+- WP8 package gates pass: lint, TypeScript, Rust formatting, whitespace checks,
+  274 focused frontend tests with one existing skip, and 25 focused Rust
+  migration tests. The separate whole-workstream integration review and full
+  release gate remain the next phase.
 
 ## Stage Acceptance Gates
 

@@ -22,6 +22,8 @@ Open Settings > Connections > InvokeAI.
 
 Select the InvokeAI root installation folder that contains `databases/invokeai.db`, then use Test Connection. After a connection is configured, the Synchronization section appears.
 
+If the InvokeAI database contains more than one user, choose one owner or explicitly choose All users. A single-owner scope limits images, favorites, directly owned boards, board collections, startup catch-up, and Live Watch to that owner. Other and unassigned records stay stored locally and reappear when their owner or All users is selected; changing scope does not delete them. Ambit does not read email addresses or sign in to InvokeAI.
+
 InvokeAI synchronization can:
 
 - import images from the InvokeAI database into Ambit's library
@@ -30,11 +32,15 @@ InvokeAI synchronization can:
 - import intermediate generation steps when Import Intermediates is enabled
 - run Orphan Recovery during a manual full output-folder recovery sweep
 
+Orphan Recovery is unavailable while one owner is selected because loose output files do not carry reliable ownership. Ambit preserves the checkbox preference and restores it automatically in All users or legacy mode. Shared/public InvokeAI boards are not included in single-owner board sync.
+
 InvokeAI can also store user uploads, control images, masks, and other source assets. Ambit imports these records so they remain recoverable, but hides known image assets from ordinary library results by default. Use the library View menu's `Show InvokeAI Image Assets` control to reveal them. Revealed assets show category badges, and their viewer Source section shows the recorded InvokeAI image name, category, and origin when available. Unknown or missing categories remain visible.
 
 When InvokeAI generation metadata identifies input images, the viewer also shows forward `Source Images` links and reverse `Used By` links. Available links open in place even when the referenced asset is hidden from ordinary results; this does not enable asset visibility or alter the active search or collection. Unresolved source names and backlinks from Removed images are retained as disabled provenance entries.
 
 Use Initiate Sync to start a manual sync. If a sync fails, Retry Sync starts it again; while a sync is active, Terminate Sync cancels it.
+
+The InvokeAI path and owner choice are locked for the duration of manual, startup, and Live Watch synchronization so one run cannot mix records from different scopes.
 
 Force Full Resync clears only the InvokeAI sync cursor. The next manual sync scans the full InvokeAI database again, while existing Ambit records, source files, and InvokeAI snapshots stay untouched.
 

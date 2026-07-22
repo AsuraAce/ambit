@@ -12,10 +12,12 @@ interface InvokeDbSnapshotConfig {
     importIntermediates?: boolean;
     importOrphans?: boolean;
     syncBoardsToCollections?: boolean;
+    scopeMode: 'legacy' | 'all' | 'owner';
+    scopeOwnerId?: string | null;
 }
 
 export const INVOKE_PATH_REPAIR_SNAPSHOT_VERSION = 1;
-export const INVOKE_IMPORT_SCHEMA_VERSION = 2;
+export const INVOKE_IMPORT_SCHEMA_VERSION = 3;
 
 const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>
     [...files].sort((a, b) => a.path.localeCompare(b.path));
@@ -35,6 +37,8 @@ export const buildInvokeDbSnapshotState = (
     importIntermediates: config.importIntermediates ?? false,
     importOrphans: config.importOrphans ?? false,
     syncBoardsToCollections: config.syncBoardsToCollections ?? false,
+    scopeMode: config.scopeMode,
+    scopeOwnerId: config.scopeMode === 'owner' ? (config.scopeOwnerId ?? null) : null,
     pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
     files: sortedFiles(snapshot.files).map(file => ({
@@ -55,6 +59,8 @@ export const isInvokeDbSnapshotCurrent = (
     if ((saved.importIntermediates ?? false) !== current.importIntermediates) return false;
     if ((saved.importOrphans ?? false) !== current.importOrphans) return false;
     if ((saved.syncBoardsToCollections ?? false) !== current.syncBoardsToCollections) return false;
+    if (saved.scopeMode !== current.scopeMode) return false;
+    if ((saved.scopeOwnerId ?? null) !== current.scopeOwnerId) return false;
     if ((saved.pathRepairVersion ?? 0) !== current.pathRepairVersion) return false;
     if ((saved.importSchemaVersion ?? 0) !== current.importSchemaVersion) return false;
 

@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from '@tauri-apps/plugin-sql';
-import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings, resolveInvokePaths, testConnection } from '../connection';
+import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, resolveInvokePaths, testConnection } from '../connection';
+
+const fetchBoardMappings = (db: Database) => fetchBoardMappingsImpl(db, {
+    mode: 'legacy',
+    dbPath: 'D:/InvokeAI/databases/invokeai.db',
+    imagesRoot: 'D:/InvokeAI',
+});
 
 const sqlMock = vi.hoisted(() => ({
     load: vi.fn()
@@ -153,6 +159,49 @@ describe('InvokeAI connection helpers', () => {
             'Failed to fetch boards/collections mapping:',
             expect.any(Error)
         );
+    });
+
+    it('loads only directly owned boards and memberships for a selected owner', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'PRAGMA table_info(boards)') return [{ name: 'user_id' }];
+            if (sql.includes('FROM boards b')) {
+                return [{ board_id: 'board-a', board_name: 'Owned', created_at: '2026-01-02T03:04:05Z', user_id: 'owner-a' }];
+            }
+            if (sql.includes('FROM board_images bi')) {
+                return [{ image_name: 'owned.png', board_id: 'board-a' }];
+            }
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+
+        const result = await fetchBoardMappingsImpl(db as unknown as Database, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/InvokeAI/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeAI',
+        });
+
+        expect(result.boards.get('board-a')).toEqual(expect.objectContaining({ ownerId: 'owner-a' }));
+        const calls = db.select.mock.calls as Array<[string, unknown[]?]>;
+        expect(calls.find(([sql]) => sql.includes('FROM boards b'))?.[1]).toEqual(['owner-a']);
+        expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[0]).toContain('b.user_id = ?');
+        expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[1]).toEqual(['owner-a']);
+    });
+
+    it('skips board mapping without failing image sync when board ownership is unavailable', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'PRAGMA table_info(boards)') return [{ name: 'board_id' }];
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+
+        const result = await fetchBoardMappingsImpl(db as unknown as Database, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/InvokeAI/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeAI',
+        });
+
+        expect(result).toEqual({ imageToBoardId: new Map(), boards: new Map() });
+        expect(console.warn).toHaveBeenCalledWith(expect.stringContaining('boards.user_id is missing'));
     });
 
     it('reports an empty connection request without touching the database', async () => {

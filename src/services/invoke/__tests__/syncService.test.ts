@@ -3,7 +3,7 @@ import Database from '@tauri-apps/plugin-sql';
 import { commands } from '../../../bindings';
 import { fetchBoardMappings } from '../connection';
 import { insertImagesBatch } from '../../db';
-import { upsertCollection } from '../../db/collectionRepo';
+import { upsertInvokeBoardCollection } from '../../db/collectionRepo';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
@@ -11,9 +11,35 @@ import {
     moveImagePathIdentity,
     syncCollectionImages
 } from '../../db/imageRepo';
-import { syncImages } from '../syncService';
+import { syncImages as syncImagesImpl, type InvokeSyncOptions } from '../syncService';
 import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
 import { GeneratorTool, type AIImage } from '../../../types';
+
+const legacyScope = {
+    mode: 'legacy' as const,
+    dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+    imagesRoot: 'D:/AmbitFixtures/InvokeAI',
+};
+const syncImages = (
+    rootPath: string,
+    onProgress: (current: number, total: number, message?: string) => void,
+    signal?: AbortSignal,
+    options: Omit<InvokeSyncOptions, 'scope'> = {}
+) => {
+    const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
+    const isFile = /\.db$/i.test(normalizedRoot);
+    const imagesRoot = isFile
+        ? normalizedRoot.replace(/\/(?:databases\/)?invokeai\.db$/i, '')
+        : normalizedRoot.replace(/\/databases$/i, '');
+    return syncImagesImpl(rootPath, onProgress, signal, {
+        scope: {
+            ...legacyScope,
+            dbPath: isFile ? normalizedRoot : `${imagesRoot}/databases/invokeai.db`,
+            imagesRoot,
+        },
+        ...options,
+    });
+};
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
@@ -83,7 +109,7 @@ vi.mock('../../db/imageRepo', () => ({
 }));
 
 vi.mock('../../db/collectionRepo', () => ({
-    upsertCollection: vi.fn()
+    upsertInvokeBoardCollection: vi.fn()
 }));
 
 const createInvokeDb = (selectMock: ReturnType<typeof vi.fn>) => ({
@@ -128,6 +154,7 @@ const arrangeManualRepair = async ({
     includeUnmatchedRow = false,
     rowImageName = name,
     thumbnailName = null,
+    ownerId,
     signal,
     onRepairRows,
 }: {
@@ -139,8 +166,9 @@ const arrangeManualRepair = async ({
     includeUnmatchedRow?: boolean;
     rowImageName?: string;
     thumbnailName?: string | null;
+    ownerId?: string;
     signal?: AbortSignal;
-    onRepairRows?: () => void;
+    onRepairRows?: (query: string, params?: unknown[]) => void;
 }) => {
     const root = 'D:/AmbitFixtures/InvokeAI';
     const stalePath = `${root}/outputs/images/${name}`;
@@ -152,14 +180,19 @@ const arrangeManualRepair = async ({
         metadata_blob: {},
         created_at: '2026-04-18 12:00:00'
     };
-    const selectMock = vi.fn(async (query: string) => {
+    const selectMock = vi.fn(async (query: string, params?: unknown[]) => {
         if (query.includes('PRAGMA table_info(images)')) {
-            return [{ name: 'metadata_json' }, { name: 'image_subfolder' }, { name: 'thumbnail_name' }];
+            return [
+                { name: 'metadata_json' },
+                { name: 'image_subfolder' },
+                { name: 'thumbnail_name' },
+                ...(ownerId ? [{ name: 'user_id' }] : []),
+            ];
         }
         if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
         if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 0 }];
         if (query.includes('SELECT i.image_name')) {
-            onRepairRows?.();
+            onRepairRows?.(query, params);
             return includeUnmatchedRow
                 ? [repairRow, { ...repairRow, image_name: 'not-stale.png' }]
                 : [repairRow];
@@ -176,9 +209,21 @@ const arrangeManualRepair = async ({
     else vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [size] } as never);
     vi.mocked(getImagesByIds).mockResolvedValue(existingPaths.map(path => makeExistingInvokeImage(name, { id: path })));
 
-    const result = await syncImages(root, vi.fn(), signal, {
-        mode: 'manual', syncBoards: false, syncFavorites: false
-    });
+    const result = ownerId
+        ? await syncImagesImpl(root, vi.fn(), signal, {
+            scope: {
+                mode: 'owner',
+                ownerId,
+                dbPath: `${root}/databases/invokeai.db`,
+                imagesRoot: root,
+            },
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
+        })
+        : await syncImages(root, vi.fn(), signal, {
+            mode: 'manual', syncBoards: false, syncFavorites: false
+        });
     return { result, stalePath, targetPath };
 };
 
@@ -205,11 +250,130 @@ describe('syncImages live mode', () => {
         });
         vi.mocked(moveImagePathIdentity).mockResolvedValue(false);
         vi.mocked(syncCollectionImages).mockResolvedValue(undefined as never);
-        vi.mocked(upsertCollection).mockResolvedValue(undefined as never);
+        vi.mocked(upsertInvokeBoardCollection).mockResolvedValue(undefined as never);
         vi.mocked(reconcileInvokeSourceFacts).mockResolvedValue(0);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
             imageToBoardId: new Map(),
             boards: new Map()
+        });
+    });
+
+    it('uses the exact selected-owner predicate for candidate, count, and batch queries', async () => {
+        const queries: Array<{ sql: string; params?: unknown[] }> = [];
+        const selectMock = vi.fn(async (sql: string, params?: unknown[]) => {
+            queries.push({ sql, params });
+            if (sql.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'user_id' }];
+            }
+            if (sql.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (sql.includes('SELECT 1 as found')) return [{ found: 1 }];
+            if (sql.includes('SELECT count(*) as count')) return [{ count: 1 }];
+            if (sql.includes('SELECT i.image_name')) return [];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+            },
+            mode: 'live',
+            syncBoards: false,
+            syncFavorites: false,
+        });
+
+        const scopedQueries = queries.filter(({ sql }) => (
+            sql.includes('SELECT 1 as found')
+            || sql.includes('SELECT count(*) as count')
+            || sql.includes('SELECT i.image_name')
+        ));
+        expect(scopedQueries).toHaveLength(3);
+        scopedQueries.forEach(({ sql, params }) => {
+            expect(sql).toContain('i.user_id = ?');
+            expect(params).toEqual(['owner-a']);
+        });
+    });
+
+    it('fails before candidate discovery when selected-owner filtering is unavailable', async () => {
+        const selectMock = vi.fn(async (sql: string) => {
+            if (sql.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (sql.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        await expect(syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+            },
+            mode: 'live',
+        })).rejects.toThrow('images.user_id is missing');
+        expect(selectMock.mock.calls.some(([sql]) => String(sql).includes('SELECT 1 as found'))).toBe(false);
+    });
+
+    it('uses selected-owner filtering during manual stale-path repair', async () => {
+        const ownerRepairQueries: Array<{ query: string; params?: unknown[] }> = [];
+
+        await arrangeManualRepair({
+            name: 'owned.png',
+            ownerId: 'owner-a',
+            existingPaths: [],
+            onRepairRows: (query, params) => ownerRepairQueries.push({ query, params }),
+        });
+
+        expect(ownerRepairQueries.length).toBeGreaterThan(0);
+        ownerRepairQueries.forEach(({ query, params }) => {
+            expect(query).toContain('i.user_id = ?');
+            expect(params?.at(-1)).toBe('owner-a');
+        });
+    });
+
+    it('backfills owner identity for used board collections during schema reconciliation with no new rows', async () => {
+        const selectMock = vi.fn(async (sql: string) => {
+            if (sql.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'user_id' }];
+            }
+            if (sql.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (sql.includes('SELECT count(*) as count')) return [{ count: 0 }];
+            if (sql.includes("name='boards'")) return [{ name: 'boards' }];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(fetchBoardMappings).mockResolvedValueOnce({
+            imageToBoardId: new Map([['owned.png', 'board-a']]),
+            boards: new Map([['board-a', {
+                name: 'Owned board',
+                createdAt: 10,
+                ownerId: 'owner-a',
+            }]]),
+        });
+
+        await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+            },
+            mode: 'startup',
+            syncBoards: true,
+            syncFavorites: false,
+            reconcileSourceFacts: true,
+        });
+
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith({
+            id: 'board-a',
+            name: 'Owned board',
+            createdAt: 10,
+            invokeOwnerId: 'owner-a',
         });
     });
 
@@ -295,7 +459,7 @@ describe('syncImages live mode', () => {
         expect(getImagesByIds).not.toHaveBeenCalled();
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(syncCollectionImages).not.toHaveBeenCalled();
-        expect(upsertCollection).not.toHaveBeenCalled();
+        expect(upsertInvokeBoardCollection).not.toHaveBeenCalled();
         expect(reconcileInvokeSourceFacts).not.toHaveBeenCalled();
     });
 
@@ -481,7 +645,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
-        expect(upsertCollection).toHaveBeenCalledTimes(1);
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(1);
         expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
             sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
             references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
@@ -521,7 +685,7 @@ describe('syncImages live mode', () => {
 
         expect(result.imported).toBe(1);
         expect(syncCollectionImages).toHaveBeenCalledTimes(2);
-        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'board-1', name: 'Board One' }));
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'board-1', name: 'Board One' }));
     });
 
     it('does not rewrite an unchanged image that already preserves raw Invoke metadata', async () => {
@@ -1070,7 +1234,7 @@ describe('syncImages live mode', () => {
             .find(query => query.includes('FROM images i') && query.includes('OFFSET 0'));
         expect(batchQuery).toContain('NULL AS image_category');
         expect(batchQuery).toContain('NULL AS image_origin');
-        expect(upsertCollection).not.toHaveBeenCalled();
+        expect(upsertInvokeBoardCollection).not.toHaveBeenCalled();
     });
 
     it('keeps startup changed cycles incremental and skips the final full collection sync', async () => {
@@ -1145,7 +1309,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
         ]);
-        expect(upsertCollection).toHaveBeenCalledTimes(1);
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(1);
     });
 
     it('resolves flat, date, type, hash, custom, and relative InvokeAI subfolder paths during DB sync', async () => {

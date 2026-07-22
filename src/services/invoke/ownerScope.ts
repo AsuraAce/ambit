@@ -4,6 +4,7 @@ import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
+import { resolveInvokeSyncScope } from './syncScope';
 
 export interface ApplyInvokeOwnerScopeOptions {
     discovery: InvokeOwnerDiscovery;
@@ -54,21 +55,26 @@ export const applyInvokeOwnerScope = async ({
         throw new Error('The saved InvokeAI owner belongs to a different database.');
     }
 
-    const db = await Database.load(`sqlite:${discovery.dbPath}`);
-    const columns = new Set(
-        (await db.select<Array<{ name: string }>>('PRAGMA table_info(images)'))
-            .map(column => column.name)
-    );
-    const pathResolver = createInvokeImagePathResolver(discovery.imagesRoot, async () =>
-        unwrap(commands.listInvokeaiImages(discovery.imagesRoot))
-    );
-    const sourceFactsUpdated = await reconcileInvokeSourceFacts({
-        db,
-        columns,
-        pathResolver,
-        onProgress,
-        signal,
-    });
+    const scope = resolveInvokeSyncScope(discovery, selection);
+    let sourceFactsUpdated = 0;
+    if (scope) {
+        const db = await Database.load(`sqlite:${discovery.dbPath}`);
+        const columns = new Set(
+            (await db.select<Array<{ name: string }>>('PRAGMA table_info(images)'))
+                .map(column => column.name)
+        );
+        const pathResolver = createInvokeImagePathResolver(discovery.imagesRoot, async () =>
+            unwrap(commands.listInvokeaiImages(discovery.imagesRoot))
+        );
+        sourceFactsUpdated = await reconcileInvokeSourceFacts({
+            db,
+            columns,
+            pathResolver,
+            scope,
+            onProgress,
+            signal,
+        });
+    }
 
     const { mode, visibility } = await refreshInvokeOwnerVisibility(discovery, selection);
 

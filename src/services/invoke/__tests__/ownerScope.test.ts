@@ -68,6 +68,7 @@ describe('applyInvokeOwnerScope', () => {
         const { applyInvokeOwnerScope } = await import('../ownerScope');
 
         await applyInvokeOwnerScope({ discovery });
+        expect(mocks.reconcileInvokeSourceFacts).not.toHaveBeenCalled();
         expect(mocks.refreshInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
             mode: 'unselected',
             ownerId: null,
@@ -76,6 +77,7 @@ describe('applyInvokeOwnerScope', () => {
         await applyInvokeOwnerScope({
             discovery: { ...discovery, schemaMode: 'legacy', owners: [] },
         });
+        expect(mocks.reconcileInvokeSourceFacts).toHaveBeenCalledOnce();
         expect(mocks.refreshInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
             mode: 'legacy',
             ownerId: null,
