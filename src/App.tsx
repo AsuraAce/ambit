@@ -421,8 +421,18 @@ export default function App() {
     const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
         const requestId = referenceNavigationRequestRef.current + 1;
         referenceNavigationRequestRef.current = requestId;
+        const isCurrentlyPrivacyHidden = (image: AIImage): boolean => {
+            const currentPrivacyState = useSettingsStore.getState();
+            return currentPrivacyState.privacyEnabled
+                && currentPrivacyState.settings.maskingMode === 'hide'
+                && isImageMasked(image, true, currentPrivacyState.settings.maskedKeywords);
+        };
         const visibleIndex = images.findIndex(image => image.id === imageId);
         if (visibleIndex !== -1) {
+            if (isCurrentlyPrivacyHidden(images[visibleIndex])) {
+                addToast('The referenced image is hidden by Privacy Mode.', 'warning');
+                return false;
+            }
             setDirectViewerImage(null);
             setViewingImageId(null);
             setSelectedImageIndex(visibleIndex);
@@ -437,12 +447,7 @@ export default function App() {
                 await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
                 return false;
             }
-            const currentPrivacyState = useSettingsStore.getState();
-            if (
-                currentPrivacyState.privacyEnabled
-                && currentPrivacyState.settings.maskingMode === 'hide'
-                && isImageMasked(image, true, currentPrivacyState.settings.maskedKeywords)
-            ) {
+            if (isCurrentlyPrivacyHidden(image)) {
                 addToast('The referenced image is hidden by Privacy Mode.', 'warning');
                 return false;
             }

@@ -894,6 +894,26 @@ describe('App orchestration', () => {
         expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is no longer available in Ambit.', 'error');
     });
 
+    it('does not open a visible reference target hidden by Privacy Mode', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+        });
+        mocks.privacyEnabled = true;
+        mocks.images = [image('one'), { ...image('two'), userMasked: true }];
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('two')).toBe(false);
+        });
+
+        expect(captured.viewer?.image.id).toBe('one');
+        expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
+    });
+
     it('does not reopen the viewer when a reference lookup finishes after close', async () => {
         const deferred = createDeferred<AIImage | null>();
         mocks.getImageWithFullMetadata.mockReturnValueOnce(deferred.promise);

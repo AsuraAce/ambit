@@ -375,6 +375,9 @@ Evidence:
 - the dedicated reference query key is invalidated after every successful
   InvokeAI sync, including no-op syncs, and after removal, restoration,
   duplicate resolution, and permanent Removed deletion;
+- follow-up review hardening enforces hide-mode privacy on both visible and
+  off-query reference targets, and invalidates image caches after direct pins
+  so cached collections restore pinned-first order;
 - 207 focused tests across the viewer, App orchestration, query repository,
   sync context, and action/maintenance hooks pass with one existing skip;
 - the complete release gate passes: generated-binding drift, lint, typecheck,

@@ -110,6 +110,9 @@ export const useAppActions = ({
     ) => {
         try {
             await Promise.all(ids.map(id => toggleImagePin(id, isPinned)));
+            if (!restoreGallery) {
+                void queryClient.invalidateQueries({ queryKey: ['images'] });
+            }
             refreshCollectionsAfterImageFlagChange();
         } catch (error) {
             console.error('[Pin] Failed to persist pin state', error);
