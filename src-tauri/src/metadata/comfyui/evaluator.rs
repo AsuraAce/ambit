@@ -22,6 +22,8 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) unique_root_sampler_count: usize,
     pub(crate) ambiguous: bool,
     pub(crate) authoritative_sampler_custom_path: bool,
+    pub(crate) authoritative_model: bool,
+    pub(crate) authoritative_cfg: bool,
     pub(crate) authoritative_positive_prompt: bool,
     pub(crate) authoritative_negative_prompt: bool,
 }
@@ -85,6 +87,10 @@ impl<'a> ComfyEvaluator<'a> {
                 if let Some((_, positive_input, negative_input)) =
                     super::eval_core::cfg_guider_params(guider_node)
                 {
+                    if super::eval_core::cfg_guider_requires_strict_inputs(guider_node) {
+                        diagnostics.authoritative_model = true;
+                        diagnostics.authoritative_cfg = true;
+                    }
                     diagnostics.authoritative_positive_prompt =
                         get_node_input_link(guider_node, positive_input).is_some();
                     diagnostics.authoritative_negative_prompt =

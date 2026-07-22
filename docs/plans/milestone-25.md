@@ -1,276 +1,284 @@
-# Milestone 25: Ambit 0.9.0 UX Release Readiness
+# Milestone 25: ComfyUI Ideogram v4 Metadata
 
-Status: In Progress
+Status: Complete (`2026-07-22`)
+Catalog commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 
 ## Reconciliation
 
-- Search transitions must preserve the manual's promise that current results remain visible while a valid search is applied.
-- Prompt keyword masking configuration is lightweight persisted state in `library.json`; session Privacy Mode remains fail-closed and enabled at startup.
-- Smart Collections use dynamic thumbnails selected from matching library images; custom thumbnails retain precedence.
-- Exact-duplicate groups remain virtualized cards and keep their existing conservative resolution behavior.
-- Release Please remains responsible for the eventual 0.9.0 version and changelog update.
+- Rust remains the authoritative ComfyUI metadata parser.
+- Official fixtures remain workflow-only, pinned, and offline.
+- Deterministic connected values must be exact or unavailable; unresolved
+  links cannot reopen stale widgets or disconnected fallback values.
+- No frontend, database, Tauri command, Specta binding, diagnostics DTO, or
+  `ImageMetadata` shape changes are planned.
+
+The milestone starts with parser version 28 and 23 `golden`, 9
+`pattern_covered`, 3 `partial`, 40 `unassessed`, and 474 `excluded` catalog
+entries.
 
 ## Objective
 
-Remove the confirmed release-smoke trust failures without broadening search semantics, privacy scope, Smart Collection behavior, or duplicate resolution policy.
+Extract exact metadata from the pinned official `image_ideogram4_t2i`
+workflow by resolving its selected JSON profile, dual-model guider, and custom
+scheduler without executing arbitrary expressions or misrepresenting its
+scheduled CFG override.
 
-The milestone is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, replaying the setup guide cannot overwrite untouched privacy settings, action tooltips dismiss after activation, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
+The milestone is accepted when Ideogram is golden with exact workflow,
+metadata, diagnostics, and provenance; parser version 31 is live; and the
+catalog reaches 24 `golden` and 39 `unassessed` entries.
 
-## Work Package 1: Stable Search Transitions
+## Work Package 1: Pinned Ideogram Fixture Intake
 
-Status: Complete (`fix/search-pending-state`, manual-smoke amendment, 2026-07-19)
+Status: Complete (`feat/comfyui-ideogram-fixture-intake`, `2026-07-19`)
 
-Primary invariant: Empty Library and No Matches appear only after the latest search has settled.
+Primary invariant: fixture evidence exactly matches the pinned catalog source.
 
 Scope:
 
-- Retain previous query data through every search-key transition, including previously empty results.
-- Treat draft debounce, first-page fetching, and placeholder data as one pending lifecycle.
-- Preserve existing images while searching and use a neutral skeleton only when no previous images are available.
-- Show an explicit non-blocking spinner and subtle search-field glow while retained results remain interactive.
-- Keep an open viewer bound to the result session it was opened from while replacement results arrive.
-- Verify the same retained-results and zero-result skeleton behavior inside collections.
-- Keep the known global library count stable until the latest query settles.
-- Add regressions for nonempty and empty previous results, cached refetches, rapid typing, and settled empty results.
+- Vendor the exact workflow as a workflow-only chunks fixture.
+- Store the exact source-authored positive prompt as adjacent expected text.
+- Verify UTF-8 bytes, Git blob identity, JSON validity, workflow preservation,
+  normalized graph count, and saved-output diagnostics.
+- Record source-authored model, seed, profile, CFG, sampler, prompt, and
+  resource expectations without asserting current parser output.
 
 Non-goals:
 
-- No search syntax, SQL matching, debounce-duration, sort, or pagination redesign.
-- No modal or blocking overlay while existing results remain available.
+- No parser changes, manifest promotion, parser-version change, images, or API
+  prompt chunks.
 
 Targeted verification:
 
-- SearchBar, AppLayout, SearchContext, and useImagesQuery tests;
-- manual search smoke against a populated library;
-- `pnpm run typecheck` and `git diff --check`.
+- catalog-intake, workflow-subgraph, output-selection, and template-coverage
+  tests;
+- `cargo fmt --check` and `git diff --check`.
 
 Completion criteria:
 
-- no pending frame can display Empty Library, No Matches, Import Images, or `0 Library`;
-- existing results remain visible until their replacement is ready;
-- settled zero-result and truly empty-library states remain correct.
+- workflow bytes match blob `c04018493c60d8d4275f0bdc54acb385f59e7ea5`;
+- the 3,598-byte prompt matches its pinned definition widget;
+- the graph normalizes to 42 nodes with one output, one root, and no ambiguity;
+- parser output and coverage claims remain unchanged.
 
 Verification evidence:
 
-- privacy-compatible placeholder pages now survive ordinary search, sort, and collection transitions, including zero-result pages;
-- privacy-setting changes reject placeholder pages, and masking-mode transitions clear stored results until current-scope data arrives;
-- first-page refetches report a continuous searching state while pagination remains independent;
-- 147 focused SearchBar, AppLayout, App viewer-session, useAppActions, SearchContext, and useImagesQuery tests passed;
-- `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed;
-- browser-mock QA confirmed retained gallery and collection results stay interactive with an accessible spinner, subtle search-field glow, and `SEARCHING...` count state;
-- a viewer opened from retained collection results stayed bound to its original image and navigation session after the replacement query settled with no matches;
-- a collection-membership write that settles after its viewer closes cannot seed a stale viewer session for the next search result set;
-- Settings lazy-loaded successfully from `http://localhost:1422` with no console errors while Yomikata retained its 1421 extension bridge;
-- the populated desktop-library smoke is reserved for the combined Work Package 5 gate so this package does not launch against the user's live profile.
-- Ambit development uses port 1422 so it can run alongside Yomikata's fixed 1421 extension bridge.
+- the workflow string is exactly 119,270 UTF-8 bytes and matches Git blob
+  `c04018493c60d8d4275f0bdc54acb385f59e7ea5`;
+- the expected positive prompt is exactly 3,598 bytes and matches the pinned
+  definition widget;
+- the graph normalizes to 42 nodes with one saved-output candidate, one unique
+  root sampler, and no ambiguity;
+- catalog-intake tests pass with 5 tests, workflow-subgraph tests with 14,
+  output-selection tests with 15, and template-coverage tests with 3;
+- parser version remains 28 and manifest totals remain 23 `golden`, 9
+  `pattern_covered`, 3 `partial`, 40 `unassessed`, and 474 `excluded`;
+- `cargo fmt --check` and `git diff --check` pass, with no `Cargo.lock` churn.
 
-## Work Package 2: Non-Destructive Prompt Keyword Masking
+## Work Package 2: Deterministic JSON and Number Resolution
+
+Status: Complete (`fix/comfyui-deterministic-json-number-resolution`, `2026-07-21`)
 
 Depends on: Work Package 1.
 
-Status: Complete (`fix/prompt-masking-toggle`, 2026-07-19)
-
-Primary invariant: disabling prompt-keyword masking never deletes the configured keyword list.
+Primary invariant: connected profile values are exact or unavailable.
 
 Scope:
 
-- Add a persisted `promptMaskingEnabled` setting with backward-compatible legacy inference.
-- Expose the same switch in onboarding and Settings > Privacy.
-- Use an empty effective keyword set while disabled while retaining stored keywords.
-- Preserve manual image masks and the immediate session Privacy Mode protection gate.
+- Add bounded exact-key `JsonExtractString` evaluation with connected-input
+  authority and workflow mappings for `json_string` and `key`.
+- Support compact JSON serialization only as needed for nested extraction.
+- Add output-slot-aware `ComfyNumberConvert` evaluation for finite float and
+  integer outputs.
+- Preserve existing cycle/depth protections, 64 KiB string limits, and 4 KiB
+  key limits.
+- Increment parser version from 28 to 29.
 
 Non-goals:
 
-- No changes to blur-versus-hide behavior, session Privacy Mode defaults, or Rust command signatures.
-
-Targeted verification:
-
-- settings persistence, onboarding, Privacy tab, search privacy-index, and masking utility tests.
+- No JSONPath, arbitrary Python stringification, math-expression execution, or
+  generated-text execution.
 
 Completion criteria:
 
-- disabling, restarting, and re-enabling restores the same custom keywords and masking behavior.
+- the selected `Default` profile deterministically resolves 20 steps and its
+  numeric scheduler parameters;
+- malformed, oversized, cyclic, or unresolved paths fail closed;
+- the package is independently review-clean.
 
 Verification evidence:
 
-- fresh installs and factory resets enable prompt-keyword masking with the default keyword list;
-- legacy settings infer the independent toggle from whether the saved keyword list is empty, while an explicit saved toggle always wins;
-- disabling uses an empty effective keyword set without mutating the stored list, and the list remains editable while inactive;
-- re-enabling an empty list keeps it empty instead of silently restoring defaults, while manual image masks remain effective;
-- privacy-index rebuilds occur only when the effective keyword set changes;
-- 339 focused settings, onboarding, persistence, search, query, layout, context-menu, collection-operation, and masking tests passed;
-- `pnpm run typecheck`, `pnpm run lint`, and `git diff --check` passed;
-- rendered browser QA remains a manual check because the in-app browser kernel failed before it could open Ambit; no user-owned development server was stopped or replaced.
+- the pinned `Default` profile resolves 20 steps, `mu = 0.0`, and
+  `std = 1.75` through the connected JSON and converter path;
+- deterministic-value tests pass with 9 tests, prompt tests with 50,
+  graph-source tests with 4, and catalog-intake tests with 5;
+- the full ComfyUI suite passes with 250 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 29, Ideogram remains `unassessed`, and manifest totals
+  remain unchanged;
+- `cargo fmt --check` and `git diff --check` pass with no `Cargo.lock` churn.
 
-## Work Package 2A: Privacy Clarity and Safe Setup-Guide Replay
+## Work Package 3: Dual-Model Guider Policy
 
-Depends on: Work Package 2.
+Status: Complete (`fix/comfyui-dual-model-guider-policy`, `2026-07-22`)
 
-Status: Complete (`fix/prompt-masking-toggle`, 2026-07-21)
+Depends on: Work Packages 1 and 2.
 
-Primary invariant: reopening setup changes only controls the user explicitly changes and never resets saved keywords, masking behavior, or unrelated settings.
+Primary invariant: only the guider's selected primary branch supplies primary
+metadata.
 
 Scope:
 
-- Present Privacy Mode as the session master over manual masks and the optional prompt-keyword source.
-- Keep prompt keywords editable while disabled and explain that Blur/Hide applies to both masking sources.
-- Add a dismissible setup-guide replay under Help & Guide without changing `hasCompletedOnboarding`.
-- Persist only guide controls explicitly touched; retain immediate saves from linked Settings pages and API-key verification.
-- Remove the public onboarding reset and place the true first-run reset behind development-only Dev Tools confirmation.
-- Preserve fail-closed gallery and collection-thumbnail gates whenever effective privacy rules change.
+- Support `DualModelGuider.model`, `cfg`, `positive`, and `negative`.
+- Treat `CFGOverride` as a transparent model wrapper.
+- Report base guider CFG 7 and leave the range-limited CFG 3 override
+  unrepresented in the current scalar field.
+- Ignore `model_negative` as a primary model candidate and preserve
+  authoritative empty negative conditioning.
+- Increment parser version from 29 to 30.
 
 Non-goals:
 
-- No search, privacy-motion, Smart Collection thumbnail, duplicate-navigation, Rust, SQLite, or persisted-settings schema changes.
-
-Targeted verification:
-
-- onboarding, App persistence, Help, Advanced/Dev settings, Privacy tab, privacy-index, gallery, and collection-thumbnail tests;
-- focused manual replay and masking smoke;
-- `pnpm run test:run`, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check`.
+- No scheduled-CFG metadata field, auxiliary-model field, or disconnected
+  guider scan.
 
 Completion criteria:
 
-- replay is dismissible through Close or Escape, ignores backdrop clicks, and preserves every untouched setting;
-- first-run remains non-dismissible and owns the completion flag;
-- the public UI clearly distinguishes the Privacy Mode master, manual masks, prompt-keyword matching, and shared Blur/Hide behavior;
-- the package is independently review-clean before Work Package 3 begins.
+- primary model, base CFG, and prompt branches are exact and connected;
+- stale widgets, unconditional models, and disconnected branches cannot
+  contribute primary metadata;
+- the package is independently review-clean.
 
 Verification evidence:
 
-- replay Close, Escape, backdrop, focus restoration, untouched-control, latest-settings merge, failure rollback, and first-run completion behavior are covered by focused component and App orchestration tests;
-- Help & Guide routing, development-only reset confirmation, public reset removal, Privacy hierarchy copy, and sidebar accessibility are covered by focused tests;
-- the complete frontend suite passed: 256 files, 2,875 tests passed, 1 skipped;
-- `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
-- the full suite exposed and repaired a stale `countGlobalImages` mock in `LibraryIntegration.test.tsx`; no production library-query behavior changed;
-- screenshot follow-up aligned both Privacy switches to fixed track geometry, represented manual masks as a non-toggle source that follows Privacy Mode, and compacted onboarding Step 4 without removing its small-window overflow fallback;
-- the follow-up's 41 focused Privacy/onboarding tests, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
-- desktop smoke against the user's live library was not run to avoid mutating their development profile; the package's interaction paths were exercised through the focused UI tests.
+- the pinned Ideogram workflow resolves primary model
+  `ideogram4_fp8_scaled`, seed `885894517601261`, base CFG 7, sampler
+  `euler`, and its exact 3,598-byte positive prompt through
+  `SamplerTraversal`;
+- the auxiliary unconditional model and scheduled CFG 3 override do not
+  become primary metadata, while authoritative empty negative conditioning
+  blocks disconnected prompt fallback;
+- steps intentionally remain unavailable until Work Package 4 adds the
+  connected `Ideogram4Scheduler` policy;
+- dual-model-guider tests pass with 5 tests, deterministic-value tests with 9,
+  multi-stage tests with 55, official-catalog tests with 27, catalog-intake
+  tests with 5, template-coverage tests with 3, workflow-subgraph tests with
+  14, and output-selection tests with 15;
+- the full ComfyUI suite passes with 255 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 30, Ideogram remains `unassessed`, and manifest totals
+  remain unchanged.
 
-## Work Package 2B: Context-Aware Tooltip Dismissal
+## Work Package 4: Ideogram Scheduler and Golden Coverage
 
-Depends on: Work Package 2A.
+Status: Complete (`fix/comfyui-ideogram-scheduler-coverage`, `2026-07-22`)
 
-Status: Complete (`fix/prompt-masking-toggle`, pointer-focus correction, 2026-07-22)
+Depends on: Work Packages 1-3.
 
-Primary invariant: activating an ordinary action never leaves its tooltip obscuring the resulting interface state.
+Primary invariant: scheduler metadata comes only from the scheduler connected
+to the selected saved output.
 
 Scope:
 
-- Make click persistence opt-in for the shared tooltip button.
-- Dismiss ordinary action tooltips after pointer or keyboard activation, even while the trigger retains focus.
-- Keep an activated action tooltip dismissed when a modal restores focus to its trigger; allow a later deliberate hover or keyboard visit to show it again.
-- Keep dedicated information tooltips click-persistent until blur, outside click, or Escape.
-- Preserve hover, focus, positioning, accessibility association, event propagation, and modal focus behavior.
+- Support `Ideogram4Scheduler` linked inputs and workflow widget indexes.
+- Use stable scheduler label `ideogram4`, producing
+  `euler (ideogram4)` for the pinned fixture.
+- Add exact golden assertions for model, seed, steps, CFG, sampler, prompts,
+  resources, workflow, diagnostics, and provenance.
+- Promote `image_ideogram4_t2i` to `golden`, increment parser version from 30
+  to 31, and update totals to 24 `golden` and 39 `unassessed`.
 
 Non-goals:
 
-- No dismissal timers, tooltip visual redesign, dependency changes, or individual action call-site migration.
-
-Targeted verification:
-
-- shared tooltip pointer, keyboard, information, modal, positioning, and accessibility tests;
-- representative sidebar and action-control smoke;
-- `pnpm run test:run`, `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check`.
+- No `mu`, `std`, dimension, or schedule-range metadata fields and no
+  model-family-wide promotion.
 
 Completion criteria:
 
-- pointer, Enter, and Space activation execute an action once and close its tooltip;
-- modal close restores focus to its launcher without reopening the dismissed action tooltip;
-- fresh hover or a later keyboard focus can show the action tooltip again;
-- information icons remain click-persistent and dismiss through the established accessible paths;
-- the package is independently review-clean before Work Package 3 begins.
+- all populated core fields use `SamplerTraversal` provenance;
+- the auxiliary unconditional model is absent and negative conditioning is
+  authoritatively empty;
+- the package is independently review-clean.
 
 Verification evidence:
 
-- click persistence is opt-in: ordinary tooltip buttons dismiss on pointer, Enter, or Space activation while dedicated information tooltips retain click persistence;
-- an action that transfers focus into a modal suppresses the first restored-focus tooltip, while a later hover or keyboard visit shows it normally;
-- actions that retain focus do not carry stale suppression into a later keyboard visit;
-- manual Settings smoke showed that the initial zero-delay transfer window expired before the lazy-loaded modal moved focus; the correction must remain pending across asynchronous modal loading and rely on actual focus/navigation events instead of elapsed time;
-- the corrected shared state remains pending through lazy loading, suppresses restored focus after the launched surface takes focus, and cancels cleanly when the user instead navigates away with Tab or a pointer;
-- manual sidebar smoke clarified the remaining defect: a pointer click leaves the action button DOM-focused, and that pointer-created focus must not keep its tooltip visible after mouse-leave;
-- pointer-created focus now contributes no persistent tooltip state, while an actual Tab transition still opens the same help for keyboard users;
-- restored action focus remains non-tooltip focus after re-hover, so leaving the button dismisses the tooltip without requiring an explicit blur;
-- focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
-- the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
-- the complete frontend suite passed after the review fixes: 256 files, 2,879 tests passed, 1 skipped;
-- `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
-- rendered Browser smoke remains manual because the in-app browser-control runtime failed before connection with `failed to write kernel assets: The system cannot find the path specified`.
+- the pinned workflow resolves 20 linked steps and stable scheduler label
+  `ideogram4`, producing `euler (ideogram4)` from the selected output path;
+- exact golden assertions cover model `ideogram4_fp8_scaled`, seed
+  `885894517601261`, CFG 7, the 3,598-byte positive prompt, authoritative empty
+  negative conditioning, no resources, workflow preservation, and output
+  diagnostics;
+- the auxiliary unconditional model and scheduled CFG 3 override remain
+  absent from primary metadata;
+- Ideogram scheduler tests pass with 5 tests, dual-model-guider tests with 5,
+  deterministic-value tests with 9, official-catalog tests with 28,
+  template-coverage tests with 3, catalog-intake tests with 5,
+  workflow-subgraph tests with 14, and output-selection tests with 15;
+- the full ComfyUI suite passes with 261 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 31 and manifest totals are 24 `golden`, 9
+  `pattern_covered`, 3 `partial`, 39 `unassessed`, and 474 `excluded`;
+- `cargo fmt --check` and `git diff --check` pass with no `Cargo.lock` churn.
 
-## Work Package 3: Initial Smart Collection Thumbnail Hydration
-
-Depends on: Work Package 2B.
-
-Status: Pending (`fix/smart-collection-initial-thumbnail`)
-
-Primary invariant: every new Smart Collection attempts to establish a thumbnail from its own matches without first being opened or pinned.
-
-Scope:
-
-- Schedule one targeted summary refresh after creation, including prompt-search filters.
-- Show the existing pending skeleton and retain pinned-then-newest selection, privacy-safe substitution, and custom-thumbnail precedence.
-- Keep zero-match and failed lookups on the Smart Collection fallback without rolling back creation.
-
-Non-goals:
-
-- No generated thumbnails, arbitrary nonmatching images, or general startup-refresh redesign.
-
-Targeted verification:
-
-- collection operation and collection-store tests for metadata filters, prompt filters, zero matches, privacy, custom thumbnails, and failures.
-
-Completion criteria:
-
-- a newly created matching Smart Collection hydrates its thumbnail asynchronously without user selection.
-
-## Work Package 4: Discoverable Duplicate-Group Navigation
-
-Depends on: Work Package 3.
-
-Status: Pending (`fix/duplicate-group-navigation`)
-
-Primary invariant: every copy in an exact-duplicate group is visibly reachable and actionable.
-
-Scope:
-
-- Retain the compact two-preview horizontal layout.
-- Add previous/next controls, endpoint states, scroll snapping, edge cues, a visible item range, and Left/Right keyboard navigation.
-- Preserve native scrolling and existing View, Compare, and Keep Only This actions.
-
-Non-goals:
-
-- No wrapping layout, detail modal, detection changes, or resolution-policy changes.
-
-Targeted verification:
-
-- duplicate component tests for groups of 2, 3, 5, and larger; keyboard, buttons, range, resize, and action routing.
-
-Completion criteria:
-
-- all copies are discoverable and reachable without prior knowledge of horizontal scrolling.
-
-## Work Package 5: Integration Review and 0.9.0 Release Gate
+## Work Package 5: Integration Review and Closure
 
 Depends on: Work Packages 1-4.
 
-Status: Pending (`docs/release-0.9.0-readiness`)
+Status: Complete (`fix/comfyui-milestone-25-closure`, `2026-07-22`)
 
-Primary invariant: the combined fixes preserve large-library virtualization and fail-closed privacy behavior.
+Primary invariant: all merged packages preserve prior coverage while closing
+the Ideogram gap without public interface changes.
 
 Scope:
 
-- Update user documentation and reconcile `docs/progress.md` with current manifests.
-- Run the combined manual smoke matrix and `pnpm run verify:release`.
-- Record verification evidence and close this milestone before the Release Please version PR merges.
+- Review the merged packages together on fresh `main`.
+- Run the complete milestone gate and record observed counts and PR evidence.
+- Confirm parser version 31, final manifest totals, and no `Cargo.lock` churn.
+- Publish a docs-only closure PR.
 
 Non-goals:
 
-- No manual version bump or unrelated release automation changes.
+- No parser, fixture, manifest, or interface changes.
+
+Verification evidence:
+
+- the four dependency-ordered packages merged through PRs #246, #251, #252,
+  and #253;
+- combined review on fresh `main` found no integration regressions between
+  workflow-only subgraph normalization, deterministic JSON/number resolution,
+  dual-model guider selection, and connected Ideogram scheduler traversal;
+- parser version is 31 and final manifest totals are 24 `golden`, 9
+  `pattern_covered`, 3 `partial`, 39 `unassessed`, and 474 `excluded`;
+- focused suites pass with 9 deterministic-value, 50 prompt, 55 multi-stage,
+  28 official-catalog, 3 template-coverage, 5 catalog-intake, 14
+  workflow-subgraph, and 15 output-selection tests;
+- the full ComfyUI suite passes with 261 passed and 1 intentionally ignored,
+  and the reparse suite passes with 10 tests;
+- `cargo fmt --check` and `git diff --check` pass, the worktree remained clean,
+  and no `Cargo.lock` churn was produced;
+- the merged milestone changed only Rust parser internals, tests, pinned
+  fixture evidence, the coverage manifest, and milestone documentation; no
+  frontend, public API, database schema, Tauri command, Specta binding,
+  diagnostics DTO, or `ImageMetadata` shape changed;
+- this closure package changes only this milestone document.
 
 ## Milestone Acceptance Gate
 
-1. Confirm all four behavior packages are independently review-clean.
-2. Repeat the search, onboarding, Smart Collection, duplicate, and Privacy Mode smoke flows.
-3. Run `pnpm run verify:release` and `git diff --check`.
-4. Update this plan with merged-package and verification evidence.
-5. Confirm Release Please proposes 0.9.0 from the resulting conventional history.
+Status: Complete (`2026-07-22`)
+
+After all behavior packages merge:
+
+1. Run deterministic-value, prompt, multi-stage, official-catalog,
+   template-coverage, catalog-intake, workflow-subgraph, output-selection,
+   full ComfyUI, and reparse tests.
+2. Run `cargo fmt --check` and `git diff --check`.
+3. Confirm parser version 31, final catalog totals, no `Cargo.lock` churn, and
+   no public interface changes.
+4. Mark this plan complete with merged PRs and observed verification evidence.
+
+## Deferred
+
+- `ComfyMathExpression` remains unsupported because the pinned workflow uses
+  it only for dimensions, which are outside `ImageMetadata` and come from the
+  file scanner.
+- ERNIE and Florence remain partial because their generated prompt results are
+  not embedded in workflow metadata.

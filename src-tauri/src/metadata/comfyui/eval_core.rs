@@ -4,9 +4,9 @@ use super::eval_utils::{
     evaluate_string, evaluate_string_link_first, get_source_id,
 };
 use super::graph::{
-    get_input_connection, get_node_input_link, get_node_param, get_node_type,
+    get_input_connection, get_input_source, get_node_input_link, get_node_param, get_node_type,
     get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
-    get_switch_branch_source, ComfyGraph, InputConnection,
+    get_switch_branch_source, ComfyGraph, InputConnection, InputSource, InputSourceConnection,
 };
 use crate::metadata::utils::{
     extract_explicit_embeddings_from_prompt, extract_hypernets_from_prompt,
@@ -77,38 +77,37 @@ pub fn extract_from_sampler(
     }
 
     if meta.steps == 0 || sampler.is_empty() || scheduler.is_empty() {
-        let sigmas_id = if is_sampler_custom {
-            get_strict_source_id(node, "sigmas")
+        let sigmas_node = if is_sampler_custom {
+            resolve_sampler_custom_scheduler(graph, node)
         } else {
-            get_source_id(graph, node, "sigmas")
+            get_source_id(graph, node, "sigmas").and_then(|sigmas_id| graph.get_node(&sigmas_id))
         };
-        if let Some(sigmas_id) = sigmas_id {
-            let sigmas_node = if is_sampler_custom {
-                resolve_transparent_reroutes(graph, &sigmas_id)
-            } else {
-                graph.get_node(&sigmas_id)
-            };
-            if let Some(sigmas_node) = sigmas_node {
-                let supports_scheduler_metadata = get_node_type(sigmas_node) != "SplitSigmas";
-                if meta.steps == 0 && supports_scheduler_metadata {
-                    let steps = if is_sampler_custom {
-                        evaluate_number_link_first(graph, sigmas_node, "steps", 500)
-                    } else {
-                        evaluate_number(graph, sigmas_node, "steps", 500)
-                    };
-                    if let Some(v) = steps {
-                        meta.steps = v as u32;
-                    }
+        if let Some(sigmas_node) = sigmas_node {
+            let sigmas_type = get_node_type(sigmas_node);
+            let strict_scheduler_inputs = is_sampler_custom || sigmas_type == "Ideogram4Scheduler";
+            let supports_scheduler_metadata = is_sampler_custom || sigmas_type != "SplitSigmas";
+            if meta.steps == 0 && supports_scheduler_metadata {
+                let steps = if strict_scheduler_inputs {
+                    evaluate_number_link_first(graph, sigmas_node, "steps", 500)
+                } else {
+                    evaluate_number(graph, sigmas_node, "steps", 500)
+                };
+                if let Some(v) = steps {
+                    meta.steps = v as u32;
                 }
-                if scheduler.is_empty() && supports_scheduler_metadata {
-                    let scheduler_value = if is_sampler_custom {
+            }
+            if scheduler.is_empty() && supports_scheduler_metadata {
+                if sigmas_type == "Ideogram4Scheduler" {
+                    scheduler = "ideogram4".to_string();
+                } else {
+                    let scheduler_value = if strict_scheduler_inputs {
                         evaluate_string_link_first(graph, sigmas_node, "scheduler")
                     } else {
                         evaluate_string(graph, sigmas_node, "scheduler")
                     };
                     if let Some(s) = scheduler_value {
                         scheduler = s;
-                    } else if get_node_type(sigmas_node) == "BetaSamplingScheduler" {
+                    } else if sigmas_type == "BetaSamplingScheduler" {
                         scheduler = "beta".to_string();
                     }
                 }
@@ -179,7 +178,8 @@ pub fn extract_from_sampler(
     } else if !is_sampler_custom {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             if let Some(guider_node) = graph.get_node(&guider_id) {
-                if let Some(model_name) = trace_model_chain(
+                let strict_connections = cfg_guider_requires_strict_inputs(guider_node);
+                if let Some(model_name) = trace_model_chain_with_mode(
                     graph,
                     guider_node,
                     "model",
@@ -187,6 +187,7 @@ pub fn extract_from_sampler(
                     ip_adapters,
                     hypernetworks,
                     &mut model_control_nets,
+                    strict_connections,
                 ) {
                     meta.model = model_name;
                 }
@@ -198,9 +199,11 @@ pub fn extract_from_sampler(
     let (pos, neg) = if let Some((guider_id, guider_node)) = cfg_guider.as_ref() {
         let (_, positive_input, negative_input) =
             cfg_guider_params(guider_node).expect("connected guider should be supported");
+        let strict_connections =
+            is_sampler_custom || cfg_guider_requires_strict_inputs(guider_node);
         let prompt = |input_name| {
             get_node_input_link(guider_node, input_name)
-                .map(|_| find_reachable_prompts(graph, &guider_id, input_name, is_sampler_custom))
+                .map(|_| find_reachable_prompts(graph, &guider_id, input_name, strict_connections))
                 .unwrap_or_default()
         };
         (prompt(positive_input), prompt(negative_input))
@@ -300,6 +303,51 @@ fn resolve_transparent_reroute_id(graph: &ComfyGraph, source_id: &str) -> Option
     None
 }
 
+fn resolve_sampler_custom_scheduler<'a>(
+    graph: &'a ComfyGraph,
+    sampler_node: &Value,
+) -> Option<&'a Value> {
+    let mut source = match get_input_source(sampler_node, "sigmas") {
+        InputSourceConnection::Connected(source) => source,
+        InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {
+            return None;
+        }
+    };
+    let mut visited = HashSet::new();
+    let mut depth = 0;
+
+    loop {
+        if depth > 16 || !visited.insert(source.node_id.clone()) {
+            return None;
+        }
+        let node = graph.get_node(&source.node_id)?;
+        match get_node_type(node) {
+            "Reroute" => {
+                source = get_first_connected_source(node, &["", "value", "input", "any"])?;
+            }
+            "SplitSigmas" => {
+                if !matches!(source.output_slot, None | Some(0 | 1)) {
+                    return None;
+                }
+                source = get_first_connected_source(node, &["sigmas"])?;
+            }
+            _ => return Some(node),
+        }
+        depth += 1;
+    }
+}
+
+fn get_first_connected_source(node: &Value, keys: &[&str]) -> Option<InputSource> {
+    for key in keys {
+        match get_input_source(node, key) {
+            InputSourceConnection::Connected(source) => return Some(source),
+            InputSourceConnection::DeclaredUnresolved => return None,
+            InputSourceConnection::Unconnected => {}
+        }
+    }
+    None
+}
+
 fn connected_cfg_guider<'a>(
     graph: &'a ComfyGraph,
     sampler_node: &Value,
@@ -321,7 +369,11 @@ fn connected_cfg_guider<'a>(
 fn extract_connected_cfg_guider(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
     let (_, guider_node) = connected_cfg_guider(graph, sampler_node)?;
     let (cfg_input, _, _) = cfg_guider_params(guider_node)?;
-    evaluate_float(graph, guider_node, cfg_input, 200.0)
+    if cfg_guider_requires_strict_inputs(guider_node) {
+        evaluate_float_link_first(graph, guider_node, cfg_input, 200.0)
+    } else {
+        evaluate_float(graph, guider_node, cfg_input, 200.0)
+    }
 }
 
 pub(crate) fn cfg_guider_params(
@@ -330,8 +382,13 @@ pub(crate) fn cfg_guider_params(
     match get_node_type(guider_node) {
         "CFGGuider" => Some(("cfg", "positive", "negative")),
         "DualCFGGuider" => Some(("cfg_conds", "cond1", "negative")),
+        "DualModelGuider" => Some(("cfg", "positive", "negative")),
         _ => None,
     }
+}
+
+pub(crate) fn cfg_guider_requires_strict_inputs(guider_node: &Value) -> bool {
+    get_node_type(guider_node) == "DualModelGuider"
 }
 
 fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
@@ -461,6 +518,12 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
+        } else if t == "CFGOverride" {
+            if let Some(next) = get_strict_source_id(node, "model") {
+                current_id = next;
+                continue;
+            }
+            return None;
         } else if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
             if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);

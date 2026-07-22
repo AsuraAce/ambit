@@ -53,9 +53,6 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
-- `video_bernini_r_image_editing.chunks.json`: the selected system prompt is
-  recovered through `CustomCombo.INDEX`, while total steps and the scheduler
-  remain behind `SplitSigmas`.
 
 ## Phase 22 Intake
 
@@ -133,6 +130,29 @@ Source-authored expectations, recorded without asserting current parser output:
   natural, moody, smooth skin, a little bit film grain.` followed by a newline;
   empty negative conditioning; ControlNet
   `Z-Image-Turbo-Fun-Controlnet-Union.safetensors`; no LoRAs.
+
+## Milestone 25 Ideogram Intake
+
+Captured on `2026-07-19`. The workflow is now `golden`; exact assertions cover
+its selected primary model, base CFG, prompt branches, and connected custom
+scheduler without promoting the auxiliary model or scheduled CFG override.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_ideogram4_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_ideogram4_t2i.json) | `c04018493c60d8d4275f0bdc54acb385f59e7ea5` | 119270 |
+
+Golden expectations:
+
+- primary model `ideogram4_fp8_scaled.safetensors`; the separate
+  `ideogram4_unconditional_fp8_scaled.safetensors` model is auxiliary;
+- seed `885894517601261`; selected `Default` profile with 20 steps;
+- base guider CFG 7; `CFGOverride` applies CFG 3 only from 70% through 100% of
+  the schedule and cannot replace the single base CFG metadata value;
+- sampler `euler` with the connected `Ideogram4Scheduler`;
+- exact 3,598-byte positive prompt in
+  `image_ideogram4_t2i.expected-positive.txt`, with SHA-256
+  `dfbe4a1694ca33c124562f3f8f879beb8b5516afa327b342dfae0d9b8f6468af`;
+- authoritative empty negative conditioning and no resources.
 
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser

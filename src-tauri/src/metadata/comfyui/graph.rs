@@ -755,6 +755,14 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "JsonExtractString" {
+            match key {
+                "json_string" => return arr.first(),
+                "key" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         if t == "RegexExtract" {
             match key {
                 "string" => return arr.first(),
@@ -825,6 +833,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "DualModelGuider" && key == "cfg" {
+            return arr.first();
+        }
+
         if t == "BasicScheduler" {
             match key {
                 "scheduler" => return arr.first(),
@@ -848,6 +860,17 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
 
         if t == "BetaSamplingScheduler" && key == "steps" {
             return arr.first();
+        }
+
+        if t == "Ideogram4Scheduler" {
+            match key {
+                "steps" => return arr.first(),
+                "width" => return arr.get(1),
+                "height" => return arr.get(2),
+                "mu" => return arr.get(3),
+                "std" => return arr.get(4),
+                _ => {}
+            }
         }
 
         if t == "SDPromptSaver" {
