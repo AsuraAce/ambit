@@ -133,14 +133,15 @@ Source-authored expectations, recorded without asserting current parser output:
 
 ## Milestone 25 Ideogram Intake
 
-Captured on `2026-07-19`. This workflow remains `unassessed` until the later
-Milestone 25 behavior packages pass exact metadata and provenance assertions.
+Captured on `2026-07-19`. The workflow is now `golden`; exact assertions cover
+its selected primary model, base CFG, prompt branches, and connected custom
+scheduler without promoting the auxiliary model or scheduled CFG override.
 
 | Workflow | Upstream Git blob | Bytes |
 | --- | --- | ---: |
 | [`image_ideogram4_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_ideogram4_t2i.json) | `c04018493c60d8d4275f0bdc54acb385f59e7ea5` | 119270 |
 
-Source-authored expectations, recorded without asserting current parser output:
+Golden expectations:
 
 - primary model `ideogram4_fp8_scaled.safetensors`; the separate
   `ideogram4_unconditional_fp8_scaled.safetensors` model is auxiliary;

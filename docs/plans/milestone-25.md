@@ -170,6 +170,8 @@ Verification evidence:
 
 ## Work Package 4: Ideogram Scheduler and Golden Coverage
 
+Status: Complete (`fix/comfyui-ideogram-scheduler-coverage`, `2026-07-22`)
+
 Depends on: Work Packages 1-3.
 
 Primary invariant: scheduler metadata comes only from the scheduler connected
@@ -196,6 +198,26 @@ Completion criteria:
 - the auxiliary unconditional model is absent and negative conditioning is
   authoritatively empty;
 - the package is independently review-clean.
+
+Verification evidence:
+
+- the pinned workflow resolves 20 linked steps and stable scheduler label
+  `ideogram4`, producing `euler (ideogram4)` from the selected output path;
+- exact golden assertions cover model `ideogram4_fp8_scaled`, seed
+  `885894517601261`, CFG 7, the 3,598-byte positive prompt, authoritative empty
+  negative conditioning, no resources, workflow preservation, and output
+  diagnostics;
+- the auxiliary unconditional model and scheduled CFG 3 override remain
+  absent from primary metadata;
+- Ideogram scheduler tests pass with 5 tests, dual-model-guider tests with 5,
+  deterministic-value tests with 9, official-catalog tests with 28,
+  template-coverage tests with 3, catalog-intake tests with 5,
+  workflow-subgraph tests with 14, and output-selection tests with 15;
+- the full ComfyUI suite passes with 261 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 31 and manifest totals are 24 `golden`, 9
+  `pattern_covered`, 3 `partial`, 39 `unassessed`, and 474 `excluded`;
+- `cargo fmt --check` and `git diff --check` pass with no `Cargo.lock` churn.
 
 ## Work Package 5: Integration Review and Closure
 
