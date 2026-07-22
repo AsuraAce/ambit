@@ -173,7 +173,8 @@ pub fn extract_from_sampler(
     } else if !is_sampler_custom {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             if let Some(guider_node) = graph.get_node(&guider_id) {
-                if let Some(model_name) = trace_model_chain(
+                let strict_connections = cfg_guider_requires_strict_inputs(guider_node);
+                if let Some(model_name) = trace_model_chain_with_mode(
                     graph,
                     guider_node,
                     "model",
@@ -181,6 +182,7 @@ pub fn extract_from_sampler(
                     ip_adapters,
                     hypernetworks,
                     &mut model_control_nets,
+                    strict_connections,
                 ) {
                     meta.model = model_name;
                 }
@@ -192,9 +194,11 @@ pub fn extract_from_sampler(
     let (pos, neg) = if let Some((guider_id, guider_node)) = cfg_guider.as_ref() {
         let (_, positive_input, negative_input) =
             cfg_guider_params(guider_node).expect("connected guider should be supported");
+        let strict_connections =
+            is_sampler_custom || cfg_guider_requires_strict_inputs(guider_node);
         let prompt = |input_name| {
             get_node_input_link(guider_node, input_name)
-                .map(|_| find_reachable_prompts(graph, &guider_id, input_name, is_sampler_custom))
+                .map(|_| find_reachable_prompts(graph, &guider_id, input_name, strict_connections))
                 .unwrap_or_default()
         };
         (prompt(positive_input), prompt(negative_input))
@@ -360,7 +364,11 @@ fn connected_cfg_guider<'a>(
 fn extract_connected_cfg_guider(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
     let (_, guider_node) = connected_cfg_guider(graph, sampler_node)?;
     let (cfg_input, _, _) = cfg_guider_params(guider_node)?;
-    evaluate_float(graph, guider_node, cfg_input, 200.0)
+    if cfg_guider_requires_strict_inputs(guider_node) {
+        evaluate_float_link_first(graph, guider_node, cfg_input, 200.0)
+    } else {
+        evaluate_float(graph, guider_node, cfg_input, 200.0)
+    }
 }
 
 pub(crate) fn cfg_guider_params(
@@ -369,8 +377,13 @@ pub(crate) fn cfg_guider_params(
     match get_node_type(guider_node) {
         "CFGGuider" => Some(("cfg", "positive", "negative")),
         "DualCFGGuider" => Some(("cfg_conds", "cond1", "negative")),
+        "DualModelGuider" => Some(("cfg", "positive", "negative")),
         _ => None,
     }
+}
+
+pub(crate) fn cfg_guider_requires_strict_inputs(guider_node: &Value) -> bool {
+    get_node_type(guider_node) == "DualModelGuider"
 }
 
 fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> Option<f64> {
@@ -500,6 +513,12 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
+        } else if t == "CFGOverride" {
+            if let Some(next) = get_strict_source_id(node, "model") {
+                current_id = next;
+                continue;
+            }
+            return None;
         } else if t == "LoraLoader" || t == "LoraLoaderModelOnly" {
             if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);

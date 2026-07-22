@@ -119,6 +119,8 @@ Verification evidence:
 
 ## Work Package 3: Dual-Model Guider Policy
 
+Status: Complete (`fix/comfyui-dual-model-guider-policy`, `2026-07-22`)
+
 Depends on: Work Packages 1 and 2.
 
 Primary invariant: only the guider's selected primary branch supplies primary
@@ -145,6 +147,26 @@ Completion criteria:
 - stale widgets, unconditional models, and disconnected branches cannot
   contribute primary metadata;
 - the package is independently review-clean.
+
+Verification evidence:
+
+- the pinned Ideogram workflow resolves primary model
+  `ideogram4_fp8_scaled`, seed `885894517601261`, base CFG 7, sampler
+  `euler`, and its exact 3,598-byte positive prompt through
+  `SamplerTraversal`;
+- the auxiliary unconditional model and scheduled CFG 3 override do not
+  become primary metadata, while authoritative empty negative conditioning
+  blocks disconnected prompt fallback;
+- steps intentionally remain unavailable until Work Package 4 adds the
+  connected `Ideogram4Scheduler` policy;
+- dual-model-guider tests pass with 5 tests, deterministic-value tests with 9,
+  multi-stage tests with 55, official-catalog tests with 27, catalog-intake
+  tests with 5, template-coverage tests with 3, workflow-subgraph tests with
+  14, and output-selection tests with 15;
+- the full ComfyUI suite passes with 255 tests and the existing Ollama test
+  ignored; all 10 reparse tests pass;
+- parser version is 30, Ideogram remains `unassessed`, and manifest totals
+  remain unchanged.
 
 ## Work Package 4: Ideogram Scheduler and Golden Coverage
 
