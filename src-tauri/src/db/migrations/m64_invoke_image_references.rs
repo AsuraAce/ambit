@@ -132,14 +132,12 @@ mod tests {
             "
             CREATE TABLE images (
                 id TEXT PRIMARY KEY,
-                invoke_image_name TEXT,
-                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0
+                invoke_image_name TEXT
             ) STRICT;
 
             CREATE TABLE removed_images (
                 id TEXT PRIMARY KEY,
-                invoke_image_name TEXT,
-                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0
+                invoke_image_name TEXT
             ) STRICT;
             ",
         )
@@ -374,6 +372,8 @@ mod tests {
         let conn = source_schema();
         conn.execute_batch(
             "
+            ALTER TABLE images ADD COLUMN invoke_scope_hidden INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE removed_images ADD COLUMN invoke_scope_hidden INTEGER NOT NULL DEFAULT 0;
             INSERT INTO images (id, invoke_image_name) VALUES
                 ('source', 'source.png'),
                 ('target', 'target.png');

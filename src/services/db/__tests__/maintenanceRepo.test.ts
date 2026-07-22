@@ -600,6 +600,7 @@ describe('maintenanceRepo', () => {
 
         const [query] = db.select.mock.calls[0] as [string];
         expect(query).toContain('duplicate_hashes');
+        expect(query).toContain('invoke_scope_hidden = 0');
         expect(query).toContain("file_hash != ''");
         expect(query).not.toContain('LOWER(TRIM(file_hash))');
         expect(query).toContain('is_missing = 0');

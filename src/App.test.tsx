@@ -1031,6 +1031,24 @@ describe('App orchestration', () => {
         expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is no longer available in Ambit.', 'error');
     });
 
+    it('moves visible reference navigation onto the current gallery session', async () => {
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        mocks.images = [image('replacement-one'), image('replacement-two')];
+        view.rerender(<App />);
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('replacement-two')).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-two'));
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-one'));
+    });
+
     it('does not open a visible reference target hidden by Privacy Mode', async () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
@@ -1049,6 +1067,36 @@ describe('App orchestration', () => {
         expect(captured.viewer?.image.id).toBe('one');
         expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
         expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
+    });
+
+    it('allows prompt-matched references when prompt masking is disabled', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+            promptMaskingEnabled: false,
+            maskedKeywords: ['private'],
+        });
+        mocks.privacyEnabled = true;
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce({
+            ...image('off-query-reference'),
+            metadata: {
+                ...image('off-query-reference').metadata,
+                positivePrompt: 'private portrait',
+            },
+        });
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('off-query-reference')).toBe(true);
+        });
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('off-query-reference'));
+        expect(mocks.addToast).not.toHaveBeenCalledWith(
+            'The referenced image is hidden by Privacy Mode.',
+            'warning'
+        );
     });
 
     it('does not reopen the viewer when a reference lookup finishes after close', async () => {

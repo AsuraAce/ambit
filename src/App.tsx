@@ -39,7 +39,7 @@ import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoord
 import { getImageWithFullMetadata } from './services/db/imageRepo';
 import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
-import { isImageMasked } from './utils/maskingUtils';
+import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
@@ -525,7 +525,11 @@ export default function App() {
             const currentPrivacyState = useSettingsStore.getState();
             return currentPrivacyState.privacyEnabled
                 && currentPrivacyState.settings.maskingMode === 'hide'
-                && isImageMasked(image, true, currentPrivacyState.settings.maskedKeywords);
+                && isImageMasked(
+                    image,
+                    true,
+                    getEffectiveMaskedKeywords(currentPrivacyState.settings)
+                );
         };
         const visibleIndex = images.findIndex(image => image.id === imageId);
         if (visibleIndex !== -1) {
@@ -536,6 +540,8 @@ export default function App() {
             setDirectViewerImage(null);
             setViewingImageId(null);
             setSelectedImageIndex(visibleIndex);
+            viewerSessionImagesRef.current = images;
+            setViewerSessionImages(images);
             return true;
         }
 
