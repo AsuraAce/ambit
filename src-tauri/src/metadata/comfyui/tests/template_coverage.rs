@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 24);
+    assert_eq!(count_coverage("golden"), 28);
     assert_eq!(count_coverage("pattern_covered"), 9);
     assert_eq!(count_coverage("partial"), 3);
-    assert_eq!(count_coverage("unassessed"), 39);
+    assert_eq!(count_coverage("unassessed"), 35);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -239,6 +239,10 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_ernie_image_turbo", "partial"),
         ("image_firered_image_edit1_1", "golden"),
         ("image_ideogram4_t2i", "golden"),
+        ("image_longcat_text_to_image", "golden"),
+        ("image_pixeldit_t2i", "golden"),
+        ("image_chrono_edit_14B", "golden"),
+        ("image_netayume_lumina_t2i", "golden"),
         ("image_anima_base_v1", "golden"),
         ("image_anima_preview", "pattern_covered"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
