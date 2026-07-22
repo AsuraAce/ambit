@@ -862,6 +862,17 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "Ideogram4Scheduler" {
+            match key {
+                "steps" => return arr.first(),
+                "width" => return arr.get(1),
+                "height" => return arr.get(2),
+                "mu" => return arr.get(3),
+                "std" => return arr.get(4),
+                _ => {}
+            }
+        }
+
         if t == "SDPromptSaver" {
             match key {
                 "ckpt_name" | "model_name" => return arr.get(2),

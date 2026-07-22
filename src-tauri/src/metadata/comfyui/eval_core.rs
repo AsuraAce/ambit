@@ -83,10 +83,11 @@ pub fn extract_from_sampler(
             get_source_id(graph, node, "sigmas").and_then(|sigmas_id| graph.get_node(&sigmas_id))
         };
         if let Some(sigmas_node) = sigmas_node {
-            let supports_scheduler_metadata =
-                is_sampler_custom || get_node_type(sigmas_node) != "SplitSigmas";
+            let sigmas_type = get_node_type(sigmas_node);
+            let strict_scheduler_inputs = is_sampler_custom || sigmas_type == "Ideogram4Scheduler";
+            let supports_scheduler_metadata = is_sampler_custom || sigmas_type != "SplitSigmas";
             if meta.steps == 0 && supports_scheduler_metadata {
-                let steps = if is_sampler_custom {
+                let steps = if strict_scheduler_inputs {
                     evaluate_number_link_first(graph, sigmas_node, "steps", 500)
                 } else {
                     evaluate_number(graph, sigmas_node, "steps", 500)
@@ -96,15 +97,19 @@ pub fn extract_from_sampler(
                 }
             }
             if scheduler.is_empty() && supports_scheduler_metadata {
-                let scheduler_value = if is_sampler_custom {
-                    evaluate_string_link_first(graph, sigmas_node, "scheduler")
+                if sigmas_type == "Ideogram4Scheduler" {
+                    scheduler = "ideogram4".to_string();
                 } else {
-                    evaluate_string(graph, sigmas_node, "scheduler")
-                };
-                if let Some(s) = scheduler_value {
-                    scheduler = s;
-                } else if get_node_type(sigmas_node) == "BetaSamplingScheduler" {
-                    scheduler = "beta".to_string();
+                    let scheduler_value = if strict_scheduler_inputs {
+                        evaluate_string_link_first(graph, sigmas_node, "scheduler")
+                    } else {
+                        evaluate_string(graph, sigmas_node, "scheduler")
+                    };
+                    if let Some(s) = scheduler_value {
+                        scheduler = s;
+                    } else if sigmas_type == "BetaSamplingScheduler" {
+                        scheduler = "beta".to_string();
+                    }
                 }
             }
         }

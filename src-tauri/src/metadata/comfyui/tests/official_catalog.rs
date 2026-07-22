@@ -144,7 +144,14 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_ideogram4_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
+    },
 ];
+
+const IDEOGRAM_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -1013,5 +1020,28 @@ fn bernini_custom_conditioning_and_split_schedule_are_golden() {
             .field_sources
             .get(&ComfyMetadataField::WorkflowHint),
         Some(&ComfyParseLayer::WorkflowChunk)
+    );
+}
+
+#[test]
+fn ideogram4_scheduler_and_dual_model_policy_are_golden() {
+    assert_fixture(
+        "image_ideogram4_t2i",
+        ExpectedMetadata {
+            model: "ideogram4_fp8_scaled",
+            seed: Some(885_894_517_601_261),
+            steps: 20,
+            cfg: 7.0,
+            sampler: "euler (ideogram4)",
+            positive_prompt: IDEOGRAM_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 42,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
     );
 }

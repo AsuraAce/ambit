@@ -246,10 +246,10 @@ fn pinned_ideogram_dual_model_guider_uses_primary_branch() {
     assert_eq!(meta.model, "ideogram4_fp8_scaled");
     assert!(!meta.model.contains("unconditional"));
     assert_eq!(meta.seed, Some(885_894_517_601_261));
-    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.steps, 20);
     assert_eq!(meta.cfg, 7.0);
     assert_ne!(meta.cfg, 3.0);
-    assert_eq!(meta.sampler, "euler");
+    assert_eq!(meta.sampler, "euler (ideogram4)");
     assert_eq!(meta.positive_prompt, IDEOGRAM_EXPECTED_POSITIVE);
     assert!(meta.negative_prompt.is_empty());
     assert!(meta.loras.is_empty());
@@ -270,6 +270,7 @@ fn pinned_ideogram_dual_model_guider_uses_primary_branch() {
     for field in [
         ComfyMetadataField::Model,
         ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
         ComfyMetadataField::Cfg,
         ComfyMetadataField::Sampler,
         ComfyMetadataField::PositivePrompt,
@@ -279,9 +280,6 @@ fn pinned_ideogram_dual_model_guider_uses_primary_branch() {
     assert!(!diagnostics
         .field_sources
         .contains_key(&ComfyMetadataField::NegativePrompt));
-    assert!(!diagnostics
-        .field_sources
-        .contains_key(&ComfyMetadataField::Steps));
     assert_eq!(
         diagnostics
             .field_sources
