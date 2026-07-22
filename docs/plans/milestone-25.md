@@ -193,7 +193,7 @@ Verification evidence:
 - restored action focus remains non-tooltip focus after re-hover, so leaving the button dismisses the tooltip without requiring an explicit blur;
 - focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
 - the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
-- the complete frontend suite passed: 256 files, 2,878 tests passed, 1 skipped;
+- the complete frontend suite passed after the review fixes: 256 files, 2,879 tests passed, 1 skipped;
 - `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
 - rendered Browser smoke remains manual because the in-app browser-control runtime failed before connection with `failed to write kernel assets: The system cannot find the path specified`.
 
