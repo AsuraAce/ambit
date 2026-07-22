@@ -64,7 +64,7 @@ export const verifyLibraryIntegrity = async (
     }
 
     const db = await getDb();
-    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
+    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
 
     if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
@@ -121,6 +121,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
         SELECT ${getImageFieldsLight()}
         FROM images
         WHERE is_missing = 1
+          AND invoke_scope_hidden = 0
           AND is_deleted = 0
         ORDER BY timestamp DESC
     `);
@@ -152,7 +153,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
@@ -165,6 +166,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
     `;
 
@@ -195,6 +197,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
         AND IFNULL(is_invoke_asset_gen, 0) = 0
@@ -260,6 +263,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
         WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
@@ -298,6 +302,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
         WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND is_missing = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -341,6 +346,7 @@ export const getUnoptimizedImageEntries = async (
         WHERE ${unoptimizedCondition}
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND is_missing = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -386,7 +392,7 @@ export const getDuplicateCandidates = async (whereClause: string = '', params: u
     }
 
     const db = await getDb();
-    const baseWhere = whereClause ? whereClause : "WHERE is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
+    const baseWhere = whereClause ? whereClause : "WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND group_id IS NULL AND IFNULL(is_intermediate_gen, 0) = 0";
 
     const query = `
         WITH scoped AS (
@@ -460,13 +466,14 @@ export const getMaintenanceCounts = async () => {
         SELECT 
             COUNT(*) FILTER (
                 WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                  AND invoke_scope_hidden = 0
                   AND is_deleted = 0
                   AND IFNULL(is_intermediate_gen, 0) = 0
                   AND IFNULL(is_invoke_asset_gen, 0) = 0
             ) as untagged,
-            COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
-            COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-            (SELECT COUNT(*) FROM removed_images) as trash
+            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
+            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
+            (SELECT COUNT(*) FROM removed_images WHERE invoke_scope_hidden = 0) as trash
         FROM images
     `);
 

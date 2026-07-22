@@ -168,6 +168,7 @@ fn best_resource_thumbnail(
                 OR i.model_name = ?1
                 OR i.resolved_model_name = ?1
              )
+             AND i.invoke_scope_hidden = 0
              AND i.is_deleted = 0
              AND IFNULL(i.is_invoke_asset_gen, 0) = 0
              AND i.thumbnail_path IS NOT NULL
@@ -223,6 +224,7 @@ fn format_resource_thumbnail_query(table: &str, name_col: &str, safe_clause: &st
          FROM {table} jt
          JOIN images i ON i.id = jt.image_id
          WHERE jt.{name_col} = ?1
+         AND i.invoke_scope_hidden = 0
          AND i.is_deleted = 0
          AND IFNULL(i.is_invoke_asset_gen, 0) = 0
          AND i.thumbnail_path IS NOT NULL

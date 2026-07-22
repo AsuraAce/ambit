@@ -292,6 +292,9 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: SqlParam[] = [];
 
+    // Owner scope applies to every library query, including recursive facet queries.
+    conditions.push('invoke_scope_hidden = 0');
+
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
 

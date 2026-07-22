@@ -413,7 +413,41 @@ Completion criteria:
 
 Depends on: Work Packages 1 and 2.
 
-Status: Pending
+Status: Complete (`codex/invokeai-image-assets`, `2026-07-22`)
+
+Approved package boundary:
+
+- owner candidates are owners represented by image rows; a previously selected
+  owner remains recoverable when its current source count reaches zero;
+- labels use display name plus stable owner ID and never read or expose email;
+- selected-owner sync is gated until Work Package 8, while legacy and explicitly
+  warned All users modes retain the current unscoped sync behavior.
+
+Evidence:
+
+- migration 65 adds durable owner facts and indexed fail-closed visibility to
+  active and removed records, preserves out-of-scope rows, and invalidates
+  facet, smart-collection count, and dynamic-thumbnail caches on upgrade;
+- read-only discovery detects legacy and per-user schemas from the configured
+  canonical database path, summarizes only owners represented by image rows,
+  optionally reads `display_name`, and never queries email or authentication
+  fields;
+- the settings flow auto-selects a sole owner, requires an explicit choice for
+  multiple owners, retains a stale saved owner with a zero count, and warns
+  before enabling All users mode;
+- owner changes reconcile authoritative source facts before atomically
+  refreshing active and Removed visibility; path matching is separator- and
+  Windows-case-safe, while generic rescans fail closed under owner scope;
+- ordinary gallery, search, facet, statistics, collection, maintenance,
+  thumbnail, direct-read, Removed, and reference paths consistently exclude
+  owner-hidden rows, while internal reconciliation can still recover them;
+- saved owner scope is bound to its canonical InvokeAI database path and clears
+  the sync cursor/snapshot when changed; selected-owner synchronization remains
+  deliberately blocked for Work Package 8, with legacy and confirmed All users
+  modes retaining their established behavior;
+- generated-binding drift, lint, typecheck, the production frontend build,
+  2,889 frontend tests with one existing skip, 506 Rust tests with one ignored,
+  Rust formatting, and whitespace validation pass.
 
 Primary invariant: changing owner scope never deletes out-of-scope Ambit rows.
 

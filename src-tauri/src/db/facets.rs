@@ -748,7 +748,7 @@ fn query_checkpoint_stats(
         conn.query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'",
             [],
@@ -758,7 +758,7 @@ fn query_checkpoint_stats(
         conn.query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND resolved_model_name = ?1",
             params![name],
@@ -792,7 +792,7 @@ fn query_checkpoint_thumb(
             &format!(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
                  FROM images
-                 WHERE is_deleted = 0
+                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                  AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
                  AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
@@ -808,7 +808,7 @@ fn query_checkpoint_thumb(
             &format!(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
                  FROM images
-                 WHERE is_deleted = 0
+                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                  AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
                  AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
@@ -834,7 +834,7 @@ fn query_checkpoint_hash(
         conn.query_row(
             "SELECT model_hash
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
              AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
@@ -847,7 +847,7 @@ fn query_checkpoint_hash(
         conn.query_row(
             "SELECT model_hash
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
              AND resolved_model_name = ?2
@@ -870,7 +870,7 @@ fn query_checkpoint_has_images(
         conn.query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
             )",
             [],
@@ -880,7 +880,7 @@ fn query_checkpoint_has_images(
         conn.query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM images
-                WHERE is_deleted = 0 AND resolved_model_name = ?1
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND resolved_model_name = ?1
             )",
             [name],
             |row| row.get(0),
@@ -954,7 +954,7 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
         .query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND COALESCE(tool, 'Unknown') = ?1",
             [name],
@@ -972,7 +972,7 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM images
-                WHERE is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1
             )",
             [name],
             |row| row.get::<_, bool>(0),
@@ -1031,7 +1031,7 @@ fn refresh_resource_facet(
             COALESCE(i.is_invoke_asset_gen, 0) AS is_invoke_asset_gen
          FROM {} jt
          JOIN images i ON i.id = jt.image_id
-         WHERE i.is_deleted = 0
+         WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
          AND jt.{} = ?1",
         config.junction_table, config.name_col
     );
@@ -1557,10 +1557,15 @@ fn get_valid_facet_names_for_query(
     collection_id: Option<&str>,
     lora_name: Option<&str>,
 ) -> Result<ValidFacetNames, String> {
-    let base_where = if where_clause.trim().is_empty() {
-        "WHERE is_deleted = 0".to_string()
+    let requested_where = where_clause.trim();
+    let requested_conditions = requested_where
+        .strip_prefix("WHERE ")
+        .or_else(|| requested_where.strip_prefix("where "))
+        .unwrap_or(requested_where);
+    let base_where = if requested_conditions.is_empty() {
+        "WHERE invoke_scope_hidden = 0 AND is_deleted = 0".to_string()
     } else {
-        where_clause.to_string()
+        format!("WHERE invoke_scope_hidden = 0 AND ({requested_conditions})")
     };
 
     let collection_join = collection_id
@@ -1817,7 +1822,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 MAX(timestamp) as last_used,
                 MIN(timestamp) as first_used
             FROM images
-            WHERE is_deleted = 0
+            WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             AND IFNULL(is_invoke_asset_gen, 0) = 0
             GROUP BY mh, lmn",
         [],
@@ -1843,7 +1848,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM images i
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
             ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
@@ -1867,7 +1872,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM images i
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
             ) WHERE lmn IS NOT NULL AND lmn != '' AND rn = 1",
@@ -1987,7 +1992,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                     LOWER(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS lmn,
                     MIN(NULLIF(model_hash, '')) AS mh
                 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 1
                 GROUP BY lmn
             ) candidates
@@ -2059,7 +2064,7 @@ fn build_resource_facets(
                     MIN(i.timestamp) as first_used
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
-                WHERE i.is_deleted = 0
+                WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 GROUP BY lclean_ref",
             temp_table,
@@ -2102,7 +2107,7 @@ fn build_resource_facets(
                     ) as rn
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
-                WHERE i.is_deleted = 0
+                WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
              ) WHERE rn = 1",
@@ -2142,7 +2147,7 @@ fn build_resource_facets(
                     ) as rn
                 FROM {2} jt
                 JOIN images i ON i.id = jt.{3}
-                WHERE i.is_deleted = 0
+                WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.privacy_hidden = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
              ) WHERE rn = 1",
@@ -2287,10 +2292,11 @@ fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
             FROM (
                 SELECT DISTINCT COALESCE(tool, 'Unknown') AS tool
                 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             ) all_tools
             LEFT JOIN images visible
               ON COALESCE(visible.tool, 'Unknown') = all_tools.tool
+             AND visible.invoke_scope_hidden = 0
              AND visible.is_deleted = 0
              AND IFNULL(visible.is_invoke_asset_gen, 0) = 0
             GROUP BY all_tools.tool",

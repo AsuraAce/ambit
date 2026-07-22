@@ -137,6 +137,8 @@ pub struct ImageRecord {
     pub invoke_image_category: Option<String>,
     #[serde(rename = "invokeImageOrigin")]
     pub invoke_image_origin: Option<String>,
+    #[serde(rename = "invokeOwnerId")]
+    pub invoke_owner_id: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]

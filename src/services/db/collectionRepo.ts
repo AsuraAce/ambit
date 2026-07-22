@@ -47,11 +47,13 @@ interface ImageThumbnailLookupRow {
     path: string;
     thumb?: string | null;
     privacy_hidden?: number | null;
+    invoke_scope_hidden?: number | null;
 }
 
 interface CustomThumbnailMatch {
     thumb?: string | null;
     privacyHidden?: number | null;
+    ownerHidden?: boolean;
 }
 
 export interface SmartCollectionSummary {
@@ -150,7 +152,7 @@ const loadImageThumbnailLookup = async (
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
-            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden
+            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden, invoke_scope_hidden
              FROM images
              WHERE ${column} IN (${placeholders})`,
             batch
@@ -160,7 +162,8 @@ const loadImageThumbnailLookup = async (
             const key = column === 'id' ? row.id : row.path;
             matches.set(key, {
                 thumb: row.thumb,
-                privacyHidden: row.privacy_hidden
+                privacyHidden: row.privacy_hidden,
+                ownerHidden: row.invoke_scope_hidden === 1,
             });
         });
     }
@@ -321,6 +324,20 @@ export const clearAllCollectionThumbnailCaches = async () => {
     );
 };
 
+export const clearCollectionOwnerScopeCaches = async () => {
+    if (isBrowserMockMode()) return;
+
+    const db = await getDb();
+    await db.execute(
+        `UPDATE collections
+         SET dynamic_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_path END,
+             dynamic_safe_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_safe_thumbnail_path END,
+             dynamic_thumbnail_is_sensitive = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_is_sensitive END,
+             dynamic_thumbnail_cached_at = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_cached_at END,
+             dynamic_count = CASE WHEN filter_state IS NOT NULL THEN NULL ELSE dynamic_count END`
+    );
+};
+
 const buildCollectionThumbnailSummaries = async (
     db: Awaited<ReturnType<typeof getDb>>,
     collections: CollectionThumbnailInput[]
@@ -354,6 +371,7 @@ const buildCollectionThumbnailSummaries = async (
                 FROM collection_images ci
                 INNER JOIN images i ON ci.image_id = i.id
                 WHERE ci.collection_id IN (${placeholders})
+                    AND i.invoke_scope_hidden = 0
                     AND i.is_deleted = 0
                     AND i.thumbnail_path IS NOT NULL
                     AND i.thumbnail_path != ''
@@ -390,7 +408,12 @@ const buildCollectionThumbnailSummaries = async (
         let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
 
         if (collection.custom_thumbnail) {
-            if (customThumb) {
+            if (customThumb?.ownerHidden) {
+                rawThumb = undefined;
+                safeThumb = undefined;
+                thumbnailIsSensitive = false;
+                thumbnailSourceKind = 'customImage';
+            } else if (customThumb) {
                 rawThumb = customThumb.thumb || collection.custom_thumbnail;
                 safeThumb = undefined;
                 thumbnailIsSensitive = customThumb.privacyHidden === 1;
@@ -646,7 +669,11 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
 
     // Get counts from junction table
     const counts = await db.select<{ collection_id: string, count: number }[]>(
-        'SELECT collection_id, COUNT(*) as count FROM collection_images GROUP BY collection_id'
+        `SELECT ci.collection_id, COUNT(*) as count
+         FROM collection_images ci
+         INNER JOIN images i ON i.id = ci.image_id
+         WHERE i.invoke_scope_hidden = 0
+         GROUP BY ci.collection_id`
     );
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
@@ -897,6 +924,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
                 SELECT thumbnail_path as path, timestamp, is_pinned
                 FROM images 
                 WHERE (id IN (${placeholders}) OR path IN (${placeholders}))
+                AND invoke_scope_hidden = 0
                 AND is_deleted = 0 
                 ORDER BY is_pinned DESC, timestamp DESC 
                 LIMIT 1

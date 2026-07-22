@@ -1,4 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
+import type { InvokeOwnerDiscovery, InvokeOwnerSummary } from '../../types';
 
 interface BoardRow {
     board_id: string;
@@ -19,6 +20,12 @@ interface TableRow {
     name: string;
 }
 
+interface OwnerRow {
+    owner_id: string;
+    display_name?: string | null;
+    count: number;
+}
+
 interface CategoryRow {
     image_category?: string;
     image_origin?: string;
@@ -36,6 +43,88 @@ export interface InvokeDiagnostics {
     imagesRoot: string;
     tables: Array<{ name: string; count: number | 'Error' }>;
 }
+
+export interface InvokePaths {
+    dbPath: string;
+    imagesRoot: string;
+}
+
+export const resolveInvokePaths = (rootPath: string): InvokePaths => {
+    let imagesRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
+    const isFile = /\.db$/i.test(imagesRoot);
+    if (isFile) {
+        imagesRoot = imagesRoot.replace(/\/(?:databases\/)?invokeai\.db$/i, '');
+    } else if (/\/databases$/i.test(imagesRoot)) {
+        imagesRoot = imagesRoot.replace(/\/databases$/i, '');
+    }
+
+    return {
+        dbPath: isFile ? rootPath.replace(/\\/g, '/') : `${imagesRoot}/databases/invokeai.db`,
+        imagesRoot,
+    };
+};
+
+export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwnerDiscovery> => {
+    if (!rootPath) throw new Error('No InvokeAI path provided.');
+
+    const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
+    const db = await Database.load(`sqlite:${dbPath}`);
+    const imageColumns = new Set(
+        (await db.select<TableRow[]>('PRAGMA table_info(images)')).map(column => column.name)
+    );
+    if (!imageColumns.has('user_id')) {
+        return { schemaMode: 'legacy', dbPath, imagesRoot, owners: [], unassignedImageCount: 0 };
+    }
+
+    const tables = new Set(
+        (await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'"))
+            .map(table => table.name)
+    );
+    let canReadDisplayNames = false;
+    if (tables.has('users')) {
+        const userColumns = new Set(
+            (await db.select<TableRow[]>('PRAGMA table_info(users)')).map(column => column.name)
+        );
+        canReadDisplayNames = userColumns.has('user_id') && userColumns.has('display_name');
+    }
+
+    const ownerRows = canReadDisplayNames
+        ? await db.select<OwnerRow[]>(`
+            SELECT TRIM(CAST(i.user_id AS TEXT)) AS owner_id,
+                   MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
+                   count(*) AS count
+            FROM images i
+            LEFT JOIN users u ON u.user_id = i.user_id
+            WHERE i.user_id IS NOT NULL AND TRIM(CAST(i.user_id AS TEXT)) != ''
+            GROUP BY TRIM(CAST(i.user_id AS TEXT))
+            ORDER BY display_name COLLATE NOCASE, owner_id
+        `)
+        : await db.select<OwnerRow[]>(`
+            SELECT TRIM(CAST(user_id AS TEXT)) AS owner_id, count(*) AS count
+            FROM images
+            WHERE user_id IS NOT NULL AND TRIM(CAST(user_id AS TEXT)) != ''
+            GROUP BY TRIM(CAST(user_id AS TEXT))
+            ORDER BY owner_id
+        `);
+    const unassignedRows = await db.select<CountRow[]>(`
+        SELECT count(*) AS count
+        FROM images
+        WHERE user_id IS NULL OR TRIM(CAST(user_id AS TEXT)) = ''
+    `);
+    const owners: InvokeOwnerSummary[] = ownerRows.map(row => ({
+        ownerId: row.owner_id,
+        displayName: row.display_name?.trim() || undefined,
+        imageCount: row.count,
+    }));
+
+    return {
+        schemaMode: 'multi_user',
+        dbPath,
+        imagesRoot,
+        owners,
+        unassignedImageCount: unassignedRows[0]?.count ?? 0,
+    };
+};
 
 export async function fetchBoardMappings(db: Database): Promise<{ imageToBoardId: Map<string, string>, boards: Map<string, { name: string, createdAt: number }> }> {
     const imageToBoardId = new Map<string, string>();
@@ -99,16 +188,8 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
 export const diagnoseInvokeAI = async (rootPath: string): Promise<InvokeDiagnostics | { error: string }> => {
     if (!rootPath) return { error: "No path provided." };
 
-    let imagesRoot = rootPath.replace(/[\\/]$/, '');
-    const isFile = rootPath.endsWith('.db');
-    if (isFile) {
-        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
-    } else if (imagesRoot.endsWith('databases')) {
-        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
-    }
-
-    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
+    const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
+    const connectionString = `sqlite:${dbPath}`;
 
     try {
         const db = await Database.load(connectionString);

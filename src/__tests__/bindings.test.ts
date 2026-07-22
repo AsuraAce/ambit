@@ -30,6 +30,7 @@ const commandCases: CommandCase[] = [
             invokeImageName: 'asset.png',
             invokeImageCategory: 'control',
             invokeImageOrigin: null,
+            invokeOwnerId: 'owner-a',
         }]],
         payload: {
             updates: [{
@@ -37,7 +38,27 @@ const commandCases: CommandCase[] = [
                 invokeImageName: 'asset.png',
                 invokeImageCategory: 'control',
                 invokeImageOrigin: null,
+                invokeOwnerId: 'owner-a',
             }],
+        },
+        returnsResult: true,
+    },
+    {
+        name: 'refreshInvokeOwnerScope',
+        invokeName: 'refresh_invoke_owner_scope',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            imagesRoot: 'C:/invoke',
+            mode: 'owner',
+            ownerId: 'owner-a',
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                imagesRoot: 'C:/invoke',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
         },
         returnsResult: true,
     },

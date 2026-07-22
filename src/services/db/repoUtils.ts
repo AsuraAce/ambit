@@ -6,6 +6,7 @@ const INVOKE_IMAGE_SOURCE_COLUMNS = [
     'invoke_image_name',
     'invoke_image_category',
     'invoke_image_origin',
+    'invoke_owner_id',
 ] as const;
 export const INVOKE_IMAGE_SOURCE_FIELDS = INVOKE_IMAGE_SOURCE_COLUMNS.join(', ');
 
@@ -127,6 +128,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
         invokeImageName: asString(row.invoke_image_name),
         invokeImageCategory: asString(row.invoke_image_category),
         invokeImageOrigin: asString(row.invoke_image_origin),
+        invokeOwnerId: asString(row.invoke_owner_id),
         notes: asString(row.notes),
         isIntermediate: asBoolean(row.is_intermediate_gen),
         metadata,

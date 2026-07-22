@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => ({
     getCollectionThumbnailSummaries: vi.fn().mockResolvedValue({}),
     getSmartCollectionSummaries: vi.fn().mockResolvedValue({}),
     getSmartCollectionCounts: vi.fn().mockResolvedValue({}),
+    clearCollectionOwnerScopeCaches: vi.fn().mockResolvedValue(undefined),
     getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue({
         hasIntermediates: false,
@@ -130,7 +131,8 @@ vi.mock('../../services/db/collectionRepo', () => ({
     getSmartCollectionCounts: (...args: unknown[]) => mocks.getSmartCollectionCounts(...args),
     deleteCollectionFromDb: vi.fn().mockResolvedValue({}),
     removeImagesFromCollection: vi.fn().mockResolvedValue({}),
-    getCollectionImageIds: vi.fn().mockResolvedValue([])
+    getCollectionImageIds: vi.fn().mockResolvedValue([]),
+    clearCollectionOwnerScopeCaches: (...args: unknown[]) => mocks.clearCollectionOwnerScopeCaches(...args)
 }));
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
@@ -161,6 +163,26 @@ vi.mock('../../services/WatcherService', () => ({
 
 vi.mock('../../services/invoke/syncService', () => ({
     syncImages: (...args: any[]) => mocks.syncImages(...args)
+}));
+
+vi.mock('../../services/invoke/connection', () => ({
+    discoverInvokeOwners: vi.fn(async (rootPath: string) => ({
+        schemaMode: 'legacy',
+        dbPath: `${rootPath.replace(/\\/g, '/').replace(/\/databases$/, '')}/databases/invokeai.db`,
+        imagesRoot: rootPath.replace(/\\/g, '/').replace(/\/databases$/, ''),
+        owners: [],
+        unassignedImageCount: 0,
+    })),
+}));
+
+vi.mock('../../services/invoke/ownerScope', () => ({
+    applyInvokeOwnerScope: vi.fn(async () => ({
+        changed: false,
+        sourceFactsUpdated: 0,
+        activeVisibilityUpdated: 0,
+        removedVisibilityUpdated: 0,
+        mode: 'legacy',
+    })),
 }));
 
 vi.mock('../../services/invoke/orphanScanner', () => ({

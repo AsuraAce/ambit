@@ -2,6 +2,7 @@ import * as React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { AppSettings } from '../../../../types';
+import type { InvokeOwnerScopeState } from '../../../../contexts/SyncContext';
 import { SyncSection } from '../SyncSection';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,11 @@ const mocks = vi.hoisted(() => ({
     cancelSync: vi.fn(),
     addToast: vi.fn(),
     syncStatus: 'idle' as 'idle' | 'syncing' | 'complete' | 'error',
-    isLiveSyncing: false
+    isLiveSyncing: false,
+    invokeOwnerScopeState: {
+        status: 'ready',
+        discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 }
+    } as InvokeOwnerScopeState
 }));
 
 vi.mock('../../../../contexts/LibraryContext', () => ({
@@ -20,7 +25,8 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
         },
         startInvokeSync: mocks.startInvokeSync,
         cancelSync: mocks.cancelSync,
-        isLiveSyncing: mocks.isLiveSyncing
+        isLiveSyncing: mocks.isLiveSyncing,
+        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
     })
 }));
 
@@ -59,6 +65,24 @@ describe('SyncSection', () => {
         vi.clearAllMocks();
         mocks.syncStatus = 'idle';
         mocks.isLiveSyncing = false;
+        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
+    });
+
+    it('blocks synchronization for a selected owner until owner-filtered sync ships', () => {
+        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
+        render(<SyncSection settings={createSettings({
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        })} setSettings={vi.fn()} />);
+
+        const syncButton = screen.getByRole('button', { name: /initiate sync/i }) as HTMLButtonElement;
+        expect(syncButton.disabled).toBe(true);
+        expect(screen.getByText(/selected-owner synchronization is intentionally gated/i)).toBeTruthy();
+        fireEvent.click(syncButton);
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
     });
 
     it('starts manual sync from the saved cursor so stale repair does not force a full resync', () => {

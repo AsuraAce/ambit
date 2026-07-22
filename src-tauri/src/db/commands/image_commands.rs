@@ -47,11 +47,49 @@ pub struct InvokeImageSourceUpdate {
     pub invoke_image_name: String,
     pub invoke_image_category: Option<String>,
     pub invoke_image_origin: Option<String>,
+    pub invoke_owner_id: Option<String>,
 }
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InvokeImageSourceReconcileResult {
+    pub active_updated: usize,
+    pub removed_updated: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeOwnerScopeMode {
+    Legacy,
+    Unselected,
+    Owner,
+    All,
+}
+
+impl InvokeOwnerScopeMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Unselected => "unselected",
+            Self::Owner => "owner",
+            Self::All => "all",
+        }
+    }
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeOwnerScopeInput {
+    pub db_path: String,
+    pub images_root: String,
+    pub mode: InvokeOwnerScopeMode,
+    pub owner_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeOwnerScopeRefreshResult {
+    pub changed: bool,
     pub active_updated: usize,
     pub removed_updated: usize,
 }
@@ -199,10 +237,18 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
-                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25,
+                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM invoke_owner_scope_state scope
+                        WHERE LOWER(substr(REPLACE(?2, '\\', '/'), 1, length(scope.images_root || '/outputs/images/'))) = LOWER(scope.images_root || '/outputs/images/')
+                          AND (
+                            scope.scope_mode = 'unselected'
+                            OR (scope.scope_mode = 'owner' AND (?26 IS NULL OR ?26 IS NOT scope.owner_id))
+                          )
+                    ) THEN 1 ELSE 0 END,
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
                     json_extract(?8, '$.tool'),
@@ -212,7 +258,7 @@ fn save_images_batch_inner(
                     CAST(json_extract(?8, '$.cfg') AS REAL),
                     REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
                     json_extract(?8, '$.generationType'),
-                    ?26,
+                    ?27,
                     ?8,
                     COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
                     COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
@@ -270,6 +316,14 @@ fn save_images_batch_inner(
                         WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_image_origin
                         ELSE images.invoke_image_origin
                     END,
+                    invoke_owner_id=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_owner_id
+                        ELSE images.invoke_owner_id
+                    END,
+                    invoke_scope_hidden=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_scope_hidden
+                        ELSE images.invoke_scope_hidden
+                    END,
                     model_hash=excluded.model_hash,
                     model_name=excluded.model_name,
                     tool=excluded.tool,
@@ -294,6 +348,8 @@ fn save_images_batch_inner(
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_owner_id IS NOT excluded.invoke_owner_id)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_scope_hidden IS NOT excluded.invoke_scope_hidden)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
@@ -432,6 +488,7 @@ fn save_images_batch_inner(
                     img.invoke_image_name,
                     img.invoke_image_category,
                     img.invoke_image_origin,
+                    img.invoke_owner_id,
                     CURRENT_PARSER_VERSION
                 ])
                 .map_err(|e| e.to_string())?;
@@ -498,11 +555,13 @@ fn reconcile_invoke_image_sources_inner(
     {
         let update_sql = "SET invoke_image_name = ?1,
                               invoke_image_category = ?2,
-                              invoke_image_origin = ?3
-                          WHERE id = ?4
+                              invoke_image_origin = ?3,
+                              invoke_owner_id = ?4
+                          WHERE id = ?5
                             AND (invoke_image_name IS NOT ?1
                                  OR invoke_image_category IS NOT ?2
-                                 OR invoke_image_origin IS NOT ?3)";
+                                 OR invoke_image_origin IS NOT ?3
+                                 OR invoke_owner_id IS NOT ?4)";
         let mut update_active = tx
             .prepare_cached(&format!("UPDATE images {update_sql}"))
             .map_err(|e| e.to_string())?;
@@ -516,6 +575,7 @@ fn reconcile_invoke_image_sources_inner(
                     update.invoke_image_name,
                     update.invoke_image_category,
                     update.invoke_image_origin,
+                    update.invoke_owner_id,
                     update.id
                 ])
                 .map_err(|e| e.to_string())?;
@@ -524,6 +584,7 @@ fn reconcile_invoke_image_sources_inner(
                     update.invoke_image_name,
                     update.invoke_image_category,
                     update.invoke_image_origin,
+                    update.invoke_owner_id,
                     update.id
                 ])
                 .map_err(|e| e.to_string())?;
@@ -532,6 +593,97 @@ fn reconcile_invoke_image_sources_inner(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+fn normalize_invoke_root(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_string()
+}
+
+fn refresh_invoke_owner_scope_inner(
+    conn: &rusqlite::Connection,
+    input: &InvokeOwnerScopeInput,
+) -> Result<InvokeOwnerScopeRefreshResult, String> {
+    let db_path = normalize_invoke_root(&input.db_path);
+    let images_root = normalize_invoke_root(&input.images_root);
+    if db_path.is_empty() || images_root.is_empty() {
+        return Err("InvokeAI database path and images root are required".to_string());
+    }
+
+    let owner_id = input
+        .owner_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if input.mode == InvokeOwnerScopeMode::Owner && owner_id.is_none() {
+        return Err("Owner scope requires a non-empty owner ID".to_string());
+    }
+
+    let source_prefix = format!("{images_root}/outputs/images/");
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let previous: Option<(String, String, String, Option<String>)> = tx
+        .query_row(
+            "SELECT db_path, images_root, scope_mode, owner_id
+             FROM invoke_owner_scope_state
+             WHERE state_key = 'current'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let visibility_sql = match input.mode {
+        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "0",
+        InvokeOwnerScopeMode::Unselected => "1",
+        InvokeOwnerScopeMode::Owner => "CASE WHEN invoke_owner_id = ?2 THEN 0 ELSE 1 END",
+    };
+    let update_sql = |table: &str| {
+        format!(
+            "UPDATE {table}
+             SET invoke_scope_hidden = {visibility_sql}
+             WHERE LOWER(substr(REPLACE(path, '\\', '/'), 1, length(?1))) = LOWER(?1)
+               AND invoke_scope_hidden IS NOT ({visibility_sql})"
+        )
+    };
+    let update_table = |table: &str| -> Result<usize, String> {
+        let sql = update_sql(table);
+        if input.mode == InvokeOwnerScopeMode::Owner {
+            tx.execute(&sql, params![source_prefix, owner_id])
+                .map_err(|e| e.to_string())
+        } else {
+            tx.execute(&sql, params![source_prefix])
+                .map_err(|e| e.to_string())
+        }
+    };
+
+    let active_updated = update_table("images")?;
+    let removed_updated = update_table("removed_images")?;
+    tx.execute(
+        "INSERT INTO invoke_owner_scope_state (
+             state_key, db_path, images_root, scope_mode, owner_id, updated_at
+         ) VALUES ('current', ?1, ?2, ?3, ?4, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+         ON CONFLICT(state_key) DO UPDATE SET
+             db_path = excluded.db_path,
+             images_root = excluded.images_root,
+             scope_mode = excluded.scope_mode,
+             owner_id = excluded.owner_id,
+             updated_at = excluded.updated_at",
+        params![db_path, images_root, input.mode.as_str(), owner_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let next = (
+        db_path,
+        images_root,
+        input.mode.as_str().to_string(),
+        owner_id.map(str::to_string),
+    );
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(InvokeOwnerScopeRefreshResult {
+        changed: previous.as_ref() != Some(&next) || active_updated > 0 || removed_updated > 0,
+        active_updated,
+        removed_updated,
+    })
 }
 
 fn replace_invoke_image_references_inner(
@@ -838,6 +990,18 @@ pub async fn refresh_privacy_mask_index(
 ) -> Result<PrivacyMaskRefreshResult, String> {
     run_blocking(app, move |conn| {
         refresh_privacy_mask_index_for_conn(conn, &masked_keywords)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn refresh_invoke_owner_scope(
+    app: AppHandle,
+    input: InvokeOwnerScopeInput,
+) -> Result<InvokeOwnerScopeRefreshResult, String> {
+    run_blocking(app, move |conn| {
+        refresh_invoke_owner_scope_inner(conn, &input)
     })
     .await
 }
@@ -1167,6 +1331,7 @@ mod tests {
             invoke_image_name: None,
             invoke_image_category: None,
             invoke_image_origin: None,
+            invoke_owner_id: None,
         }
     }
 
@@ -1253,18 +1418,21 @@ mod tests {
                 invoke_image_name: "active.png".to_string(),
                 invoke_image_category: None,
                 invoke_image_origin: None,
+                invoke_owner_id: Some("owner-active".to_string()),
             },
             super::InvokeImageSourceUpdate {
                 id: "invoke-removed".to_string(),
                 invoke_image_name: "removed.png".to_string(),
                 invoke_image_category: Some("mask".to_string()),
                 invoke_image_origin: Some("external".to_string()),
+                invoke_owner_id: Some("owner-removed".to_string()),
             },
             super::InvokeImageSourceUpdate {
                 id: "missing".to_string(),
                 invoke_image_name: "missing.png".to_string(),
                 invoke_image_category: Some("user".to_string()),
                 invoke_image_origin: None,
+                invoke_owner_id: None,
             },
         ];
 
@@ -1374,6 +1542,138 @@ mod tests {
             .expect("repeat reconciliation");
         assert_eq!(repeated.active_updated, 0);
         assert_eq!(repeated.removed_updated, 0);
+    }
+
+    #[test]
+    fn owner_scope_reconciles_active_and_removed_rows_without_deleting_or_touching_other_roots() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(&conn, &[image]).expect("insert Invoke row");
+        }
+        let mut outside = create_image_record("outside", 100, 10, "{}");
+        outside.path = "C:/Other/outputs/images/outside.png".to_string();
+        outside.invoke_image_name = Some("outside.png".to_string());
+        outside.invoke_owner_id = Some("b".to_string());
+        super::save_images_batch_inner(&conn, &[outside]).expect("insert outside row");
+        conn.execute(
+            "INSERT INTO removed_images (
+                id, path, timestamp, metadata_json, removed_at,
+                invoke_image_name, invoke_owner_id
+             ) VALUES (
+                'removed-a', 'C:/Invoke/outputs/images/removed-a.png', 100, '{}', 200,
+                'removed-a.png', 'a'
+             )",
+            [],
+        )
+        .expect("insert removed row");
+
+        let owner_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+            },
+        )
+        .expect("apply owner scope");
+        assert!(owner_result.changed);
+        assert_eq!(owner_result.active_updated, 1);
+
+        let active: Vec<(String, i64)> = conn
+            .prepare("SELECT id, invoke_scope_hidden FROM images ORDER BY id")
+            .expect("prepare active visibility")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query active visibility")
+            .collect::<Result<_, _>>()
+            .expect("collect active visibility");
+        assert_eq!(
+            active,
+            vec![
+                ("outside".to_string(), 0),
+                ("owner-a".to_string(), 0),
+                ("owner-b".to_string(), 1),
+            ]
+        );
+        let removed_hidden: i64 = conn
+            .query_row(
+                "SELECT invoke_scope_hidden FROM removed_images WHERE id = 'removed-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("removed visibility");
+        assert_eq!(removed_hidden, 0);
+
+        let mut generic_late = create_image_record("generic-late", 101, 10, "{}");
+        generic_late.path = "C:/Invoke/outputs/images/generic-late.png".to_string();
+        let mut owner_late = create_image_record("owner-late", 102, 10, "{}");
+        owner_late.path = "C:/Invoke/outputs/images/owner-late.png".to_string();
+        owner_late.invoke_image_name = Some("owner-late.png".to_string());
+        owner_late.invoke_owner_id = Some("a".to_string());
+        super::save_images_batch_inner(&conn, &[generic_late, owner_late])
+            .expect("insert rows while owner scope is active");
+        let late_visibility: Vec<(String, i64)> = conn
+            .prepare(
+                "SELECT id, invoke_scope_hidden FROM images
+                 WHERE id IN ('generic-late', 'owner-late') ORDER BY id",
+            )
+            .expect("prepare late visibility")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query late visibility")
+            .collect::<Result<_, _>>()
+            .expect("collect late visibility");
+        assert_eq!(
+            late_visibility,
+            vec![
+                ("generic-late".to_string(), 1),
+                ("owner-late".to_string(), 0),
+            ],
+            "generic rescans must fail closed while authoritative owner imports may match"
+        );
+
+        let stale_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("stale".to_string()),
+            },
+        )
+        .expect("apply stale owner scope");
+        assert_eq!(stale_result.active_updated, 2);
+        let visible_in_root: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images
+                 WHERE path LIKE 'C:/Invoke/outputs/images/%' AND invoke_scope_hidden = 0",
+                [],
+                |row| row.get(0),
+            )
+            .expect("visible owner rows");
+        assert_eq!(visible_in_root, 0);
+
+        let all_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::All,
+                owner_id: None,
+            },
+        )
+        .expect("apply all-owner scope");
+        assert_eq!(all_result.active_updated, 4);
+        assert_eq!(all_result.removed_updated, 1);
+        let total_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .expect("active row count");
+        assert_eq!(total_rows, 5, "scope changes must never delete stored rows");
     }
 
     #[test]

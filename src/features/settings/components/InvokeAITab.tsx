@@ -1,10 +1,12 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen } from 'lucide-react';
+import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen, Users } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
+import { useLibrary } from '../../../contexts/LibraryContext';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 
 interface TabProps {
     settings: AppSettings;
@@ -37,11 +39,18 @@ interface InvokeDiagnostics {
 }
 
 export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+    const { invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope } = useLibrary();
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
+    const [isAllUsersConfirmOpen, setIsAllUsersConfirmOpen] = useState(false);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
+    const ownerDiscovery = invokeOwnerScopeState.discovery;
+    const ownerSelection = settings.invokeOwnerSelection?.dbPath === ownerDiscovery?.dbPath
+        ? settings.invokeOwnerSelection
+        : undefined;
+    const ownerScopeBusy = invokeOwnerScopeState.status === 'discovering' || invokeOwnerScopeState.status === 'applying';
 
     const runDiagnostics = async () => {
         setIsDiagLoading(true);
@@ -166,6 +175,88 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                 </div>
             </section>
 
+            {settings.invokeAiPath && (
+                <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
+                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-5 flex items-center gap-3">
+                        <Users className="w-4 h-4" /> InvokeAI Owner Scope
+                    </h4>
+
+                    {ownerScopeBusy && (
+                        <div className="flex items-center gap-3 text-sm text-gray-500">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            {invokeOwnerScopeState.status === 'discovering' ? 'Discovering owners…' : 'Applying owner visibility…'}
+                        </div>
+                    )}
+
+                    {invokeOwnerScopeState.status === 'error' && (
+                        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300">
+                            <p className="text-xs font-bold">Owner detection failed</p>
+                            <p className="text-[10px] mt-1 break-words">{invokeOwnerScopeState.error}</p>
+                            <button type="button" onClick={() => void retryInvokeOwnerScope()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
+                                Retry
+                            </button>
+                        </div>
+                    )}
+
+                    {!ownerScopeBusy && ownerDiscovery?.schemaMode === 'legacy' && (
+                        <div className="p-4 rounded-xl bg-sage-500/10 border border-sage-500/20 text-xs text-gray-600 dark:text-gray-300">
+                            This InvokeAI database predates per-user ownership. Ambit keeps the existing unscoped behavior.
+                        </div>
+                    )}
+
+                    {!ownerScopeBusy && ownerDiscovery?.schemaMode === 'multi_user' && (
+                        <div className="space-y-3">
+                            <p className="text-xs text-gray-500">
+                                Choose whose InvokeAI images Ambit may show. Display names and stable IDs are shown; email addresses are never read.
+                            </p>
+                            {ownerDiscovery.owners.map(owner => {
+                                const selected = ownerSelection?.mode === 'owner' && ownerSelection.ownerId === owner.ownerId;
+                                return (
+                                    <button
+                                        key={owner.ownerId}
+                                        type="button"
+                                        disabled={ownerScopeBusy}
+                                        onClick={() => void selectInvokeOwnerScope({ dbPath: ownerDiscovery.dbPath, mode: 'owner', ownerId: owner.ownerId })}
+                                        className={`w-full text-left p-3 rounded-xl border transition-colors ${selected ? 'border-sage-500 bg-sage-500/10' : 'border-gray-200 dark:border-white/10 hover:border-sage-500/50'}`}
+                                    >
+                                        <span className="flex items-center justify-between gap-3">
+                                            <span className="min-w-0">
+                                                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100 truncate">
+                                                    {owner.displayName || 'Unnamed owner'}{owner.isStale ? ' (not currently represented)' : ''}
+                                                </span>
+                                                <span className="block text-[10px] font-mono text-gray-500 break-all">{owner.ownerId}</span>
+                                            </span>
+                                            <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">{owner.imageCount.toLocaleString()} images</span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+
+                            {ownerDiscovery.unassignedImageCount > 0 && (
+                                <p className="text-[10px] text-amber-700 dark:text-amber-300">
+                                    {ownerDiscovery.unassignedImageCount.toLocaleString()} image rows have no owner and remain hidden in single-owner scope.
+                                </p>
+                            )}
+
+                            <button
+                                type="button"
+                                onClick={() => setIsAllUsersConfirmOpen(true)}
+                                className={`w-full p-3 rounded-xl border text-left transition-colors ${ownerSelection?.mode === 'all' ? 'border-amber-500 bg-amber-500/10' : 'border-gray-200 dark:border-white/10 hover:border-amber-500/50'}`}
+                            >
+                                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
+                                <span className="block text-[10px] text-gray-500">Show every owner represented by this InvokeAI database.</span>
+                            </button>
+
+                            {invokeOwnerScopeState.status === 'selection_required' && (
+                                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-300">
+                                    Select an owner or explicitly choose All users. InvokeAI rows remain hidden until then.
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </section>
+            )}
+
             {developerFeaturesEnabled && (
                 <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                     <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
@@ -282,6 +373,18 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
             )}
 
             <SyncSection settings={settings} setSettings={setSettings} />
+            <ConfirmDialog
+                isOpen={isAllUsersConfirmOpen}
+                title="Show images from all InvokeAI users?"
+                message="Ambit will expose every owner represented by this local InvokeAI database across the gallery, collections, maintenance views, and references. You can return to a single owner at any time."
+                confirmLabel="Show All Users"
+                onConfirm={() => {
+                    setIsAllUsersConfirmOpen(false);
+                    if (ownerDiscovery) void selectInvokeOwnerScope({ dbPath: ownerDiscovery.dbPath, mode: 'all' });
+                }}
+                onCancel={() => setIsAllUsersConfirmOpen(false)}
+                zIndex={220}
+            />
         </div>
     );
 });

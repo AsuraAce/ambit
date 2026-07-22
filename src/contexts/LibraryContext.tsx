@@ -18,7 +18,7 @@ export type LibraryContextType =
   & ReturnType<typeof useCollections>
   & ReturnType<typeof useSearch>
   & ReturnType<typeof useWatchers>
-  & Pick<ReturnType<typeof useSync>, 'syncState' | 'startInvokeSync' | 'cancelSync' | 'cleanLibrary' | 'isLiveSyncing'>
+  & Pick<ReturnType<typeof useSync>, 'syncState' | 'startInvokeSync' | 'cancelSync' | 'cleanLibrary' | 'isLiveSyncing' | 'invokeOwnerScopeState' | 'selectInvokeOwnerScope' | 'retryInvokeOwnerScope'>
   & Pick<
     LibraryStoreState,
     | 'syncStatus'
@@ -142,8 +142,11 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     startInvokeSync: syncCtx.startInvokeSync,
     cancelSync: syncCtx.cancelSync,
     cleanLibrary: syncCtx.cleanLibrary,
+    invokeOwnerScopeState: syncCtx.invokeOwnerScopeState,
+    selectInvokeOwnerScope: syncCtx.selectInvokeOwnerScope,
+    retryInvokeOwnerScope: syncCtx.retryInvokeOwnerScope,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
-  }), [settingsCtx, collectionCtx, searchCtx, watcherCtx, syncStatus, isActivityDockDismissed, setIsActivityDockDismissed, isImporting, setIsImporting, setImportProgress, isRegeneratingThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, isResolvingModels, setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress, lastModelResolutionResult, setLastModelResolutionResult, syncCtx.isLiveSyncing, syncCtx.syncState, syncCtx.startInvokeSync, syncCtx.cancelSync, syncCtx.cleanLibrary]);
+  }), [settingsCtx, collectionCtx, searchCtx, watcherCtx, syncStatus, isActivityDockDismissed, setIsActivityDockDismissed, isImporting, setIsImporting, setImportProgress, isRegeneratingThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, isResolvingModels, setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress, lastModelResolutionResult, setLastModelResolutionResult, syncCtx.isLiveSyncing, syncCtx.syncState, syncCtx.startInvokeSync, syncCtx.cancelSync, syncCtx.cleanLibrary, syncCtx.invokeOwnerScopeState, syncCtx.selectInvokeOwnerScope, syncCtx.retryInvokeOwnerScope]);
 
   return (
     <LibraryContext.Provider value={value}>

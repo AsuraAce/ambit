@@ -193,7 +193,8 @@ pub async fn backfill_image_file_hashes(
                     "
                     SELECT id, path
                     FROM images
-                    WHERE is_deleted = 0
+                    WHERE invoke_scope_hidden = 0
+                      AND is_deleted = 0
                       AND is_missing = 0
                       AND (file_hash IS NULL OR file_hash = '')
                       AND path NOT LIKE 'blob:%'
@@ -201,7 +202,8 @@ pub async fn backfill_image_file_hashes(
                       AND file_size IN (
                         SELECT file_size
                         FROM images
-                        WHERE is_deleted = 0
+                        WHERE invoke_scope_hidden = 0
+                          AND is_deleted = 0
                           AND is_missing = 0
                           AND path NOT LIKE 'blob:%'
                           AND path NOT LIKE 'data:%'
@@ -287,7 +289,8 @@ pub async fn backfill_image_file_hashes(
                 "
                 SELECT COUNT(*)
                 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0
+                  AND is_deleted = 0
                   AND is_missing = 0
                   AND (file_hash IS NULL OR file_hash = '')
                   AND path NOT LIKE 'blob:%'
@@ -295,7 +298,8 @@ pub async fn backfill_image_file_hashes(
                   AND file_size IN (
                     SELECT file_size
                     FROM images
-                    WHERE is_deleted = 0
+                    WHERE invoke_scope_hidden = 0
+                      AND is_deleted = 0
                       AND is_missing = 0
                       AND path NOT LIKE 'blob:%'
                       AND path NOT LIKE 'data:%'

@@ -97,6 +97,7 @@ pub async fn start_reparse_job(
         // Helper to build WHERE clause
         let build_filters = |force: bool, root: Option<&String>, tool: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let mut clauses = vec![
+                "invoke_scope_hidden = 0".to_string(),
                 "is_deleted = 0".to_string(),
                 "original_metadata_json IS NOT NULL".to_string(),
                 "original_metadata_json != ''".to_string()

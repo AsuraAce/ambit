@@ -17,7 +17,7 @@ const STARRED_AS_VALUES = ['favorite', 'pin', 'both', 'none'] as const satisfies
 const isStarredAs = (value: string): value is StarredAs => (STARRED_AS_VALUES as readonly string[]).includes(value);
 
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
-    const { syncState, startInvokeSync, cancelSync, isLiveSyncing } = useLibrary();
+    const { syncState, startInvokeSync, cancelSync, isLiveSyncing, invokeOwnerScopeState } = useLibrary();
     const { status } = syncState;
     const { addToast } = useToast();
     const [isFullResyncConfirmOpen, setIsFullResyncConfirmOpen] = React.useState(false);
@@ -25,6 +25,9 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
     const syncFavorites = settings.invokeSyncFavorites !== false;
     const syncBoards = settings.invokeSyncBoards !== false;
     const isInvokeSyncActive = status === 'syncing' || isLiveSyncing;
+    const ownerSyncBlocked = invokeOwnerScopeState.status !== 'ready'
+        || (invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
+            && settings.invokeOwnerSelection?.mode !== 'all');
 
     const handleStarredAsChange = (value: string) => {
         if (!isStarredAs(value)) return;
@@ -95,6 +98,14 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                 <p className="text-sm text-gray-500 font-medium">
                     Automate the bridge between InvokeAI and your {APP_NAME} library.
                 </p>
+
+                {ownerSyncBlocked && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-300">
+                        {settings.invokeOwnerSelection?.mode === 'owner'
+                            ? 'Selected-owner synchronization is intentionally gated until the next work package. Existing rows are already isolated to this owner.'
+                            : 'Resolve the InvokeAI owner scope above before synchronization can run.'}
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Favorites Group */}
@@ -207,8 +218,9 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleSync}
-                                className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3"
-                                title="Start synchronization with InvokeAI"
+                                disabled={ownerSyncBlocked}
+                                className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-sage-600"
+                                title={ownerSyncBlocked ? 'Resolve owner scope before synchronization' : 'Start synchronization with InvokeAI'}
                             >
                                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}

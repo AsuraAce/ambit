@@ -64,7 +64,7 @@ describe('searchRepo basic queries', () => {
 
         await expect(countGlobalImages()).resolves.toBe(7);
         await expect(countGlobalImages()).resolves.toBe(0);
-        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE is_deleted = 0');
+        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
     });
 
     it('searches image IDs with explicit and default visibility predicates', async () => {
@@ -102,7 +102,7 @@ describe('searchRepo basic queries', () => {
         });
 
         expect(db.select.mock.calls[0]?.[0]).toContain('ORDER BY images.timestamp DESC, images.id DESC');
-        expect(db.select.mock.calls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_asset_fast_sort_v1');
+        expect(db.select.mock.calls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
         expect(db.select.mock.calls[1]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.path ASC, images.id ASC');
         expect(db.select.mock.calls[1]?.[1]).toEqual([0, 0, 0, 'image.png', 0, 'image.png', 'image-1']);
         expect(db.select.mock.calls[2]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.timestamp DESC, images.id DESC');
@@ -1668,7 +1668,7 @@ describe('searchRepo scoped stats queries', () => {
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        const baseWhere = 'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const baseWhere = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
         const defaultWhere = `${baseWhere} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
         const privacyWhere = `${defaultWhere} AND privacy_hidden = 0`;
         await getLibraryStatsSummary(defaultWhere, []);
@@ -1679,11 +1679,11 @@ describe('searchRepo scoped stats queries', () => {
 
         const averageCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('AVG(steps) AS avg_steps'));
         expect(averageCalls).toHaveLength(5);
-        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_asset_fast_sort_v1');
-        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_asset_fast_sort_v1');
+        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
+        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
         expect(averageCalls[2]?.[0]).toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
         expect(averageCalls[3]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
-        expect(averageCalls[4]?.[0]).not.toContain('FROM images INDEXED BY idx_images_invoke_asset_fast_sort_v1');
+        expect(averageCalls[4]?.[0]).not.toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
         expect(averageCalls[4]?.[1]).toEqual(['Euler']);
     });
 
@@ -1701,8 +1701,8 @@ describe('searchRepo scoped stats queries', () => {
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
 
         const modelCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('GROUP BY name'));
 
@@ -1730,7 +1730,7 @@ describe('searchRepo scoped stats queries', () => {
         expect(summary.totalImages).toBe(3);
         const [countSql, countParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
         expect(countSql).toContain('FROM images');
-        expect(countSql).toContain('INDEXED BY idx_images_invoke_asset_fast_sort_v1');
+        expect(countSql).toContain('INDEXED BY idx_images_invoke_scope_fast_sort_v1');
         expect(countSql).not.toContain('FROM scoped_images');
         expect(countParams).toEqual([]);
         expect(findSelectCall(db, (value) => value.includes('count(*) as total'))).toBeUndefined();

@@ -40,6 +40,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::image_commands::refresh_boards_native,
         db::commands::image_commands::get_image_count_for_path_prefix,
         db::commands::image_commands::refresh_privacy_mask_index,
+        db::commands::image_commands::refresh_invoke_owner_scope,
         db::commands::maintenance::optimize_database,
         db::commands::maintenance::schedule_purge_transaction,
         db::commands::filter_commands::get_parameter_ranges,

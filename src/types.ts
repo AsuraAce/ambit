@@ -132,6 +132,7 @@ export interface AIImage {
   invokeImageName?: string; // Stable image name from the InvokeAI database
   invokeImageCategory?: string; // InvokeAI source category, independent of generation metadata
   invokeImageOrigin?: string; // Supplementary InvokeAI source provenance
+  invokeOwnerId?: string; // Stable owner ID from the configured InvokeAI database
   stack?: AIImage[]; // UI ONLY: List of images collapsed under this one
   notes?: string;
   metadata: ImageMetadata;
@@ -258,6 +259,25 @@ export interface InvokeDbSnapshotState {
   files: InvokeDbSnapshotFile[];
 }
 
+export type InvokeOwnerSelection =
+  | { dbPath: string; mode: 'owner'; ownerId: string }
+  | { dbPath: string; mode: 'all' };
+
+export interface InvokeOwnerSummary {
+  ownerId: string;
+  displayName?: string;
+  imageCount: number;
+  isStale?: boolean;
+}
+
+export interface InvokeOwnerDiscovery {
+  schemaMode: 'legacy' | 'multi_user';
+  dbPath: string;
+  imagesRoot: string;
+  owners: InvokeOwnerSummary[];
+  unassignedImageCount: number;
+}
+
 export interface AppSettings {
   hasCompletedOnboarding: boolean;
   theme: 'dark' | 'light';
@@ -285,6 +305,7 @@ export interface AppSettings {
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
   invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
+  invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
   libraryShowGrids?: boolean; // Persisted view preference

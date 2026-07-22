@@ -672,7 +672,7 @@ describe('imageRepo batch removal', () => {
                         invokeImageName: (params[21] as string | null) ?? null,
                         invokeImageCategory: (params[22] as string | null) ?? null,
                         invokeImageOrigin: (params[23] as string | null) ?? null,
-                        collectionIdsJson: (params[25] as string | null) ?? null,
+                        collectionIdsJson: (params[27] as string | null) ?? null,
                     });
                     return;
                 }
@@ -1110,8 +1110,8 @@ describe('imageRepo batch removal', () => {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.toLowerCase();
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
-                if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
-                if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
+                if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_intermediate_gen')) return [{ 1: 1 }];
+                if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_grid_gen')) return [];
                 if (sql.includes('FROM images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }

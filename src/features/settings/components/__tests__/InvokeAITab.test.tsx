@@ -2,6 +2,7 @@ import * as React from 'react';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppSettings } from '../../../../types';
+import type { InvokeOwnerScopeState } from '../../../../contexts/SyncContext';
 import { InvokeAITab } from '../InvokeAITab';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,10 @@ const mocks = vi.hoisted(() => ({
     invoke: vi.fn(),
     open: vi.fn(),
     testConnection: vi.fn(),
-    diagnoseInvokeAI: vi.fn()
+    diagnoseInvokeAI: vi.fn(),
+    selectInvokeOwnerScope: vi.fn(),
+    retryInvokeOwnerScope: vi.fn(),
+    ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
 }));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
@@ -17,6 +21,13 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('../../../../services/invoke/connection', () => ({ testConnection: mocks.testConnection, diagnoseInvokeAI: mocks.diagnoseInvokeAI }));
 vi.mock('../../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled: () => mocks.developerFeatures }));
 vi.mock('../SyncSection', () => ({ SyncSection: () => <div>sync-section</div> }));
+vi.mock('../../../../contexts/LibraryContext', () => ({
+    useLibrary: () => ({
+        invokeOwnerScopeState: mocks.ownerScopeState,
+        selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
+        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+    }),
+}));
 
 const settings = (invokeAiPath?: string) => ({ invokeAiPath } as AppSettings);
 const applySettings = (initial: AppSettings) => {
@@ -31,6 +42,7 @@ describe('InvokeAITab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.developerFeatures = true;
+        mocks.ownerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
         mocks.open.mockResolvedValue(null);
         mocks.testConnection.mockResolvedValue({ success: true, message: 'Connected' });
         mocks.diagnoseInvokeAI.mockResolvedValue({ totalInDb: 2, categories: [], origins: [] });
@@ -44,6 +56,40 @@ describe('InvokeAITab', () => {
         expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
         expect(screen.queryByText('System Audit')).toBeNull();
         expect(screen.getByText('sync-section')).toBeTruthy();
+    });
+
+    it('shows display names with stable IDs and requires confirmation for All users', async () => {
+        mocks.ownerScopeState = {
+            status: 'selection_required',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+                unassignedImageCount: 2,
+            },
+        };
+        mocks.selectInvokeOwnerScope.mockResolvedValue(true);
+        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+
+        expect(screen.getByText('Artemis')).toBeTruthy();
+        expect(screen.getByText('owner-a')).toBeTruthy();
+        expect(screen.queryByText(/email/i)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        expect(mocks.selectInvokeOwnerScope).toHaveBeenCalledWith({
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /all users/i }));
+        expect(screen.getByText('Show images from all InvokeAI users?')).toBeTruthy();
+        expect(mocks.selectInvokeOwnerScope).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Show All Users' }));
+        await waitFor(() => expect(mocks.selectInvokeOwnerScope).toHaveBeenLastCalledWith({
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            mode: 'all',
+        }));
     });
 
     it('updates typed and browsed paths while ignoring cancelled selections', async () => {

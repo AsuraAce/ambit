@@ -17,6 +17,7 @@ interface InvokeSourceIdentityRow {
 interface InvokeSourceFactRow extends InvokeSourceIdentityRow {
     image_category: string | null;
     image_origin: string | null;
+    user_id: string | null;
     metadata_blob: unknown;
 }
 
@@ -158,6 +159,9 @@ export const reconcileInvokeSourceFacts = async ({
     const originSelect = columns.has('image_origin')
         ? ', i.image_origin'
         : ', NULL AS image_origin';
+    const ownerSelect = columns.has('user_id')
+        ? ', CAST(i.user_id AS TEXT) AS user_id'
+        : ', NULL AS user_id';
     const metadataSelect = columns.has('metadata_json')
         ? ', i.metadata_json AS metadata_blob'
         : (columns.has('metadata')
@@ -169,7 +173,7 @@ export const reconcileInvokeSourceFacts = async ({
     for (let offset = 0; offset < total; offset += BATCH_SIZE) {
         throwIfAborted(signal);
         const rows = await db.select<InvokeSourceFactRow[]>(`
-            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${metadataSelect}
+            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${ownerSelect}${metadataSelect}
             FROM images i
             ORDER BY ${orderBy}
             LIMIT ${BATCH_SIZE} OFFSET ${offset}
@@ -192,6 +196,7 @@ export const reconcileInvokeSourceFacts = async ({
                 invokeImageName: row.image_name,
                 invokeImageCategory: row.image_category ?? null,
                 invokeImageOrigin: row.image_origin ?? null,
+                invokeOwnerId: row.user_id?.trim() || null,
             });
             const extraction = extractInvokeImageReferences(row.metadata_blob);
             const addUpdate = (key: string, id: string): void => {

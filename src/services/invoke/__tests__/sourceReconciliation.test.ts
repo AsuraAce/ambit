@@ -18,6 +18,7 @@ const createDb = (rows: Array<{
     image_subfolder?: string | null;
     image_category?: string | null;
     image_origin?: string | null;
+    user_id?: string | null;
     metadata_blob?: unknown;
 }>) => ({
     select: vi.fn(async (query: string) => {
@@ -95,24 +96,28 @@ describe('reconcileInvokeSourceFacts', () => {
                 invokeImageName: 'shared.png',
                 invokeImageCategory: 'general',
                 invokeImageOrigin: 'internal',
+                invokeOwnerId: null,
             },
             {
                 id: `${root}/outputs/images/references/shared.png`,
                 invokeImageName: 'shared.png',
                 invokeImageCategory: 'control',
                 invokeImageOrigin: 'external',
+                invokeOwnerId: null,
             },
             {
                 id: `${root}/outputs/images/references/pose.png`,
                 invokeImageName: 'pose.png',
                 invokeImageCategory: 'control',
                 invokeImageOrigin: 'external',
+                invokeOwnerId: null,
             },
             {
                 id: `${root}/outputs/images/pose.png`,
                 invokeImageName: 'pose.png',
                 invokeImageCategory: 'control',
                 invokeImageOrigin: 'external',
+                invokeOwnerId: null,
             },
         ]));
         expect(updates).toHaveLength(4);
@@ -146,6 +151,7 @@ describe('reconcileInvokeSourceFacts', () => {
             invokeImageName: 'asset.png',
             invokeImageCategory: 'control',
             invokeImageOrigin: 'external',
+            invokeOwnerId: null,
         }]);
     });
 
@@ -167,11 +173,40 @@ describe('reconcileInvokeSourceFacts', () => {
             invokeImageName: 'asset.png',
             invokeImageCategory: null,
             invokeImageOrigin: null,
+            invokeOwnerId: null,
         }]);
         const factQuery = db.select.mock.calls
             .map(call => call[0])
             .find(query => query.includes('NULL AS image_category'));
         expect(factQuery).toContain('NULL AS image_origin');
+    });
+
+    it('reconciles the authoritative image owner without reading user profile fields', async () => {
+        const db = createDb([{
+            image_name: 'owned.png',
+            image_category: 'general',
+            image_origin: 'internal',
+            user_id: ' owner-a ',
+        }]);
+
+        await reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(['image_category', 'image_origin', 'user_id']),
+            pathResolver: createInvokeImagePathResolver(root, async () => ['outputs/images/owned.png']),
+            onProgress: vi.fn(),
+        });
+
+        expect(reconcileInvokeImageSources).toHaveBeenCalledWith([{
+            id: `${root}/outputs/images/owned.png`,
+            invokeImageName: 'owned.png',
+            invokeImageCategory: 'general',
+            invokeImageOrigin: 'internal',
+            invokeOwnerId: 'owner-a',
+        }]);
+        const sourceQuery = db.select.mock.calls.map(call => call[0]).find(query => query.includes('metadata_blob'));
+        expect(sourceQuery).toContain('CAST(i.user_id AS TEXT) AS user_id');
+        expect(sourceQuery?.toLowerCase()).not.toContain('email');
+        expect(sourceQuery?.toLowerCase()).not.toContain('password');
     });
 
     it('reconciles exact references for canonical and safe legacy source identities', async () => {
@@ -313,6 +348,7 @@ describe('reconcileInvokeSourceFacts', () => {
             invokeImageName: 'asset.png',
             invokeImageCategory: expectedCategory,
             invokeImageOrigin: expectedOrigin,
+            invokeOwnerId: null,
         }]);
         const factQuery = db.select.mock.calls
             .map(call => call[0])

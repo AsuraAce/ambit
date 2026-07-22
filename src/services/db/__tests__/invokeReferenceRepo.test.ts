@@ -57,6 +57,10 @@ describe('invokeReferenceRepo', () => {
         expect(select).toHaveBeenCalledTimes(2);
         expect(select.mock.calls[0][0]).toContain('WHERE r.source_image_id = ?');
         expect(select.mock.calls[1][0]).toContain('WHERE r.target_image_id = ?');
+        expect(select.mock.calls[0][0]).toContain('visible_source.invoke_scope_hidden = 0');
+        expect(select.mock.calls[0][0]).toContain('target.invoke_scope_hidden = 0');
+        expect(select.mock.calls[1][0]).toContain('visible_target.invoke_scope_hidden = 0');
+        expect(select.mock.calls[1][0]).toContain('removed_source.invoke_scope_hidden = 0');
         expect(select.mock.calls[0][1]).toEqual(['C:/invoke/current.png']);
         expect(select.mock.calls[1][1]).toEqual(['C:/invoke/current.png']);
         expect(graph).toEqual({
@@ -94,13 +98,6 @@ describe('invokeReferenceRepo', () => {
                     active_source_id: null,
                     removed_source_id: 'C:\\Invoke\\removed-source.png',
                 },
-                {
-                    role: 'init_image',
-                    source_image_id: 'C:/Invoke/dangling.png',
-                    source_invoke_image_name: '',
-                    active_source_id: null,
-                    removed_source_id: null,
-                },
             ]);
         mocks.getDb.mockResolvedValue({ select });
 
@@ -108,12 +105,6 @@ describe('invokeReferenceRepo', () => {
         const graph = await getInvokeReferenceGraph('target');
 
         expect(graph.usedBy).toEqual([
-            {
-                imageId: null,
-                invokeImageName: 'dangling.png',
-                availability: 'unresolved',
-                roles: ['init_image'],
-            },
             {
                 imageId: null,
                 invokeImageName: 'removed-source.png',

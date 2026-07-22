@@ -375,7 +375,7 @@ const getDiskModifiedAtForFacetRow = (
     );
 };
 
-const BASE_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const BASE_VISIBLE_WHERE = "WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
 const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
 const BASE_PRIVACY_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const PRIVACY_VISIBLE_WHERE = `${DEFAULT_VISIBLE_WHERE} AND privacy_hidden = 0`;
@@ -394,6 +394,8 @@ const isDefaultGlobalScope = (
 const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
 const hasInvokeAssetVisibilityFilter = (whereClause: string) =>
     whereClause.includes('IFNULL(is_invoke_asset_gen, 0) = 0');
+const hasInvokeOwnerVisibilityFilter = (whereClause: string) =>
+    whereClause.includes('invoke_scope_hidden = 0');
 const hasFastSortVisibilityPrefix = (whereClause: string) =>
     whereClause.includes('is_deleted = 0') &&
     whereClause.includes('IFNULL(is_intermediate_gen, 0) = 0') &&
@@ -403,6 +405,9 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
     if (!hasFastSortVisibilityPrefix(whereClause)) return null;
 
     if (sortField === 'timestamp') {
+        if (hasInvokeOwnerVisibilityFilter(whereClause) && hasInvokeAssetVisibilityFilter(whereClause)) {
+            return 'idx_images_invoke_scope_fast_sort_v1';
+        }
         if (hasInvokeAssetVisibilityFilter(whereClause)) return 'idx_images_invoke_asset_fast_sort_v1';
         return hasPrivacyFilter(whereClause) ? 'idx_images_privacy_fast_sort_v1' : 'idx_images_fast_sort_v3';
     }
@@ -425,7 +430,7 @@ const selectAverageStepsScopeIndex = (
 ): string | null => {
     if (collectionId || loraName || params.length > 0) return null;
     if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
-        return 'idx_images_invoke_asset_fast_sort_v1';
+        return 'idx_images_invoke_scope_fast_sort_v1';
     }
     if (whereClause === BASE_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
     if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
@@ -435,7 +440,7 @@ const selectAverageStepsScopeIndex = (
 const selectCountVisibilityIndex = (whereClause: string, params: unknown[]): string | null => {
     if (params.length > 0) return null;
     if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
-        return 'idx_images_invoke_asset_fast_sort_v1';
+        return 'idx_images_invoke_scope_fast_sort_v1';
     }
     if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
     return null;
@@ -505,7 +510,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
     const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
-        `SELECT count(*) as count FROM images WHERE is_deleted = 0`
+        `SELECT count(*) as count FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
     ));
     return result[0]?.count || 0;
 };

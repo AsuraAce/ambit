@@ -4,6 +4,7 @@ import { commands, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings } from './connection';
+import { resolveInvokePaths } from './connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage, FacetType } from '../../types';
 import {
@@ -66,6 +67,7 @@ interface InvokeImageRow {
     is_intermediate?: number | boolean | null;
     image_category?: string | null;
     image_origin?: string | null;
+    user_id?: string | null;
 }
 
 interface InvokeRepairCandidate {
@@ -100,16 +102,8 @@ export const syncImages = async (
     };
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
-    let imagesRoot = rootPath.replace(/[\\/]$/, '');
-    const isFile = rootPath.endsWith('.db');
-    if (isFile) {
-        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
-    } else if (imagesRoot.endsWith('databases')) {
-        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
-    }
-
-    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
+    const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
+    const connectionString = `sqlite:${dbPath}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb: Database;
@@ -150,6 +144,7 @@ export const syncImages = async (
     const hasImageSubfolder = columns.includes('image_subfolder');
     const hasImageCategory = columns.includes('image_category');
     const hasImageOrigin = columns.includes('image_origin');
+    const hasUserId = columns.includes('user_id');
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -375,7 +370,7 @@ export const syncImages = async (
                 console.warn('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', error);
                 sizes = new Array(targetPaths.length).fill(0);
             }
-            const existingImagesInBatch = await getImagesByIds(lookupPaths);
+            const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
             const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
             const sizeByPath = new Map(targetPaths.map((path, index) => [path, sizes[index] || 0]));
             const thumbnailPaths = await resolveThumbnailPathsForRows(repairRows, resolvedPaths);
@@ -527,6 +522,7 @@ export const syncImages = async (
     const imageSubfolderCol = hasImageSubfolder ? ', i.image_subfolder' : '';
     const imageCategoryCol = hasImageCategory ? ', i.image_category' : ', NULL AS image_category';
     const imageOriginCol = hasImageOrigin ? ', i.image_origin' : ', NULL AS image_origin';
+    const ownerCol = hasUserId ? ', CAST(i.user_id AS TEXT) AS user_id' : ', NULL AS user_id';
 
     const createdBoardIds = new Set<string>();
     let batchCount = 0;
@@ -538,7 +534,7 @@ export const syncImages = async (
         const batchIndex = batchCount + 1;
         const metaSelect = `i.${metaCol} as metadata_blob`;
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol} ${imageCategoryCol} ${imageOriginCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol} ${imageCategoryCol} ${imageOriginCol} ${ownerCol}
             FROM images i
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
@@ -574,7 +570,7 @@ export const syncImages = async (
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(lookupPaths);
+        const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
         const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
@@ -753,6 +749,7 @@ export const syncImages = async (
                     if ((existing.invokeImageName ?? null) !== row.image_name) needsUpdate = true;
                     if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
                     if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
+                    if ((existing.invokeOwnerId ?? null) !== (row.user_id?.trim() || null)) needsUpdate = true;
                 }
 
                 const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
@@ -824,6 +821,7 @@ export const syncImages = async (
                     invokeImageName: row.image_name,
                     invokeImageCategory: row.image_category ?? undefined,
                     invokeImageOrigin: row.image_origin ?? undefined,
+                    invokeOwnerId: row.user_id?.trim() || undefined,
                 };
 
                 if (!existing) {

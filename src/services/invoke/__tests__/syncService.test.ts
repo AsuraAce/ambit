@@ -53,7 +53,17 @@ vi.mock('../metadataMapper', () => ({
 }));
 
 vi.mock('../connection', () => ({
-    fetchBoardMappings: vi.fn()
+    fetchBoardMappings: vi.fn(),
+    resolveInvokePaths: vi.fn((rootPath: string) => {
+        let imagesRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
+        const isFile = /\.db$/i.test(imagesRoot);
+        if (isFile) imagesRoot = imagesRoot.replace(/\/(?:databases\/)?invokeai\.db$/i, '');
+        else if (/\/databases$/i.test(imagesRoot)) imagesRoot = imagesRoot.replace(/\/databases$/i, '');
+        return {
+            dbPath: isFile ? rootPath.replace(/\\/g, '/') : `${imagesRoot}/databases/invokeai.db`,
+            imagesRoot,
+        };
+    })
 }));
 
 vi.mock('../sourceReconciliation', () => ({
@@ -1199,7 +1209,7 @@ describe('syncImages live mode', () => {
             'D:/AmbitFixtures/InvokeAI/outputs/images/type.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/hash.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/custom.png'
-        ]));
+        ]), { includeOwnerHidden: true });
         expect(vi.mocked(insertImagesBatch).mock.calls[0][0].map((image) => image.id)).toEqual([
             'D:/AmbitFixtures/InvokeAI/outputs/images/flat.png',
             'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png',
