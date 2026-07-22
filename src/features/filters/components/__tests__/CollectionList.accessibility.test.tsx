@@ -110,6 +110,7 @@ describe('CollectionList toolbar tooltips', () => {
         const viewButton = screen.getByRole('button', { name: 'Switch to Grid View' });
         expect(viewButton.getAttribute('title')).toBeNull();
         expect(viewButton.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.keyDown(document, { key: 'Tab' });
         fireEvent.focus(viewButton);
         expect(screen.getByRole('tooltip').textContent).toBe('Switch to Grid View');
         fireEvent.blur(viewButton);

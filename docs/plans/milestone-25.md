@@ -150,7 +150,7 @@ Verification evidence:
 
 Depends on: Work Package 2A.
 
-Status: Complete (`fix/prompt-masking-toggle`, asynchronous focus-restoration correction, 2026-07-22)
+Status: Complete (`fix/prompt-masking-toggle`, pointer-focus correction, 2026-07-22)
 
 Primary invariant: activating an ordinary action never leaves its tooltip obscuring the resulting interface state.
 
@@ -187,9 +187,11 @@ Verification evidence:
 - actions that retain focus do not carry stale suppression into a later keyboard visit;
 - manual Settings smoke showed that the initial zero-delay transfer window expired before the lazy-loaded modal moved focus; the correction must remain pending across asynchronous modal loading and rely on actual focus/navigation events instead of elapsed time;
 - the corrected shared state remains pending through lazy loading, suppresses restored focus after the launched surface takes focus, and cancels cleanly when the user instead navigates away with Tab or a pointer;
+- manual sidebar smoke clarified the remaining defect: a pointer click leaves the action button DOM-focused, and that pointer-created focus must not keep its tooltip visible after mouse-leave;
+- pointer-created focus now contributes no persistent tooltip state, while an actual Tab transition still opens the same help for keyboard users;
 - focused shared-component, collection-toolbar, resource-toolbar, modal, and sidebar coverage passed, including retained focus, re-hover, blur, outside click, Escape, and dynamic label changes;
 - the first full-suite run identified two tests that encoded the retired sticky-action behavior; both now verify dismissal followed by updated help on fresh hover or focus;
-- the complete frontend suite passed: 256 files, 2,877 tests passed, 1 skipped;
+- the complete frontend suite passed: 256 files, 2,878 tests passed, 1 skipped;
 - `pnpm run typecheck`, `pnpm run lint`, `pnpm run build`, and `git diff --check` passed;
 - rendered Browser smoke remains manual because the in-app browser-control runtime failed before connection with `failed to write kernel assets: The system cannot find the path specified`.
 

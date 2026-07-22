@@ -133,6 +133,33 @@ describe('InfoTooltip', () => {
         expect(screen.getByRole('tooltip')).toBeTruthy();
     });
 
+    it('does not let pointer-created focus keep an action tooltip open after mouse-leave', () => {
+        render(
+            <TooltipButton label="Open action" content="Open action">
+                Open
+            </TooltipButton>
+        );
+
+        const trigger = screen.getByRole('button', { name: 'Open action' });
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+
+        fireEvent.pointerDown(trigger);
+        act(() => trigger.focus());
+        fireEvent.click(trigger);
+
+        expect(document.activeElement).toBe(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+
+        fireEvent.mouseEnter(trigger);
+        expect(screen.getByRole('tooltip')).toBeTruthy();
+        fireEvent.mouseLeave(trigger);
+        expect(screen.queryByRole('tooltip')).toBeNull();
+    });
+
     it('keeps an asynchronously mounted modal launcher tooltip dismissed when focus is restored', async () => {
         render(<ModalLauncherHarness />);
 

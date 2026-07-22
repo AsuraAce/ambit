@@ -41,6 +41,7 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
     const tooltipRef = React.useRef<HTMLDivElement>(null);
     const awaitingActionFocusExitRef = React.useRef(false);
     const suppressNextFocusRef = React.useRef(false);
+    const keyboardFocusRef = React.useRef(true);
     const [isHovered, setIsHovered] = React.useState(false);
     const [isFocused, setIsFocused] = React.useState(false);
     const [isClickOpen, setIsClickOpen] = React.useState(false);
@@ -50,13 +51,21 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
 
     React.useEffect(() => {
         const handlePointerDown = (event: PointerEvent) => {
+            keyboardFocusRef.current = false;
             if (!triggerRef.current?.contains(event.target as Node)) {
                 awaitingActionFocusExitRef.current = false;
             }
         };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Tab') keyboardFocusRef.current = true;
+        };
 
         document.addEventListener('pointerdown', handlePointerDown);
-        return () => document.removeEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
     }, []);
 
     React.useLayoutEffect(() => {
@@ -158,8 +167,8 @@ export const TooltipButton: React.FC<TooltipButtonProps> = ({
                 onFocus={(event) => {
                     const shouldRemainDismissed = suppressNextFocusRef.current;
                     suppressNextFocusRef.current = false;
-                    setIsFocused(true);
-                    if (!shouldRemainDismissed) setIsDismissed(false);
+                    setIsFocused(keyboardFocusRef.current);
+                    if (keyboardFocusRef.current && !shouldRemainDismissed) setIsDismissed(false);
                     onFocus?.(event);
                 }}
                 onBlur={(event) => {
