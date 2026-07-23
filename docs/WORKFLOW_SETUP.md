@@ -32,11 +32,11 @@ Protect `main` with these required status checks:
 - Scheduled and manually dispatched runs execute both audits.
 - Unrelated PRs report that audits were skipped and pass the check.
 
-Do not require an always-green dependency-review placeholder. Enable the real `actions/dependency-review-action` only after the repository is public or GitHub Advanced Security makes it available.
+Do not require an always-green dependency-review placeholder. The public repository currently uses the direct npm and Rust audits above; adopting `actions/dependency-review-action` should be an intentional workflow change with its real check required only after it is enabled and validated.
 
 ## Repository Rules
 
-GitHub exposes branch protection and repository rulesets for private repositories only on a paid plan. If Ambit remains private on GitHub Free, upgrade the account before treating required checks as enforced policy.
+Branch protection and repository rulesets are hosted GitHub state and cannot be proven from this file. Verify the live `AsuraAce/ambit` settings before treating the required checks as enforced policy.
 
 The repository merge settings should allow squash merges only and automatically delete merged branches.
 
@@ -67,7 +67,7 @@ Under **Settings > Actions > General**, use the selected-actions policy, require
 - `googleapis/release-please-action`
 - `tauri-apps/tauri-action`
 
-Ambit is private and uses Windows runners, so confirm an Actions spending limit and valid payment method under the account's billing and metered-usage settings. A private-repository quota or payment block can reject workflows before any job starts.
+Ambit uses Windows runners. If a workflow is rejected before any job starts, check GitHub Actions availability, account billing or metered-usage policy, and repository Actions settings before editing the workflow YAML.
 
 ## Release Please GitHub App
 
@@ -145,10 +145,10 @@ Historical runs `27337343607` (`pr-ci`) and `27337343030` (`dependency-security`
 - Review gone-tracking branches individually before deletion; a missing upstream does not prove that unique local commits are disposable.
 - Review all linked worktrees before deleting a local branch.
 
-After CI and the GitHub App are working, inspect the existing Release Please PR. Reuse it only if Release Please can refresh it cleanly; otherwise close the obsolete PR, delete its branch, and dispatch a fresh release PR. Do not merge or publish it merely to test automation.
+If a Release Please PR becomes stale, reuse it only if the automation can refresh it cleanly; otherwise close the obsolete PR and dispatch a fresh release run. Do not merge or publish a release merely to test automation.
 
 ## Updater Risks
 
 - Losing the private updater key prevents existing installed builds from accepting future updates without a migration strategy.
 - A public/private key mismatch causes downloaded updates to be rejected.
-- While the repository and release assets are private, installed apps cannot consume GitHub's unauthenticated public release feed.
+- Installed clients require unauthenticated access to `latest.json`, the referenced installer, and its signature. Draft, private, missing, or mismatched release assets break updater discovery or installation even when authenticated maintainer downloads succeed.
