@@ -1,34 +1,31 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-22
 
-## Current State
-- The repo is currently on package version `0.6.4`; do not infer release publication status from this file alone.
-- The routed docs package is now baseline repo infrastructure: `AGENTS.md`, `docs/architecture.md`, `docs/WORKFLOW_SETUP.md`, and this file should be maintained rather than re-bootstrapped.
-- Production build hardening is part of the normal build path: `app:build` now runs `verify:release` before `tauri build --ci`, and the release gate includes a no-bundle Tauri compatibility build.
-- Frontend bundle cleanup has a build-output guard: `build:guard` fails if ineffective dynamic imports return or the startup entry chunk exceeds the 500 kB warning threshold.
-- The Live Watch incremental facet branch now avoids the old default idle-time full facet rebuild for normal live imports. Live Watch refreshes changed resource facets through the incremental queue, while manual recovery and non-live flows retain the full rebuild fallback.
-- The latest manual InvokeAI run showed the resource incremental path working as intended: browser logs emitted `mode:"resource-incremental"`, Rust resource refresh completed in about `452ms`, and the previously slow `caradhras-mix_style` LoRA refresh was about `106ms` instead of multi-second.
-- Asset drill-down now uses standard disjunctive faceting semantics: selected Match Any values keep sibling alternatives visible by counting that facet against all other active filters, while Match All keeps narrowed co-occurrence counts. Checkpoints remain multi-select but Any-only because each image has one checkpoint/model, and generator tools remain Any-only in the UI.
-- Maintenance currently exposes Missing, Thumbnails, Duplicates, Untagged, conditional Intermediates, and Removed tabs. Thumbnail optimization remains a visible maintenance surface as well as a background healing path.
+## Current Baseline
+- The current checkout and release manifests are version `0.9.0`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. The checkout is tagged `v0.9.0`; hosted release state still belongs to GitHub rather than this file.
+- Release builds remain Windows-only. Linux and macOS packages are manual, unsigned or non-updater experimental artifacts as documented in `docs/experimental-unix-builds.md`.
+- Production packaging runs `verify:release` before Tauri builds. The gate checks version consistency, generated binding drift, lint, TypeScript, guarded frontend output, coverage, Rust tests, and a no-bundle Tauri compatibility build.
+- ComfyUI metadata milestones 22 through 26 are complete. Their files under `docs/plans/` are historical verification records, not active work.
+- The search-transition, prompt-masking, setup-guide replay, and tooltip-dismissal packages recorded in `docs/plans/release-0.9.0-ux-readiness.md` landed before the `v0.9.0` release.
 
 ## Current Constraints
-- `package.json` defines dev, build, lint, typecheck, one-shot frontend test, coverage, Rust test, Tauri no-bundle check, and release verification scripts.
-- `verify:release` runs version consistency, binding drift check, lint, TypeScript, guarded production build, coverage-backed frontend tests, Rust tests, and the no-bundle Tauri build before production desktop packaging.
-- `.github/workflows/pr-ci.yml`, `.github/workflows/release-please.yml`, and `.github/workflows/release.yml` automate PR validation, versioning, and packaging; they do not replace task-specific local verification.
-- `src/bindings.ts` is generated from Rust command signatures during debug Tauri runs and should not be hand-edited.
+- Specta binding generation is explicit. Do not expect a debug Tauri launch to update `src/bindings.ts`; run `pnpm run bindings:generate`, then `pnpm run bindings:check`.
 - Desktop persistence is intentionally split: SQLite stores image records and heavy metadata under Local AppData, `library.json` stores lightweight app settings and recent searches, and the OS keyring stores sensitive API keys.
-- `src/services/repository.ts` is not the shipping desktop persistence path; treat it as legacy or fallback code unless a dedicated cleanup task explicitly changes that contract.
-- Duplicate detection treats same SHA-256 file content as an exact duplicate regardless of filename or path; metadata/dimensions/filesize-only “likely” groups are no longer surfaced.
-- Duplicate maintenance is a global scan. It backfills missing hashes in the native backend as a cancellable Activity Dock task without blocking imports, and reports cancelled/error-remnant scans as incomplete.
-- Duplicate cleanup is transactional and conservative: safe keeper state and collection memberships are merged, redundant records move through the Removed flow, and files are not deleted by default.
+- `src/services/repository.ts` is not the shipping desktop persistence path. Treat its LocalStorage/mock behavior as an ambiguous fallback until a dedicated task either validates or retires it.
+- Exact duplicate detection is a global SHA-256 scan. Cleanup merges safe keeper state and collection memberships, moves redundant records through the Removed flow, and does not delete files by default.
+- The `io.github.asuraace.ambit` identifier is current. Startup migration and reset/repair paths still account for legacy `com.ambit.app` Local and Roaming AppData during the public-beta transition.
 
-## Next Work
-- Add browser smoke tests for lazy-loaded app surfaces: settings, dashboard/statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editor.
-- Add coverage thresholds after the public-beta baseline is reviewed.
-- Add a small Tauri desktop launch smoke test later, using a temporary app data/profile directory; keep installer/update testing for release packaging work.
-- Production builds now use the Tauri identifier `io.github.asuraace.ambit`. Release builds run a one-time startup migration from the legacy `com.ambit.app` Roaming and Local AppData directories before SQL initialization, and reset/repair paths still check both identifiers during the public-beta transition.
-- The durable engineering follow-up from earlier work still stands: clarify whether `src/services/repository.ts` remains a supported non-desktop or mock fallback, or should be retired in a dedicated cleanup.
-- Live Watch still needs a separate pending-completion UX pass if we want toggle-off to distinguish "activity detected but output not complete yet" from passive idle or summary states. See `docs/refactor.md#live-watch-pending-completion-state`.
-- Future asset-filter work should centralize facet taxonomy and match-mode support so hook logic, SQL filtering, browser mocks, and UI controls cannot drift. See `docs/refactor.md#facet-semantics-centralization`.
-- Use this file for active repo state and durable near-term follow-ups. Move recurring structural debt to `docs/refactor.md`, and keep personal scratch planning out of tracked files.
+## Active Follow-Ups
+- `docs/plans/release-0.9.0-ux-readiness.md` was overtaken by the `v0.9.0` release and is no longer a live release gate. Its Work Package 3 (initial Smart Collection thumbnail hydration) and Work Package 4 (discoverable duplicate-group navigation) remain unversioned product follow-ups.
+- Add browser smoke coverage for lazy-loaded app surfaces, including settings, statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editing.
+- Add coverage thresholds after the public-beta baseline is intentionally reviewed.
+- Add a small Tauri desktop launch smoke test using a temporary app-data/profile directory; keep installer and updater validation in the release-candidate workflow.
+- Decide whether `src/services/repository.ts` remains a supported non-desktop/mock fallback or should be retired in dedicated cleanup.
+- Keep structural follow-ups in `docs/refactor.md`; notably Live Watch pending-completion UX and facet-semantics centralization remain deferred there.
+
+## Status Routing
+- Use this file for moving repository state and near-term follow-ups.
+- Use `docs/release-candidate-validation.md` for release-asset, updater, and installed-app evidence.
+- Treat plans marked `Complete` or `Superseded` as historical. Do not infer active work from a pending item inside a superseded plan without reconciling it here.
+- Use `docs/refactor.md` for actionable deferred structural work, not release status or session notes.

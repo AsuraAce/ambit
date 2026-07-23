@@ -1,6 +1,6 @@
 # Ambit 0.9.0 UX Release Readiness
 
-Status: In Progress
+Status: Superseded after partial completion (`v0.9.0` released 2026-07-22)
 
 ## Reconciliation
 
@@ -8,13 +8,15 @@ Status: In Progress
 - Prompt keyword masking configuration is lightweight persisted state in `library.json`; session Privacy Mode remains fail-closed and enabled at startup.
 - Smart Collections use dynamic thumbnails selected from matching library images; custom thumbnails retain precedence.
 - Exact-duplicate groups remain virtualized cards and keep their existing conservative resolution behavior.
-- Release Please remains responsible for the eventual 0.9.0 version and changelog update.
+- Release Please produced the `0.9.0` version, changelog update, tag, and release commit before this track's remaining packages were completed.
+- Work Packages 1 through 2B shipped before `v0.9.0`. Work Packages 3 and 4 remain unversioned product follow-ups; Work Package 5 is superseded as a `0.9.0` gate.
+- Release Please remains responsible for future version and changelog updates.
 
-## Objective
+## Historical Objective
 
 Remove the confirmed release-smoke trust failures without broadening search semantics, privacy scope, Smart Collection behavior, or duplicate resolution policy.
 
-The release-readiness track is accepted when search never reports a false empty state, prompt masking can be disabled without deleting keywords, replaying the setup guide cannot overwrite untouched privacy settings, action tooltips dismiss after activation, new Smart Collections hydrate a matching thumbnail, every duplicate copy is discoverably reachable, and the full release gate passes.
+The track was intended to be accepted when search never reported a false empty state, prompt masking could be disabled without deleting keywords, replaying the setup guide could not overwrite untouched privacy settings, action tooltips dismissed after activation, new Smart Collections hydrated a matching thumbnail, every duplicate copy was discoverably reachable, and the full release gate passed. Because `v0.9.0` was released first, this document no longer represents a live release gate.
 
 ## Work Package 1: Stable Search Transitions
 
@@ -201,7 +203,7 @@ Verification evidence:
 
 Depends on: Work Package 2B.
 
-Status: Pending (`fix/smart-collection-initial-thumbnail`)
+Status: Pending unversioned follow-up (`fix/smart-collection-initial-thumbnail`)
 
 Primary invariant: every new Smart Collection attempts to establish a thumbnail from its own matches without first being opened or pinned.
 
@@ -227,7 +229,7 @@ Completion criteria:
 
 Depends on: Work Package 3.
 
-Status: Pending (`fix/duplicate-group-navigation`)
+Status: Pending unversioned follow-up (`fix/duplicate-group-navigation`)
 
 Primary invariant: every copy in an exact-duplicate group is visibly reachable and actionable.
 
@@ -253,7 +255,7 @@ Completion criteria:
 
 Depends on: Work Packages 1-4.
 
-Status: Pending (`docs/release-0.9.0-readiness`)
+Status: Superseded by the `v0.9.0` release
 
 Primary invariant: the combined fixes preserve large-library virtualization and fail-closed privacy behavior.
 
@@ -267,7 +269,9 @@ Non-goals:
 
 - No manual version bump or unrelated release automation changes.
 
-## Release Acceptance Gate
+## Historical Release Acceptance Gate
+
+This gate was not completed before `v0.9.0` was released. Preserve it as planning history; do not use it to claim current release readiness.
 
 1. Confirm all four behavior packages are independently review-clean.
 2. Repeat the search, onboarding, Smart Collection, duplicate, and Privacy Mode smoke flows.

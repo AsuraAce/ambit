@@ -1,6 +1,6 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-07-07
+Last reviewed: 2026-07-22
 
 ## System Overview
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
@@ -11,7 +11,7 @@ Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust back
 Purpose: boot the Tauri app, register plugins, manage app-scoped state, and export Specta bindings.
 Code: `src-tauri/src/lib.rs`, `src-tauri/src/main.rs`, `src/bindings.ts`
 Interacts with: frontend services that call `commands.*`, Tauri plugins for SQL, filesystem, dialog, shell, and window state
-Risks: command signature changes can break TypeScript callers; debug Tauri runs overwrite `src/bindings.ts`
+Risks: command signature changes can break TypeScript callers; use `pnpm run bindings:generate` to regenerate `src/bindings.ts` and `pnpm run bindings:check` to detect drift
 Related docs: `docs/progress.md#current-constraints`
 
 ### SQLite Data, Migrations, and Maintenance
@@ -26,7 +26,14 @@ Purpose: scan image files, extract metadata and workflows, resolve models, and w
 Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
 Risks: parser heuristics and watcher behavior can create wrong metadata or miss library changes; external path handling must stay scoped and local
-Related docs: `docs/WORKFLOW_SETUP.md`
+Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`
+
+### Thumbnail Generation and Optimization
+Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in the background, expose maintenance controls, and throttle or cancel native work around foreground activity.
+Code: `src-tauri/src/thumb/`, `src/services/thumbnailService.ts`, `src/hooks/useThumbnailQueue.ts`, `src/hooks/useThumbnailOps.ts`
+Interacts with: SQLite image rows, app-local thumbnail storage, Activity Dock state, maintenance UI, collection thumbnail refresh, and generated Tauri bindings
+Risks: background jobs write in batches and coordinate cancellation, retry backoff, cache-loss recovery, and foreground throttling; changes can create heavy disk or database work on large libraries
+Related docs: `docs/manual/maintenance.md`, `docs/refactor.md#smart-thumbnail-optimization-and-thumbnail-maintenance-ownership`
 
 ### Frontend App Shell and Feature Surfaces
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
@@ -40,7 +47,7 @@ Purpose: own frontend query flows, transient UI state, JSON-backed settings and 
 Code: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 Interacts with: `src/features/`, `src/bindings.ts`, `src-tauri/src/db/`, app-local `library.json`
 Risks: state ownership is split across React Query, contexts, Zustand, and repository adapters, which makes duplicate sources of truth easy to introduce
-Related docs: `docs/progress.md#active-workstreams`, `docs/refactor.md#frontend-state-and-shell-coordination`
+Related docs: `docs/progress.md#current-constraints`, `docs/refactor.md#frontend-state-and-shell-coordination`
 
 ### Network Surface
 Purpose: keep the core app local-first while supporting explicit public-beta network paths.
@@ -52,6 +59,7 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 ## Invariants
 - SQLite is the source of truth for image records and heavy metadata. On Windows, the main library database lives in Local AppData, with Roaming AppData retained only as a legacy fallback during the public-beta transition. `library.json` should not become a second image store.
 - Rust-exposed command and type changes should flow through Specta into `src/bindings.ts`; do not hand-maintain Rust-backed TypeScript mirrors.
+- Generated binding updates are explicit: run `pnpm run bindings:generate`, then verify with `pnpm run bindings:check` or a broader gate that includes it.
 - Filesystem access must remain local-only and within Tauri-registered or scoped paths.
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
 - Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
@@ -62,4 +70,5 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - `src/contexts/SearchContext.tsx`: bridges React Query, SQL filter construction, collection refresh, and legacy store synchronization.
 - `src-tauri/src/db/migrations/`: schema changes and backfills affect existing user libraries.
 - `src-tauri/src/metadata/comfyui/`: parser heuristics are subtle and guarded by many Rust tests.
+- `src-tauri/src/thumb/` and `src/hooks/useThumbnailQueue.ts`: native background work, SQLite updates, cancellation, and foreground throttling must stay coordinated.
 - `src/services/TauriFsRepository.ts` and `src/stores/settingsStore.ts`: persistence behavior, settings migration, and folder scope registration.

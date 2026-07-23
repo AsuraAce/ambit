@@ -187,8 +187,8 @@ Status: Deferred
 Status: Deferred
 
 ### Why Cleanup Is Needed
-- `src/App.tsx` is a 487-line integration shell that coordinates view mode, selection, import and export, modals, viewer state, drag and drop, shortcuts, and maintenance hooks.
-- `src/contexts/SearchContext.tsx` is a 287-line bridge between React Query, persisted settings, SQL clause generation, and a mirrored Zustand store.
+- `src/App.tsx` remains a broad integration shell that coordinates view mode, selection, import and export, modals, viewer state, drag and drop, shortcuts, and maintenance hooks.
+- `src/contexts/SearchContext.tsx` remains a broad bridge between React Query, persisted settings, SQL clause generation, and a mirrored Zustand store.
 
 ### Current Pain Points
 - Images, filters, and recent-search state are shared across contexts, hooks, and stores.
