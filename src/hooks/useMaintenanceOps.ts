@@ -94,12 +94,16 @@ export const useMaintenanceOps = ({
         }
     }, [setImages, addToast, refreshCollections, incrementFacetCacheVersion]);
 
-    const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle, onComplete: () => void) => {
-        const img = images.find(i => i.id === targetId);
-        if (!img) return;
-
+    const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle): Promise<AIImage | null> => {
         setIsRecoveringMetadata(true);
         try {
+            const img = images.find(i => i.id === targetId)
+                ?? (await getImagesByIds([targetId]))[0];
+            if (!img) {
+                addToast("Prompt Recovery could not find this image in the library.", "error");
+                return null;
+            }
+
             const base64 = await imageToBase64(img.id);
             const apiKey = useSettingsStore.getState().geminiApiKey;
             if (!apiKey) throw new Error("No API Key");
@@ -131,10 +135,11 @@ export const useMaintenanceOps = ({
             ));
 
             addToast("Metadata recovered successfully!", "success");
-            onComplete();
+            return updatedImg;
         } catch (e) {
             console.error(e);
-            addToast("AI Analysis Failed", "error");
+            addToast("AI Prompt Recovery failed. Please try again.", "error");
+            return null;
         } finally {
             setIsRecoveringMetadata(false);
         }

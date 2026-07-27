@@ -183,6 +183,7 @@ const mocks = vi.hoisted(() => ({
     updateCollectionFilters: vi.fn().mockResolvedValue(undefined),
     handleExportConfirm: vi.fn(),
     executeDelete: vi.fn(),
+    openMetadataRecovery: vi.fn(),
     executeMetadataRecovery: vi.fn(),
     handlePinImage: vi.fn(),
     handleFavoriteImage: vi.fn(),
@@ -382,6 +383,7 @@ vi.mock('./hooks/useAppActions', () => ({
     useAppActions: () => ({
         handleExportConfirm: mocks.handleExportConfirm,
         executeDelete: mocks.executeDelete,
+        openMetadataRecovery: mocks.openMetadataRecovery,
         executeMetadataRecovery: mocks.executeMetadataRecovery,
         handlePinImage: mocks.handlePinImage,
         handleFavoriteImage: mocks.handleFavoriteImage,
@@ -1300,7 +1302,7 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.appLayout, 'AppLayout').scopeTotal).toBe(2);
     });
 
-    it('updates searches and gates recovery on AI configuration', async () => {
+    it('updates searches and delegates viewer recovery launch', async () => {
         render(<App />);
         act(() => requireProbe(captured.appLayout, 'AppLayout').setViewingImageId('one'));
         await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
@@ -1310,20 +1312,7 @@ describe('App orchestration', () => {
         await waitFor(() => expect(mocks.setFilters).toHaveBeenCalled());
         expect(mocks.setRecentSearches).toHaveBeenCalledWith(expect.any(Function));
         viewer.onRecoverMetadata();
-        expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('intelligence');
-        expect(mocks.addToast).toHaveBeenCalledWith(
-            'Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.',
-            'info'
-        );
-
-        mocks.settings.enableAI = true;
-        mocks.geminiApiKey = 'key';
-        const { rerender } = render(<App />);
-        rerender(<App />);
-        act(() => requireProbe(captured.appLayout, 'AppLayout').setViewingImageId('one'));
-        await waitFor(() => expect(captured.viewer).not.toBeNull());
-        requireProbe(captured.viewer, 'ImageViewer').onRecoverMetadata();
-        expect(mocks.modals.openModal).toHaveBeenCalledWith('recovery');
+        expect(mocks.openMetadataRecovery).toHaveBeenCalledWith();
     });
 
     it('imports selected browser files through the hidden input', () => {
