@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/AsuraAce/ambit/compare/v0.9.0...v0.9.1) (2026-07-27)
+
+
+### Bug Fixes
+
+* recover prompts from maintenance viewer ([#260](https://github.com/AsuraAce/ambit/issues/260)) ([8838489](https://github.com/AsuraAce/ambit/commit/8838489be0df4ce62a82a6b7b95acc536770a9c7))
+
 ## [0.9.0](https://github.com/AsuraAce/ambit/compare/v0.8.0...v0.9.0) (2026-07-22)
 
 
