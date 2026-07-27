@@ -115,9 +115,9 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper });
 
-        const onComplete = vi.fn();
+        let recoveredImage: AIImage | null = null;
         await act(async () => {
-            await result.current.recoverMetadata(image.id, 'generic', onComplete);
+            recoveredImage = await result.current.recoverMetadata(image.id, 'generic');
         });
 
         expect(mockImageToBase64).toHaveBeenCalledWith(image.id);
@@ -138,10 +138,10 @@ describe('useMaintenanceOps metadata recovery', () => {
         expect(cached?.pages[0].images[0].metadata.positivePrompt).toBe('Recovered prompt');
         expect(cached?.pages[0].images[0].originalMetadata).toBeUndefined();
         expect(mockAddToast).toHaveBeenCalledWith('Metadata recovered successfully!', 'success');
-        expect(onComplete).toHaveBeenCalledTimes(1);
+        expect((recoveredImage as AIImage | null)?.metadata.positivePrompt).toBe('Recovered prompt');
     });
 
-    it('returns without entering recovery when the target image is absent', async () => {
+    it('reports an error when the target image is absent from memory and the database', async () => {
         const queryClient = new QueryClient();
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -153,10 +153,35 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper });
 
-        await act(async () => result.current.recoverMetadata('missing', 'generic', vi.fn()));
+        await act(async () => result.current.recoverMetadata('missing', 'generic'));
 
         expect(result.current.isRecoveringMetadata).toBe(false);
+        expect(imageRepoMocks.getImagesByIds).toHaveBeenCalledWith(['missing']);
         expect(mockImageToBase64).not.toHaveBeenCalled();
+        expect(mockAddToast).toHaveBeenCalledWith('Prompt Recovery could not find this image in the library.', 'error');
+    });
+
+    it('recovers a Maintenance image fetched from the database when it is outside the Gallery query', async () => {
+        imageRepoMocks.getImagesByIds.mockResolvedValueOnce([image]);
+        const queryClient = new QueryClient();
+        const wrapper = ({ children }: { children: React.ReactNode }) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const { result } = renderHook(() => useMaintenanceOps({
+            images: [],
+            setImages: vi.fn(),
+            refreshCollections: vi.fn(),
+            settings,
+        }), { wrapper });
+
+        let recoveredImage: AIImage | null = null;
+        await act(async () => {
+            recoveredImage = await result.current.recoverMetadata(image.id, 'generic');
+        });
+
+        expect(imageRepoMocks.getImagesByIds).toHaveBeenCalledWith([image.id]);
+        expect(mockImageToBase64).toHaveBeenCalledWith(image.id);
+        expect((recoveredImage as AIImage | null)?.metadata.positivePrompt).toBe('Recovered prompt');
     });
 
     it('reports missing API credentials and releases recovery state', async () => {
@@ -173,10 +198,10 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper });
 
-        await act(async () => result.current.recoverMetadata(image.id, 'generic', vi.fn()));
+        await act(async () => result.current.recoverMetadata(image.id, 'generic'));
 
         expect(mockRecoverImageMetadata).not.toHaveBeenCalled();
-        expect(mockAddToast).toHaveBeenCalledWith('AI Analysis Failed', 'error');
+        expect(mockAddToast).toHaveBeenCalledWith('AI Prompt Recovery failed. Please try again.', 'error');
         expect(result.current.isRecoveringMetadata).toBe(false);
         error.mockRestore();
     });
@@ -194,15 +219,14 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper });
 
-        await act(async () => result.current.recoverMetadata(image.id, 'generic', vi.fn()));
+        await act(async () => result.current.recoverMetadata(image.id, 'generic'));
 
         expect(mockUpdateImageMetadataFields).toHaveBeenCalledWith(image.id, { positivePrompt: '' });
     });
 
-    it('reports recovery service failures without calling completion', async () => {
+    it('returns null and reports recovery service failures', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         mockRecoverImageMetadata.mockRejectedValue(new Error('provider unavailable'));
-        const onComplete = vi.fn();
         const queryClient = new QueryClient();
         const wrapper = ({ children }: { children: React.ReactNode }) => (
             <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -214,10 +238,13 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper });
 
-        await act(async () => result.current.recoverMetadata(image.id, 'generic', onComplete));
+        let recoveredImage: AIImage | null = image;
+        await act(async () => {
+            recoveredImage = await result.current.recoverMetadata(image.id, 'generic');
+        });
 
-        expect(mockAddToast).toHaveBeenCalledWith('AI Analysis Failed', 'error');
-        expect(onComplete).not.toHaveBeenCalled();
+        expect(mockAddToast).toHaveBeenCalledWith('AI Prompt Recovery failed. Please try again.', 'error');
+        expect(recoveredImage).toBeNull();
         expect(result.current.isRecoveringMetadata).toBe(false);
         error.mockRestore();
     });

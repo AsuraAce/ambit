@@ -150,7 +150,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     // Stores
     const settings = useSettingsStore(s => s.settings);
-    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
     const privacyExposureBlocked = privacyEnabled && privacyMaskIndexStatus !== 'ready';
@@ -419,14 +418,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onUpdateModel={handlers.handleUpdateModel}
                                         onUpdateTool={handlers.handleUpdateTool}
                                         onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
-                                        onRecoverMetadata={() => {
-                                            if (!settings.enableAI || !geminiApiKey) {
-                                                addToast("Enable AI features and configure a Gemini API key first", "error");
-                                                modals.setInitialSettingsTab('intelligence');
-                                                modals.openModal('settings');
-                                            } else {
-                                                modals.openModal('recovery');
-                                            }
+                                        onRecoverMetadata={(targetId, onRecovered) => {
+                                            actions.openMetadataRecovery(targetId, onRecovered);
                                         }}
                                         onToggleFavorite={(id) => toggleFavorite(id)}
                                         onTogglePin={actions.handlePinImage}

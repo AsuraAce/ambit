@@ -1,6 +1,6 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-07-22
+Last reviewed: 2026-07-27
 
 ## System Overview
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
@@ -39,8 +39,8 @@ Related docs: `docs/manual/maintenance.md`, `docs/refactor.md#smart-thumbnail-op
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`
 Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, and Tauri plugins
-Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature
-Related docs: `docs/refactor.md#frontend-state-and-shell-coordination`
+Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature. Gallery and Maintenance both render the shared `src/features/viewer/components/ImageViewer.tsx`, but each owns context-specific session navigation and action wiring; viewer feature changes must verify both entry points.
+Related docs: `docs/refactor.md#frontend-state-and-shell-coordination`, `docs/refactor.md#shared-image-viewer-integration-boundary`
 
 ### Query, State, and Persistence Adapters
 Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, thumbnail services, and database helper modules.
@@ -64,6 +64,7 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
 - Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
 - Large library browsing paths must remain virtualized and performance-conscious.
+- Gallery and Maintenance should reuse the shared `ImageViewer` presentation instead of developing separate viewer implementations. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.
 
 ## High-Risk Areas
 - `src/App.tsx`: app shell integration point for selection, viewer, import, shortcuts, modals, and layout state.
