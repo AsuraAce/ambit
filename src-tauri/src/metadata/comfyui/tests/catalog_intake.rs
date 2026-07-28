@@ -485,6 +485,58 @@ const MILESTONE32_FLUX2_VARIANT_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE33_TARGET_CLOSURE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "flux_schnell_full_text_to_image",
+        source_blob: "99099e105eb26ec695c53590e5dff7606c8e3b1a",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_schnell_full_text_to_image.chunks.json"
+        ),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "hidream_e1_full",
+        source_blob: "057d62066a57cfa9639e81912c348743d8c6fcd9",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_full.chunks.json"),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_hidream_o1",
+        source_blob: "6506c98a9bec9a138b475804637d810158639774",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1.chunks.json"),
+        graph_node_count: 41,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_hidream_o1_dev",
+        source_blob: "3c714c936dde6fad348c57fc74c790d7b71d4d03",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1_dev.chunks.json"),
+        graph_node_count: 40,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_edit_2511",
+        source_blob: "c055e4e70c8a75ca4df197e99be72ec11c582203",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
+        ),
+        graph_node_count: 29,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -658,6 +710,11 @@ fn pinned_milestone31_baseline_edit_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone32_flux2_variant_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE32_FLUX2_VARIANT_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone33_target_closure_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE33_TARGET_CLOSURE_FIXTURES);
 }
 
 #[test]

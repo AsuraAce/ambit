@@ -590,6 +590,19 @@ fn extract_text_from_node(
         }
     }
 
+    if t == "CLIPTextEncodeFlux" {
+        let mut parts = Vec::new();
+        for input_name in ["clip_l", "t5xxl"] {
+            if let Some(text) = trace_text_input(graph, node_id, input_name, true)
+                .filter(|text| !is_missing_prompt_value(text))
+                .filter(|text| !parts.contains(text))
+            {
+                parts.push(text);
+            }
+        }
+        return (!parts.is_empty()).then(|| parts.join("\n\n"));
+    }
+
     let mut visited = HashSet::new();
     evaluate_string_node_with_mode(
         graph,

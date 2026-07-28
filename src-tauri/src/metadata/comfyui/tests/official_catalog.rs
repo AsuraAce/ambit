@@ -322,6 +322,30 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_flux2_text_to_image_9b.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "flux_schnell_full_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_schnell_full_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_e1_full",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_full.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_hidream_o1",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_hidream_o1_dev",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit_2511",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
+        ),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -2010,6 +2034,122 @@ fn flux2_klein_9b_base_text_to_image() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_schnell_dual_encoder_is_golden() {
+    assert_fixture(
+        "flux_schnell_full_text_to_image",
+        ExpectedMetadata {
+            model: "flux1_schnell",
+            seed: Some(167_447_334_682_596),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Cute retro mini car, pastel - colored 3D flowers overflowing from it, soft green background, minimalist and fresh style, high - precision rendering, spring - like vibrant atmosphere, delicate petal details, gentle color grading, whimsical and lovely scene\n\nCreate a 3D - styled image: A cute, retro - looking mini car with soft, pastel - colored flowers (like daisies, pink blooms) overflowing from it. Set against a gentle green background, giving a fresh, spring - vibe. Make it look whimsical and delicate, like a sweet illustration.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_e1_full_is_golden() {
+    assert_fixture(
+        "hidream_e1_full",
+        ExpectedMetadata {
+            model: "hidream_e1_full_bf16",
+            seed: Some(705_826_023_365_990),
+            steps: 28,
+            cfg: 5.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Let the girl put on the VR glasses full of a sense of technology, just like the scenes in Ready Player One, with CG rendering and ultra-realism.",
+            negative_prompt: "low quality, blurry, distorted",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_o1_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_hidream_o1",
+        ExpectedMetadata {
+            model: "hidream_o1_image_bf16",
+            seed: Some(493_576_922_569_549),
+            steps: 40,
+            cfg: 5.0,
+            sampler: "dpmpp_2m_sde_gpu (normal)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 41,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_o1_dev_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_hidream_o1_dev",
+        ExpectedMetadata {
+            model: "hidream_o1_image_dev_fp8_scaled",
+            seed: Some(270_186_383_729_385),
+            steps: 28,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 40,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_is_golden() {
+    assert_fixture(
+        "image_qwen_image_edit_2511",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(0),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt:
+                "Change the furniture leather difference in image 1 to the fur material in image 2.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

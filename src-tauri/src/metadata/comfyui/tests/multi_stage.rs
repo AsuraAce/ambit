@@ -132,6 +132,59 @@ fn unconnected_sampler_custom_core_sockets_do_not_use_wireless_candidates() {
 }
 
 #[test]
+fn selected_sampler_custom_reports_connected_lcm_sampler() {
+    let prompt = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "hidream.safetensors" } },
+        "2": { "class_type": "SamplerLCM", "inputs": {} },
+        "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "normal", "steps": 28 } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "literal prompt" } },
+        "5": {
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0], "positive": ["4", 0], "sampler": ["2", 0],
+                "sigmas": ["3", 0], "noise_seed": 42, "cfg": 1.0
+            }
+        },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string()));
+
+    assert_eq!(meta.sampler, "lcm (normal)");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Sampler,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn disconnected_lcm_sampler_does_not_override_selected_sampler() {
+    let prompt = json!({
+        "0": { "class_type": "SamplerLCM", "inputs": {} },
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "selected.safetensors" } },
+        "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 4 } },
+        "4": {
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0], "sampler": ["2", 0], "sigmas": ["3", 0],
+                "noise_seed": 7, "cfg": 1.0
+            }
+        },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["4", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    });
+
+    let (meta, _) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string()));
+
+    assert_eq!(meta.sampler, "euler (simple)");
+}
+
+#[test]
 fn saved_output_reroute_reaches_sampler_custom() {
     // API Reroute uses the empty input name. It is transparent on the bounded
     // saved-output walk, so the connected SamplerCustom remains authoritative.

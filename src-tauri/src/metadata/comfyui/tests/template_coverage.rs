@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 57);
+    assert_eq!(count_coverage("golden"), 60);
     assert_eq!(count_coverage("pattern_covered"), 9);
-    assert_eq!(count_coverage("partial"), 4);
-    assert_eq!(count_coverage("unassessed"), 5);
+    assert_eq!(count_coverage("partial"), 6);
+    assert_eq!(count_coverage("unassessed"), 0);
     assert_eq!(count_coverage("excluded"), 474);
 }
 

@@ -124,6 +124,164 @@ fn extract_custom_conditioning_prompt(
     extract_comfyui_metadata_with_diagnostics(&chunks)
 }
 
+#[test]
+fn flux_text_encoder_combines_distinct_literal_lanes_in_stable_order() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "CLIPTextEncodeFlux",
+            "inputs": { "clip_l": "short description", "t5xxl": "detailed description" }
+        }),
+    )]);
+
+    assert_eq!(
+        meta.positive_prompt,
+        "short description\n\ndetailed description"
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn flux_text_encoder_deduplicates_and_omits_empty_or_placeholder_lanes() {
+    for (clip_l, t5xxl, expected) in [
+        ("same prompt", "same prompt", "same prompt"),
+        ("", "detailed prompt", "detailed prompt"),
+        ("unknown", "detailed prompt", "detailed prompt"),
+        ("short prompt", "", "short prompt"),
+    ] {
+        let (meta, _) = extract_custom_conditioning_prompt(vec![(
+            "2",
+            json!({
+                "class_type": "CLIPTextEncodeFlux",
+                "inputs": { "clip_l": clip_l, "t5xxl": t5xxl }
+            }),
+        )]);
+
+        assert_eq!(meta.positive_prompt, expected);
+    }
+}
+
+#[test]
+fn flux_text_encoder_links_override_stale_widgets_and_fail_closed_independently() {
+    let (meta, _) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "CLIPTextEncodeFlux",
+                "inputs": { "clip_l": ["3", 0], "t5xxl": ["4", 0] },
+                "widgets_values": ["stale short", "stale detailed", 3.5]
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "PrimitiveStringMultiline", "inputs": { "value": "linked short" } }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "generator input" } }),
+        ),
+    ]);
+
+    assert_eq!(meta.positive_prompt, "linked short");
+}
+
+#[test]
+fn flux_text_encoder_uses_unlinked_workflow_widgets_and_suppresses_empty_provenance() {
+    let (meta, _) = extract_custom_conditioning_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "CLIPTextEncodeFlux",
+            "widgets_values": ["widget short", "widget detailed", 3.5]
+        }),
+    )]);
+    assert_eq!(meta.positive_prompt, "widget short\n\nwidget detailed");
+
+    let (empty_meta, empty_diagnostics) = extract_custom_conditioning_prompt(vec![
+        (
+            "2",
+            json!({
+                "class_type": "CLIPTextEncodeFlux",
+                "inputs": { "clip_l": ["3", 0], "t5xxl": ["4", 0] },
+                "widgets_values": ["stale short", "stale detailed", 3.5]
+            }),
+        ),
+        (
+            "3",
+            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "first input" } }),
+        ),
+        (
+            "4",
+            json!({ "class_type": "TextGenerate", "inputs": { "prompt": "second input" } }),
+        ),
+        (
+            "99",
+            json!({ "class_type": "CLIPTextEncode", "inputs": { "text": "disconnected fallback" } }),
+        ),
+    ]);
+
+    assert_eq!(empty_meta.positive_prompt, "");
+    assert!(!empty_diagnostics
+        .field_sources
+        .contains_key(&ComfyMetadataField::PositivePrompt));
+}
+
+#[test]
+fn unresolved_workflow_flux_lane_does_not_reopen_stale_widget_for_ordinary_sampler() {
+    let workflow = json!({
+        "nodes": [
+            {
+                "id": 1, "type": "UNETLoader", "inputs": [],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [1] }],
+                "widgets_values": ["model.safetensors"]
+            },
+            {
+                "id": 2, "type": "CLIPTextEncodeFlux",
+                "inputs": [{ "name": "clip_l", "type": "STRING", "link": 999 }],
+                "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [2] }],
+                "widgets_values": ["stale short", "", 3.5]
+            },
+            {
+                "id": 3, "type": "KSampler",
+                "inputs": [
+                    { "name": "model", "type": "MODEL", "link": 1 },
+                    { "name": "positive", "type": "CONDITIONING", "link": 2 }
+                ],
+                "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [3] }],
+                "widgets_values": [1, "fixed", 4, 1.0, "euler", "simple", 1.0]
+            },
+            {
+                "id": 4, "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "type": "LATENT", "link": 3 }],
+                "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [4] }]
+            },
+            {
+                "id": 5, "type": "SaveImage",
+                "inputs": [{ "name": "images", "type": "IMAGE", "link": 4 }]
+            },
+            { "id": 99, "type": "CLIPTextEncode", "widgets_values": ["disconnected fallback"] }
+        ],
+        "links": [
+            [1, 1, 0, 3, 0, "MODEL"],
+            [2, 2, 0, 3, 1, "CONDITIONING"],
+            [3, 3, 0, 4, 0, "LATENT"],
+            [4, 4, 0, 5, 0, "IMAGE"]
+        ]
+    });
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "");
+    assert!(!diagnostics
+        .field_sources
+        .contains_key(&ComfyMetadataField::PositivePrompt));
+}
+
 fn extract_workflow_boogu_prompt(
     boogu_node: Value,
     extra_nodes: Vec<Value>,

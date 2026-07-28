@@ -133,7 +133,10 @@ pub fn extract_from_sampler(
                     } else {
                         evaluate_string(graph, samp_node, "sampler_name")
                     };
-                    if let Some(s) = sampler_value {
+                    if let Some(s) = sampler_value.or_else(|| {
+                        (is_sampler_custom && get_node_type(samp_node) == "SamplerLCM")
+                            .then_some("lcm".into())
+                    }) {
                         sampler = s;
                     }
                 }

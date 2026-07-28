@@ -742,6 +742,14 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "CLIPTextEncodeFlux" {
+            match key {
+                "clip_l" => return arr.first(),
+                "t5xxl" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         if t == "TextEncodeBooguEdit" && key == "prompt" {
             return arr.first();
         }

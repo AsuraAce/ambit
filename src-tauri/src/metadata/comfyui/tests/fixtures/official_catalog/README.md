@@ -331,3 +331,21 @@ existing selected-output parser behavior.
 All seven fixtures have one unambiguous active saved-output root and exact
 `SamplerTraversal` metadata assertions. Disabled Turbo LoRAs, bypassed
 alternative subgraphs, and bypassed save nodes are intentionally omitted.
+
+## Milestone 33 Active Target Closure
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures assess the final five entries in the 75-workflow active target.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`flux_schnell_full_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux_schnell_full_text_to_image.json) | `99099e105eb26ec695c53590e5dff7606c8e3b1a` | 11039 |
+| [`hidream_e1_full`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/hidream_e1_full.json) | `057d62066a57cfa9639e81912c348743d8c6fcd9` | 20330 |
+| [`image_hidream_o1`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_hidream_o1.json) | `6506c98a9bec9a138b475804637d810158639774` | 66255 |
+| [`image_hidream_o1_dev`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_hidream_o1_dev.json) | `3c714c936dde6fad348c57fc74c790d7b71d4d03` | 64769 |
+| [`image_qwen_image_edit_2511`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_image_edit_2511.json) | `c055e4e70c8a75ca4df197e99be72ec11c582203` | 57017 |
+
+Flux Schnell, HiDream E1, and Qwen Image Edit 2511 are exact goldens. The two
+HiDream O1 workflows are partial because their selected `TextGenerate` result
+is not embedded; the parser deliberately leaves those prompts empty rather
+than reporting generator input or stale widget text.
