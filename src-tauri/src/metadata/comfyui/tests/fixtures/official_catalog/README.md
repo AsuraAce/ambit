@@ -356,3 +356,64 @@ Flux Schnell, HiDream E1, and Qwen Image Edit 2511 are exact goldens. The two
 HiDream O1 workflows are partial because their selected `TextGenerate` result
 is not embedded; the parser deliberately leaves those prompts empty rather
 than reporting generator input or stale widget text.
+
+## Milestone 34 Published-Catalog Intake
+
+Captured on `2026-07-28` from published release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`. These exact workflow-only
+fixtures are intake evidence. They remain `unassessed` until later packages
+add exact extraction assertions; the stable-shape test intentionally verifies
+only source identity, workflow preservation, normalized node count, and output
+selection diagnostics.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_krea2_turbo_int8_image_style_reference`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_krea2_turbo_int8_image_style_reference.json) | `9b56eb3fef84084b0fc94d7cb76242fa144fa4ae` | 58544 | 28 |
+| [`image_qwen_image_edit_2511_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_image_edit_2511_int8.json) | `251ffb5115cf8e6ab27b2ebc1038423737f22e72` | 57955 | 27 |
+| [`image_ideogram4_t2i_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_ideogram4_t2i_int8.json) | `4e9a71db38bc0c6e09aafba658adb5b06d10c8fa` | 124948 | 46 |
+| [`image_anima_lllite_any_control_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_anima_lllite_any_control_to_image.json) | `ef59950bec26fc85e8ad7e2f6cdd2718b830bcc0` | 57479 | 29 |
+| [`image_anima_lllite_image_inpainting`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_anima_lllite_image_inpainting.json) | `0fef38f42235bf9a6133f502a3f9611a8a4fdd3e` | 54070 | 28 |
+| [`image_anima_lllite_depth_control_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_anima_lllite_depth_control_to_image.json) | `a05af628646ad83c3378fcf5acfa4330dd3647c4` | 68061 | 29 |
+| [`image_boogu_image_0_1_edit_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_boogu_image_0_1_edit_int8.json) | `1d9cd1a0f28c76c74ad972c6ffd823aef11e84ea` | 33811 | 18 |
+| [`image_z_image_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_z_image_int8.json) | `2dd3f57d9d01e83b10caa16cddba37d356d50e23` | 33334 | 14 |
+| [`image_joyai_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_joyai_image_edit.json) | `3d92ffa74ffffa81de5654134fd8afbeb1611e56` | 34878 | 15 |
+
+Every workflow has one active persisted output candidate, one root sampler,
+and no output ambiguity. Source-authored expectations, recorded independently
+of golden parser assertions:
+
+- `image_krea2_turbo_int8_image_style_reference`: Krea 2 Turbo INT8 ConvRot;
+  seed `355028178891957`; 8 steps; CFG 1; `euler` with `simple`; literal prompt
+  `a white yeti with horns reading a book that is titled "Ostris + Krea2 Style Reference"`.
+  The style-reference LoRA is on the disabled switch branch.
+- `image_qwen_image_edit_2511_int8`: Qwen Image Edit 2511 INT8 ConvRot; seed
+  `1119496583977398`; 40 steps; CFG 4; `euler` with `simple`; literal edit
+  prompt `Convert this image to pop art poster style`. The Lightning LoRA is
+  disabled.
+- `image_ideogram4_t2i_int8`: Ideogram 4 INT8 ConvRot; seed
+  `71584314815009`; selected Default profile with 20 steps; base CFG 7;
+  `euler` with the Ideogram 4 scheduler; the exact JSON caption is the literal
+  on `CLIPTextEncode` node 24. The unconditional model is auxiliary.
+- `image_anima_lllite_any_control_to_image`: Anima Base v1; seed
+  `1986030987480`; 30 steps; CFG 4; `euler` with `simple`; exact positive and
+  negative literals are on nodes 84 and 82. The selected model path applies
+  `anima-lllite-any-test-like-v2.safetensors`; turbo is disabled.
+- `image_anima_lllite_image_inpainting`: Anima Base v1; seed
+  `1376514088921`; the active turbo branch selects 8 steps and CFG 1 with
+  `euler`/`simple`; positive prompt `girl with red eyes`; the selected model
+  patch is `anima-lllite-inpainting-v2.safetensors` and the active LoRA is
+  `anima-turbo-lora-v0.2.safetensors`.
+- `image_anima_lllite_depth_control_to_image`: Anima Base v1; seed
+  `520254185749746`; 30 steps; CFG 4; `euler` with `simple`; exact positive and
+  negative literals are on nodes 84 and 82. The selected model path applies
+  `anima-lllite-depth-1.safetensors`; turbo is disabled.
+- `image_boogu_image_0_1_edit_int8`: Boogu Image Edit INT8 ConvRot; seed 22;
+  25 steps; CFG 3.5; `dpmpp_2m` with `simple`; literal edit prompt `Keep the
+  character unchanged, replace the desert background and scene. The model is
+  on the dune.`
+- `image_z_image_int8`: Z-Image INT8 ConvRot; seed `677498465340151`; 25
+  steps; CFG 4; `res_multistep` with `simple`; exact positive literal is on
+  node 67 and negative conditioning is empty.
+- `image_joyai_image_edit`: JoyAI Image Edit INT8 ConvRot; seed 42; 40 steps;
+  CFG 4; `euler` with `normal`; literal edit prompt `Change the background to
+  a glacial scene.` and empty negative conditioning.

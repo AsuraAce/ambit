@@ -537,6 +537,102 @@ const MILESTONE33_TARGET_CLOSURE_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE34_CATALOG_REFRESH_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_krea2_turbo_int8_image_style_reference",
+        source_blob: "9b56eb3fef84084b0fc94d7cb76242fa144fa4ae",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_int8_image_style_reference.chunks.json"
+        ),
+        graph_node_count: 28,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_edit_2511_int8",
+        source_blob: "251ffb5115cf8e6ab27b2ebc1038423737f22e72",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511_int8.chunks.json"
+        ),
+        graph_node_count: 27,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_ideogram4_t2i_int8",
+        source_blob: "4e9a71db38bc0c6e09aafba658adb5b06d10c8fa",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.chunks.json"),
+        graph_node_count: 46,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_anima_lllite_any_control_to_image",
+        source_blob: "ef59950bec26fc85e8ad7e2f6cdd2718b830bcc0",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_any_control_to_image.chunks.json"
+        ),
+        graph_node_count: 29,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_anima_lllite_image_inpainting",
+        source_blob: "0fef38f42235bf9a6133f502a3f9611a8a4fdd3e",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_image_inpainting.chunks.json"
+        ),
+        graph_node_count: 28,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_anima_lllite_depth_control_to_image",
+        source_blob: "a05af628646ad83c3378fcf5acfa4330dd3647c4",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.chunks.json"
+        ),
+        graph_node_count: 29,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_boogu_image_0_1_edit_int8",
+        source_blob: "1d9cd1a0f28c76c74ad972c6ffd823aef11e84ea",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit_int8.chunks.json"
+        ),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image_int8",
+        source_blob: "2dd3f57d9d01e83b10caa16cddba37d356d50e23",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_int8.chunks.json"),
+        graph_node_count: 14,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_joyai_image_edit",
+        source_blob: "3d92ffa74ffffa81de5654134fd8afbeb1611e56",
+        chunks_json: include_str!("fixtures/official_catalog/image_joyai_image_edit.chunks.json"),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -715,6 +811,11 @@ fn pinned_milestone32_flux2_variant_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone33_target_closure_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE33_TARGET_CLOSURE_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone34_catalog_refresh_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE34_CATALOG_REFRESH_FIXTURES);
 }
 
 #[test]

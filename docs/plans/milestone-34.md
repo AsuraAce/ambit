@@ -1,6 +1,6 @@
 # Milestone 34: Published ComfyUI Catalog Refresh
 
-Status: In progress
+Status: Complete
 Catalog release: `v0.11.15`
 Catalog commit: `703fb0b082fdb76331d02232ff67e878e2a6ca6e`
 
@@ -32,3 +32,15 @@ Run template-coverage, catalog-intake, official-catalog, workflow-subgraph,
 output-selection, full ComfyUI, and metadata-reparse tests. Run
 `cargo fmt --check` and `git diff --check`, and confirm parser version 36 and no
 `Cargo.lock` churn.
+
+## Verification
+
+Completed on `2026-07-28`:
+
+- refreshed manifest schema and totals passed `template_coverage` tests;
+- all nine intake fixtures passed exact Git-blob, workflow-preservation,
+  normalized-node, and output-selection assertions;
+- `official_catalog`, `workflow_subgraphs`, `output_selection`, full ComfyUI,
+  and metadata reparse tests passed;
+- `cargo fmt --check` and `git diff --check` passed;
+- parser version remained 36 and incidental `Cargo.lock` churn was removed.
