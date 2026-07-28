@@ -117,7 +117,8 @@ export const isPathWithinDirectory = (path: string, directory: string): boolean 
  */
 export const normalizeInvokeRoot = (rawPath: string | null | undefined): string | null => {
     if (!rawPath) return null;
-    let root = rawPath.replace(/\\/g, '/').replace(/\/$/, '');
+    let root = rawPath.trim().replace(/\\/g, '/').replace(/\/$/, '');
+    if (!root) return null;
     
     if (root.toLowerCase().endsWith('.db')) {
         root = root.replace(/\/[\w-]+\.db$/i, '');

@@ -76,8 +76,7 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
     const headingRef = React.useRef<HTMLHeadingElement>(null);
     const isBusy = state.status === 'idle'
         || state.status === 'discovering'
-        || state.status === 'applying'
-        || state.status === 'offline_ready';
+        || state.status === 'applying';
 
     React.useEffect(() => {
         if (!isBusy) headingRef.current?.focus();

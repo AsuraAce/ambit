@@ -80,4 +80,19 @@ describe('InvokeOwnerScopeGate', () => {
         expect(callbacks.onRetry).toHaveBeenCalledTimes(1);
         expect(callbacks.onOpenSettings).toHaveBeenCalledTimes(1);
     });
+
+    it('offers recovery instead of an indefinite spinner for an offline scope that cannot be admitted', () => {
+        const { callbacks } = renderGate({
+            status: 'offline_ready',
+            rootPath: 'D:/PreviousInvoke',
+            failure: { kind: 'source_unavailable', details: 'database unavailable' },
+            error: 'database unavailable',
+        });
+
+        expect(screen.queryByRole('status')).toBeNull();
+        expect(screen.getByRole('alert')).toBeTruthy();
+        expect(screen.getByText('InvokeAI needs attention')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(callbacks.onRetry).toHaveBeenCalledTimes(1);
+    });
 });

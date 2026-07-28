@@ -35,11 +35,14 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                         type="button"
                         disabled={disabled}
                         aria-pressed={selected}
-                        onClick={() => void onSelect({
-                            dbPath: discovery.dbPath,
-                            mode: 'owner',
-                            ownerId: owner.ownerId,
-                        })}
+                        onClick={() => {
+                            if (selected) return;
+                            void onSelect({
+                                dbPath: discovery.dbPath,
+                                mode: 'owner',
+                                ownerId: owner.ownerId,
+                            });
+                        }}
                         className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selected
                             ? 'border-sage-500 bg-sage-500/10'
                             : 'border-gray-200 hover:border-sage-500/50 dark:border-white/10'}`}
@@ -69,7 +72,10 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                 type="button"
                 disabled={disabled}
                 aria-pressed={selection?.mode === 'all'}
-                onClick={() => setIsAllUsersConfirmOpen(true)}
+                onClick={() => {
+                    if (selection?.mode === 'all') return;
+                    setIsAllUsersConfirmOpen(true);
+                }}
                 className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selection?.mode === 'all'
                     ? 'border-amber-500 bg-amber-500/10'
                     : 'border-gray-200 hover:border-amber-500/50 dark:border-white/10'}`}

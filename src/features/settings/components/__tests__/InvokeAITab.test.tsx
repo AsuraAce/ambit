@@ -160,6 +160,7 @@ describe('InvokeAITab', () => {
 
         expect(screen.getByText('Using the last verified local view')).toBeTruthy();
         expect(screen.getByText(/Sync and Live Watch are paused/i)).toBeTruthy();
+        expect(screen.queryByText('Preparing your InvokeAI library...')).toBeNull();
         expect((screen.getByRole('button', { name: /retrying/i }) as HTMLButtonElement).disabled).toBe(true);
 
         mocks.ownerScopeState = {
@@ -177,6 +178,46 @@ describe('InvokeAITab', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
         await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+    });
+
+    it('does not reapply or catch up when the current owner is clicked again', () => {
+        mocks.ownerScopeState = {
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
+                unassignedImageCount: 0,
+            },
+        };
+        const view = render(<InvokeAITab settings={{
+            ...settings('D:/Invoke'),
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        }} setSettings={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+
+        expect(mocks.selectInvokeOwnerScope).not.toHaveBeenCalled();
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+
+        view.rerender(<InvokeAITab settings={{
+            ...settings('D:/Invoke'),
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'all',
+            },
+        }} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /All users/i }));
+
+        expect(screen.queryByText('Show images from all InvokeAI users?')).toBeNull();
+        expect(mocks.selectInvokeOwnerScope).not.toHaveBeenCalled();
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
     });
 
     it('updates typed and browsed paths while ignoring cancelled selections', async () => {

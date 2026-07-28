@@ -1066,6 +1066,19 @@ describe('App orchestration', () => {
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
     });
 
+    it('treats a whitespace-only InvokeAI path as unconfigured instead of showing an indefinite gate', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: '   ',
+        });
+        mocks.invokeOwnerScopeState = { status: 'idle' };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
     it('keeps selection and blocking errors in front of the library', () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,

@@ -165,15 +165,16 @@ Evidence:
 - recovery success starts startup catch-up automatically, and same-event
   coverage proves a newly persisted owner cannot be re-read as a stale
   unselected setting;
-- focused recovery coverage passes 139 tests with one existing skip across the
+- focused recovery coverage passes 165 tests with one existing skip across the
   trusted-state service, Sync context, startup gate, Settings, and App
-  orchestration;
+  orchestration, including path normalization and synchronization controls;
 - rendered Browser QA confirms the normal shell is interactive, console-clean,
-  and free of horizontal overflow at an approximately 398 CSS-pixel viewport;
+  and free of horizontal overflow at approximately 398 and 431 CSS-pixel
+  viewports;
   native source-failure states are verified deterministically in component and
   integration tests because browser mock mode cannot open a real InvokeAI DB;
 - `pnpm run verify:release` passes version and binding checks, lint, TypeScript,
-  the 445 kB startup-bundle guard, all 3,036 frontend tests with one existing
+  the 445 kB startup-bundle guard, all 3,039 frontend tests with one existing
   skip at 98.4% statement coverage, all 557 Rust tests, and the optimized
   no-bundle Tauri build.
 
@@ -189,3 +190,15 @@ desktop journey described above.
 | A source outage needed to preserve useful local data without authorizing new InvokeAI reads or mutations. | Blocking | Added fail-closed trusted-scope verification and an `offline_ready` admission whose sync permission remains false. Discovery-only failure can use it; preparation failures cannot. | Trusted-state and Sync integration coverage exercises matching and mismatched snapshots, state rows, roots, selections, retries, and post-mutation failure. |
 | Selecting an owner and immediately starting catch-up could observe the pre-selection React ref before its render committed. | Blocking race | Synchronized the mutable settings admission ref with the already-committed Zustand state before selection resolves. | Same-event integration coverage selects an owner and starts catch-up without a second discovery or unselected application. |
 | Settings was the only place to understand or recover from owner admission. | Non-blocking UX | Added an in-context selection gate, persistent offline warning, actionable blocking errors, shared selection controls, focus management, and explicit All users confirmation. | Gate, Settings, and App tests cover copy, focus, confirmation, retry, catch-up, and Open Settings behavior. |
+| A whitespace-only or padded configured path could be treated as configured by the App gate but unconfigured by Sync, leaving an indefinite preparation screen. | Blocking | Normalized InvokeAI roots now trim surrounding whitespace and collapse whitespace-only values to no configuration. | Path utility and App orchestration tests cover padded roots and the whitespace-only startup journey. |
+| A stale `offline_ready` state that did not match the configured root could render the busy gate without an operation or recovery action. | Blocking | `offline_ready` is no longer classified as active preparation; a non-admissible offline state renders the actionable failure gate. | Gate coverage verifies the stale offline state exposes Retry instead of a status spinner. |
+| Settings described an offline retry as both library preparation and verified-offline recovery at once. | Non-blocking UX | Kept retry as a control-locking state while limiting the standalone progress panel to discovery and application. | Settings coverage verifies the offline card owns retry progress without duplicate preparation copy. |
+| Re-clicking the already selected owner or All users option started an unnecessary catch-up. | Non-blocking performance/UX | Selected scope controls now behave as no-ops; manual synchronization remains the explicit refresh action. | Shared-selector coverage verifies neither selection application nor startup catch-up is called for either selected option. |
+
+Follow-up closure evidence: the focused recovery suite passes 165 tests with one
+existing skip; lint, TypeScript, and whitespace validation pass; rendered QA
+loads the browser-mock library, activates Assets, reports no console warnings or
+errors, and has no horizontal overflow at 431 CSS pixels; the repeated release
+gate passes all 3,039 frontend tests with one existing skip, 98.4% statement
+coverage, all 557 Rust tests, the 445 kB startup-bundle guard, binding and
+version checks, and the optimized Tauri build.

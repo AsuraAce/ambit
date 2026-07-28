@@ -55,9 +55,9 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const ownerSelection = settings.invokeOwnerSelection?.dbPath === ownerDiscovery?.dbPath
         ? settings.invokeOwnerSelection
         : undefined;
-    const ownerScopeBusy = invokeOwnerScopeState.status === 'discovering'
-        || invokeOwnerScopeState.status === 'applying'
-        || invokeOwnerScopeState.isRetrying === true;
+    const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering'
+        || invokeOwnerScopeState.status === 'applying';
+    const ownerScopeBusy = ownerScopeInProgress || invokeOwnerScopeState.isRetrying === true;
     const scopeControlsBusy = ownerScopeBusy || isInvokeSyncActive;
 
     const handleOwnerSelection = async (selection: Parameters<typeof selectInvokeOwnerScope>[0]) => {
@@ -208,7 +208,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         <Users className="w-4 h-4" /> InvokeAI Owner Scope
                     </h4>
 
-                    {ownerScopeBusy && (
+                    {ownerScopeInProgress && (
                         <div className="flex items-start gap-3 text-sm text-gray-500" role="status" aria-live="polite">
                             <Loader2 className="w-4 h-4 animate-spin" />
                             <span>
