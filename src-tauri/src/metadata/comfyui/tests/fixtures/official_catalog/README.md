@@ -189,6 +189,24 @@ Golden expectations:
   the negative prompt is 481 bytes with SHA-256
   `00d0aa5c35231d969700a87b124faf21c4ae8ea940466cd166aa6b56079129e9`.
 
+## Milestone 27 Image-Edit Intake
+
+Captured on `2026-07-28`. These workflows add exact image-edit coverage for
+LongCat, Capybara, OmniGen2, and HiDream E1.1.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_longcat_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_longcat_image_edit.json) | `adf2d2d05b97d783139443fcbb0645a4812ed7ed` | 35122 |
+| [`Image_capybara_v0_1_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/Image_capybara_v0_1_image_edit.json) | `39b6c3d9fa952a5f4c50d801d7931720613324fe` | 48160 |
+| [`image_omnigen2_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_omnigen2_image_edit.json) | `c14f55f4797cf66a0980a5dedf51919f91865942` | 26553 |
+| [`hidream_e1_1`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/hidream_e1_1.json) | `b43bcca048e888b5f7f9d1b713a3465052924736` | 21495 |
+
+All four fixtures have one unambiguous saved-output root, no resources, and
+exact `SamplerTraversal` metadata assertions. HiDream E1.1 connects the two
+edit-conditioning outputs to `DualCFGGuider.cond1` and `.cond2`; parser version
+32 preserves the source output slot so slot 1 supplies the negative prompt
+without changing ordinary dual-guider `cond2` policy.
+
 `coverage_manifest.json` is a stable, name-sorted projection of every entry in
 the pinned catalog index. It records only fields needed to classify parser
 coverage. Refresh it only as an intentional fixture update: fetch the pinned

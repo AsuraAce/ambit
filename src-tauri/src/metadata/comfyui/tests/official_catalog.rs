@@ -168,6 +168,26 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_netayume_lumina_t2i.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_longcat_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_longcat_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "Image_capybara_v0_1_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_omnigen2_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_omnigen2_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_e1_1",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_1.chunks.json"),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -1155,6 +1175,98 @@ fn netayume_lumina_nested_prompt_composition() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn longcat_image_edit() {
+    assert_fixture(
+        "image_longcat_image_edit",
+        ExpectedMetadata {
+            model: "longcat_image_edit_bf16",
+            seed: Some(43),
+            steps: 50,
+            cfg: 4.5,
+            sampler: "euler (simple)",
+            positive_prompt: "Change the scene to a time when it is illuminated by the rising sun. The overall atmosphere is filled with the light of early morning. The tall snow-capped mountains in the background are lit up by the sunlight. The rays of the rising sun illuminate the front of the building as well as the distant snow-capped mountains. In the foreground of the photo, there is a person walking alone towards the building.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn capybara_image_edit() {
+    assert_fixture(
+        "Image_capybara_v0_1_image_edit",
+        ExpectedMetadata {
+            model: "capybara_v0.1",
+            seed: Some(1_044_901_887_090_653),
+            steps: 20,
+            cfg: 6.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Keep the characters and fluttering costumes unchanged, replace the indoor scene with an outdoor grassland setting",
+            negative_prompt: "blurry, low quality, distorted, ugly, watermark, text",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn omnigen2_image_edit() {
+    assert_fixture(
+        "image_omnigen2_image_edit",
+        ExpectedMetadata {
+            model: "omnigen2_fp16",
+            seed: Some(441_693_270_797_774),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Transform character into crystal material, transparent crystal texture, sparkling surface, prismatic light effects, magical appearance, elegant translucent look",
+            negative_prompt: "deformed, blurry, over saturation, bad anatomy, disfigured, poorly drawn face, mutation, mutated, extra_limb, ugly, poorly drawn hands, fused fingers, messy drawing, broken legs censor, censored, censor_bar",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_e1_image_edit() {
+    assert_fixture(
+        "hidream_e1_1",
+        ExpectedMetadata {
+            model: "hidream_e1_1_bf16",
+            seed: Some(567_500_569_211_369),
+            steps: 20,
+            cfg: 3.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Change the image to let the girl’s hair fall loose around her shoulders, natural and flowing. Don’t change other parts",
+            negative_prompt: "low quality, blurry, distorted",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

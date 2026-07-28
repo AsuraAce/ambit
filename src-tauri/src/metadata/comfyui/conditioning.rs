@@ -36,6 +36,22 @@ pub fn find_reachable_prompts(
         "cond1" | "conditioning" => "positive",
         _ => input_name,
     };
+    find_reachable_prompts_with_role(
+        graph,
+        start_node_id,
+        input_name,
+        prompt_role,
+        strict_connections,
+    )
+}
+
+pub(crate) fn find_reachable_prompts_with_role(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    prompt_role: &str,
+    strict_connections: bool,
+) -> String {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut prompts = Vec::new();

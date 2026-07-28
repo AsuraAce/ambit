@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 28);
+    assert_eq!(count_coverage("golden"), 32);
     assert_eq!(count_coverage("pattern_covered"), 9);
     assert_eq!(count_coverage("partial"), 3);
-    assert_eq!(count_coverage("unassessed"), 35);
+    assert_eq!(count_coverage("unassessed"), 31);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -223,6 +223,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
     let expected = [
         ("01_get_started_text_to_image", "golden"),
         ("02_qwen_Image_edit_subgraphed", "golden"),
+        ("Image_capybara_v0_1_image_edit", "golden"),
         ("Image_capybara_v0_1_text_to_image", "golden"),
         ("default", "pattern_covered"),
         ("flux_fill_inpaint_example", "golden"),
@@ -234,11 +235,13 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("gsl_creator_2", "pattern_covered"),
         ("gsl_starter_1_1", "pattern_covered"),
         ("gsl_starter_1_3", "pattern_covered"),
+        ("hidream_e1_1", "golden"),
         ("hidream_i1_full", "golden"),
         ("image_ernie_image", "partial"),
         ("image_ernie_image_turbo", "partial"),
         ("image_firered_image_edit1_1", "golden"),
         ("image_ideogram4_t2i", "golden"),
+        ("image_longcat_image_edit", "golden"),
         ("image_longcat_text_to_image", "golden"),
         ("image_pixeldit_t2i", "golden"),
         ("image_chrono_edit_14B", "golden"),
@@ -253,6 +256,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_lens_t2i", "golden"),
         ("image_lens_turbo_t2i", "pattern_covered"),
         ("image_newbieimage_exp0_1-t2i", "golden"),
+        ("image_omnigen2_image_edit", "golden"),
         ("image_omnigen2_t2i", "golden"),
         ("image_boogu_image_0_1_edit", "golden"),
         ("image_qwen_Image_2512_controlnet", "golden"),

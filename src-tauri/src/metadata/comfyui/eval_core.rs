@@ -1,4 +1,6 @@
-use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
+use super::conditioning::{
+    find_connected_controlnets, find_reachable_prompts, find_reachable_prompts_with_role,
+};
 use super::eval_utils::{
     evaluate_float, evaluate_float_link_first, evaluate_number, evaluate_number_link_first,
     evaluate_string, evaluate_string_link_first, get_source_id,
@@ -206,7 +208,12 @@ pub fn extract_from_sampler(
                 .map(|_| find_reachable_prompts(graph, &guider_id, input_name, strict_connections))
                 .unwrap_or_default()
         };
-        (prompt(positive_input), prompt(negative_input))
+        let negative = if dual_cfg_uses_instruct_pix_to_pix_negative(graph, guider_node) {
+            find_reachable_prompts_with_role(graph, &guider_id, "cond2", "negative", true)
+        } else {
+            prompt(negative_input)
+        };
+        (prompt(positive_input), negative)
     } else {
         (
             find_reachable_prompts(graph, node_id, "positive", is_sampler_custom),
@@ -345,6 +352,44 @@ fn get_first_connected_source(node: &Value, keys: &[&str]) -> Option<InputSource
             InputSourceConnection::Unconnected => {}
         }
     }
+    None
+}
+
+fn dual_cfg_uses_instruct_pix_to_pix_negative(graph: &ComfyGraph, guider_node: &Value) -> bool {
+    if get_node_type(guider_node) != "DualCFGGuider" {
+        return false;
+    }
+
+    let Some(source) = resolve_input_source_through_reroutes(graph, guider_node, "cond2") else {
+        return false;
+    };
+    source.output_slot == Some(1)
+        && graph
+            .get_node(&source.node_id)
+            .is_some_and(|node| get_node_type(node) == "InstructPixToPixConditioning")
+}
+
+fn resolve_input_source_through_reroutes(
+    graph: &ComfyGraph,
+    node: &Value,
+    input_name: &str,
+) -> Option<InputSource> {
+    let InputSourceConnection::Connected(mut source) = get_input_source(node, input_name) else {
+        return None;
+    };
+    let mut visited = HashSet::new();
+
+    for _ in 0..=16 {
+        if !visited.insert(source.node_id.clone()) {
+            return None;
+        }
+        let source_node = graph.get_node(&source.node_id)?;
+        if get_node_type(source_node) != "Reroute" {
+            return Some(source);
+        }
+        source = get_first_connected_source(source_node, &["", "value", "input", "any"])?;
+    }
+
     None
 }
 

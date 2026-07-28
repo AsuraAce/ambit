@@ -163,6 +163,49 @@ const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_longcat_image_edit",
+        source_blob: "adf2d2d05b97d783139443fcbb0645a4812ed7ed",
+        chunks_json: include_str!("fixtures/official_catalog/image_longcat_image_edit.chunks.json"),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "Image_capybara_v0_1_image_edit",
+        source_blob: "39b6c3d9fa952a5f4c50d801d7931720613324fe",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
+        ),
+        graph_node_count: 22,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_omnigen2_image_edit",
+        source_blob: "c14f55f4797cf66a0980a5dedf51919f91865942",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_omnigen2_image_edit.chunks.json"
+        ),
+        graph_node_count: 27,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "hidream_e1_1",
+        source_blob: "b43bcca048e888b5f7f9d1b713a3465052924736",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_1.chunks.json"),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -306,6 +349,11 @@ fn pinned_milestone25_ideogram_workflow_has_stable_graph_shape() {
 #[test]
 fn pinned_milestone26_new_family_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE26_NEW_FAMILY_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone27_image_edit_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE27_IMAGE_EDIT_FIXTURES);
 }
 
 #[test]
