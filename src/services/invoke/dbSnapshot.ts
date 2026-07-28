@@ -75,11 +75,17 @@ export const isInvokeDbSnapshotCurrent = (
 export const isInvokeImportSchemaCurrent = (saved: InvokeDbSnapshotState | undefined): boolean =>
     (saved?.importSchemaVersion ?? 0) === INVOKE_IMPORT_SCHEMA_VERSION;
 
+export const isInvokePathRepairSnapshotCurrent = (saved: InvokeDbSnapshotState | undefined): boolean =>
+    (saved?.pathRepairVersion ?? 0) === INVOKE_PATH_REPAIR_SNAPSHOT_VERSION;
+
 export const isInvokeDbSnapshotScopeCurrent = (
     saved: InvokeDbSnapshotState | undefined,
     scope: InvokeSyncScope | null
 ): boolean => {
-    if (!saved || !scope || !isInvokeImportSchemaCurrent(saved)) return false;
+    if (!saved
+        || !scope
+        || !isInvokeImportSchemaCurrent(saved)
+        || !isInvokePathRepairSnapshotCurrent(saved)) return false;
     if (saved.dbPath !== scope.dbPath || saved.scopeMode !== scope.mode) return false;
 
     const ownerId = scope.mode === 'owner' ? scope.ownerId : null;

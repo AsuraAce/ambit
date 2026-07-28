@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     diagnoseInvokeAI: vi.fn(),
     selectInvokeOwnerScope: vi.fn(),
     retryInvokeOwnerScope: vi.fn(),
+    startInvokeSync: vi.fn(),
     isInvokeSyncActive: false,
     ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
 }));
@@ -27,6 +28,7 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
         invokeOwnerScopeState: mocks.ownerScopeState,
         selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
         retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+        startInvokeSync: mocks.startInvokeSync,
         isInvokeSyncActive: mocks.isInvokeSyncActive,
     }),
 }));
@@ -120,6 +122,7 @@ describe('InvokeAITab', () => {
             },
         };
         mocks.selectInvokeOwnerScope.mockResolvedValue(true);
+        mocks.startInvokeSync.mockResolvedValue(undefined);
         render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
 
         expect(screen.getByText('Artemis')).toBeTruthy();
@@ -131,15 +134,49 @@ describe('InvokeAITab', () => {
             mode: 'owner',
             ownerId: 'owner-a',
         });
+        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
 
         fireEvent.click(screen.getByRole('button', { name: /all users/i }));
         expect(screen.getByText('Show images from all InvokeAI users?')).toBeTruthy();
+        expect(screen.getByText(/2 unassigned image rows/i)).toBeTruthy();
         expect(mocks.selectInvokeOwnerScope).toHaveBeenCalledTimes(1);
         fireEvent.click(screen.getByRole('button', { name: 'Show All Users' }));
         await waitFor(() => expect(mocks.selectInvokeOwnerScope).toHaveBeenLastCalledWith({
             dbPath: 'D:/Invoke/databases/invokeai.db',
             mode: 'all',
         }));
+        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledTimes(2));
+    });
+
+    it('explains offline and blocking failures without exposing raw errors by default', async () => {
+        mocks.ownerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/Invoke',
+            isRetrying: true,
+            error: 'file is locked',
+            failure: { kind: 'source_unavailable', details: 'file is locked' },
+        };
+        const view = render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+
+        expect(screen.getByText('Using the last verified local view')).toBeTruthy();
+        expect(screen.getByText(/Sync and Live Watch are paused/i)).toBeTruthy();
+        expect((screen.getByRole('button', { name: /retrying/i }) as HTMLButtonElement).disabled).toBe(true);
+
+        mocks.ownerScopeState = {
+            status: 'error',
+            rootPath: 'D:/Invoke',
+            error: 'visibility transaction failed',
+            failure: { kind: 'preparation_failed', details: 'visibility transaction failed' },
+        };
+        mocks.retryInvokeOwnerScope.mockResolvedValueOnce(true);
+        mocks.startInvokeSync.mockResolvedValueOnce(undefined);
+        view.rerender(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+
+        expect(screen.getByText('InvokeAI library preparation failed')).toBeTruthy();
+        expect((screen.getByText('Technical details').parentElement as HTMLDetailsElement).open).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
     });
 
     it('updates typed and browsed paths while ignoring cancelled selections', async () => {

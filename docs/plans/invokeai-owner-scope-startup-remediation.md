@@ -1,6 +1,6 @@
 # InvokeAI Owner-Scope Startup Remediation
 
-Status: In progress (`2026-07-28`, Work Package 1 implemented and verified; owner acceptance pending)
+Status: Implementation complete and release-verified (`2026-07-28`; Work Package 2 owner acceptance pending)
 
 ## Context
 
@@ -41,7 +41,7 @@ only progress indication lived in Settings and used implementation language.
 
 ## Work Package 1: Trustworthy automatic startup
 
-Status: Implemented and verified; owner acceptance pending
+Status: Accepted
 
 Primary invariant: Ambit either shows a coherent library for the active owner
 scope or shows a truthful preparation gate, never a mixture of both.
@@ -121,7 +121,7 @@ build.
 
 ## Work Package 2: Selection, offline, and error recovery
 
-Status: Pending; depends on Work Package 1 acceptance
+Status: Implemented and release-verified; owner acceptance pending
 
 Primary invariant: every non-ready admission state gives the user a clear,
 safe next action without exposing an ambiguous library.
@@ -146,3 +146,46 @@ Non-goals:
 Final acceptance is a desktop journey covering first upgrade, normal restart,
 multi-owner selection, temporary offline startup, retry after failure, and
 scope change without missing or deleted Ambit records.
+
+Evidence:
+
+- trusted offline admission requires an exact configured root, current import
+  and path-repair versions, a matching saved legacy/All users/owner scope, and
+  the same native visibility-state row;
+- source discovery failures may open that verified view, while failures after
+  visibility, persistence, or cache work begins remain blocking and never fall
+  back to potentially ambiguous data;
+- owner selection is available in the startup gate and Settings through one
+  shared selector; an owner applies immediately, while All users explicitly
+  confirms that unassigned rows are included;
+- blocking failures use plain-language copy with Retry, Open Settings, and
+  collapsed technical details; verified offline mode keeps the authoritative
+  library mounted under a persistent non-dismissible warning while Sync and
+  Live Watch remain paused;
+- recovery success starts startup catch-up automatically, and same-event
+  coverage proves a newly persisted owner cannot be re-read as a stale
+  unselected setting;
+- focused recovery coverage passes 139 tests with one existing skip across the
+  trusted-state service, Sync context, startup gate, Settings, and App
+  orchestration;
+- rendered Browser QA confirms the normal shell is interactive, console-clean,
+  and free of horizontal overflow at an approximately 398 CSS-pixel viewport;
+  native source-failure states are verified deterministically in component and
+  integration tests because browser mock mode cannot open a real InvokeAI DB;
+- `pnpm run verify:release` passes version and binding checks, lint, TypeScript,
+  the 445 kB startup-bundle guard, all 3,036 frontend tests with one existing
+  skip at 98.4% statement coverage, all 557 Rust tests, and the optimized
+  no-bundle Tauri build.
+
+### Review closure (`2026-07-28`)
+
+The Assure review/remediation loop is closed with no known blocking Work
+Package 2 findings. The remaining acceptance step is the owner's real-data
+desktop journey described above.
+
+| Finding | Severity | Disposition | Verification |
+| --- | --- | --- | --- |
+| The prior error path rendered a client-filtered current page, producing incomplete counts and an ambiguous library. | Blocking | Removed the emergency page filter. Selection and errors now gate the whole workspace; only an exact-root verified offline state may render the authoritative query result. | App orchestration covers idle, selection, error, exact-root offline, stale-root offline, counts, gallery data, and modal data. |
+| A source outage needed to preserve useful local data without authorizing new InvokeAI reads or mutations. | Blocking | Added fail-closed trusted-scope verification and an `offline_ready` admission whose sync permission remains false. Discovery-only failure can use it; preparation failures cannot. | Trusted-state and Sync integration coverage exercises matching and mismatched snapshots, state rows, roots, selections, retries, and post-mutation failure. |
+| Selecting an owner and immediately starting catch-up could observe the pre-selection React ref before its render committed. | Blocking race | Synchronized the mutable settings admission ref with the already-committed Zustand state before selection resolves. | Same-event integration coverage selects an owner and starts catch-up without a second discovery or unselected application. |
+| Settings was the only place to understand or recover from owner admission. | Non-blocking UX | Added an in-context selection gate, persistent offline warning, actionable blocking errors, shared selection controls, focus management, and explicit All users confirmation. | Gate, Settings, and App tests cover copy, focus, confirmation, retry, catch-up, and Open Settings behavior. |

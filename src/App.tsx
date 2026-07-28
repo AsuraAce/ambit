@@ -10,13 +10,14 @@ import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
 import { InvokeOwnerScopeGate } from './components/ui/InvokeOwnerScopeGate';
+import { InvokeOwnerScopeOfflineBanner } from './components/ui/InvokeOwnerScopeOfflineBanner';
 import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, GeneratorTool } from './types';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, type InvokeOwnerSelection } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -287,25 +288,37 @@ export default function App() {
         onImportFiles: handleImportFiles
     });
 
-    const { startInvokeSync, invokeOwnerScopeState } = useSync();
-    const isInvokeOwnerScopeApplying = invokeOwnerScopeState.status === 'applying';
+    const {
+        startInvokeSync,
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+    } = useSync();
     const configuredInvokeRoot = normalizeInvokeRoot(settings.invokeAiPath);
-    const discoveredInvokeRoot = normalizeInvokeRoot(invokeOwnerScopeState.discovery?.imagesRoot);
-    const isConfiguredScopeUnsettled = configuredInvokeRoot !== null
-        && invokeOwnerScopeState.status !== 'error'
-        && (invokeOwnerScopeState.status === 'idle' || discoveredInvokeRoot !== configuredInvokeRoot);
-    const isInvokeOwnerScopeBlocking = isInvokeOwnerScopeApplying
-        || invokeOwnerScopeState.status === 'discovering'
-        || isConfiguredScopeUnsettled;
-    const shouldHideOwnerScopedImages = isInvokeOwnerScopeBlocking
-        || invokeOwnerScopeState.status === 'error';
-    const ownerScopedDisplayImages = shouldHideOwnerScopedImages
-        ? images.filter(image => (
-            !image.invokeImageName
-            && !image.invokeOwnerId
-            && image.metadata.tool !== GeneratorTool.INVOKEAI
-        ))
-        : images;
+    const admittedInvokeRoot = normalizeInvokeRoot(
+        invokeOwnerScopeState.rootPath ?? invokeOwnerScopeState.discovery?.imagesRoot
+    );
+    const isCurrentInvokeRoot = configuredInvokeRoot !== null
+        && admittedInvokeRoot === configuredInvokeRoot;
+    const isInvokeOwnerScopeReady = invokeOwnerScopeState.status === 'ready' && isCurrentInvokeRoot;
+    const isInvokeOwnerScopeOfflineReady = invokeOwnerScopeState.status === 'offline_ready' && isCurrentInvokeRoot;
+    const isInvokeOwnerScopeBlocking = configuredInvokeRoot !== null
+        && !isInvokeOwnerScopeReady
+        && !isInvokeOwnerScopeOfflineReady;
+    const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
+        if (await selectInvokeOwnerScope(selection)) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    }, [selectInvokeOwnerScope, startInvokeSync]);
+    const handleInvokeOwnerRetry = useCallback(async () => {
+        if (await retryInvokeOwnerScope()) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    }, [retryInvokeOwnerScope, startInvokeSync]);
+    const openInvokeSettings = useCallback(() => {
+        modals.setInitialSettingsTab('invokeai');
+        modals.openModal('settings');
+    }, [modals.openModal, modals.setInitialSettingsTab]);
 
     useEffect(() => {
         const startedBlocking = isInvokeOwnerScopeBlocking && !wasInvokeOwnerScopeBlockingRef.current;
@@ -525,7 +538,7 @@ export default function App() {
         : (selectedImageIndex !== null ? viewerImages[selectedImageIndex] : null);
     const displayedViewerImage = sessionViewerImage
         && !privacyExposureBlocked
-        && !shouldHideOwnerScopedImages
+        && !isInvokeOwnerScopeBlocking
         ? (directViewerImage?.id === sessionViewerImage.id
             ? directViewerImage
             : images.find(image => image.id === sessionViewerImage.id) ?? sessionViewerImage)
@@ -594,7 +607,7 @@ export default function App() {
     }, [privacyExposureBlocked, setSelectedImageIndex, setViewingImageId]);
 
     useEffect(() => {
-        if (shouldHideOwnerScopedImages) {
+        if (isInvokeOwnerScopeBlocking) {
             setAvailableTags([]);
             return;
         }
@@ -611,7 +624,7 @@ export default function App() {
             setAvailableTags(Array.from(tags).sort());
         }, 1000);
         return () => clearTimeout(timer);
-    }, [images, shouldHideOwnerScopedImages]);
+    }, [images, isInvokeOwnerScopeBlocking]);
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const workspaceRef = useRef<HTMLElement>(null);
@@ -640,7 +653,7 @@ export default function App() {
     useGlobalShortcuts({
         viewMode,
         selectedIds,
-        filteredImages: ownerScopedDisplayImages,
+        filteredImages: images,
         lastSelectedId,
         isViewerOpen: viewingImageId !== null || selectedImageIndex !== null || isMaintenanceViewerOpen,
         gridRef,
@@ -779,8 +792,21 @@ export default function App() {
         <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
             <TitleBar />
 
+            {isInvokeOwnerScopeOfflineReady && (
+                <InvokeOwnerScopeOfflineBanner
+                    isRetrying={invokeOwnerScopeState.isRetrying}
+                    onRetry={handleInvokeOwnerRetry}
+                    onOpenSettings={openInvokeSettings}
+                />
+            )}
+
             {isInvokeOwnerScopeBlocking ? (
-                <InvokeOwnerScopeGate state={invokeOwnerScopeState} />
+                <InvokeOwnerScopeGate
+                    state={invokeOwnerScopeState}
+                    onSelect={handleInvokeOwnerSelection}
+                    onRetry={handleInvokeOwnerRetry}
+                    onOpenSettings={openInvokeSettings}
+                />
             ) : (
                 <AppLayout
 
@@ -799,8 +825,8 @@ export default function App() {
                 setLayoutMode={setLayoutMode}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
-                displayedCount={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : totalImages}
-                scopeTotal={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : scopeTotal}
+                displayedCount={totalImages}
+                scopeTotal={scopeTotal}
                 scopeName={scopeName}
                 isFiltering={isFiltering}
                 fileOps={fileOps}
@@ -808,7 +834,7 @@ export default function App() {
                 clearAllFilters={clearAllFilters}
                 workspaceRef={workspaceRef}
                 scrollContainerRef={scrollContainerRef}
-                images={ownerScopedDisplayImages}
+                images={images}
                 handlers={{ ...handlers, setImages, setContextMenu }}
                 setViewingImageId={setViewingImageId}
                 onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
@@ -869,7 +895,7 @@ export default function App() {
                 modals={modals.modals}
                 setModals={modals.setModals}
                 selectedIds={selectedIds}
-                filteredImages={ownerScopedDisplayImages}
+                filteredImages={images}
                 canCheckForUpdates={updater.canCheckForUpdates}
                 onSettingsSave={setSettings}
                 onExportConfirm={(name, folder) => {
@@ -1007,7 +1033,7 @@ export default function App() {
             <AppContextMenu
                 contextMenu={contextMenu}
                 onClose={() => setContextMenu(null)}
-                images={ownerScopedDisplayImages}
+                images={images}
                 actions={actions}
                 fileOps={fileOps}
                 colOps={colOps}

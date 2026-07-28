@@ -49,6 +49,10 @@ import {
     resolveInvokeSyncScope,
     type InvokeSyncScope,
 } from '../services/invoke/syncScope';
+import {
+    isSameInvokeSyncScope,
+    readTrustedInvokeOwnerScope,
+} from '../services/invoke/trustedOwnerScope';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -115,9 +119,16 @@ const mergePendingTargetedPerfContext = (
 };
 
 export interface InvokeOwnerScopeState {
-    status: 'idle' | 'discovering' | 'applying' | 'ready' | 'selection_required' | 'error';
+    status: 'idle' | 'discovering' | 'applying' | 'ready' | 'selection_required' | 'offline_ready' | 'error';
+    rootPath?: string;
+    scope?: InvokeSyncScope;
     discovery?: InvokeOwnerDiscovery;
     error?: string;
+    failure?: {
+        kind: 'source_unavailable' | 'preparation_failed';
+        details: string;
+    };
+    isRetrying?: boolean;
     progress?: SyncProgress;
 }
 
@@ -127,6 +138,7 @@ interface InvokeOwnerAdmission {
     scope?: InvokeSyncScope;
     reason?: string;
     sourceFactsReconciled?: boolean;
+    offline?: boolean;
 }
 
 interface SyncContextType {
@@ -144,7 +156,7 @@ interface SyncContextType {
     cleanLibrary: () => Promise<void>;
     invokeOwnerScopeState: InvokeOwnerScopeState;
     selectInvokeOwnerScope: (selection: InvokeOwnerSelection) => Promise<boolean>;
-    retryInvokeOwnerScope: () => Promise<void>;
+    retryInvokeOwnerScope: () => Promise<boolean>;
 }
 
 const SyncContext = createContext<SyncContextType | undefined>(undefined);
@@ -265,8 +277,12 @@ export const SyncProvider: React.FC<{
             if (!committed) {
                 throw new Error('Owner selection persistence permit expired before commit.');
             }
+            // Selection handlers can immediately start catch-up in the same React event.
+            // Keep the admission ref in lockstep with the committed Zustand state so that
+            // the follow-up sync cannot re-discover against a render-stale selection.
+            settingsRef.current = useSettingsStore.getState().settings;
         });
-    }, []);
+    }, [settingsRef]);
 
     const applyDiscoveredOwnerScope = useCallback(async (
         discovery: InvokeOwnerDiscovery,
@@ -296,6 +312,7 @@ export const SyncProvider: React.FC<{
         const reportProgress = (current: number, total: number, message?: string) => {
             setInvokeOwnerScopeState({
                 status: 'applying',
+                rootPath,
                 discovery: discoveryWithStaleOwner,
                 progress: { current, total, message },
             });
@@ -349,6 +366,8 @@ export const SyncProvider: React.FC<{
             : undefined;
         setInvokeOwnerScopeState({
             status: result.mode === 'unselected' ? 'selection_required' : 'ready',
+            rootPath,
+            scope: scope ?? undefined,
             discovery: discoveryWithStaleOwner,
         });
         const admission = {
@@ -372,15 +391,29 @@ export const SyncProvider: React.FC<{
         const cachedAdmission = ownerScopeAdmissionRef.current;
         if (!force && cachedAdmission?.rootPath === rootPath) {
             if (cachedAdmission.scope
-                ? isInvokeSyncScopeSelectionCurrent(
-                    cachedAdmission.scope,
-                    settingsRef.current.invokeOwnerSelection
-                )
+                ? (cachedAdmission.scope.mode === 'legacy'
+                    ? !settingsRef.current.invokeOwnerSelection
+                    : isInvokeSyncScopeSelectionCurrent(
+                        cachedAdmission.scope,
+                        settingsRef.current.invokeOwnerSelection
+                    ))
                 : !settingsRef.current.invokeOwnerSelection) {
                 return cachedAdmission;
             }
             ownerScopeAdmissionRef.current = null;
         }
+        const cachedOfflineScope = cachedAdmission?.rootPath === rootPath && cachedAdmission.offline
+            ? cachedAdmission.scope
+            : undefined;
+        const trustedOfflineScope = cachedOfflineScope
+            && (cachedOfflineScope.mode === 'legacy'
+                ? !settingsRef.current.invokeOwnerSelection
+                : isInvokeSyncScopeSelectionCurrent(
+                    cachedOfflineScope,
+                    settingsRef.current.invokeOwnerSelection
+                ))
+            ? cachedOfflineScope
+            : undefined;
         const runningScope = ownerScopePromiseRef.current;
         if (runningScope?.rootPath === rootPath) return runningScope.promise;
         const precedingScope = runningScope?.promise;
@@ -396,15 +429,74 @@ export const SyncProvider: React.FC<{
             if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
                 return { rootPath, allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
             }
-            setInvokeOwnerScopeState({
-                status: 'discovering',
-                progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
-            });
+            if (trustedOfflineScope) {
+                setInvokeOwnerScopeState(previous => ({
+                    ...previous,
+                    status: 'offline_ready',
+                    rootPath,
+                    scope: trustedOfflineScope,
+                    isRetrying: true,
+                }));
+            } else {
+                setInvokeOwnerScopeState({
+                    status: 'discovering',
+                    rootPath,
+                    progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
+                });
+            }
+
+            let discovery: InvokeOwnerDiscovery;
             try {
-                const discovery = await discoverInvokeOwners(rootPath);
+                discovery = await discoverInvokeOwners(rootPath);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                let offlineScope = trustedOfflineScope ?? null;
+                if (!offlineScope) {
+                    try {
+                        offlineScope = await readTrustedInvokeOwnerScope(rootPath, settingsRef.current);
+                    } catch (verificationError) {
+                        console.error('[InvokeAI Owner Scope] Trusted local scope verification failed.', verificationError);
+                    }
+                }
                 if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
                     return { rootPath, allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
                 }
+                if (offlineScope) {
+                    const admission: InvokeOwnerAdmission = {
+                        rootPath,
+                        allowed: false,
+                        scope: offlineScope,
+                        reason: 'InvokeAI is unavailable while Ambit is using the last verified local view.',
+                        offline: true,
+                    };
+                    ownerScopeAdmissionRef.current = admission;
+                    setInvokeOwnerScopeState({
+                        status: 'offline_ready',
+                        rootPath,
+                        scope: offlineScope,
+                        error: message,
+                        failure: { kind: 'source_unavailable', details: message },
+                        isRetrying: false,
+                    });
+                    return admission;
+                }
+
+                setInvokeOwnerScopeState({
+                    status: 'error',
+                    rootPath,
+                    error: message,
+                    failure: { kind: 'source_unavailable', details: message },
+                });
+                const admission = { rootPath, allowed: false, reason: message };
+                ownerScopeAdmissionRef.current = admission;
+                return admission;
+            }
+
+            if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
+                return { rootPath, allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
+            }
+
+            try {
                 const saved = settingsRef.current.invokeOwnerSelection;
                 let selection = saved?.dbPath === discovery.dbPath ? saved : undefined;
                 let shouldPersistSelection = !!saved && !selection;
@@ -432,6 +524,26 @@ export const SyncProvider: React.FC<{
                     shouldPersistSelection = true;
                 }
 
+                if (trustedOfflineScope
+                    && !shouldPersistSelection
+                    && isSameInvokeSyncScope(trustedOfflineScope, resolvedScope)
+                    && isInvokeDbSnapshotScopeCurrent(settingsRef.current.invokeDbSnapshot, resolvedScope)) {
+                    const admission: InvokeOwnerAdmission = {
+                        rootPath,
+                        allowed: true,
+                        scope: trustedOfflineScope,
+                        sourceFactsReconciled: false,
+                    };
+                    ownerScopeAdmissionRef.current = admission;
+                    setInvokeOwnerScopeState({
+                        status: 'ready',
+                        rootPath,
+                        scope: trustedOfflineScope,
+                        discovery,
+                    });
+                    return admission;
+                }
+
                 const admission = await applyDiscoveredOwnerScope(
                     discovery,
                     selection,
@@ -451,7 +563,13 @@ export const SyncProvider: React.FC<{
                 return admission;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
-                setInvokeOwnerScopeState({ status: 'error', error: message });
+                setInvokeOwnerScopeState({
+                    status: 'error',
+                    rootPath,
+                    discovery,
+                    error: message,
+                    failure: { kind: 'preparation_failed', details: message },
+                });
                 ownerScopeAdmissionRef.current = { rootPath, allowed: false, reason: message };
                 return { rootPath, allowed: false, reason: message };
             }
@@ -506,7 +624,13 @@ export const SyncProvider: React.FC<{
             return true;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
-            setInvokeOwnerScopeState({ status: 'error', discovery, error: message });
+            setInvokeOwnerScopeState({
+                status: 'error',
+                rootPath: currentRoot,
+                discovery,
+                error: message,
+                failure: { kind: 'preparation_failed', details: message },
+            });
             addToast(`Could not update InvokeAI owner scope: ${message}`, 'error');
             return false;
         } finally {
@@ -516,10 +640,14 @@ export const SyncProvider: React.FC<{
         }
     }, [addToast, applyDiscoveredOwnerScope, invokeOwnerScopeState.discovery, invokeOwnerScopeState.status, settingsRef]);
 
-    const retryInvokeOwnerScope = useCallback(async () => {
-        ownerScopeAdmissionRef.current = null;
-        await ensureInvokeOwnerScope(true);
-    }, [ensureInvokeOwnerScope]);
+    const retryInvokeOwnerScope = useCallback(async (): Promise<boolean> => {
+        const admission = await ensureInvokeOwnerScope(true);
+        if (admission.allowed) {
+            addToast('InvokeAI connection restored.', 'success');
+            return true;
+        }
+        return false;
+    }, [addToast, ensureInvokeOwnerScope]);
 
     useEffect(() => {
         if (!settingsLoaded) return;

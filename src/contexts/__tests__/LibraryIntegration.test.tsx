@@ -58,6 +58,7 @@ const mocks = vi.hoisted(() => ({
     discoverInvokeOwners: vi.fn(),
     applyInvokeOwnerScope: vi.fn(),
     refreshInvokeOwnerVisibility: vi.fn(),
+    readTrustedInvokeOwnerScope: vi.fn(),
     getMaintenanceCounts: vi.fn().mockResolvedValue({ untagged: 0, trash: 0, orphans: 0, intermediates: 0, missing: 0, duplicates: 0 }),
     checkHiddenContentAvailability: vi.fn().mockResolvedValue({
         hasIntermediates: false,
@@ -181,6 +182,11 @@ vi.mock('../../services/invoke/ownerScope', () => ({
     refreshInvokeOwnerVisibility: (...args: unknown[]) => mocks.refreshInvokeOwnerVisibility(...args),
 }));
 
+vi.mock('../../services/invoke/trustedOwnerScope', async (importOriginal) => ({
+    ...await importOriginal<typeof import('../../services/invoke/trustedOwnerScope')>(),
+    readTrustedInvokeOwnerScope: (...args: unknown[]) => mocks.readTrustedInvokeOwnerScope(...args),
+}));
+
 vi.mock('../../services/invoke/orphanScanner', () => ({
     scanForOrphans: (...args: unknown[]) => mocks.scanForOrphans(...args)
 }));
@@ -290,6 +296,7 @@ describe('Library Integration (Provider Stack)', () => {
                 removedVisibilityUpdated: 0,
             },
         });
+        mocks.readTrustedInvokeOwnerScope.mockResolvedValue(null);
         mocks.checkHiddenContentAvailability.mockReset().mockResolvedValue({
             hasIntermediates: false,
             hasGrids: false,
@@ -1720,6 +1727,183 @@ describe('Library Integration (Provider Stack)', () => {
         }));
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(mocks.clearLibraryStatsCache).not.toHaveBeenCalled();
+    });
+
+    it('starts catch-up from a newly selected owner without re-discovering stale settings', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: {
+            selection?: { mode: 'owner' | 'all' };
+        }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+
+        await act(async () => {
+            const selected = await syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            });
+            expect(selected).toBe(true);
+            await syncHook!.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(mocks.discoverInvokeOwners).toHaveBeenCalledTimes(1);
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledTimes(2);
+        expect(mocks.syncImages).toHaveBeenCalledWith(
+            'D:/Invoke',
+            expect.any(Function),
+            expect.any(AbortSignal),
+            expect.objectContaining({
+                scope: expect.objectContaining({ mode: 'owner', ownerId: 'owner-a' }),
+            })
+        );
+    });
+
+    it('keeps the last verified owner view available when discovery cannot open InvokeAI', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const trustedScope = {
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            mode: 'owner' as const,
+            ownerId: 'owner-a',
+        };
+        mocks.discoverInvokeOwners.mockRejectedValue(new Error('database is unavailable'));
+        mocks.readTrustedInvokeOwnerScope.mockResolvedValue(trustedScope);
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            invokeOwnerSelection: { dbPath: trustedScope.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            invokeDbSnapshot: {
+                dbPath: trustedScope.dbPath,
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: 'owner',
+                scopeOwnerId: 'owner-a',
+                pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                files: [],
+            },
+        }));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+            status: 'offline_ready',
+            rootPath: 'D:/Invoke',
+            scope: trustedScope,
+            isRetrying: false,
+            failure: expect.objectContaining({ kind: 'source_unavailable' }),
+        })));
+        await act(async () => syncHook?.startInvokeSync({ mode: 'manual' }));
+
+        expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('retries discovery behind the verified offline view and reconnects without rewriting visibility', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [{ ownerId: 'owner-a', imageCount: 4 }],
+            unassignedImageCount: 0,
+        };
+        const trustedScope = { ...discovery, mode: 'owner' as const, ownerId: 'owner-a' };
+        mocks.discoverInvokeOwners.mockRejectedValueOnce(new Error('database is unavailable'));
+        mocks.readTrustedInvokeOwnerScope.mockResolvedValue({
+            dbPath: discovery.dbPath,
+            imagesRoot: discovery.imagesRoot,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            invokeDbSnapshot: {
+                dbPath: discovery.dbPath,
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: 'owner',
+                scopeOwnerId: 'owner-a',
+                pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                files: [],
+            },
+        }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('offline_ready'));
+        mocks.applyInvokeOwnerScope.mockClear();
+
+        const retryDiscovery = createDeferred<InvokeOwnerDiscovery>();
+        mocks.discoverInvokeOwners.mockImplementationOnce(() => retryDiscovery.promise);
+        let retryResult!: Promise<boolean>;
+        act(() => {
+            retryResult = syncHook!.retryInvokeOwnerScope();
+        });
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+            status: 'offline_ready',
+            isRetrying: true,
+        })));
+        expect(syncHook?.invokeOwnerScopeState.scope).toEqual(expect.objectContaining({
+            dbPath: trustedScope.dbPath,
+            ownerId: trustedScope.ownerId,
+        }));
+
+        await act(async () => retryDiscovery.resolve(discovery));
+        await expect(retryResult).resolves.toBe(true);
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+    });
+
+    it('blocks after preparation begins instead of falling back to a prior view', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        mocks.applyInvokeOwnerScope.mockRejectedValue(new Error('visibility update failed'));
+        mocks.readTrustedInvokeOwnerScope.mockResolvedValue({
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            mode: 'legacy',
+        });
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+            status: 'error',
+            failure: expect.objectContaining({ kind: 'preparation_failed' }),
+        })));
+        expect(mocks.readTrustedInvokeOwnerScope).not.toHaveBeenCalled();
     });
 
     it('publishes real owner reconciliation progress before revealing the library', async () => {

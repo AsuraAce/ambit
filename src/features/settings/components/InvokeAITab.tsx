@@ -6,7 +6,7 @@ import { AppSettings } from '../../../types';
 import { SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { useLibrary } from '../../../contexts/LibraryContext';
-import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
 
 interface TabProps {
     settings: AppSettings;
@@ -39,19 +39,38 @@ interface InvokeDiagnostics {
 }
 
 export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
-    const { invokeOwnerScopeState, selectInvokeOwnerScope, retryInvokeOwnerScope, isInvokeSyncActive } = useLibrary();
+    const {
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+        startInvokeSync,
+        isInvokeSyncActive,
+    } = useLibrary();
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
-    const [isAllUsersConfirmOpen, setIsAllUsersConfirmOpen] = useState(false);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const ownerDiscovery = invokeOwnerScopeState.discovery;
     const ownerSelection = settings.invokeOwnerSelection?.dbPath === ownerDiscovery?.dbPath
         ? settings.invokeOwnerSelection
         : undefined;
-    const ownerScopeBusy = invokeOwnerScopeState.status === 'discovering' || invokeOwnerScopeState.status === 'applying';
+    const ownerScopeBusy = invokeOwnerScopeState.status === 'discovering'
+        || invokeOwnerScopeState.status === 'applying'
+        || invokeOwnerScopeState.isRetrying === true;
     const scopeControlsBusy = ownerScopeBusy || isInvokeSyncActive;
+
+    const handleOwnerSelection = async (selection: Parameters<typeof selectInvokeOwnerScope>[0]) => {
+        if (await selectInvokeOwnerScope(selection)) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    };
+
+    const handleOwnerRetry = async () => {
+        if (await retryInvokeOwnerScope()) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    };
 
     const runDiagnostics = async () => {
         setIsDiagLoading(true);
@@ -210,70 +229,72 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
                     {invokeOwnerScopeState.status === 'error' && (
                         <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300">
-                            <p className="text-xs font-bold">Owner detection failed</p>
-                            <p className="text-[10px] mt-1 break-words">{invokeOwnerScopeState.error}</p>
-                            <button type="button" onClick={() => void retryInvokeOwnerScope()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
+                            <p className="text-xs font-bold">
+                                {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
+                                    ? 'InvokeAI connection unavailable'
+                                    : 'InvokeAI library preparation failed'}
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4">
+                                {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
+                                    ? 'Ambit could not verify this InvokeAI database, so its content remains hidden.'
+                                    : 'Ambit could not finish verifying owner visibility, so its content remains hidden.'}
+                            </p>
+                            {invokeOwnerScopeState.error && (
+                                <details className="mt-3 text-[10px]">
+                                    <summary className="cursor-pointer font-bold">Technical details</summary>
+                                    <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
+                                </details>
+                            )}
+                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
                                 Retry
                             </button>
                         </div>
                     )}
 
-                    {!ownerScopeBusy && ownerDiscovery?.schemaMode === 'legacy' && (
+                    {invokeOwnerScopeState.status === 'offline_ready' && (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-800 dark:text-amber-200">
+                            <p className="text-xs font-bold">Using the last verified local view</p>
+                            <p className="mt-1 text-[10px] leading-4">
+                                InvokeAI is unavailable. Your verified library remains visible, but Sync and Live Watch are paused.
+                            </p>
+                            {invokeOwnerScopeState.error && (
+                                <details className="mt-3 text-[10px]">
+                                    <summary className="cursor-pointer font-bold">Technical details</summary>
+                                    <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
+                                </details>
+                            )}
+                            <button
+                                type="button"
+                                disabled={invokeOwnerScopeState.isRetrying}
+                                onClick={() => void handleOwnerRetry()}
+                                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
+                            >
+                                {invokeOwnerScopeState.isRetrying && <Loader2 className="h-3 w-3 animate-spin" />}
+                                {invokeOwnerScopeState.isRetrying ? 'Retrying…' : 'Retry connection'}
+                            </button>
+                        </div>
+                    )}
+
+                    {!ownerScopeBusy
+                        && invokeOwnerScopeState.status !== 'error'
+                        && invokeOwnerScopeState.status !== 'offline_ready'
+                        && ownerDiscovery?.schemaMode === 'legacy' && (
                         <div className="p-4 rounded-xl bg-sage-500/10 border border-sage-500/20 text-xs text-gray-600 dark:text-gray-300">
                             This InvokeAI database predates per-user ownership. Ambit keeps the existing unscoped behavior.
                         </div>
                     )}
 
-                    {!ownerScopeBusy && ownerDiscovery?.schemaMode === 'multi_user' && (
-                        <div className="space-y-3">
-                            <p className="text-xs text-gray-500">
-                                Choose whose InvokeAI images Ambit may show. Display names and stable IDs are shown; email addresses are never read.
-                            </p>
-                            {ownerDiscovery.owners.map(owner => {
-                                const selected = ownerSelection?.mode === 'owner' && ownerSelection.ownerId === owner.ownerId;
-                                return (
-                                    <button
-                                        key={owner.ownerId}
-                                        type="button"
-                                        disabled={scopeControlsBusy}
-                                        onClick={() => void selectInvokeOwnerScope({ dbPath: ownerDiscovery.dbPath, mode: 'owner', ownerId: owner.ownerId })}
-                                        className={`w-full text-left p-3 rounded-xl border transition-colors ${selected ? 'border-sage-500 bg-sage-500/10' : 'border-gray-200 dark:border-white/10 hover:border-sage-500/50'}`}
-                                    >
-                                        <span className="flex items-center justify-between gap-3">
-                                            <span className="min-w-0">
-                                                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100 truncate">
-                                                    {owner.displayName || 'Unnamed owner'}{owner.isStale ? ' (not currently represented)' : ''}
-                                                </span>
-                                                <span className="block text-[10px] font-mono text-gray-500 break-all">{owner.ownerId}</span>
-                                            </span>
-                                            <span className="text-[10px] font-bold text-gray-500 whitespace-nowrap">{owner.imageCount.toLocaleString()} images</span>
-                                        </span>
-                                    </button>
-                                );
-                            })}
-
-                            {ownerDiscovery.unassignedImageCount > 0 && (
-                                <p className="text-[10px] text-amber-700 dark:text-amber-300">
-                                    {ownerDiscovery.unassignedImageCount.toLocaleString()} image rows have no owner and remain hidden in single-owner scope.
-                                </p>
-                            )}
-
-                            <button
-                                type="button"
-                                onClick={() => setIsAllUsersConfirmOpen(true)}
-                                disabled={scopeControlsBusy}
-                                className={`w-full p-3 rounded-xl border text-left transition-colors ${ownerSelection?.mode === 'all' ? 'border-amber-500 bg-amber-500/10' : 'border-gray-200 dark:border-white/10 hover:border-amber-500/50'}`}
-                            >
-                                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
-                                <span className="block text-[10px] text-gray-500">Show every owner represented by this InvokeAI database.</span>
-                            </button>
-
-                            {invokeOwnerScopeState.status === 'selection_required' && (
-                                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-300">
-                                    Select an owner or explicitly choose All users. InvokeAI rows remain hidden until then.
-                                </div>
-                            )}
-                        </div>
+                    {!ownerScopeBusy
+                        && invokeOwnerScopeState.status !== 'error'
+                        && invokeOwnerScopeState.status !== 'offline_ready'
+                        && ownerDiscovery?.schemaMode === 'multi_user' && (
+                        <InvokeOwnerScopeSelector
+                            discovery={ownerDiscovery}
+                            selection={ownerSelection}
+                            disabled={scopeControlsBusy}
+                            selectionRequired={invokeOwnerScopeState.status === 'selection_required'}
+                            onSelect={handleOwnerSelection}
+                        />
                     )}
                 </section>
             )}
@@ -394,18 +415,6 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
             )}
 
             <SyncSection settings={settings} setSettings={setSettings} />
-            <ConfirmDialog
-                isOpen={isAllUsersConfirmOpen}
-                title="Show images from all InvokeAI users?"
-                message="Ambit will expose every owner represented by this local InvokeAI database across the gallery, collections, maintenance views, and references. You can return to a single owner at any time."
-                confirmLabel="Show All Users"
-                onConfirm={() => {
-                    setIsAllUsersConfirmOpen(false);
-                    if (ownerDiscovery) void selectInvokeOwnerScope({ dbPath: ownerDiscovery.dbPath, mode: 'all' });
-                }}
-                onCancel={() => setIsAllUsersConfirmOpen(false)}
-                zIndex={220}
-            />
         </div>
     );
 });

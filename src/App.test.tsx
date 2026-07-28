@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { act, fireEvent, render, waitFor } from './test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from './test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from './constants/defaultSettings';
 import { createDefaultFilters } from './utils/filterState';
 import { GeneratorTool, type AIImage, type AppSettings, type Collection, type FilterState, type LayoutMode, type SmartCollection, type ViewMode } from './types';
+import type { InvokeOwnerScopeState } from './contexts/SyncContext';
 import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 
@@ -207,10 +208,9 @@ const mocks = vi.hoisted(() => ({
         handleRevertMetadata: vi.fn()
     },
     startInvokeSync: vi.fn(),
-    invokeOwnerScopeState: { status: 'ready' } as {
-        status: string;
-        discovery?: { imagesRoot: string };
-    },
+    selectInvokeOwnerScope: vi.fn(),
+    retryInvokeOwnerScope: vi.fn(),
+    invokeOwnerScopeState: { status: 'ready' } as InvokeOwnerScopeState,
     getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
@@ -420,6 +420,8 @@ vi.mock('./contexts/SyncContext', () => ({
     useSync: () => ({
         startInvokeSync: mocks.startInvokeSync,
         invokeOwnerScopeState: mocks.invokeOwnerScopeState,
+        selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
+        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
     })
 }));
 vi.mock('./hooks/useFolderMonitor', () => ({ useFolderMonitor: mocks.folderMonitor }));
@@ -1003,6 +1005,11 @@ describe('App orchestration', () => {
             invokeImageName: 'owner-a-control.png',
         };
         mocks.images = [localImage, ownerGalleryImage];
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
         mocks.churnClearAllFiltersIdentity = true;
         mocks.getImageWithFullMetadata.mockResolvedValueOnce(referencedAsset);
         const view = render(<App />);
@@ -1013,7 +1020,7 @@ describe('App orchestration', () => {
         });
         await waitFor(() => expect(captured.viewer?.image.id).toBe(referencedAsset.id));
 
-        mocks.invokeOwnerScopeState = { status: 'applying' };
+        mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
 
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
@@ -1025,10 +1032,10 @@ describe('App orchestration', () => {
         view.rerender(<App />);
         expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
 
-        mocks.invokeOwnerScopeState = { status: 'ready' };
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
-        mocks.invokeOwnerScopeState = { status: 'applying' };
+        mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
         expect(mocks.clearAllFilters).toHaveBeenCalledTimes(2);
     });
@@ -1046,17 +1053,114 @@ describe('App orchestration', () => {
 
         mocks.invokeOwnerScopeState = {
             status: 'ready',
-            discovery: { imagesRoot: 'D:/PreviousInvoke' },
+            rootPath: 'D:/PreviousInvoke',
         };
         view.rerender(<App />);
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
 
         mocks.invokeOwnerScopeState = {
             status: 'ready',
-            discovery: { imagesRoot: 'D:/Invoke' },
+            rootPath: 'D:/Invoke',
         };
         view.rerender(<App />);
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
+    it('keeps selection and blocking errors in front of the library', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'selection_required',
+            rootPath: 'D:/Invoke',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', imageCount: 2 }],
+                unassignedImageCount: 0,
+            },
+        };
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(screen.getByText('Choose which InvokeAI images to show')).toBeTruthy();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'error',
+            rootPath: 'D:/Invoke',
+            error: 'database locked',
+            failure: { kind: 'preparation_failed', details: 'database locked' },
+        };
+        view.rerender(<App />);
+        expect(screen.getByText('InvokeAI library preparation failed')).toBeTruthy();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+    });
+
+    it('shows the authoritative library with a persistent warning for an exact-root offline view', async () => {
+        const invokeImage = {
+            ...image('invoke-image'),
+            invokeImageName: 'invoke-image.png',
+            metadata: { ...image('invoke-image').metadata, tool: GeneratorTool.INVOKEAI },
+        };
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.images = [image('local-image'), invokeImage];
+        mocks.invokeOwnerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+            failure: { kind: 'source_unavailable', details: 'offline' },
+        };
+        mocks.retryInvokeOwnerScope.mockResolvedValueOnce(true);
+        mocks.startInvokeSync.mockResolvedValue(undefined);
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-offline-banner"]')).not.toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').images.map(candidate => candidate.id)).toEqual([
+            'local-image',
+            'invoke-image',
+        ]);
+        expect(requireProbe(captured.globalModals, 'GlobalModals').filteredImages).toHaveLength(2);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
+        expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('invokeai');
+        expect(mocks.modals.openModal).toHaveBeenCalledWith('settings');
+    });
+
+    it('does not trust an offline view from a different configured root', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/InvokeNew',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/InvokeOld',
+            scope: {
+                dbPath: 'D:/InvokeOld/databases/invokeai.db',
+                imagesRoot: 'D:/InvokeOld',
+                mode: 'legacy',
+            },
+        };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-offline-banner"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
     });
 
     it('does not treat differently cased POSIX InvokeAI roots as the same installation', () => {
@@ -1066,7 +1170,7 @@ describe('App orchestration', () => {
         });
         mocks.invokeOwnerScopeState = {
             status: 'ready',
-            discovery: { imagesRoot: '/home/artemis/Invoke' },
+            rootPath: '/home/artemis/Invoke',
         };
 
         const view = render(<App />);
