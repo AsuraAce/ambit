@@ -44,6 +44,7 @@ describe('applyInvokeOwnerScope', () => {
         const result = await applyInvokeOwnerScope({
             discovery,
             selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileSourceFacts: true,
         });
 
         expect(mocks.reconcileInvokeSourceFacts).toHaveBeenCalledOnce();
@@ -52,6 +53,7 @@ describe('applyInvokeOwnerScope', () => {
             imagesRoot: discovery.imagesRoot,
             mode: 'owner',
             ownerId: 'owner-a',
+            forceRefresh: true,
         });
         expect(mocks.reconcileInvokeSourceFacts.mock.invocationCallOrder[0])
             .toBeLessThan(mocks.refreshInvokeOwnerScope.mock.invocationCallOrder[0]);
@@ -76,11 +78,13 @@ describe('applyInvokeOwnerScope', () => {
 
         await applyInvokeOwnerScope({
             discovery: { ...discovery, schemaMode: 'legacy', owners: [] },
+            reconcileSourceFacts: true,
         });
         expect(mocks.reconcileInvokeSourceFacts).toHaveBeenCalledOnce();
         expect(mocks.refreshInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
             mode: 'legacy',
             ownerId: null,
+            forceRefresh: true,
         }));
     });
 

@@ -183,7 +183,7 @@ describe('AppLayout', () => {
         setLayoutMode: vi.fn(),
         sortOption: 'date-desc',
         setSortOption: vi.fn(),
-        totalImages: 0,
+        displayedCount: 0,
         scopeTotal: 0,
         scopeName: 'All Photos',
         isFiltering: false,
@@ -228,6 +228,17 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-sidebar')).toBeTruthy();
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
+    });
+
+    it('uses the authoritative scoped count supplied by App', () => {
+        searchState.value.totalImages = 265804;
+
+        render(<AppLayout {...defaultProps} displayedCount={823} scopeTotal={823} />);
+
+        expect(capturedProps.header).toEqual(expect.objectContaining({
+            displayedCount: 823,
+            totalCount: 823,
+        }));
     });
 
     it('unmounts library surfaces while privacy protection is stale', () => {

@@ -962,9 +962,12 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(AbortSignal),
             expect.objectContaining({
                 mode: 'manual',
-                reconcileSourceFacts: true,
+                reconcileSourceFacts: false,
             })
         );
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
+            reconcileSourceFacts: true,
+        }));
         expect(mocks.scanForOrphans).toHaveBeenCalledWith(
             'D:/AmbitFixtures/InvokeAI/databases',
             expect.any(Set),
@@ -1591,9 +1594,12 @@ describe('Library Integration (Provider Stack)', () => {
             expect.any(AbortSignal),
             expect.objectContaining({
                 mode: 'startup',
-                reconcileSourceFacts: true,
+                reconcileSourceFacts: false,
             })
         );
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
+            reconcileSourceFacts: true,
+        }));
         const snapshotUpdater = mocks.appRepository.update.mock.calls.at(-1)?.[0] as
             (state: unknown) => { settings: { invokeDbSnapshot: InvokeDbSnapshotState } };
         expect(snapshotUpdater(await mocks.appRepository.load()).settings.invokeDbSnapshot.importSchemaVersion)
@@ -1660,6 +1666,82 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).not.toHaveBeenCalled();
+    });
+
+    it('uses a current saved owner scope without reconciling sources or rebuilding caches', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [{ ownerId: 'owner-a', imageCount: 4 }],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            lastSyncedAt: 100,
+            invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            invokeDbSnapshot: {
+                dbPath: discovery.dbPath,
+                lastSyncedAt: 100,
+                importIntermediates: false,
+                importOrphans: false,
+                syncBoardsToCollections: false,
+                scopeMode: 'owner',
+                scopeOwnerId: 'owner-a',
+                pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
+                importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                files: [],
+            },
+        }));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
+            reconcileSourceFacts: false,
+            forceVisibilityRefresh: false,
+        }));
+        expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
+        expect(mocks.clearLibraryStatsCache).not.toHaveBeenCalled();
+    });
+
+    it('publishes real owner reconciliation progress before revealing the library', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const application = createDeferred<{
+            changed: boolean;
+            sourceFactsUpdated: number;
+            activeVisibilityUpdated: number;
+            removedVisibilityUpdated: number;
+            mode: 'legacy';
+        }>();
+        mocks.applyInvokeOwnerScope.mockImplementation((options: {
+            onProgress: (current: number, total: number, message?: string) => void;
+        }) => {
+            options.onProgress(500, 2000, 'Reconciling sources: 500 / 2000');
+            return application.promise;
+        });
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+            status: 'applying',
+            progress: expect.objectContaining({ current: 500, total: 2000 }),
+        })));
+        await act(async () => application.resolve({
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            mode: 'legacy',
+        }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
     });
 
     it('discards stale owner discovery when the InvokeAI root changes in flight', async () => {

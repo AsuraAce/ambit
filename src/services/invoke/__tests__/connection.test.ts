@@ -72,11 +72,11 @@ describe('InvokeAI connection helpers', () => {
             if (sql === 'PRAGMA table_info(users)') return [{ name: 'user_id' }, { name: 'display_name' }, { name: 'email' }];
             if (sql.includes('LEFT JOIN users')) {
                 return [
+                    { owner_id: null, display_name: null, count: 2 },
                     { owner_id: 'owner-a', display_name: ' Artemis ', count: 12 },
                     { owner_id: 'owner-b', display_name: null, count: 4 },
                 ];
             }
-            if (sql.includes('user_id IS NULL')) return [{ count: 2 }];
             throw new Error(`Unexpected SQL: ${sql}`);
         });
         sqlMock.load.mockResolvedValue(db);
@@ -100,8 +100,7 @@ describe('InvokeAI connection helpers', () => {
         const db = createDb(async (sql) => {
             if (sql === 'PRAGMA table_info(images)') return [{ name: 'user_id' }];
             if (sql === "SELECT name FROM sqlite_master WHERE type='table'") return [{ name: 'images' }];
-            if (sql.includes('GROUP BY TRIM')) return [{ owner_id: 'owner-only', count: 3 }];
-            if (sql.includes('user_id IS NULL')) return [];
+            if (sql.includes('GROUP BY user_id')) return [{ owner_id: 'owner-only', count: 3 }];
             throw new Error(`Unexpected SQL: ${sql}`);
         });
         sqlMock.load.mockResolvedValue(db);

@@ -33,6 +33,7 @@ type AppLayoutProbe = {
     };
     scopeName: string;
     scopeTotal: number;
+    displayedCount: number;
     loadMoreImages: () => void;
     handlers: {
         setContextMenu: React.Dispatch<React.SetStateAction<unknown>>;
@@ -1012,7 +1013,8 @@ describe('App orchestration', () => {
         mocks.invokeOwnerScopeState = { status: 'applying' };
         view.rerender(<App />);
 
-        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([localImage]);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
         await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
         expect(mocks.clearSelection).toHaveBeenCalled();
         expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
@@ -1022,6 +1024,7 @@ describe('App orchestration', () => {
 
         mocks.invokeOwnerScopeState = { status: 'ready' };
         view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
         mocks.invokeOwnerScopeState = { status: 'applying' };
         view.rerender(<App />);
         expect(mocks.clearAllFilters).toHaveBeenCalledTimes(2);

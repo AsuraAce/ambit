@@ -23,7 +23,7 @@ interface TableRow {
 }
 
 interface OwnerRow {
-    owner_id: string;
+    owner_id: string | null;
     display_name?: string | null;
     count: number;
 }
@@ -92,39 +92,43 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
 
     const ownerRows = canReadDisplayNames
         ? await db.select<OwnerRow[]>(`
-            SELECT TRIM(CAST(i.user_id AS TEXT)) AS owner_id,
+            SELECT CAST(i.user_id AS TEXT) AS owner_id,
                    MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
                    count(*) AS count
             FROM images i
             LEFT JOIN users u ON u.user_id = i.user_id
-            WHERE i.user_id IS NOT NULL AND TRIM(CAST(i.user_id AS TEXT)) != ''
-            GROUP BY TRIM(CAST(i.user_id AS TEXT))
+            GROUP BY i.user_id
             ORDER BY display_name COLLATE NOCASE, owner_id
         `)
         : await db.select<OwnerRow[]>(`
-            SELECT TRIM(CAST(user_id AS TEXT)) AS owner_id, count(*) AS count
+            SELECT CAST(user_id AS TEXT) AS owner_id, count(*) AS count
             FROM images
-            WHERE user_id IS NOT NULL AND TRIM(CAST(user_id AS TEXT)) != ''
-            GROUP BY TRIM(CAST(user_id AS TEXT))
+            GROUP BY user_id
             ORDER BY owner_id
         `);
-    const unassignedRows = await db.select<CountRow[]>(`
-        SELECT count(*) AS count
-        FROM images
-        WHERE user_id IS NULL OR TRIM(CAST(user_id AS TEXT)) = ''
-    `);
-    const owners: InvokeOwnerSummary[] = ownerRows.map(row => ({
-        ownerId: row.owner_id,
-        displayName: row.display_name?.trim() || undefined,
-        imageCount: row.count,
-    }));
+    let unassignedImageCount = 0;
+    const ownersById = new Map<string, InvokeOwnerSummary>();
+    ownerRows.forEach(row => {
+        const ownerId = row.owner_id?.trim() ?? '';
+        if (!ownerId) {
+            unassignedImageCount += row.count;
+            return;
+        }
+
+        const existing = ownersById.get(ownerId);
+        ownersById.set(ownerId, {
+            ownerId,
+            displayName: row.display_name?.trim() || existing?.displayName,
+            imageCount: (existing?.imageCount ?? 0) + row.count,
+        });
+    });
 
     return {
         schemaMode: 'multi_user',
         dbPath,
         imagesRoot,
-        owners,
-        unassignedImageCount: unassignedRows[0]?.count ?? 0,
+        owners: Array.from(ownersById.values()),
+        unassignedImageCount,
     };
 };
 

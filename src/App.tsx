@@ -9,6 +9,7 @@ import { OnboardingWizard, type OnboardingSettingsUpdate } from './components/ui
 import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
+import { InvokeOwnerScopeGate } from './components/ui/InvokeOwnerScopeGate';
 import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
@@ -287,6 +288,8 @@ export default function App() {
 
     const { startInvokeSync, invokeOwnerScopeState } = useSync();
     const isInvokeOwnerScopeApplying = invokeOwnerScopeState.status === 'applying';
+    const isInvokeOwnerScopeBlocking = isInvokeOwnerScopeApplying
+        || invokeOwnerScopeState.status === 'discovering';
     const shouldHideOwnerScopedImages = isInvokeOwnerScopeApplying
         || invokeOwnerScopeState.status === 'discovering'
         || invokeOwnerScopeState.status === 'error';
@@ -770,7 +773,10 @@ export default function App() {
         <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
             <TitleBar />
 
-            <AppLayout
+            {isInvokeOwnerScopeBlocking ? (
+                <InvokeOwnerScopeGate state={invokeOwnerScopeState} />
+            ) : (
+                <AppLayout
 
                 filters={filters}
                 setFilters={setFilters}
@@ -787,7 +793,7 @@ export default function App() {
                 setLayoutMode={setLayoutMode}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
-                totalImages={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : totalImages}
+                displayedCount={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : totalImages}
                 scopeTotal={shouldHideOwnerScopedImages ? ownerScopedDisplayImages.length : scopeTotal}
                 scopeName={scopeName}
                 isFiltering={isFiltering}
@@ -824,7 +830,8 @@ export default function App() {
                 handleOpenCollectionModal={handleOpenCollectionModal}
                 onSetCollectionMembership={handleSetCollectionMembership}
                 onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
-            />
+                />
+            )}
 
             {/* Overlays & Portals */}
             {shouldRenderOnboarding ? (

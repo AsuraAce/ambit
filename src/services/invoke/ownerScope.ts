@@ -9,6 +9,8 @@ import { resolveInvokeSyncScope } from './syncScope';
 export interface ApplyInvokeOwnerScopeOptions {
     discovery: InvokeOwnerDiscovery;
     selection?: InvokeOwnerSelection;
+    reconcileSourceFacts?: boolean;
+    forceVisibilityRefresh?: boolean;
     onProgress?: (current: number, total: number, message?: string) => void;
     signal?: AbortSignal;
 }
@@ -33,7 +35,8 @@ const resolveOwnerScope = (
 
 export const refreshInvokeOwnerVisibility = async (
     discovery: InvokeOwnerDiscovery,
-    selection?: InvokeOwnerSelection
+    selection?: InvokeOwnerSelection,
+    forceRefresh: boolean = false
 ) => {
     const { mode, ownerId } = resolveOwnerScope(discovery, selection);
     const visibility = await unwrap(commands.refreshInvokeOwnerScope({
@@ -41,6 +44,7 @@ export const refreshInvokeOwnerVisibility = async (
         imagesRoot: discovery.imagesRoot,
         mode,
         ownerId,
+        forceRefresh,
     }));
     return { mode, visibility };
 };
@@ -48,6 +52,8 @@ export const refreshInvokeOwnerVisibility = async (
 export const applyInvokeOwnerScope = async ({
     discovery,
     selection,
+    reconcileSourceFacts = false,
+    forceVisibilityRefresh = false,
     onProgress = () => undefined,
     signal,
 }: ApplyInvokeOwnerScopeOptions): Promise<ApplyInvokeOwnerScopeResult> => {
@@ -57,7 +63,7 @@ export const applyInvokeOwnerScope = async ({
 
     const scope = resolveInvokeSyncScope(discovery, selection);
     let sourceFactsUpdated = 0;
-    if (scope) {
+    if (scope && reconcileSourceFacts) {
         const db = await Database.load(`sqlite:${discovery.dbPath}`);
         const columns = new Set(
             (await db.select<Array<{ name: string }>>('PRAGMA table_info(images)'))
@@ -76,7 +82,12 @@ export const applyInvokeOwnerScope = async ({
         });
     }
 
-    const { mode, visibility } = await refreshInvokeOwnerVisibility(discovery, selection);
+    onProgress(0, 0, 'Applying InvokeAI owner visibility...');
+    const { mode, visibility } = await refreshInvokeOwnerVisibility(
+        discovery,
+        selection,
+        sourceFactsUpdated > 0 || forceVisibilityRefresh
+    );
 
     return {
         changed: visibility.changed || sourceFactsUpdated > 0,

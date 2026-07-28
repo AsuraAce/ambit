@@ -1,9 +1,9 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-18
+Last reviewed: 2026-07-28
 
 ## Current State
-- The repo is currently on package version `0.6.4`; do not infer release publication status from this file alone.
+- The repo is currently on package version `0.8.0`; do not infer release publication status from this file alone.
 - The routed docs package is now baseline repo infrastructure: `AGENTS.md`, `docs/architecture.md`, `docs/WORKFLOW_SETUP.md`, and this file should be maintained rather than re-bootstrapped.
 - Production build hardening is part of the normal build path: `app:build` now runs `verify:release` before `tauri build --ci`, and the release gate includes a no-bundle Tauri compatibility build.
 - Frontend bundle cleanup has a build-output guard: `build:guard` fails if ineffective dynamic imports return or the startup entry chunk exceeds the 500 kB warning threshold.
@@ -12,6 +12,7 @@ Last reviewed: 2026-07-18
 - Asset drill-down now uses standard disjunctive faceting semantics: selected Match Any values keep sibling alternatives visible by counting that facet against all other active filters, while Match All keeps narrowed co-occurrence counts. Checkpoints remain multi-select but Any-only because each image has one checkpoint/model, and generator tools remain Any-only in the UI.
 - Maintenance currently exposes Missing, Thumbnails, Duplicates, Untagged, conditional Intermediates, and Removed tabs. Thumbnail optimization remains a visible maintenance surface as well as a background healing path.
 - InvokeAI synchronization now applies one durable legacy, All users, or selected-owner scope across manual, startup, and Live Watch queries. Selected-owner mode includes owned boards and collections, disables filesystem-only orphan recovery without erasing its preference, and preserves hidden rows for later scope changes.
+- InvokeAI owner-scope startup remediation is active as a separate two-package workstream. Work Package 1 adds a truthful blocking preparation gate, real reconciliation progress, an unchanged-scope fast path, and authoritative library counts; Work Package 2 will cover owner selection plus offline and error recovery. See `docs/plans/invokeai-owner-scope-startup-remediation.md`.
 
 ## Current Constraints
 - `package.json` defines dev, build, lint, typecheck, one-shot frontend test, coverage, Rust test, Tauri no-bundle check, and release verification scripts.
@@ -25,6 +26,7 @@ Last reviewed: 2026-07-18
 - Duplicate cleanup is transactional and conservative: safe keeper state and collection memberships are merged, redundant records move through the Removed flow, and files are not deleted by default.
 
 ## Next Work
+- Obtain owner acceptance for the implemented and release-verified InvokeAI owner-scope startup remediation Work Package 1, then implement the approved selection/offline/error recovery package.
 - Add browser smoke tests for lazy-loaded app surfaces: settings, dashboard/statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editor.
 - Add coverage thresholds after the public-beta baseline is reviewed.
 - Add a small Tauri desktop launch smoke test later, using a temporary app data/profile directory; keep installer/update testing for release packaging work.

@@ -89,7 +89,7 @@ interface AppLayoutProps {
     setLayoutMode: (mode: LayoutMode) => void;
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
-    totalImages: number;
+    displayedCount: number;
     scopeTotal: number;
     scopeName: string;
     isFiltering: boolean;
@@ -135,7 +135,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
     colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
-    sortOption, setSortOption, scopeTotal, scopeName,
+    sortOption, setSortOption, displayedCount, scopeTotal, scopeName,
     fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
     handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, isViewerShortcutBlocked,
     actions, availableTags, selectedIds,
@@ -199,7 +199,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     // Store Access
     const {
         images,
-        totalImages,
         globalTotal,
         isFiltering,
         clearAllFilters,
@@ -375,7 +374,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     setLayoutMode={setLayoutMode}
                     sortOption={sortOption}
                     setSortOption={setSortOption}
-                    displayedCount={totalImages}
+                    displayedCount={displayedCount}
                     totalCount={scopeTotal}
                     scopeName={scopeName}
                     isFiltering={isSearchPending}

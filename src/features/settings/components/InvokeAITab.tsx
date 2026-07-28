@@ -190,9 +190,21 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     </h4>
 
                     {ownerScopeBusy && (
-                        <div className="flex items-center gap-3 text-sm text-gray-500">
+                        <div className="flex items-start gap-3 text-sm text-gray-500" role="status" aria-live="polite">
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            {invokeOwnerScopeState.status === 'discovering' ? 'Discovering owners…' : 'Applying owner visibility…'}
+                            <span>
+                                <span className="block">
+                                    {invokeOwnerScopeState.progress?.message
+                                        ?? (invokeOwnerScopeState.status === 'discovering'
+                                            ? 'Checking InvokeAI owner information...'
+                                            : 'Preparing your InvokeAI library...')}
+                                </span>
+                                {(invokeOwnerScopeState.progress?.total ?? 0) > 0 && (
+                                    <span className="mt-1 block text-[10px] font-mono text-gray-400">
+                                        {invokeOwnerScopeState.progress?.current.toLocaleString()} / {invokeOwnerScopeState.progress?.total.toLocaleString()}
+                                    </span>
+                                )}
+                            </span>
                         </div>
                     )}
 

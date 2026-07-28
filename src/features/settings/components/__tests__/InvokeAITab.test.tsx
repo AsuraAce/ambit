@@ -71,12 +71,15 @@ describe('InvokeAITab', () => {
                 owners: [{ ownerId: 'owner-a', imageCount: 1 }],
                 unassignedImageCount: 0,
             },
+            progress: { current: 500, total: 2000, message: 'Reconciling sources...' },
         };
         render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
 
         expect((screen.getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
         expect((screen.getByText('Browse').closest('button') as HTMLButtonElement).disabled).toBe(true);
         expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByRole('status').textContent).toContain('Reconciling sources...');
+        expect(screen.getByRole('status').textContent).toContain('500 / 2,000');
     });
 
     it('locks root and owner controls during quiet startup synchronization', () => {

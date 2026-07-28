@@ -84,6 +84,7 @@ pub struct InvokeOwnerScopeInput {
     pub images_root: String,
     pub mode: InvokeOwnerScopeMode,
     pub owner_id: Option<String>,
+    pub force_refresh: bool,
 }
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
@@ -630,6 +631,16 @@ fn refresh_invoke_owner_scope_inner(
         )
         .optional()
         .map_err(|e| e.to_string())?;
+    let next = (
+        db_path.clone(),
+        images_root.clone(),
+        input.mode.as_str().to_string(),
+        owner_id.map(str::to_string),
+    );
+    if !input.force_refresh && previous.as_ref() == Some(&next) {
+        tx.commit().map_err(|e| e.to_string())?;
+        return Ok(InvokeOwnerScopeRefreshResult::default());
+    }
 
     let visibility_sql = match input.mode {
         InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "0",
@@ -671,12 +682,6 @@ fn refresh_invoke_owner_scope_inner(
     )
     .map_err(|e| e.to_string())?;
 
-    let next = (
-        db_path,
-        images_root,
-        input.mode.as_str().to_string(),
-        owner_id.map(str::to_string),
-    );
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(InvokeOwnerScopeRefreshResult {
@@ -1609,6 +1614,7 @@ mod tests {
                 images_root: "c:/invoke".to_string(),
                 mode: super::InvokeOwnerScopeMode::Owner,
                 owner_id: Some("a".to_string()),
+                force_refresh: false,
             },
         )
         .expect("apply owner scope");
@@ -1638,6 +1644,51 @@ mod tests {
             )
             .expect("removed visibility");
         assert_eq!(removed_hidden, 0);
+
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 0 WHERE id = 'owner-b'",
+            [],
+        )
+        .expect("introduce visibility drift");
+        let no_op_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: false,
+            },
+        )
+        .expect("validate unchanged owner scope");
+        assert_eq!(
+            no_op_result,
+            super::InvokeOwnerScopeRefreshResult::default()
+        );
+        let drifted_visibility: i64 = conn
+            .query_row(
+                "SELECT invoke_scope_hidden FROM images WHERE id = 'owner-b'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("drifted visibility");
+        assert_eq!(
+            drifted_visibility, 0,
+            "unchanged scope must avoid a table repair pass"
+        );
+
+        let forced_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: true,
+            },
+        )
+        .expect("force owner visibility repair");
+        assert_eq!(forced_result.active_updated, 1);
 
         let mut generic_late = create_image_record("generic-late", 101, 10, "{}");
         generic_late.path = "C:/Invoke/outputs/images/generic-late.png".to_string();
@@ -1673,6 +1724,7 @@ mod tests {
                 images_root: "C:/Invoke".to_string(),
                 mode: super::InvokeOwnerScopeMode::Owner,
                 owner_id: Some("stale".to_string()),
+                force_refresh: false,
             },
         )
         .expect("apply stale owner scope");
@@ -1694,6 +1746,7 @@ mod tests {
                 images_root: "C:/Invoke".to_string(),
                 mode: super::InvokeOwnerScopeMode::All,
                 owner_id: None,
+                force_refresh: false,
             },
         )
         .expect("apply all-owner scope");

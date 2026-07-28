@@ -2,7 +2,7 @@ import * as React from 'react';
 import { createContext, useContext, useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import { useSettings } from './SettingsContext';
 import { useToast } from '../hooks/useToast';
-import { getLiveWatchSummaryMessage, useLibraryStore } from '../stores/libraryStore';
+import { getLiveWatchSummaryMessage, useLibraryStore, type SyncProgress } from '../stores/libraryStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
@@ -118,6 +118,7 @@ export interface InvokeOwnerScopeState {
     status: 'idle' | 'discovering' | 'applying' | 'ready' | 'selection_required' | 'error';
     discovery?: InvokeOwnerDiscovery;
     error?: string;
+    progress?: SyncProgress;
 }
 
 interface InvokeOwnerAdmission {
@@ -125,6 +126,7 @@ interface InvokeOwnerAdmission {
     allowed: boolean;
     scope?: InvokeSyncScope;
     reason?: string;
+    sourceFactsReconciled?: boolean;
 }
 
 interface SyncContextType {
@@ -288,11 +290,29 @@ export const SyncProvider: React.FC<{
             : discovery;
 
         ownerScopeAdmissionRef.current = null;
-        setInvokeOwnerScopeState({ status: 'applying', discovery: discoveryWithStaleOwner });
+        const scope = resolveInvokeSyncScope(discovery, selection);
+        const reconcileSourceFacts = scope !== null
+            && !isInvokeDbSnapshotScopeCurrent(settingsRef.current.invokeDbSnapshot, scope);
+        const reportProgress = (current: number, total: number, message?: string) => {
+            setInvokeOwnerScopeState({
+                status: 'applying',
+                discovery: discoveryWithStaleOwner,
+                progress: { current, total, message },
+            });
+        };
+        reportProgress(0, 0, reconcileSourceFacts
+            ? 'Preparing InvokeAI library upgrade...'
+            : 'Checking saved InvokeAI visibility...');
         const previousSelection = settingsRef.current.invokeOwnerSelection?.dbPath === discovery.dbPath
             ? settingsRef.current.invokeOwnerSelection
             : undefined;
-        const result = await applyInvokeOwnerScope({ discovery, selection });
+        const result = await applyInvokeOwnerScope({
+            discovery,
+            selection,
+            reconcileSourceFacts,
+            forceVisibilityRefresh: forceRefresh,
+            onProgress: reportProgress,
+        });
         if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
             await refreshInvokeOwnerVisibility(discovery, previousSelection);
             await refreshAfterOwnerScopeChange();
@@ -314,13 +334,15 @@ export const SyncProvider: React.FC<{
                 throw persistError;
             }
         }
-        if (result.changed || forceRefresh) await refreshAfterOwnerScopeChange();
+        if (result.changed || forceRefresh) {
+            reportProgress(0, 0, 'Refreshing library filters and collections...');
+            await refreshAfterOwnerScopeChange();
+        }
 
         if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
             return { rootPath, allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
         }
 
-        const scope = resolveInvokeSyncScope(discovery, selection);
         const allowed = scope !== null;
         const reason = result.mode === 'unselected'
             ? 'Choose an InvokeAI owner or All users before syncing.'
@@ -329,7 +351,13 @@ export const SyncProvider: React.FC<{
             status: result.mode === 'unselected' ? 'selection_required' : 'ready',
             discovery: discoveryWithStaleOwner,
         });
-        const admission = { rootPath, allowed, scope: scope ?? undefined, reason };
+        const admission = {
+            rootPath,
+            allowed,
+            scope: scope ?? undefined,
+            reason,
+            sourceFactsReconciled: reconcileSourceFacts,
+        };
         ownerScopeAdmissionRef.current = admission;
         return admission;
     }, [persistOwnerSelection, refreshAfterOwnerScopeChange, settingsRef]);
@@ -368,7 +396,10 @@ export const SyncProvider: React.FC<{
             if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
                 return { rootPath, allowed: false, reason: 'InvokeAI path changed while owner scope was loading.' };
             }
-            setInvokeOwnerScopeState({ status: 'discovering' });
+            setInvokeOwnerScopeState({
+                status: 'discovering',
+                progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
+            });
             try {
                 const discovery = await discoverInvokeOwners(rootPath);
                 if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
@@ -408,6 +439,9 @@ export const SyncProvider: React.FC<{
                     rootPath,
                     force
                 );
+                if (admission.sourceFactsReconciled && admission.allowed) {
+                    addToast('InvokeAI library upgrade complete. No images or collections were deleted.', 'success');
+                }
                 if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
                     if (ownerScopeAdmissionRef.current?.rootPath === rootPath) {
                         ownerScopeAdmissionRef.current = null;
@@ -430,7 +464,7 @@ export const SyncProvider: React.FC<{
                 ownerScopePromiseRef.current = null;
             }
         }
-    }, [applyDiscoveredOwnerScope, settingsRef]);
+    }, [addToast, applyDiscoveredOwnerScope, settingsRef]);
 
     const selectInvokeOwnerScope = useCallback(async (selection: InvokeOwnerSelection): Promise<boolean> => {
         if (activeInvokeSyncScopeRef.current) {
@@ -577,7 +611,8 @@ export const SyncProvider: React.FC<{
             && shouldImportOrphans === false;
         const shouldReconcileSourceFacts =
             options.mode !== 'live'
-            && !isInvokeImportSchemaCurrent(settingsRef.current.invokeDbSnapshot);
+            && !isInvokeImportSchemaCurrent(settingsRef.current.invokeDbSnapshot)
+            && !ownerAdmission.sourceFactsReconciled;
 
         if (options.mode === 'live'
             && (activeInvokeSyncScopeRef.current || syncStatus === 'syncing' || isLiveSyncingRef.current)) {
@@ -665,7 +700,9 @@ export const SyncProvider: React.FC<{
             if (
                 !isCapturedScopeCurrent()
                 || options.mode === 'live'
-                || (shouldImportOrphans && !shouldReconcileSourceFacts)
+                || (shouldImportOrphans
+                    && !shouldReconcileSourceFacts
+                    && !ownerAdmission.sourceFactsReconciled)
             ) return;
 
             try {
