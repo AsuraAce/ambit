@@ -401,6 +401,15 @@ describe('SearchProvider', () => {
         expect((mocks.collections.current as { refreshCollections: ReturnType<typeof vi.fn> }).refreshCollections).toHaveBeenCalledOnce();
     });
 
+    it('keeps the filter reset callback stable across provider rerenders', () => {
+        const view = renderProvider();
+        const initialClearAllFilters = latest.clearAllFilters;
+
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        expect(latest.clearAllFilters).toBe(initialClearAllFilters);
+    });
+
     it('loads another page only when a next page is available and idle', async () => {
         const fetchNextPage = vi.fn().mockResolvedValue(undefined);
         mocks.imagesQuery.current = {

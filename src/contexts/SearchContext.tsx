@@ -566,6 +566,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [fetchNextPage, privacyExposureBlocked, queryClient]);
 
+    const clearAllFiltersAndRefresh = useCallback(() => {
+        clearAllFilters();
+        // Explicitly invalidate to ensure fresh data if cache was stale
+        queryClient.invalidateQueries({ queryKey: ['images'] });
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+    }, [clearAllFilters, queryClient]);
+
 
 
     return (
@@ -587,12 +594,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     await fetchNextPage();
                 }
             },
-            clearAllFilters: () => {
-                clearAllFilters();
-                // Explicitly invalidate to ensure fresh data if cache was stale
-                queryClient.invalidateQueries({ queryKey: ['images'] });
-                queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
-            },
+            clearAllFilters: clearAllFiltersAndRefresh,
             isFiltering: !privacyIndexBlocked
                 && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
             privacyExposureBlocked,

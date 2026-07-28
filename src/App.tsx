@@ -58,6 +58,7 @@ export default function App() {
     const [viewerSessionImages, setViewerSessionImages] = useState<AIImage[] | null>(null);
     const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
     const referenceNavigationRequestRef = useRef(0);
+    const wasInvokeOwnerScopeApplyingRef = useRef(false);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -298,7 +299,9 @@ export default function App() {
         : images;
 
     useEffect(() => {
-        if (!isInvokeOwnerScopeApplying) return;
+        const startedApplying = isInvokeOwnerScopeApplying && !wasInvokeOwnerScopeApplyingRef.current;
+        wasInvokeOwnerScopeApplyingRef.current = isInvokeOwnerScopeApplying;
+        if (!startedApplying) return;
 
         referenceNavigationRequestRef.current += 1;
         selectedImageIndexRef.current = null;

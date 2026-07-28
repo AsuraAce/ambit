@@ -154,6 +154,7 @@ const mocks = vi.hoisted(() => ({
     setSortOption: vi.fn(),
     toggleFavorite: vi.fn(),
     clearAllFilters: vi.fn(),
+    churnClearAllFiltersIdentity: false,
     setRecentSearches: vi.fn(),
     refreshMetadata: vi.fn(),
     selectedIds: new Set<string>(),
@@ -333,7 +334,9 @@ vi.mock('./contexts/SearchContext', () => ({
         isFiltering: false,
         privacyExposureBlocked: mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
-        clearAllFilters: mocks.clearAllFilters,
+        clearAllFilters: mocks.churnClearAllFiltersIdentity
+            ? () => mocks.clearAllFilters()
+            : mocks.clearAllFilters,
         recentSearches: ['old'],
         setRecentSearches: mocks.setRecentSearches,
         refreshMetadata: mocks.refreshMetadata
@@ -494,6 +497,7 @@ describe('App orchestration', () => {
         mocks.privacyExposureBlocked = false;
         mocks.images = [image('one'), image('two')];
         mocks.invokeOwnerScopeState = { status: 'ready' };
+        mocks.churnClearAllFiltersIdentity = false;
         mocks.filters = createDefaultFilters();
         mocks.selectedIds = new Set();
         mocks.aiSearchOptions = null;
@@ -995,6 +999,7 @@ describe('App orchestration', () => {
             invokeImageName: 'owner-a-control.png',
         };
         mocks.images = [localImage, ownerGalleryImage];
+        mocks.churnClearAllFiltersIdentity = true;
         mocks.getImageWithFullMetadata.mockResolvedValueOnce(referencedAsset);
         const view = render(<App />);
         act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
@@ -1010,7 +1015,16 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([localImage]);
         await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
         expect(mocks.clearSelection).toHaveBeenCalled();
-        expect(mocks.clearAllFilters).toHaveBeenCalled();
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
+
+        view.rerender(<App />);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
+
+        mocks.invokeOwnerScopeState = { status: 'ready' };
+        view.rerender(<App />);
+        mocks.invokeOwnerScopeState = { status: 'applying' };
+        view.rerender(<App />);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(2);
     });
 
     it('uses the current gallery for visible reference targets and keeps missing targets disabled', async () => {
