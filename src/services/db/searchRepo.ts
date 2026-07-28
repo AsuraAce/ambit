@@ -989,7 +989,14 @@ export const getLibraryStats = async (whereClause: string = '', params: unknown[
     }
 };
 
-export const getKeywordStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<{ text: string; value: number }[]> => {
+export const getKeywordStats = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string,
+    signal?: AbortSignal
+): Promise<{ text: string; value: number }[]> => {
+    signal?.throwIfAborted();
     const db = await getDb();
 
     try {
@@ -998,6 +1005,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
         let lastRowId = 0;
 
         for (;;) {
+            signal?.throwIfAborted();
             const scopedParts = buildScopedImageQueryParts(
                 whereClause,
                 params,
@@ -1026,6 +1034,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
                 scopedParts.reason,
                 () => db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
             );
+            signal?.throwIfAborted();
 
             rows.forEach(r => {
                 const tokens = (r.positive_prompt || '')
@@ -1053,6 +1062,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
             .slice(0, 40);
 
     } catch (e) {
+        if (signal?.aborted) throw e;
         console.error('[DB] Failed to get keyword stats', e);
         return [];
     }

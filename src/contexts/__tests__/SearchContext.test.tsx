@@ -6,6 +6,7 @@ import type { ImagesQueryKey } from '../../hooks/useImagesQuery';
 import { SearchProvider, useSearch } from '../SearchContext';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoordinator';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -17,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     imagesQueryArgs: { current: null as { settingsLoaded?: boolean } | null },
     statsQuery: { current: {} as unknown },
     queryClient: {
-        invalidateQueries: vi.fn().mockResolvedValue(undefined)
+        invalidateQueries: vi.fn().mockResolvedValue(undefined),
+        cancelQueries: vi.fn().mockResolvedValue(undefined)
     },
     repository: {
         load: vi.fn(),
@@ -210,12 +212,53 @@ describe('SearchProvider', () => {
             privacyMaskIndexError: null,
             privacyMaskIndexRetryToken: 0,
         });
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
 
     afterEach(() => vi.useRealTimers());
 
     it('requires consumers to be rendered within the provider', () => {
         expect(() => render(<Consumer />)).toThrow('useSearch must be used within SearchProvider');
+    });
+
+    it('blocks and cancels library-derived queries until the configured InvokeAI root is admitted', async () => {
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke' }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true,
+        };
+
+        renderProvider();
+
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
+        expect(mocks.checkHiddenContentAvailability).not.toHaveBeenCalled();
+        await waitFor(() => expect(mocks.queryClient.cancelQueries).toHaveBeenCalledTimes(4));
+        expect(mocks.queryClient.cancelQueries.mock.calls.map(([filter]) => filter.queryKey)).toEqual([
+            ['images'],
+            ['libraryStats'],
+            ['libraryKeywordStats'],
+            ['parameterRanges'],
+        ]);
+    });
+
+    it('enables library-derived queries for the matching admitted InvokeAI root', async () => {
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke' }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true,
+        };
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+        });
+
+        renderProvider();
+
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true);
+        await waitFor(() => expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledOnce());
+        expect(mocks.queryClient.cancelQueries).not.toHaveBeenCalled();
     });
 
     it('exposes query data, stats, facets, SQL state, and synchronizes query images', async () => {

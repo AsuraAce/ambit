@@ -61,8 +61,8 @@ describe('applyInvokeOwnerScope', () => {
             .toBeLessThan(mocks.refreshInvokeOwnerScope.mock.invocationCallOrder[0]);
         const reconciliationProgress = mocks.reconcileInvokeSourceFacts.mock.calls[0][0].onProgress;
         reconciliationProgress(1, 2, 'Reconciling sources: 1 / 2');
-        expect(onProgress).toHaveBeenCalledWith(1, 2, 'Updating InvokeAI image details...');
-        expect(onProgress).toHaveBeenCalledWith(0, 0, 'Updating which InvokeAI images are shown...');
+        expect(onProgress).toHaveBeenCalledWith(1, 2, 'Reconciling sources: 1 / 2');
+        expect(onProgress).toHaveBeenCalledWith(0, 0, 'Applying InvokeAI visibility...');
         expect(result).toEqual({
             changed: true,
             sourceFactsUpdated: 3,

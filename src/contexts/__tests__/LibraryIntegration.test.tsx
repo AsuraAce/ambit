@@ -8,6 +8,7 @@ import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { QueryClient } from '@tanstack/react-query';
 import type { Collection, InvokeDbSnapshotState, InvokeOwnerDiscovery } from '../../types';
 import {
@@ -312,6 +313,7 @@ describe('Library Integration (Provider Stack)', () => {
             message: 'Library purge scheduled.'
         }));
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
         useSettingsStore.setState(useSettingsStore.getInitialState(), true);
         useCollectionStore.setState({
             setCollections: defaultSetCollections,
@@ -487,6 +489,8 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
+        await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
+        await waitFor(() => expect(mocks.searchImages).toHaveBeenCalled());
 
         mocks.syncImages.mockResolvedValueOnce({
             imported: 0,
@@ -826,6 +830,8 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
+        await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
+        await waitFor(() => expect(mocks.searchImages).toHaveBeenCalled());
 
         mocks.syncImages.mockResolvedValueOnce({
             imported: 0,

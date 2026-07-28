@@ -42,7 +42,7 @@ import { getImageWithFullMetadata } from './services/db/imageRepo';
 import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
-import { normalizeInvokeRoot } from './utils/pathUtils';
+import { isInvokeOwnerScopeAdmitted } from './stores/invokeOwnerScopeStore';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
@@ -294,17 +294,13 @@ export default function App() {
         selectInvokeOwnerScope,
         retryInvokeOwnerScope,
     } = useSync();
-    const configuredInvokeRoot = normalizeInvokeRoot(settings.invokeAiPath);
-    const admittedInvokeRoot = normalizeInvokeRoot(
-        invokeOwnerScopeState.rootPath ?? invokeOwnerScopeState.discovery?.imagesRoot
+    const isInvokeOwnerScopeAdmittedForRoot = isInvokeOwnerScopeAdmitted(
+        settings.invokeAiPath,
+        invokeOwnerScopeState
     );
-    const isCurrentInvokeRoot = configuredInvokeRoot !== null
-        && admittedInvokeRoot === configuredInvokeRoot;
-    const isInvokeOwnerScopeReady = invokeOwnerScopeState.status === 'ready' && isCurrentInvokeRoot;
-    const isInvokeOwnerScopeOfflineReady = invokeOwnerScopeState.status === 'offline_ready' && isCurrentInvokeRoot;
-    const isInvokeOwnerScopeBlocking = configuredInvokeRoot !== null
-        && !isInvokeOwnerScopeReady
-        && !isInvokeOwnerScopeOfflineReady;
+    const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
+        && invokeOwnerScopeState.status === 'offline_ready';
+    const isInvokeOwnerScopeBlocking = !isInvokeOwnerScopeAdmittedForRoot;
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         if (await selectInvokeOwnerScope(selection)) {
             await startInvokeSync({ mode: 'startup' });

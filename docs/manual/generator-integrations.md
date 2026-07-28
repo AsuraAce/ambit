@@ -24,7 +24,7 @@ Select the InvokeAI root installation folder that contains `databases/invokeai.d
 
 If the InvokeAI database contains more than one user, choose one owner or explicitly choose All users. A single-owner scope limits images, favorites, directly owned boards, board collections, startup catch-up, and Live Watch to that owner. Other and unassigned records stay stored locally and reappear when their owner or All users is selected; changing scope does not delete them. Ambit does not read email addresses or sign in to InvokeAI.
 
-After an update that changes InvokeAI ownership data, Ambit may briefly show a `Preparing your InvokeAI library` screen before opening the library. It checks ownership, applies visibility, and refreshes library filters and collections as one guarded startup step. The screen reports progress when the work has a known size. It does not delete images or collections. Once the upgrade has completed, unchanged restarts use the saved scope and skip the broad reconciliation pass.
+After an update that changes InvokeAI ownership data, Ambit may keep the `Preparing Ambit` screen open as startup moves from the local database to the InvokeAI library. Library images, counts, boards, filters, statistics, and privacy indexing wait until the configured InvokeAI view is safe to use. The status moves through file indexing, image-location mapping, legacy-location checks when needed, image details, visibility, and library cache refresh. Bounded work shows a count and progress bar; other phases show activity without inventing a percentage. No images or collections are deleted. Once the upgrade has completed, unchanged restarts use the saved scope and skip the broad reconciliation pass.
 
 InvokeAI synchronization can:
 

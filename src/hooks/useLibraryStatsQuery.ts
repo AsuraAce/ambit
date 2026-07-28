@@ -299,7 +299,7 @@ export const useLibraryStatsQuery = ({
         // Keep keywords on a separate root key so broad library-stats invalidations
         // refresh the cheap summary first before restarting the prompt scan.
         queryKey: ['libraryKeywordStats', activeSummaryVersion],
-        queryFn: async () => {
+        queryFn: async ({ signal }) => {
             if (useBrowserMocks) {
                 return {
                     summaryVersion: activeSummaryVersion,
@@ -310,7 +310,7 @@ export const useLibraryStatsQuery = ({
             const { where, params, collectionId, loraName } = queryInput!;
             return {
                 summaryVersion: activeSummaryVersion,
-                keywordStats: await getKeywordStats(where, params, collectionId, loraName)
+                keywordStats: await getKeywordStats(where, params, collectionId, loraName, signal)
             };
         },
         placeholderData: (previousData) => previousData,

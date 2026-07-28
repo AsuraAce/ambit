@@ -90,8 +90,106 @@ describe('reconcileInvokeSourceFacts', () => {
         expect(imageQueries.length).toBeGreaterThanOrEqual(3);
         imageQueries.forEach(({ sql, params }) => {
             expect(sql).toContain('i.user_id = ?');
-            expect(params).toEqual(['owner-a']);
+            if (sql.includes('ORDER BY i.rowid ASC')) {
+                expect(sql).toContain('i.rowid > ?');
+                expect(sql).not.toContain('OFFSET');
+                expect(params).toEqual(['owner-a', 0]);
+            } else {
+                expect(params).toEqual(['owner-a']);
+            }
         });
+    });
+
+    it('uses rowid keyset pagination across both source passes and reports truthful phases', async () => {
+        const rows = Array.from({ length: 501 }, (_, index) => ({
+            source_rowid: index + 1,
+            image_name: `image-${index + 1}.png`,
+            metadata_blob: null,
+        }));
+        const db = {
+            select: vi.fn(async (sql: string, params: unknown[] = []) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
+                if (sql.includes('FROM images i')) {
+                    const cursor = Number(params.at(-1) ?? 0);
+                    return rows.filter(row => row.source_rowid > cursor).slice(0, 500);
+                }
+                return [];
+            }),
+        };
+        const onProgress = vi.fn();
+
+        await reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(['metadata_json']),
+            pathResolver: createInvokeImagePathResolver(root, async () => rows.map(row => (
+                `outputs/images/${row.image_name}`
+            ))),
+            onProgress,
+        });
+
+        const batchCalls = db.select.mock.calls.filter(([sql]) => sql.includes('ORDER BY i.rowid ASC'));
+        expect(batchCalls).toHaveLength(4);
+        expect(batchCalls.map(([, params]) => params)).toEqual([[0], [500], [0], [500]]);
+        batchCalls.forEach(([sql]) => {
+            expect(sql).toContain('i.rowid > ?');
+            expect(sql).not.toContain('OFFSET');
+        });
+        expect(onProgress).toHaveBeenCalledWith(0, 0, 'Indexing InvokeAI image files...');
+        expect(onProgress).toHaveBeenCalledWith(500, 501, 'Mapping InvokeAI image locations...');
+        expect(onProgress).toHaveBeenCalledWith(0, 501, 'Updating InvokeAI image details...');
+        expect(onProgress).toHaveBeenCalledWith(501, 501, 'Updating InvokeAI image details...');
+    });
+
+    it('uses ordered offset pagination only when the source table has no rowid', async () => {
+        const rows = [{ image_name: 'asset.png' }];
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) {
+                    throw new Error('no such column: rowid');
+                }
+                if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
+                if (sql.includes('FROM images i')) return rows;
+                return [];
+            }),
+        };
+
+        await reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(),
+            pathResolver: createInvokeImagePathResolver(root, async () => ['outputs/images/asset.png']),
+            onProgress: vi.fn(),
+        });
+
+        const batchSql = db.select.mock.calls
+            .map(([sql]) => sql)
+            .filter(sql => sql.includes('FROM images i') && sql.includes('ORDER BY'));
+        expect(batchSql).toHaveLength(2);
+        batchSql.forEach(sql => {
+            expect(sql).toContain('ORDER BY i.image_name ASC');
+            expect(sql).toContain('OFFSET 0');
+            expect(sql).not.toContain('i.rowid > ?');
+        });
+    });
+
+    it('does not hide unrelated rowid capability probe failures behind compatibility pagination', async () => {
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.includes('SELECT count(*)')) return [{ count: 1 }];
+                if (sql.startsWith('SELECT rowid AS source_rowid')) {
+                    throw new Error('database is locked');
+                }
+                return [];
+            }),
+        };
+
+        await expect(reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(),
+            pathResolver: createInvokeImagePathResolver(root, async () => []),
+            onProgress: vi.fn(),
+        })).rejects.toThrow('database is locked');
+        expect(reconcileInvokeImageSources).not.toHaveBeenCalled();
     });
 
     it('lets canonical paths win and only emits an unclaimed unique legacy alias', async () => {

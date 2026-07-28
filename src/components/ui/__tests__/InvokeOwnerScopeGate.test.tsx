@@ -23,7 +23,8 @@ describe('InvokeOwnerScopeGate', () => {
         });
 
         expect(screen.getByRole('status')).toBeTruthy();
-        expect(screen.getByText('Preparing your InvokeAI library')).toBeTruthy();
+        expect(screen.getByText('InvokeAI library')).toBeTruthy();
+        expect(screen.getByRole('heading', { name: 'Preparing Ambit' })).toBeTruthy();
         expect(screen.getByText('No images or collections are being deleted.')).toBeTruthy();
         expect(screen.getByText('Checking InvokeAI owner information...')).toBeTruthy();
         expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBeNull();

@@ -1782,6 +1782,29 @@ describe('searchRepo scoped stats queries', () => {
         });
     });
 
+    it('stops keyword batching when the query signal is cancelled', async () => {
+        const controller = new AbortController();
+        const promptRows = Array.from({ length: 500 }, (_, index) => ({
+            rowid: index + 1,
+            positive_prompt: 'alpha',
+        }));
+        const db = {
+            select: vi.fn(async () => {
+                controller.abort();
+                return promptRows;
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { getKeywordStats } = await import('../searchRepo');
+
+        await expect(getKeywordStats('', [], undefined, undefined, controller.signal))
+            .rejects.toMatchObject({ name: 'AbortError' });
+        expect(db.select).toHaveBeenCalledOnce();
+        expect(errorSpy).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+    });
+
     it('excludes short, numeric, and configured stop-word tokens from keyword stats', async () => {
         const db = {
             select: vi.fn().mockResolvedValue([

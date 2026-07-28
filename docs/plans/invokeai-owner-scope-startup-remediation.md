@@ -1,6 +1,6 @@
 # InvokeAI Owner-Scope Startup Remediation
 
-Status: Implementation complete and release-verified (`2026-07-28`; Work Package 2 owner acceptance pending)
+Status: Work Packages 1 through 3 release-verified (`2026-07-28`); Work Packages 2 and 3 owner acceptance pending
 
 ## Context
 
@@ -202,3 +202,106 @@ errors, and has no horizontal overflow at 431 CSS pixels; the repeated release
 gate passes all 3,039 frontend tests with one existing skip, 98.4% statement
 coverage, all 557 Rust tests, the 445 kB startup-bundle guard, binding and
 version checks, and the optimized Tauri build.
+
+## Work Package 3: Large-library startup completion
+
+Status: Implemented and release-verified; owner acceptance pending
+
+Primary invariant: while a configured InvokeAI library is not admitted, Ambit
+does not start library queries against an unresolved visibility state; when
+preparation is required, the work scales predictably and reads as one
+continuous startup journey.
+
+Scope:
+
+- establish one transient owner-admission state and shared root/status
+  predicate for App, Sync, and Search orchestration;
+- pause image, statistics, facet, parameter-range, privacy-index, and initial
+  hidden-content queries until the configured root is ready or verified for
+  offline use, and cancel already-running work if admission closes;
+- make batched keyword statistics observe React Query cancellation;
+- replace ordinary InvokeAI source reconciliation offsets with rowid keyset
+  pagination while retaining a compatibility fallback for unexpected
+  `WITHOUT ROWID` source tables;
+- report truthful indexing, mapping, legacy-path, detail, visibility, and cache
+  refresh phases without exposing paths, owners, prompts, or per-row details;
+- present database maintenance and InvokeAI reconciliation with one shared
+  `Preparing Ambit` card, including accessible determinate and indeterminate
+  progress states.
+
+Non-goals:
+
+- no SQLite migration, native command, generated binding, persisted setting,
+  owner-scope semantic, or metadata-extraction change;
+- no destructive cleanup or resetting of a user's completed owner snapshot;
+- no expansion of the completed InvokeAI metadata roadmap or the separate
+  ComfyUI milestones;
+- no Figma or new visual-concept deliverable.
+
+Targeted verification:
+
+- admission tests for no configured root, unresolved and stale roots, ready
+  roots, verified offline roots, root changes, and active query cancellation;
+- keyword-batch abort coverage and reconciliation tests for keyset pagination,
+  compatibility fallback, collisions, aliases, references, cancellation, and
+  retry;
+- phase-message propagation and shared startup-card component coverage;
+- rendered desktop and narrow startup journeys checking progress semantics,
+  clipping, layout shift, overflow, interaction recovery, and console health;
+- read-only real-source timing and next-restart fast-path checks where the
+  existing local snapshot permits them;
+- lint, TypeScript, whitespace, focused frontend coverage, release
+  verification, and an Assure review/remediation closure pass.
+
+Completion criteria:
+
+- configured unresolved InvokeAI startup cannot launch library-derived queries
+  or briefly render misleading counts and filters;
+- ordinary reconciliation uses cursor pagination and exposes visible movement
+  from its first materially expensive phase;
+- database and InvokeAI preparation appear as successive phases of the same
+  startup experience, without a detached decorative spinner;
+- unchanged completed snapshots retain the ordinary fast startup path;
+- no known blocking correctness, data-integrity, compatibility, or startup UX
+  findings remain after closure review.
+
+Evidence (`2026-07-28`):
+
+- an expanded focused frontend run passes 230 tests across 11 files; the full
+  library integration suite passes 67 tests with its one existing skip;
+- admission, root-change cancellation, parameter-range gating, keyword-batch
+  abort propagation, keyset paging, compatibility fallback, and unrelated
+  source-probe error coverage all pass;
+- the browser-mock journey loads at 431 CSS pixels without horizontal overflow
+  or console warnings/errors, and the Assets surface remains interactive after
+  startup settles;
+- read-only source evaluation confirmed the existing InvokeAI `images` table is
+  rowid-capable with 154,719 rows. A representative deep-page comparison during
+  planning measured the former offset query at about 8.17 seconds and the rowid
+  keyset query at about 48.5 milliseconds; these are feasibility timings, not an
+  end-to-end startup benchmark;
+- `verify:release` passes all 3,056 frontend tests with one existing skip,
+  98.38% statement coverage, all 557 Rust tests, the 447 kB startup-bundle
+  guard, version and generated-binding checks, and the optimized no-bundle
+  Tauri build.
+
+Closure review:
+
+- library queries could begin before owner admission: fixed with one shared
+  root/status predicate, query gating, and cancellation when admission closes;
+- Search and parameter consumers initially subscribed to the full progress
+  object: fixed with derived admission selectors so progress ticks do not fan
+  out through query orchestration;
+- initial hidden-content availability could be requested twice at admission:
+  fixed by removing the pre-admission refresh and retaining the admitted catch-up;
+- the first compatibility implementation could have hidden unrelated source
+  errors: fixed so fallback occurs only for the specific missing-rowid error;
+- the former first reconciliation pass had no visible movement and used offset
+  paging: fixed with named phases and rowid keyset cursors;
+- database and InvokeAI maintenance had separate visual language and a detached
+  spinner: fixed with the shared `Preparing Ambit` card and accessible progress.
+
+No blocking finding remains. A real native first-upgrade/retry/fast-restart
+replay remains owner acceptance because reproducing it would require resetting
+or replacing the user's completed owner snapshot, which is explicitly outside
+this package.

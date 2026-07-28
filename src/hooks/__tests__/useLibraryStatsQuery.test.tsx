@@ -157,6 +157,13 @@ describe('useLibraryStatsQuery valid facets', () => {
         searchRepoMocks.getBrowserMockValidFacetNames.mockReturnValue(validNames);
     });
 
+    it('passes the React Query cancellation signal into keyword batches', async () => {
+        renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledOnce());
+        expect(searchRepoMocks.getKeywordStats.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
+    });
+
     afterEach(() => {
         vi.useRealTimers();
     });

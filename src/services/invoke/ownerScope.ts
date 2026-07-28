@@ -77,19 +77,21 @@ export const applyInvokeOwnerScope = async ({
             columns,
             pathResolver,
             scope,
-            onProgress: (current, total) => {
-                onProgress(current, total, 'Updating InvokeAI image details...');
+            onProgress: (current, total, message) => {
+                onProgress(current, total, message ?? 'Updating InvokeAI image details...');
             },
             signal,
         });
     }
 
-    onProgress(0, 0, 'Updating which InvokeAI images are shown...');
+    onProgress(0, 0, 'Applying InvokeAI visibility...');
+    const visibilityStartedAt = performance.now();
     const { mode, visibility } = await refreshInvokeOwnerVisibility(
         discovery,
         selection,
         reconcileSourceFacts || forceVisibilityRefresh
     );
+    console.info(`[InvokeAI] Visibility application completed in ${Math.round(performance.now() - visibilityStartedAt)}ms.`);
 
     return {
         changed: visibility.changed || sourceFactsUpdated > 0,

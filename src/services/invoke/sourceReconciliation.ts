@@ -11,6 +11,7 @@ import { extractInvokeImageReferences } from './referenceExtractor';
 import { invokeOwnerPredicate, type InvokeSyncScope } from './syncScope';
 
 interface InvokeSourceIdentityRow {
+    source_rowid?: number;
     image_name: string;
     image_subfolder?: string | null;
 }
@@ -68,6 +69,18 @@ const throwIfAborted = (signal?: AbortSignal): void => {
     if (signal?.aborted) throw new Error('Aborted');
 };
 
+const supportsImageRowId = async (db: Database): Promise<boolean> => {
+    try {
+        await db.select('SELECT rowid AS source_rowid FROM images LIMIT 1');
+        return true;
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/no such column:\s*rowid/i.test(message)) throw error;
+        console.info('[InvokeAI] Source reconciliation is using compatibility pagination.');
+        return false;
+    }
+};
+
 export const reconcileInvokeSourceFacts = async ({
     db,
     columns,
@@ -81,31 +94,39 @@ export const reconcileInvokeSourceFacts = async ({
     }
     const hasImageSubfolder = columns.has('image_subfolder');
     const subfolderSelect = hasImageSubfolder ? ', i.image_subfolder' : '';
-    const orderBy = `i.image_name ASC${hasImageSubfolder ? ', i.image_subfolder ASC' : ''}`;
+    const fallbackOrderBy = `i.image_name ASC${hasImageSubfolder ? ', i.image_subfolder ASC' : ''}`;
     const ownerPredicate = invokeOwnerPredicate(scope, 'i');
     const whereClause = ownerPredicate.clause ? `WHERE ${ownerPredicate.clause}` : '';
+    onProgress(0, 0, 'Indexing InvokeAI image files...');
     const countRows = await db.select<Array<{ count: number }>>(
         `SELECT count(*) as count FROM images i ${whereClause}`,
         ownerPredicate.params
     );
     const total = countRows[0]?.count ?? 0;
     if (total === 0) return 0;
+    const useRowId = await supportsImageRowId(db);
+    const cursorWhereClause = ownerPredicate.clause
+        ? `WHERE ${ownerPredicate.clause} AND i.rowid > ?`
+        : 'WHERE i.rowid > ?';
 
-    onProgress(0, total, 'Preparing InvokeAI source reconciliation...');
     const canonicalOwners = new Map<string, string | null>();
     const legacyOwners = new Map<string, string | null>();
     const legacyPaths = new Map<string, string>();
     const legacyTargets = new Map<string, string | null>();
+    let identityProcessed = 0;
+    let identityCursor = 0;
+    let identityOffset = 0;
+    const identityStartedAt = performance.now();
 
-    for (let offset = 0; offset < total; offset += BATCH_SIZE) {
+    while (identityProcessed < total) {
         throwIfAborted(signal);
         const rows = await db.select<InvokeSourceIdentityRow[]>(`
-            SELECT i.image_name${subfolderSelect}
+            SELECT i.image_name${subfolderSelect}${useRowId ? ', i.rowid AS source_rowid' : ''}
             FROM images i
-            ${whereClause}
-            ORDER BY ${orderBy}
-            LIMIT ${BATCH_SIZE} OFFSET ${offset}
-        `, ownerPredicate.params);
+            ${useRowId ? cursorWhereClause : whereClause}
+            ORDER BY ${useRowId ? 'i.rowid ASC' : fallbackOrderBy}
+            LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${identityOffset}`}
+        `, useRowId ? [...ownerPredicate.params, identityCursor] : ownerPredicate.params);
         if (rows.length === 0) break;
 
         const resolvedPaths = await Promise.all(rows.map(row =>
@@ -124,7 +145,26 @@ export const reconcileInvokeSourceFacts = async ({
                 claimLegacyTarget(legacyTargets, legacyPath, resolved.absolutePath);
             }
         });
+
+        identityProcessed += rows.length;
+        onProgress(
+            Math.min(identityProcessed, total),
+            total,
+            'Mapping InvokeAI image locations...'
+        );
+        if (rows.length < BATCH_SIZE) break;
+        if (useRowId) {
+            const nextCursor = rows.at(-1)?.source_rowid;
+            if (typeof nextCursor !== 'number') {
+                throw new Error('InvokeAI source row cursor was not returned.');
+            }
+            identityCursor = nextCursor;
+        } else {
+            identityOffset += rows.length;
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
     }
+    console.info(`[InvokeAI] Image-location mapping completed in ${Math.round(performance.now() - identityStartedAt)}ms.`);
 
     const aliasCandidates = Array.from(legacyOwners.entries())
         .map(([legacyKey, owner]) => ({
@@ -150,12 +190,20 @@ export const reconcileInvokeSourceFacts = async ({
     ])));
     const missingPathKeys = new Set<string>();
 
+    if (pathsToVerify.length > 0) {
+        onProgress(0, pathsToVerify.length, 'Checking legacy image locations...');
+    }
     for (let offset = 0; offset < pathsToVerify.length; offset += BATCH_SIZE) {
         throwIfAborted(signal);
         const missingPaths = await unwrap(commands.verifyImagePaths(
             pathsToVerify.slice(offset, offset + BATCH_SIZE)
         ));
         missingPaths.forEach(path => missingPathKeys.add(pathKey(path)));
+        onProgress(
+            Math.min(offset + BATCH_SIZE, pathsToVerify.length),
+            pathsToVerify.length,
+            'Checking legacy image locations...'
+        );
     }
 
     const safeLegacyAliases = new Set(aliasCandidates
@@ -181,16 +229,20 @@ export const reconcileInvokeSourceFacts = async ({
             : ', NULL AS metadata_blob');
     let processed = 0;
     let updated = 0;
+    let factCursor = 0;
+    let factOffset = 0;
+    const factsStartedAt = performance.now();
+    onProgress(0, total, 'Updating InvokeAI image details...');
 
-    for (let offset = 0; offset < total; offset += BATCH_SIZE) {
+    while (processed < total) {
         throwIfAborted(signal);
         const rows = await db.select<InvokeSourceFactRow[]>(`
-            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${ownerSelect}${metadataSelect}
+            SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${ownerSelect}${metadataSelect}${useRowId ? ', i.rowid AS source_rowid' : ''}
             FROM images i
-            ${whereClause}
-            ORDER BY ${orderBy}
-            LIMIT ${BATCH_SIZE} OFFSET ${offset}
-        `, ownerPredicate.params);
+            ${useRowId ? cursorWhereClause : whereClause}
+            ORDER BY ${useRowId ? 'i.rowid ASC' : fallbackOrderBy}
+            LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${factOffset}`}
+        `, useRowId ? [...ownerPredicate.params, factCursor] : ownerPredicate.params);
         if (rows.length === 0) break;
 
         const resolvedPaths = await Promise.all(rows.map(row =>
@@ -247,9 +299,22 @@ export const reconcileInvokeSourceFacts = async ({
         }
 
         processed += rows.length;
-        onProgress(Math.min(processed, total), total, `Reconciling sources: ${Math.min(processed, total)} / ${total}`);
+        onProgress(Math.min(processed, total), total, 'Updating InvokeAI image details...');
+        if (rows.length === BATCH_SIZE) {
+            if (useRowId) {
+                const nextCursor = rows.at(-1)?.source_rowid;
+                if (typeof nextCursor !== 'number') {
+                    throw new Error('InvokeAI source row cursor was not returned.');
+                }
+                factCursor = nextCursor;
+            } else {
+                factOffset += rows.length;
+            }
+        }
         await new Promise(resolve => setTimeout(resolve, 0));
     }
+
+    console.info(`[InvokeAI] Image-detail reconciliation completed in ${Math.round(performance.now() - factsStartedAt)}ms.`);
 
     return updated;
 };

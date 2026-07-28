@@ -53,6 +53,12 @@ import {
     isSameInvokeSyncScope,
     readTrustedInvokeOwnerScope,
 } from '../services/invoke/trustedOwnerScope';
+import {
+    useInvokeOwnerScopeStore,
+    type InvokeOwnerScopeState,
+} from '../stores/invokeOwnerScopeStore';
+
+export type { InvokeOwnerScopeState } from '../stores/invokeOwnerScopeStore';
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -117,20 +123,6 @@ const mergePendingTargetedPerfContext = (
         mergedCycleCount: current.mergedCycleCount! + (incoming.mergedCycleCount ?? 1)
     };
 };
-
-export interface InvokeOwnerScopeState {
-    status: 'idle' | 'discovering' | 'applying' | 'ready' | 'selection_required' | 'offline_ready' | 'error';
-    rootPath?: string;
-    scope?: InvokeSyncScope;
-    discovery?: InvokeOwnerDiscovery;
-    error?: string;
-    failure?: {
-        kind: 'source_unavailable' | 'preparation_failed';
-        details: string;
-    };
-    isRetrying?: boolean;
-    progress?: SyncProgress;
-}
 
 interface InvokeOwnerAdmission {
     rootPath: string;
@@ -199,7 +191,8 @@ export const SyncProvider: React.FC<{
     const pendingTargetedPathsRef = useRef<Set<string>>(new Set());
     const pendingTargetedPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
     const targetedLiveDrainPromiseRef = useRef<Promise<TargetedLiveSyncResult> | null>(null);
-    const [invokeOwnerScopeState, setInvokeOwnerScopeState] = useState<InvokeOwnerScopeState>({ status: 'idle' });
+    const invokeOwnerScopeState = useInvokeOwnerScopeStore(state => state.ownerScopeState);
+    const setInvokeOwnerScopeState = useInvokeOwnerScopeStore(state => state.setOwnerScopeState);
     const [isInvokeSyncActive, setIsInvokeSyncActive] = useState(false);
     const ownerScopePromiseRef = useRef<{
         rootPath: string;
@@ -236,22 +229,23 @@ export const SyncProvider: React.FC<{
     }, []);
 
     const refreshAfterOwnerScopeChange = useCallback(async () => {
+        const refreshStartedAt = performance.now();
         clearLibraryStatsCache();
         await clearCollectionOwnerScopeCaches();
         await rebuildFacetCacheStrict();
         incrementFacetCacheVersion();
-        const [, , , , , , maintenanceCounts] = await Promise.all([
+        const [, , , , , maintenanceCounts] = await Promise.all([
             queryClient.invalidateQueries({ queryKey: ['images'] }),
             queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
             queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
             invalidateInvokeReferenceQueries(queryClient),
             refreshCollections(true),
-            onInvokeContentChanged?.(),
             getMaintenanceCounts(),
         ]);
         useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
         await refreshCollectionThumbnails(true);
-    }, [incrementFacetCacheVersion, onInvokeContentChanged, queryClient, refreshCollectionThumbnails, refreshCollections]);
+        console.info(`[InvokeAI] Library cache refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms.`);
+    }, [incrementFacetCacheVersion, queryClient, refreshCollectionThumbnails, refreshCollections]);
 
     const persistOwnerSelection = useCallback(async (
         selection: InvokeOwnerSelection | undefined,

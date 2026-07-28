@@ -31,6 +31,10 @@ import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
+import {
+    isInvokeOwnerScopeAdmitted,
+    useInvokeOwnerScopeStore,
+} from '../stores/invokeOwnerScopeStore';
 
 interface SearchContextType {
     images: AIImage[];
@@ -121,6 +125,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
     const [lastSyncedPrivacyScope, setLastSyncedPrivacyScope] = useState<string | null>(null);
     const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
+    const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
+        state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
+    );
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
@@ -139,6 +146,12 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
 
         if (!settingsLoaded) {
+            setPrivacyMaskIndexState('pending');
+            return;
+        }
+
+        if (!invokeQueriesAdmitted) {
+            privacyMaskRefreshCoordinator.discardPending();
             setPrivacyMaskIndexState('pending');
             return;
         }
@@ -190,11 +203,24 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         requiresPrivacyMaskIndex,
         setPrivacyMaskIndexState,
         settingsLoaded,
+        invokeQueriesAdmitted,
     ]);
 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded
+        && invokeQueriesAdmitted
         && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
+
+    React.useEffect(() => {
+        if (invokeQueriesAdmitted) return;
+
+        void Promise.all([
+            queryClient.cancelQueries({ queryKey: ['images'] }),
+            queryClient.cancelQueries({ queryKey: ['libraryStats'] }),
+            queryClient.cancelQueries({ queryKey: ['libraryKeywordStats'] }),
+            queryClient.cancelQueries({ queryKey: ['parameterRanges'] }),
+        ]);
+    }, [invokeQueriesAdmitted, queryClient]);
     const allCollections = React.useMemo(
         () => [...collections, ...smartCollections],
         [collections, smartCollections]
@@ -222,7 +248,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         && lastSyncedPrivacyScope !== privacyQueryScopeKey;
     const privacyIndexBlocked = requiresPrivacyMaskIndex
         && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
-    const privacyExposureBlocked = privacyIndexBlocked || privacyScopeTransitionBlocked;
+    const privacyExposureBlocked = !invokeQueriesAdmitted
+        || privacyIndexBlocked
+        || privacyScopeTransitionBlocked;
     const isFirstPageFetching = isFetching && !isFetchingNextPage;
 
     // Flatten pages into a single image array
@@ -475,9 +503,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
 
         void loadRecentSearches();
-        void checkHiddenContentAvailability()
-            .then(setAvailableHiddenContent)
-            .catch(error => console.error('[SearchContext] Failed to load hidden-content availability', error));
 
         return () => {
             cancelled = true;
@@ -486,6 +511,21 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             releaseRetryDelay?.();
         };
     }, []);
+
+    useEffect(() => {
+        if (!databaseQueriesEnabled) return;
+
+        let cancelled = false;
+        void checkHiddenContentAvailability()
+            .then(availability => {
+                if (!cancelled) setAvailableHiddenContent(availability);
+            })
+            .catch(error => console.error('[SearchContext] Failed to load hidden-content availability', error));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [databaseQueriesEnabled]);
 
     // Hydrate persisted view settings before enabling the effects that write them back.
     useEffect(() => {

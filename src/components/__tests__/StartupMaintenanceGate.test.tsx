@@ -53,7 +53,7 @@ describe('StartupMaintenanceGate', () => {
         await flushAsyncWork();
 
         expect(screen.getByText('Library ready')).toBeTruthy();
-        expect(screen.queryByText('Startup Maintenance')).toBeNull();
+        expect(screen.queryByText('Preparing Ambit')).toBeNull();
         expect(staticLoader.style.opacity).toBe('');
         expect(staticLoader.style.pointerEvents).toBe('');
     });
@@ -101,7 +101,8 @@ describe('StartupMaintenanceGate', () => {
 
         expect(staticLoader.style.opacity).toBe('0');
         expect(staticLoader.style.pointerEvents).toBe('none');
-        expect(screen.getByText('Startup Maintenance')).toBeTruthy();
+        expect(screen.getByText('Local database')).toBeTruthy();
+        expect(screen.getByRole('heading', { name: 'Preparing Ambit' })).toBeTruthy();
         expect(screen.getByText('Preparing database')).toBeTruthy();
         expect(screen.getByText('Preparing the local database. Startup may take longer than usual this time.')).toBeTruthy();
 
@@ -134,7 +135,7 @@ describe('StartupMaintenanceGate', () => {
 
         expect(staticLoader.style.opacity).toBe('0');
         expect(staticLoader.style.pointerEvents).toBe('none');
-        expect(screen.getByText('Startup Maintenance')).toBeTruthy();
+        expect(screen.getByText('Local database')).toBeTruthy();
         expect(screen.getByText('Database startup failed')).toBeTruthy();
         expect(screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')).toBeTruthy();
         expect(screen.getByText('migration failed')).toBeTruthy();
@@ -153,7 +154,7 @@ describe('StartupMaintenanceGate', () => {
         );
 
         expect(screen.getByText('Browser mock app')).toBeTruthy();
-        expect(screen.queryByText('Startup Maintenance')).toBeNull();
+        expect(screen.queryByText('Preparing Ambit')).toBeNull();
         expect(vi.mocked(getDb)).not.toHaveBeenCalled();
     });
 });
