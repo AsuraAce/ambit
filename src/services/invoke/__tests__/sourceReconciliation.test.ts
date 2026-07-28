@@ -172,6 +172,37 @@ describe('reconcileInvokeSourceFacts', () => {
         });
     });
 
+    it('does not reread a short detail batch when the source shrinks after counting', async () => {
+        const row = {
+            source_rowid: 1,
+            image_name: 'remaining.png',
+            metadata_blob: null,
+        };
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) return [{ count: 501 }];
+                if (sql.includes('FROM images i')) return [row];
+                return [];
+            }),
+        };
+
+        await reconcileInvokeSourceFacts({
+            db: db as never,
+            columns: new Set(['metadata_json']),
+            pathResolver: createInvokeImagePathResolver(root, async () => [
+                'outputs/images/remaining.png',
+            ]),
+            onProgress: vi.fn(),
+        });
+
+        const detailQueries = db.select.mock.calls
+            .map(([sql]) => sql)
+            .filter(sql => sql.includes('metadata_blob'));
+        expect(detailQueries).toHaveLength(1);
+        expect(reconcileInvokeImageSources).toHaveBeenCalledOnce();
+    });
+
     it('does not hide unrelated rowid capability probe failures behind compatibility pagination', async () => {
         const db = {
             select: vi.fn(async (sql: string) => {

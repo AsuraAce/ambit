@@ -280,7 +280,7 @@ Evidence (`2026-07-28`):
   planning measured the former offset query at about 8.17 seconds and the rowid
   keyset query at about 48.5 milliseconds; these are feasibility timings, not an
   end-to-end startup benchmark;
-- `verify:release` passes all 3,056 frontend tests with one existing skip,
+- `verify:release` passes all 3,058 frontend tests with one existing skip,
   98.38% statement coverage, all 557 Rust tests, the 447 kB startup-bundle
   guard, version and generated-binding checks, and the optimized no-bundle
   Tauri build.
@@ -299,7 +299,14 @@ Closure review:
 - the former first reconciliation pass had no visible movement and used offset
   paging: fixed with named phases and rowid keyset cursors;
 - database and InvokeAI maintenance had separate visual language and a detached
-  spinner: fixed with the shared `Preparing Ambit` card and accessible progress.
+  spinner: fixed with the shared `Preparing Ambit` card and accessible progress;
+- closure review found that a source shrinking after its initial count could
+  make the detail pass reread a short terminal batch: fixed by terminating both
+  reconciliation passes consistently on a short page;
+- closure review found that privacy preparation waiting for database readiness
+  could start after owner admission closed: fixed with cancellation checks before
+  and after database readiness. The affected closure suite passes 312 tests with
+  one existing skip, plus lint and TypeScript checks.
 
 No blocking finding remains. A real native first-upgrade/retry/fast-restart
 replay remains owner acceptance because reproducing it would require resetting

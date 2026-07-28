@@ -300,16 +300,15 @@ export const reconcileInvokeSourceFacts = async ({
 
         processed += rows.length;
         onProgress(Math.min(processed, total), total, 'Updating InvokeAI image details...');
-        if (rows.length === BATCH_SIZE) {
-            if (useRowId) {
-                const nextCursor = rows.at(-1)?.source_rowid;
-                if (typeof nextCursor !== 'number') {
-                    throw new Error('InvokeAI source row cursor was not returned.');
-                }
-                factCursor = nextCursor;
-            } else {
-                factOffset += rows.length;
+        if (rows.length < BATCH_SIZE) break;
+        if (useRowId) {
+            const nextCursor = rows.at(-1)?.source_rowid;
+            if (typeof nextCursor !== 'number') {
+                throw new Error('InvokeAI source row cursor was not returned.');
             }
+            factCursor = nextCursor;
+        } else {
+            factOffset += rows.length;
         }
         await new Promise(resolve => setTimeout(resolve, 0));
     }

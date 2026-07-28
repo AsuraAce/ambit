@@ -261,6 +261,38 @@ describe('SearchProvider', () => {
         expect(mocks.queryClient.cancelQueries).not.toHaveBeenCalled();
     });
 
+    it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
+        let resolveDb: (() => void) | undefined;
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke', maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true,
+        };
+        useSettingsStore.setState({ privacyEnabled: true });
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+        });
+        mocks.getDb.mockReturnValueOnce(new Promise<void>(resolve => {
+            resolveDb = resolve;
+        }));
+
+        renderProvider();
+        await waitFor(() => expect(mocks.getDb).toHaveBeenCalledOnce());
+
+        act(() => {
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                status: 'applying',
+                rootPath: 'D:/Invoke',
+            });
+        });
+        await act(async () => resolveDb?.());
+
+        expect(mocks.refreshPrivacyMaskIndex).not.toHaveBeenCalled();
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
+    });
+
     it('exposes query data, stats, facets, SQL state, and synchronizes query images', async () => {
         const first = image();
         mocks.imagesQuery.current = {

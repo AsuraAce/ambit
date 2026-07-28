@@ -161,7 +161,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         privacyMaskRefreshCoordinator.schedule(async () => {
             try {
+                if (cancelled) return;
                 await getDb();
+                if (cancelled) return;
                 const refreshStartedAt = performance.now();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
