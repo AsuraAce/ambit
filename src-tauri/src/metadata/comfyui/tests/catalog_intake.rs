@@ -359,6 +359,56 @@ const MILESTONE30_BASELINE_VARIANT_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE31_BASELINE_EDIT_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "flux_dev_full_text_to_image",
+        source_blob: "cfbee2b5bcc18720521cd895ab939c5b8ba76723",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_full_text_to_image.chunks.json"
+        ),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "flux1_krea_dev",
+        source_blob: "017543a6a0fcf55faa5391a0a2ee34df2aeb845b",
+        chunks_json: include_str!("fixtures/official_catalog/flux1_krea_dev.chunks.json"),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_edit",
+        source_blob: "8da6b49269c84e01c75a3664090dabd7996d0041",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_edit.chunks.json"),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image",
+        source_blob: "ccce095bde775ea9c0fbe8c0dd3bfd2b708d32cc",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image.chunks.json"),
+        graph_node_count: 14,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image_turbo_int8",
+        source_blob: "37ba25e23784c6b830dc5473f7ac1938a8cb1dda",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -522,6 +572,11 @@ fn pinned_milestone29_core_variant_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone30_baseline_variant_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE30_BASELINE_VARIANT_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone31_baseline_edit_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE31_BASELINE_EDIT_FIXTURES);
 }
 
 #[test]

@@ -292,3 +292,22 @@ defaults. Chroma exercises the direct custom-sampler path. Qwen keeps turbo
 mode disabled, so linked 20-step/CFG-4 values win over stale sampler widgets
 and the inactive Lightning LoRA is not reported. Its independently captured
 UTF-8 prompt is stored in `image_qwen_image.expected-positive.txt`.
+
+## Milestone 31 Baseline And Edit Intake
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures close additional baseline and edit variants with existing parser
+behavior.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`flux_dev_full_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux_dev_full_text_to_image.json) | `cfbee2b5bcc18720521cd895ab939c5b8ba76723` | 25597 |
+| [`flux1_krea_dev`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux1_krea_dev.json) | `017543a6a0fcf55faa5391a0a2ee34df2aeb845b` | 26044 |
+| [`image_qwen_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_image_edit.json) | `8da6b49269c84e01c75a3664090dabd7996d0041` | 51223 |
+| [`image_z_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_z_image.json) | `ccce095bde775ea9c0fbe8c0dd3bfd2b708d32cc` | 30515 |
+| [`image_z_image_turbo_int8`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_z_image_turbo_int8.json) | `37ba25e23784c6b830dc5473f7ac1938a8cb1dda` | 28047 |
+
+All five fixtures have one unambiguous saved-output root, no reported
+resources, and exact `SamplerTraversal` metadata assertions. Qwen Image Edit
+keeps its Lightning LoRA disabled. The independently captured UTF-8 Z-Image
+prompt is stored in `image_z_image.expected-positive.txt`.

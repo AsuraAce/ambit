@@ -262,6 +262,28 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_z_image_turbo",
         chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo.chunks.json"),
     },
+    CatalogFixture {
+        name: "flux_dev_full_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_full_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "flux1_krea_dev",
+        chunks_json: include_str!("fixtures/official_catalog/flux1_krea_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image_turbo_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -272,6 +294,8 @@ const NETAYUME_EXPECTED_NEGATIVE: &str =
     include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-negative.txt");
 const QWEN_IMAGE_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_qwen_image.expected-positive.txt");
+const Z_IMAGE_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_z_image.expected-positive.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -1663,6 +1687,124 @@ fn z_image_turbo_subgraph_variant() {
             cfg: 1.0,
             sampler: "res_multistep (simple)",
             positive_prompt: "Latina female with thick wavy hair, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. ",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_dev_full_subgraph_variant() {
+    assert_fixture(
+        "flux_dev_full_text_to_image",
+        ExpectedMetadata {
+            model: "flux1_dev",
+            seed: Some(0),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A fairy tale scene of a young girl with silver curly hair wearing a delicate white dress, standing among crystal butterflies and glowing glass roses. The scene is filled with soft magical light, like a dream from a fantasy world.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_krea_dev_subgraph_variant() {
+    assert_fixture(
+        "flux1_krea_dev",
+        ExpectedMetadata {
+            model: "flux1_krea_dev_fp8_scaled",
+            seed: Some(0),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "Highly realistic portrait of a Nordic woman with blonde hair and blue eyes, gaze sharp and intellectual. The lighting should reflect the unique coolness of Northern Europe. Outfit is minimalist and modern, background is blurred in cool tones. Needs to perfectly capture the characteristics of a Scandinavian woman. solo, Centered composition",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_base_mode_omits_lightning_lora() {
+    assert_fixture(
+        "image_qwen_image_edit",
+        ExpectedMetadata {
+            model: "qwen_image_edit_fp8_e4m3fn",
+            seed: Some(344_147_753_686_358),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "Remove all UI text elements from the image. Keep the feeling that the characters and scene are in water. Also, remove the green UI elements at the bottom.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_base_subgraph_variant() {
+    assert_fixture(
+        "image_z_image",
+        ExpectedMetadata {
+            model: "z_image_bf16",
+            seed: Some(770_044_821_593_082),
+            steps: 25,
+            cfg: 4.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: Z_IMAGE_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_int8_subgraph_variant() {
+    assert_fixture(
+        "image_z_image_turbo_int8",
+        ExpectedMetadata {
+            model: "z_image_turbo_int8_convrot",
+            seed: Some(121_725_701_057_393),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "Dramatic black and white high fashion studio portrait, close-up bust shot, pale platinum blonde woman with sleek low ponytail, head tilted upward, eyes softly closed, wearing a fitted black turtleneck top. A large translucent pale white butterfly hovers gently right at her lips, delicate detailed wing veins visible. Hard rim light creates glowing bright white halo around her hair and face, deep inky pure black minimalist background, stark high contrast chiaroscuro lighting, film grain texture, moody ethereal atmosphere, monochrome, editorial fashion photography, shot on 35mm film, soft subtle skin texture, sharp focus on butterfly and facial profile, vertical composition, minimalist dark aesthetic, artistic surreal fashion",
             negative_prompt: "",
             loras: &[],
             control_nets: &[],

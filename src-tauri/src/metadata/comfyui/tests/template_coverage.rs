@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 45);
+    assert_eq!(count_coverage("golden"), 50);
     assert_eq!(count_coverage("pattern_covered"), 9);
     assert_eq!(count_coverage("partial"), 4);
-    assert_eq!(count_coverage("unassessed"), 17);
+    assert_eq!(count_coverage("unassessed"), 12);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -227,6 +227,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("Image_capybara_v0_1_text_to_image", "golden"),
         ("default", "pattern_covered"),
         ("flux_dev_checkpoint_example", "golden"),
+        ("flux_dev_full_text_to_image", "golden"),
+        ("flux1_krea_dev", "golden"),
         ("flux1_dev_uso_reference_image_gen", "golden"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
@@ -273,9 +275,12 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_qwen_Image_2512", "golden"),
         ("image_qwen_image", "golden"),
         ("image_qwen_image_2512_with_2steps_lora", "golden"),
+        ("image_qwen_image_edit", "golden"),
         ("image_qwen_image_edit_2509", "golden"),
         ("image_qwen_image_union_control_lora", "golden"),
+        ("image_z_image", "golden"),
         ("image_z_image_turbo", "golden"),
+        ("image_z_image_turbo_int8", "golden"),
         ("video_bernini_r_image_editing", "golden"),
     ];
 
