@@ -6,10 +6,17 @@ They contain exact workflow JSON wrapped as a `workflow` metadata chunk.
 No generated images, thumbnails, input assets, or API prompt chunks are vendored.
 
 - Repository: `https://github.com/Comfy-Org/workflow_templates`
-- Commit: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
+- Coverage release: `v0.11.15`
+- Coverage commit: `703fb0b082fdb76331d02232ff67e878e2a6ca6e`
+- Previous fixture baseline: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
 - Catalog index: `templates/index.json`
-- Captured: `2026-07-11`
+- Coverage snapshot captured: `2026-07-28`
 - Upstream license: MIT
+
+Coverage is commit-specific. Fixtures retained from the previous baseline count
+for the refreshed manifest only when their upstream workflow Git blob is
+unchanged. Changed workflows remain useful parser regressions, but are marked
+`unassessed` for the refreshed release until their new bytes are revalidated.
 
 Golden workflows:
 

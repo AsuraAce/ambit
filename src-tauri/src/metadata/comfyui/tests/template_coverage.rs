@@ -2,7 +2,8 @@ use serde::Deserialize;
 use std::collections::{BTreeSet, HashSet};
 
 const MANIFEST_JSON: &str = include_str!("fixtures/official_catalog/coverage_manifest.json");
-const CATALOG_COMMIT: &str = "c3bf8342318a3c2bfcbf6d0ac020155745417f29";
+const CATALOG_RELEASE: &str = "v0.11.15";
+const CATALOG_COMMIT: &str = "703fb0b082fdb76331d02232ff67e878e2a6ca6e";
 const GETTING_STARTED_TARGET_IDS: [&str; 10] = [
     "01_get_started_text_to_image",
     "02_qwen_Image_edit_subgraphed",
@@ -29,6 +30,7 @@ struct CoverageManifest {
 #[derive(Deserialize)]
 struct CatalogSource {
     repository: String,
+    release_tag: String,
     commit: String,
     index_path: String,
     captured_on: String,
@@ -61,6 +63,7 @@ struct CatalogEntry {
     tags: Vec<String>,
     open_source: Option<bool>,
     custom_nodes: Vec<String>,
+    source_blob: String,
     scope: String,
     coverage: String,
     exclusion_reason: Option<String>,
@@ -88,16 +91,17 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(manifest.schema_version, 1);
+    assert_eq!(manifest.schema_version, 2);
     assert_eq!(
         manifest.source.repository,
         "https://github.com/Comfy-Org/workflow_templates"
     );
+    assert_eq!(manifest.source.release_tag, CATALOG_RELEASE);
     assert_eq!(manifest.source.commit, CATALOG_COMMIT);
     assert_eq!(manifest.source.index_path, "templates/index.json");
-    assert_eq!(manifest.source.captured_on, "2026-07-11");
+    assert_eq!(manifest.source.captured_on, "2026-07-28");
     assert_eq!(actual_states, allowed_states);
-    assert_eq!(manifest.entries.len(), 549);
+    assert_eq!(manifest.entries.len(), 578);
 
     let mut ids = HashSet::new();
     let mut previous_id: Option<&str> = None;
@@ -122,6 +126,15 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
             &entry.tags,
             entry.open_source,
             &entry.custom_nodes,
+        );
+        assert_eq!(entry.source_blob.len(), 40, "{} source blob", entry.id);
+        assert!(
+            entry
+                .source_blob
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit()),
+            "{} source blob should be hexadecimal",
+            entry.id
         );
 
         let is_target = entry.scope == "target_core_image";
@@ -181,6 +194,16 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
         ) {
             assert!(!entry.evidence.is_empty(), "{} needs evidence", entry.id);
         }
+        if entry.coverage == "unassessed" {
+            assert!(
+                entry
+                    .evidence
+                    .iter()
+                    .any(|item| item.starts_with("reason:")),
+                "{} needs an assessment reason",
+                entry.id
+            );
+        }
     }
 }
 
@@ -202,19 +225,19 @@ fn manifest_counts_match_the_declared_catalog_scope() {
             .count()
     };
 
-    assert_eq!(manifest.counts.catalog_entries, 549);
-    assert_eq!(manifest.counts.image_category_entries, 140);
-    assert_eq!(manifest.counts.image_core_entries, 65);
+    assert_eq!(manifest.counts.catalog_entries, 578);
+    assert_eq!(manifest.counts.image_category_entries, 150);
+    assert_eq!(manifest.counts.image_core_entries, 74);
     assert_eq!(manifest.counts.getting_started_image_entries, 10);
-    assert_eq!(manifest.counts.target_entries, 75);
-    assert_eq!(manifest.counts.excluded_entries, 474);
-    assert_eq!(count("Image", "target_core_image"), 65);
+    assert_eq!(manifest.counts.target_entries, 84);
+    assert_eq!(manifest.counts.excluded_entries, 494);
+    assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 60);
-    assert_eq!(count_coverage("pattern_covered"), 9);
-    assert_eq!(count_coverage("partial"), 6);
-    assert_eq!(count_coverage("unassessed"), 0);
-    assert_eq!(count_coverage("excluded"), 474);
+    assert_eq!(count_coverage("golden"), 34);
+    assert_eq!(count_coverage("pattern_covered"), 4);
+    assert_eq!(count_coverage("partial"), 1);
+    assert_eq!(count_coverage("unassessed"), 45);
+    assert_eq!(count_coverage("excluded"), 494);
 }
 
 #[test]
@@ -223,72 +246,43 @@ fn manifest_links_covered_entries_to_test_evidence() {
     let expected = [
         ("01_get_started_text_to_image", "golden"),
         ("02_qwen_Image_edit_subgraphed", "golden"),
-        ("Image_capybara_v0_1_image_edit", "golden"),
-        ("Image_capybara_v0_1_text_to_image", "golden"),
         ("default", "pattern_covered"),
+        ("flux_depth_lora_example", "golden"),
         ("flux_dev_checkpoint_example", "golden"),
         ("flux_dev_full_text_to_image", "golden"),
-        ("flux1_krea_dev", "golden"),
-        ("flux1_dev_uso_reference_image_gen", "golden"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
+        ("flux_schnell_full_text_to_image", "golden"),
+        ("flux1_dev_uso_reference_image_gen", "golden"),
+        ("flux1_krea_dev", "golden"),
         ("gsc_creator_2_1", "pattern_covered"),
         ("gsc_creator_2_2", "golden"),
         ("gsc_creator_2_3", "partial"),
         ("gsc_starter_1", "pattern_covered"),
-        ("gsl_creator_2", "pattern_covered"),
-        ("gsl_starter_1_1", "pattern_covered"),
         ("gsl_starter_1_3", "pattern_covered"),
         ("hidream_e1_1", "golden"),
+        ("hidream_e1_full", "golden"),
         ("hidream_i1_dev", "golden"),
         ("hidream_i1_fast", "golden"),
         ("hidream_i1_full", "golden"),
-        ("image_ernie_image", "partial"),
-        ("image_ernie_image_turbo", "partial"),
-        ("image_firered_image_edit1_1", "golden"),
-        ("image_ideogram4_t2i", "golden"),
-        ("image_longcat_image_edit", "golden"),
-        ("image_longcat_text_to_image", "golden"),
-        ("image_pixeldit_t2i", "golden"),
-        ("image_chrono_edit_14B", "golden"),
-        ("image_netayume_lumina_t2i", "golden"),
-        ("image_anima_base_v1", "golden"),
-        ("image_anima_preview", "pattern_covered"),
-        ("image_boogu_image_0_1_turbo_t2i", "golden"),
-        ("image-qwen_image_edit_2511_lora_inflation", "golden"),
         ("image_chroma_text_to_image", "golden"),
+        ("image_chroma1_radiance_text_to_image", "golden"),
+        ("image_chrono_edit_14B", "golden"),
         ("image_flux.1_fill_dev_OneReward", "golden"),
-        ("image_flux2", "golden"),
         ("image_flux2_fp8", "golden"),
         ("image_flux2_klein_9b_kv_image_edit", "golden"),
-        ("image_flux2_klein_image_edit_4b_base", "golden"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
-        ("image_flux2_klein_image_edit_9b_base", "golden"),
-        ("image_flux2_klein_image_edit_9b_distilled", "golden"),
         ("image_flux2_klein_text_to_image", "golden"),
-        ("image_flux2_text_to_image", "golden"),
-        ("image_flux2_text_to_image_9b", "golden"),
-        ("image_chroma1_radiance_text_to_image", "golden"),
         ("image_kandinsky5_t2i", "golden"),
-        ("image_krea2_turbo_t2i", "pattern_covered"),
-        ("image_krea2_turbo_t2i_int8", "partial"),
-        ("image_lens_t2i", "golden"),
-        ("image_lens_turbo_t2i", "pattern_covered"),
+        ("image_netayume_lumina_t2i", "golden"),
         ("image_newbieimage_exp0_1-t2i", "golden"),
         ("image_omnigen2_image_edit", "golden"),
         ("image_omnigen2_t2i", "golden"),
-        ("image_boogu_image_0_1_edit", "golden"),
-        ("image_qwen_Image_2512_controlnet", "golden"),
-        ("image_qwen_Image_2512", "golden"),
         ("image_qwen_image", "golden"),
-        ("image_qwen_image_2512_with_2steps_lora", "golden"),
         ("image_qwen_image_edit", "golden"),
-        ("image_qwen_image_edit_2509", "golden"),
         ("image_qwen_image_union_control_lora", "golden"),
-        ("image_z_image", "golden"),
         ("image_z_image_turbo", "golden"),
-        ("image_z_image_turbo_int8", "golden"),
-        ("video_bernini_r_image_editing", "golden"),
+        ("image_z_image_turbo_fun_union_controlnet", "golden"),
     ];
 
     for (id, coverage) in expected {
