@@ -409,6 +409,82 @@ const MILESTONE31_BASELINE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE32_FLUX2_VARIANT_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_flux2",
+        source_blob: "d645c7331fee1921608a0c28d44d42a5bf890bcf",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2.chunks.json"),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_fp8",
+        source_blob: "f7782e43ffb3a61798c8bc4b6e2b046c6e568b3c",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2_fp8.chunks.json"),
+        graph_node_count: 29,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_klein_image_edit_4b_base",
+        source_blob: "c3ebfc04b920186bb50ff84561e7ef90cd3fd83a",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_4b_base.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_klein_image_edit_9b_base",
+        source_blob: "81dded82f99bb109005f066ba6397a114029077a",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_base.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_klein_image_edit_9b_distilled",
+        source_blob: "41b340042e8d167cb220ef8dbccfacba55d7ad43",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_distilled.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_klein_text_to_image",
+        source_blob: "951d58ac7945845aa6d0d4bb7544d26fdc96c22c",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_text_to_image.chunks.json"
+        ),
+        graph_node_count: 19,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_text_to_image_9b",
+        source_blob: "b6cd774b9d5cf56dbfd13b87a27066f0075ddf6b",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_text_to_image_9b.chunks.json"
+        ),
+        graph_node_count: 17,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -577,6 +653,11 @@ fn pinned_milestone30_baseline_variant_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone31_baseline_edit_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE31_BASELINE_EDIT_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone32_flux2_variant_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE32_FLUX2_VARIANT_FIXTURES);
 }
 
 #[test]

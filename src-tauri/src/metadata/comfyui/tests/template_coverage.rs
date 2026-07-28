@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 50);
+    assert_eq!(count_coverage("golden"), 57);
     assert_eq!(count_coverage("pattern_covered"), 9);
     assert_eq!(count_coverage("partial"), 4);
-    assert_eq!(count_coverage("unassessed"), 12);
+    assert_eq!(count_coverage("unassessed"), 5);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -258,9 +258,16 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image-qwen_image_edit_2511_lora_inflation", "golden"),
         ("image_chroma_text_to_image", "golden"),
         ("image_flux.1_fill_dev_OneReward", "golden"),
+        ("image_flux2", "golden"),
+        ("image_flux2_fp8", "golden"),
         ("image_flux2_klein_9b_kv_image_edit", "golden"),
+        ("image_flux2_klein_image_edit_4b_base", "golden"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
+        ("image_flux2_klein_image_edit_9b_base", "golden"),
+        ("image_flux2_klein_image_edit_9b_distilled", "golden"),
+        ("image_flux2_klein_text_to_image", "golden"),
         ("image_flux2_text_to_image", "golden"),
+        ("image_flux2_text_to_image_9b", "golden"),
         ("image_chroma1_radiance_text_to_image", "golden"),
         ("image_kandinsky5_t2i", "golden"),
         ("image_krea2_turbo_t2i", "pattern_covered"),

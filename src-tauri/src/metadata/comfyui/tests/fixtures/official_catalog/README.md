@@ -311,3 +311,23 @@ All five fixtures have one unambiguous saved-output root, no reported
 resources, and exact `SamplerTraversal` metadata assertions. Qwen Image Edit
 keeps its Lightning LoRA disabled. The independently captured UTF-8 Z-Image
 prompt is stored in `image_z_image.expected-positive.txt`.
+
+## Milestone 32 Flux.2 Variant Intake
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures close the remaining Flux.2 Dev and Flux.2 Klein target variants using
+existing selected-output parser behavior.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_flux2`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2.json) | `d645c7331fee1921608a0c28d44d42a5bf890bcf` | 57255 |
+| [`image_flux2_fp8`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_fp8.json) | `f7782e43ffb3a61798c8bc4b6e2b046c6e568b3c` | 59153 |
+| [`image_flux2_klein_image_edit_4b_base`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_klein_image_edit_4b_base.json) | `c3ebfc04b920186bb50ff84561e7ef90cd3fd83a` | 98467 |
+| [`image_flux2_klein_image_edit_9b_base`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_klein_image_edit_9b_base.json) | `81dded82f99bb109005f066ba6397a114029077a` | 97915 |
+| [`image_flux2_klein_image_edit_9b_distilled`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_klein_image_edit_9b_distilled.json) | `41b340042e8d167cb220ef8dbccfacba55d7ad43` | 99897 |
+| [`image_flux2_klein_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_klein_text_to_image.json) | `951d58ac7945845aa6d0d4bb7544d26fdc96c22c` | 69968 |
+| [`image_flux2_text_to_image_9b`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_text_to_image_9b.json) | `b6cd774b9d5cf56dbfd13b87a27066f0075ddf6b` | 39806 |
+
+All seven fixtures have one unambiguous active saved-output root and exact
+`SamplerTraversal` metadata assertions. Disabled Turbo LoRAs, bypassed
+alternative subgraphs, and bypassed save nodes are intentionally omitted.

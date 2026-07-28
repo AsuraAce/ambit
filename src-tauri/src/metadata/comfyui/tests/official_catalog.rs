@@ -284,6 +284,44 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_z_image_turbo_int8",
         chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
     },
+    CatalogFixture {
+        name: "image_flux2",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2_fp8",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2_fp8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_4b_base",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_4b_base.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_9b_base",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_base.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_9b_distilled",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_distilled.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_text_to_image_9b",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_text_to_image_9b.chunks.json"
+        ),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -1810,6 +1848,168 @@ fn z_image_turbo_int8_subgraph_variant() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_image_edit_keeps_turbo_mode_disabled() {
+    assert_fixture(
+        "image_flux2",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(342_971_778_941_390),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler",
+            positive_prompt: "The woman is wearing a small pale yellow knitted beanie, with a white fabric patch on the front right, embroidered with big gray text “FLUX.2 COMFY.” Keep the face",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_fp8_image_edit_keeps_turbo_mode_disabled() {
+    assert_fixture(
+        "image_flux2_fp8",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(315_616_751_694_460),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler",
+            positive_prompt:
+                "Apply the design from Reference Image 1 onto objects in Reference Image 2.\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_4b_base_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_4b_base",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_4b_fp8",
+            seed: Some(1_111_443_136_920_027),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "Change the background to a cozy, softly lit interior space with warm beige tones, soft natural window light filtering through, and a relaxed, intimate atmosphere similar to the original image's mood. Keep the person in the exact same position, scale, and pose. Maintain identical camera angle, framing, and perspective. The lighting should be soft, even, and warm - not harsh or bright. Only replace the room environment, preserving all facial features, hairstyle, expression, clothing, and pose exactly as they are.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_base_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_9b_base",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_9b_fp8",
+            seed: Some(192_774_551_144_773),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "Change the camera angle to a first-person driver's perspective looking through the steering wheel at the dashboard and windshield, maintaining the same white minimalist interior style and lighting\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_distilled_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_9b_distilled",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b_fp8",
+            seed: Some(26_416_064_315_367),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "Replace the background with a quiet coastal cliff at overcast sunset. Remove all buildings and streets. Add wind-shaped grass and a distant ocean horizon. Keep the subject’s pose and framing unchanged.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_4b_base_text_to_image_ignores_distilled_branch() {
+    assert_fixture(
+        "image_flux2_klein_text_to_image",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_4b",
+            seed: Some(0),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "A hedgehog wearing a tiny party hat surrounded by confetti, early digital camera style, slight noise, flash photography, candid moment, 2000s digicam aesthetic, festive birthday celebration atmosphere\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_base_text_to_image() {
+    assert_fixture(
+        "image_flux2_text_to_image_9b",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_9b_fp8",
+            seed: Some(145_965_955_694_731),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "A vintage motorcycle parked in front of a retro diner at sunset, warm orange and pink sky, neon signs glowing, 80s vintage photo style, film grain, warm color cast",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

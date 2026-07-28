@@ -642,7 +642,7 @@ fn linked_flux_guidance_supplies_cfg_for_sampler_custom_advanced() {
 }
 
 #[test]
-fn workflow_flux_guidance_widget_value_supplies_cfg() {
+fn workflow_flux_guidance_and_zero_noise_widgets_supply_metadata() {
     // Workflow-only imports rely on FluxGuidance.widgets_values[0] because API
     // input names are not available in the UI-format node body.
     let workflow = r#"{
@@ -676,7 +676,7 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
             {
                 "id": 5,
                 "type": "RandomNoise",
-                "widgets_values": [123456789]
+                "widgets_values": [0]
             },
             {
                 "id": 6,
@@ -734,6 +734,7 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
     let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
 
     assert_eq!(meta.model, "flux_ui");
+    assert_eq!(meta.seed, Some(0));
     assert_eq!(meta.steps, 12);
     assert_eq!(meta.cfg, 4.25);
     assert_eq!(meta.sampler, "euler (simple)");
@@ -741,6 +742,11 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
     assert_field_source(
         &diagnostics,
         ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Seed,
         ComfyParseLayer::SamplerTraversal,
     );
 }
