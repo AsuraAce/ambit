@@ -379,8 +379,16 @@ fn flatten_container<'a>(
         let Some(instance) = nodes.get(&instance_id) else {
             continue;
         };
-        if is_inactive(&instance) || depth >= MAX_SUBGRAPH_DEPTH {
+        if is_muted(instance) || depth >= MAX_SUBGRAPH_DEPTH {
             block_instance_inputs(&mut edges, &instance_id);
+            continue;
+        }
+        if is_bypassed(instance) {
+            if bypass_instance(instance, &instance_id, &mut edges, budget) {
+                nodes.remove(&instance_id);
+            } else {
+                block_instance_inputs(&mut edges, &instance_id);
+            }
             continue;
         }
 
@@ -433,6 +441,7 @@ fn flatten_container<'a>(
             instance,
             definition,
             &mut child.nodes,
+            &mut child.edges,
             &child.input_targets,
         );
 
@@ -525,6 +534,7 @@ fn clear_unlinked_boundary_input_links(
     instance: &Value,
     definition: &Value,
     nodes: &mut HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
     input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
 ) {
     let Some(instance_inputs) = instance.get("inputs").and_then(Value::as_array) else {
@@ -552,6 +562,8 @@ fn clear_unlinked_boundary_input_links(
         };
 
         for target in targets {
+            edges
+                .retain(|edge| edge.target_id != target.node_id || edge.target_slot != target.slot);
             if let Some(input) = nodes
                 .get_mut(&target.node_id)
                 .and_then(Value::as_object_mut)
@@ -568,6 +580,76 @@ fn clear_unlinked_boundary_input_links(
 
 fn block_instance_inputs(edges: &mut Vec<WorkflowEdge>, instance_id: &str) {
     edges.retain(|edge| edge.target_id != instance_id);
+}
+
+fn bypass_instance(
+    instance: &Value,
+    instance_id: &str,
+    edges: &mut Vec<WorkflowEdge>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(inputs) = instance.get("inputs").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(outputs) = instance.get("outputs").and_then(Value::as_array) else {
+        return false;
+    };
+    let incoming = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.target_id == instance_id)
+        .collect::<Vec<_>>();
+    let outgoing = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.source_id == instance_id)
+        .collect::<Vec<_>>();
+    if outgoing.is_empty() {
+        return false;
+    }
+
+    let mut rewrites = Vec::with_capacity(outgoing.len());
+    for (outgoing_index, outgoing_edge) in outgoing {
+        let Some(output_type) = outputs
+            .get(outgoing_edge.source_slot)
+            .and_then(|output| output.get("type"))
+            .and_then(Value::as_str)
+        else {
+            return false;
+        };
+        let mut candidates = incoming.iter().filter(|(_, incoming_edge)| {
+            inputs
+                .get(incoming_edge.target_slot)
+                .and_then(|input| input.get("type"))
+                .and_then(Value::as_str)
+                == Some(output_type)
+        });
+        let Some((_, source)) = candidates.next() else {
+            return false;
+        };
+        if candidates.next().is_some() {
+            return false;
+        }
+        let link_type = stronger_link_type(&source.link_type, &outgoing_edge.link_type);
+        if !budget.reserve_auxiliary_clone(source.source_id.len() + link_type.len()) {
+            return false;
+        }
+        rewrites.push((
+            outgoing_index,
+            source.source_id.clone(),
+            source.source_slot,
+            link_type,
+        ));
+    }
+
+    for (index, source_id, source_slot, link_type) in rewrites {
+        let edge = &mut edges[index];
+        edge.source_id = source_id;
+        edge.source_slot = source_slot;
+        edge.link_type = link_type;
+    }
+    edges.retain(|edge| edge.target_id != instance_id);
+    true
 }
 
 fn bind_instance_inputs(
@@ -790,8 +872,12 @@ fn value_usize(value: &Value) -> Option<usize> {
         .or_else(|| value.as_i64().and_then(|value| usize::try_from(value).ok()))
 }
 
-fn is_inactive(node: &Value) -> bool {
-    matches!(node.get("mode").and_then(Value::as_i64), Some(2 | 4))
+fn is_muted(node: &Value) -> bool {
+    node.get("mode").and_then(Value::as_i64) == Some(2)
+}
+
+fn is_bypassed(node: &Value) -> bool {
+    node.get("mode").and_then(Value::as_i64) == Some(4)
 }
 
 fn stronger_link_type<'a>(left: &'a str, right: &'a str) -> String {

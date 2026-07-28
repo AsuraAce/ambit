@@ -394,6 +394,65 @@ fn z_image_model_patch_is_a_controlnet_not_the_primary_model() {
 }
 
 #[test]
+fn uso_style_reference_collects_upstream_lora_without_promoting_projector() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "flux1-dev-fp8.safetensors" }
+        },
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": "uso-flux1-dit-lora-v1.safetensors",
+                "strength_model": 1.0
+            }
+        },
+        "3": {
+            "class_type": "ModelPatchLoader",
+            "inputs": { "model_patch_name": "uso-flux1-projector-v1.safetensors" }
+        },
+        "4": {
+            "class_type": "USOStyleReference",
+            "inputs": {
+                "model": ["2", 0],
+                "model_patch": ["3", 0]
+            }
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "USO prompt" }
+        },
+        "6": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["4", 0],
+                "positive": ["5", 0],
+                "seed": 42,
+                "steps": 20,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "7": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
+        "8": { "class_type": "SaveImage", "inputs": { "images": ["7", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux1_dev_fp8");
+    assert_eq!(meta.loras, ["uso_flux1_dit_lora_v1"]);
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Loras),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn qwen_model_patch_reads_the_canonical_api_name() {
     let prompt = r#"{
         "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "z_image_turbo_bf16.safetensors" } },
