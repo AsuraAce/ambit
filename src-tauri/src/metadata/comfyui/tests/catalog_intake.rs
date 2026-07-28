@@ -206,6 +206,159 @@ const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE28_REFERENCE_MODIFIER_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "flux1_dev_uso_reference_image_gen",
+        source_blob: "f03156d29ad4afb6c1f81f552076c793404f62ed",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux1_dev_uso_reference_image_gen.chunks.json"
+        ),
+        graph_node_count: 26,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux.1_fill_dev_OneReward",
+        source_blob: "ae89238cf5e0bebca38ca224c75645c89800fd5d",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux.1_fill_dev_OneReward.chunks.json"
+        ),
+        graph_node_count: 18,
+        output_candidates: 2,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_flux2_klein_9b_kv_image_edit",
+        source_blob: "5a67a1cce4b06a69f97c20eaa56a800f9cf2cd18",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_9b_kv_image_edit.chunks.json"
+        ),
+        graph_node_count: 27,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image-qwen_image_edit_2511_lora_inflation",
+        source_blob: "5c3f4546c31cb25680e948141c2eee700112952d",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
+        ),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
+const MILESTONE29_CORE_VARIANT_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_qwen_Image_2512",
+        source_blob: "004f4589eed5dd60d9c7f96154fcebf94387cd28",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_Image_2512.chunks.json"),
+        graph_node_count: 21,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_2512_with_2steps_lora",
+        source_blob: "be0745544baab6c66bc9aacd184361668b70ddb8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_2512_with_2steps_lora.chunks.json"
+        ),
+        graph_node_count: 13,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "hidream_i1_dev",
+        source_blob: "7ae5db47050e8c47124525d7fc37f9ddb43e6a7f",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_dev.chunks.json"),
+        graph_node_count: 12,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "hidream_i1_fast",
+        source_blob: "60a6efb63511ac851359451dbd8641c4d71cccd9",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_fast.chunks.json"),
+        graph_node_count: 12,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_krea2_turbo_t2i_int8",
+        source_blob: "6cb31b94a0ebf07bc142594bce0dad454a903bc7",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
+        ),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
+const MILESTONE30_BASELINE_VARIANT_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "flux_dev_checkpoint_example",
+        source_blob: "c59a204c9ad1c454cdbb2b416f97a3bd8fba0082",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_checkpoint_example.chunks.json"
+        ),
+        graph_node_count: 10,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_boogu_image_0_1_turbo_t2i",
+        source_blob: "53deaf8c1fece841eaaca33b3507dce701aeaf7d",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_turbo_t2i.chunks.json"
+        ),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_chroma_text_to_image",
+        source_blob: "1b9525f95e3b80c3e6b07835bd869854aba1d182",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_chroma_text_to_image.chunks.json"
+        ),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image",
+        source_blob: "2a8e9aee5c43a30e95274b2a59dbbc10a218a083",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image.chunks.json"),
+        graph_node_count: 23,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image_turbo",
+        source_blob: "4a98c03bf882a1d4d3a9ebd70ba280f08bc14dde",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo.chunks.json"),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -354,6 +507,21 @@ fn pinned_milestone26_new_family_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone27_image_edit_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE27_IMAGE_EDIT_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone28_reference_modifier_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE28_REFERENCE_MODIFIER_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone29_core_variant_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE29_CORE_VARIANT_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone30_baseline_variant_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE30_BASELINE_VARIANT_FIXTURES);
 }
 
 #[test]

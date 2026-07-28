@@ -188,6 +188,80 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "hidream_e1_1",
         chunks_json: include_str!("fixtures/official_catalog/hidream_e1_1.chunks.json"),
     },
+    CatalogFixture {
+        name: "flux1_dev_uso_reference_image_gen",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux1_dev_uso_reference_image_gen.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux.1_fill_dev_OneReward",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux.1_fill_dev_OneReward.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_9b_kv_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_9b_kv_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image-qwen_image_edit_2511_lora_inflation",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_Image_2512",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_Image_2512.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_2512_with_2steps_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_2512_with_2steps_lora.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_i1_dev",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "hidream_i1_fast",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_fast.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_krea2_turbo_t2i_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "flux_dev_checkpoint_example",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_checkpoint_example.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_turbo_t2i",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_turbo_t2i.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_chroma_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_chroma_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_image",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image_turbo",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo.chunks.json"),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -196,6 +270,8 @@ const NETAYUME_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-positive.txt");
 const NETAYUME_EXPECTED_NEGATIVE: &str =
     include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-negative.txt");
+const QWEN_IMAGE_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_qwen_image.expected-positive.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -339,7 +415,7 @@ fn image_qwen_image_edit_2509() {
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 27,
+            graph_node_count: 26,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
@@ -1267,6 +1343,331 @@ fn hidream_e1_image_edit() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux1_uso_reference_image_generation() {
+    assert_fixture(
+        "flux1_dev_uso_reference_image_gen",
+        ExpectedMetadata {
+            model: "flux1_dev_fp8",
+            seed: Some(1_058_487_910_949_722),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A European girl with a heartfelt smile. She is immersed in a vast, endless field of blooming flowers under a perfect summer sky.",
+            negative_prompt: "",
+            loras: &["uso_flux1_dit_lora_v1"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux1_fill_onereward_preview_outputs_share_one_root() {
+    assert_fixture(
+        "image_flux.1_fill_dev_OneReward",
+        ExpectedMetadata {
+            model: "flux.1_fill_dev_onereward_transformer_fp8",
+            seed: Some(75_154_916_226_486),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Remove the girl's hat\n",
+            negative_prompt: "",
+            loras: &["removal_timestep_alpha_2_1740"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 2,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_kv_image_edit() {
+    assert_fixture(
+        "image_flux2_klein_9b_kv_image_edit",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b_kv_fp8",
+            seed: Some(720_512_742_793_301),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "Have the man in Figure 1 put on the clothes from Figure 2, wear a hat, and carry a bag. Then, change the background environment to an African savannah while keeping the man in the same posture to give a natural outdoor feel.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_inflation_lora() {
+    assert_fixture(
+        "image-qwen_image_edit_2511_lora_inflation",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(1_123_448_499_955_428),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "inflate the man",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2511_systms_infl8"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_2512_base() {
+    assert_fixture(
+        "image_qwen_Image_2512",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(464_857_551_335_368),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Urban alleyway at dusk. Tall, statuesque high-fashion model striding elegantly, mid distant full body shot from an angular perspective, cinematic/editorial with bold contrasts and tactile materials. They wear a rose-gold metallic trench coat with deconstructed elements over a black long-sleeved turtleneck with subtle texture; paired with forest-green pleated pants with raw hems and a soft texture. Long braided dark hair, medium complexion. They carry a vibrant yellow designer handbag with geometric details and a structured silhouette. White architectural sneakers with bold geometric cutouts. Bold, high-contrast, tactile, urban-grit meets high-fashion impact, extreme clarity, extreme layering, post-processing with transparent light-transmitting ultra-smooth high-definition film effect, removing all noise and grain, removing all blur, removing all vintage feel, removing all roughness, drawn with 32K pixel precision, unparalleled fine line drawing of every single detail, the entire image like a brand new photograph, photorealistic\n",
+            negative_prompt: "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 21,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_2512_two_step_lora() {
+    assert_fixture(
+        "image_qwen_image_2512_with_2steps_lora",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(318_036_859_179_089),
+            steps: 2,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "High-contrast black and white fashion photography, extreme side profile of a rugged European male model with tousled wet-look hair and stubble, wearing an unbuttoned textured black leather jacket over a fitted white crewneck shirt. Low-angle composition, dramatic side lighting carving sharp, sculpted shadows across his angular jawline and neck, minimalist stark white background, edgy tough masculine aesthetic, hyper-realistic studio quality.\n",
+            negative_prompt: "",
+            loras: &["wuli_qwen_image_2512_turbo_lora_2steps_v1.0_bf16"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 13,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_i1_dev_variant() {
+    assert_fixture(
+        "hidream_i1_dev",
+        ExpectedMetadata {
+            model: "hidream_i1_dev_fp8",
+            seed: Some(426_270_906_276_990),
+            steps: 28,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "A photograph of an albino woman with white skin and dark hair wearing black in the style of old baroque oil paintings, with soft focus, wearing a pearl necklace around her neck, with a dark background, with rosy cheeks, with a long veil covering her face, looking straight ahead",
+            negative_prompt: "bad ugly jpeg artifacts",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_i1_fast_variant() {
+    assert_fixture(
+        "hidream_i1_fast",
+        ExpectedMetadata {
+            model: "hidream_i1_fast_fp8",
+            seed: Some(833_271_177_511_441),
+            steps: 16,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "A lo-fi, grungy wide shot of a ragged large red tree leaning slightly to one side Polaroid aesthetic. the tree is alone in a desolate landscape, the tree is illuminated by a red light, the background is pitch black",
+            negative_prompt: "bad ugly jpeg artifacts",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_int8_generated_prompt_remains_partial() {
+    assert_fixture(
+        "image_krea2_turbo_t2i_int8",
+        ExpectedMetadata {
+            model: "krea2_turbo_int8_convrot",
+            seed: Some(45_862_206_397_178),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_dev_checkpoint_subgraph_variant() {
+    assert_fixture(
+        "flux_dev_checkpoint_example",
+        ExpectedMetadata {
+            model: "flux1_dev",
+            seed: Some(53_943_644_181_156),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "Beautiful photography of a gorgeous-haired female artist, natural and authentic, her hair styled in a messy casual bun, smiling joyfully and looking directly at the camera, cinematic lighting, soft natural daylight, shallow depth of field, warm gentle tones, film grain, high detail, 8K, realistic portrait",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn boogu_turbo_text_to_image_variant() {
+    assert_fixture(
+        "image_boogu_image_0_1_turbo_t2i",
+        ExpectedMetadata {
+            model: "boogu_image_turbo_fp8_scaled",
+            seed: Some(896_977_722_960_984),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "lcm (sgm_uniform)",
+            positive_prompt: "Abstract close-up portrait of a young man wearing a cream turtleneck, captured with severe horizontal motion blur and double exposure effect that distorts his facial features, rendered in an analog film grain style with muted earthy background tones, framed tightly on his face to emphasize the blur streaks across his eyes, nose, and lips while retaining the texture of the knit collar and soft ambient lighting.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn chroma_direct_custom_sampler_variant() {
+    assert_fixture(
+        "image_chroma_text_to_image",
+        ExpectedMetadata {
+            model: "chroma1_hd_fp8mixed",
+            seed: Some(68_346_347_456_896),
+            steps: 26,
+            cfg: 3.5,
+            sampler: "euler (beta)",
+            positive_prompt: "This is a nature documentary close-up photograph of the right side of the face of a tiger. The photograph is centered on it's highly detailed and speckled eye surrounded by intricately detailed fur. Overlaid at the center of the image is a title text that says \"CHROMA1-HD\" in a large white 3D letters. Amateur photography. Unfiltered. Real life. Natural light. Subtle shadows. ",
+            negative_prompt: "This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom. It has a toony aesthetic with bold outlines and flat colors. ",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_base_switches_keep_turbo_resources_disabled() {
+    assert_fixture(
+        "image_qwen_image",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(50_347_169_638_278),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: QWEN_IMAGE_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 23,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_subgraph_variant() {
+    assert_fixture(
+        "image_z_image_turbo",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(0),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "Latina female with thick wavy hair, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. ",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

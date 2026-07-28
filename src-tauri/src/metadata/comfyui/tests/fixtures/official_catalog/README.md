@@ -215,3 +215,80 @@ rules documented in the manifest tests, sort by template name, then carry
 forward coverage evidence only when the associated golden test still passes.
 
 Tests are offline and must never fetch the catalog at runtime.
+
+## Milestone 28 Reference And Modifier Intake
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures cover reference conditioning, shared-root preview outputs, transparent
+model modifiers, and an active edit LoRA.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`flux1_dev_uso_reference_image_gen`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux1_dev_uso_reference_image_gen.json) | `f03156d29ad4afb6c1f81f552076c793404f62ed` | 111297 |
+| [`image_flux.1_fill_dev_OneReward`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux.1_fill_dev_OneReward.json) | `ae89238cf5e0bebca38ca224c75645c89800fd5d` | 74206 |
+| [`image_flux2_klein_9b_kv_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_flux2_klein_9b_kv_image_edit.json) | `5a67a1cce4b06a69f97c20eaa56a800f9cf2cd18` | 46164 |
+| [`image-qwen_image_edit_2511_lora_inflation`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image-qwen_image_edit_2511_lora_inflation.json) | `5c3f4546c31cb25680e948141c2eee700112952d` | 40876 |
+
+Golden expectations:
+
+- USO keeps `flux1_dev_fp8` as the primary model, reports only
+  `uso_flux1_dit_lora_v1`, and ignores its projector, CLIP vision, and style
+  reference as generation resources. Its bypassed model wrapper is traversed
+  only because the instance has one connected input matching the used output
+  type.
+- OneReward selects two active preview outputs that share one sampler root;
+  the mode-4 save is ignored. Direct sampler CFG 1 remains authoritative over
+  connected Flux guidance 30.
+- Flux.2 Klein KV cache is transparent to primary model traversal and does not
+  become a resource.
+- Qwen Image Edit reports only the active inflation LoRA.
+
+Parser version 33 adds conservative workflow-only bypass passthrough. A muted,
+malformed, or type-ambiguous instance remains opaque and cannot gain strong
+traversal authority.
+
+## Milestone 29 Core Variant Intake
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures close direct Qwen Image 2512 and HiDream I1 variants while recording
+the Krea 2 INT8 generated-prompt boundary honestly.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`image_qwen_Image_2512`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_Image_2512.json) | `004f4589eed5dd60d9c7f96154fcebf94387cd28` | 52269 |
+| [`image_qwen_image_2512_with_2steps_lora`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_image_2512_with_2steps_lora.json) | `be0745544baab6c66bc9aacd184361668b70ddb8` | 18117 |
+| [`hidream_i1_dev`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/hidream_i1_dev.json) | `7ae5db47050e8c47124525d7fc37f9ddb43e6a7f` | 16039 |
+| [`hidream_i1_fast`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/hidream_i1_fast.json) | `60a6efb63511ac851359451dbd8641c4d71cccd9` | 15996 |
+| [`image_krea2_turbo_t2i_int8`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_krea2_turbo_t2i_int8.json) | `6cb31b94a0ebf07bc142594bce0dad454a903bc7` | 56802 |
+
+The Qwen base template keeps turbo mode disabled, while the two-step template
+reports its active Turbo LoRA. HiDream Dev and Fast retain their distinct LCM
+sampler settings and literal prompts. Krea 2 INT8 enables `TextGenerate`; its
+result is not embedded, so the positive prompt remains unavailable and the
+visible stale `CLIPTextEncode` widget is not treated as generated metadata.
+The disabled Krea style LoRA is not reported.
+
+Parser version 34 also fixes workflow definitions that retain a stale second
+edge into an input owned by an unlinked subgraph boundary. The boundary's
+declared widget default remains authoritative; the shadow edge cannot supply a
+different scalar such as CFG in place of the sampler seed.
+
+## Milestone 30 Baseline Variant Intake
+
+Captured on `2026-07-28` from the pinned catalog commit. These workflow-only
+fixtures close representative baseline and turbo variants using existing
+selected-output parser behavior.
+
+| Workflow | Upstream Git blob | Bytes |
+| --- | --- | ---: |
+| [`flux_dev_checkpoint_example`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/flux_dev_checkpoint_example.json) | `c59a204c9ad1c454cdbb2b416f97a3bd8fba0082` | 25190 |
+| [`image_boogu_image_0_1_turbo_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_boogu_image_0_1_turbo_t2i.json) | `53deaf8c1fece841eaaca33b3507dce701aeaf7d` | 23747 |
+| [`image_chroma_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_chroma_text_to_image.json) | `1b9525f95e3b80c3e6b07835bd869854aba1d182` | 21297 |
+| [`image_qwen_image`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_image.json) | `2a8e9aee5c43a30e95274b2a59dbbc10a218a083` | 46429 |
+| [`image_z_image_turbo`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_z_image_turbo.json) | `4a98c03bf882a1d4d3a9ebd70ba280f08bc14dde` | 27172 |
+
+Flux Dev, Boogu Turbo, and Z-Image Turbo exercise ordinary KSampler subgraph
+defaults. Chroma exercises the direct custom-sampler path. Qwen keeps turbo
+mode disabled, so linked 20-step/CFG-4 values win over stale sampler widgets
+and the inactive Lightning LoRA is not reported. Its independently captured
+UTF-8 prompt is stored in `image_qwen_image.expected-positive.txt`.

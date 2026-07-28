@@ -210,10 +210,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 474);
     assert_eq!(count("Image", "target_core_image"), 65);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 32);
+    assert_eq!(count_coverage("golden"), 45);
     assert_eq!(count_coverage("pattern_covered"), 9);
-    assert_eq!(count_coverage("partial"), 3);
-    assert_eq!(count_coverage("unassessed"), 31);
+    assert_eq!(count_coverage("partial"), 4);
+    assert_eq!(count_coverage("unassessed"), 17);
     assert_eq!(count_coverage("excluded"), 474);
 }
 
@@ -226,6 +226,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("Image_capybara_v0_1_image_edit", "golden"),
         ("Image_capybara_v0_1_text_to_image", "golden"),
         ("default", "pattern_covered"),
+        ("flux_dev_checkpoint_example", "golden"),
+        ("flux1_dev_uso_reference_image_gen", "golden"),
         ("flux_fill_inpaint_example", "golden"),
         ("flux_kontext_dev_basic", "golden"),
         ("gsc_creator_2_1", "pattern_covered"),
@@ -236,6 +238,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("gsl_starter_1_1", "pattern_covered"),
         ("gsl_starter_1_3", "pattern_covered"),
         ("hidream_e1_1", "golden"),
+        ("hidream_i1_dev", "golden"),
+        ("hidream_i1_fast", "golden"),
         ("hidream_i1_full", "golden"),
         ("image_ernie_image", "partial"),
         ("image_ernie_image_turbo", "partial"),
@@ -248,11 +252,17 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_netayume_lumina_t2i", "golden"),
         ("image_anima_base_v1", "golden"),
         ("image_anima_preview", "pattern_covered"),
+        ("image_boogu_image_0_1_turbo_t2i", "golden"),
+        ("image-qwen_image_edit_2511_lora_inflation", "golden"),
+        ("image_chroma_text_to_image", "golden"),
+        ("image_flux.1_fill_dev_OneReward", "golden"),
+        ("image_flux2_klein_9b_kv_image_edit", "golden"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
         ("image_flux2_text_to_image", "golden"),
         ("image_chroma1_radiance_text_to_image", "golden"),
         ("image_kandinsky5_t2i", "golden"),
         ("image_krea2_turbo_t2i", "pattern_covered"),
+        ("image_krea2_turbo_t2i_int8", "partial"),
         ("image_lens_t2i", "golden"),
         ("image_lens_turbo_t2i", "pattern_covered"),
         ("image_newbieimage_exp0_1-t2i", "golden"),
@@ -260,8 +270,12 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_omnigen2_t2i", "golden"),
         ("image_boogu_image_0_1_edit", "golden"),
         ("image_qwen_Image_2512_controlnet", "golden"),
+        ("image_qwen_Image_2512", "golden"),
+        ("image_qwen_image", "golden"),
+        ("image_qwen_image_2512_with_2steps_lora", "golden"),
         ("image_qwen_image_edit_2509", "golden"),
         ("image_qwen_image_union_control_lora", "golden"),
+        ("image_z_image_turbo", "golden"),
         ("video_bernini_r_image_editing", "golden"),
     ];
 
