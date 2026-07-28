@@ -41,10 +41,12 @@ describe('applyInvokeOwnerScope', () => {
 
     it('reconciles authoritative source facts before applying durable owner visibility', async () => {
         const { applyInvokeOwnerScope } = await import('../ownerScope');
+        const onProgress = vi.fn();
         const result = await applyInvokeOwnerScope({
             discovery,
             selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
             reconcileSourceFacts: true,
+            onProgress,
         });
 
         expect(mocks.reconcileInvokeSourceFacts).toHaveBeenCalledOnce();
@@ -57,6 +59,10 @@ describe('applyInvokeOwnerScope', () => {
         });
         expect(mocks.reconcileInvokeSourceFacts.mock.invocationCallOrder[0])
             .toBeLessThan(mocks.refreshInvokeOwnerScope.mock.invocationCallOrder[0]);
+        const reconciliationProgress = mocks.reconcileInvokeSourceFacts.mock.calls[0][0].onProgress;
+        reconciliationProgress(1, 2, 'Reconciling sources: 1 / 2');
+        expect(onProgress).toHaveBeenCalledWith(1, 2, 'Updating InvokeAI image details...');
+        expect(onProgress).toHaveBeenCalledWith(0, 0, 'Updating which InvokeAI images are shown...');
         expect(result).toEqual({
             changed: true,
             sourceFactsUpdated: 3,
@@ -84,6 +90,25 @@ describe('applyInvokeOwnerScope', () => {
         expect(mocks.refreshInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
             mode: 'legacy',
             ownerId: null,
+            forceRefresh: true,
+        }));
+    });
+
+    it('revalidates visibility after reconciliation even when source facts were already repaired', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.reconcileInvokeSourceFacts.mockResolvedValueOnce(0);
+        mocks.refreshInvokeOwnerScope.mockResolvedValueOnce({
+            status: 'ok',
+            data: { changed: false, activeUpdated: 0, removedUpdated: 0 },
+        });
+
+        await applyInvokeOwnerScope({
+            discovery,
+            selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileSourceFacts: true,
+        });
+
+        expect(mocks.refreshInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
             forceRefresh: true,
         }));
     });

@@ -94,9 +94,30 @@ Evidence:
   errors, fits a 394 CSS-pixel viewport without horizontal overflow, and
   returns to an interactive Assets view after readiness;
 - `pnpm run verify:release` passes version and binding checks, lint, TypeScript,
-  the 434 kB startup-bundle guard, all 3,015 frontend tests with one existing
+  the 434 kB startup-bundle guard, all 3,018 frontend tests with one existing
   skip at 98.43% statement coverage, all 557 Rust tests with one ignored, and
   the optimized no-bundle Tauri build.
+
+### Review closure (`2026-07-28`)
+
+The Assure review/remediation loop is closed with no remaining Work Package 1
+blocking findings. The explicit Work Package 2 selection, offline, and error
+recovery scope remains planned rather than being silently absorbed here.
+
+| Finding | Severity | Disposition | Verification |
+| --- | --- | --- | --- |
+| A configured library could render once while owner discovery was still `idle`, or while ready state belonged to a previous InvokeAI root. | Blocking | Fixed by treating configured idle and root mismatch as guarded startup states. | App orchestration covers idle, stale-root, ready-root, and case-sensitive POSIX roots. |
+| A crash after durable scope selection but before cache refresh could leave stale counts, facets, or collections on the next no-op startup. | Blocking | Fixed by refreshing derived library caches whenever the saved scope snapshot requires reconciliation, even if no rows changed. | Sync integration verifies a zero-row reconciliation still rebuilds derived caches before readiness. |
+| A crash after source facts were committed but before visibility was applied could make the next same-scope startup skip visibility repair. | Blocking | Fixed by forcing visibility validation whenever source reconciliation is requested; trusted unchanged startups retain the native fast path. | Owner-scope service coverage verifies forced validation after a zero-update reconciliation; the native fast-path/forced-repair test passes. |
+| First-time configuration could show an inaccurate upgrade-complete toast, and progress exposed implementation language. | Non-blocking UX | Fixed by limiting the completion toast to pre-existing synchronized libraries and mapping progress to user-facing copy. | Sync, gate, settings, and service tests cover fresh setup, legacy upgrade, counts, and copy. |
+| Lowercasing configured roots could treat distinct case-sensitive filesystem paths as one installation. | Non-blocking portability | Fixed with normalized exact root comparison; discovery preserves configured casing. | App orchestration covers differently cased POSIX roots. |
+
+Closure evidence: the focused review suite passes 115 tests with one existing
+skip; TypeScript, lint, native owner-scope regression, and whitespace checks
+pass; the repeated release gate passes 3,018 frontend tests with one existing
+skip, 98.43% statement coverage, all 557 Rust tests with one ignored, binding
+and version checks, the 434 kB startup-bundle guard, and the optimized Tauri
+build.
 
 ## Work Package 2: Selection, offline, and error recovery
 

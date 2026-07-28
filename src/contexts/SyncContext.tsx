@@ -302,7 +302,7 @@ export const SyncProvider: React.FC<{
         };
         reportProgress(0, 0, reconcileSourceFacts
             ? 'Preparing InvokeAI library upgrade...'
-            : 'Checking saved InvokeAI visibility...');
+            : 'Checking your saved InvokeAI view...');
         const previousSelection = settingsRef.current.invokeOwnerSelection?.dbPath === discovery.dbPath
             ? settingsRef.current.invokeOwnerSelection
             : undefined;
@@ -334,7 +334,7 @@ export const SyncProvider: React.FC<{
                 throw persistError;
             }
         }
-        if (result.changed || forceRefresh) {
+        if (result.changed || forceRefresh || reconcileSourceFacts) {
             reportProgress(0, 0, 'Refreshing library filters and collections...');
             await refreshAfterOwnerScopeChange();
         }
@@ -439,7 +439,7 @@ export const SyncProvider: React.FC<{
                     rootPath,
                     force
                 );
-                if (admission.sourceFactsReconciled && admission.allowed) {
+                if (hasPersistedSyncState && admission.sourceFactsReconciled && admission.allowed) {
                     addToast('InvokeAI library upgrade complete. No images or collections were deleted.', 'success');
                 }
                 if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {

@@ -207,7 +207,10 @@ const mocks = vi.hoisted(() => ({
         handleRevertMetadata: vi.fn()
     },
     startInvokeSync: vi.fn(),
-    invokeOwnerScopeState: { status: 'ready' } as { status: string },
+    invokeOwnerScopeState: { status: 'ready' } as {
+        status: string;
+        discovery?: { imagesRoot: string };
+    },
     getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
@@ -1028,6 +1031,48 @@ describe('App orchestration', () => {
         mocks.invokeOwnerScopeState = { status: 'applying' };
         view.rerender(<App />);
         expect(mocks.clearAllFilters).toHaveBeenCalledTimes(2);
+    });
+
+    it('blocks a configured InvokeAI library before discovery and while discovery belongs to an older root', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke/databases',
+        });
+        mocks.invokeOwnerScopeState = { status: 'idle' };
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            discovery: { imagesRoot: 'D:/PreviousInvoke' },
+        };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            discovery: { imagesRoot: 'D:/Invoke' },
+        };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
+    it('does not treat differently cased POSIX InvokeAI roots as the same installation', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: '/home/Artemis/Invoke/databases',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            discovery: { imagesRoot: '/home/artemis/Invoke' },
+        };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
     });
 
     it('uses the current gallery for visible reference targets and keeps missing targets disabled', async () => {

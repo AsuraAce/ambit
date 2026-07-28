@@ -41,6 +41,7 @@ import { getImageWithFullMetadata } from './services/db/imageRepo';
 import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
+import { normalizeInvokeRoot } from './utils/pathUtils';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
@@ -59,7 +60,7 @@ export default function App() {
     const [viewerSessionImages, setViewerSessionImages] = useState<AIImage[] | null>(null);
     const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
     const referenceNavigationRequestRef = useRef(0);
-    const wasInvokeOwnerScopeApplyingRef = useRef(false);
+    const wasInvokeOwnerScopeBlockingRef = useRef(false);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -288,10 +289,15 @@ export default function App() {
 
     const { startInvokeSync, invokeOwnerScopeState } = useSync();
     const isInvokeOwnerScopeApplying = invokeOwnerScopeState.status === 'applying';
+    const configuredInvokeRoot = normalizeInvokeRoot(settings.invokeAiPath);
+    const discoveredInvokeRoot = normalizeInvokeRoot(invokeOwnerScopeState.discovery?.imagesRoot);
+    const isConfiguredScopeUnsettled = configuredInvokeRoot !== null
+        && invokeOwnerScopeState.status !== 'error'
+        && (invokeOwnerScopeState.status === 'idle' || discoveredInvokeRoot !== configuredInvokeRoot);
     const isInvokeOwnerScopeBlocking = isInvokeOwnerScopeApplying
-        || invokeOwnerScopeState.status === 'discovering';
-    const shouldHideOwnerScopedImages = isInvokeOwnerScopeApplying
         || invokeOwnerScopeState.status === 'discovering'
+        || isConfiguredScopeUnsettled;
+    const shouldHideOwnerScopedImages = isInvokeOwnerScopeBlocking
         || invokeOwnerScopeState.status === 'error';
     const ownerScopedDisplayImages = shouldHideOwnerScopedImages
         ? images.filter(image => (
@@ -302,9 +308,9 @@ export default function App() {
         : images;
 
     useEffect(() => {
-        const startedApplying = isInvokeOwnerScopeApplying && !wasInvokeOwnerScopeApplyingRef.current;
-        wasInvokeOwnerScopeApplyingRef.current = isInvokeOwnerScopeApplying;
-        if (!startedApplying) return;
+        const startedBlocking = isInvokeOwnerScopeBlocking && !wasInvokeOwnerScopeBlockingRef.current;
+        wasInvokeOwnerScopeBlockingRef.current = isInvokeOwnerScopeBlocking;
+        if (!startedBlocking) return;
 
         referenceNavigationRequestRef.current += 1;
         selectedImageIndexRef.current = null;
@@ -317,7 +323,7 @@ export default function App() {
         setAvailableTags([]);
         clearAllFilters();
         clearSelection();
-    }, [clearAllFilters, clearSelection, isInvokeOwnerScopeApplying]);
+    }, [clearAllFilters, clearSelection, isInvokeOwnerScopeBlocking]);
 
     const handleSelectFilesImport = useCallback(async () => {
         const isTauriEnv = typeof window !== 'undefined' && !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;

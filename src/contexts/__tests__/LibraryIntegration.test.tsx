@@ -386,7 +386,7 @@ describe('Library Integration (Provider Stack)', () => {
             await act(async () => hook?.startInvokeSync({ mode }));
 
             await waitFor(() => expect(screen.getByTitle('View Options')).toBeTruthy());
-            expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledTimes(2);
+            expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledTimes(3);
         }
     );
 
@@ -1000,6 +1000,8 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook?.settings.importOrphans).toBe(false);
         });
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        const facetCacheVersionBeforeSync = useLibraryStore.getState().facetCacheVersion;
 
         const touchedFacetResources = {
             checkpoints: ['Flux Base'],
@@ -1032,7 +1034,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().syncStatus).toBe('complete');
         expect(useLibraryStore.getState().syncProgress.total).toBe(2);
-        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(facetCacheVersionBeforeSync + 1);
     });
 
     it('keeps startup Invoke catch-up on the full rebuild path for large deltas', async () => {
@@ -1052,6 +1054,8 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook?.settings.importOrphans).toBe(false);
         });
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        const facetCacheVersionBeforeSync = useLibraryStore.getState().facetCacheVersion;
 
         mocks.syncImages.mockResolvedValueOnce({
             imported: 501,
@@ -1081,7 +1085,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.refreshFacetCacheForResourcesStrict).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCache).not.toHaveBeenCalled();
         expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledTimes(1);
-        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(facetCacheVersionBeforeSync + 1);
     });
 
     it('refreshes grid and facets after a live Invoke cycle without falling back to the full rebuild', async () => {
@@ -1164,6 +1168,7 @@ describe('Library Integration (Provider Stack)', () => {
             });
             useLibraryStore.getState().setIsLiveWatching(true);
         });
+        await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
 
         const deferred = createDeferred<{
             imported: number;
@@ -1222,8 +1227,10 @@ describe('Library Integration (Provider Stack)', () => {
             await syncPromise;
         });
 
-        expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
-        expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
+        await waitFor(() => {
+            expect(useLibraryStore.getState().liveWatchSession.active).toBe(false);
+            expect(useLibraryStore.getState().liveWatchSessionCloseRequested).toBe(false);
+        });
     });
 
     it('drains scheduled Invoke activity after toggling off during detected activity', async () => {
@@ -1438,6 +1445,7 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
+        await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
 
         mocks.syncImages.mockClear();
 
@@ -1483,6 +1491,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         await waitFor(() => expect(hook?.settings.invokeAiPath)
             .toBe('D:/AmbitFixtures/InvokeAI/databases'));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
 
         const snapshotDeferred = createDeferred<{
             status: 'ok';
@@ -1579,6 +1588,10 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => {
             expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
+        await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
+        await waitFor(() => expect(screen.getByText(
+            'InvokeAI library upgrade complete. No images or collections were deleted.'
+        )).toBeTruthy());
 
         mocks.syncImages.mockClear();
         mocks.appRepository.update.mockClear();
@@ -1728,6 +1741,8 @@ describe('Library Integration (Provider Stack)', () => {
 
         renderSyncStack(h => libraryHook = h, h => syncHook = h);
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        mocks.rebuildFacetCacheStrict.mockClear();
+        mocks.clearLibraryStatsCache.mockClear();
         await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
 
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
@@ -1742,6 +1757,11 @@ describe('Library Integration (Provider Stack)', () => {
             mode: 'legacy',
         }));
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledOnce();
+        expect(mocks.clearLibraryStatsCache).toHaveBeenCalledOnce();
+        expect(screen.queryByText(
+            'InvokeAI library upgrade complete. No images or collections were deleted.'
+        )).toBeNull();
     });
 
     it('discards stale owner discovery when the InvokeAI root changes in flight', async () => {
@@ -2680,6 +2700,8 @@ describe('Library Integration (Provider Stack)', () => {
             });
         });
         await waitFor(() => expect(hook?.settings.syncBoardsToCollections).toBe(true));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        const facetCacheVersionBeforeSync = useLibraryStore.getState().facetCacheVersion;
 
         mocks.syncImages.mockImplementationOnce(async (
             _path: string,
@@ -2721,7 +2743,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.scanForOrphans).toHaveBeenCalledOnce();
         expect(mocks.rebuildFacetCache).toHaveBeenCalledOnce();
-        expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(useLibraryStore.getState().facetCacheVersion).toBe(facetCacheVersionBeforeSync + 1);
         const boardUpdater = [...setCollectionsSpy.mock.calls]
             .reverse()
             .map(call => call[0])
@@ -2852,6 +2874,9 @@ describe('Library Integration (Provider Stack)', () => {
             syncBoardsToCollections: true,
             importOrphans: false,
         }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        refreshCollections.mockClear();
+        refreshCollectionThumbnails.mockClear();
         mocks.getInvokeDbSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'));
         mocks.syncImages.mockImplementationOnce(async (
             _path: string,
@@ -2982,7 +3007,7 @@ describe('Library Integration (Provider Stack)', () => {
     it('falls back to full facets and reports asynchronous live refresh failures', async () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const refreshCollections = vi.fn().mockResolvedValue(undefined);
-        const refreshCollectionThumbnails = vi.fn().mockRejectedValue(new Error('thumbnail refresh failed'));
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
         useCollectionStore.setState({ refreshCollections, refreshCollectionThumbnails });
         let hook: ReturnType<typeof useLibraryContext> | undefined;
         let syncHook: SyncHook | undefined;
@@ -2992,6 +3017,11 @@ describe('Library Integration (Provider Stack)', () => {
             invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
             syncBoardsToCollections: true,
         }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        refreshCollections.mockClear();
+        refreshCollectionThumbnails.mockClear();
+        mocks.rebuildFacetCacheStrict.mockClear();
+        refreshCollectionThumbnails.mockRejectedValueOnce(new Error('thumbnail refresh failed'));
         const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
             .mockRejectedValue(new Error('invalidate failed'));
         mocks.rebuildFacetCacheIncrementalBatchStrict.mockRejectedValueOnce(new Error('incremental failed'));
