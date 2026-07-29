@@ -233,10 +233,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 494);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 50);
+    assert_eq!(count_coverage("golden"), 56);
     assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 28);
+    assert_eq!(count_coverage("unassessed"), 22);
     assert_eq!(count_coverage("excluded"), 494);
 }
 
@@ -276,10 +276,16 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_boogu_image_0_1_edit_int8", "golden"),
         ("image_boogu_image_0_1_turbo_t2i", "golden"),
         ("image_flux.1_fill_dev_OneReward", "golden"),
+        ("image_flux2", "golden"),
         ("image_flux2_fp8", "golden"),
         ("image_flux2_klein_9b_kv_image_edit", "golden"),
+        ("image_flux2_klein_image_edit_4b_base", "golden"),
         ("image_flux2_klein_image_edit_4b_distilled", "golden"),
+        ("image_flux2_klein_image_edit_9b_base", "golden"),
+        ("image_flux2_klein_image_edit_9b_distilled", "golden"),
         ("image_flux2_klein_text_to_image", "golden"),
+        ("image_flux2_text_to_image", "golden"),
+        ("image_flux2_text_to_image_9b", "golden"),
         ("image_kandinsky5_t2i", "golden"),
         ("image_ideogram4_t2i_int8", "golden"),
         ("image_joyai_image_edit", "golden"),

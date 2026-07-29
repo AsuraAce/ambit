@@ -464,3 +464,23 @@ and `euler` with `simple`; the turbo LoRA is not on the selected path. Anima
 Preview retains its independent 30-step `er_sde` path. Both workflows are exact
 goldens with one saved output, one root sampler, no ambiguity, and
 `SamplerTraversal` provenance for every populated metadata field.
+
+## Milestone 39 v0.11.15 Flux.2 Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_flux2`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2.json) | `9a287d49f685916349fff6bae6bc685f322f23ef` | 57237 | 25 |
+| [`image_flux2_klein_image_edit_4b_base`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2_klein_image_edit_4b_base.json) | `39e7de94ac24e08dc153248f36dc91cbc9bc26a1` | 98449 | 24 |
+| [`image_flux2_klein_image_edit_9b_base`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2_klein_image_edit_9b_base.json) | `af8f73e22d92467d11ac8ed609b8ada906b9bfdf` | 97897 | 24 |
+| [`image_flux2_klein_image_edit_9b_distilled`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2_klein_image_edit_9b_distilled.json) | `0b2a11b1f2f8218897fcfe91d48f786a00b7ef93` | 99879 | 24 |
+| [`image_flux2_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2_text_to_image.json) | `bb7d4e5be6f379834e7c6ee563dd58687fc78dad` | 49075 | 20 |
+| [`image_flux2_text_to_image_9b`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_flux2_text_to_image_9b.json) | `cc97272e7f37e2102eb8157416f39adaf63fc838` | 39788 | 17 |
+
+The release updates only informational `MarkdownNote` text in these six
+workflows. Their parser-relevant nodes, links, widgets, and subgraph interfaces
+match the previously asserted selected paths. Each remains an exact golden with
+one saved output, one root sampler, no ambiguity, no selected resources, and
+`SamplerTraversal` provenance for every populated generation field.
