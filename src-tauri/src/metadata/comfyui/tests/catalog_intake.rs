@@ -740,6 +740,27 @@ const MILESTONE41_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE42_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "gsl_creator_2",
+        source_blob: "f7f46f0e04d0c2c3d58ad4b094525dce898d4ca0",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_creator_2.chunks.json"),
+        graph_node_count: 26,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "gsl_starter_1_1",
+        source_blob: "68e7933294af216c41c1218f5e6303f80f81ccd4",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_1.chunks.json"),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -943,6 +964,11 @@ fn pinned_milestone40_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone41_revalidated_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE41_REVALIDATED_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone42_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE42_REVALIDATED_FIXTURES);
 }
 
 #[test]

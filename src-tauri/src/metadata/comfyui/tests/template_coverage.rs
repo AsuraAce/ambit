@@ -233,11 +233,22 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 494);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 62);
+    assert_eq!(count_coverage("golden"), 64);
     assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 16);
+    assert_eq!(count_coverage("unassessed"), 14);
     assert_eq!(count_coverage("excluded"), 494);
+    assert_eq!(
+        manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.category == "Getting Started"
+                && entry.scope == "target_core_image"
+                && entry.coverage == "unassessed")
+            .count(),
+        0,
+        "all active Getting Started workflows should be assessed"
+    );
 }
 
 #[test]
@@ -261,6 +272,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("gsc_creator_2_2", "golden"),
         ("gsc_creator_2_3", "partial"),
         ("gsc_starter_1", "pattern_covered"),
+        ("gsl_creator_2", "golden"),
+        ("gsl_starter_1_1", "golden"),
         ("gsl_starter_1_3", "pattern_covered"),
         ("hidream_e1_1", "golden"),
         ("hidream_e1_full", "golden"),

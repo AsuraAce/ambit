@@ -398,6 +398,14 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_joyai_image_edit",
         chunks_json: include_str!("fixtures/official_catalog/image_joyai_image_edit.chunks.json"),
     },
+    CatalogFixture {
+        name: "gsl_creator_2",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_creator_2.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsl_starter_1_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_1.chunks.json"),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -420,6 +428,8 @@ const ANIMA_LLLITE_ANY_EXPECTED_POSITIVE: &str = include_str!(
 const ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE: &str = include_str!(
     "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.expected-positive.txt"
 );
+const GSL_STARTER_POSITIVE: &str = "masterpiece, best quality, ultra-detailed, 8k, photorealistic oil painting, cinematic lighting, soft focus,\n1girl, solo, blonde wavy short hair, messy hair, floating hair, looking up, blue eyes, soft gaze, parted lips, pale skin, delicate facial features, **simple white long-sleeve top, fully covered shoulders, high neckline, modest clothing**, gold necklace with green gem pendant, upper body shot,\nbackground of cosmic space, giant glowing planet with clouds, bright light beam from planet, starry sky, bokeh, dreamy atmosphere, soft light, ethereal, fantasy aesthetic, depth of field, painterly details, smooth skin texture";
+const GSL_STARTER_NEGATIVE: &str = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, deformed, disfigured, ugly, extra limbs, missing limbs, poorly drawn face, mutated, mutated hands, extra fingers, bad proportions, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, long neck, text, signature, watermark, cartoon, anime, 3d render, realistic (non-painting style)";
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -2281,6 +2291,52 @@ fn qwen_image_edit_2511_int8_omits_the_disabled_lightning_lora() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsl_creator_2_is_golden() {
+    assert_fixture(
+        "gsl_creator_2",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(179_304_186_588_666),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "sunglasses.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &["z_image_turbo_fun_controlnet_union_2.1"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsl_starter_1_1_is_golden() {
+    assert_fixture(
+        "gsl_starter_1_1",
+        ExpectedMetadata {
+            model: "dreamshaper_8_pruned",
+            seed: Some(650_101_271_515_995),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt: GSL_STARTER_POSITIVE,
+            negative_prompt: GSL_STARTER_NEGATIVE,
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

@@ -526,3 +526,20 @@ Qwen Edit 2511 now selects `qwen_image_edit_2511_fp8mixed` with seed
 authoritative and the Lightning LoRA is omitted. Both workflows have one
 saved output, one root sampler, no ambiguity, and exact `SamplerTraversal`
 provenance without parser changes.
+
+## Milestone 42 v0.11.15 Getting Started Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`gsl_creator_2`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/gsl_creator_2.json) | `f7f46f0e04d0c2c3d58ad4b094525dce898d4ca0` | 56051 | 26 |
+| [`gsl_starter_1_1`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/gsl_starter_1_1.json) | `68e7933294af216c41c1218f5e6303f80f81ccd4` | 17707 | 15 |
+
+`gsl_creator_2` selects the Z-Image inpaint subgraph with its literal prompt
+and model-patch ControlNet. `gsl_starter_1_1` is a standard SD1.5 workflow with
+exact positive and negative conditioning. Both published workflows differ
+from the previous catalog only in informational note text, and both retain one
+saved output, one root sampler, and `SamplerTraversal` provenance without
+parser changes.
