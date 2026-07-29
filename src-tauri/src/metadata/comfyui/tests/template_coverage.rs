@@ -233,10 +233,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 494);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 56);
+    assert_eq!(count_coverage("golden"), 60);
     assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 22);
+    assert_eq!(count_coverage("unassessed"), 18);
     assert_eq!(count_coverage("excluded"), 494);
 }
 
@@ -296,10 +296,14 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_newbieimage_exp0_1-t2i", "golden"),
         ("image_omnigen2_image_edit", "golden"),
         ("image_omnigen2_t2i", "golden"),
+        ("image_qwen_Image_2512", "golden"),
+        ("image_qwen_Image_2512_controlnet", "golden"),
         ("image_qwen_image", "golden"),
+        ("image_qwen_image_2512_with_2steps_lora", "golden"),
         ("image_qwen_image_edit", "golden"),
         ("image_qwen_image_edit_2511_int8", "golden"),
         ("image_qwen_image_union_control_lora", "golden"),
+        ("image-qwen_image_edit_2511_lora_inflation", "golden"),
         ("image_z_image_turbo", "golden"),
         ("image_z_image_int8", "golden"),
         ("image_z_image_turbo_fun_union_controlnet", "golden"),

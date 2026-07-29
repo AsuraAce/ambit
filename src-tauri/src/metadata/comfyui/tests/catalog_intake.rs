@@ -240,40 +240,9 @@ const MILESTONE28_REFERENCE_MODIFIER_FIXTURES: &[IntakeFixture] = &[
         output_roots: 1,
         output_ambiguous: false,
     },
-    IntakeFixture {
-        name: "image-qwen_image_edit_2511_lora_inflation",
-        source_blob: "5c3f4546c31cb25680e948141c2eee700112952d",
-        chunks_json: include_str!(
-            "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
-        ),
-        graph_node_count: 20,
-        output_candidates: 1,
-        output_roots: 1,
-        output_ambiguous: false,
-    },
 ];
 
 const MILESTONE29_CORE_VARIANT_FIXTURES: &[IntakeFixture] = &[
-    IntakeFixture {
-        name: "image_qwen_Image_2512",
-        source_blob: "004f4589eed5dd60d9c7f96154fcebf94387cd28",
-        chunks_json: include_str!("fixtures/official_catalog/image_qwen_Image_2512.chunks.json"),
-        graph_node_count: 21,
-        output_candidates: 1,
-        output_roots: 1,
-        output_ambiguous: false,
-    },
-    IntakeFixture {
-        name: "image_qwen_image_2512_with_2steps_lora",
-        source_blob: "be0745544baab6c66bc9aacd184361668b70ddb8",
-        chunks_json: include_str!(
-            "fixtures/official_catalog/image_qwen_image_2512_with_2steps_lora.chunks.json"
-        ),
-        graph_node_count: 13,
-        output_candidates: 1,
-        output_roots: 1,
-        output_ambiguous: false,
-    },
     IntakeFixture {
         name: "hidream_i1_dev",
         source_blob: "7ae5db47050e8c47124525d7fc37f9ddb43e6a7f",
@@ -712,6 +681,51 @@ const MILESTONE39_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE40_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_qwen_Image_2512",
+        source_blob: "4e46879b51bd266d513fdb5429bb9b52448e0bb1",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_Image_2512.chunks.json"),
+        graph_node_count: 21,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_Image_2512_controlnet",
+        source_blob: "689d1a76fc42f37db926af1055860617a08bebf4",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_Image_2512_controlnet.chunks.json"
+        ),
+        graph_node_count: 30,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_2512_with_2steps_lora",
+        source_blob: "c4214781ab66852199b88bbfe98e5f564004b4fa",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_2512_with_2steps_lora.chunks.json"
+        ),
+        graph_node_count: 13,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image-qwen_image_edit_2511_lora_inflation",
+        source_blob: "4cb616f9532b188bf15134808ff6e29c8bc8ace9",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
+        ),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -905,6 +919,11 @@ fn pinned_milestone37_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone39_revalidated_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE39_REVALIDATED_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone40_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE40_REVALIDATED_FIXTURES);
 }
 
 #[test]

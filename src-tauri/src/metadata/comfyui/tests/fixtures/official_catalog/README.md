@@ -484,3 +484,24 @@ workflows. Their parser-relevant nodes, links, widgets, and subgraph interfaces
 match the previously asserted selected paths. Each remains an exact golden with
 one saved output, one root sampler, no ambiguity, no selected resources, and
 `SamplerTraversal` provenance for every populated generation field.
+
+## Milestone 40 v0.11.15 Qwen Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_qwen_Image_2512`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_Image_2512.json) | `4e46879b51bd266d513fdb5429bb9b52448e0bb1` | 52251 | 21 |
+| [`image_qwen_Image_2512_controlnet`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_Image_2512_controlnet.json) | `689d1a76fc42f37db926af1055860617a08bebf4` | 62531 | 30 |
+| [`image_qwen_image_2512_with_2steps_lora`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_image_2512_with_2steps_lora.json) | `c4214781ab66852199b88bbfe98e5f564004b4fa` | 18099 | 13 |
+| [`image-qwen_image_edit_2511_lora_inflation`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image-qwen_image_edit_2511_lora_inflation.json) | `4cb616f9532b188bf15134808ff6e29c8bc8ace9` | 40858 | 20 |
+
+Only informational `MarkdownNote` widget text changed in these four workflows.
+Their parser-relevant nodes, links, widgets, and subgraph interfaces remain
+identical to the historical fixtures. Existing exact model, sampler, prompt,
+resource, output, and provenance assertions therefore remain authoritative.
+
+`image_qwen_image_edit_2509` and `image_qwen_image_edit_2511` are not included:
+their v0.11.15 workflows contain structural graph changes and remain unassessed
+until their selected paths receive an independent review.
