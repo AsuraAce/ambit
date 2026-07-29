@@ -601,10 +601,31 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
-        } else if t == "ZImageFunControlnet" || t == "QwenImageDiffsynthControlnet" {
-            if let Some(patch_id) =
+        } else if t == "ZImageFunControlnet"
+            || t == "QwenImageDiffsynthControlnet"
+            || t == "AnimaLLLiteApply"
+        {
+            if t == "AnimaLLLiteApply" {
+                match node.get("mode").and_then(Value::as_i64) {
+                    Some(2) => return None,
+                    Some(4) => {
+                        if let Some(next) =
+                            get_model_chain_source_id(graph, node, "model", strict_connections)
+                        {
+                            current_id = next;
+                            continue;
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let patch_id = if t == "AnimaLLLiteApply" {
+                get_strict_source_id(node, "model_patch")
+            } else {
                 get_model_chain_source_id(graph, node, "model_patch", strict_connections)
-            {
+            };
+            if let Some(patch_id) = patch_id {
                 if let Some(patch_node) = graph.get_node(&patch_id) {
                     if get_node_type(patch_node) == "ModelPatchLoader" {
                         if let Some(name) = extract_model_patch_name(graph, patch_node) {

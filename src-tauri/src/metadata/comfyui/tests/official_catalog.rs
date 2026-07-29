@@ -363,6 +363,24 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.chunks.json"),
     },
     CatalogFixture {
+        name: "image_anima_lllite_any_control_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_any_control_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_anima_lllite_image_inpainting",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_image_inpainting.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_anima_lllite_depth_control_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
         name: "image_boogu_image_0_1_edit_int8",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_boogu_image_0_1_edit_int8.chunks.json"
@@ -392,6 +410,12 @@ const IDEOGRAM_INT8_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.expected-positive.txt");
 const Z_IMAGE_INT8_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_z_image_int8.expected-positive.txt");
+const ANIMA_LLLITE_ANY_EXPECTED_POSITIVE: &str = include_str!(
+    "fixtures/official_catalog/image_anima_lllite_any_control_to_image.expected-positive.txt"
+);
+const ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE: &str = include_str!(
+    "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.expected-positive.txt"
+);
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -2332,6 +2356,86 @@ fn joyai_image_edit_int8_is_golden() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_any_control_is_golden() {
+    let positive_prompt = ANIMA_LLLITE_ANY_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Anima LLLite any-control prompt should end with one fixture newline");
+
+    assert_fixture(
+        "image_anima_lllite_any_control_to_image",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(1_986_030_987_480),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt,
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &["anima_lllite_any_test_like_v2"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_inpainting_is_golden() {
+    assert_fixture(
+        "image_anima_lllite_image_inpainting",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(1_376_514_088_921),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "girl with red eyes",
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &["anima_turbo_lora_v0.2"],
+            control_nets: &["anima_lllite_inpainting_v2"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_depth_control_is_golden() {
+    let positive_prompt = ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Anima LLLite depth prompt should end with one fixture newline");
+
+    assert_fixture(
+        "image_anima_lllite_depth_control_to_image",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(520_254_185_749_746),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt,
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &["anima_lllite_depth_1"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

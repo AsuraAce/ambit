@@ -426,7 +426,12 @@ has one active persisted output and one root sampler, and all populated core
 fields are sourced from `SamplerTraversal`. Disabled LoRA branches and the
 Ideogram unconditional model remain excluded from selected-path metadata.
 
-The three Anima LLLite workflows remain `unassessed`. Their scalar and prompt
-metadata already follows the selected sampler path, but their active
-`ModelPatchLoader` assets need an explicit resource-classification policy
-before the workflows can be promoted without making a misleading claim.
+The three Anima LLLite workflows are golden coverage. Ambit classifies a
+`ModelPatchLoader` reached through the selected `AnimaLLLiteApply` model path
+as a ControlNet resource, matching the existing Z-Image and Qwen model-patch
+policy. Generic and disconnected model-patch loaders remain unclassified.
+
+Milestone 36 records exact Anima Base model, sampler, prompt, LoRA, and LLLite
+resource metadata for the any-control, inpainting, and depth workflows. All
+populated fields use `SamplerTraversal`; each workflow has one active saved
+output, one root sampler, and no ambiguity.
