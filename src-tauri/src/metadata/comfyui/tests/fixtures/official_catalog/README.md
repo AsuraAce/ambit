@@ -435,3 +435,16 @@ Milestone 36 records exact Anima Base model, sampler, prompt, LoRA, and LLLite
 resource metadata for the any-control, inpainting, and depth workflows. All
 populated fields use `SamplerTraversal`; each workflow has one active saved
 output, one root sampler, and no ambiguity.
+
+## Milestone 37 v0.11.15 Selected-Path Revalidation
+
+The Capybara text-to-image and image-edit, Boogu edit and turbo, and Lens base
+and turbo workflows now use their exact `v0.11.15` bytes. Their selected model,
+sampler, conditioning, and saved-output paths remain supported without parser
+changes. Boogu Edit adds one normalized documentation node, raising its graph
+count from 17 to 18 without changing extracted generation metadata.
+
+All six workflows have one active persisted output, one root sampler, no
+ambiguity, and no selected resources. The five directly asserted workflows are
+golden; Lens Turbo remains pattern-covered by its structural comparison with
+the Lens base selected path.

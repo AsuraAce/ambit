@@ -1165,7 +1165,7 @@ fn boogu_edit_custom_conditioning() {
             loras: &[],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 17,
+            graph_node_count: 18,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

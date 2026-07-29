@@ -35,7 +35,7 @@ const FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_lens_t2i",
-        source_blob: "8784096ee565f02e20c13c07a0f582cfa9d0692d",
+        source_blob: "e12d2d791d212cc8aed8ee00d9999d25206a866b",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
         graph_node_count: 19,
         output_candidates: 1,
@@ -44,11 +44,11 @@ const FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_boogu_image_0_1_edit",
-        source_blob: "35750c20d300a25e6e1f8231c664392accee8abe",
+        source_blob: "c452dc0e1c831de8ea738b4e11a59dc7525d8238",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_boogu_image_0_1_edit.chunks.json"
         ),
-        graph_node_count: 17,
+        graph_node_count: 18,
         output_candidates: 1,
         output_roots: 1,
         output_ambiguous: false,
@@ -78,7 +78,7 @@ const RELATED_VARIANTS: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_lens_turbo_t2i",
-        source_blob: "697cbf0bb04eff2d70750dd9d2f01cc920d76ca5",
+        source_blob: "604a4ba02cd10dc7d00703cf1975151ee6787c45",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
         graph_node_count: 20,
         output_candidates: 1,
@@ -175,7 +175,7 @@ const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "Image_capybara_v0_1_image_edit",
-        source_blob: "39b6c3d9fa952a5f4c50d801d7931720613324fe",
+        source_blob: "7c47ad4cd0ed3613c4a0ed04c669c485a2b82b21",
         chunks_json: include_str!(
             "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
         ),
@@ -319,7 +319,7 @@ const MILESTONE30_BASELINE_VARIANT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_boogu_image_0_1_turbo_t2i",
-        source_blob: "53deaf8c1fece841eaaca33b3507dce701aeaf7d",
+        source_blob: "0386a9fccd5075d20de37c972bb29fcaeea95f8a",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_boogu_image_0_1_turbo_t2i.chunks.json"
         ),
@@ -633,6 +633,71 @@ const MILESTONE34_CATALOG_REFRESH_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE37_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "Image_capybara_v0_1_text_to_image",
+        source_blob: "adffcf2fac68599ca2495f0b60557d03327c8d49",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_text_to_image.chunks.json"
+        ),
+        graph_node_count: 17,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "Image_capybara_v0_1_image_edit",
+        source_blob: "7c47ad4cd0ed3613c4a0ed04c669c485a2b82b21",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
+        ),
+        graph_node_count: 22,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_boogu_image_0_1_edit",
+        source_blob: "c452dc0e1c831de8ea738b4e11a59dc7525d8238",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit.chunks.json"
+        ),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_boogu_image_0_1_turbo_t2i",
+        source_blob: "0386a9fccd5075d20de37c972bb29fcaeea95f8a",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_turbo_t2i.chunks.json"
+        ),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_lens_t2i",
+        source_blob: "e12d2d791d212cc8aed8ee00d9999d25206a866b",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
+        graph_node_count: 19,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_lens_turbo_t2i",
+        source_blob: "604a4ba02cd10dc7d00703cf1975151ee6787c45",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -816,6 +881,11 @@ fn pinned_milestone33_target_closure_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone34_catalog_refresh_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE34_CATALOG_REFRESH_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone37_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE37_REVALIDATED_FIXTURES);
 }
 
 #[test]

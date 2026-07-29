@@ -233,10 +233,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 494);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 43);
-    assert_eq!(count_coverage("pattern_covered"), 4);
+    assert_eq!(count_coverage("golden"), 48);
+    assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 36);
+    assert_eq!(count_coverage("unassessed"), 30);
     assert_eq!(count_coverage("excluded"), 494);
 }
 
@@ -246,6 +246,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
     let expected = [
         ("01_get_started_text_to_image", "golden"),
         ("02_qwen_Image_edit_subgraphed", "golden"),
+        ("Image_capybara_v0_1_image_edit", "golden"),
+        ("Image_capybara_v0_1_text_to_image", "golden"),
         ("default", "pattern_covered"),
         ("flux_depth_lora_example", "golden"),
         ("flux_dev_checkpoint_example", "golden"),
@@ -268,7 +270,9 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_chroma_text_to_image", "golden"),
         ("image_chroma1_radiance_text_to_image", "golden"),
         ("image_chrono_edit_14B", "golden"),
+        ("image_boogu_image_0_1_edit", "golden"),
         ("image_boogu_image_0_1_edit_int8", "golden"),
+        ("image_boogu_image_0_1_turbo_t2i", "golden"),
         ("image_flux.1_fill_dev_OneReward", "golden"),
         ("image_flux2_fp8", "golden"),
         ("image_flux2_klein_9b_kv_image_edit", "golden"),
@@ -278,6 +282,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_ideogram4_t2i_int8", "golden"),
         ("image_joyai_image_edit", "golden"),
         ("image_krea2_turbo_int8_image_style_reference", "golden"),
+        ("image_lens_t2i", "golden"),
+        ("image_lens_turbo_t2i", "pattern_covered"),
         ("image_netayume_lumina_t2i", "golden"),
         ("image_newbieimage_exp0_1-t2i", "golden"),
         ("image_omnigen2_image_edit", "golden"),
