@@ -15,9 +15,9 @@ struct IntakeFixture {
 const FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "image_anima_base_v1",
-        source_blob: "2b8eb6b61006a4e95a92f9e9b10fb23df44f3868",
+        source_blob: "f572962bfa4aaecd0ee7721df58b03d684c11c9d",
         chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
-        graph_node_count: 10,
+        graph_node_count: 20,
         output_candidates: 1,
         output_roots: 1,
         output_ambiguous: false,
@@ -69,7 +69,7 @@ const FIXTURES: &[IntakeFixture] = &[
 const RELATED_VARIANTS: &[IntakeFixture] = &[
     IntakeFixture {
         name: "image_anima_preview",
-        source_blob: "80c7cca83a3fed582d4fd1fe20971b60d68336ac",
+        source_blob: "f0bf84c0e8e9c0b2dc4634371626d8ae288fb289",
         chunks_json: include_str!("fixtures/official_catalog/image_anima_preview.chunks.json"),
         graph_node_count: 10,
         output_candidates: 1,

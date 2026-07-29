@@ -233,10 +233,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.excluded_entries, 494);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 48);
+    assert_eq!(count_coverage("golden"), 50);
     assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 1);
-    assert_eq!(count_coverage("unassessed"), 30);
+    assert_eq!(count_coverage("unassessed"), 28);
     assert_eq!(count_coverage("excluded"), 494);
 }
 
@@ -267,6 +267,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("hidream_i1_dev", "golden"),
         ("hidream_i1_fast", "golden"),
         ("hidream_i1_full", "golden"),
+        ("image_anima_base_v1", "golden"),
+        ("image_anima_preview", "golden"),
         ("image_chroma_text_to_image", "golden"),
         ("image_chroma1_radiance_text_to_image", "golden"),
         ("image_chrono_edit_14B", "golden"),

@@ -113,6 +113,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
     },
     CatalogFixture {
+        name: "image_anima_preview",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_preview.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_newbieimage_exp0_1-t2i",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
@@ -1080,11 +1084,34 @@ fn anima_base_subgraph_control() {
         "image_anima_base_v1",
         ExpectedMetadata {
             model: "anima_base_v1.0",
+            seed: Some(755_918_130_909_406),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_preview_subgraph_control() {
+    assert_fixture(
+        "image_anima_preview",
+        ExpectedMetadata {
+            model: "anima_preview3_base",
             seed: Some(875_817_230_929_465),
             steps: 30,
             cfg: 4.0,
             sampler: "er_sde (simple)",
-            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            positive_prompt: "masterpiece, best quality, score_7, safe, anime, a close-up of a futuristic cyberpunk robotic eye, original close-up eye composition strictly preserved, encased in weathered metallic blue and chrome plating with exposed wiring, glowing orange indicator lights, hydraulic pistons, and panel seams wrapping around the eyelid, a chrome mechanical tear duct with fine circuit details, long dark anime-style eyelashes framing the eye, soft pink sclera. The dark pupil holds a complete, glowing Earth with blue atmosphere and white clouds as a reflection, while the surrounding iris reflects a vivid cosmic scene: a fiery red shooting star, wispy cyan nebula clouds, and tiny glowing star specks. No change to the original close-up eye framing, no additional elements outside the eye structure, neon accent lighting, high contrast cyberpunk color palette, intricate mechanical engineering, sharp line art, gritty futuristic sci-fi atmosphere.",
             negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
             loras: &[],
             control_nets: &[],

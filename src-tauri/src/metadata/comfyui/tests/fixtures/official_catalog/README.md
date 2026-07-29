@@ -37,6 +37,7 @@ Golden workflows:
 - `image_chroma1_radiance_text_to_image.chunks.json`
 - `image_firered_image_edit1_1.chunks.json`
 - `image_anima_base_v1.chunks.json`
+- `image_anima_preview.chunks.json`
 - `image_boogu_image_0_1_edit.chunks.json`
 - `flux_depth_lora_example.chunks.json`
 - `image_lens_t2i.chunks.json`
@@ -49,8 +50,6 @@ Golden workflows:
 
 Pattern-covered workflows:
 
-- `image_anima_preview.chunks.json`: its internal selected path matches the
-  Anima Base golden; exact assertions cover its instance bindings and metadata.
 - `image_lens_turbo_t2i.chunks.json`: its internal custom-sampler path matches
   Lens, while exact assertions cover its distinct prompt boundary and metadata.
 
@@ -448,3 +447,20 @@ All six workflows have one active persisted output, one root sampler, no
 ambiguity, and no selected resources. The five directly asserted workflows are
 golden; Lens Turbo remains pattern-covered by its structural comparison with
 the Lens base selected path.
+
+## Milestone 38 v0.11.15 Anima Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_anima_base_v1`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_anima_base_v1.json) | `f572962bfa4aaecd0ee7721df58b03d684c11c9d` | 42714 | 20 |
+| [`image_anima_preview`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_anima_preview.json) | `f0bf84c0e8e9c0b2dc4634371626d8ae288fb289` | 28174 | 10 |
+
+Anima Base now uses switch-selected base and turbo branches for its model,
+steps, and CFG. Its published instance selects the base model, 30 steps, CFG 4,
+and `euler` with `simple`; the turbo LoRA is not on the selected path. Anima
+Preview retains its independent 30-step `er_sde` path. Both workflows are exact
+goldens with one saved output, one root sampler, no ambiguity, and
+`SamplerTraversal` provenance for every populated metadata field.
