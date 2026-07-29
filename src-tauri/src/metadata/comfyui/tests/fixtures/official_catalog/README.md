@@ -543,3 +543,29 @@ exact positive and negative conditioning. Both published workflows differ
 from the previous catalog only in informational note text, and both retain one
 saved output, one root sampler, and `SamplerTraversal` provenance without
 parser changes.
+
+## Milestone 43 v0.11.15 Semantic-Preserving Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_ernie_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_ernie_image.json) | `4b841c64cd1742dced75614e4b51747ee13adcaf` | 54571 | 22 |
+| [`image_firered_image_edit1_1`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_firered_image_edit1_1.json) | `19e4e5ea3489a781be917056dd33d07942bd7e09` | 56233 | 23 |
+| [`image_hidream_o1`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_hidream_o1.json) | `3f64d3feb9b39c301be81e5e5d7ddc7d7f267042` | 66237 | 41 |
+| [`image_hidream_o1_dev`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_hidream_o1_dev.json) | `cdd77698d6cb5dafb6e43c3fbb2e12375809a9dc` | 64751 | 40 |
+| [`image_ideogram4_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_ideogram4_t2i.json) | `9c016c249246439ccc08ccffbab31d04e54673cb` | 119252 | 42 |
+| [`image_longcat_image_edit`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_longcat_image_edit.json) | `e15d90ae587724f429a6c223194f1b21404922a6` | 35104 | 18 |
+| [`image_longcat_text_to_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_longcat_text_to_image.json) | `68749b8b2f45c580fd2f019d49ae2313fc655b14` | 32268 | 15 |
+| [`image_pixeldit_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_pixeldit_t2i.json) | `61d7236d058ddbcf921b544ffdfcf6afe7108cda` | 28973 | 12 |
+| [`image_z_image_turbo_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_z_image_turbo_int8.json) | `61bb66e258200a92db5626bb519d317e047807f4` | 28029 | 11 |
+| [`video_bernini_r_image_editing`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/video_bernini_r_image_editing.json) | `ca3d1c2a1981faa2322ae98ee0bfa85995b379c2` | 98067 | 45 |
+
+The release changes only informational notes or visual workflow serialization
+for these ten fixtures. FireRed, Ideogram, LongCat, PixelDiT, Z-Image INT8,
+and Bernini retain exact golden metadata. ERNIE Image and both HiDream O1
+workflows retain exact available metadata but remain partial because their
+generated prompt results are not embedded in the workflow. Every fixture has
+one saved output, one root sampler, no ambiguity, and unchanged selected-path
+provenance.

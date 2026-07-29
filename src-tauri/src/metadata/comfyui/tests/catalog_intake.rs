@@ -55,7 +55,7 @@ const FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "video_bernini_r_image_editing",
-        source_blob: "8d6b8327865c9421a0f20244f1f314d8c2818e67",
+        source_blob: "ca3d1c2a1981faa2322ae98ee0bfa85995b379c2",
         chunks_json: include_str!(
             "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
         ),
@@ -112,7 +112,7 @@ const PHASE23_RESOURCE_FIXTURES: &[IntakeFixture] = &[
 
 const MILESTONE25_IDEOGRAM_FIXTURES: &[IntakeFixture] = &[IntakeFixture {
     name: "image_ideogram4_t2i",
-    source_blob: "c04018493c60d8d4275f0bdc54acb385f59e7ea5",
+    source_blob: "9c016c249246439ccc08ccffbab31d04e54673cb",
     chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
     graph_node_count: 42,
     output_candidates: 1,
@@ -123,7 +123,7 @@ const MILESTONE25_IDEOGRAM_FIXTURES: &[IntakeFixture] = &[IntakeFixture {
 const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "image_longcat_text_to_image",
-        source_blob: "134b4ef684a862eb5d6a579d0e38e15589b6fa79",
+        source_blob: "68749b8b2f45c580fd2f019d49ae2313fc655b14",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
         ),
@@ -134,7 +134,7 @@ const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_pixeldit_t2i",
-        source_blob: "66593d57b3d14b42e137be9d53cf2f90820e7bee",
+        source_blob: "61d7236d058ddbcf921b544ffdfcf6afe7108cda",
         chunks_json: include_str!("fixtures/official_catalog/image_pixeldit_t2i.chunks.json"),
         graph_node_count: 12,
         output_candidates: 1,
@@ -166,7 +166,7 @@ const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
 const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "image_longcat_image_edit",
-        source_blob: "adf2d2d05b97d783139443fcbb0645a4812ed7ed",
+        source_blob: "e15d90ae587724f429a6c223194f1b21404922a6",
         chunks_json: include_str!("fixtures/official_catalog/image_longcat_image_edit.chunks.json"),
         graph_node_count: 18,
         output_candidates: 1,
@@ -369,7 +369,7 @@ const MILESTONE31_BASELINE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_z_image_turbo_int8",
-        source_blob: "37ba25e23784c6b830dc5473f7ac1938a8cb1dda",
+        source_blob: "61bb66e258200a92db5626bb519d317e047807f4",
         chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
         graph_node_count: 11,
         output_candidates: 1,
@@ -424,7 +424,7 @@ const MILESTONE33_TARGET_CLOSURE_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_hidream_o1",
-        source_blob: "6506c98a9bec9a138b475804637d810158639774",
+        source_blob: "3f64d3feb9b39c301be81e5e5d7ddc7d7f267042",
         chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1.chunks.json"),
         graph_node_count: 41,
         output_candidates: 1,
@@ -433,7 +433,7 @@ const MILESTONE33_TARGET_CLOSURE_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_hidream_o1_dev",
-        source_blob: "3c714c936dde6fad348c57fc74c790d7b71d4d03",
+        source_blob: "cdd77698d6cb5dafb6e43c3fbb2e12375809a9dc",
         chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1_dev.chunks.json"),
         graph_node_count: 40,
         output_candidates: 1,
@@ -761,6 +761,105 @@ const MILESTONE42_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE43_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_ernie_image",
+        source_blob: "4b841c64cd1742dced75614e4b51747ee13adcaf",
+        chunks_json: include_str!("fixtures/official_catalog/image_ernie_image.chunks.json"),
+        graph_node_count: 22,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_firered_image_edit1_1",
+        source_blob: "19e4e5ea3489a781be917056dd33d07942bd7e09",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_firered_image_edit1_1.chunks.json"
+        ),
+        graph_node_count: 23,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_hidream_o1",
+        source_blob: "3f64d3feb9b39c301be81e5e5d7ddc7d7f267042",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1.chunks.json"),
+        graph_node_count: 41,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_hidream_o1_dev",
+        source_blob: "cdd77698d6cb5dafb6e43c3fbb2e12375809a9dc",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1_dev.chunks.json"),
+        graph_node_count: 40,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_ideogram4_t2i",
+        source_blob: "9c016c249246439ccc08ccffbab31d04e54673cb",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i.chunks.json"),
+        graph_node_count: 42,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_longcat_image_edit",
+        source_blob: "e15d90ae587724f429a6c223194f1b21404922a6",
+        chunks_json: include_str!("fixtures/official_catalog/image_longcat_image_edit.chunks.json"),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_longcat_text_to_image",
+        source_blob: "68749b8b2f45c580fd2f019d49ae2313fc655b14",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
+        ),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_pixeldit_t2i",
+        source_blob: "61d7236d058ddbcf921b544ffdfcf6afe7108cda",
+        chunks_json: include_str!("fixtures/official_catalog/image_pixeldit_t2i.chunks.json"),
+        graph_node_count: 12,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image_turbo_int8",
+        source_blob: "61bb66e258200a92db5626bb519d317e047807f4",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "video_bernini_r_image_editing",
+        source_blob: "ca3d1c2a1981faa2322ae98ee0bfa85995b379c2",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/video_bernini_r_image_editing.chunks.json"
+        ),
+        graph_node_count: 45,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -972,6 +1071,11 @@ fn pinned_milestone42_revalidated_workflows_have_stable_graph_shape() {
 }
 
 #[test]
+fn pinned_milestone43_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE43_REVALIDATED_FIXTURES);
+}
+
+#[test]
 fn pinned_ideogram_source_expectations_are_stable() {
     let chunks: HashMap<String, String> =
         serde_json::from_str(MILESTONE25_IDEOGRAM_FIXTURES[0].chunks_json)
@@ -979,7 +1083,7 @@ fn pinned_ideogram_source_expectations_are_stable() {
     let workflow = chunks
         .get("workflow")
         .expect("Ideogram fixture should include a workflow chunk");
-    assert_eq!(workflow.len(), 119_270, "pinned workflow byte length");
+    assert_eq!(workflow.len(), 119_252, "pinned workflow byte length");
 
     let workflow: serde_json::Value =
         serde_json::from_str(workflow).expect("Ideogram workflow should be valid JSON");
