@@ -417,3 +417,16 @@ of golden parser assertions:
 - `image_joyai_image_edit`: JoyAI Image Edit INT8 ConvRot; seed 42; 40 steps;
   CFG 4; `euler` with `normal`; literal edit prompt `Change the background to
   a glacial scene.` and empty negative conditioning.
+
+## Milestone 35 v0.11.15 Golden Batch
+
+The exact v0.11.15 Krea style-reference, Qwen 2511 INT8, Ideogram 4 INT8,
+Boogu Edit INT8, Z-Image INT8, and JoyAI workflows are golden coverage. Each
+has one active persisted output and one root sampler, and all populated core
+fields are sourced from `SamplerTraversal`. Disabled LoRA branches and the
+Ideogram unconditional model remain excluded from selected-path metadata.
+
+The three Anima LLLite workflows remain `unassessed`. Their scalar and prompt
+metadata already follows the selected sampler path, but their active
+`ModelPatchLoader` assets need an explicit resource-classification policy
+before the workflows can be promoted without making a misleading claim.

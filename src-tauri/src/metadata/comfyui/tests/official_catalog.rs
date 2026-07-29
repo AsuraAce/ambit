@@ -346,6 +346,36 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_krea2_turbo_int8_image_style_reference",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_int8_image_style_reference.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit_2511_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_ideogram4_t2i_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_edit_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_z_image_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_int8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_joyai_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_joyai_image_edit.chunks.json"),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -358,6 +388,10 @@ const QWEN_IMAGE_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_qwen_image.expected-positive.txt");
 const Z_IMAGE_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_z_image.expected-positive.txt");
+const IDEOGRAM_INT8_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.expected-positive.txt");
+const Z_IMAGE_INT8_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_z_image_int8.expected-positive.txt");
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -2150,6 +2184,154 @@ fn qwen_image_edit_2511_is_golden() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_turbo_int8_style_reference_uses_the_selected_branch() {
+    assert_fixture(
+        "image_krea2_turbo_int8_image_style_reference",
+        ExpectedMetadata {
+            model: "krea2_turbo_int8_convrot",
+            seed: Some(355_028_178_891_957),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "a white yeti with horns reading a book that is titled \"Ostris + Krea2 Style Reference\"",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_int8_omits_the_disabled_lightning_lora() {
+    assert_fixture(
+        "image_qwen_image_edit_2511_int8",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_int8_convrot",
+            seed: Some(1_119_496_583_977_398),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Convert this image to pop art poster style",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn ideogram4_int8_uses_the_primary_model_and_exact_json_prompt() {
+    let positive_prompt = IDEOGRAM_INT8_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Ideogram INT8 expected prompt should end with one fixture newline");
+    assert_eq!(positive_prompt.len(), 2_215);
+
+    assert_fixture(
+        "image_ideogram4_t2i_int8",
+        ExpectedMetadata {
+            model: "ideogram4_int8_convrot",
+            seed: Some(71_584_314_815_009),
+            steps: 20,
+            cfg: 7.0,
+            sampler: "euler (ideogram4)",
+            positive_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 46,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn boogu_image_edit_int8_is_golden() {
+    assert_fixture(
+        "image_boogu_image_0_1_edit_int8",
+        ExpectedMetadata {
+            model: "boogu_image_edit_int8_convrot",
+            seed: Some(22),
+            steps: 25,
+            cfg: 3.5,
+            sampler: "dpmpp_2m (simple)",
+            positive_prompt: "Keep the character unchanged, replace the desert background and scene. The model is on the dune.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_int8_preserves_the_exact_literal_prompt() {
+    let positive_prompt = Z_IMAGE_INT8_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Z-Image INT8 expected prompt should end with one fixture newline");
+    assert_eq!(positive_prompt.len(), 633);
+
+    assert_fixture(
+        "image_z_image_int8",
+        ExpectedMetadata {
+            model: "z_image_int8_convrot",
+            seed: Some(677_498_465_340_151),
+            steps: 25,
+            cfg: 4.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn joyai_image_edit_int8_is_golden() {
+    assert_fixture(
+        "image_joyai_image_edit",
+        ExpectedMetadata {
+            model: "joyai_image_edit_int8_convrot",
+            seed: Some(42),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Change the background to a glacial scene.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
