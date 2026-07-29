@@ -553,7 +553,7 @@ fn image_qwen_image_edit_2509() {
         "image_qwen_image_edit_2509",
         ExpectedMetadata {
             model: "qwen_image_edit_2509_fp8_e4m3fn",
-            seed: Some(973_414_316_252_139),
+            seed: Some(362_225_868_152_841),
             steps: 4,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -563,7 +563,7 @@ fn image_qwen_image_edit_2509() {
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 26,
+            graph_node_count: 24,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
@@ -2223,8 +2223,8 @@ fn qwen_image_edit_2511_is_golden() {
     assert_fixture(
         "image_qwen_image_edit_2511",
         ExpectedMetadata {
-            model: "qwen_image_edit_2511_bf16",
-            seed: Some(0),
+            model: "qwen_image_edit_2511_fp8mixed",
+            seed: Some(677_909_188_488_042),
             steps: 40,
             cfg: 4.0,
             sampler: "euler (simple)",
@@ -2234,7 +2234,7 @@ fn qwen_image_edit_2511_is_golden() {
             loras: &[],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 29,
+            graph_node_count: 28,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

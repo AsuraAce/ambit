@@ -440,17 +440,6 @@ const MILESTONE33_TARGET_CLOSURE_FIXTURES: &[IntakeFixture] = &[
         output_roots: 1,
         output_ambiguous: false,
     },
-    IntakeFixture {
-        name: "image_qwen_image_edit_2511",
-        source_blob: "c055e4e70c8a75ca4df197e99be72ec11c582203",
-        chunks_json: include_str!(
-            "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
-        ),
-        graph_node_count: 29,
-        output_candidates: 1,
-        output_roots: 1,
-        output_ambiguous: false,
-    },
 ];
 
 const MILESTONE34_CATALOG_REFRESH_FIXTURES: &[IntakeFixture] = &[
@@ -726,6 +715,31 @@ const MILESTONE40_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE41_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_qwen_image_edit_2509",
+        source_blob: "522c66b253bc74333b8791e02296407a510c2295",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2509.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_edit_2511",
+        source_blob: "f439d8f10c247ae856d1aa4c4e7e37e55c6d2f94",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
+        ),
+        graph_node_count: 28,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -924,6 +938,11 @@ fn pinned_milestone39_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone40_revalidated_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE40_REVALIDATED_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone41_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE41_REVALIDATED_FIXTURES);
 }
 
 #[test]

@@ -21,6 +21,7 @@ unchanged. Changed workflows remain useful parser regressions, but are marked
 Golden workflows:
 
 - `image_qwen_image_edit_2509.chunks.json`
+- `image_qwen_image_edit_2511.chunks.json`
 - `flux_fill_inpaint_example.chunks.json`
 - `flux_kontext_dev_basic.chunks.json`
 - `hidream_i1_full.chunks.json`
@@ -502,6 +503,26 @@ Their parser-relevant nodes, links, widgets, and subgraph interfaces remain
 identical to the historical fixtures. Existing exact model, sampler, prompt,
 resource, output, and provenance assertions therefore remain authoritative.
 
-`image_qwen_image_edit_2509` and `image_qwen_image_edit_2511` are not included:
-their v0.11.15 workflows contain structural graph changes and remain unassessed
-until their selected paths receive an independent review.
+Milestone 40 did not include `image_qwen_image_edit_2509` or
+`image_qwen_image_edit_2511`: their v0.11.15 workflows contain structural graph
+changes and remained unassessed pending the independent review below.
+
+## Milestone 41 v0.11.15 Qwen Edit Revalidation
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_qwen_image_edit_2509`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_image_edit_2509.json) | `522c66b253bc74333b8791e02296407a510c2295` | 53036 | 24 |
+| [`image_qwen_image_edit_2511`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_qwen_image_edit_2511.json) | `f439d8f10c247ae856d1aa4c4e7e37e55c6d2f94` | 59130 | 28 |
+
+Qwen Edit 2509 now packages one four-step Lightning path inside a single
+workflow subgraph. Its selected path keeps the Qwen 2509 FP8 model and edit
+prompt, uses seed `362225868152841`, and reports the active Lightning LoRA.
+
+Qwen Edit 2511 now selects `qwen_image_edit_2511_fp8mixed` with seed
+`677909188488042`; turbo remains disabled, so the 40-step CFG 4 base path is
+authoritative and the Lightning LoRA is omitted. Both workflows have one
+saved output, one root sampler, no ambiguity, and exact `SamplerTraversal`
+provenance without parser changes.
