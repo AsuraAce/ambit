@@ -10,6 +10,7 @@ use super::graph::{
     get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
     get_switch_branch_source, ComfyGraph, InputConnection, InputSource, InputSourceConnection,
 };
+use super::heuristics::is_primary_model_loader_type;
 use crate::metadata::utils::{
     extract_explicit_embeddings_from_prompt, extract_hypernets_from_prompt,
     extract_loras_from_prompt,
@@ -642,11 +643,7 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
-        } else if get_node_type(node).contains("CheckpointLoader")
-            || get_node_type(node).contains("UNETLoader")
-            || get_node_type(node).contains("Ckpt Loader")
-            || get_node_type(node).contains("EasyLoader")
-        {
+        } else if is_primary_model_loader_type(get_node_type(node)) {
             match evaluate_loader_model_name(graph, node, strict_connections) {
                 LoaderModelName::Resolved(name) => {
                     return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
@@ -781,7 +778,10 @@ fn evaluate_loader_model_name(
             .unwrap_or(LoaderModelName::Wrapper);
     }
 
-    let input_names: &[&str] = if get_node_type(node).contains("UNETLoader") {
+    let input_names: &[&str] = if get_node_type(node)
+        .to_ascii_lowercase()
+        .contains("unetloader")
+    {
         &["unet_name"]
     } else {
         &["ckpt_name", "checkpoint"]

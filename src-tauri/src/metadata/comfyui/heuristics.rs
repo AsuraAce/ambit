@@ -3,6 +3,14 @@ use super::graph::{
 };
 use serde_json::Value;
 
+pub(crate) fn is_primary_model_loader_type(node_type: &str) -> bool {
+    let node_type = node_type.to_ascii_lowercase();
+    node_type.contains("checkpointloader")
+        || node_type.contains("unetloader")
+        || node_type.contains("ckpt loader")
+        || node_type.contains("easyloader")
+}
+
 /// Scans the graph for nodes that might be broadcasting a value of `input_type`
 /// to the `target_node`.
 ///
@@ -80,14 +88,20 @@ pub fn find_wireless_node(
         let mut candidates = Vec::new();
         for (id, node) in graph.nodes() {
             let t = get_node_type(node);
-            if !is_disabled(node)
-                && (t == "CheckpointLoaderSimple" || t == "CheckpointLoader" || t == "UNETLoader")
-            {
+            let is_candidate = if needed_type == "MODEL" {
+                is_primary_model_loader_type(t)
+            } else {
+                t == "CheckpointLoaderSimple" || t == "CheckpointLoader" || t == "UNETLoader"
+            };
+            if !is_disabled(node) && is_candidate {
                 candidates.push(id.clone());
             }
         }
         if candidates.len() == 1 {
             return Some(candidates[0].clone());
+        }
+        if needed_type == "MODEL" {
+            return None;
         }
         // If multiple, maybe find the one titled "Main" or "Base"?
         // Heuristic: Pick the one with the lowest ID (often first added)?

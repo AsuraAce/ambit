@@ -94,6 +94,10 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
         name: "loader_only_gguf_fallback",
         chunks_json: include_str!("fixtures/real_world/loader_only_gguf_fallback.chunks.json"),
     },
+    RealWorldFixture {
+        name: "connected_gguf_sampler",
+        chunks_json: include_str!("fixtures/real_world/connected_gguf_sampler.chunks.json"),
+    },
 ];
 
 pub(super) fn real_world_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -509,7 +513,7 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
             output_candidate_count: 0,
             root_sampler_count: 0,
             sources: &[
-                (ComfyMetadataField::Model, ComfyParseLayer::SamplerFallback),
+                (ComfyMetadataField::Model, ComfyParseLayer::GlobalScan),
                 (ComfyMetadataField::Seed, ComfyParseLayer::SamplerFallback),
                 (ComfyMetadataField::Steps, ComfyParseLayer::SamplerFallback),
                 (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerFallback),
@@ -524,7 +528,7 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
     assert_real_world_repro(
         "loader_only_gguf_fallback",
         ExpectedMetadata {
-            model: "qwen_image_edit_2511_q4_k_m.gguf",
+            model: "qwen_image_edit_2511_q4_k_m",
             seed: None,
             steps: 0,
             cfg: 0.0,
@@ -540,6 +544,37 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
             output_candidate_count: 0,
             root_sampler_count: 0,
             sources: &[(ComfyMetadataField::Model, ComfyParseLayer::GlobalScan)],
+        },
+    );
+
+    assert_real_world_repro(
+        "connected_gguf_sampler",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_q4_k_m",
+            seed: Some(42),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 4,
+            output_candidate_count: 1,
+            root_sampler_count: 1,
+            sources: &[
+                (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+                (
+                    ComfyMetadataField::Sampler,
+                    ComfyParseLayer::SamplerTraversal,
+                ),
+            ],
         },
     );
 }

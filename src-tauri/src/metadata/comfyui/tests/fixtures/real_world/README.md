@@ -77,10 +77,15 @@ Initial fixture sources:
   `subgraph_repro.rs`, covering deterministic weak model fallback when a
   disconnected sampler and competing UNET/GGUF loaders are present.
 - `loader_only_gguf_fallback.chunks.json`: minimized from `subgraph_repro.rs`,
-  covering the current GGUF model fallback without a sampler or saved output.
+  covering suffix-free GGUF global model recovery without a sampler or saved
+  output.
+- `connected_gguf_sampler.chunks.json`: minimized workflow-only coverage for a
+  saved-output `KSampler` path connected to `UnetLoaderGGUF`, proving GGUF
+  model extraction receives `SamplerTraversal` provenance.
 
 Extraction dates:
 
 - 2026-07-07: initial real-world fixture batch.
 - 2026-07-08: Krea/format-parity fixtures from user-provided local images.
 - 2026-07-30: additional in-repo user/repro fixture batch.
+- 2026-07-30: connected GGUF saved-output fixture.

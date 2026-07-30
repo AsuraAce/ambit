@@ -28,6 +28,44 @@ fn test_extract_comfyui_unet_loader() {
 }
 
 #[test]
+fn connected_api_unet_loader_gguf_uses_sampler_traversal() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": { "unet_name": "models/Qwen-Image-Edit-2511-Q4_K_M.GGUF" }
+        },
+        "2": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "seed": 42,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "3": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["2", 0] }
+        },
+        "4": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["3", 0] }
+        }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn test_extract_comfyui_easy_loader() {
     // A graph using EasyLoader (Flux)
     let prompt = r#"{

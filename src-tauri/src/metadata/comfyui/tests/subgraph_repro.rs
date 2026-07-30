@@ -36,8 +36,12 @@ fn test_unet_loader_extraction() {
     assert_eq!(meta.steps, 4);
     assert_eq!(meta.cfg, 1.0);
     assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::GlobalScan),
+        "competing disconnected model loaders must not gain wireless authority"
+    );
     for field in [
-        ComfyMetadataField::Model,
         ComfyMetadataField::Seed,
         ComfyMetadataField::Steps,
         ComfyMetadataField::Cfg,
@@ -68,10 +72,40 @@ fn test_gguf_loader_extraction() {
     chunks.insert("workflow".to_string(), workflow.to_string());
     let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
 
-    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m.gguf");
+    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m");
     assert_eq!(
         diagnostics.field_sources.get(&ComfyMetadataField::Model),
         Some(&ComfyParseLayer::GlobalScan),
         "loader-only model recovery should remain weak global evidence"
+    );
+}
+
+#[test]
+fn sole_disconnected_gguf_loader_can_supply_sampler_fallback_model() {
+    let workflow = r#"{
+        "id": "gguf_sampler_fallback",
+        "nodes": [
+            {
+                "id": 65,
+                "type": "KSampler",
+                "widgets_values": [0, "randomize", 4, 1, "euler", "simple", 1]
+            },
+            {
+                "id": 89,
+                "type": "UnetLoaderGGUF",
+                "widgets_values": ["qwen-image-edit-2511-Q4_K_M.gguf"]
+            }
+        ],
+        "links": []
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::SamplerFallback),
+        "one eligible disconnected loader may provide weak sampler fallback evidence"
     );
 }

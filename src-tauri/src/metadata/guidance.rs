@@ -29,15 +29,16 @@ impl GuidanceClassifier {
 
         // 2. Remove extensions and common generic suffixes, then normalize
         basename
+            .to_lowercase()
             .replace(".safetensors", "")
             .replace(".ckpt", "")
             .replace(".pth", "")
             .replace(".bin", "")
             .replace(".pt", "")
+            .replace(".gguf", "")
             .split('(')
             .next()
             .unwrap_or("")
-            .to_lowercase()
             .replace(' ', "_")
             .replace('-', "_")
             .trim()
@@ -346,6 +347,14 @@ mod tests {
         assert_eq!(
             GuidanceClassifier::clean_name("/usr/share/models/controlnet/canny.bin"),
             "canny"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.GGUF"),
+            "qwen_image_edit_2511_q4_k_m"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.gguf"),
+            "qwen_image_edit_2511_q4_k_m"
         );
 
         // Consolidation tests

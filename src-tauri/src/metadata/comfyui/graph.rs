@@ -649,6 +649,11 @@ fn value_as_bool(value: &Value) -> Option<bool> {
     })
 }
 
+fn has_supported_model_extension(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.ends_with(".safetensors") || value.ends_with(".ckpt") || value.ends_with(".gguf")
+}
+
 pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     // 1. Check in API format "inputs"
     if let Some(val) = node.get("inputs").and_then(|v| v.get(key)) {
@@ -707,10 +712,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "ckpt_name" => {
                     if let Some(v) = arr.first() {
                         if let Some(s) = v.as_str() {
-                            if s.ends_with(".safetensors")
-                                || s.ends_with(".ckpt")
-                                || s.ends_with(".gguf")
-                            {
+                            if has_supported_model_extension(s) {
                                 return Some(v);
                             }
                         }
@@ -1009,10 +1011,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             "ckpt_name" | "unet_name" | "model_name" | "checkpoint" | "files" => {
                 for val in arr {
                     if let Some(s) = val.as_str() {
-                        if s.ends_with(".safetensors")
-                            || s.ends_with(".ckpt")
-                            || s.ends_with(".gguf")
-                        {
+                        if has_supported_model_extension(s) {
                             return Some(val);
                         }
                     }
