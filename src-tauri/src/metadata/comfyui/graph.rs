@@ -805,6 +805,18 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             }
         }
 
+        if t == "KSampler //Inspire" {
+            match key {
+                "seed" | "noise_seed" => return arr.first(),
+                "steps" => return arr.get(2),
+                "cfg" => return arr.get(3),
+                "sampler_name" => return arr.get(4),
+                "scheduler" => return arr.get(5),
+                "denoise" => return arr.get(6),
+                _ => {}
+            }
+        }
+
         if t == "KSamplerAdvanced" {
             match key {
                 "noise_seed" | "seed" => return arr.get(1),

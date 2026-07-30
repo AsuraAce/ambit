@@ -1,0 +1,22 @@
+{
+  "workflow": {
+    "nodes": [
+      {"id": 1127, "type": "KSamplerAdvanced", "inputs": [{"name": "model", "type": "MODEL", "link": 2479}, {"name": "positive", "type": "CONDITIONING", "link": 2502}, {"name": "negative", "type": "CONDITIONING", "link": 2503}]},
+      {"id": 1790, "type": "ConditioningConcat", "inputs": [{"name": "conditioning_to", "type": "CONDITIONING", "link": 2459}, {"name": "conditioning_from", "type": "CONDITIONING", "link": 2460}]},
+      {"id": 18, "type": "smZ CLIPTextEncode", "widgets_values": ["Positive Prompt Text", "comfy", true, true, false, false, 6, 1024, 1024, 0, 0, 1024, 1024, "", "", 1]},
+      {"id": 1789, "type": "smZ CLIPTextEncode", "widgets_values": ["", "comfy", true, true, false, false, 6, 1024, 1024, 0, 0, 1024, 1024, "", "", 1]},
+      {"id": 1791, "type": "smZ CLIPTextEncode", "widgets_values": ["Negative Prompt Text", "A1111", false, true, false, false, 6, 1024, 1024, 0, 0, 1024, 1024, "", "", 1]},
+      {"id": 1121, "type": "GetNode", "widgets_values": ["model after ipAdapter"]},
+      {"id": 1358, "type": "SetNode", "widgets_values": ["model after ipAdapter"], "inputs": [{"name": "MODEL", "type": "MODEL", "link": 1879}]},
+      {"id": 53, "type": "CheckpointLoaderSimple", "widgets_values": ["base.safetensors"]}
+    ],
+    "links": [
+      [2479, 1121, 0, 1127, 0, "MODEL"],
+      [2502, 1790, 0, 1127, 1, "CONDITIONING"],
+      [2503, 1791, 0, 1127, 2, "CONDITIONING"],
+      [2459, 18, 0, 1790, 0, "CONDITIONING"],
+      [2460, 1789, 0, 1790, 1, "CONDITIONING"],
+      [1879, 53, 0, 1358, 0, "MODEL"]
+    ]
+  }
+}

@@ -51,8 +51,22 @@ Initial fixture sources:
   `D:\AI\art\webUI\comfyUI\output\Krea2_turbo_00719_.png`, generated via the
   regular ComfyUI `SaveImage` node. Covers the same Krea template path without
   the metadata saver node.
+- `issue_1024_sdprompt_saver.chunks.json`: minimized from
+  `repro_issue_1024.rs`, covering mixed flat parameters, an `SDPromptSaver`
+  output path, stale sentinel prompts, and graph-derived steps and prompt text.
+- `inspire_faceid_resources.chunks.json`: minimized from
+  `repro_ip_adapter.rs`, covering exact `KSampler //Inspire` widgets plus
+  FaceID LoRA and ControlNet collection on a workflow fragment without a save
+  output.
+- `smz_concat_setget.chunks.json`: minimized from `repro_smz_concat.rs`,
+  covering SetNode/GetNode model resolution, smZ prompt encoders, and
+  conditioning concatenation.
+- `prompts_everywhere_broadcast.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering deterministic collection of multiple
+  `Prompts Everywhere` conditioning inputs.
 
 Extraction dates:
 
 - 2026-07-07: initial real-world fixture batch.
 - 2026-07-08: Krea/format-parity fixtures from user-provided local images.
+- 2026-07-30: additional in-repo user/repro fixture batch.
