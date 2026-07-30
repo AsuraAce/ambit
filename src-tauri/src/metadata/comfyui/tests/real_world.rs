@@ -54,6 +54,12 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
     },
 ];
 
+pub(super) fn real_world_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
+    REAL_WORLD_FIXTURES
+        .iter()
+        .map(|fixture| (fixture.name, fixture.chunks_json))
+}
+
 #[test]
 fn test_real_world_fixtures_extract_expected_metadata() {
     assert_real_world_fixture(

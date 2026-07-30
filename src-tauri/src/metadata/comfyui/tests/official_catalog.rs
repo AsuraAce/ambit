@@ -462,7 +462,17 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/templates_rob_portrait_light_migration.app.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_lens_turbo_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
+    },
 ];
+
+pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
+    FIXTURES
+        .iter()
+        .map(|fixture| (fixture.name, fixture.chunks_json))
+}
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");

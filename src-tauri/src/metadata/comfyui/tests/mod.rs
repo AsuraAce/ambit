@@ -1,4 +1,5 @@
 pub mod catalog_intake;
+pub mod catalog_path_parity;
 pub mod catalog_patterns;
 pub mod complex_workflows;
 pub mod deterministic_values;
