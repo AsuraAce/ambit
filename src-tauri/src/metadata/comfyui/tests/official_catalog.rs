@@ -428,6 +428,40 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/template_qwen_image_illustration_lora.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "template_sugar_coated_gummy_style_qwen",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_sugar_coated_gummy_style_qwen.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates-1_click_multiple_character_angles-v1.0",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-1_click_multiple_character_angles-v1.0.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates-image_to_real",
+        chunks_json: include_str!("fixtures/official_catalog/templates-image_to_real.chunks.json"),
+    },
+    CatalogFixture {
+        name: "templates-portrait_light_migration",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-portrait_light_migration.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_rob_image_to_real.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_image_to_real.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_rob_portrait_light_migration.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_portrait_light_migration.app.chunks.json"
+        ),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -2639,6 +2673,150 @@ fn qwen_image_illustration_lora_use_case() {
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn sugar_coated_gummy_qwen_use_case() {
+    assert_fixture(
+        "template_sugar_coated_gummy_style_qwen",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(671_299_924_443_981),
+            steps: 25,
+            cfg: 3.0,
+            sampler: "euler (simple)",
+            positive_prompt: "cat,sugar-coated sour gummy candy style, with pink, yellow, and green gummy, sugar crystals, glossy eyes",
+            negative_prompt: "",
+            loras: &["gummycandy_qwen"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_to_real_use_case() {
+    assert_fixture(
+        "templates-image_to_real",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(27_584_544_029_937),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (beta)",
+            positive_prompt: "change image 1 to realistic photograph",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2509_lightning_8steps_v1.0_bf16",
+                "qwen_image_edit_2509_anything2realalpha",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_portrait_light_migration_use_case() {
+    assert_fixture(
+        "templates-portrait_light_migration",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(919_727_647_002_936),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明, maintain canny edge of interior glass orb.",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_light_migration"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn rob_qwen_image_to_real_use_case() {
+    assert_fixture(
+        "templates_rob_image_to_real.app",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(189_890_890_797_522),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "change image 1 to realistic photograph",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_anything2realalpha"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn rob_qwen_portrait_light_migration_use_case() {
+    assert_fixture(
+        "templates_rob_portrait_light_migration.app",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(67_733_640_390_271),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_light_migration"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn multiple_character_angles_remains_an_honest_ambiguous_partial() {
+    assert_fixture(
+        "templates-1_click_multiple_character_angles-v1.0",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(345_666_571_704_709),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: " Turn the camera to a close-up.",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2511_lightning_4steps_v1.0_bf16",
+                "qwen_image_edit_2511_multiple_angles_lora",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerFallback,
+            graph_node_count: 202,
+            output_candidates: 8,
+            output_roots: 8,
+            output_ambiguous: true,
         },
     );
 }

@@ -50,6 +50,11 @@ Golden workflows:
 - `image_chrono_edit_14B.chunks.json`
 - `image_netayume_lumina_t2i.chunks.json`
 - `image_z_image.chunks.json`
+- `template_sugar_coated_gummy_style_qwen.chunks.json`
+- `templates-image_to_real.chunks.json`
+- `templates-portrait_light_migration.chunks.json`
+- `templates_rob_image_to_real.app.chunks.json`
+- `templates_rob_portrait_light_migration.app.chunks.json`
 
 Pattern-covered workflows:
 
@@ -70,6 +75,9 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_krea2_turbo_t2i_int8.chunks.json`: prompt enhancement is enabled, but
   the selected `TextGenerate` result is not embedded in the workflow.
+- `templates-1_click_multiple_character_angles-v1.0.chunks.json`: eight saved
+  outputs have distinct sampler roots, prompts, and seeds that cannot be
+  represented by one `ImageMetadata` record.
 
 ## Phase 22 Intake
 
@@ -619,5 +627,34 @@ workflow remains disabled, while both selected LoRAs in the action workflow
 are reported.
 
 The manifest now separately targets nine open-source, core-node, image-only
-official use cases. The remaining six are explicitly unassessed for later
-fixture batches rather than inferred from model-family similarity.
+official use cases. The remaining six were assessed in milestone 46 rather
+than inferred from model-family similarity.
+
+## Milestone 46 Official Image Use-Case Closure
+
+Captured on `2026-07-30` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`template_sugar_coated_gummy_style_qwen`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/template_sugar_coated_gummy_style_qwen.json) | `36d8c3fc581dbe444ab38f39b82ceec770ef968e` | 33908 | 15 |
+| [`templates-1_click_multiple_character_angles-v1.0`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/templates-1_click_multiple_character_angles-v1.0.json) | `65342f0c439959c17c2a93035769214faa8689f9` | 467187 | 202 |
+| [`templates-image_to_real`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/templates-image_to_real.json) | `f9f24a85aa745c1ee8bad8975853a58f4dbf3808` | 32625 | 15 |
+| [`templates-portrait_light_migration`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/templates-portrait_light_migration.json) | `416905e6af115ce68e68ca3791f03681be8dc4ec` | 59820 | 27 |
+| [`templates_rob_image_to_real.app`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/templates_rob_image_to_real.app.json) | `178a045d6ace46ce8e154904ff6afd91c463d6a1` | 60211 | 26 |
+| [`templates_rob_portrait_light_migration.app`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/templates_rob_portrait_light_migration.app.json) | `fb8881c12142ba715f8471fd53c31c29069f0925` | 59590 | 28 |
+
+Five workflows have one unambiguous saved-output root and exact
+`SamplerTraversal` metadata. They cover Qwen gummy styling, image-to-real
+conversion, and two portrait relighting variants while correctly omitting
+disabled Lightning LoRAs.
+
+The multiple-angle workflow intentionally remains partial. It expands to eight
+saved outputs with eight distinct sampler roots and different prompts and
+seeds. The parser therefore withholds strong traversal authority and exposes
+only deterministic `SamplerFallback` metadata. Representing every output would
+require a multi-output metadata shape rather than a parser heuristic.
+
+This closes assessment of all 93 targeted workflows at 80 golden, 5
+pattern-covered, 8 partial, and 0 unassessed without changing parser version
+37.

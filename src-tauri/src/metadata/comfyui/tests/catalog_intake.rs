@@ -937,6 +937,73 @@ const MILESTONE45_OFFICIAL_USE_CASE_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE46_OFFICIAL_USE_CASE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "template_sugar_coated_gummy_style_qwen",
+        source_blob: "36d8c3fc581dbe444ab38f39b82ceec770ef968e",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_sugar_coated_gummy_style_qwen.chunks.json"
+        ),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates-1_click_multiple_character_angles-v1.0",
+        source_blob: "65342f0c439959c17c2a93035769214faa8689f9",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-1_click_multiple_character_angles-v1.0.chunks.json"
+        ),
+        graph_node_count: 202,
+        output_candidates: 8,
+        output_roots: 8,
+        output_ambiguous: true,
+    },
+    IntakeFixture {
+        name: "templates-image_to_real",
+        source_blob: "f9f24a85aa745c1ee8bad8975853a58f4dbf3808",
+        chunks_json: include_str!("fixtures/official_catalog/templates-image_to_real.chunks.json"),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates-portrait_light_migration",
+        source_blob: "416905e6af115ce68e68ca3791f03681be8dc4ec",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-portrait_light_migration.chunks.json"
+        ),
+        graph_node_count: 27,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates_rob_image_to_real.app",
+        source_blob: "178a045d6ace46ce8e154904ff6afd91c463d6a1",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_image_to_real.app.chunks.json"
+        ),
+        graph_node_count: 26,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates_rob_portrait_light_migration.app",
+        source_blob: "fb8881c12142ba715f8471fd53c31c29069f0925",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_portrait_light_migration.app.chunks.json"
+        ),
+        graph_node_count: 28,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1160,6 +1227,11 @@ fn pinned_milestone44_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone45_official_use_case_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE45_OFFICIAL_USE_CASE_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone46_official_use_case_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE46_OFFICIAL_USE_CASE_FIXTURES);
 }
 
 #[test]

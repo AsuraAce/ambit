@@ -273,10 +273,10 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
     assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
-    assert_eq!(count_coverage("golden"), 75);
+    assert_eq!(count_coverage("golden"), 80);
     assert_eq!(count_coverage("pattern_covered"), 5);
-    assert_eq!(count_coverage("partial"), 7);
-    assert_eq!(count_coverage("unassessed"), 6);
+    assert_eq!(count_coverage("partial"), 8);
+    assert_eq!(count_coverage("unassessed"), 0);
     assert_eq!(count_coverage("excluded"), 485);
     assert_eq!(
         manifest
@@ -295,17 +295,9 @@ fn manifest_counts_match_the_declared_catalog_scope() {
             .iter()
             .filter(|entry| entry.scope == "target_official_use_case_image"
                 && entry.coverage == "unassessed")
-            .map(|entry| entry.id.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "template_sugar_coated_gummy_style_qwen",
-            "templates-1_click_multiple_character_angles-v1.0",
-            "templates-image_to_real",
-            "templates-portrait_light_migration",
-            "templates_rob_image_to_real.app",
-            "templates_rob_portrait_light_migration.app",
-        ],
-        "the deferred official image-use-case batch should remain explicit"
+            .count(),
+        0,
+        "all targeted official image-use-case workflows should be assessed"
     );
 }
 
@@ -380,6 +372,15 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_z_image_turbo", "golden"),
         ("image_z_image_int8", "golden"),
         ("image_z_image_turbo_fun_union_controlnet", "golden"),
+        ("template_sugar_coated_gummy_style_qwen", "golden"),
+        (
+            "templates-1_click_multiple_character_angles-v1.0",
+            "partial",
+        ),
+        ("templates-image_to_real", "golden"),
+        ("templates-portrait_light_migration", "golden"),
+        ("templates_rob_image_to_real.app", "golden"),
+        ("templates_rob_portrait_light_migration.app", "golden"),
     ];
 
     for (id, coverage) in expected {
