@@ -17,6 +17,7 @@ Coverage is commit-specific. Fixtures retained from the previous baseline count
 for the refreshed manifest only when their upstream workflow Git blob is
 unchanged. Changed workflows remain useful parser regressions, but are marked
 `unassessed` for the refreshed release until their new bytes are revalidated.
+The v0.11.15 active target is now fully assessed.
 
 Golden workflows:
 
@@ -48,6 +49,7 @@ Golden workflows:
 - `image_pixeldit_t2i.chunks.json`
 - `image_chrono_edit_14B.chunks.json`
 - `image_netayume_lumina_t2i.chunks.json`
+- `image_z_image.chunks.json`
 
 Pattern-covered workflows:
 
@@ -64,6 +66,10 @@ Partial workflows:
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
+- `image_krea2_turbo_t2i.chunks.json`: prompt enhancement is enabled, but the
+  selected `TextGenerate` result is not embedded in the workflow.
+- `image_krea2_turbo_t2i_int8.chunks.json`: prompt enhancement is enabled, but
+  the selected `TextGenerate` result is not embedded in the workflow.
 
 ## Phase 22 Intake
 
@@ -569,3 +575,27 @@ workflows retain exact available metadata but remain partial because their
 generated prompt results are not embedded in the workflow. Every fixture has
 one saved output, one root sampler, no ambiguity, and unchanged selected-path
 provenance.
+
+## Milestone 44 v0.11.15 Catalog Closure
+
+Captured on `2026-07-29` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`image_ernie_image_turbo`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_ernie_image_turbo.json) | `07b3e3bb3a7ef9ba9ce012fe8a83b1175e70f2ac` | 52770 | 21 |
+| [`image_krea2_turbo_t2i`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_krea2_turbo_t2i.json) | `b63db4754f99c506b66263750498cf633789ee48` | 57124 | 25 |
+| [`image_krea2_turbo_t2i_int8`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_krea2_turbo_t2i_int8.json) | `a4fb56cfcf541204aa87cc02462fd78ce3090eb8` | 57015 | 25 |
+| [`image_z_image`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/image_z_image.json) | `97cfc42585f59bbe43139e2fea4c5a6530240592` | 33896 | 14 |
+
+ERNIE Turbo and both Krea Turbo workflows select `TextGenerate` through their
+connected boolean controls. The visible literal text is input to that generator,
+not the final prompt used for conditioning, and the generated result is not
+embedded. These fixtures are therefore partial and assert an unavailable
+positive prompt without provenance. Z-Image is golden and saves through
+`SaveImageAdvanced`, which the generalized save-node policy resolves to its
+single root sampler.
+
+All four workflows have one saved output, one root sampler, and no ambiguity.
+Available generation fields retain `SamplerTraversal` provenance. This closes
+the v0.11.15 active catalog target honestly without parser changes.

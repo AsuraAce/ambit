@@ -235,6 +235,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/hidream_i1_fast.chunks.json"),
     },
     CatalogFixture {
+        name: "image_krea2_turbo_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_krea2_turbo_t2i.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_krea2_turbo_t2i_int8",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
@@ -1716,7 +1720,30 @@ fn hidream_i1_fast_variant() {
 }
 
 #[test]
-fn krea2_int8_generated_prompt_remains_partial() {
+fn krea2_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_krea2_turbo_t2i",
+        ExpectedMetadata {
+            model: "krea2_turbo_fp8_scaled",
+            seed: Some(735_915_477_938_686),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_int8_generated_prompt_is_partial() {
     assert_fixture(
         "image_krea2_turbo_t2i_int8",
         ExpectedMetadata {
@@ -1934,7 +1961,7 @@ fn z_image_base_subgraph_variant() {
         "image_z_image",
         ExpectedMetadata {
             model: "z_image_bf16",
-            seed: Some(770_044_821_593_082),
+            seed: Some(677_498_465_340_151),
             steps: 25,
             cfg: 4.0,
             sampler: "res_multistep (simple)",

@@ -263,7 +263,7 @@ const MILESTONE29_CORE_VARIANT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_krea2_turbo_t2i_int8",
-        source_blob: "6cb31b94a0ebf07bc142594bce0dad454a903bc7",
+        source_blob: "a4fb56cfcf541204aa87cc02462fd78ce3090eb8",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
         ),
@@ -360,7 +360,7 @@ const MILESTONE31_BASELINE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_z_image",
-        source_blob: "ccce095bde775ea9c0fbe8c0dd3bfd2b708d32cc",
+        source_blob: "97cfc42585f59bbe43139e2fea4c5a6530240592",
         chunks_json: include_str!("fixtures/official_catalog/image_z_image.chunks.json"),
         graph_node_count: 14,
         output_candidates: 1,
@@ -860,6 +860,47 @@ const MILESTONE43_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE44_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_ernie_image_turbo",
+        source_blob: "07b3e3bb3a7ef9ba9ce012fe8a83b1175e70f2ac",
+        chunks_json: include_str!("fixtures/official_catalog/image_ernie_image_turbo.chunks.json"),
+        graph_node_count: 21,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_krea2_turbo_t2i",
+        source_blob: "b63db4754f99c506b66263750498cf633789ee48",
+        chunks_json: include_str!("fixtures/official_catalog/image_krea2_turbo_t2i.chunks.json"),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_krea2_turbo_t2i_int8",
+        source_blob: "a4fb56cfcf541204aa87cc02462fd78ce3090eb8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
+        ),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_z_image",
+        source_blob: "97cfc42585f59bbe43139e2fea4c5a6530240592",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image.chunks.json"),
+        graph_node_count: 14,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1073,6 +1114,11 @@ fn pinned_milestone42_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone43_revalidated_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE43_REVALIDATED_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone44_revalidated_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE44_REVALIDATED_FIXTURES);
 }
 
 #[test]

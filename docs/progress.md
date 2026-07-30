@@ -1,12 +1,12 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-22
+Last reviewed: 2026-07-30
 
 ## Current Baseline
-- The current checkout and release manifests are version `0.9.0`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. The checkout is tagged `v0.9.0`; hosted release state still belongs to GitHub rather than this file.
+- The current release manifests are version `0.9.1`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. Hosted release state still belongs to GitHub rather than this file.
 - Release builds remain Windows-only. Linux and macOS packages are manual, unsigned or non-updater experimental artifacts as documented in `docs/experimental-unix-builds.md`.
 - Production packaging runs `verify:release` before Tauri builds. The gate checks version consistency, generated binding drift, lint, TypeScript, guarded frontend output, coverage, Rust tests, and a no-bundle Tauri compatibility build.
-- ComfyUI metadata milestones 22 through 26 are complete. Their files under `docs/plans/` are historical verification records, not active work.
+- ComfyUI metadata milestones 22 through 44 are complete. The pinned v0.11.15 active catalog target is fully assessed at 72 golden, 5 pattern-covered, 7 partial, and 0 unassessed workflows; parser version 37 includes the corresponding selected-path extraction fixes. Their files under `docs/plans/` are historical verification records, not active work.
 - The search-transition, prompt-masking, setup-guide replay, and tooltip-dismissal packages recorded in `docs/plans/release-0.9.0-ux-readiness.md` landed before the `v0.9.0` release.
 
 ## Current Constraints
