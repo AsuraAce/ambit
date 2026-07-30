@@ -122,6 +122,7 @@ fn load_eligible_duplicate_record(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
          FROM images
          WHERE id = ?1
+           AND media_type = 'image'
            AND is_deleted = 0
            AND is_missing = 0
            AND group_id IS NULL
@@ -542,6 +543,7 @@ pub async fn backfill_image_file_hashes(
                     SELECT id, path
                     FROM images
                     WHERE is_deleted = 0
+                      AND media_type = 'image'
                       AND is_missing = 0
                       AND group_id IS NULL
                       AND IFNULL(is_intermediate_gen, 0) = 0
@@ -552,6 +554,7 @@ pub async fn backfill_image_file_hashes(
                         SELECT file_size
                         FROM images
                         WHERE is_deleted = 0
+                          AND media_type = 'image'
                           AND is_missing = 0
                           AND group_id IS NULL
                           AND IFNULL(is_intermediate_gen, 0) = 0
@@ -640,6 +643,7 @@ pub async fn backfill_image_file_hashes(
                 SELECT COUNT(*)
                 FROM images
                 WHERE is_deleted = 0
+                  AND media_type = 'image'
                   AND is_missing = 0
                   AND group_id IS NULL
                   AND IFNULL(is_intermediate_gen, 0) = 0
@@ -650,6 +654,7 @@ pub async fn backfill_image_file_hashes(
                     SELECT file_size
                     FROM images
                     WHERE is_deleted = 0
+                      AND media_type = 'image'
                       AND is_missing = 0
                       AND group_id IS NULL
                       AND IFNULL(is_intermediate_gen, 0) = 0

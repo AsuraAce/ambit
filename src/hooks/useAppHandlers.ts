@@ -199,8 +199,14 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
         const updatedImg = { ...img, notes };
         setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
-        await updateImageNotesCol(id, notes);
-        addToast('Saved', 'success');
+        try {
+            await updateImageNotesCol(id, notes);
+            addToast('Saved', 'success');
+        } catch (error) {
+            console.error('[Notes] Failed to persist notes', error);
+            setImages(prev => prev.map(i => i.id === id ? img : i));
+            addToast('Failed to save notes', 'error');
+        }
     };
 
     const handleRevertMetadata = async (id: string) => {

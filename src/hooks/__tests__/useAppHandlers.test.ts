@@ -272,6 +272,20 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
     });
 
+    it('rolls back notes and reports an error when persistence fails', async () => {
+        dispatchedImages = [mockImages[0], { ...mockImages[0], id: 'img2' }];
+        mockUpdateImageNotesCol.mockRejectedValueOnce(new Error('missing row'));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHandlers();
+
+        await act(async () => result.current.handleUpdateNotes('img1', 'note'));
+
+        expect(dispatchedImages.map(image => image.notes)).toEqual([undefined, undefined]);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to save notes', 'error');
+        expect(error).toHaveBeenCalledWith('[Notes] Failed to persist notes', expect.any(Error));
+        error.mockRestore();
+    });
+
     it('groups only requested images and applies the transactional duplicate result', async () => {
         dispatchedImages = [mockImages[0], { ...mockImages[0], id: 'img2' }];
         const { result } = renderHandlers();

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle } from '../types';
+import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle, isVideoAsset } from '../types';
 import { useToast } from './useToast';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -177,6 +177,10 @@ export const useAppActions = ({
 
     const handleExportConfirm = async (filename: string, folder: string, ids?: Set<string>) => {
         const targetIds = ids || selectedIds;
+        if (images.some(image => targetIds.has(image.id) && isVideoAsset(image))) {
+            addToast('ZIP export is image-only. Open a video to export its original file.', 'warning');
+            return;
+        }
         await fileOps.exportImages(filename, targetIds, folder, () => {
             if (!ids) setSelectedIds(new Set());
             closeModal('export');
@@ -311,6 +315,12 @@ export const useAppActions = ({
         const resolvedTargetId = resolveMetadataRecoveryTargetId(targetId);
         if (!resolvedTargetId) {
             addToast('Select an image before starting Prompt Recovery.', 'error');
+            return;
+        }
+        const target = viewerImages.find(image => image.id === resolvedTargetId)
+            ?? images.find(image => image.id === resolvedTargetId);
+        if (target && isVideoAsset(target)) {
+            addToast('Prompt Recovery is currently image-only.', 'info');
             return;
         }
 

@@ -175,4 +175,17 @@ describe('SelectionBar', () => {
         expect(screen.queryByRole('button', { name: 'Remove Selected from Collection' })).toBeNull();
         expect((screen.getByRole('button', { name: 'Export Selected Images' }) as HTMLButtonElement).disabled).toBe(true);
     });
+
+    it('keeps image-only compare and ZIP export unavailable for a video selection', () => {
+        const callbacks = renderBar([
+            image('one'),
+            { ...image('video'), mediaType: 'video' }
+        ]);
+
+        expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
+        const exportButton = screen.getByRole('button', { name: 'Use the video viewer to export originals' }) as HTMLButtonElement;
+        expect(exportButton.disabled).toBe(true);
+        fireEvent.click(exportButton);
+        expect(callbacks.onExport).not.toHaveBeenCalled();
+    });
 });

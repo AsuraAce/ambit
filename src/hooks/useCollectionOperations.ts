@@ -265,7 +265,7 @@ export const useCollectionOperations = ({
         return false;
       }
 
-      addToast(`Added images to collection`, 'success');
+      addToast('Added to collection', 'success');
       try {
         await Promise.all([
           refreshCollections(),
@@ -374,7 +374,7 @@ export const useCollectionOperations = ({
       // 2. Add to target
       await addImgsToCol(targetId, imageIds);
 
-      addToast(`Moved images to ${targetCol.name}`, 'success');
+      addToast(`Moved to ${targetCol.name}`, 'success');
       await Promise.all([
         refreshCollections(),
         queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -388,7 +388,7 @@ export const useCollectionOperations = ({
         if (c.id === targetId) return targetCol;
         return c;
       }));
-      addToast("Failed to move images", "error");
+      addToast("Failed to move to collection", "error");
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast]);
 

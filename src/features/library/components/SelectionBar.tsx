@@ -1,5 +1,5 @@
 import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { AIImage, isVideoAsset } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -58,6 +58,7 @@ export function SelectionBar({
     const allPinned = selectedImages.length > 0 && selectedImages.every(img => img.isPinned);
     const favoritePressed: boolean | 'mixed' = allFavorite ? true : selectedImages.some(img => img.isFavorite) ? 'mixed' : false;
     const pinPressed: boolean | 'mixed' = allPinned ? true : selectedImages.some(img => img.isPinned) ? 'mixed' : false;
+    const hasSelectedVideo = selectedImages.some(isVideoAsset);
 
     const allUserMasked = selectedImages.every(img => img.userMasked === true);
     const allUserUnmasked = selectedImages.every(img => img.userMasked === false);
@@ -108,7 +109,7 @@ export function SelectionBar({
                     <span className="text-gray-500 dark:text-gray-400 font-normal">Selected</span>
                 </div>
 
-                {selectedIds.size === 2 && (
+                {selectedIds.size === 2 && !hasSelectedVideo && (
                     <TooltipButton label="Compare Selected Images" content="Compare Selected Images" onClick={onCompare} className={NEUTRAL_BUTTON_CLASS}>
                         <SplitSquareHorizontal className="w-5 h-5" />
                     </TooltipButton>
@@ -139,7 +140,13 @@ export function SelectionBar({
                 )}
 
 
-                <TooltipButton label="Export Selected Images" content="Export Selected Images" onClick={onExport} disabled={isExporting} className={`${NEUTRAL_BUTTON_CLASS} disabled:opacity-50`}>
+                <TooltipButton
+                    label={hasSelectedVideo ? 'Use the video viewer to export originals' : 'Export Selected Images'}
+                    content={hasSelectedVideo ? 'ZIP export is image-only. Open a video to export its original file.' : 'Export Selected Images'}
+                    onClick={onExport}
+                    disabled={isExporting || hasSelectedVideo}
+                    className={`${NEUTRAL_BUTTON_CLASS} disabled:opacity-50`}
+                >
                     <Share className="w-5 h-5" />
                 </TooltipButton>
 

@@ -296,6 +296,7 @@ describe('useCollectionOperations', () => {
             const nextState = updater(mockCollections);
             expect(nextState[0].count).toBe(6); // 5 + 1
             expect(addImgs).toHaveBeenCalledWith('col1', ['img2']);
+            expect(mockAddToast).toHaveBeenCalledWith('Added to collection', 'success');
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
@@ -652,7 +653,7 @@ describe('useCollectionOperations', () => {
             const imageUpdater = mockSetImages.mock.calls[0][0] as (images: AIImage[]) => AIImage[];
             expect(imageUpdater([makeImage({ id: 'img1' }), makeImage({ id: 'img2' })]).map(image => image.id)).toEqual(['img2']);
             expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
-            expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
+            expect(mockAddToast).toHaveBeenCalledWith('Failed to move to collection', 'error');
             expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
         });
@@ -842,7 +843,7 @@ describe('useCollectionOperations', () => {
         await act(async () => result.current.addImagesToCollection(['a'], 'col1'));
         await act(async () => result.current.removeImagesFromCollection(['a', 'b'], 'col1'));
         await act(async () => result.current.moveImagesBetweenCollections(['a'], 'col1', 'target'));
-        expect(mockAddToast).toHaveBeenCalledWith('Moved images to Target', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Moved to Target', 'success');
     });
 
     it('uses the smart-save alias and supports image URL thumbnail fallback', async () => {
@@ -950,7 +951,7 @@ describe('useCollectionOperations', () => {
         const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [source, target, extra], activeCollectionId: null }));
         await act(async () => result.current.moveImagesBetweenCollections(['img'], 'col1', 'target'));
         expect(dispatchedCollections).toEqual([source, target, extra]);
-        expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to move to collection', 'error');
     });
 
     it('preserves unrelated collections in thumbnail set and reset updaters', async () => {

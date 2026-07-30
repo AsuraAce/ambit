@@ -202,8 +202,9 @@ describe('thumbnailService', () => {
     });
 
     it('syncs missing DB thumbnail paths by rescanning existing files and writing one batch update', async () => {
+        const select = vi.fn().mockResolvedValue([{ id: 'C:/library/a.png' }, { id: 'C:/library/b.png' }]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ id: 'C:/library/a.png' }, { id: 'C:/library/b.png' }]),
+            select,
             execute: vi.fn(),
         });
         mocks.scanImagesBulk.mockResolvedValue([{ thumbnail: 'a.webp' }, { thumbnail: 'b.webp' }]);
@@ -211,6 +212,7 @@ describe('thumbnailService', () => {
         const { syncExistingThumbnailsToDB } = await import('../thumbnailService');
 
         await expect(syncExistingThumbnailsToDB()).resolves.toBe(2);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining("media_type = 'image'"));
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/library/a.png');
         expect(mocks.updateThumbnailPathsBatch).toHaveBeenCalledWith([
             { id: 'C:/library/a.png', thumbnailPath: 'a.webp', thumbnailSource: 'ambit' },

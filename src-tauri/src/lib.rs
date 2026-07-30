@@ -1,6 +1,7 @@
 mod app_data_migration;
 mod db;
 mod fs_commands;
+mod media;
 mod metadata;
 mod scanner;
 mod security;
@@ -11,6 +12,8 @@ mod watcher;
 use db::commands::maintenance::FileHashBackfillState;
 #[cfg(not(test))]
 use db::reparse::ReparseState;
+#[cfg(not(test))]
+use media::VideoImportState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
 #[cfg(not(test))]
@@ -97,6 +100,12 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         metadata::models::unset_model_thumbnail,
         metadata::models::clear_all_thumbnails,
         metadata::models::set_resource_thumbnail_sensitivity,
+        // video media commands
+        media::import_video_asset,
+        media::cancel_video_import,
+        media::store_video_poster,
+        media::prepare_video_playback,
+        media::export_asset_original,
         // fs commands
         fs_commands::move_to_trash,
         fs_commands::delete_thumbnail,
@@ -109,6 +118,8 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 #[cfg(not(test))]
 pub fn run() {
     let builder = create_builder();
+    let context = tauri::generate_context!();
+    let active_identifier = context.config().identifier.clone();
 
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {
@@ -116,7 +127,7 @@ pub fn run() {
     }
 
     // Check for deferred purge request BEFORE initializing the database.
-    if let Err(error) = app_data_migration::check_and_execute_deferred_purge() {
+    if let Err(error) = app_data_migration::check_and_execute_deferred_purge(&active_identifier) {
         eprintln!("[Purge] {error}");
         return;
     }
@@ -173,6 +184,7 @@ pub fn run() {
         .manage(ModelDiscoveryState::default())
         .manage(ReparseState::default())
         .manage(FileHashBackfillState::default())
+        .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
         .invoke_handler(builder.invoke_handler())
         .setup(|app| {
@@ -210,7 +222,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {

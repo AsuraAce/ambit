@@ -170,6 +170,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
+        AND media_type = 'image'
         AND is_deleted = 0
     `;
 
@@ -196,6 +197,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
+        AND media_type = 'image'
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
     `;
@@ -258,6 +260,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
@@ -296,6 +299,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
     let query = `
         SELECT COUNT(*) as count FROM images 
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
@@ -339,6 +343,7 @@ export const getUnoptimizedImageEntries = async (
     let query = `
         SELECT id, path FROM images 
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND is_deleted = 0
@@ -405,6 +410,7 @@ export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
             SELECT id, file_hash
             FROM images
             WHERE is_deleted = 0
+              AND media_type = 'image'
               AND is_missing = 0
               AND group_id IS NULL
               AND IFNULL(is_intermediate_gen, 0) = 0

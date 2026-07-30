@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeneratorTool, type AIImage } from '../../../../types';
+import { GeneratorTool, type AIImage, type VideoAsset } from '../../../../types';
 import { ImageCard } from '../ImageCard';
 
 const smartImageMocks = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
@@ -55,6 +55,18 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ImageCard>> = {}) 
     const result = render(<ImageCard {...props} />);
     return { ...result, props };
 };
+
+const video = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
+    ...image({ id: 'video-1', url: 'source.mp4', thumbnailUrl: 'source.mp4', filename: 'source.mp4' }),
+    mediaType: 'video',
+    durationMs: 12_000,
+    videoCodec: 'AVC',
+    audioPresent: true,
+    rotationDegrees: 0,
+    probeStatus: 'ready',
+    playbackStatus: 'unknown',
+    ...overrides
+});
 
 describe('ImageCard', () => {
     beforeEach(() => {
@@ -116,6 +128,29 @@ describe('ImageCard', () => {
         fireEvent.mouseLeave(root);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
         expect(props.onClick).not.toHaveBeenCalled();
+    });
+
+    it('never assigns a posterless video to an image element and reveals it directly into the viewer', () => {
+        const { props } = setup({ image: video(), isMasked: true });
+
+        expect(smartImageMocks.props).toHaveLength(0);
+        expect(screen.getByText('Hidden Content')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Reveal and open' }));
+        expect(props.onClick).toHaveBeenCalledOnce();
+        expect(screen.queryByText('Hidden Content')).toBeNull();
+        expect(screen.getByText('AVC')).toBeTruthy();
+        expect(screen.getByText('1024x768 · 0:12')).toBeTruthy();
+    });
+
+    it('uses only an Ambit poster for video cards and has no source-video fallback', () => {
+        setup({
+            image: video({
+                thumbnailUrl: 'poster.webp',
+                thumbnailSource: 'ambit-video-v1'
+            })
+        });
+
+        expect(smartImageMocks.props[0]).toMatchObject({ src: 'poster.webp', fallbackSrc: undefined });
     });
 
     it('disables unavailable actions and shows missing, deleted, thumbnail, pin, and favorite states', () => {

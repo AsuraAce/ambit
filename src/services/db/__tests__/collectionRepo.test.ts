@@ -1042,11 +1042,11 @@ describe('collectionRepo membership helpers', () => {
     it('adds images to a collection, updates recency, and clears stale dynamic thumbnails', async () => {
         const { addImagesToCollection } = await import('../collectionRepo');
 
-        await addImagesToCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
+        await addImagesToCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
         expect(dbMocks.execute).toHaveBeenCalledWith(
             'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-            ['c1', 'C:/images/a.png']
+            ['c1', '//?/C:/images/a.png']
         );
         expect(dbMocks.execute).toHaveBeenCalledWith(
             'UPDATE collections SET updated_at = ? WHERE id = ?',
@@ -1061,11 +1061,11 @@ describe('collectionRepo membership helpers', () => {
     it('removes images from a collection with normalized image ids', async () => {
         const { removeImagesFromCollection } = await import('../collectionRepo');
 
-        await removeImagesFromCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
+        await removeImagesFromCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
         expect(dbMocks.execute).toHaveBeenCalledWith(
             'DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (?,?)',
-            ['c1', 'C:/images/a.png', 'C:/images/b.png']
+            ['c1', '//?/C:/images/a.png', 'C:/images/b.png']
         );
         expect(dbMocks.execute).toHaveBeenCalledWith(
             expect.stringContaining('dynamic_thumbnail_path = NULL'),

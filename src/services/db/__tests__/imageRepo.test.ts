@@ -1127,6 +1127,59 @@ describe('imageRepo batch removal', () => {
         expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?');
     });
 
+    it('preserves verbatim video identities for user-facing mutations', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
+        };
+        getDbMock.mockResolvedValue(db);
+        const verbatimId = '\\\\?\\C:\\videos\\clip.mp4';
+        const canonicalId = '//?/C:/videos/clip.mp4';
+        const {
+            updateImageNotesCol,
+            toggleImagePin,
+            toggleImageFavorite,
+            toggleImageMask,
+            updateVideoPlaybackStatus,
+        } = await import('../imageRepo');
+
+        await updateImageNotesCol(verbatimId, 'motion reference');
+        await toggleImagePin(verbatimId, true);
+        await toggleImageFavorite(verbatimId, true);
+        await toggleImageMask(verbatimId, false);
+        await updateVideoPlaybackStatus(verbatimId, 'playable');
+
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET notes = ? WHERE id = ?', ['motion reference', canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2', [1, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2', [1, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET user_masked = $1 WHERE id = $2', [0, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith(
+            "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video'",
+            ['playable', canonicalId]
+        );
+    });
+
+    it('rejects user-facing mutations when the asset identity matches no row', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        getDbMock.mockResolvedValue(db);
+        const {
+            updateImageNotesCol,
+            toggleImagePin,
+            toggleImageFavorite,
+            toggleImageMask,
+            updateVideoPlaybackStatus,
+        } = await import('../imageRepo');
+
+        await expect(updateImageNotesCol('C:/missing.mp4', 'note')).rejects.toThrow('asset was not found');
+        await expect(toggleImagePin('C:/missing.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(toggleImageFavorite('C:/missing.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(toggleImageMask('C:/missing.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(updateVideoPlaybackStatus('C:/missing.mp4', 'playable')).rejects.toThrow('asset was not found');
+    });
+
     it('returns without touching metadata when revert has no source row', async () => {
         const db = {
             select: vi.fn(async () => []),
@@ -1276,6 +1329,67 @@ describe('imageRepo batch removal', () => {
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('DELETE FROM removed_images WHERE id IN (?)'),
             ['C:/removed/restore.png']
+        );
+    });
+
+    it('restores removed videos with their probe and playback fields intact', async () => {
+        const db = {
+            select: vi.fn(async () => [{
+                id: '//?/C:/removed/clip.mp4',
+                path: '//?/C:/removed/clip.mp4',
+                width: 1920,
+                height: 1080,
+                file_size: 4_096,
+                timestamp: 1700000000000,
+                metadata_json: '{}',
+                thumbnail_path: 'C:/thumbs/clip.webp',
+                micro_thumbnail: null,
+                thumbnail_source: 'ambit-video-v1',
+                is_favorite: 1,
+                is_pinned: 0,
+                is_missing: 0,
+                is_corrupt: 0,
+                user_masked: null,
+                group_id: null,
+                board_id: null,
+                notes: null,
+                original_metadata_json: null,
+                original_parsed_json: null,
+                original_state_json: null,
+                collection_ids_json: null,
+                media_type: 'video',
+                media_container: 'MPEG-4',
+                media_mime_type: 'video/mp4',
+                duration_ms: 2_500,
+                video_codec: 'AVC',
+                video_profile: 'High',
+                audio_present: 1,
+                audio_codec: 'AAC',
+                frame_rate_num: 30_000,
+                frame_rate_den: 1_001,
+                rotation_degrees: 90,
+                probe_status: 'ready',
+                playback_status: 'playable',
+            }]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+        const { commands } = await import('../../../bindings');
+
+        const { restoreRemovedImages } = await import('../imageRepo');
+        await restoreRemovedImages(['\\\\?\\C:\\removed\\clip.mp4']);
+
+        expect(commands.saveImagesBatch).not.toHaveBeenCalled();
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining('INSERT INTO images'),
+            expect.arrayContaining([
+                'video', 'MPEG-4', 'video/mp4', 2_500, 'AVC', 'High', 1, 'AAC',
+                30_000, 1_001, 90, 'ready', 'playable'
+            ])
+        );
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining('DELETE FROM removed_images WHERE id IN (?)'),
+            ['//?/C:/removed/clip.mp4']
         );
     });
 
@@ -1497,8 +1611,8 @@ describe('imageRepo batch removal', () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const { removeImagesFromLibrary, restoreRemovedImages } = await import('../imageRepo');
 
-        await removeImagesFromLibrary(['C:/missing.png']);
-        await restoreRemovedImages(['C:/missing.png']);
+        await expect(removeImagesFromLibrary(['C:/missing.png'])).rejects.toThrow('Could not remove 1 asset');
+        await expect(restoreRemovedImages(['C:/missing.png'])).rejects.toThrow('Could not restore 1 asset');
         await restoreRemovedImages(['C:/removed/a.png']);
         await restoreRemovedImages(['C:/removed/bad.png']);
         expect(console.warn).toHaveBeenCalledWith(

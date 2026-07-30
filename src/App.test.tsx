@@ -611,7 +611,7 @@ describe('App orchestration', () => {
         expect(mocks.modals.setCollectionToEditId).toHaveBeenCalledWith('collection-a');
         await act(async () => layout.handleRemoveFromCollection());
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
-        expect(mocks.addToast).toHaveBeenCalledWith('Removed 1 images from collection', 'info');
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('images from collection'), 'info');
         await act(async () => {
             expect(await layout.onSetCollectionMembership('one', 'target', true)).toBe(true);
             expect(await layout.onSetCollectionMembership('one', 'target', false)).toBe(true);
@@ -629,6 +629,28 @@ describe('App orchestration', () => {
         requireProbe(captured.contextMenu, 'AppContextMenu').onMoveToCollection();
         expect(mocks.modals.setSourceCollectionId).toHaveBeenCalledWith('collection-a');
         requireProbe(captured.contextMenu, 'AppContextMenu').onClose();
+    });
+
+    it('keeps the selection when bulk collection removal does not persist', async () => {
+        mocks.collections = [{
+            id: 'collection-a',
+            name: 'Collection A',
+            imageIds: ['one'],
+            count: 1,
+            createdAt: 1,
+            source: 'ambit'
+        }];
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.selectedIds = new Set(['one']);
+        mocks.removeImagesFromCollection.mockResolvedValueOnce(false);
+        render(<App />);
+        const clearCount = mocks.clearSelection.mock.calls.length;
+
+        await act(async () => requireProbe(captured.appLayout, 'AppLayout').handleRemoveFromCollection());
+
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearCount);
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('from collection'), 'info');
     });
 
     it('routes committed navbar searches by view and opens syntax help', () => {

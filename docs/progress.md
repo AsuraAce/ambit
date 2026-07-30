@@ -1,9 +1,9 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-22
+Last reviewed: 2026-07-30
 
 ## Current Baseline
-- The current checkout and release manifests are version `0.9.0`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. The checkout is tagged `v0.9.0`; hosted release state still belongs to GitHub rather than this file.
+- The current checkout and release manifests are version `0.9.1`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. Hosted release state still belongs to GitHub rather than this file.
 - Release builds remain Windows-only. Linux and macOS packages are manual, unsigned or non-updater experimental artifacts as documented in `docs/experimental-unix-builds.md`.
 - Production packaging runs `verify:release` before Tauri builds. The gate checks version consistency, generated binding drift, lint, TypeScript, guarded frontend output, coverage, Rust tests, and a no-bundle Tauri compatibility build.
 - ComfyUI metadata milestones 22 through 26 are complete. Their files under `docs/plans/` are historical verification records, not active work.
@@ -17,6 +17,7 @@ Last reviewed: 2026-07-22
 - The `io.github.asuraace.ambit` identifier is current. Startup migration and reset/repair paths still account for legacy `com.ambit.app` Local and Roaming AppData during the public-beta transition.
 
 ## Active Follow-Ups
+- `docs/plans/milestone-27.md` is the active GenAI video-support plan. WP1 manual import-to-viewer support is accepted after owner smoke, closure review, and the full release gate. WP2 folder discovery, Live Watch, and mixed-library operations are the next package; they are not implemented yet.
 - `docs/plans/release-0.9.0-ux-readiness.md` was overtaken by the `v0.9.0` release and is no longer a live release gate. Its Work Package 3 (initial Smart Collection thumbnail hydration) and Work Package 4 (discoverable duplicate-group navigation) remain unversioned product follow-ups.
 - Add browser smoke coverage for lazy-loaded app surfaces, including settings, statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editing.
 - Add coverage thresholds after the public-beta baseline is intentionally reviewed.

@@ -107,6 +107,8 @@ export interface OriginalState {
 }
 
 export interface AIImage {
+  /** Omitted by pre-video records; those records are always images. */
+  mediaType?: 'image' | 'video';
   id: string;
   url: string;
   thumbnailUrl: string;
@@ -136,6 +138,26 @@ export interface AIImage {
   originalChunks?: Record<string, string>; // Raw chunks for re-parsing (persisted to DB)
   originalState?: OriginalState; // Snapshot of image-level state at import (for sync)
 }
+
+export interface VideoAsset extends AIImage {
+  mediaType: 'video';
+  mediaContainer?: string;
+  mediaMimeType?: string;
+  durationMs: number;
+  videoCodec: string;
+  videoProfile?: string;
+  audioPresent: boolean;
+  audioCodec?: string;
+  frameRateNum?: number;
+  frameRateDen?: number;
+  rotationDegrees: 0 | 90 | 180 | 270;
+  probeStatus: 'ready' | 'invalid';
+  playbackStatus: 'unknown' | 'playable' | 'external_required';
+}
+
+export type LibraryAsset = AIImage | VideoAsset;
+
+export const isVideoAsset = (asset: AIImage): asset is VideoAsset => asset.mediaType === 'video';
 
 export interface FilterState {
   searchQuery: string;

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, RecoveryStyle, ViewMode } from '../types';
+import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, RecoveryStyle, ViewMode, isVideoAsset } from '../types';
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 import type { ImportResult } from '../services/importService';
 import { createDefaultFilters } from '../utils/filterState';
@@ -114,6 +114,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     onNavigateToMaintenance
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
+    const imageOnlyResults = filteredImages.filter(image => !isVideoAsset(image));
 
     return (
         <>
@@ -175,7 +176,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                     <SlideshowModal
                         isOpen={modals.slideshow}
                         onClose={() => closeModal('slideshow')}
-                        images={filteredImages}
+                        images={imageOnlyResults}
                         initialIndex={0}
                         isShuffleDefault={slideshowShuffle}
                     />
@@ -220,10 +221,10 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                     />
                 )}
 
-                {modals.compare && filteredImages.length >= 2 && Array.from(selectedIds).length >= 2 && (
+                {modals.compare && imageOnlyResults.length >= 2 && Array.from(selectedIds).length >= 2 && (
                     <CompareModal
-                        imageA={filteredImages.find(i => i.id === Array.from(selectedIds)[0]) || filteredImages[0]}
-                        imageB={filteredImages.find(i => i.id === Array.from(selectedIds)[1]) || filteredImages[1]}
+                        imageA={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[0]) || imageOnlyResults[0]}
+                        imageB={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[1]) || imageOnlyResults[1]}
                         onClose={() => closeModal('compare')}
                         onToggleFavorite={toggleFavorite}
                         onTogglePin={togglePin}

@@ -464,6 +464,7 @@ fn get_thumbnail_optimization_failures_for_conn(
                     thumbnail_last_attempt_at
              FROM images
              WHERE is_deleted = 0
+               AND media_type = 'image'
                AND is_missing = 0
                AND COALESCE(thumbnail_failure_count, 0) > 0
              ORDER BY COALESCE(thumbnail_last_attempt_at, 0) DESC, id ASC
@@ -496,6 +497,7 @@ fn retry_failed_thumbnail_optimizations_for_conn(conn: &Connection) -> Result<us
              thumbnail_last_error = NULL,
              thumbnail_last_attempt_at = NULL
          WHERE is_deleted = 0
+           AND media_type = 'image'
            AND is_missing = 0
            AND COALESCE(thumbnail_failure_count, 0) > 0",
         [],
@@ -892,6 +894,7 @@ fn thumbnail_queue_condition(include_upgradeable: bool, now_ms: i64) -> String {
 
     format!(
         "is_deleted = 0
+         AND media_type = 'image'
          AND is_missing = 0
          AND IFNULL(is_intermediate_gen, 0) = 0
          AND (is_corrupt = 0 OR is_corrupt IS NULL)
@@ -947,6 +950,7 @@ mod tests {
                 thumbnail_failure_count INTEGER NOT NULL DEFAULT 0,
                 thumbnail_last_error TEXT,
                 thumbnail_last_attempt_at INTEGER,
+                media_type TEXT NOT NULL DEFAULT 'image',
                 is_deleted INTEGER NOT NULL DEFAULT 0,
                 is_missing INTEGER NOT NULL DEFAULT 0,
                 is_intermediate_gen INTEGER NOT NULL DEFAULT 0,
@@ -1426,6 +1430,22 @@ mod tests {
         let ids: Vec<String> = rows.into_iter().map(|row| row.id).collect();
 
         assert_eq!(ids, vec!["missing", "outdated"]);
+    }
+
+    #[test]
+    fn queue_never_selects_video_posters_for_image_optimization() {
+        let conn = setup_queue_db();
+        insert_image(&conn, "video", None, None, 0, 40);
+        conn.execute(
+            "UPDATE images SET media_type = 'video' WHERE id = 'video'",
+            [],
+        )
+        .expect("mark video");
+
+        let rows =
+            fetch_thumbnail_candidates(&conn, true, None, 10, 10_000).expect("fetch candidates");
+
+        assert!(rows.is_empty());
     }
 
     #[test]

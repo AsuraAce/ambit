@@ -75,6 +75,16 @@ type RemovedImageRow = ImageRow & {
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
 
+const assertMutationMatched = (
+    result: { rowsAffected: number } | undefined,
+    assetId: string,
+    operation: string
+): void => {
+    if (result?.rowsAffected === 0) {
+        throw new Error(`${operation} failed because the asset was not found: ${assetId}`);
+    }
+};
+
 const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] => {
     const chunks: T[][] = [];
     for (let i = 0; i < items.length; i += chunkSize) {
@@ -612,7 +622,8 @@ export const updateImageNotesCol = async (id: string, notes: string | null) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
-        await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        const result = await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        assertMutationMatched(result, normalizedId, 'Updating notes');
     });
 };
 
@@ -772,7 +783,8 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
@@ -785,7 +797,8 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -800,7 +813,8 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     if (userMasked === true) value = 1;
     if (userMasked === false) value = 0;
 
-    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    const result = await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating content mask');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -843,6 +857,19 @@ export const deleteImage = async (id: string) => {
     await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
 };
 
+export const updateVideoPlaybackStatus = async (
+    id: string,
+    status: 'unknown' | 'playable' | 'external_required'
+) => {
+    if (isBrowserMockMode()) return;
+    const db = await getDb();
+    const result = await db.execute(
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video'",
+        [status, normalizePath(id)]
+    );
+    assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
+};
+
 const removeTombstones = async (db: Awaited<ReturnType<typeof getDb>>, ids: string[]) => {
     for (const chunk of chunkItems(ids)) {
         const placeholders = chunk.map(() => '?').join(',');
@@ -864,7 +891,9 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
             const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt
+                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                        media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
+                        audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
                  FROM images
                  WHERE id IN (${placeholders})`,
                 chunk
@@ -872,7 +901,11 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
             rows.push(...chunkRows);
         }
 
-        if (rows.length === 0) return;
+        if (rows.length !== normalizedIds.length) {
+            const foundIds = new Set(rows.map(row => row.id));
+            const missingIds = normalizedIds.filter(id => !foundIds.has(id));
+            throw new Error(`Could not remove ${missingIds.length} asset(s) because they were not found: ${missingIds.join(', ')}`);
+        }
 
         const membershipRows: { image_id: string; collection_id: string }[] = [];
         console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: normalizedIds.length });
@@ -900,8 +933,10 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                 `INSERT OR REPLACE INTO removed_images (
                     id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                     is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json,
+                    media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
+                    audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     row.id,
                     row.path,
@@ -925,7 +960,20 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                     row.original_state_json ?? null,
                     row.is_corrupt ?? 0,
                     removedAt,
-                    memberships[row.id] ? JSON.stringify(memberships[row.id]) : null
+                    memberships[row.id] ? JSON.stringify(memberships[row.id]) : null,
+                    row.media_type ?? 'image',
+                    row.media_container ?? null,
+                    row.media_mime_type ?? null,
+                    row.duration_ms ?? null,
+                    row.video_codec ?? null,
+                    row.video_profile ?? null,
+                    row.audio_present ?? null,
+                    row.audio_codec ?? null,
+                    row.frame_rate_num ?? null,
+                    row.frame_rate_den ?? null,
+                    row.rotation_degrees ?? null,
+                    row.probe_status ?? 'not_applicable',
+                    row.playback_status ?? 'not_applicable'
                 ]
             );
         }
@@ -961,15 +1009,43 @@ export const restoreRemovedImages = async (ids: string[]) => {
             rows.push(...chunkRows);
         }
 
-        if (rows.length === 0) return;
+        if (rows.length !== normalizedIds.length) {
+            const foundIds = new Set(rows.map(row => row.id));
+            const missingIds = normalizedIds.filter(id => !foundIds.has(id));
+            throw new Error(`Could not restore ${missingIds.length} asset(s) because they were not found: ${missingIds.join(', ')}`);
+        }
 
-        const restoredImages = rows.map(row => ({
+        const restoredImages = rows.filter(row => row.media_type !== 'video').map(row => ({
             ...mapRowToImage(row),
             isDeleted: false
         }));
         const restoreStartedAt = liveWatchNow();
         const records = restoredImages.map(buildPersistableImageRecord);
-        await persistImageRecords(records, db);
+        if (records.length > 0) {
+            await persistImageRecords(records, db);
+        }
+        for (const row of rows.filter(row => row.media_type === 'video')) {
+            await db.execute(
+                `INSERT INTO images (
+                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
+                    is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                    media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
+                    audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    row.id, row.path, row.width ?? null, row.height ?? null, row.file_size ?? null, row.timestamp,
+                    row.metadata_json ?? '{}', row.thumbnail_path ?? null, row.micro_thumbnail ?? null, row.thumbnail_source ?? null,
+                    row.is_favorite ?? 0, row.is_pinned ?? 0, row.is_missing ?? 0, row.user_masked ?? null,
+                    row.group_id ?? null, row.board_id ?? null, row.notes ?? null, row.original_metadata_json ?? null,
+                    row.original_parsed_json ?? null, row.original_state_json ?? null, row.is_corrupt ?? 0,
+                    'video', row.media_container ?? null, row.media_mime_type ?? null, row.duration_ms ?? null,
+                    row.video_codec ?? null, row.video_profile ?? null, row.audio_present ?? null, row.audio_codec ?? null,
+                    row.frame_rate_num ?? null, row.frame_rate_den ?? null, row.rotation_degrees ?? 0,
+                    row.probe_status ?? 'ready', row.playback_status ?? 'unknown'
+                ]
+            );
+        }
         infoLiveWatchPerf('restoreRemovedImages persisted restored records', {
             imageCount: restoredImages.length,
             totalMs: elapsedMs(restoreStartedAt)

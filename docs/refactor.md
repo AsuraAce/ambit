@@ -5,6 +5,24 @@ Last reviewed: 2026-07-27
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Image-Named Mixed-Media Persistence Boundary
+Status: Deferred
+
+### Why Cleanup Is Needed
+- The compatibility-first video slice stores both images and videos in the historical `images` and `removed_images` tables and keeps several `AIImage`-named frontend boundaries.
+- Renaming the repository surface before mixed-media behavior is proven would create broad migration and API churn, but the names are now less precise.
+
+### Suggested Future Direction
+- After the mixed-media milestone is accepted, migrate shared callers toward `LibraryAsset` or narrower `ImageAsset` and `VideoAsset` contracts.
+- Consider table and command naming only with an explicit compatibility and migration plan; do not rename persisted tables opportunistically.
+- Keep image-only helpers visibly narrowed while this debt remains.
+
+### Related Code
+- `src/types.ts`
+- `src/services/db/repoUtils.ts`
+- `src/services/db/imageRepo.ts`
+- `src-tauri/src/db/migrations/m63_video_library_assets.rs`
+
 ## Maintenance Query Ownership
 Status: Deferred
 

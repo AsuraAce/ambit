@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { memo, useRef } from 'react';
-import { AIImage } from '../../../types';
+import { AIImage, isVideoAsset } from '../../../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
 import { isImageMasked } from '../../../utils/maskingUtils';
@@ -51,6 +51,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
 
     // Error Handler: If real thumbnail fails to load, regenerate it (with retry limit)
     const handleImageError = () => {
+        if (isVideoAsset(image)) return;
         const sourcePath = normalizePath(urlToPath(image.url));
         if (!sourcePath || image.isMissing || isVerifyingMissingRef.current) {
             return;

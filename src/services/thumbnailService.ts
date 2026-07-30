@@ -266,7 +266,9 @@ export const syncExistingThumbnailsToDB = async (
     // Get all images that don't have a thumbnail_path set
     const db = await getDb();
     const rows = await db.select<{ id: string }[]>(
-        'SELECT id FROM images WHERE thumbnail_path IS NULL OR thumbnail_path = ""'
+        `SELECT id FROM images
+         WHERE media_type = 'image'
+           AND (thumbnail_path IS NULL OR thumbnail_path = '')`
     );
 
     if (rows.length === 0) {

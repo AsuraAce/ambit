@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
@@ -14,7 +15,7 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection } from './types';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, isVideoAsset } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -35,12 +36,16 @@ import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
+import { cancelVideoImport, importVideoPaths, pickVideoPaths } from './services/videoService';
+import { isImageMasked } from './utils/maskingUtils';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
+const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
 
 export default function App() {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const modals = useModalManager();
     const appVersion = useAppVersion();
 
@@ -59,6 +64,8 @@ export default function App() {
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
+    const activeVideoImportRef = useRef<string | null>(null);
+    const videoImportCancelledRef = useRef(false);
     const openImportModal = useCallback(() => setIsImportModalOpen(true), []);
 
     // --- Store Subscriptions ---
@@ -266,6 +273,42 @@ export default function App() {
         fileOps.fileInputRef.current?.click();
     }, [fileOps]);
 
+    const handleSelectVideosImport = useCallback(async () => {
+        try {
+            const paths = await pickVideoPaths();
+            if (paths.length === 0) return;
+            videoImportCancelledRef.current = false;
+            addToast(
+                `Importing ${paths.length} video${paths.length === 1 ? '' : 's'}…`,
+                'info',
+                {
+                    label: 'Cancel',
+                    onClick: () => {
+                        videoImportCancelledRef.current = true;
+                        const operationId = activeVideoImportRef.current;
+                        if (operationId) void cancelVideoImport(operationId);
+                    }
+                }
+            );
+            const summary = await importVideoPaths(paths, operationId => {
+                activeVideoImportRef.current = operationId;
+            }, () => videoImportCancelledRef.current);
+            activeVideoImportRef.current = null;
+            videoImportCancelledRef.current = false;
+            await queryClient.invalidateQueries({ queryKey: imagesQueryKey });
+            const accepted = summary.imported + summary.duplicate;
+            addToast(
+                `${accepted} video${accepted === 1 ? '' : 's'} ready${summary.cancelled ? ', import cancelled' : ''}${summary.rejected ? `, ${summary.rejected} rejected` : ''}${summary.posterFailures ? `, ${summary.posterFailures} using a generic poster` : ''}`,
+                summary.rejected > 0 || summary.cancelled > 0 ? 'warning' : 'success'
+            );
+        } catch (error) {
+            activeVideoImportRef.current = null;
+            videoImportCancelledRef.current = false;
+            await queryClient.invalidateQueries({ queryKey: imagesQueryKey });
+            addToast(`Video import failed: ${String(error)}`, 'error');
+        }
+    }, [addToast, imagesQueryKey, queryClient]);
+
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
@@ -311,11 +354,11 @@ export default function App() {
 
     const handleRemoveFromCollection = useCallback(async () => {
         if (filters.collectionId && selectedIds.size > 0) {
-            await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            const didRemove = await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            if (!didRemove) return;
             clearSelection();
-            addToast(`Removed ${selectedIds.size} images from collection`, 'info');
         }
-    }, [filters.collectionId, selectedIds, colOps, clearSelection, addToast]);
+    }, [filters.collectionId, selectedIds, colOps, clearSelection]);
 
     const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
         modals.setAddToCollectionMode(mode);
@@ -686,6 +729,7 @@ export default function App() {
                 onClose={() => setIsImportModalOpen(false)}
                 onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 onImportFiles={() => { void handleSelectFilesImport(); }}
+                onImportVideos={() => { void handleSelectVideosImport(); }}
             />
             <input
                 type="file"
@@ -784,7 +828,25 @@ export default function App() {
 
             <React.Suspense fallback={null}>
                 <AnimatePresence>
-                    {displayedViewerImage && (
+                    {displayedViewerImage && isVideoAsset(displayedViewerImage) ? (
+                        <VideoViewer
+                            key={`video-viewer:${displayedViewerImage.id}`}
+                            video={displayedViewerImage}
+                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, settings.promptMaskingEnabled === false ? [] : settings.maskedKeywords)}
+                            onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
+                            onNext={() => {
+                                if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) setSelectedImageIndex(selectedImageIndex + 1);
+                            }}
+                            onPrev={() => {
+                                if (selectedImageIndex !== null && selectedImageIndex > 0) setSelectedImageIndex(selectedImageIndex - 1);
+                            }}
+                            onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
+                            onTogglePin={(id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })}
+                            onDelete={(id) => actions.handleDeleteViewerImage(id)}
+                            onUpdateNotes={(id, notes) => handlers.handleUpdateNotes(id, notes)}
+                            onSetCollectionMembership={handleSetViewerCollectionMembership}
+                        />
+                    ) : displayedViewerImage ? (
                         <ImageViewer
                             key="image-viewer"
                             image={displayedViewerImage}
@@ -824,7 +886,7 @@ export default function App() {
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
                             searchHighlights={searchHighlights}
                         />
-                    )}
+                    ) : null}
                 </AnimatePresence>
             </React.Suspense>
 

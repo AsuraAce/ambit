@@ -31,24 +31,26 @@ const renderModal = () => {
     const onClose = vi.fn();
     const onOpenSettings = vi.fn();
     const onImportFiles = vi.fn();
+    const onImportVideos = vi.fn();
     const result = render(
         <ImportModal
             isOpen={true}
             onClose={onClose}
             onOpenSettings={onOpenSettings}
             onImportFiles={onImportFiles}
+            onImportVideos={onImportVideos}
         />
     );
 
-    return { ...result, onClose, onOpenSettings, onImportFiles };
+    return { ...result, onClose, onOpenSettings, onImportFiles, onImportVideos };
 };
 
 describe('ImportModal', () => {
     it('renders a named modal dialog and focuses its heading', () => {
         renderModal();
 
-        const dialog = screen.getByRole('dialog', { name: 'Add Images to Your Library' });
-        const heading = screen.getByRole('heading', { name: 'Add Images to Your Library' });
+        const dialog = screen.getByRole('dialog', { name: 'Add Media to Your Library' });
+        const heading = screen.getByRole('heading', { name: 'Add Media to Your Library' });
         expect(dialog.getAttribute('aria-modal')).toBe('true');
         expect(document.activeElement).toBe(heading);
         expect(screen.getByRole('button', { name: 'Close Add Images' }).hasAttribute('autofocus')).toBe(false);
@@ -57,7 +59,7 @@ describe('ImportModal', () => {
     it('wraps forward and reverse focus within the dialog', () => {
         renderModal();
 
-        const heading = screen.getByRole('heading', { name: 'Add Images to Your Library' });
+        const heading = screen.getByRole('heading', { name: 'Add Media to Your Library' });
         const firstControl = screen.getByRole('button', { name: 'Close Add Images' });
         const lastControl = screen.getByRole('button', { name: 'Add Folder' });
 
@@ -84,7 +86,8 @@ describe('ImportModal', () => {
         expect(screen.getByRole('button', { name: 'InvokeAI' })).not.toBeNull();
         expect(screen.getByRole('button', { name: 'ComfyUI' })).not.toBeNull();
         expect(screen.getByRole('button', { name: 'SD WebUI' })).not.toBeNull();
-        expect(screen.getByRole('button', { name: 'Select Files' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Select Images' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: 'Select Videos' })).not.toBeNull();
         expect(screen.getByRole('button', { name: 'Add Folder' })).not.toBeNull();
         expect(screen.queryByRole('button', { name: 'Skip' })).toBeNull();
         expect(screen.queryByText("Don't show this again")).toBeNull();
@@ -100,18 +103,20 @@ describe('ImportModal', () => {
     });
 
     it('routes every remaining import action and closes after handoff', () => {
-        const { onClose, onOpenSettings, onImportFiles } = renderModal();
+        const { onClose, onOpenSettings, onImportFiles, onImportVideos } = renderModal();
 
         fireEvent.click(screen.getByRole('button', { name: 'ComfyUI' }));
         fireEvent.click(screen.getByRole('button', { name: 'SD WebUI' }));
-        fireEvent.click(screen.getByRole('button', { name: 'Select Files' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Select Images' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Select Videos' }));
         fireEvent.click(screen.getByRole('button', { name: 'Add Folder' }));
 
         expect(onOpenSettings).toHaveBeenNthCalledWith(1, 'comfyui');
         expect(onOpenSettings).toHaveBeenNthCalledWith(2, 'a1111');
         expect(onOpenSettings).toHaveBeenNthCalledWith(3, 'folders');
         expect(onImportFiles).toHaveBeenCalledOnce();
-        expect(onClose).toHaveBeenCalledTimes(4);
+        expect(onImportVideos).toHaveBeenCalledOnce();
+        expect(onClose).toHaveBeenCalledTimes(5);
     });
 
     it('keeps focus on the dialog when no focusable descendants are available', () => {
@@ -155,6 +160,7 @@ describe('ImportModal', () => {
                 onClose={vi.fn()}
                 onOpenSettings={vi.fn()}
                 onImportFiles={vi.fn()}
+                onImportVideos={vi.fn()}
             />
         );
         expect(screen.queryByRole('dialog')).toBeNull();

@@ -534,6 +534,46 @@ async setResourceThumbnailSensitivity(modelHash: string, modelName: string | nul
     else return { status: "error", error: e  as any };
 }
 },
+async importVideoAsset(path: string, operationId: string) : Promise<Result<VideoImportOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_video_asset", { path, operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelVideoImport(operationId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_video_import", { operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async storeVideoPoster(assetId: string, webpBase64: string) : Promise<Result<VideoPosterResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("store_video_poster", { assetId, webpBase64 }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async prepareVideoPlayback(assetId: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_video_playback", { assetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportAssetOriginal(assetId: string, destinationDirectory: string) : Promise<Result<ExportOriginalResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_asset_original", { assetId, destinationDirectory }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveToTrash(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_to_trash", { path }) };
@@ -587,6 +627,7 @@ export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath:
 export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPinned: boolean; userMasked: boolean | null }
 export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
+export type ExportOriginalResult = { assetId: string; outputPath: string; bytesCopied: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
 export type FileEntry = { path: string; modified: number; size: number }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
@@ -642,6 +683,9 @@ export type ThumbnailScanResult = { found: number; updated: number; cachedFiles:
  * Valid facet names result - used for drill-down filtering
  */
 export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[]; controlNets: string[]; ipAdapters: string[] }
+export type VideoAssetRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; mediaContainer: string | null; mediaMimeType: string | null; durationMs: number; videoCodec: string; videoProfile: string | null; audioPresent: boolean; audioCodec: string | null; frameRateNum: number | null; frameRateDen: number | null; rotationDegrees: number }
+export type VideoImportOutcome = { status: string; asset: VideoAssetRecord | null; reason: string | null }
+export type VideoPosterResult = { assetId: string; thumbnailPath: string; thumbnailSource: string }
 
 /** tauri-specta globals **/
 
