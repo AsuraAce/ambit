@@ -67,6 +67,17 @@ Initial fixture sources:
 - `anything_everywhere_broadcaster_loop.chunks.json`: minimized from
   `repro_smz_concat.rs`, covering a disconnected generic broadcaster that must
   terminate without fabricating prompt metadata.
+- `placeholder_saver_prompt_precedence.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering a valid graph prompt overriding flat and
+  saver-node `undefined` placeholders while flat steps remain available.
+- `placeholder_positive_valid_negative.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering role-correct negative conditioning plus a
+  deterministic positive fallback when the connected value is a placeholder.
+- `loader_only_unet_gguf_fallback.chunks.json`: minimized from
+  `subgraph_repro.rs`, covering deterministic weak model fallback when a
+  disconnected sampler and competing UNET/GGUF loaders are present.
+- `loader_only_gguf_fallback.chunks.json`: minimized from `subgraph_repro.rs`,
+  covering the current GGUF model fallback without a sampler or saved output.
 
 Extraction dates:
 

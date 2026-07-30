@@ -74,6 +74,26 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
             "fixtures/real_world/anything_everywhere_broadcaster_loop.chunks.json"
         ),
     },
+    RealWorldFixture {
+        name: "placeholder_saver_prompt_precedence",
+        chunks_json: include_str!(
+            "fixtures/real_world/placeholder_saver_prompt_precedence.chunks.json"
+        ),
+    },
+    RealWorldFixture {
+        name: "placeholder_positive_valid_negative",
+        chunks_json: include_str!(
+            "fixtures/real_world/placeholder_positive_valid_negative.chunks.json"
+        ),
+    },
+    RealWorldFixture {
+        name: "loader_only_unet_gguf_fallback",
+        chunks_json: include_str!("fixtures/real_world/loader_only_unet_gguf_fallback.chunks.json"),
+    },
+    RealWorldFixture {
+        name: "loader_only_gguf_fallback",
+        chunks_json: include_str!("fixtures/real_world/loader_only_gguf_fallback.chunks.json"),
+    },
 ];
 
 pub(super) fn real_world_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -407,6 +427,119 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
             output_candidate_count: 0,
             root_sampler_count: 0,
             sources: &[],
+        },
+    );
+
+    assert_real_world_repro(
+        "placeholder_saver_prompt_precedence",
+        ExpectedMetadata {
+            model: "model",
+            seed: None,
+            steps: 20,
+            cfg: 0.0,
+            sampler: "Unknown",
+            positive_prompt: "Valid Positive Prompt",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 3,
+            output_candidate_count: 0,
+            root_sampler_count: 0,
+            sources: &[
+                (ComfyMetadataField::Model, ComfyParseLayer::GlobalScan),
+                (ComfyMetadataField::Steps, ComfyParseLayer::FlatParameters),
+                (
+                    ComfyMetadataField::PositivePrompt,
+                    ComfyParseLayer::SamplerFallback,
+                ),
+            ],
+        },
+    );
+
+    assert_real_world_repro(
+        "placeholder_positive_valid_negative",
+        ExpectedMetadata {
+            model: "Unknown",
+            seed: None,
+            steps: 0,
+            cfg: 0.0,
+            sampler: "Unknown",
+            positive_prompt: "Better Positive Prompt",
+            negative_prompt: "Negative Prompt: Valid Negative Prompt",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 4,
+            output_candidate_count: 0,
+            root_sampler_count: 0,
+            sources: &[
+                (
+                    ComfyMetadataField::PositivePrompt,
+                    ComfyParseLayer::GlobalScan,
+                ),
+                (
+                    ComfyMetadataField::NegativePrompt,
+                    ComfyParseLayer::SamplerFallback,
+                ),
+            ],
+        },
+    );
+
+    assert_real_world_repro(
+        "loader_only_unet_gguf_fallback",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(0),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 3,
+            output_candidate_count: 0,
+            root_sampler_count: 0,
+            sources: &[
+                (ComfyMetadataField::Model, ComfyParseLayer::SamplerFallback),
+                (ComfyMetadataField::Seed, ComfyParseLayer::SamplerFallback),
+                (ComfyMetadataField::Steps, ComfyParseLayer::SamplerFallback),
+                (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerFallback),
+                (
+                    ComfyMetadataField::Sampler,
+                    ComfyParseLayer::SamplerFallback,
+                ),
+            ],
+        },
+    );
+
+    assert_real_world_repro(
+        "loader_only_gguf_fallback",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_q4_k_m.gguf",
+            seed: None,
+            steps: 0,
+            cfg: 0.0,
+            sampler: "Unknown",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 1,
+            output_candidate_count: 0,
+            root_sampler_count: 0,
+            sources: &[(ComfyMetadataField::Model, ComfyParseLayer::GlobalScan)],
         },
     );
 }

@@ -1,4 +1,5 @@
-use super::super::extract_comfyui_metadata;
+use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
+use super::super::extract_comfyui_metadata_with_diagnostics;
 use std::collections::HashMap;
 
 #[test]
@@ -28,22 +29,26 @@ fn test_unet_loader_extraction() {
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
 
-    let meta = extract_comfyui_metadata(&chunks);
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
 
-    // If it extracted the LoRA, that is technically "wrong" for the main model field?
-    // The LoRA is "Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16"
-    // The UNET is "qwen_image_edit_2511_bf16"
-
-    // Check what we got
-    assert!(!meta.model.is_empty(), "Model should not be empty");
-    assert!(
-        !meta.model.to_lowercase().contains("unknown"),
-        "Model should not be unknown"
-    );
-
-    // We ideally want the UNET, not the LoRA.
-    // But for this test, let's just ensure we get *something* valid.
-    // The GGUF loader should also work if UNETLoader wasn't there.
+    assert_eq!(meta.model, "qwen_image_edit_2511_bf16");
+    assert_eq!(meta.seed, Some(0));
+    assert_eq!(meta.steps, 4);
+    assert_eq!(meta.cfg, 1.0);
+    assert_eq!(meta.sampler, "euler (simple)");
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerFallback),
+            "disconnected sampler should provide {field:?} only as fallback evidence"
+        );
+    }
 }
 
 #[test]
@@ -61,10 +66,12 @@ fn test_gguf_loader_extraction() {
     }"#;
     let mut chunks = HashMap::new();
     chunks.insert("workflow".to_string(), workflow.to_string());
-    let meta = extract_comfyui_metadata(&chunks);
-    assert!(
-        meta.model.contains("qwen_image_edit"),
-        "Should extract GGUF model: {}",
-        meta.model
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m.gguf");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::GlobalScan),
+        "loader-only model recovery should remain weak global evidence"
     );
 }
