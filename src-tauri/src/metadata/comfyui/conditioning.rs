@@ -4,6 +4,7 @@ use super::graph::{
     get_switch_branch_input_strict, ComfyGraph, InputConnection, InputSource,
     InputSourceConnection,
 };
+use super::heuristics::get_prompts_everywhere_source;
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::{is_missing_prompt_value, is_placeholder_prompt_value};
 use regex::Regex;
@@ -210,6 +211,17 @@ pub(crate) fn find_reachable_prompts_with_role(
                     InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
                         return String::new();
                     }
+                }
+                continue;
+            }
+
+            if t == "Prompts Everywhere" {
+                match get_prompts_everywhere_source(node, prompt_role) {
+                    InputSourceConnection::Connected(source) => {
+                        queue.push_back((source.node_id, branch_strict_connections));
+                    }
+                    InputSourceConnection::DeclaredUnresolved
+                    | InputSourceConnection::Unconnected => return String::new(),
                 }
                 continue;
             }

@@ -62,8 +62,11 @@ Initial fixture sources:
   covering SetNode/GetNode model resolution, smZ prompt encoders, and
   conditioning concatenation.
 - `prompts_everywhere_broadcast.chunks.json`: minimized from
-  `repro_smz_concat.rs`, covering deterministic collection of multiple
-  `Prompts Everywhere` conditioning inputs.
+  `repro_smz_concat.rs`, covering role-aware positive and negative routing for
+  the two `Prompts Everywhere` conditioning inputs.
+- `anything_everywhere_broadcaster_loop.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering a disconnected generic broadcaster that must
+  terminate without fabricating prompt metadata.
 
 Extraction dates:
 

@@ -68,6 +68,12 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
         name: "prompts_everywhere_broadcast",
         chunks_json: include_str!("fixtures/real_world/prompts_everywhere_broadcast.chunks.json"),
     },
+    RealWorldFixture {
+        name: "anything_everywhere_broadcaster_loop",
+        chunks_json: include_str!(
+            "fixtures/real_world/anything_everywhere_broadcaster_loop.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn real_world_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -359,8 +365,8 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
             steps: 0,
             cfg: 0.0,
             sampler: "Unknown",
-            positive_prompt: "Positive 1, Positive 2",
-            negative_prompt: "Positive 1, Positive 2",
+            positive_prompt: "Positive 1",
+            negative_prompt: "Positive 2",
             loras: &[],
             control_nets: &[],
             ip_adapters: &[],
@@ -379,6 +385,28 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
                     ComfyParseLayer::SamplerFallback,
                 ),
             ],
+        },
+    );
+
+    assert_real_world_repro(
+        "anything_everywhere_broadcaster_loop",
+        ExpectedMetadata {
+            model: "Unknown",
+            seed: None,
+            steps: 0,
+            cfg: 0.0,
+            sampler: "Unknown",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 2,
+            output_candidate_count: 0,
+            root_sampler_count: 0,
+            sources: &[],
         },
     );
 }

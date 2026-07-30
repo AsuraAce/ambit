@@ -116,6 +116,7 @@ impl ComfyGraph {
                             let node_type = get_node_type(&node).to_string();
                             let mut resolved = serde_json::Map::new();
                             let mut resolved_sources = serde_json::Map::new();
+                            let mut resolved_sources_by_slot = serde_json::Map::new();
 
                             if let Some(inputs) = node.get("inputs").and_then(Value::as_array) {
                                 for (slot, input) in inputs.iter().enumerate() {
@@ -141,11 +142,16 @@ impl ComfyGraph {
                                             .entry(name.to_string())
                                             .or_insert(Value::Array(Vec::new()));
                                         if let Some(values) = value.as_array_mut() {
-                                            values.push(resolved_source_value(
-                                                source_id,
-                                                *source_slot,
-                                            ));
+                                            let source =
+                                                resolved_source_value(source_id, *source_slot);
+                                            values.push(source.clone());
+                                            resolved_sources_by_slot
+                                                .insert(slot.to_string(), source);
                                         }
+                                    } else if input.get("link").is_some_and(|link| !link.is_null())
+                                    {
+                                        resolved_sources_by_slot
+                                            .insert(slot.to_string(), Value::Null);
                                     }
                                 }
                             }
@@ -194,6 +200,10 @@ impl ComfyGraph {
                                     "_resolved_sources".to_string(),
                                     Value::Object(resolved_sources),
                                 );
+                                object.insert(
+                                    "_resolved_sources_by_slot".to_string(),
+                                    Value::Object(resolved_sources_by_slot),
+                                );
                             }
                             nodes_map.insert(id, node);
                         }
@@ -209,6 +219,7 @@ impl ComfyGraph {
                 broadcasters.push(id.clone());
             }
         }
+        broadcasters.sort_by(|left, right| compare_node_ids(left, right));
 
         Self {
             nodes: nodes_map,
@@ -329,6 +340,32 @@ pub(crate) fn get_input_source(node: &Value, key: &str) -> InputSourceConnection
     InputSourceConnection::Unconnected
 }
 
+pub(crate) fn get_input_source_by_slot(node: &Value, slot: usize) -> InputSourceConnection {
+    if let Some(value) = node
+        .get("_resolved_sources_by_slot")
+        .and_then(Value::as_object)
+        .and_then(|sources| sources.get(&slot.to_string()))
+    {
+        return resolved_input_source(value)
+            .map(InputSourceConnection::Connected)
+            .unwrap_or(InputSourceConnection::DeclaredUnresolved);
+    }
+
+    let Some(input) = node
+        .get("inputs")
+        .and_then(Value::as_array)
+        .and_then(|inputs| inputs.get(slot))
+    else {
+        return InputSourceConnection::Unconnected;
+    };
+
+    if input.get("link").is_some_and(|link| !link.is_null()) {
+        InputSourceConnection::DeclaredUnresolved
+    } else {
+        InputSourceConnection::Unconnected
+    }
+}
+
 fn resolved_source_value(source_id: &str, source_slot: usize) -> Value {
     json!({
         "node_id": source_id,
@@ -409,8 +446,15 @@ pub(crate) fn get_node_input_links(node: &Value, key: &str) -> Vec<String> {
 /// Helper to resolve links (including wireless)
 pub fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
     if let Some(node) = graph.get_node(node_id) {
-        if let Some(link) = get_node_input_link(node, input_name) {
-            return Some(link);
+        match get_input_connection(node, input_name) {
+            InputConnection::Connected(source_id) => return Some(source_id),
+            InputConnection::DeclaredUnresolved
+                if matches!(input_name, "positive" | "negative" | "conditioning") =>
+            {
+                return None;
+            }
+            InputConnection::DeclaredUnresolved => {}
+            InputConnection::Unconnected => {}
         }
         // Wireless fallback
         if let Some(wireless) =
