@@ -8,6 +8,7 @@ use super::workflow_normalizer::normalize_workflow;
 pub struct ComfyGraph {
     pub(crate) nodes: HashMap<String, Value>,
     pub(crate) broadcasters: Vec<String>,
+    blocked_wireless_targets: HashSet<(String, usize)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +34,7 @@ pub(crate) enum InputSourceConnection {
 impl ComfyGraph {
     pub fn from_chunks(chunks: &HashMap<String, String>) -> Self {
         let mut nodes_map = HashMap::new();
+        let mut blocked_wireless_targets = HashSet::new();
 
         // 1. Try "prompt" chunk (API format)
         if let Some(prompt_json) = chunks.get("prompt") {
@@ -61,6 +63,7 @@ impl ComfyGraph {
             if let Some(workflow_json) = chunks.get("workflow") {
                 if let Ok(json) = serde_json::from_str::<Value>(workflow_json) {
                     if let Some(normalized) = normalize_workflow(&json) {
+                        blocked_wireless_targets = normalized.blocked_wireless_targets;
                         let mut incoming = HashMap::new();
                         let mut incoming_by_link = HashMap::new();
                         for edge in &normalized.edges {
@@ -224,6 +227,7 @@ impl ComfyGraph {
         Self {
             nodes: nodes_map,
             broadcasters,
+            blocked_wireless_targets,
         }
     }
 
@@ -235,6 +239,24 @@ impl ComfyGraph {
     #[allow(dead_code)]
     pub fn nodes(&self) -> &HashMap<String, Value> {
         &self.nodes
+    }
+
+    fn blocks_wireless_input(&self, node_id: &str, input_name: &str) -> bool {
+        let Some(slot) = self
+            .nodes
+            .get(node_id)
+            .and_then(|node| node.get("inputs"))
+            .and_then(Value::as_array)
+            .and_then(|inputs| {
+                inputs
+                    .iter()
+                    .position(|input| input.get("name").and_then(Value::as_str) == Some(input_name))
+            })
+        else {
+            return false;
+        };
+        self.blocked_wireless_targets
+            .contains(&(node_id.to_string(), slot))
     }
 }
 
@@ -455,6 +477,9 @@ pub fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Opt
             }
             InputConnection::DeclaredUnresolved => {}
             InputConnection::Unconnected => {}
+        }
+        if graph.blocks_wireless_input(node_id, input_name) {
+            return None;
         }
         // Wireless fallback
         if let Some(wireless) =

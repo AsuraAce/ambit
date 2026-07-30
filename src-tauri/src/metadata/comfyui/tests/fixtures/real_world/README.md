@@ -82,6 +82,13 @@ Initial fixture sources:
 - `connected_gguf_sampler.chunks.json`: minimized workflow-only coverage for a
   saved-output `KSampler` path connected to `UnetLoaderGGUF`, proving GGUF
   model extraction receives `SamplerTraversal` provenance.
+- `use_everywhere_v7_resolved_links.chunks.json`: exact workflow-only fixture
+  from the upstream cg-use-everywhere `docs/UE_example.json` example. It covers
+  version 7.0.1 persisted `extra.ue_links` reconstruction for model, VAE, CLIP,
+  and conditioning inputs without simulating Use Everywhere matching rules.
+  Source: https://github.com/chrisgoringe/cg-use-everywhere/blob/main/docs/UE_example.json
+  Plugin commit recorded by the workflow:
+  `98286cadb33486c27d87759f24b4813bbbda8799`.
 
 Extraction dates:
 
@@ -89,3 +96,4 @@ Extraction dates:
 - 2026-07-08: Krea/format-parity fixtures from user-provided local images.
 - 2026-07-30: additional in-repo user/repro fixture batch.
 - 2026-07-30: connected GGUF saved-output fixture.
+- 2026-07-30: upstream cg-use-everywhere 7.0.1 resolved-link fixture.

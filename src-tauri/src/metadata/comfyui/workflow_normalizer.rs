@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::graph::compare_node_ids;
 
@@ -67,6 +67,18 @@ impl ExpansionBudget {
             + edge.target_id.owned_len()
             + edge.link_type.len();
         self.reserve(0, 1, bytes)
+    }
+
+    fn reserve_raw_ue_link(&mut self, link: &BorrowedUeLink<'_>) -> bool {
+        let bytes = link.source_id.owned_len()
+            + link.target_id.owned_len()
+            + link.controller_id.owned_len()
+            + link.link_type.len();
+        self.reserve(0, 1, bytes)
+    }
+
+    fn reserve_wireless_block(&mut self, node_id: &str) -> bool {
+        self.reserve(0, 1, node_id.len())
     }
 
     fn reserve_value_clone(&mut self, value: &Value, extra_bytes: usize) -> bool {
@@ -223,6 +235,37 @@ struct BorrowedWorkflowEdge<'a> {
     link_type: &'a str,
 }
 
+struct BorrowedUeLink<'a> {
+    source_id: BorrowedId<'a>,
+    source_slot: usize,
+    target_id: BorrowedId<'a>,
+    target_slot: usize,
+    controller_id: BorrowedId<'a>,
+    link_type: &'a str,
+}
+
+struct UeLink {
+    source_id: String,
+    source_slot: usize,
+    target_id: String,
+    target_slot: usize,
+    controller_id: String,
+    link_type: String,
+}
+
+impl BorrowedUeLink<'_> {
+    fn into_owned(self) -> UeLink {
+        UeLink {
+            source_id: self.source_id.into_owned(),
+            source_slot: self.source_slot,
+            target_id: self.target_id.into_owned(),
+            target_slot: self.target_slot,
+            controller_id: self.controller_id.into_owned(),
+            link_type: self.link_type.to_string(),
+        }
+    }
+}
+
 impl BorrowedWorkflowEdge<'_> {
     fn into_owned(self) -> WorkflowEdge {
         WorkflowEdge {
@@ -239,6 +282,7 @@ impl BorrowedWorkflowEdge<'_> {
 pub(crate) struct NormalizedWorkflow {
     pub nodes: Vec<Value>,
     pub edges: Vec<WorkflowEdge>,
+    pub blocked_wireless_targets: HashSet<(String, usize)>,
 }
 
 #[derive(Clone)]
@@ -259,6 +303,7 @@ struct BoundarySource {
 struct WorkflowFragment {
     nodes: HashMap<String, Value>,
     edges: Vec<WorkflowEdge>,
+    blocked_wireless_targets: HashSet<(String, usize)>,
     input_targets: HashMap<usize, Vec<BoundaryTarget>>,
     output_sources: HashMap<usize, Vec<BoundarySource>>,
 }
@@ -289,6 +334,7 @@ fn normalize_workflow_with_limits(
     Some(NormalizedWorkflow {
         nodes: fragment.nodes.into_values().collect(),
         edges: fragment.edges,
+        blocked_wireless_targets: fragment.blocked_wireless_targets,
     })
 }
 
@@ -366,6 +412,20 @@ fn flatten_container<'a>(
         }
     }
 
+    let mut blocked_wireless_targets = HashSet::new();
+    if !append_resolved_ue_edges(
+        container,
+        &local_ids,
+        input_id.as_deref(),
+        output_id.as_deref(),
+        &nodes,
+        &mut edges,
+        &mut blocked_wireless_targets,
+        budget,
+    ) {
+        return None;
+    }
+
     let mut instance_ids = nodes
         .iter()
         .filter_map(|(id, node)| {
@@ -437,6 +497,19 @@ fn flatten_container<'a>(
             continue;
         };
 
+        let blocked_instance_slots = blocked_wireless_targets
+            .iter()
+            .filter_map(|(node_id, slot)| (node_id == &instance_id).then_some(*slot))
+            .collect::<Vec<_>>();
+        blocked_wireless_targets.retain(|(node_id, _)| node_id != &instance_id);
+        block_child_inputs(
+            &blocked_instance_slots,
+            &mut child.nodes,
+            &mut child.edges,
+            &child.input_targets,
+            &mut child.blocked_wireless_targets,
+        );
+
         clear_unlinked_boundary_input_links(
             instance,
             definition,
@@ -476,6 +549,7 @@ fn flatten_container<'a>(
         edges.extend(child.edges);
         edges.extend(input_bindings);
         edges.extend(output_bindings);
+        blocked_wireless_targets.extend(child.blocked_wireless_targets);
         nodes.remove(&instance_id);
         nodes.extend(child.nodes);
     }
@@ -525,9 +599,207 @@ fn flatten_container<'a>(
     Some(WorkflowFragment {
         nodes,
         edges: retained_edges,
+        blocked_wireless_targets,
         input_targets,
         output_sources,
     })
+}
+
+fn block_child_inputs(
+    blocked_slots: &[usize],
+    nodes: &mut HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    blocked_wireless_targets: &mut HashSet<(String, usize)>,
+) {
+    for slot in blocked_slots {
+        let Some(targets) = input_targets.get(slot) else {
+            continue;
+        };
+        for target in targets {
+            edges
+                .retain(|edge| edge.target_id != target.node_id || edge.target_slot != target.slot);
+            blocked_wireless_targets.insert((target.node_id.clone(), target.slot));
+            if let Some(input) = nodes
+                .get_mut(&target.node_id)
+                .and_then(Value::as_object_mut)
+                .and_then(|node| node.get_mut("inputs"))
+                .and_then(Value::as_array_mut)
+                .and_then(|inputs| inputs.get_mut(target.slot))
+                .and_then(Value::as_object_mut)
+            {
+                input.insert("link".to_string(), Value::Null);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_resolved_ue_edges(
+    container: &Value,
+    local_ids: &HashMap<String, String>,
+    input_id: Option<&str>,
+    output_id: Option<&str>,
+    nodes: &HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
+    blocked_wireless_targets: &mut HashSet<(String, usize)>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(raw_links) = container
+        .get("extra")
+        .and_then(|extra| extra.get("ue_links"))
+        .and_then(Value::as_array)
+    else {
+        return true;
+    };
+
+    for (node_id, node) in nodes {
+        let input_count = node
+            .get("inputs")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        for slot in 0..input_count {
+            if !budget.reserve_wireless_block(node_id) {
+                return false;
+            }
+            blocked_wireless_targets.insert((node_id.clone(), slot));
+        }
+    }
+
+    let mut candidates: HashMap<(String, usize), Option<WorkflowEdge>> = HashMap::new();
+
+    for raw_link in raw_links {
+        let Some(raw_link) = parse_borrowed_ue_link(raw_link) else {
+            if !budget.reserve(0, 1, 0) {
+                return false;
+            }
+            continue;
+        };
+        if !budget.reserve_raw_ue_link(&raw_link) {
+            return false;
+        }
+
+        let mut link = raw_link.into_owned();
+        let mapped_source = map_endpoint(&link.source_id, local_ids, input_id, output_id);
+        let mapped_target = map_endpoint(&link.target_id, local_ids, input_id, output_id);
+        let mapped_controller = local_ids.get(&link.controller_id);
+
+        let source_changed = mapped_source != link.source_id;
+        let target_changed = mapped_target != link.target_id;
+        let controller_changed = mapped_controller.is_some_and(|id| id != &link.controller_id);
+        let replacement_bytes = usize::from(source_changed) * mapped_source.len()
+            + usize::from(target_changed) * mapped_target.len()
+            + mapped_controller
+                .filter(|_| controller_changed)
+                .map_or(0, |id| id.len());
+        if !budget.reserve_auxiliary_clone(replacement_bytes) {
+            return false;
+        }
+        let source_replacement = source_changed.then(|| mapped_source.to_string());
+        let target_replacement = target_changed.then(|| mapped_target.to_string());
+        let controller_replacement = mapped_controller.filter(|_| controller_changed).cloned();
+        if let Some(source) = source_replacement {
+            link.source_id = source;
+        }
+        if let Some(target) = target_replacement {
+            link.target_id = target;
+        }
+        if let Some(controller) = controller_replacement {
+            link.controller_id = controller;
+        }
+
+        if edges
+            .iter()
+            .any(|edge| edge.target_id == link.target_id && edge.target_slot == link.target_slot)
+        {
+            continue;
+        }
+        if !endpoint_slot_exists(nodes, &link.target_id, link.target_slot, false, container) {
+            continue;
+        }
+        if !budget.reserve_auxiliary_clone(link.target_id.len()) {
+            return false;
+        }
+        let target = (link.target_id.clone(), link.target_slot);
+        if mapped_controller.is_none()
+            || !endpoint_slot_exists(nodes, &link.source_id, link.source_slot, true, container)
+            || !endpoint_is_active(nodes, &link.source_id)
+            || !endpoint_is_active(nodes, &link.target_id)
+            || !endpoint_is_active(nodes, &link.controller_id)
+        {
+            candidates.insert(target, None);
+            continue;
+        }
+
+        let edge = WorkflowEdge {
+            link_id: None,
+            source_id: link.source_id,
+            source_slot: link.source_slot,
+            target_id: link.target_id,
+            target_slot: link.target_slot,
+            link_type: link.link_type,
+        };
+        match candidates.entry(target) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(edge));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let is_duplicate = entry.get().as_ref().is_some_and(|existing| {
+                    existing.source_id == edge.source_id
+                        && existing.source_slot == edge.source_slot
+                        && existing.link_type == edge.link_type
+                });
+                if !is_duplicate {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
+
+    for (target, edge) in candidates {
+        if let Some(edge) = edge {
+            edges.push(edge);
+        } else {
+            blocked_wireless_targets.insert(target);
+        }
+    }
+    true
+}
+
+fn endpoint_slot_exists(
+    nodes: &HashMap<String, Value>,
+    node_id: &str,
+    slot: usize,
+    source: bool,
+    container: &Value,
+) -> bool {
+    if source && node_id == INPUT_BOUNDARY {
+        return container
+            .get("inputs")
+            .and_then(Value::as_array)
+            .is_some_and(|inputs| slot < inputs.len());
+    }
+    if !source && node_id == OUTPUT_BOUNDARY {
+        return container
+            .get("outputs")
+            .and_then(Value::as_array)
+            .is_some_and(|outputs| slot < outputs.len());
+    }
+    let slots_key = if source { "outputs" } else { "inputs" };
+    nodes
+        .get(node_id)
+        .and_then(|node| node.get(slots_key))
+        .and_then(Value::as_array)
+        .is_some_and(|slots| slot < slots.len())
+}
+
+fn endpoint_is_active(nodes: &HashMap<String, Value>, node_id: &str) -> bool {
+    if node_id == INPUT_BOUNDARY || node_id == OUTPUT_BOUNDARY {
+        return true;
+    }
+    nodes
+        .get(node_id)
+        .is_some_and(|node| !is_muted(node) && !is_bypassed(node))
 }
 
 fn clear_unlinked_boundary_input_links(
@@ -814,6 +1086,17 @@ fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {
         target_id: borrowed_id(value.get("target_id")?)?,
         target_slot: value_usize(value.get("target_slot")?)?,
         link_type: value.get("type").and_then(Value::as_str).unwrap_or("*"),
+    })
+}
+
+fn parse_borrowed_ue_link(value: &Value) -> Option<BorrowedUeLink<'_>> {
+    Some(BorrowedUeLink {
+        source_id: borrowed_id(value.get("upstream")?)?,
+        source_slot: value_usize(value.get("upstream_slot")?)?,
+        target_id: borrowed_id(value.get("downstream")?)?,
+        target_slot: value_usize(value.get("downstream_slot")?)?,
+        controller_id: borrowed_id(value.get("controller")?)?,
+        link_type: value.get("type")?.as_str()?,
     })
 }
 

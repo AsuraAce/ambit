@@ -98,6 +98,12 @@ const REAL_WORLD_FIXTURES: &[RealWorldFixture] = &[
         name: "connected_gguf_sampler",
         chunks_json: include_str!("fixtures/real_world/connected_gguf_sampler.chunks.json"),
     },
+    RealWorldFixture {
+        name: "use_everywhere_v7_resolved_links",
+        chunks_json: include_str!(
+            "fixtures/real_world/use_everywhere_v7_resolved_links.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn real_world_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -572,6 +578,46 @@ fn test_additional_real_world_repros_extract_expected_metadata() {
                 (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
                 (
                     ComfyMetadataField::Sampler,
+                    ComfyParseLayer::SamplerTraversal,
+                ),
+            ],
+        },
+    );
+
+    assert_real_world_repro(
+        "use_everywhere_v7_resolved_links",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly_fp16",
+            seed: Some(156680208700286),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt:
+                "beautiful scenery nature glass bottle landscape, , purple galaxy bottle,",
+            negative_prompt: "text, watermark",
+            loras: &[],
+            control_nets: &[],
+            ip_adapters: &[],
+        },
+        ExpectedDiagnostics {
+            graph_node_count: 8,
+            output_candidate_count: 1,
+            root_sampler_count: 1,
+            sources: &[
+                (ComfyMetadataField::Model, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Seed, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Steps, ComfyParseLayer::SamplerTraversal),
+                (ComfyMetadataField::Cfg, ComfyParseLayer::SamplerTraversal),
+                (
+                    ComfyMetadataField::Sampler,
+                    ComfyParseLayer::SamplerTraversal,
+                ),
+                (
+                    ComfyMetadataField::PositivePrompt,
+                    ComfyParseLayer::SamplerTraversal,
+                ),
+                (
+                    ComfyMetadataField::NegativePrompt,
                     ComfyParseLayer::SamplerTraversal,
                 ),
             ],

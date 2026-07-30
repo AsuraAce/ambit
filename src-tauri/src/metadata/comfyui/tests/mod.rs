@@ -27,3 +27,4 @@ pub mod template_coverage;
 pub mod test_workflow_repro;
 pub mod ui_format;
 pub mod workflow_subgraphs;
+pub mod workflow_virtual_links;
