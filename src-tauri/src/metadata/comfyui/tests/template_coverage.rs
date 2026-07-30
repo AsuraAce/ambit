@@ -42,6 +42,7 @@ struct CatalogCounts {
     image_category_entries: usize,
     image_core_entries: usize,
     getting_started_image_entries: usize,
+    official_use_case_image_entries: usize,
     target_entries: usize,
     excluded_entries: usize,
     legacy_golden_families: usize,
@@ -91,7 +92,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(manifest.schema_version, 2);
+    assert_eq!(manifest.schema_version, 3);
     assert_eq!(
         manifest.source.repository,
         "https://github.com/Comfy-Org/workflow_templates"
@@ -137,22 +138,39 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
             entry.id
         );
 
-        let is_target = entry.scope == "target_core_image";
+        let is_core_target = entry.scope == "target_core_image";
+        let is_use_case_target = entry.scope == "target_official_use_case_image";
         match entry.category.as_str() {
             "Image" => assert_eq!(
-                is_target,
+                is_core_target,
                 entry.open_source == Some(true) && entry.custom_nodes.is_empty(),
                 "{} Image scope must follow the open-source core-node rule",
                 entry.id
             ),
             "Getting Started" => assert_eq!(
-                is_target,
+                is_core_target,
                 getting_started_targets.contains(entry.id.as_str()),
                 "{} Getting Started scope must match the pinned target set",
                 entry.id
             ),
+            "Use Cases" => {
+                let video_tags = ["Video", "Image to Video", "Reference to Video", "FLF2V"];
+                let qualifies = entry.media_type.as_deref() == Some("image")
+                    && entry.open_source == Some(true)
+                    && entry.custom_nodes.is_empty()
+                    && !entry
+                        .tags
+                        .iter()
+                        .any(|tag| video_tags.contains(&tag.as_str()));
+                assert_eq!(
+                    is_use_case_target, qualifies,
+                    "{} Use Cases scope must follow the official image-use-case rule",
+                    entry.id
+                );
+                assert!(!is_core_target, "{} cannot use the core scope", entry.id);
+            }
             _ => assert!(
-                !is_target,
+                !is_core_target && !is_use_case_target,
                 "{} category is outside the active target",
                 entry.id
             ),
@@ -160,6 +178,26 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
 
         match entry.scope.as_str() {
             "target_core_image" => {
+                assert_eq!(
+                    entry.open_source,
+                    Some(true),
+                    "{} must be open source",
+                    entry.id
+                );
+                assert!(
+                    entry.custom_nodes.is_empty(),
+                    "{} must use only core nodes",
+                    entry.id
+                );
+                assert_ne!(entry.coverage, "excluded", "{} is targeted", entry.id);
+                assert!(entry.exclusion_reason.is_none(), "{} is targeted", entry.id);
+            }
+            "target_official_use_case_image" => {
+                assert_eq!(
+                    entry.category, "Use Cases",
+                    "{} must be a use case",
+                    entry.id
+                );
                 assert_eq!(
                     entry.open_source,
                     Some(true),
@@ -229,15 +267,17 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.image_category_entries, 150);
     assert_eq!(manifest.counts.image_core_entries, 74);
     assert_eq!(manifest.counts.getting_started_image_entries, 10);
-    assert_eq!(manifest.counts.target_entries, 84);
-    assert_eq!(manifest.counts.excluded_entries, 494);
+    assert_eq!(manifest.counts.official_use_case_image_entries, 9);
+    assert_eq!(manifest.counts.target_entries, 93);
+    assert_eq!(manifest.counts.excluded_entries, 485);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
-    assert_eq!(count_coverage("golden"), 72);
+    assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
+    assert_eq!(count_coverage("golden"), 75);
     assert_eq!(count_coverage("pattern_covered"), 5);
     assert_eq!(count_coverage("partial"), 7);
-    assert_eq!(count_coverage("unassessed"), 0);
-    assert_eq!(count_coverage("excluded"), 494);
+    assert_eq!(count_coverage("unassessed"), 6);
+    assert_eq!(count_coverage("excluded"), 485);
     assert_eq!(
         manifest
             .entries
@@ -248,6 +288,24 @@ fn manifest_counts_match_the_declared_catalog_scope() {
             .count(),
         0,
         "all active Getting Started workflows should be assessed"
+    );
+    assert_eq!(
+        manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.scope == "target_official_use_case_image"
+                && entry.coverage == "unassessed")
+            .map(|entry| entry.id.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "template_sugar_coated_gummy_style_qwen",
+            "templates-1_click_multiple_character_angles-v1.0",
+            "templates-image_to_real",
+            "templates-portrait_light_migration",
+            "templates_rob_image_to_real.app",
+            "templates_rob_portrait_light_migration.app",
+        ],
+        "the deferred official image-use-case batch should remain explicit"
     );
 }
 

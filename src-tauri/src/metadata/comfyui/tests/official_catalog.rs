@@ -410,6 +410,24 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "gsl_starter_1_1",
         chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_1.chunks.json"),
     },
+    CatalogFixture {
+        name: "template_qwen_Image_2512_360_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_Image_2512_360_lora.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "template_qwen_image_edit_2511_systms_action",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_edit_2511_systms_action.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "template_qwen_image_illustration_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_illustration_lora.chunks.json"
+        ),
+    },
 ];
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
@@ -2546,6 +2564,78 @@ fn anima_lllite_depth_control_is_golden() {
             control_nets: &["anima_lllite_depth_1"],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_2512_360_lora_use_case() {
+    assert_fixture(
+        "template_qwen_Image_2512_360_lora",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(662_848_447_520_565),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "equirectangular 360 image, A spacious warm living room, soft sunlight through window, soft sofa, delicate decor, green potted plants, clean tidy space, gentle ambient light",
+            negative_prompt: "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲",
+            loras: &["qwen_360_diffusion_2512_int8_bf16_v2"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_action_lora_use_case() {
+    assert_fixture(
+        "template_qwen_image_edit_2511_systms_action",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(314_630_365_089_879),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "action the scene",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2511_lightning_4steps_v1.0_bf16",
+                "qwen_edit_action_v1",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_illustration_lora_use_case() {
+    assert_fixture(
+        "template_qwen_image_illustration_lora",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(1_124_798_614_324_697),
+            steps: 45,
+            cfg: 3.5,
+            sampler: "euler (simple)",
+            positive_prompt: "a girl with short hair in a bomber jacket leaning against a wall, clean cel shading, bold graphic composition, 90s ranma era anime, film grain",
+            negative_prompt: "",
+            loras: &["illustration_1.0_qwen_image"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

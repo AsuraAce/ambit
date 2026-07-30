@@ -901,6 +901,42 @@ const MILESTONE44_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE45_OFFICIAL_USE_CASE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "template_qwen_Image_2512_360_lora",
+        source_blob: "80e423a1f68544e703c6211a8b1796268b946fe4",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_Image_2512_360_lora.chunks.json"
+        ),
+        graph_node_count: 26,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "template_qwen_image_edit_2511_systms_action",
+        source_blob: "5150867d119e05bb2de5bf2695f6f0627507b702",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_edit_2511_systms_action.chunks.json"
+        ),
+        graph_node_count: 27,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "template_qwen_image_illustration_lora",
+        source_blob: "1a3ab15e43ac980bc93b6934aae74c3f200f01c3",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_illustration_lora.chunks.json"
+        ),
+        graph_node_count: 12,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1119,6 +1155,11 @@ fn pinned_milestone43_revalidated_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone44_revalidated_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE44_REVALIDATED_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone45_official_use_case_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE45_OFFICIAL_USE_CASE_FIXTURES);
 }
 
 #[test]

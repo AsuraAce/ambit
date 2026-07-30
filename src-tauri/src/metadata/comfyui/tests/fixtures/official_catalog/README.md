@@ -599,3 +599,25 @@ single root sampler.
 All four workflows have one saved output, one root sampler, and no ambiguity.
 Available generation fields retain `SamplerTraversal` provenance. This closes
 the v0.11.15 active catalog target honestly without parser changes.
+
+## Milestone 45 Official Image Use-Case Expansion
+
+Captured on `2026-07-30` from release `v0.11.15` at commit
+`703fb0b082fdb76331d02232ff67e878e2a6ca6e`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| [`template_qwen_Image_2512_360_lora`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/template_qwen_Image_2512_360_lora.json) | `80e423a1f68544e703c6211a8b1796268b946fe4` | 58351 | 26 |
+| [`template_qwen_image_edit_2511_systms_action`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/template_qwen_image_edit_2511_systms_action.json) | `5150867d119e05bb2de5bf2695f6f0627507b702` | 57407 | 27 |
+| [`template_qwen_image_illustration_lora`](https://github.com/Comfy-Org/workflow_templates/blob/703fb0b082fdb76331d02232ff67e878e2a6ca6e/templates/template_qwen_image_illustration_lora.json) | `1a3ab15e43ac980bc93b6934aae74c3f200f01c3` | 35226 | 12 |
+
+These official `Use Cases` workflows exercise Qwen 2512 panorama generation,
+Qwen Edit 2511 with two selected LoRAs, and Qwen illustration styling. Each
+workflow expands one subgraph into one saved-output root with exact
+`SamplerTraversal` provenance. The optional Lightning branch in the panorama
+workflow remains disabled, while both selected LoRAs in the action workflow
+are reported.
+
+The manifest now separately targets nine open-source, core-node, image-only
+official use cases. The remaining six are explicitly unassessed for later
+fixture batches rather than inferred from model-family similarity.
