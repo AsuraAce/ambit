@@ -24,7 +24,7 @@ const FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_newbieimage_exp0_1-t2i",
-        source_blob: "04bd4bae0d85c4860b65e603f3b5020391123210",
+        source_blob: "6044ee8e1cfef4b5588222d68423cd574fdab471",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_newbieimage_exp0_1-t2i.chunks.json"
         ),
@@ -123,7 +123,7 @@ const MILESTONE25_IDEOGRAM_FIXTURES: &[IntakeFixture] = &[IntakeFixture {
 const MILESTONE26_NEW_FAMILY_FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "image_longcat_text_to_image",
-        source_blob: "68749b8b2f45c580fd2f019d49ae2313fc655b14",
+        source_blob: "d7d9b733b6b0c642819157d176c265477111beba",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
         ),
@@ -175,7 +175,7 @@ const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "Image_capybara_v0_1_image_edit",
-        source_blob: "7c47ad4cd0ed3613c4a0ed04c669c485a2b82b21",
+        source_blob: "dce38e01ff6a905881b2287cf0d3bdb2b4be6b32",
         chunks_json: include_str!(
             "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
         ),
@@ -209,7 +209,7 @@ const MILESTONE27_IMAGE_EDIT_FIXTURES: &[IntakeFixture] = &[
 const MILESTONE28_REFERENCE_MODIFIER_FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "flux1_dev_uso_reference_image_gen",
-        source_blob: "f03156d29ad4afb6c1f81f552076c793404f62ed",
+        source_blob: "75e27ca4085912c0121d23c7c400b02e7e1e6d3b",
         chunks_json: include_str!(
             "fixtures/official_catalog/flux1_dev_uso_reference_image_gen.chunks.json"
         ),
@@ -390,7 +390,7 @@ const MILESTONE32_FLUX2_VARIANT_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_flux2_klein_text_to_image",
-        source_blob: "951d58ac7945845aa6d0d4bb7544d26fdc96c22c",
+        source_blob: "1742589ef5a7707fe3369af2fc72a08b8144284e",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_flux2_klein_text_to_image.chunks.json"
         ),
@@ -541,7 +541,7 @@ const MILESTONE34_CATALOG_REFRESH_FIXTURES: &[IntakeFixture] = &[
 const MILESTONE37_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     IntakeFixture {
         name: "Image_capybara_v0_1_text_to_image",
-        source_blob: "adffcf2fac68599ca2495f0b60557d03327c8d49",
+        source_blob: "7a5c3974e1cab90c902d38e12774bc77be397478",
         chunks_json: include_str!(
             "fixtures/official_catalog/Image_capybara_v0_1_text_to_image.chunks.json"
         ),
@@ -552,7 +552,7 @@ const MILESTONE37_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "Image_capybara_v0_1_image_edit",
-        source_blob: "7c47ad4cd0ed3613c4a0ed04c669c485a2b82b21",
+        source_blob: "dce38e01ff6a905881b2287cf0d3bdb2b4be6b32",
         chunks_json: include_str!(
             "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
         ),
@@ -682,7 +682,7 @@ const MILESTONE40_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_qwen_Image_2512_controlnet",
-        source_blob: "689d1a76fc42f37db926af1055860617a08bebf4",
+        source_blob: "411fb4856946c94105a4916b964f5e0953694ce7",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_qwen_Image_2512_controlnet.chunks.json"
         ),
@@ -704,7 +704,7 @@ const MILESTONE40_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image-qwen_image_edit_2511_lora_inflation",
-        source_blob: "4cb616f9532b188bf15134808ff6e29c8bc8ace9",
+        source_blob: "c6a68adddae123ec23bd49aa2f96856fe5e8849e",
         chunks_json: include_str!(
             "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
         ),
@@ -820,7 +820,7 @@ const MILESTONE43_REVALIDATED_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "image_longcat_text_to_image",
-        source_blob: "68749b8b2f45c580fd2f019d49ae2313fc655b14",
+        source_blob: "d7d9b733b6b0c642819157d176c265477111beba",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_longcat_text_to_image.chunks.json"
         ),

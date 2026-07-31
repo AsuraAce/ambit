@@ -63,6 +63,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_3.chunks.json"),
     },
     CatalogFixture {
+        name: "gsl_starter_1_3",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_3.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_flux2_klein_image_edit_4b_distilled",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_flux2_klein_image_edit_4b_distilled.chunks.json"
@@ -746,7 +750,7 @@ fn getting_started_qwen_image_edit_subgraph() {
         "02_qwen_Image_edit_subgraphed",
         ExpectedMetadata {
             model: "qwen_image_edit_2509_fp8_e4m3fn",
-            seed: Some(1_118_877_715_456_453),
+            seed: Some(392_667_428_726_572),
             steps: 4,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -755,12 +759,65 @@ fn getting_started_qwen_image_edit_subgraph() {
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 22,
+            graph_node_count: 17,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
         },
     );
+}
+
+#[test]
+fn gsl_starter_bypassed_generator_remains_pattern_covered() {
+    let chunks = load_chunks("gsl_starter_1_3");
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux_2_klein_base_4b_fp8");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "Unknown");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+    assert_eq!(diagnostics.graph_node_count, 8);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert!(!diagnostics.output_ambiguous);
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::GlobalScan)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+        ComfyMetadataField::Loras,
+        ComfyMetadataField::ControlNets,
+    ] {
+        assert_eq!(diagnostics.field_sources.get(&field), None, "{field:?}");
+    }
 }
 
 #[test]

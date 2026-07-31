@@ -2,8 +2,8 @@ use serde::Deserialize;
 use std::collections::{BTreeSet, HashSet};
 
 const MANIFEST_JSON: &str = include_str!("fixtures/official_catalog/coverage_manifest.json");
-const CATALOG_RELEASE: &str = "v0.11.15";
-const CATALOG_COMMIT: &str = "703fb0b082fdb76331d02232ff67e878e2a6ca6e";
+const CATALOG_RELEASE: &str = "v0.11.18";
+const CATALOG_COMMIT: &str = "8f6709b8f6ef808b0eccc47eff28ada4a58adbbe";
 const GETTING_STARTED_TARGET_IDS: [&str; 10] = [
     "01_get_started_text_to_image",
     "02_qwen_Image_edit_subgraphed",
@@ -100,7 +100,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
     assert_eq!(manifest.source.release_tag, CATALOG_RELEASE);
     assert_eq!(manifest.source.commit, CATALOG_COMMIT);
     assert_eq!(manifest.source.index_path, "templates/index.json");
-    assert_eq!(manifest.source.captured_on, "2026-07-28");
+    assert_eq!(manifest.source.captured_on, "2026-07-30");
     assert_eq!(actual_states, allowed_states);
     assert_eq!(manifest.entries.len(), 578);
 

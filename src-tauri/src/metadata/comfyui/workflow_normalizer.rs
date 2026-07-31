@@ -518,7 +518,14 @@ fn flatten_container<'a>(
             &child.input_targets,
         );
 
-        if !apply_proxy_widget_overrides(instance, &instance_id, &mut child.nodes, budget) {
+        if !apply_instance_widget_overrides(
+            instance,
+            definition,
+            &instance_id,
+            &mut child.nodes,
+            &child.input_targets,
+            budget,
+        ) {
             block_instance_inputs(&mut edges, &instance_id);
             continue;
         }
@@ -1015,6 +1022,88 @@ fn bind_instance_outputs(
     Some(bindings)
 }
 
+fn apply_instance_widget_overrides(
+    instance: &Value,
+    definition: &Value,
+    instance_id: &str,
+    nodes: &mut HashMap<String, Value>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    if instance
+        .get("properties")
+        .and_then(|value| value.get("proxyWidgets"))
+        .is_some()
+    {
+        return apply_proxy_widget_overrides(instance, instance_id, nodes, budget);
+    }
+
+    apply_definition_input_widget_overrides(instance, definition, nodes, input_targets, budget)
+}
+
+fn apply_definition_input_widget_overrides(
+    instance: &Value,
+    definition: &Value,
+    nodes: &mut HashMap<String, Value>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(values) = instance.get("widgets_values").and_then(Value::as_array) else {
+        return true;
+    };
+    let Some(definition_inputs) = definition.get("inputs").and_then(Value::as_array) else {
+        return true;
+    };
+    let instance_inputs = instance.get("inputs").and_then(Value::as_array);
+    let mut values = values.iter();
+
+    for (definition_slot, definition_input) in definition_inputs.iter().enumerate() {
+        let Some(targets) = input_targets.get(&definition_slot) else {
+            continue;
+        };
+        if !targets
+            .iter()
+            .any(|target| target_widget_name(nodes, target).is_some())
+        {
+            continue;
+        }
+
+        let Some(value) = values.next() else {
+            break;
+        };
+        // ComfyUI uses null instance values to mean "use the definition default".
+        if value.is_null() {
+            continue;
+        }
+        let input_name = definition_input.get("name").and_then(Value::as_str);
+        if input_name.is_some_and(|name| {
+            instance_inputs
+                .and_then(|inputs| {
+                    inputs
+                        .iter()
+                        .find(|input| input.get("name").and_then(Value::as_str) == Some(name))
+                })
+                .and_then(|input| input.get("link"))
+                .is_some_and(|link| !link.is_null())
+        }) {
+            continue;
+        }
+
+        for target in targets {
+            let Some(widget_name) = target_widget_name(nodes, target) else {
+                continue;
+            };
+            if !budget.reserve_value_clone(value, widget_name.len()) {
+                return false;
+            }
+            let widget_name = widget_name.to_string();
+            insert_reserved_widget_override(nodes, &target.node_id, &widget_name, value);
+        }
+    }
+
+    true
+}
+
 fn apply_proxy_widget_overrides(
     instance: &Value,
     instance_id: &str,
@@ -1050,21 +1139,56 @@ fn apply_proxy_widget_overrides(
         if !nodes.contains_key(&target_id) {
             continue;
         }
-        if !budget.reserve_value_clone(value, widget_name.len()) {
+        if !insert_widget_override(nodes, &target_id, widget_name, value, budget) {
             return false;
-        }
-        let target = nodes
-            .get_mut(&target_id)
-            .and_then(Value::as_object_mut)
-            .expect("checked subgraph proxy target should remain an object");
-        let overrides = target
-            .entry("_widget_overrides".to_string())
-            .or_insert_with(|| Value::Object(serde_json::Map::new()));
-        if let Some(overrides) = overrides.as_object_mut() {
-            overrides.insert(widget_name.to_string(), value.clone());
         }
     }
     true
+}
+
+fn insert_widget_override(
+    nodes: &mut HashMap<String, Value>,
+    target_id: &str,
+    widget_name: &str,
+    value: &Value,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    if !budget.reserve_value_clone(value, widget_name.len()) {
+        return false;
+    }
+    insert_reserved_widget_override(nodes, target_id, widget_name, value);
+    true
+}
+
+fn insert_reserved_widget_override(
+    nodes: &mut HashMap<String, Value>,
+    target_id: &str,
+    widget_name: &str,
+    value: &Value,
+) {
+    let Some(target) = nodes.get_mut(target_id).and_then(Value::as_object_mut) else {
+        return;
+    };
+    let overrides = target
+        .entry("_widget_overrides".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(overrides) = overrides.as_object_mut() {
+        overrides.insert(widget_name.to_string(), value.clone());
+    }
+}
+
+fn target_widget_name<'a>(
+    nodes: &'a HashMap<String, Value>,
+    target: &BoundaryTarget,
+) -> Option<&'a str> {
+    nodes
+        .get(&target.node_id)?
+        .get("inputs")?
+        .as_array()?
+        .get(target.slot)?
+        .get("widget")?
+        .get("name")?
+        .as_str()
 }
 
 fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {

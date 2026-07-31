@@ -6,18 +6,17 @@ They contain exact workflow JSON wrapped as a `workflow` metadata chunk.
 No generated images, thumbnails, input assets, or API prompt chunks are vendored.
 
 - Repository: `https://github.com/Comfy-Org/workflow_templates`
-- Coverage release: `v0.11.15`
-- Coverage commit: `703fb0b082fdb76331d02232ff67e878e2a6ca6e`
-- Previous fixture baseline: `c3bf8342318a3c2bfcbf6d0ac020155745417f29`
+- Coverage release: `v0.11.18`
+- Coverage commit: `8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`
+- Previous fixture baseline: release `v0.11.15` at `703fb0b082fdb76331d02232ff67e878e2a6ca6e`
 - Catalog index: `templates/index.json`
-- Coverage snapshot captured: `2026-07-28`
+- Coverage snapshot captured: `2026-07-30`
 - Upstream license: MIT
 
-Coverage is commit-specific. Fixtures retained from the previous baseline count
-for the refreshed manifest only when their upstream workflow Git blob is
-unchanged. Changed workflows remain useful parser regressions, but are marked
-`unassessed` for the refreshed release until their new bytes are revalidated.
-The v0.11.15 active target is now fully assessed.
+Coverage is commit-specific. Unchanged fixtures retain their prior evidence;
+changed workflows are refreshed from the pinned release and revalidated before
+remaining covered. The v0.11.18 snapshot keeps all 578 catalog IDs and all 93
+active targets fully assessed.
 
 Golden workflows:
 
@@ -658,3 +657,33 @@ require a multi-output metadata shape rather than a parser heuristic.
 This closes assessment of all 93 targeted workflows at 80 golden, 5
 pattern-covered, 8 partial, and 0 unassessed without changing parser version
 37.
+
+## Milestone 53 v0.11.18 Delta Revalidation
+
+Captured on `2026-07-30` from release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Nodes |
+| --- | --- | ---: | ---: |
+| `02_qwen_Image_edit_subgraphed` | `623899adee1aee1c59508fd70c6de3fea407fe18` | 42878 | 17 |
+| `Image_capybara_v0_1_image_edit` | `dce38e01ff6a905881b2287cf0d3bdb2b4be6b32` | 49691 | 22 |
+| `Image_capybara_v0_1_text_to_image` | `7a5c3974e1cab90c902d38e12774bc77be397478` | 37235 | 17 |
+| `flux1_dev_uso_reference_image_gen` | `75e27ca4085912c0121d23c7c400b02e7e1e6d3b` | 126526 | 26 |
+| `gsc_creator_2_2` | `6b1ee67a75bdb91812d16268d713ddb56b7f0234` | 43444 | 32 |
+| `image-qwen_image_edit_2511_lora_inflation` | `c6a68adddae123ec23bd49aa2f96856fe5e8849e` | 46260 | 20 |
+| `image_flux2_klein_text_to_image` | `1742589ef5a7707fe3369af2fc72a08b8144284e` | 72346 | 19 |
+| `image_kandinsky5_t2i` | `47bd7fd5c6b1d6d6d6e877b118fda006538f5be7` | 29030 | 11 |
+| `image_longcat_text_to_image` | `d7d9b733b6b0c642819157d176c265477111beba` | 32648 | 15 |
+| `image_newbieimage_exp0_1-t2i` | `6044ee8e1cfef4b5588222d68423cd574fdab471` | 38312 | 17 |
+| `image_qwen_Image_2512_controlnet` | `411fb4856946c94105a4916b964f5e0953694ce7` | 64216 | 30 |
+| `gsl_starter_1_3` | `abacfac6dbf27b831f515cf9dc052c00168834c6` | 67493 | 8 |
+
+Eleven refreshed golden workflows retain their exact selected-path metadata.
+The Qwen Getting Started template now serializes instance widget values without
+`proxyWidgets`; normalization maps those values through widget-backed definition
+inputs, so its selected seed remains traversal-derived. `gsl_starter_1_3` is
+vendored as pattern evidence: its generator is bypassed, leaving one save
+candidate but no root sampler or strong scalar/prompt provenance.
+
+The manifest remains 80 golden, 5 pattern-covered, 8 partial, 485 excluded,
+and 0 unassessed. Parser version 42 covers the modern instance-widget behavior.

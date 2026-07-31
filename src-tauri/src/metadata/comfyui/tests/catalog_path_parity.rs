@@ -7,7 +7,7 @@ use crate::metadata::{extract_a1111_metadata, reparse::reparse_from_json, ImageM
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
-const OFFICIAL_CATALOG_FIXTURE_COUNT: usize = 89;
+const OFFICIAL_CATALOG_FIXTURE_COUNT: usize = 90;
 const REAL_WORLD_FIXTURE_COUNT: usize = 21;
 
 #[test]

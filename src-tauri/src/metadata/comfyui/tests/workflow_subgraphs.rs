@@ -195,6 +195,31 @@ fn subgraph_inputs_use_defaults_then_proxy_then_external_link() {
 }
 
 #[test]
+fn subgraph_inputs_without_proxy_widgets_use_definition_input_order() {
+    for (seed_override, external_seed, expected_seed) in [
+        (None, None, 11),
+        (Some(77), None, 77),
+        (Some(77), Some(99), 99),
+    ] {
+        let mut workflow = single_instance_workflow(seed_override, external_seed);
+        workflow["nodes"][0]["properties"] = json!({});
+
+        let (meta, diagnostics) =
+            extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+        assert_eq!(meta.seed, Some(expected_seed));
+        assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
+    }
+
+    let mut workflow = single_instance_workflow(Some(77), None);
+    workflow["nodes"][0]["properties"] = json!({});
+    workflow["nodes"][0]["widgets_values"] = json!([null]);
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+    assert_eq!(meta.seed, Some(11));
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
+}
+
+#[test]
 fn unlinked_boundary_input_removes_shadow_edges_before_using_the_default() {
     let mut definition = basic_definition("basic", "subgraph-model", 11);
     definition["nodes"]
