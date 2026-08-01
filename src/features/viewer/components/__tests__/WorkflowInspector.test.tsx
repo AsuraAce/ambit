@@ -54,6 +54,11 @@ const diagnosticsReport = {
     hasPromptChunk: true,
     hasWorkflowChunk: true,
     graphNodeCount: 2,
+    selectedOutputCandidateCount: 1,
+    uniqueOutputRootSamplerCount: 1,
+    outputAmbiguous: false,
+    traversalIssues: [],
+    traversalIssuesTruncated: false,
     attemptedLayers: ['workflow_chunk', 'sampler_traversal'],
     fieldSources: {
         model: 'sampler_traversal',
@@ -131,6 +136,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
         expect(await screen.findByText('Parser Diagnostics')).toBeTruthy();
         expect(screen.getByText('diagnostic_model')).toBeTruthy();
+        expect(screen.getByText('1 output / 1 root')).toBeTruthy();
         expect(screen.getAllByText(/Sampler Traversal/i).length).toBeGreaterThan(0);
         expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledWith({
             workflow: workflowJson,
@@ -152,7 +158,14 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             chunkKeys: string[];
             chunkLengths: Record<string, number>;
             graphNodeCount: number;
+            outputSelection: {
+                selectedOutputCandidateCount: number;
+                uniqueOutputRootSamplerCount: number;
+                ambiguous: boolean;
+            };
             fieldSources: Record<string, string>;
+            traversalIssues: unknown[];
+            traversalIssuesTruncated: boolean;
             metadata: { model: string };
             chunks?: unknown;
             prompt?: unknown;
@@ -166,7 +179,14 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             workflow: workflowJson.length
         });
         expect(parsed.graphNodeCount).toBe(2);
+        expect(parsed.outputSelection).toEqual({
+            selectedOutputCandidateCount: 1,
+            uniqueOutputRootSamplerCount: 1,
+            ambiguous: false
+        });
         expect(parsed.fieldSources.model).toBe('sampler_traversal');
+        expect(parsed.traversalIssues).toEqual([]);
+        expect(parsed.traversalIssuesTruncated).toBe(false);
         expect(parsed.metadata.model).toBe('diagnostic_model');
         expect(parsed).not.toHaveProperty('chunks');
         expect(parsed).not.toHaveProperty('prompt');
@@ -307,6 +327,67 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(
             await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
         ).toBeTruthy();
+    });
+
+    it('renders compact traversal blockers and output ambiguity', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                selectedOutputCandidateCount: 2,
+                uniqueOutputRootSamplerCount: 2,
+                outputAmbiguous: true,
+                traversalIssues: [{
+                    field: 'positive_prompt',
+                    nodeId: '30:19',
+                    nodeType: 'TextGenerate',
+                    inputName: 'text',
+                    reason: 'generated_value_unavailable'
+                }]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('2 outputs / 2 roots')).toBeTruthy();
+        expect(screen.getByTitle('Multiple saved-output roots were found, so no branch received strong traversal authority.')).toBeTruthy();
+        expect(screen.getByText('Traversal Blockers')).toBeTruthy();
+        const blocker = screen.getByTitle('The value is generated at runtime and no literal result is embedded in the image.');
+        expect(blocker.textContent).toContain('Positive Prompt at 30:19 (TextGenerate) / text: Generated Value Unavailable');
+    });
+
+    it('copies the complete capped blocker list without raw metadata bodies', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                traversalIssues,
+                traversalIssuesTruncated: true
+            }
+        });
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Copy parser diagnostics summary'));
+        await waitFor(() => expect(mockClipboardWriteText).toHaveBeenCalledTimes(1));
+
+        const copied = JSON.parse(mockClipboardWriteText.mock.calls[0][0] as string) as {
+            traversalIssues: typeof traversalIssues;
+            traversalIssuesTruncated: boolean;
+            prompt?: unknown;
+            workflow?: unknown;
+        };
+        expect(copied.traversalIssues).toEqual(traversalIssues);
+        expect(copied.traversalIssuesTruncated).toBe(true);
+        expect(copied).not.toHaveProperty('prompt');
+        expect(copied).not.toHaveProperty('workflow');
+        expect(screen.getByText('+2 or more in copied diagnostics')).toBeTruthy();
     });
 
     it('hides parser diagnostics outside developer mode', () => {

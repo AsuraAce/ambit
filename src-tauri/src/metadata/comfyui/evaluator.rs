@@ -1,3 +1,4 @@
+use super::diagnostics::ComfyTraversalIssue;
 use super::graph::{
     compare_node_ids, get_input_connection, get_node_input_link, get_node_input_links,
     get_node_type, get_source_id, ComfyGraph, InputConnection,
@@ -26,6 +27,8 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) authoritative_cfg: bool,
     pub(crate) authoritative_positive_prompt: bool,
     pub(crate) authoritative_negative_prompt: bool,
+    pub(crate) traversal_issues: Vec<ComfyTraversalIssue>,
+    pub(crate) traversal_issues_truncated: bool,
 }
 
 pub struct ComfyEvaluator<'a> {
@@ -39,6 +42,19 @@ impl<'a> ComfyEvaluator<'a> {
 
     pub(crate) fn extract_with_output_diagnostics(
         &self,
+    ) -> (ImageMetadata, OutputTraversalDiagnostics) {
+        self.extract_with_output_diagnostics_internal(false)
+    }
+
+    pub(crate) fn extract_with_traversal_diagnostics(
+        &self,
+    ) -> (ImageMetadata, OutputTraversalDiagnostics) {
+        self.extract_with_output_diagnostics_internal(true)
+    }
+
+    fn extract_with_output_diagnostics_internal(
+        &self,
+        collect_traversal_issues: bool,
     ) -> (ImageMetadata, OutputTraversalDiagnostics) {
         let output_nodes = self.find_output_nodes();
         let mut diagnostics = OutputTraversalDiagnostics {
@@ -114,6 +130,17 @@ impl<'a> ComfyEvaluator<'a> {
             &mut ip_adapters,
             &mut hypernetworks,
         );
+
+        if collect_traversal_issues {
+            let issue_collection = super::traversal_diagnostics::collect_traversal_issues(
+                self.graph,
+                root_sampler_id,
+                root_node,
+                &metadata,
+            );
+            diagnostics.traversal_issues = issue_collection.issues;
+            diagnostics.traversal_issues_truncated = issue_collection.truncated;
+        }
 
         (metadata, diagnostics)
     }

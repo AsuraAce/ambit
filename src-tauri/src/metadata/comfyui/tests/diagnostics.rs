@@ -279,6 +279,11 @@ fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
     assert!(report.has_prompt_chunk);
     assert!(report.has_workflow_chunk);
     assert_eq!(report.graph_node_count, 5);
+    assert_eq!(report.selected_output_candidate_count, 1);
+    assert_eq!(report.unique_output_root_sampler_count, 1);
+    assert!(!report.output_ambiguous);
+    assert!(report.traversal_issues.is_empty());
+    assert!(!report.traversal_issues_truncated);
     assert_eq!(report.metadata.model, "diagnostic_model");
     assert_eq!(report.metadata.seed, Some(12345));
     assert_eq!(report.metadata.steps, 25);
@@ -345,4 +350,170 @@ fn test_diagnostics_report_includes_flat_parameters_without_graph_chunks() {
     assert_eq!(report.metadata.cfg, 5.0);
     assert_eq!(report.metadata.positive_prompt, "flat prompt");
     assert!(!report.metadata.has_workflow_json);
+}
+
+#[test]
+fn test_diagnostics_report_identifies_unsupported_model_on_selected_output_path() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["2", 0],
+                "positive": ["3", 0],
+                "negative": ["4", 0],
+                "seed": 123,
+                "steps": 20,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "2": { "class_type": "UnknownModelWrapper", "inputs": {} },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "prompt" } },
+        "4": { "class_type": "ConditioningZeroOut", "inputs": {} },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    }"#;
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(prompt));
+
+    assert_eq!(report.selected_output_candidate_count, 1);
+    assert_eq!(report.unique_output_root_sampler_count, 1);
+    assert!(!report.output_ambiguous);
+    assert_eq!(report.traversal_issues.len(), 1);
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "model");
+    assert_eq!(issue.node_id, "2");
+    assert_eq!(issue.node_type, "UnknownModelWrapper");
+    assert_eq!(issue.input_name.as_deref(), Some("model"));
+    assert_eq!(issue.reason, "unsupported_node");
+}
+
+#[test]
+fn test_diagnostics_report_marks_generated_prompt_without_flagging_zeroed_negative() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["2", 0],
+                "positive": ["3", 0],
+                "negative": ["5", 0],
+                "seed": 123,
+                "steps": 20,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "2": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "diagnostic-model.safetensors" }
+        },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": ["4", 0] } },
+        "4": { "class_type": "TextGenerate", "inputs": { "prompt": "generator input" } },
+        "5": { "class_type": "ConditioningZeroOut", "inputs": {} },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    }"#;
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(prompt));
+
+    assert_eq!(report.traversal_issues.len(), 1);
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "positive_prompt");
+    assert_eq!(issue.node_id, "4");
+    assert_eq!(issue.node_type, "TextGenerate");
+    assert_eq!(issue.input_name.as_deref(), Some("text"));
+    assert_eq!(issue.reason, "generated_value_unavailable");
+    assert!(!report
+        .traversal_issues
+        .iter()
+        .any(|issue| issue.field == "negative_prompt"));
+}
+
+#[test]
+fn test_ambiguous_output_report_exposes_counts_without_field_blockers() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": { "seed": 1, "steps": 10, "cfg": 5, "sampler_name": "euler" }
+        },
+        "2": {
+            "class_type": "KSampler",
+            "inputs": { "seed": 2, "steps": 20, "cfg": 6, "sampler_name": "heun" }
+        },
+        "3": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "4": { "class_type": "VAEDecode", "inputs": { "samples": ["2", 0] } },
+        "5": { "class_type": "SaveImage", "inputs": { "images": ["3", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["4", 0] } }
+    }"#;
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(prompt));
+
+    assert_eq!(report.selected_output_candidate_count, 2);
+    assert_eq!(report.unique_output_root_sampler_count, 2);
+    assert!(report.output_ambiguous);
+    assert!(report.traversal_issues.is_empty());
+}
+
+#[test]
+fn test_diagnostics_report_bounds_untrusted_graph_labels() {
+    let long_node_id = "n".repeat(256);
+    let prompt = serde_json::json!({
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": [long_node_id, 0],
+                "seed": 1,
+                "steps": 10,
+                "cfg": 5,
+                "sampler_name": "euler"
+            }
+        },
+        "2": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "3": { "class_type": "SaveImage", "inputs": { "images": ["2", 0] } }
+    })
+    .to_string();
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(&prompt));
+
+    assert_eq!(report.traversal_issues.len(), 1);
+    assert_eq!(report.traversal_issues[0].reason, "missing_source_node");
+    assert_eq!(report.traversal_issues[0].node_id.chars().count(), 128);
+}
+
+#[test]
+fn test_diagnostics_report_labels_declared_but_unresolved_links() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["2", 0],
+                "positive": [{}, 0],
+                "negative": ["4", 0],
+                "seed": 123,
+                "steps": 20,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "2": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "diagnostic-model.safetensors" }
+        },
+        "4": { "class_type": "ConditioningZeroOut", "inputs": {} },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    }"#;
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(prompt));
+
+    assert_eq!(report.traversal_issues.len(), 1);
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "positive_prompt");
+    assert_eq!(issue.node_id, "1");
+    assert_eq!(issue.node_type, "KSampler");
+    assert_eq!(issue.input_name.as_deref(), Some("positive"));
+    assert_eq!(issue.reason, "unresolved_link");
 }

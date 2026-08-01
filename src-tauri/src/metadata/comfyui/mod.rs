@@ -10,6 +10,7 @@ mod graph;
 mod heuristics;
 mod parse_helper;
 mod strategies;
+mod traversal_diagnostics;
 mod workflow_normalizer;
 
 #[cfg(test)]
@@ -30,6 +31,14 @@ pub(crate) fn merge_comfyui_metadata(
     base: &mut ImageMetadata,
     chunks: &HashMap<String, String>,
 ) -> ComfyParseDiagnostics {
+    merge_comfyui_metadata_internal(base, chunks, false)
+}
+
+fn merge_comfyui_metadata_internal(
+    base: &mut ImageMetadata,
+    chunks: &HashMap<String, String>,
+    collect_traversal_issues: bool,
+) -> ComfyParseDiagnostics {
     let mut diagnostics = ComfyParseDiagnostics::default();
 
     if let Some(parameters) = flat_parameters_chunk(chunks) {
@@ -39,7 +48,8 @@ pub(crate) fn merge_comfyui_metadata(
         record_flat_parameter_sources(&mut diagnostics, base, &flat_meta);
     }
 
-    let (mut graph_meta, graph_diagnostics) = extract_comfyui_graph_with_diagnostics(chunks);
+    let (mut graph_meta, graph_diagnostics) =
+        extract_comfyui_graph_with_diagnostics(chunks, collect_traversal_issues);
     diagnostics.graph_node_count = graph_diagnostics.graph_node_count;
     diagnostics.selected_output_candidate_count = graph_diagnostics.selected_output_candidate_count;
     diagnostics.unique_output_root_sampler_count =
@@ -56,6 +66,8 @@ pub(crate) fn merge_comfyui_metadata(
         clear_core_field_sources(&mut diagnostics);
     }
     merge_graph_metadata(base, &mut graph_meta, &graph_diagnostics, &mut diagnostics);
+    diagnostics.traversal_issues = graph_diagnostics.traversal_issues;
+    diagnostics.traversal_issues_truncated = graph_diagnostics.traversal_issues_truncated;
     base.tool = "ComfyUI".to_string();
 
     diagnostics
@@ -498,11 +510,26 @@ pub struct ComfyMetadataPreview {
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct ComfyTraversalIssueReport {
+    pub field: String,
+    pub node_id: String,
+    pub node_type: String,
+    pub input_name: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
     pub chunk_keys: Vec<String>,
     pub has_prompt_chunk: bool,
     pub has_workflow_chunk: bool,
     pub graph_node_count: usize,
+    pub selected_output_candidate_count: usize,
+    pub unique_output_root_sampler_count: usize,
+    pub output_ambiguous: bool,
+    pub traversal_issues: Vec<ComfyTraversalIssueReport>,
+    pub traversal_issues_truncated: bool,
     pub attempted_layers: Vec<String>,
     pub field_sources: BTreeMap<String, String>,
     pub metadata: ComfyMetadataPreview,
@@ -519,7 +546,11 @@ pub async fn inspect_comfyui_metadata_chunks(
 pub(crate) fn build_comfyui_diagnostics_report(
     chunks: &HashMap<String, String>,
 ) -> ComfyParserDiagnosticsReport {
-    let (metadata, diagnostics) = extract_comfyui_metadata_with_diagnostics(chunks);
+    let mut metadata = ImageMetadata {
+        tool: "ComfyUI".to_string(),
+        ..ImageMetadata::default()
+    };
+    let diagnostics = merge_comfyui_metadata_internal(&mut metadata, chunks, true);
     let mut chunk_keys: Vec<String> = chunks.keys().cloned().collect();
     chunk_keys.sort();
 
@@ -528,6 +559,21 @@ pub(crate) fn build_comfyui_diagnostics_report(
         has_prompt_chunk: chunks.contains_key("prompt"),
         has_workflow_chunk: chunks.contains_key("workflow"),
         graph_node_count: diagnostics.graph_node_count,
+        selected_output_candidate_count: diagnostics.selected_output_candidate_count,
+        unique_output_root_sampler_count: diagnostics.unique_output_root_sampler_count,
+        output_ambiguous: diagnostics.output_ambiguous,
+        traversal_issues: diagnostics
+            .traversal_issues
+            .iter()
+            .map(|issue| ComfyTraversalIssueReport {
+                field: metadata_field_label(issue.field).to_string(),
+                node_id: bounded_diagnostic_label(&issue.node_id),
+                node_type: bounded_diagnostic_label(&issue.node_type),
+                input_name: issue.input_name.as_deref().map(bounded_diagnostic_label),
+                reason: traversal_issue_reason_label(issue.reason).to_string(),
+            })
+            .collect(),
+        traversal_issues_truncated: diagnostics.traversal_issues_truncated,
         attempted_layers: diagnostics
             .attempted_layers
             .iter()
@@ -600,6 +646,24 @@ fn metadata_field_label(field: ComfyMetadataField) -> &'static str {
     }
 }
 
+fn traversal_issue_reason_label(reason: diagnostics::ComfyTraversalIssueReason) -> &'static str {
+    match reason {
+        diagnostics::ComfyTraversalIssueReason::DeclaredLinkUnresolved => "unresolved_link",
+        diagnostics::ComfyTraversalIssueReason::MissingSourceNode => "missing_source_node",
+        diagnostics::ComfyTraversalIssueReason::UnsupportedNode => "unsupported_node",
+        diagnostics::ComfyTraversalIssueReason::GeneratedValueUnavailable => {
+            "generated_value_unavailable"
+        }
+        diagnostics::ComfyTraversalIssueReason::CycleDetected => "cycle_detected",
+        diagnostics::ComfyTraversalIssueReason::DepthLimit => "depth_limit",
+    }
+}
+
+fn bounded_diagnostic_label(value: &str) -> String {
+    const MAX_LABEL_CHARS: usize = 128;
+    value.chars().take(MAX_LABEL_CHARS).collect()
+}
+
 pub(crate) fn extract_comfyui_metadata_with_diagnostics(
     chunks: &HashMap<String, String>,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
@@ -613,6 +677,7 @@ pub(crate) fn extract_comfyui_metadata_with_diagnostics(
 
 fn extract_comfyui_graph_with_diagnostics(
     chunks: &HashMap<String, String>,
+    collect_traversal_issues: bool,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
     // Breadcrumb for ComfyUI parsing
     println!("[ComfyUI] Parsing metadata...");
@@ -655,13 +720,19 @@ fn extract_comfyui_graph_with_diagnostics(
     // Only run if we are missing critical info, OR if we want to fill in gaps.
     diagnostics.attempt(ComfyParseLayer::SamplerTraversal);
     let evaluator = ComfyEvaluator::new(&graph);
-    let (traversal_meta, output_diagnostics) = evaluator.extract_with_output_diagnostics();
+    let (traversal_meta, output_diagnostics) = if collect_traversal_issues {
+        evaluator.extract_with_traversal_diagnostics()
+    } else {
+        evaluator.extract_with_output_diagnostics()
+    };
     diagnostics.selected_output_candidate_count =
         output_diagnostics.selected_output_candidate_count;
     diagnostics.unique_output_root_sampler_count = output_diagnostics.unique_root_sampler_count;
     diagnostics.output_ambiguous = output_diagnostics.ambiguous;
     diagnostics.authoritative_sampler_custom_path =
         output_diagnostics.authoritative_sampler_custom_path;
+    diagnostics.traversal_issues = output_diagnostics.traversal_issues;
+    diagnostics.traversal_issues_truncated = output_diagnostics.traversal_issues_truncated;
     if output_diagnostics.authoritative_sampler_custom_path {
         clear_core_fields(&mut meta);
         clear_core_field_sources(&mut diagnostics);
