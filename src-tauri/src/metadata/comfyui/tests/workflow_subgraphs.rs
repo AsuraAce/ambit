@@ -195,6 +195,24 @@ fn subgraph_inputs_use_defaults_then_proxy_then_external_link() {
 }
 
 #[test]
+fn singleton_object_definition_output_reaches_saved_output() {
+    let mut workflow = single_instance_workflow(None, None);
+    let mut output = workflow["definitions"]["subgraphs"][0]["outputs"][0].clone();
+    output["linkIds"] = json!([6]);
+    workflow["definitions"]["subgraphs"][0]["outputs"] = output;
+    workflow["definitions"]["subgraphs"][0]["links"][5]["target_slot"] = json!(-1);
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.model, "subgraph_model");
+    assert_eq!(meta.seed, Some(11));
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Model);
+}
+
+#[test]
 fn subgraph_inputs_without_proxy_widgets_use_definition_input_order() {
     for (seed_override, external_seed, expected_seed) in [
         (None, None, 11),

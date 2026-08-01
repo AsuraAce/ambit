@@ -224,6 +224,22 @@ impl BorrowedId<'_> {
             Self::Unsigned(value) => value.to_string(),
         }
     }
+
+    fn equals(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::String(left), Self::String(right)) => left == right,
+            (Self::Signed(left), Self::Signed(right)) => left == right,
+            (Self::Unsigned(left), Self::Unsigned(right)) => left == right,
+            (Self::Signed(left), Self::Unsigned(right))
+            | (Self::Unsigned(right), Self::Signed(left)) => {
+                u64::try_from(left).is_ok_and(|left| left == right)
+            }
+            (Self::String(left), Self::Signed(right))
+            | (Self::Signed(right), Self::String(left)) => left.parse::<i64>() == Ok(right),
+            (Self::String(left), Self::Unsigned(right))
+            | (Self::Unsigned(right), Self::String(left)) => left.parse::<u64>() == Ok(right),
+        }
+    }
 }
 
 struct BorrowedWorkflowEdge<'a> {
@@ -374,7 +390,13 @@ fn flatten_container<'a>(
     let mut edges = Vec::new();
     if let Some(raw_edges) = container.get("links").and_then(Value::as_array) {
         for raw_edge in raw_edges {
-            let Some(raw_edge) = parse_borrowed_edge(raw_edge) else {
+            let Some(raw_edge) = parse_borrowed_edge(raw_edge).or_else(|| {
+                parse_borrowed_output_boundary_edge(
+                    raw_edge,
+                    output_id.as_deref(),
+                    container.get("outputs"),
+                )
+            }) else {
                 continue;
             };
             if !budget.reserve_raw_edge(&raw_edge) {
@@ -981,7 +1003,12 @@ fn bind_instance_outputs(
     budget: &mut ExpansionBudget,
 ) -> Option<Vec<WorkflowEdge>> {
     let instance_outputs = instance.get("outputs").and_then(Value::as_array);
-    let definition_outputs = definition.get("outputs").and_then(Value::as_array)?;
+    let definition_outputs = definition.get("outputs")?;
+    let definition_outputs = match definition_outputs {
+        Value::Array(outputs) => outputs.as_slice(),
+        output @ Value::Object(_) => std::slice::from_ref(output),
+        _ => return None,
+    };
     let mut bindings = Vec::new();
 
     for edge in outgoing {
@@ -1209,6 +1236,52 @@ fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {
         source_slot: value_usize(value.get("origin_slot")?)?,
         target_id: borrowed_id(value.get("target_id")?)?,
         target_slot: value_usize(value.get("target_slot")?)?,
+        link_type: value.get("type").and_then(Value::as_str).unwrap_or("*"),
+    })
+}
+
+fn parse_borrowed_output_boundary_edge<'a>(
+    value: &'a Value,
+    output_id: Option<&str>,
+    definition_outputs: Option<&Value>,
+) -> Option<BorrowedWorkflowEdge<'a>> {
+    let output_id = output_id?;
+    let target_id = borrowed_id(value.get("target_id")?)?;
+    if !target_id.equals(BorrowedId::String(output_id))
+        || value.get("target_slot")?.as_i64() != Some(-1)
+    {
+        return None;
+    }
+
+    let link_id = value.get("id")?;
+    let borrowed_link_id = borrowed_id(link_id)?;
+    let output_slot = match definition_outputs? {
+        Value::Array(outputs) => outputs.iter().position(|output| {
+            output
+                .get("linkIds")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| {
+                    ids.iter()
+                        .any(|id| borrowed_id(id).is_some_and(|id| id.equals(borrowed_link_id)))
+                })
+        })?,
+        Value::Object(output) => output
+            .get("linkIds")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| {
+                ids.iter()
+                    .any(|id| borrowed_id(id).is_some_and(|id| id.equals(borrowed_link_id)))
+            })
+            .then_some(0)?,
+        _ => return None,
+    };
+
+    Some(BorrowedWorkflowEdge {
+        link_id: Some(borrowed_link_id),
+        source_id: borrowed_id(value.get("origin_id")?)?,
+        source_slot: value_usize(value.get("origin_slot")?)?,
+        target_id,
+        target_slot: output_slot,
         link_type: value.get("type").and_then(Value::as_str).unwrap_or("*"),
     })
 }

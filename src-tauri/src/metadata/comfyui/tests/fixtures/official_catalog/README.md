@@ -825,3 +825,30 @@ stage.
 The manifest now contains 93 core targets, 8 extended image targets, and 477
 excluded entries: 94 golden, 2 pattern-covered, 5 partial, and 0 unassessed.
 Parser version 44 covers the narrow `SetFirstSigma` traversal behavior.
+
+## Milestone 60 Upscale Utility Coverage
+
+Validated on `2026-08-01` against release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `utility_image_upscale_supir` | `8a8e8ab0b24fc80fa4df1a8ac704f4c4203c0653` | 65187 | 25 |
+| `utility_seedvr2_3b_int8_upscale_image` | `c41a0ca230497db90dc97168980cc4d2a914fbf6` | 31293 | 14 |
+| `utility_seedvr2_7b_int8_upscale_image` | `8b185fd6994fc6e62aad0e2187dcb381c5c03606` | 31389 | 14 |
+| `utility_interpolation_image_upscale` | `db67b8baec0cc27c41d6f083cec2dd11099f05fa` | 4256 | 5 |
+
+The two SeedVR2 variants are exact one-step upscale goldens. The interpolation
+workflow is a non-generative golden control: it has one persisted output but no
+sampler root, so generation fields remain unavailable without fabricated
+provenance.
+
+SUPIR expands one modern singleton-output subgraph into one trusted sampler
+root. Its selected checkpoint, seed, steps, CFG, sampler, and negative prompt
+are exact `SamplerTraversal` values. Its positive prompt remains unavailable
+because the selected `TextGenerate` caption result is not embedded in workflow
+metadata, so the fixture is intentionally partial. Parser version 45 covers
+singleton object output boundaries and deduplicates identical SDXL text lanes.
+
+The manifest now contains 93 core targets, 12 extended image targets, and 473
+excluded entries: 97 golden, 2 pattern-covered, 6 partial, and 0 unassessed.

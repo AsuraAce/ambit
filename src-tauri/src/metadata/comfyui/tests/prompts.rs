@@ -167,6 +167,25 @@ fn flux_text_encoder_deduplicates_and_omits_empty_or_placeholder_lanes() {
 }
 
 #[test]
+fn sdxl_text_encoder_deduplicates_identical_literal_lanes() {
+    let (meta, diagnostics) = extract_custom_conditioning_prompt(vec![(
+        "2",
+        json!({
+            "class_type": "CLIPTextEncodeSDXL",
+            "inputs": { "text_g": "shared prompt", "text_l": "shared prompt" }
+        }),
+    )]);
+
+    assert_eq!(meta.positive_prompt, "shared prompt");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn flux_text_encoder_links_override_stale_widgets_and_fail_closed_independently() {
     let (meta, _) = extract_custom_conditioning_prompt(vec![
         (

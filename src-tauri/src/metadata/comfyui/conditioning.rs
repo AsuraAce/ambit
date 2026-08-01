@@ -619,7 +619,10 @@ fn extract_text_from_node(
             {
                 return None;
             }
-            if let Some(text) = text {
+            if let Some(text) = text
+                .filter(|text| !is_missing_prompt_value(text))
+                .filter(|text| !parts.contains(text))
+            {
                 parts.push(text);
             }
         }

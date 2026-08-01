@@ -526,6 +526,30 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/utility_pid_latent_upscale_dit.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "utility_image_upscale_supir",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_image_upscale_supir.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_seedvr2_3b_int8_upscale_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_seedvr2_3b_int8_upscale_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_seedvr2_7b_int8_upscale_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_seedvr2_7b_int8_upscale_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_interpolation_image_upscale",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_interpolation_image_upscale.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -910,6 +934,119 @@ fn pid_latent_upscale_is_golden() {
             output_roots: 1,
             output_ambiguous: false,
         },
+    );
+}
+
+#[test]
+fn supir_upscale_is_an_honest_partial() {
+    assert_fixture(
+        "utility_image_upscale_supir",
+        ExpectedMetadata {
+            model: "juggernautxl_v9rdphoto2lightning",
+            seed: Some(402_244_474_214_267),
+            steps: 10,
+            cfg: 1.5,
+            sampler: "dpmpp_2m_sde (sgm_uniform)",
+            positive_prompt: "",
+            negative_prompt: "painting, oil painting, illustration, drawing, art, sketch, cartoon, CG Style, 3D render, unreal engine, blurring, dirty, messy, worst quality, low quality, frames, watermark, signature, jpeg artifacts, deformed, lowres, over-smooth bad quality, blurry, messy",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn seedvr2_3b_int8_upscale_is_golden() {
+    assert_fixture(
+        "utility_seedvr2_3b_int8_upscale_image",
+        ExpectedMetadata {
+            model: "seedvr2_3b_int8_convrot",
+            seed: Some(959_948_902_156_062),
+            steps: 1,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn seedvr2_7b_int8_upscale_is_golden() {
+    assert_fixture(
+        "utility_seedvr2_7b_int8_upscale_image",
+        ExpectedMetadata {
+            model: "seedvr2_7b_int8_convrot",
+            seed: Some(959_948_902_156_062),
+            steps: 1,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn interpolation_upscale_is_a_non_generative_golden() {
+    let name = "utility_interpolation_image_upscale";
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "Unknown");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "Unknown");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert!(meta.embeddings.is_empty());
+    assert!(meta.hypernetworks.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+
+    assert_eq!(diagnostics.graph_node_count, 5);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert!(!diagnostics.output_ambiguous);
+    assert_eq!(diagnostics.field_sources.len(), 2);
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
     );
 }
 
