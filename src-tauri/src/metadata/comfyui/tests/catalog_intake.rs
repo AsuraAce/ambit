@@ -1034,6 +1034,53 @@ const MILESTONE57_ACTIVE_TARGET_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE58_EXTENDED_IMAGE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "templates-qwen_image_edit-crop_and_stitch-fusion",
+        source_blob: "daaf07ff45657ba39e301682d2b3980c1294af86",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-qwen_image_edit-crop_and_stitch-fusion.chunks.json"
+        ),
+        graph_node_count: 25,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates_doc_workbox_klein_9b_image_extend",
+        source_blob: "61f73aa5d9889982f55ff6084eb4abed5f6b9b24",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_doc_workbox_klein_9b_image_extend.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "templates_text_prompt_to_360hdr.app",
+        source_blob: "9a989eef6e613051ee24374069a68847381caac9",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_text_prompt_to_360hdr.app.chunks.json"
+        ),
+        graph_node_count: 24,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "utility_z_image_turbo_2k_upscaler.app",
+        source_blob: "6d4ec0ed208e8545aedd0b2652fb38192f12c994",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_z_image_turbo_2k_upscaler.app.chunks.json"
+        ),
+        graph_node_count: 19,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1267,6 +1314,11 @@ fn pinned_milestone46_official_use_case_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone57_active_target_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE57_ACTIVE_TARGET_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone58_extended_image_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE58_EXTENDED_IMAGE_FIXTURES);
 }
 
 #[test]

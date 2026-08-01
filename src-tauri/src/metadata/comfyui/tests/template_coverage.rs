@@ -44,6 +44,7 @@ struct CatalogCounts {
     getting_started_image_entries: usize,
     official_use_case_image_entries: usize,
     target_entries: usize,
+    extended_target_entries: usize,
     excluded_entries: usize,
     legacy_golden_families: usize,
 }
@@ -92,7 +93,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(manifest.schema_version, 3);
+    assert_eq!(manifest.schema_version, 4);
     assert_eq!(
         manifest.source.repository,
         "https://github.com/Comfy-Org/workflow_templates"
@@ -140,6 +141,7 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
 
         let is_core_target = entry.scope == "target_core_image";
         let is_use_case_target = entry.scope == "target_official_use_case_image";
+        let is_extended_target = entry.scope == "target_extended_image";
         match entry.category.as_str() {
             "Image" => assert_eq!(
                 is_core_target,
@@ -212,6 +214,22 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
                 assert_ne!(entry.coverage, "excluded", "{} is targeted", entry.id);
                 assert!(entry.exclusion_reason.is_none(), "{} is targeted", entry.id);
             }
+            "target_extended_image" => {
+                assert_eq!(
+                    entry.media_type.as_deref(),
+                    Some("image"),
+                    "{} must be an image workflow",
+                    entry.id
+                );
+                assert_eq!(
+                    entry.open_source,
+                    Some(true),
+                    "{} must be open source",
+                    entry.id
+                );
+                assert_ne!(entry.coverage, "excluded", "{} is targeted", entry.id);
+                assert!(entry.exclusion_reason.is_none(), "{} is targeted", entry.id);
+            }
             "excluded" => {
                 assert_eq!(entry.coverage, "excluded", "{} is excluded", entry.id);
                 assert!(
@@ -224,6 +242,14 @@ fn manifest_covers_the_pinned_catalog_with_valid_classifications() {
                 );
             }
             other => panic!("unknown scope {other} for {}", entry.id),
+        }
+
+        if is_extended_target {
+            assert!(
+                matches!(entry.category.as_str(), "Use Cases" | "Utility"),
+                "{} extended target should come from a measured image category",
+                entry.id
+            );
         }
 
         if matches!(
@@ -269,15 +295,24 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.getting_started_image_entries, 10);
     assert_eq!(manifest.counts.official_use_case_image_entries, 9);
     assert_eq!(manifest.counts.target_entries, 93);
-    assert_eq!(manifest.counts.excluded_entries, 485);
+    assert_eq!(manifest.counts.extended_target_entries, 4);
+    assert_eq!(manifest.counts.excluded_entries, 481);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
     assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
-    assert_eq!(count_coverage("golden"), 86);
+    assert_eq!(
+        manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.scope == "target_extended_image")
+            .count(),
+        4
+    );
+    assert_eq!(count_coverage("golden"), 90);
     assert_eq!(count_coverage("pattern_covered"), 2);
     assert_eq!(count_coverage("partial"), 5);
     assert_eq!(count_coverage("unassessed"), 0);
-    assert_eq!(count_coverage("excluded"), 485);
+    assert_eq!(count_coverage("excluded"), 481);
     assert_eq!(
         manifest
             .entries
@@ -302,18 +337,24 @@ fn manifest_counts_match_the_declared_catalog_scope() {
 }
 
 #[test]
-fn every_active_target_has_dedicated_fixture_evidence() {
+fn every_measured_target_has_dedicated_fixture_evidence() {
     let manifest = load_manifest();
-    let targeted = manifest
+    let core_targeted = manifest
         .entries
         .iter()
         .filter(|entry| {
             entry.scope == "target_core_image" || entry.scope == "target_official_use_case_image"
         })
         .collect::<Vec<_>>();
+    let extended_targeted = manifest
+        .entries
+        .iter()
+        .filter(|entry| entry.scope == "target_extended_image")
+        .collect::<Vec<_>>();
 
-    assert_eq!(targeted.len(), 93);
-    for entry in targeted {
+    assert_eq!(core_targeted.len(), 93);
+    assert_eq!(extended_targeted.len(), 4);
+    for entry in core_targeted.into_iter().chain(extended_targeted) {
         assert!(
             entry
                 .evidence
@@ -403,10 +444,14 @@ fn manifest_links_covered_entries_to_test_evidence() {
             "templates-1_click_multiple_character_angles-v1.0",
             "partial",
         ),
+        ("templates-qwen_image_edit-crop_and_stitch-fusion", "golden"),
         ("templates-image_to_real", "golden"),
         ("templates-portrait_light_migration", "golden"),
+        ("templates_doc_workbox_klein_9b_image_extend", "golden"),
         ("templates_rob_image_to_real.app", "golden"),
         ("templates_rob_portrait_light_migration.app", "golden"),
+        ("templates_text_prompt_to_360hdr.app", "golden"),
+        ("utility_z_image_turbo_2k_upscaler.app", "golden"),
     ];
 
     for (id, coverage) in expected {

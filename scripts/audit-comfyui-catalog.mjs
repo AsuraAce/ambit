@@ -17,6 +17,9 @@ const DEFAULT_MANIFEST_PATH = path.join(
 );
 const DEFAULT_FIXTURE_DIR = path.dirname(DEFAULT_MANIFEST_PATH);
 const DIRECT_FIXTURE_PREFIX = 'fixture:official_catalog/';
+const CORE_TARGET_SCOPES = new Set(['target_core_image', 'target_official_use_case_image']);
+const EXTENDED_TARGET_SCOPE = 'target_extended_image';
+const ALLOWED_SCOPES = new Set([...CORE_TARGET_SCOPES, EXTENDED_TARGET_SCOPE, 'excluded']);
 const MODES = new Set(['verify', 'diff']);
 const FORMATS = new Set(['text', 'json']);
 
@@ -97,6 +100,39 @@ const loadManifest = (manifestPath) => {
     throw new Error(
       `Coverage manifest count ${manifest.counts?.catalog_entries ?? '<missing>'} does not match ${manifest.entries.length} entries.`,
     );
+  }
+
+  const coreTargetEntries = manifest.entries.filter((entry) =>
+    CORE_TARGET_SCOPES.has(entry.scope),
+  ).length;
+  const extendedTargetEntries = manifest.entries.filter(
+    (entry) => entry.scope === EXTENDED_TARGET_SCOPE,
+  ).length;
+  const excludedEntries = manifest.entries.filter(
+    (entry) => entry.scope === 'excluded',
+  ).length;
+  for (const entry of manifest.entries) {
+    if (!ALLOWED_SCOPES.has(entry.scope)) {
+      throw new Error(`Coverage manifest entry ${entry.id} has unknown scope ${entry.scope}.`);
+    }
+  }
+  if (manifest.counts?.target_entries !== coreTargetEntries) {
+    throw new Error(
+      `Coverage manifest core target count ${manifest.counts?.target_entries ?? '<missing>'} does not match ${coreTargetEntries} entries.`,
+    );
+  }
+  if (manifest.counts?.extended_target_entries !== extendedTargetEntries) {
+    throw new Error(
+      `Coverage manifest extended target count ${manifest.counts?.extended_target_entries ?? '<missing>'} does not match ${extendedTargetEntries} entries.`,
+    );
+  }
+  if (manifest.counts?.excluded_entries !== excludedEntries) {
+    throw new Error(
+      `Coverage manifest excluded count ${manifest.counts?.excluded_entries ?? '<missing>'} does not match ${excludedEntries} entries.`,
+    );
+  }
+  if (coreTargetEntries + extendedTargetEntries + excludedEntries !== manifest.entries.length) {
+    throw new Error('Coverage manifest scope counts do not partition the catalog entries.');
   }
 
   return { manifest, entriesById };

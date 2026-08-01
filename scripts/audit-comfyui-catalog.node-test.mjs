@@ -16,6 +16,7 @@ const makeAuditWorkspace = (
     candidateWorkflows = baselineWorkflows,
     fixtureIds = ['alpha'],
     fixtureOverrides = {},
+    extendedTargetIds = [],
     candidateCommit = 'baseline-commit',
     templateOrder = Object.keys(candidateWorkflows),
   } = {},
@@ -42,7 +43,12 @@ const makeAuditWorkspace = (
     .map(([id, workflow]) => ({
       id,
       source_blob: gitBlobHash(workflow),
-      scope: id === 'beta' ? 'excluded' : 'target_core_image',
+      scope:
+        id === 'beta'
+          ? 'excluded'
+          : extendedTargetIds.includes(id)
+            ? 'target_extended_image'
+            : 'target_core_image',
       coverage: id === 'beta' ? 'excluded' : 'golden',
       evidence: fixtureIds.includes(id) ? [`fixture:official_catalog/${id}.chunks.json`] : [],
     }))
@@ -53,7 +59,13 @@ const makeAuditWorkspace = (
       commit: 'baseline-commit',
       index_path: 'templates/index.json',
     },
-    counts: { catalog_entries: entries.length },
+    counts: {
+      catalog_entries: entries.length,
+      target_entries: entries.filter((entry) => entry.scope === 'target_core_image').length,
+      extended_target_entries: entries.filter((entry) => entry.scope === 'target_extended_image')
+        .length,
+      excluded_entries: entries.filter((entry) => entry.scope === 'excluded').length,
+    },
     entries,
   };
   fs.writeFileSync(manifestPath, JSON.stringify(manifest));
@@ -190,6 +202,28 @@ test('cross-workflow pattern evidence is not treated as direct fixture identity'
 
   const result = auditCatalog({ ...workspace, mode: 'verify' });
   assert.equal(result.verifiedFixtures, 0);
+});
+
+test('manifest validation keeps core and extended image targets independently counted', (t) => {
+  const workspace = makeAuditWorkspace(t, {
+    baselineWorkflows: {
+      alpha: '{"nodes":[{"id":1}]}',
+      beta: '{"nodes":[{"id":2}]}',
+      gamma: '{"nodes":[{"id":3}]}',
+    },
+    fixtureIds: ['alpha', 'gamma'],
+    extendedTargetIds: ['gamma'],
+  });
+
+  assert.doesNotThrow(() => auditCatalog({ ...workspace, mode: 'verify' }));
+
+  const manifest = JSON.parse(fs.readFileSync(workspace.manifestPath, 'utf8'));
+  manifest.counts.extended_target_entries = 0;
+  fs.writeFileSync(workspace.manifestPath, JSON.stringify(manifest));
+  assert.throws(
+    () => auditCatalog({ ...workspace, mode: 'verify' }),
+    /extended target count 0 does not match 1 entries/,
+  );
 });
 
 test('CLI parsing accepts the separator forwarded by pnpm', () => {

@@ -771,3 +771,33 @@ All 93 active targets now have dedicated official-catalog fixtures. The active
 target contains 86 golden, 2 pattern-covered, 5 partial, 485 excluded, and 0
 unassessed workflows. Parser version remains 43 because this milestone changes
 coverage evidence rather than extraction behavior.
+
+## Milestone 58 Extended Official Image Coverage
+
+Validated on `2026-08-01` against release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `templates-qwen_image_edit-crop_and_stitch-fusion` | `daaf07ff45657ba39e301682d2b3980c1294af86` | 61203 | 25 |
+| `templates_doc_workbox_klein_9b_image_extend` | `61f73aa5d9889982f55ff6084eb4abed5f6b9b24` | 37947 | 24 |
+| `templates_text_prompt_to_360hdr.app` | `9a989eef6e613051ee24374069a68847381caac9` | 37317 | 24 |
+| `utility_z_image_turbo_2k_upscaler.app` | `6d4ec0ed208e8545aedd0b2652fb38192f12c994` | 36015 | 19 |
+
+These workflows intentionally sit outside the original 93-workflow core
+target: three are utility or custom-node use cases and one is a core-node
+utility. They now use the separate `target_extended_image` scope so broader
+official image coverage remains measurable without changing the core target's
+definition.
+
+All four have one unambiguous saved-output root and exact `SamplerTraversal`
+contracts. The Qwen crop-and-stitch workflow reports only its enabled Fusion
+LoRA; its disabled Lightning branch is omitted. The Flux 2 Klein outpainting
+workflow recovers scheduler steps without inventing a scheduler label. The
+360 HDR workflow reports its selected Qwen 360 LoRA. The Z-Image upscale
+workflow keeps the diffusion model primary and does not promote RealESRGAN to
+`ImageMetadata.model`.
+
+The manifest now contains 93 core targets, 4 extended image targets, and 481
+excluded entries: 90 golden, 2 pattern-covered, 5 partial, and 0 unassessed.
+Parser version remains 43 because no extraction behavior changed.

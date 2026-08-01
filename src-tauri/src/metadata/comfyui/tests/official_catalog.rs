@@ -482,6 +482,30 @@ const FIXTURES: &[CatalogFixture] = &[
         name: "image_lens_turbo_t2i",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
     },
+    CatalogFixture {
+        name: "templates-qwen_image_edit-crop_and_stitch-fusion",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-qwen_image_edit-crop_and_stitch-fusion.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_doc_workbox_klein_9b_image_extend",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_doc_workbox_klein_9b_image_extend.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_text_prompt_to_360hdr.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_text_prompt_to_360hdr.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_z_image_turbo_2k_upscaler.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_z_image_turbo_2k_upscaler.app.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -641,6 +665,98 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata
         meta.embeddings
     );
     assert!(meta.hypernetworks.is_empty(), "{name} hypernetworks");
+}
+
+#[test]
+fn qwen_crop_and_stitch_fusion_is_golden() {
+    assert_fixture(
+        "templates-qwen_image_edit-crop_and_stitch-fusion",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(1_032_855_151_349_184),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Image blending, correcting the product's perspective angle and light and shadow to integrate the product into the background",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_fusion"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_image_extend_is_golden() {
+    assert_fixture(
+        "templates_doc_workbox_klein_9b_image_extend",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b",
+            seed: Some(754_163_315_896_983),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "remove the green part",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_360_hdr_generation_is_golden() {
+    assert_fixture(
+        "templates_text_prompt_to_360hdr.app",
+        ExpectedMetadata {
+            model: "qwen_image_2512_bf16",
+            seed: Some(364_767_852_585_212),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "equirectangular 360 image, a quiet lakeside with pine trees and crystal blue lake. Captured during a sunset, the sun is in the frame with many clouds nearby",
+            negative_prompt: "",
+            loras: &["qwen_360_diffusion_2512_int8_bf16_v2"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_2k_upscaler_is_golden() {
+    assert_fixture(
+        "utility_z_image_turbo_2k_upscaler.app",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(824_287_194_145_573),
+            steps: 5,
+            cfg: 1.0,
+            sampler: "dpmpp_2m_sde (beta)",
+            positive_prompt: "masterpiece, 8k",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
 }
 
 #[test]
