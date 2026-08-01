@@ -18,6 +18,11 @@ changed workflows are refreshed from the pinned release and revalidated before
 remaining covered. The v0.11.18 snapshot keeps all 578 catalog IDs and all 93
 active targets fully assessed.
 
+Fixture workflow strings preserve the exact parsed upstream workflow. Their
+JSON formatting may be raw, line-ending-normalized, or minified. The manifest's
+`source_blob` separately preserves the Git identity of the original upstream
+file bytes.
+
 Golden workflows:
 
 - `image_qwen_image_edit_2509.chunks.json`
@@ -235,6 +240,30 @@ rules documented in the manifest tests, sort by template name, then carry
 forward coverage evidence only when the associated golden test still passes.
 
 Tests are offline and must never fetch the catalog at runtime.
+
+## Offline Catalog Audit
+
+Use a local checkout of the catalog to verify the current pin:
+
+```powershell
+pnpm run audit:comfyui-catalog -- --mode verify --catalog-root C:\path\to\workflow_templates
+```
+
+Verification requires the checkout commit to match the manifest pin. It checks
+all catalog IDs, all 578 original-file Git blob identities, and every dedicated
+official-catalog fixture against the parsed upstream workflow.
+
+Before an intentional pin update, compare a candidate checkout without changing
+tracked files:
+
+```powershell
+pnpm run audit:comfyui-catalog -- --mode diff --catalog-root C:\path\to\workflow_templates
+```
+
+Diff mode reports added, removed, changed-targeted, changed-excluded, and stale
+fixture entries in stable ID order. Add `--format json` for machine-readable
+output. The command is deliberately read-only and is not part of the release
+gate because it depends on an external catalog checkout.
 
 ## Milestone 28 Reference And Modifier Intake
 
