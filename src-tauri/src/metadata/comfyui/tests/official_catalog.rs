@@ -467,6 +467,18 @@ const FIXTURES: &[CatalogFixture] = &[
         ),
     },
     CatalogFixture {
+        name: "default",
+        chunks_json: include_str!("fixtures/official_catalog/default.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsc_creator_2_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsc_starter_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_starter_1.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_lens_turbo_t2i",
         chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
     },
@@ -500,6 +512,10 @@ const ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE: &str = include_str!(
 );
 const GSL_STARTER_POSITIVE: &str = "masterpiece, best quality, ultra-detailed, 8k, photorealistic oil painting, cinematic lighting, soft focus,\n1girl, solo, blonde wavy short hair, messy hair, floating hair, looking up, blue eyes, soft gaze, parted lips, pale skin, delicate facial features, **simple white long-sleeve top, fully covered shoulders, high neckline, modest clothing**, gold necklace with green gem pendant, upper body shot,\nbackground of cosmic space, giant glowing planet with clouds, bright light beam from planet, starry sky, bokeh, dreamy atmosphere, soft light, ethereal, fantasy aesthetic, depth of field, painterly details, smooth skin texture";
 const GSL_STARTER_NEGATIVE: &str = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, deformed, disfigured, ugly, extra limbs, missing limbs, poorly drawn face, mutated, mutated hands, extra fingers, bad proportions, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, long neck, text, signature, watermark, cartoon, anime, 3d render, realistic (non-painting style)";
+const DEFAULT_POSITIVE: &str =
+    "beautiful scenery nature glass bottle landscape, purple galaxy bottle,";
+const GSC_CREATOR_POSITIVE: &str = "Editorial shot: On a volcanic black sand beach with a dark overcast sky.\n\nLow side-angle: Male model is in a deep squat, knees wide, head resting in one hand with a brooding, sharp gaze.\n\nHair: Ultra-short platinum blonde buzz cut.\n\nWardrobe: light-blue transparent oval sunglasses, oversized black wool chunky-knit sweater, baggy cargo trousers, climbing shoes. \n\nLighting: Theatrical cold blue moonlighting contrasted by a single sharp, warm orange spotlight on the face. Shot on Fujifilm GFX 100S, 110mm f/2 lens\n\nVibe: Paganism, futuristic tech-wear.";
+const GSC_STARTER_POSITIVE: &str = "High-fashion editorial tight portrait, ultra-crisp detail\nclean modern sheen, faint high-key digital gloss\nhyper-saturated pale-lilac flat sky background\nharsh unfiltered desert noon glare\nfemale model standing, subtle head tilt to the side\ncalm yet piercing direct eye contact, quiet self-assured intensity\nexpression of someone who just solved a complex node chain perfectly\nglossy dark-chocolate brown medium-length hair\nsoft centre-part, slight forward-falling fringe, air-dried natural texture\nhair tucked behind one ear revealing matte-black wireless earbud\nthin matte-black sports headband pushed up on forehead\noff-white/bone technical half-zip mock-neck pullover\nprominent tiny tonal micro-raised “comfy” monospaced embroidery on right chest\nlayered semi-sheer pale-grey long-sleeve base tee\nvery faint terminal-green command-line micro-grid subtly visible through top\nlow-rise wide-leg washed charcoal parachute-nylon track pants, tonal drawcord, slightly open zip cargo pocket showing phone edge, exposed toned midriff + iliac line";
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -818,6 +834,75 @@ fn gsl_starter_bypassed_generator_remains_pattern_covered() {
     ] {
         assert_eq!(diagnostics.field_sources.get(&field), None, "{field:?}");
     }
+}
+
+#[test]
+fn default_sd15_workflow_is_golden() {
+    assert_fixture(
+        "default",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly_fp16",
+            seed: Some(685_468_484_323_813),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt: DEFAULT_POSITIVE,
+            negative_prompt: "text, watermark",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn getting_started_z_image_creator_is_golden() {
+    assert_fixture(
+        "gsc_creator_2_1",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(222_678_399_973_641),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: GSC_CREATOR_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn disconnected_z_image_starter_remains_pattern_covered() {
+    assert_fixture(
+        "gsc_starter_1",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(336_703_310_549_440),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: GSC_STARTER_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerFallback,
+            graph_node_count: 13,
+            output_candidates: 0,
+            output_roots: 0,
+            output_ambiguous: false,
+        },
+    );
 }
 
 #[test]

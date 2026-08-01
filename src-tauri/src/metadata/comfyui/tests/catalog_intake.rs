@@ -1004,6 +1004,36 @@ const MILESTONE46_OFFICIAL_USE_CASE_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE57_ACTIVE_TARGET_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "default",
+        source_blob: "53abcfc4060472fad63722f9aa0d52ea8b5e0ac9",
+        chunks_json: include_str!("fixtures/official_catalog/default.chunks.json"),
+        graph_node_count: 11,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "gsc_creator_2_1",
+        source_blob: "de03243dd2bf5f0f6eb216dc14f2cc7a5e052d33",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_1.chunks.json"),
+        graph_node_count: 18,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "gsc_starter_1",
+        source_blob: "a8c0ce81211cf16d2654a857964942dd88130ac6",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_starter_1.chunks.json"),
+        graph_node_count: 13,
+        output_candidates: 0,
+        output_roots: 0,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1232,6 +1262,11 @@ fn pinned_milestone45_official_use_case_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone46_official_use_case_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE46_OFFICIAL_USE_CASE_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone57_active_target_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE57_ACTIVE_TARGET_FIXTURES);
 }
 
 #[test]

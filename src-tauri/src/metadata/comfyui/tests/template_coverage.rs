@@ -273,8 +273,8 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
     assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
-    assert_eq!(count_coverage("golden"), 83);
-    assert_eq!(count_coverage("pattern_covered"), 5);
+    assert_eq!(count_coverage("golden"), 86);
+    assert_eq!(count_coverage("pattern_covered"), 2);
     assert_eq!(count_coverage("partial"), 5);
     assert_eq!(count_coverage("unassessed"), 0);
     assert_eq!(count_coverage("excluded"), 485);
@@ -302,6 +302,30 @@ fn manifest_counts_match_the_declared_catalog_scope() {
 }
 
 #[test]
+fn every_active_target_has_dedicated_fixture_evidence() {
+    let manifest = load_manifest();
+    let targeted = manifest
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.scope == "target_core_image" || entry.scope == "target_official_use_case_image"
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(targeted.len(), 93);
+    for entry in targeted {
+        assert!(
+            entry
+                .evidence
+                .iter()
+                .any(|evidence| evidence.starts_with("fixture:official_catalog/")),
+            "{} should have dedicated official-catalog fixture evidence",
+            entry.id
+        );
+    }
+}
+
+#[test]
 fn manifest_links_covered_entries_to_test_evidence() {
     let manifest = load_manifest();
     let expected = [
@@ -309,7 +333,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("02_qwen_Image_edit_subgraphed", "golden"),
         ("Image_capybara_v0_1_image_edit", "golden"),
         ("Image_capybara_v0_1_text_to_image", "golden"),
-        ("default", "pattern_covered"),
+        ("default", "golden"),
         ("flux_depth_lora_example", "golden"),
         ("flux_dev_checkpoint_example", "golden"),
         ("flux_dev_full_text_to_image", "golden"),
@@ -318,7 +342,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("flux_schnell_full_text_to_image", "golden"),
         ("flux1_dev_uso_reference_image_gen", "golden"),
         ("flux1_krea_dev", "golden"),
-        ("gsc_creator_2_1", "pattern_covered"),
+        ("gsc_creator_2_1", "golden"),
         ("gsc_creator_2_2", "golden"),
         ("gsc_creator_2_3", "golden"),
         ("gsc_starter_1", "pattern_covered"),
@@ -356,7 +380,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("image_joyai_image_edit", "golden"),
         ("image_krea2_turbo_int8_image_style_reference", "golden"),
         ("image_lens_t2i", "golden"),
-        ("image_lens_turbo_t2i", "pattern_covered"),
+        ("image_lens_turbo_t2i", "golden"),
         ("image_netayume_lumina_t2i", "golden"),
         ("image_newbieimage_exp0_1-t2i", "golden"),
         ("image_omnigen2_image_edit", "golden"),

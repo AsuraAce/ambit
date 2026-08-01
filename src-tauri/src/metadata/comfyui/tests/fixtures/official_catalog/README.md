@@ -743,3 +743,31 @@ Validated on `2026-08-01` against the pinned `v0.11.18` catalog snapshot.
 The active target now contains 83 golden, 5 pattern-covered, 5 partial, 485
 excluded, and 0 unassessed workflows. Parser version 43 covers the narrow
 conditioning-switch extraction correction.
+
+## Milestone 57 Active-Target Fixture Closure
+
+Validated on `2026-08-01` against release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `default` | `53abcfc4060472fad63722f9aa0d52ea8b5e0ac9` | 11463 | 11 |
+| `gsc_creator_2_1` | `de03243dd2bf5f0f6eb216dc14f2cc7a5e052d33` | 19454 | 18 |
+| `gsc_starter_1` | `a8c0ce81211cf16d2654a857964942dd88130ac6` | 28646 | 13 |
+
+`default` and `gsc_creator_2_1` have one saved-output root and exact
+`SamplerTraversal` metadata, so direct fixture evidence replaces their earlier
+representative pattern claims. `image_lens_turbo_t2i` is likewise golden: its
+dedicated fixture already asserts exact metadata and structural equivalence to
+the supported Lens selected path.
+
+`gsc_starter_1` intentionally ships with its generation subgraph disconnected
+from `SaveImage`. Its direct contract reports zero output candidates and roots,
+retains only deterministic `SamplerFallback` metadata, and never grants strong
+traversal authority. Together with the bypassed `gsl_starter_1_3` contract,
+this leaves two honest pattern-covered tutorial workflows.
+
+All 93 active targets now have dedicated official-catalog fixtures. The active
+target contains 86 golden, 2 pattern-covered, 5 partial, 485 excluded, and 0
+unassessed workflows. Parser version remains 43 because this milestone changes
+coverage evidence rather than extraction behavior.
