@@ -962,7 +962,7 @@ const MILESTONE46_OFFICIAL_USE_CASE_FIXTURES: &[IntakeFixture] = &[
     },
     IntakeFixture {
         name: "templates-image_to_real",
-        source_blob: "f9f24a85aa745c1ee8bad8975853a58f4dbf3808",
+        source_blob: "6c3a5dd627de6f8046b1a1f89867b435ae02882d",
         chunks_json: include_str!("fixtures/official_catalog/templates-image_to_real.chunks.json"),
         graph_node_count: 15,
         output_candidates: 1,
