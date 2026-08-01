@@ -801,3 +801,27 @@ workflow keeps the diffusion model primary and does not promote RealESRGAN to
 The manifest now contains 93 core targets, 4 extended image targets, and 481
 excluded entries: 90 golden, 2 pattern-covered, 5 partial, and 0 unassessed.
 Parser version remains 43 because no extraction behavior changed.
+
+## Milestone 59 Core Transform Coverage
+
+Validated on `2026-08-01` against release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `image_lotus_depth_v1_1` | `3890caa916452a60910a6a35a8934b61cb6eb6dd` | 30848 | 15 |
+| `image_qwen_image_layered` | `b223427ea084d44ee4281eff75f55b3f93a11410` | 78903 | 22 |
+| `image_qwen_image_layered_control` | `066f16b82dfc00eddafe06d2c8db5735e1dc595c` | 43155 | 20 |
+| `utility_pid_latent_upscale_dit` | `645c89ddb3ba91f6d5da5e69b73dba887d82d338` | 67084 | 26 |
+
+All four workflows are workflow-only goldens with one unambiguous saved-output
+root. The Lotus depth workflow requires connected `SamplerCustomAdvanced`
+traversal to pass through `SetFirstSigma` before reaching `BasicScheduler`;
+the wrapper's own widget is not sampler metadata. The two Qwen Layered
+workflows retain exact prompt and sampler contracts. The PiD utility reports
+the final saved PiD upscale stage rather than the upstream image-generation
+stage.
+
+The manifest now contains 93 core targets, 8 extended image targets, and 477
+excluded entries: 94 golden, 2 pattern-covered, 5 partial, and 0 unassessed.
+Parser version 44 covers the narrow `SetFirstSigma` traversal behavior.

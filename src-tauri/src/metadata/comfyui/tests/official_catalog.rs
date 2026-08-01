@@ -506,6 +506,26 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/utility_z_image_turbo_2k_upscaler.app.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_lotus_depth_v1_1",
+        chunks_json: include_str!("fixtures/official_catalog/image_lotus_depth_v1_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_layered",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_layered.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_layered_control",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_layered_control.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_pid_latent_upscale_dit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_pid_latent_upscale_dit.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -752,6 +772,140 @@ fn z_image_turbo_2k_upscaler_is_golden() {
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
             graph_node_count: 19,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn lotus_depth_v1_1_is_golden() {
+    let name = "image_lotus_depth_v1_1";
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "lotus_depth_d_v1_1");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 1);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "euler (normal)");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert!(meta.embeddings.is_empty());
+    assert!(meta.hypernetworks.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+
+    assert_eq!(diagnostics.graph_node_count, 15);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert!(!diagnostics.output_ambiguous);
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerTraversal),
+            "{name} {field:?} provenance"
+        );
+    }
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            None,
+            "{name} {field:?} should be unavailable"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+}
+
+#[test]
+fn qwen_layered_image_is_golden() {
+    assert_fixture(
+        "image_qwen_image_layered",
+        ExpectedMetadata {
+            model: "qwen_image_layered_bf16",
+            seed: Some(331_728_509_923_362),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "A cinematic medium shot of a beautiful young woman with fair skin and a joyful, radiant smile, looking back over her shoulder. She has voluminous, curly auburn hair styled in a loose, windblown updo. She is standing on a rugged, rocky coastline overlooking a sun-drenched ocean. She wears a vintage, long-sleeved, high-collared dress in an off-white, crinkled fabric with delicate smocking on the bodice and a simple brown sash at her waist. In the background, the ocean sparkles brightly under the sun, and a majestic tall ship with full sails is visible in the distance. The scene is illuminated by the warm, golden light of the late afternoon, creating a soft, romantic, and nostalgic atmosphere with a shallow depth of field that keeps the woman in sharp focus.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_layered_control_is_golden() {
+    assert_fixture(
+        "image_qwen_image_layered_control",
+        ExpectedMetadata {
+            model: "qwen_image_layered_control_bf16",
+            seed: Some(657_641_993_490_688),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "guitar",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn pid_latent_upscale_is_golden() {
+    assert_fixture(
+        "utility_pid_latent_upscale_dit",
+        ExpectedMetadata {
+            model: "pid_flux1_1024_to_4096_4step_bf16",
+            seed: Some(3),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "lcm (simple)",
+            positive_prompt: "A cinematic shot of a solitary figure viewed from behind, standing on a circular platform inside a massive concrete tube structure. The person is wearing a long beige trench coat and looking out through the large circular opening at a dense cityscape of tall skyscrapers with grid-like windows. The composition features strong concentric circles and framing, creating a sense of depth and isolation. The lighting is soft and diffused daylight, casting gentle shadows within the curved architecture. The art style is photorealistic with a slightly muted color palette dominated by beige, grey, and concrete tones. High resolution, architectural photography, 8k, sharp focus on the subject and background buildings, volumetric lighting, detailed texture of the concrete walls and fabric coat.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,

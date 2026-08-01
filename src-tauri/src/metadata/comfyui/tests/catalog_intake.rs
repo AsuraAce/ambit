@@ -1081,6 +1081,49 @@ const MILESTONE58_EXTENDED_IMAGE_FIXTURES: &[IntakeFixture] = &[
     },
 ];
 
+const MILESTONE59_EXTENDED_IMAGE_FIXTURES: &[IntakeFixture] = &[
+    IntakeFixture {
+        name: "image_lotus_depth_v1_1",
+        source_blob: "3890caa916452a60910a6a35a8934b61cb6eb6dd",
+        chunks_json: include_str!("fixtures/official_catalog/image_lotus_depth_v1_1.chunks.json"),
+        graph_node_count: 15,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_layered",
+        source_blob: "b223427ea084d44ee4281eff75f55b3f93a11410",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_layered.chunks.json"),
+        graph_node_count: 22,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "image_qwen_image_layered_control",
+        source_blob: "066f16b82dfc00eddafe06d2c8db5735e1dc595c",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_layered_control.chunks.json"
+        ),
+        graph_node_count: 20,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+    IntakeFixture {
+        name: "utility_pid_latent_upscale_dit",
+        source_blob: "645c89ddb3ba91f6d5da5e69b73dba887d82d338",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_pid_latent_upscale_dit.chunks.json"
+        ),
+        graph_node_count: 26,
+        output_candidates: 1,
+        output_roots: 1,
+        output_ambiguous: false,
+    },
+];
+
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
 
@@ -1319,6 +1362,11 @@ fn pinned_milestone57_active_target_workflows_have_stable_graph_shape() {
 #[test]
 fn pinned_milestone58_extended_image_workflows_have_stable_graph_shape() {
     assert_pinned_workflows(MILESTONE58_EXTENDED_IMAGE_FIXTURES);
+}
+
+#[test]
+fn pinned_milestone59_extended_image_workflows_have_stable_graph_shape() {
+    assert_pinned_workflows(MILESTONE59_EXTENDED_IMAGE_FIXTURES);
 }
 
 #[test]

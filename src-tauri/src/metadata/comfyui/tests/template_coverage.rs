@@ -295,8 +295,8 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(manifest.counts.getting_started_image_entries, 10);
     assert_eq!(manifest.counts.official_use_case_image_entries, 9);
     assert_eq!(manifest.counts.target_entries, 93);
-    assert_eq!(manifest.counts.extended_target_entries, 4);
-    assert_eq!(manifest.counts.excluded_entries, 481);
+    assert_eq!(manifest.counts.extended_target_entries, 8);
+    assert_eq!(manifest.counts.excluded_entries, 477);
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
     assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
@@ -306,13 +306,13 @@ fn manifest_counts_match_the_declared_catalog_scope() {
             .iter()
             .filter(|entry| entry.scope == "target_extended_image")
             .count(),
-        4
+        8
     );
-    assert_eq!(count_coverage("golden"), 90);
+    assert_eq!(count_coverage("golden"), 94);
     assert_eq!(count_coverage("pattern_covered"), 2);
     assert_eq!(count_coverage("partial"), 5);
     assert_eq!(count_coverage("unassessed"), 0);
-    assert_eq!(count_coverage("excluded"), 481);
+    assert_eq!(count_coverage("excluded"), 477);
     assert_eq!(
         manifest
             .entries
@@ -353,7 +353,7 @@ fn every_measured_target_has_dedicated_fixture_evidence() {
         .collect::<Vec<_>>();
 
     assert_eq!(core_targeted.len(), 93);
-    assert_eq!(extended_targeted.len(), 4);
+    assert_eq!(extended_targeted.len(), 8);
     for entry in core_targeted.into_iter().chain(extended_targeted) {
         assert!(
             entry

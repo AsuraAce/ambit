@@ -80,11 +80,7 @@ pub fn extract_from_sampler(
     }
 
     if meta.steps == 0 || sampler.is_empty() || scheduler.is_empty() {
-        let sigmas_node = if is_sampler_custom {
-            resolve_sampler_custom_scheduler(graph, node)
-        } else {
-            get_source_id(graph, node, "sigmas").and_then(|sigmas_id| graph.get_node(&sigmas_id))
-        };
+        let sigmas_node = resolve_sampler_scheduler(graph, node, is_sampler_custom);
         if let Some(sigmas_node) = sigmas_node {
             let sigmas_type = get_node_type(sigmas_node);
             let strict_scheduler_inputs = is_sampler_custom || sigmas_type == "Ideogram4Scheduler";
@@ -314,9 +310,10 @@ fn resolve_transparent_reroute_id(graph: &ComfyGraph, source_id: &str) -> Option
     None
 }
 
-fn resolve_sampler_custom_scheduler<'a>(
+fn resolve_sampler_scheduler<'a>(
     graph: &'a ComfyGraph,
     sampler_node: &Value,
+    trace_split_sigmas: bool,
 ) -> Option<&'a Value> {
     let mut source = match get_input_source(sampler_node, "sigmas") {
         InputSourceConnection::Connected(source) => source,
@@ -336,7 +333,13 @@ fn resolve_sampler_custom_scheduler<'a>(
             "Reroute" => {
                 source = get_first_connected_source(node, &["", "value", "input", "any"])?;
             }
-            "SplitSigmas" => {
+            "SetFirstSigma" => {
+                if !matches!(source.output_slot, None | Some(0)) {
+                    return None;
+                }
+                source = get_first_connected_source(node, &["sigmas"])?;
+            }
+            "SplitSigmas" if trace_split_sigmas => {
                 if !matches!(source.output_slot, None | Some(0 | 1)) {
                     return None;
                 }

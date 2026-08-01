@@ -2400,6 +2400,48 @@ fn sampler_custom_traces_split_sigmas_to_upstream_scheduler() {
 }
 
 #[test]
+fn sampler_custom_advanced_traces_set_first_sigma_to_scheduler() {
+    // SetFirstSigma changes the leading sigma but does not define schedule
+    // identity or length. Those fields still belong to its connected scheduler.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors","default"] },
+            { "id": 2, "type": "BasicGuider", "inputs": [{"name":"model","link":1}] },
+            { "id": 3, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 4, "type": "BasicScheduler", "inputs": [{"name":"model","link":2}], "widgets_values": ["normal",1,1] },
+            { "id": 5, "type": "SetFirstSigma", "inputs": [{"name":"sigmas","link":5}], "widgets_values": [999.0] },
+            { "id": 6, "type": "SamplerCustomAdvanced", "inputs": [
+                {"name":"guider","link":3},{"name":"sampler","link":4},
+                {"name":"sigmas","link":6}
+            ] },
+            { "id": 7, "type": "VAEDecode", "inputs": [{"name":"samples","link":7}] },
+            { "id": 8, "type": "SaveImage", "inputs": [{"name":"images","link":8}] }
+        ],
+        "links": [
+            [1,1,0,2,0,"MODEL"], [2,1,0,4,0,"MODEL"],
+            [3,2,0,6,0,"GUIDER"], [4,3,0,6,1,"SAMPLER"],
+            [5,4,0,5,0,"SIGMAS"], [6,5,0,6,2,"SIGMAS"],
+            [7,6,0,7,0,"LATENT"], [8,7,0,8,0,"IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "model");
+    assert_eq!(meta.steps, 1);
+    assert_eq!(meta.sampler, "euler (normal)");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Steps),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Sampler),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn sampler_custom_accepts_both_split_outputs_and_legacy_missing_slot() {
     let extract = |slot: Option<usize>| {
         let mut sampler = json!({
