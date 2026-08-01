@@ -890,7 +890,7 @@ fn gsc_creator_2_2() {
 }
 
 #[test]
-fn gsc_creator_2_3_generated_prompt_is_partial() {
+fn gsc_creator_2_3_selected_literal_prompt_is_golden() {
     assert_fixture(
         "gsc_creator_2_3",
         ExpectedMetadata {
@@ -2329,7 +2329,7 @@ fn hidream_e1_full_is_golden() {
 }
 
 #[test]
-fn hidream_o1_generated_prompt_is_partial() {
+fn hidream_o1_selected_literal_prompt_is_golden() {
     assert_fixture(
         "image_hidream_o1",
         ExpectedMetadata {
@@ -2338,7 +2338,7 @@ fn hidream_o1_generated_prompt_is_partial() {
             steps: 40,
             cfg: 5.0,
             sampler: "dpmpp_2m_sde_gpu (normal)",
-            positive_prompt: "",
+            positive_prompt: "Graceful female skincare shot, light nude makeup, holding essence bottle, warm ivory backdrop, soft diffused light",
             negative_prompt: "",
             loras: &[],
             control_nets: &[],
@@ -2352,7 +2352,7 @@ fn hidream_o1_generated_prompt_is_partial() {
 }
 
 #[test]
-fn hidream_o1_dev_generated_prompt_is_partial() {
+fn hidream_o1_dev_selected_literal_prompt_is_golden() {
     assert_fixture(
         "image_hidream_o1_dev",
         ExpectedMetadata {
@@ -2361,7 +2361,7 @@ fn hidream_o1_dev_generated_prompt_is_partial() {
             steps: 28,
             cfg: 1.0,
             sampler: "lcm (normal)",
-            positive_prompt: "",
+            positive_prompt: "Transform the background into a rainy neon city street at night, with wet asphalt reflections, blurred neon signs",
             negative_prompt: "",
             loras: &[],
             control_nets: &[],

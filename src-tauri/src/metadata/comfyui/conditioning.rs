@@ -88,6 +88,32 @@ pub(crate) fn find_reachable_prompts_with_role(
                 continue;
             }
 
+            if t == "ComfySwitchNode" {
+                let branch = if branch_strict_connections {
+                    get_switch_branch_input_strict(graph, node)
+                } else {
+                    get_switch_branch_input(graph, &current_id, node)
+                };
+                let Some(branch) = branch else {
+                    if branch_strict_connections {
+                        return String::new();
+                    }
+                    continue;
+                };
+                if let Some(source_id) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    branch,
+                    branch_strict_connections,
+                ) {
+                    queue.push_back((source_id, branch_strict_connections));
+                } else if branch_strict_connections {
+                    return String::new();
+                }
+                continue;
+            }
+
             // 1. Found a Text Encode Node? Extract and Stop branch.
             // Nodes that directly contain or produce the final text
             if t_lower.contains("cliptextencode")

@@ -1,6 +1,7 @@
 use super::diagnostics::{ComfyMetadataField, ComfyTraversalIssue, ComfyTraversalIssueReason};
 use super::graph::{
-    get_input_source, get_node_param, get_node_type, ComfyGraph, InputSource, InputSourceConnection,
+    get_input_source, get_node_param, get_node_type, get_switch_branch_input_strict, ComfyGraph,
+    InputSource, InputSourceConnection,
 };
 use super::heuristics::is_primary_model_loader_type;
 use crate::metadata::{is_missing_prompt_value, ImageMetadata};
@@ -556,6 +557,74 @@ impl IssueCollector {
         };
         let node_type = get_node_type(node);
         if node_type == "ConditioningZeroOut" {
+            return;
+        }
+        if node_type == "ComfySwitchNode" {
+            let Some(branch) = get_switch_branch_input_strict(graph, node) else {
+                self.push(
+                    field,
+                    &source.node_id,
+                    node_type,
+                    Some("switch"),
+                    ComfyTraversalIssueReason::UnsupportedNode,
+                );
+                return;
+            };
+            match get_input_source(node, branch) {
+                InputSourceConnection::Connected(next) => {
+                    self.trace_prompt_source(graph, &next, input_name, field, visited, depth + 1)
+                }
+                InputSourceConnection::DeclaredUnresolved => self.push(
+                    field,
+                    &source.node_id,
+                    node_type,
+                    Some(branch),
+                    ComfyTraversalIssueReason::DeclaredLinkUnresolved,
+                ),
+                InputSourceConnection::Unconnected => {
+                    if get_node_param(node, branch)
+                        .and_then(Value::as_str)
+                        .is_none()
+                    {
+                        self.push(
+                            field,
+                            &source.node_id,
+                            node_type,
+                            Some(branch),
+                            ComfyTraversalIssueReason::UnsupportedNode,
+                        );
+                    }
+                }
+            }
+            return;
+        }
+        if node_type == "PreviewAny" {
+            match get_input_source(node, "source") {
+                InputSourceConnection::Connected(next) => {
+                    self.trace_prompt_source(graph, &next, input_name, field, visited, depth + 1)
+                }
+                InputSourceConnection::DeclaredUnresolved => self.push(
+                    field,
+                    &source.node_id,
+                    node_type,
+                    Some("source"),
+                    ComfyTraversalIssueReason::DeclaredLinkUnresolved,
+                ),
+                InputSourceConnection::Unconnected => {
+                    if get_node_param(node, "source")
+                        .and_then(Value::as_str)
+                        .is_none()
+                    {
+                        self.push(
+                            field,
+                            &source.node_id,
+                            node_type,
+                            Some("source"),
+                            ComfyTraversalIssueReason::UnsupportedNode,
+                        );
+                    }
+                }
+            }
             return;
         }
         if is_generated_text_node(node_type) {

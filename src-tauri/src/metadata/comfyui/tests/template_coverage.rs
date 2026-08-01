@@ -273,9 +273,9 @@ fn manifest_counts_match_the_declared_catalog_scope() {
     assert_eq!(count("Image", "target_core_image"), 74);
     assert_eq!(count("Getting Started", "target_core_image"), 10);
     assert_eq!(count("Use Cases", "target_official_use_case_image"), 9);
-    assert_eq!(count_coverage("golden"), 80);
+    assert_eq!(count_coverage("golden"), 83);
     assert_eq!(count_coverage("pattern_covered"), 5);
-    assert_eq!(count_coverage("partial"), 8);
+    assert_eq!(count_coverage("partial"), 5);
     assert_eq!(count_coverage("unassessed"), 0);
     assert_eq!(count_coverage("excluded"), 485);
     assert_eq!(
@@ -320,7 +320,7 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("flux1_krea_dev", "golden"),
         ("gsc_creator_2_1", "pattern_covered"),
         ("gsc_creator_2_2", "golden"),
-        ("gsc_creator_2_3", "partial"),
+        ("gsc_creator_2_3", "golden"),
         ("gsc_starter_1", "pattern_covered"),
         ("gsl_creator_2", "golden"),
         ("gsl_starter_1_1", "golden"),
@@ -330,6 +330,8 @@ fn manifest_links_covered_entries_to_test_evidence() {
         ("hidream_i1_dev", "golden"),
         ("hidream_i1_fast", "golden"),
         ("hidream_i1_full", "golden"),
+        ("image_hidream_o1", "golden"),
+        ("image_hidream_o1_dev", "golden"),
         ("image_anima_base_v1", "golden"),
         ("image_anima_preview", "golden"),
         ("image_chroma_text_to_image", "golden"),

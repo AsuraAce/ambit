@@ -432,6 +432,53 @@ fn test_diagnostics_report_marks_generated_prompt_without_flagging_zeroed_negati
 }
 
 #[test]
+fn test_diagnostics_report_follows_selected_switch_branch_to_generated_prompt() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["2", 0],
+                "positive": ["3", 0],
+                "negative": ["7", 0],
+                "seed": 123,
+                "steps": 20,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "2": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "diagnostic-model.safetensors" }
+        },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": ["4", 0] } },
+        "4": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": true,
+                "on_true": ["5", 0],
+                "on_false": "literal fallback"
+            }
+        },
+        "5": { "class_type": "PreviewAny", "inputs": { "source": ["6", 0] } },
+        "6": { "class_type": "TextGenerate", "inputs": { "prompt": "generator input" } },
+        "7": { "class_type": "ConditioningZeroOut", "inputs": {} },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0] } }
+    }"#;
+
+    let report = build_comfyui_diagnostics_report(&chunks_with_prompt(prompt));
+
+    assert_eq!(report.traversal_issues.len(), 1);
+    let issue = &report.traversal_issues[0];
+    assert_eq!(issue.field, "positive_prompt");
+    assert_eq!(issue.node_id, "6");
+    assert_eq!(issue.node_type, "TextGenerate");
+    assert_eq!(issue.input_name.as_deref(), Some("text"));
+    assert_eq!(issue.reason, "generated_value_unavailable");
+}
+
+#[test]
 fn test_ambiguous_output_report_exposes_counts_without_field_blockers() {
     let prompt = r#"{
         "1": {

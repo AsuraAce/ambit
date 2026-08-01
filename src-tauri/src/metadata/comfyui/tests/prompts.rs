@@ -563,6 +563,69 @@ fn test_extract_comfyui_switch_string_true_branch() {
 }
 
 #[test]
+fn selected_conditioning_switch_branch_supplies_sampler_prompt() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["2", 0],
+                "positive": ["3", 0],
+                "negative": ["7", 0],
+                "seed": 1,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "2": { "class_type": "UNETLoader", "inputs": { "unet_name": "model.safetensors" } },
+        "3": {
+            "class_type": "ComfySwitchNode",
+            "inputs": {
+                "switch": false,
+                "on_false": ["4", 0],
+                "on_true": ["6", 0]
+            }
+        },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "selected literal" } },
+        "6": { "class_type": "TextGenerate", "inputs": { "prompt": "unused generator" } },
+        "7": { "class_type": "ConditioningZeroOut", "inputs": {} },
+        "8": { "class_type": "VAEDecode", "inputs": { "samples": ["1", 0] } },
+        "9": { "class_type": "SaveImage", "inputs": { "images": ["8", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "selected literal");
+    assert!(meta.negative_prompt.is_empty());
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::NegativePrompt),
+        None
+    );
+
+    let generated_prompt = prompt.replacen("\"switch\": false", "\"switch\": true", 1);
+    let chunks = HashMap::from([("prompt".to_string(), generated_prompt)]);
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert!(meta.positive_prompt.is_empty());
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::PositivePrompt),
+        None
+    );
+}
+
+#[test]
 fn test_extract_comfyui_workflow_clip_text_widget_prompts() {
     let workflow = r#"{
         "nodes": [

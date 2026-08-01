@@ -35,6 +35,7 @@ Golden workflows:
 - `image_flux2_text_to_image.chunks.json`
 - `image_qwen_Image_2512_controlnet.chunks.json`
 - `gsc_creator_2_2.chunks.json`
+- `gsc_creator_2_3.chunks.json`
 - `image_flux2_klein_image_edit_4b_distilled.chunks.json`
 - `image_qwen_image_union_control_lora.chunks.json`
 - `Image_capybara_v0_1_text_to_image.chunks.json`
@@ -42,6 +43,8 @@ Golden workflows:
 - `image_omnigen2_t2i.chunks.json`
 - `image_chroma1_radiance_text_to_image.chunks.json`
 - `image_firered_image_edit1_1.chunks.json`
+- `image_hidream_o1.chunks.json`
+- `image_hidream_o1_dev.chunks.json`
 - `image_anima_base_v1.chunks.json`
 - `image_anima_preview.chunks.json`
 - `image_boogu_image_0_1_edit.chunks.json`
@@ -67,10 +70,6 @@ Pattern-covered workflows:
 
 Partial workflows:
 
-- `gsc_creator_2_3.chunks.json`: the workflow contains a Florence-generated
-  caption preview that is not connected to the upscale sampler. The sampler
-  instead uses its definition prompt, so the generated caption cannot be
-  represented as final generation metadata.
 - `image_ernie_image.chunks.json`: prompt enhancement is enabled, but the
   selected `TextGenerate` result is not embedded in the workflow.
 - `image_ernie_image_turbo.chunks.json`: prompt enhancement is enabled, but the
@@ -395,9 +394,10 @@ fixtures assess the final five entries in the 75-workflow active target.
 | [`image_qwen_image_edit_2511`](https://github.com/Comfy-Org/workflow_templates/blob/c3bf8342318a3c2bfcbf6d0ac020155745417f29/templates/image_qwen_image_edit_2511.json) | `c055e4e70c8a75ca4df197e99be72ec11c582203` | 57017 |
 
 Flux Schnell, HiDream E1, and Qwen Image Edit 2511 are exact goldens. The two
-HiDream O1 workflows are partial because their selected `TextGenerate` result
-is not embedded; the parser deliberately leaves those prompts empty rather
-than reporting generator input or stale widget text.
+HiDream O1 workflows were initially classified as partial based on an assumed
+`TextGenerate` selection. Milestone 56 supersedes that interpretation with
+selected-path diagnostics proving that both workflows choose literal prompt
+branches.
 
 ## Milestone 34 Published-Catalog Intake
 
@@ -606,9 +606,9 @@ Captured on `2026-07-29` from release `v0.11.15` at commit
 
 The release changes only informational notes or visual workflow serialization
 for these ten fixtures. FireRed, Ideogram, LongCat, PixelDiT, Z-Image INT8,
-and Bernini retain exact golden metadata. ERNIE Image and both HiDream O1
-workflows retain exact available metadata but remain partial because their
-generated prompt results are not embedded in the workflow. Every fixture has
+and Bernini retain exact golden metadata. ERNIE Image remains partial because
+its generated prompt result is not embedded. The HiDream O1 classification in
+this historical section is superseded by Milestone 56. Every fixture has
 one saved output, one root sampler, no ambiguity, and unchanged selected-path
 provenance.
 
@@ -716,3 +716,30 @@ candidate but no root sampler or strong scalar/prompt provenance.
 
 The manifest remains 80 golden, 5 pattern-covered, 8 partial, 485 excluded,
 and 0 unassessed. Parser version 42 covers the modern instance-widget behavior.
+
+## Milestone 56 Partial-Coverage Diagnostic Contracts
+
+Validated on `2026-08-01` against the pinned `v0.11.18` catalog snapshot.
+
+- `image_ernie_image`, `image_ernie_image_turbo`,
+  `image_krea2_turbo_t2i`, and `image_krea2_turbo_t2i_int8` each have one
+  selected output root and one exact `positive_prompt` blocker at their
+  selected `TextGenerate.text` path. Their generated values remain unavailable
+  without fabricating prompt metadata.
+- `templates-1_click_multiple_character_angles-v1.0` has eight saved outputs
+  and eight root samplers. Diagnostics report ambiguity and intentionally do
+  not speculate about field blockers.
+- `gsc_creator_2_3` has one saved-output root whose sampler uses the literal
+  `masterpiece, 8k` definition prompt. Florence captioning is preview-only and
+  disconnected, so the workflow is golden rather than partial.
+- `image_hidream_o1` and `image_hidream_o1_dev` select literal prompt branches
+  through conditioning and string `ComfySwitchNode` nodes. Strict conditioning
+  switch traversal now extracts those prompts with `SamplerTraversal`
+  provenance; inactive `TextGenerate` branches do not create blockers.
+- The current `templates-image_to_real` fixture identity is
+  `6c3a5dd627de6f8046b1a1f89867b435ae02882d` (39,450 bytes), matching the
+  pinned v0.11.18 fixture and manifest rather than the older v0.11.15 blob.
+
+The active target now contains 83 golden, 5 pattern-covered, 5 partial, 485
+excluded, and 0 unassessed workflows. Parser version 43 covers the narrow
+conditioning-switch extraction correction.
