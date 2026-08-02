@@ -42,6 +42,25 @@ pub(crate) enum ComfyMetadataField {
     WorkflowHint,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) enum ComfyTraversalIssueReason {
+    DeclaredLinkUnresolved,
+    MissingSourceNode,
+    UnsupportedNode,
+    GeneratedValueUnavailable,
+    CycleDetected,
+    DepthLimit,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(crate) struct ComfyTraversalIssue {
+    pub(crate) field: ComfyMetadataField,
+    pub(crate) node_id: String,
+    pub(crate) node_type: String,
+    pub(crate) input_name: Option<String>,
+    pub(crate) reason: ComfyTraversalIssueReason,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ComfyParseDiagnostics {
     pub(crate) graph_node_count: usize,
@@ -49,6 +68,8 @@ pub(crate) struct ComfyParseDiagnostics {
     pub(crate) unique_output_root_sampler_count: usize,
     pub(crate) output_ambiguous: bool,
     pub(crate) authoritative_sampler_custom_path: bool,
+    pub(crate) traversal_issues: Vec<ComfyTraversalIssue>,
+    pub(crate) traversal_issues_truncated: bool,
     pub(crate) attempted_layers: Vec<ComfyParseLayer>,
     pub(crate) field_sources: BTreeMap<ComfyMetadataField, ComfyParseLayer>,
 }

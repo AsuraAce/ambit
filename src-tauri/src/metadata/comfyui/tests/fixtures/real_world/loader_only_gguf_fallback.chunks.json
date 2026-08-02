@@ -1,0 +1,1 @@
+{"workflow":{"id":"gguf_test","nodes":[{"id":89,"type":"UnetLoaderGGUF","widgets_values":["qwen-image-edit-2511-Q4_K_M.gguf"]}],"links":[]}}

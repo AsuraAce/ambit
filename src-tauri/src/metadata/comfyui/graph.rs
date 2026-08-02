@@ -8,6 +8,7 @@ use super::workflow_normalizer::normalize_workflow;
 pub struct ComfyGraph {
     pub(crate) nodes: HashMap<String, Value>,
     pub(crate) broadcasters: Vec<String>,
+    blocked_wireless_targets: HashSet<(String, usize)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -33,6 +34,7 @@ pub(crate) enum InputSourceConnection {
 impl ComfyGraph {
     pub fn from_chunks(chunks: &HashMap<String, String>) -> Self {
         let mut nodes_map = HashMap::new();
+        let mut blocked_wireless_targets = HashSet::new();
 
         // 1. Try "prompt" chunk (API format)
         if let Some(prompt_json) = chunks.get("prompt") {
@@ -61,6 +63,7 @@ impl ComfyGraph {
             if let Some(workflow_json) = chunks.get("workflow") {
                 if let Ok(json) = serde_json::from_str::<Value>(workflow_json) {
                     if let Some(normalized) = normalize_workflow(&json) {
+                        blocked_wireless_targets = normalized.blocked_wireless_targets;
                         let mut incoming = HashMap::new();
                         let mut incoming_by_link = HashMap::new();
                         for edge in &normalized.edges {
@@ -116,6 +119,7 @@ impl ComfyGraph {
                             let node_type = get_node_type(&node).to_string();
                             let mut resolved = serde_json::Map::new();
                             let mut resolved_sources = serde_json::Map::new();
+                            let mut resolved_sources_by_slot = serde_json::Map::new();
 
                             if let Some(inputs) = node.get("inputs").and_then(Value::as_array) {
                                 for (slot, input) in inputs.iter().enumerate() {
@@ -141,11 +145,16 @@ impl ComfyGraph {
                                             .entry(name.to_string())
                                             .or_insert(Value::Array(Vec::new()));
                                         if let Some(values) = value.as_array_mut() {
-                                            values.push(resolved_source_value(
-                                                source_id,
-                                                *source_slot,
-                                            ));
+                                            let source =
+                                                resolved_source_value(source_id, *source_slot);
+                                            values.push(source.clone());
+                                            resolved_sources_by_slot
+                                                .insert(slot.to_string(), source);
                                         }
+                                    } else if input.get("link").is_some_and(|link| !link.is_null())
+                                    {
+                                        resolved_sources_by_slot
+                                            .insert(slot.to_string(), Value::Null);
                                     }
                                 }
                             }
@@ -194,6 +203,10 @@ impl ComfyGraph {
                                     "_resolved_sources".to_string(),
                                     Value::Object(resolved_sources),
                                 );
+                                object.insert(
+                                    "_resolved_sources_by_slot".to_string(),
+                                    Value::Object(resolved_sources_by_slot),
+                                );
                             }
                             nodes_map.insert(id, node);
                         }
@@ -209,10 +222,12 @@ impl ComfyGraph {
                 broadcasters.push(id.clone());
             }
         }
+        broadcasters.sort_by(|left, right| compare_node_ids(left, right));
 
         Self {
             nodes: nodes_map,
             broadcasters,
+            blocked_wireless_targets,
         }
     }
 
@@ -224,6 +239,24 @@ impl ComfyGraph {
     #[allow(dead_code)]
     pub fn nodes(&self) -> &HashMap<String, Value> {
         &self.nodes
+    }
+
+    fn blocks_wireless_input(&self, node_id: &str, input_name: &str) -> bool {
+        let Some(slot) = self
+            .nodes
+            .get(node_id)
+            .and_then(|node| node.get("inputs"))
+            .and_then(Value::as_array)
+            .and_then(|inputs| {
+                inputs
+                    .iter()
+                    .position(|input| input.get("name").and_then(Value::as_str) == Some(input_name))
+            })
+        else {
+            return false;
+        };
+        self.blocked_wireless_targets
+            .contains(&(node_id.to_string(), slot))
     }
 }
 
@@ -329,6 +362,32 @@ pub(crate) fn get_input_source(node: &Value, key: &str) -> InputSourceConnection
     InputSourceConnection::Unconnected
 }
 
+pub(crate) fn get_input_source_by_slot(node: &Value, slot: usize) -> InputSourceConnection {
+    if let Some(value) = node
+        .get("_resolved_sources_by_slot")
+        .and_then(Value::as_object)
+        .and_then(|sources| sources.get(&slot.to_string()))
+    {
+        return resolved_input_source(value)
+            .map(InputSourceConnection::Connected)
+            .unwrap_or(InputSourceConnection::DeclaredUnresolved);
+    }
+
+    let Some(input) = node
+        .get("inputs")
+        .and_then(Value::as_array)
+        .and_then(|inputs| inputs.get(slot))
+    else {
+        return InputSourceConnection::Unconnected;
+    };
+
+    if input.get("link").is_some_and(|link| !link.is_null()) {
+        InputSourceConnection::DeclaredUnresolved
+    } else {
+        InputSourceConnection::Unconnected
+    }
+}
+
 fn resolved_source_value(source_id: &str, source_slot: usize) -> Value {
     json!({
         "node_id": source_id,
@@ -409,8 +468,18 @@ pub(crate) fn get_node_input_links(node: &Value, key: &str) -> Vec<String> {
 /// Helper to resolve links (including wireless)
 pub fn get_source_id(graph: &ComfyGraph, node_id: &str, input_name: &str) -> Option<String> {
     if let Some(node) = graph.get_node(node_id) {
-        if let Some(link) = get_node_input_link(node, input_name) {
-            return Some(link);
+        match get_input_connection(node, input_name) {
+            InputConnection::Connected(source_id) => return Some(source_id),
+            InputConnection::DeclaredUnresolved
+                if matches!(input_name, "positive" | "negative" | "conditioning") =>
+            {
+                return None;
+            }
+            InputConnection::DeclaredUnresolved => {}
+            InputConnection::Unconnected => {}
+        }
+        if graph.blocks_wireless_input(node_id, input_name) {
+            return None;
         }
         // Wireless fallback
         if let Some(wireless) =
@@ -605,6 +674,11 @@ fn value_as_bool(value: &Value) -> Option<bool> {
     })
 }
 
+fn has_supported_model_extension(value: &str) -> bool {
+    let value = value.to_ascii_lowercase();
+    value.ends_with(".safetensors") || value.ends_with(".ckpt") || value.ends_with(".gguf")
+}
+
 pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
     // 1. Check in API format "inputs"
     if let Some(val) = node.get("inputs").and_then(|v| v.get(key)) {
@@ -663,10 +737,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "ckpt_name" => {
                     if let Some(v) = arr.first() {
                         if let Some(s) = v.as_str() {
-                            if s.ends_with(".safetensors")
-                                || s.ends_with(".ckpt")
-                                || s.ends_with(".gguf")
-                            {
+                            if has_supported_model_extension(s) {
                                 return Some(v);
                             }
                         }
@@ -742,6 +813,14 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             return arr.first();
         }
 
+        if t == "CLIPTextEncodeFlux" {
+            match key {
+                "clip_l" => return arr.first(),
+                "t5xxl" => return arr.get(1),
+                _ => {}
+            }
+        }
+
         if t == "TextEncodeBooguEdit" && key == "prompt" {
             return arr.first();
         }
@@ -788,6 +867,18 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
         if t == "KSampler" {
             match key {
                 "seed" | "noise_seed" => return arr.get(0),
+                "steps" => return arr.get(2),
+                "cfg" => return arr.get(3),
+                "sampler_name" => return arr.get(4),
+                "scheduler" => return arr.get(5),
+                "denoise" => return arr.get(6),
+                _ => {}
+            }
+        }
+
+        if t == "KSampler //Inspire" {
+            match key {
+                "seed" | "noise_seed" => return arr.first(),
                 "steps" => return arr.get(2),
                 "cfg" => return arr.get(3),
                 "sampler_name" => return arr.get(4),
@@ -856,6 +947,10 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
                 "cfg" => return arr.get(3),
                 _ => {}
             }
+        }
+
+        if t == "RandomNoise" && matches!(key, "noise_seed" | "seed") {
+            return arr.first();
         }
 
         if t == "BetaSamplingScheduler" && key == "steps" {
@@ -941,10 +1036,7 @@ pub fn get_node_param<'a>(node: &'a Value, key: &str) -> Option<&'a Value> {
             "ckpt_name" | "unet_name" | "model_name" | "checkpoint" | "files" => {
                 for val in arr {
                     if let Some(s) = val.as_str() {
-                        if s.ends_with(".safetensors")
-                            || s.ends_with(".ckpt")
-                            || s.ends_with(".gguf")
-                        {
+                        if has_supported_model_extension(s) {
                             return Some(val);
                         }
                     }
