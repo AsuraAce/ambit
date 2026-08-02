@@ -852,3 +852,29 @@ singleton object output boundaries and deduplicates identical SDXL text lanes.
 
 The manifest now contains 93 core targets, 12 extended image targets, and 473
 excluded entries: 97 golden, 2 pattern-covered, 6 partial, and 0 unassessed.
+
+## Milestone 61 Non-Generative Utility Coverage
+
+Validated on `2026-08-01` against release `v0.11.18` at commit
+`8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`.
+
+| Workflow | Upstream Git blob | Bytes | Normalized nodes |
+| --- | --- | ---: | ---: |
+| `utility_birefnet_remove_background` | `31c25593f87170ced962316ab8747463b70c1410` | 13599 | 8 |
+| `utility_depth_anything3_image_depth_estimation` | `0fe0818e15bda7713f1a33464763a5188e87877e` | 20060 | 8 |
+| `utility_image_segment_sam3` | `6ebf2d63547302a223d9f7bc4989c44d02675696` | 23454 | 9 |
+| `utility_sdpose_ood_image_to_pose` | `dee20246e40fcb32e2cde5e4ab801da1ffcaf9a2` | 35611 | 7 |
+
+All four workflows produce images without a generation sampler. Their golden
+contracts preserve the workflow while leaving model, prompt, seed, steps, CFG,
+sampler, and resources unavailable. In particular, SAM3's selector prompt and
+checkpoint and SDPose's pose-estimation checkpoint are not generation metadata.
+
+Selected sampler-less outputs now suppress `SamplerFallback` and `GlobalScan`
+only when the authored prompt/workflow contains no sampler definition. Cached
+API prompts under workflow `extra` are ignored for this decision, while
+disconnected and bypassed generation workflows retain their established recovery
+behavior. Parser version 46 covers this narrower fallback policy.
+
+The manifest now contains 93 core targets, 16 extended image targets, and 469
+excluded entries: 101 golden, 2 pattern-covered, 6 partial, and 0 unassessed.

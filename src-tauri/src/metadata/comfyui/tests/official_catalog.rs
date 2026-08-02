@@ -550,6 +550,30 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/utility_interpolation_image_upscale.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "utility_birefnet_remove_background",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_birefnet_remove_background.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_depth_anything3_image_depth_estimation",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_depth_anything3_image_depth_estimation.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_image_segment_sam3",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_image_segment_sam3.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_sdpose_ood_image_to_pose",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_sdpose_ood_image_to_pose.chunks.json"
+        ),
+    },
 ];
 
 pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -679,6 +703,54 @@ fn assert_fixture(name: &str, expected: ExpectedMetadata<'_>) {
             .get(&ComfyMetadataField::ControlNets),
         (!expected.control_nets.is_empty()).then_some(&expected.source),
         "{name} ControlNet provenance"
+    );
+}
+
+fn assert_non_generative_fixture(name: &str, graph_node_count: usize) {
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "Unknown");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "Unknown");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert!(meta.embeddings.is_empty());
+    assert!(meta.hypernetworks.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+
+    assert_eq!(diagnostics.graph_node_count, graph_node_count);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert!(!diagnostics.output_ambiguous);
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::SamplerFallback));
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::GlobalScan));
+    assert_eq!(diagnostics.field_sources.len(), 2);
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
     );
 }
 
@@ -1008,46 +1080,27 @@ fn seedvr2_7b_int8_upscale_is_golden() {
 
 #[test]
 fn interpolation_upscale_is_a_non_generative_golden() {
-    let name = "utility_interpolation_image_upscale";
-    let chunks = load_chunks(name);
-    let workflow = chunks
-        .get("workflow")
-        .expect("catalog fixture should include workflow chunk");
-    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_non_generative_fixture("utility_interpolation_image_upscale", 5);
+}
 
-    assert_eq!(meta.tool, "ComfyUI");
-    assert_eq!(meta.model, "Unknown");
-    assert_eq!(meta.seed, None);
-    assert_eq!(meta.steps, 0);
-    assert_eq!(meta.cfg, 0.0);
-    assert_eq!(meta.sampler, "Unknown");
-    assert!(meta.positive_prompt.is_empty());
-    assert!(meta.negative_prompt.is_empty());
-    assert!(meta.loras.is_empty());
-    assert!(meta.control_nets.is_empty());
-    assert!(meta.ip_adapters.is_empty());
-    assert!(meta.embeddings.is_empty());
-    assert!(meta.hypernetworks.is_empty());
-    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
-    assert!(meta.has_workflow_hint);
+#[test]
+fn birefnet_background_removal_is_a_non_generative_golden() {
+    assert_non_generative_fixture("utility_birefnet_remove_background", 8);
+}
 
-    assert_eq!(diagnostics.graph_node_count, 5);
-    assert_eq!(diagnostics.selected_output_candidate_count, 1);
-    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
-    assert!(!diagnostics.output_ambiguous);
-    assert_eq!(diagnostics.field_sources.len(), 2);
-    assert_eq!(
-        diagnostics
-            .field_sources
-            .get(&ComfyMetadataField::WorkflowJson),
-        Some(&ComfyParseLayer::WorkflowChunk)
-    );
-    assert_eq!(
-        diagnostics
-            .field_sources
-            .get(&ComfyMetadataField::WorkflowHint),
-        Some(&ComfyParseLayer::WorkflowChunk)
-    );
+#[test]
+fn depth_anything3_estimation_is_a_non_generative_golden() {
+    assert_non_generative_fixture("utility_depth_anything3_image_depth_estimation", 8);
+}
+
+#[test]
+fn sam3_segmentation_does_not_promote_utility_conditioning() {
+    assert_non_generative_fixture("utility_image_segment_sam3", 9);
+}
+
+#[test]
+fn sdpose_estimation_does_not_promote_utility_checkpoint() {
+    assert_non_generative_fixture("utility_sdpose_ood_image_to_pose", 7);
 }
 
 #[test]

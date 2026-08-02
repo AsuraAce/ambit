@@ -547,7 +547,7 @@ fn classify_output_candidate(node_type: &str) -> Option<OutputCandidateKind> {
     None
 }
 
-fn is_sampler_node(node: &Value) -> bool {
+pub(crate) fn is_sampler_node(node: &Value) -> bool {
     let node_type = get_node_type(node);
     (node_type.contains("KSampler")
         && !node_type.contains("Select")

@@ -19,7 +19,7 @@ mod tests;
 use self::diagnostics::{
     ComfyMetadataField, ComfyMetadataSnapshot, ComfyParseDiagnostics, ComfyParseLayer,
 };
-use self::evaluator::ComfyEvaluator;
+use self::evaluator::{is_sampler_node, ComfyEvaluator};
 use self::graph::ComfyGraph;
 use self::strategies::{global_scan, scan_explicit_nodes};
 
@@ -733,6 +733,9 @@ fn extract_comfyui_graph_with_diagnostics(
         output_diagnostics.authoritative_sampler_custom_path;
     diagnostics.traversal_issues = output_diagnostics.traversal_issues;
     diagnostics.traversal_issues_truncated = output_diagnostics.traversal_issues_truncated;
+    let selected_samplerless_output = output_diagnostics.selected_output_candidate_count > 0
+        && output_diagnostics.unique_root_sampler_count == 0
+        && !chunks_contain_sampler_definition(chunks);
     if output_diagnostics.authoritative_sampler_custom_path {
         clear_core_fields(&mut meta);
         clear_core_field_sources(&mut diagnostics);
@@ -744,7 +747,7 @@ fn extract_comfyui_graph_with_diagnostics(
     // Layer 3.5: Sampler Scan (Fragment Fallback)
     // If output traversal didn't find specific generation data (common in fragments or tests),
     // scan specifically for standard KSamplers using the smart evaluator logic.
-    if meta.is_incomplete() {
+    if meta.is_incomplete() && !selected_samplerless_output {
         diagnostics.attempt(ComfyParseLayer::SamplerFallback);
         let mut sampler_meta = evaluator.extract_from_all_samplers();
         if output_diagnostics.authoritative_model {
@@ -770,7 +773,7 @@ fn extract_comfyui_graph_with_diagnostics(
 
     // Layer 4: Global Scan (Last Resort / Cleanup)
     // If we still found nothing (e.g. graph is totally disconnected or custom nodes unknown to evaluator)
-    if meta.is_incomplete() {
+    if meta.is_incomplete() && !selected_samplerless_output {
         diagnostics.attempt(ComfyParseLayer::GlobalScan);
         let mut scan_meta = global_scan(&graph);
         if output_diagnostics.authoritative_model {
@@ -795,6 +798,52 @@ fn extract_comfyui_graph_with_diagnostics(
     }
 
     (meta, diagnostics)
+}
+
+fn chunks_contain_sampler_definition(chunks: &HashMap<String, String>) -> bool {
+    chunks
+        .get("prompt")
+        .and_then(|raw| decode_chunk_envelope(raw))
+        .is_some_and(|value| prompt_contains_sampler_definition(&value))
+        || chunks
+            .get("workflow")
+            .and_then(|raw| decode_chunk_envelope(raw))
+            .is_some_and(|value| workflow_contains_sampler_definition(&value))
+}
+
+fn decode_chunk_envelope(raw: &str) -> Option<serde_json::Value> {
+    let mut value = serde_json::from_str(raw).ok()?;
+    for _ in 0..2 {
+        let serde_json::Value::String(encoded) = &value else {
+            break;
+        };
+        value = serde_json::from_str(encoded).ok()?;
+    }
+    Some(value)
+}
+
+fn prompt_contains_sampler_definition(value: &serde_json::Value) -> bool {
+    value
+        .as_object()
+        .is_some_and(|nodes| nodes.values().any(is_sampler_node))
+}
+
+fn workflow_contains_sampler_definition(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => {
+            object
+                .get("nodes")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|nodes| nodes.iter().any(is_sampler_node))
+                || ["definitions", "subgraphs"].into_iter().any(|key| {
+                    object
+                        .get(key)
+                        .is_some_and(workflow_contains_sampler_definition)
+                })
+        }
+        serde_json::Value::Array(array) => array.iter().any(workflow_contains_sampler_definition),
+        _ => false,
+    }
 }
 
 fn clear_core_fields(meta: &mut ImageMetadata) {
