@@ -22,8 +22,9 @@ const BusyGate: React.FC<{ state: InvokeOwnerScopeState }> = ({ state }) => {
     return (
         <StartupPreparationCard
             phaseLabel="InvokeAI library"
+            title="Preparing your InvokeAI view"
             icon={<ShieldCheck className="h-7 w-7" />}
-            description="Ambit is updating which InvokeAI images, boards, filters, and statistics belong in this view."
+            description="Ambit is verifying which InvokeAI images, boards, filters, and statistics belong in this view."
             statusMessage={message}
             reassurance="No images or collections are being deleted."
             progress={progress}

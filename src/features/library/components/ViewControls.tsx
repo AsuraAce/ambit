@@ -4,7 +4,17 @@ import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, E
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { useDelayedBusyPresentation } from '../../../hooks/useDelayedBusyPresentation';
 // import { useSearchStore } from '../../../stores/searchStore';
+
+const COUNT_LOADING_REVEAL_DELAY_MS = 180;
+const COUNT_LOADING_MIN_VISIBLE_MS = 300;
+
+interface CountPresentation {
+    displayedCount: number;
+    totalCount: number;
+    scopeName: string;
+}
 
 interface ViewControlsProps {
     showLayoutSwitcher: boolean;
@@ -46,6 +56,28 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
     const sortMenuRef = useRef<HTMLDivElement>(null);
     const viewMenuRef = useRef<HTMLDivElement>(null);
+    const settledCountPresentationRef = useRef<CountPresentation | null>(
+        isFiltering ? null : { displayedCount, totalCount, scopeName }
+    );
+    const isCountLoadingVisible = useDelayedBusyPresentation(Boolean(isFiltering), {
+        revealDelayMs: COUNT_LOADING_REVEAL_DELAY_MS,
+        minimumVisibleMs: COUNT_LOADING_MIN_VISIBLE_MS,
+    });
+
+    React.useLayoutEffect(() => {
+        if (isFiltering) return;
+        settledCountPresentationRef.current = { displayedCount, totalCount, scopeName };
+    }, [displayedCount, isFiltering, scopeName, totalCount]);
+
+    const showCountLoading = isCountLoadingVisible;
+    const isAwaitingFirstSettledCount = Boolean(isFiltering)
+        && !showCountLoading
+        && settledCountPresentationRef.current === null;
+    const countPresentation = isFiltering
+        && !showCountLoading
+        && settledCountPresentationRef.current
+        ? settledCountPresentationRef.current
+        : { displayedCount, totalCount, scopeName };
 
     // Click outside listener
     useEffect(() => {
@@ -252,29 +284,44 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
             <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
 
-            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${isFiltering ? 'opacity-50' : 'opacity-100'}`}>
-                {displayedCount !== totalCount ? (
+            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${showCountLoading ? 'opacity-50' : 'opacity-100'}`}>
+                {isAwaitingFirstSettledCount ? (
+                    <>
+                        <span aria-hidden="true">&nbsp;</span>
+                        <span aria-hidden="true" className="text-[10px]">&nbsp;</span>
+                    </>
+                ) : showCountLoading ? (
+                    <>
+                        <span className="text-gray-600 dark:text-gray-300">...</span>
+                        <span
+                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
+                            title={`LOADING ${scopeName}`}
+                        >
+                            {`LOADING ${scopeName}`}
+                        </span>
+                    </>
+                ) : countPresentation.displayedCount !== countPresentation.totalCount ? (
                     <>
                         <div className="flex items-center gap-1">
-                            <span className="text-sage-600 dark:text-sage-400">{(isFiltering && displayedCount === 0) ? '...' : displayedCount.toLocaleString()}</span>
+                            <span className="text-sage-600 dark:text-sage-400">{countPresentation.displayedCount.toLocaleString()}</span>
                             <span className="opacity-40">/</span>
-                            <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
+                            <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount.toLocaleString()}</span>
                         </div>
                         <span
                             className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
-                            title={(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
+                            title={`MATCHES IN ${countPresentation.scopeName}`}
                         >
-                            {(isFiltering) ? 'SEARCHING...' : `MATCHES IN ${scopeName}`}
+                            {`MATCHES IN ${countPresentation.scopeName}`}
                         </span>
                     </>
                 ) : (
                     <>
-                        <span className="text-gray-600 dark:text-gray-300">{(isFiltering && totalCount === 0) ? '...' : totalCount.toLocaleString()}</span>
+                        <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount.toLocaleString()}</span>
                         <span
                             className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
-                            title={(isFiltering) ? 'LOADING...' : scopeName}
+                            title={countPresentation.scopeName}
                         >
-                            {(isFiltering) ? 'LOADING...' : scopeName}
+                            {countPresentation.scopeName}
                         </span>
                     </>
                 )}

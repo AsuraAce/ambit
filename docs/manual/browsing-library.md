@@ -29,7 +29,7 @@ Typical grid actions:
 - pin images for quick resurfacing
 - right-click images for context-specific actions
 
-Revealed InvokeAI image assets carry a User, Control, Mask, or Other badge. Missing or unrecognized InvokeAI categories are not hidden or badged.
+Revealed InvokeAI image assets carry an `Asset · User`, `Asset · Control`, `Asset · Mask`, or `Asset · Other` badge centered along the top of the card. The badge stays in place when the selection control appears in the upper-left corner. Missing or unrecognized InvokeAI categories are not hidden or marked.
 
 ## Timeline Browsing
 

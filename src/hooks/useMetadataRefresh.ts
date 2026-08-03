@@ -129,7 +129,7 @@ export function useMetadataRefresh() {
                 if (startupCount !== null && !startupAnnouncementShownRef.current) {
                     startupAnnouncementShownRef.current = true;
                     addToast(
-                        `Parser updated - re-analyzing ${startupCount.toLocaleString()} images in the background`,
+                        `Ambit is updating metadata for ${startupCount.toLocaleString()} images after a parser update. Your library remains available.`,
                         'info'
                     );
                 }

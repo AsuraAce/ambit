@@ -175,10 +175,15 @@ describe('ImageCard', () => {
             <ImageCard image={image({ invokeImageCategory: ' CONTROL ' })} isSelected={false} {...callbacks} />
         );
 
-        expect(screen.getByText('Control').getAttribute('title')).toBe('InvokeAI image asset: Control');
+        const marker = screen.getByText('Asset · Control');
+        expect(marker.getAttribute('title')).toBe('InvokeAI image asset category: Control');
+        expect(marker.getAttribute('aria-label')).toBe('InvokeAI image asset category: Control');
+        expect(marker.className).toContain('top-2');
+        expect(marker.className).toContain('left-1/2');
+        expect(marker.className).toContain('-translate-x-1/2');
 
         rerender(<ImageCard image={image({ invokeImageCategory: 'general' })} isSelected={false} {...callbacks} />);
-        expect(screen.queryByText('Control')).toBeNull();
+        expect(screen.queryByText('Asset · Control')).toBeNull();
         expect(screen.queryByText('General')).toBeNull();
 
         rerender(<ImageCard image={image({ invokeImageCategory: 'future-category' })} isSelected={false} {...callbacks} />);

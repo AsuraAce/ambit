@@ -177,6 +177,7 @@ export const SyncProvider: React.FC<{
     // syncProgress is used internally in startInvokeSync but not exposed in Context
     const syncProgress = useLibraryStore(s => s.syncProgress);
     const setSyncProgress = useLibraryStore(s => s.setSyncProgress);
+    const setInvokeSyncActivityKind = useLibraryStore(s => s.setInvokeSyncActivityKind);
     const isLiveSyncing = useLibraryStore(s => s.isLiveSyncing);
     const setIsLiveSyncing = useLibraryStore(s => s.setIsLiveSyncing);
     const setSyncAbortController = useLibraryStore(s => s.setSyncAbortController);
@@ -200,6 +201,7 @@ export const SyncProvider: React.FC<{
     } | null>(null);
     const ownerScopeAdmissionRef = useRef<InvokeOwnerAdmission | null>(null);
     const activeInvokeSyncScopeRef = useRef<InvokeSyncScope | null>(null);
+    const pendingInvokeViewReadyAnnouncementRootRef = useRef<string | null>(null);
     const incrementFacetCacheVersion = useCallback(() => {
         useLibraryStore.getState().incrementFacetCacheVersion();
     }, []);
@@ -546,7 +548,7 @@ export const SyncProvider: React.FC<{
                     force
                 );
                 if (hasPersistedSyncState && admission.sourceFactsReconciled && admission.allowed) {
-                    addToast('InvokeAI library upgrade complete. No images or collections were deleted.', 'success');
+                    pendingInvokeViewReadyAnnouncementRootRef.current = rootPath;
                 }
                 if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
                     if (ownerScopeAdmissionRef.current?.rootPath === rootPath) {
@@ -576,7 +578,7 @@ export const SyncProvider: React.FC<{
                 ownerScopePromiseRef.current = null;
             }
         }
-    }, [addToast, applyDiscoveredOwnerScope, settingsRef]);
+    }, [applyDiscoveredOwnerScope, settingsRef]);
 
     const selectInvokeOwnerScope = useCallback(async (selection: InvokeOwnerSelection): Promise<boolean> => {
         if (activeInvokeSyncScopeRef.current) {
@@ -614,7 +616,7 @@ export const SyncProvider: React.FC<{
             if (settingsRef.current.invokeAiPath?.trim() !== currentRoot) {
                 return false;
             }
-            addToast(selection.mode === 'all' ? 'Showing images from all InvokeAI users.' : 'InvokeAI owner scope updated.', 'success');
+            pendingInvokeViewReadyAnnouncementRootRef.current = currentRoot;
             return true;
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -637,14 +639,18 @@ export const SyncProvider: React.FC<{
     const retryInvokeOwnerScope = useCallback(async (): Promise<boolean> => {
         const admission = await ensureInvokeOwnerScope(true);
         if (admission.allowed) {
-            addToast('InvokeAI connection restored.', 'success');
+            pendingInvokeViewReadyAnnouncementRootRef.current = admission.rootPath;
             return true;
         }
         return false;
-    }, [addToast, ensureInvokeOwnerScope]);
+    }, [ensureInvokeOwnerScope]);
 
     useEffect(() => {
         if (!settingsLoaded) return;
+        const configuredRootPath = settings.invokeAiPath?.trim();
+        if (pendingInvokeViewReadyAnnouncementRootRef.current !== configuredRootPath) {
+            pendingInvokeViewReadyAnnouncementRootRef.current = null;
+        }
         ownerScopeAdmissionRef.current = null;
         if (activeInvokeSyncScopeRef.current) return;
         void ensureInvokeOwnerScope().catch(() => {
@@ -684,6 +690,22 @@ export const SyncProvider: React.FC<{
             );
         };
         const isStartupMode = options.mode === 'startup';
+        const announcePreparedInvokeView = (outcome: 'catchup' | 'current' | 'unavailable') => {
+            if (!isStartupMode || pendingInvokeViewReadyAnnouncementRootRef.current !== capturedRootPath) return;
+            pendingInvokeViewReadyAnnouncementRootRef.current = null;
+            const catchesUpBoards = options.syncBoards !== false;
+            const message = outcome === 'catchup'
+                ? catchesUpBoards
+                    ? 'Your InvokeAI view is ready. Ambit is catching up images and boards in the background. You can use your library now.'
+                    : 'Your InvokeAI view is ready. Ambit is catching up images in the background. You can use your library now.'
+                : outcome === 'current'
+                    ? 'Your InvokeAI view is ready. You can use your library now.'
+                    : 'Your saved InvokeAI view is available, but catch-up could not start because the InvokeAI database file is unavailable.';
+            addToast(
+                message,
+                outcome === 'unavailable' ? 'warning' : 'success'
+            );
+        };
         let startupSyncVisible = false;
         const setVisibleStartupProgress = (progress: NonNullable<typeof syncProgress>) => {
             if (!startupSyncVisible) {
@@ -762,6 +784,7 @@ export const SyncProvider: React.FC<{
                 const dbSnapshotFile = currentSnapshot.files.find(file => file.path === currentSnapshot.dbPath);
 
                 if (dbSnapshotFile && !dbSnapshotFile.exists) {
+                    announcePreparedInvokeView('unavailable');
                     console.warn('[Startup Catch-up] Invoke DB file is missing; skipped SQLite sync.', {
                         dbPath: currentSnapshot.dbPath,
                         checkMs: elapsedMs(snapshotStartedAt)
@@ -773,6 +796,7 @@ export const SyncProvider: React.FC<{
                 }
 
                 if (isInvokeDbSnapshotCurrent(settingsRef.current.invokeDbSnapshot, currentSnapshot)) {
+                    announcePreparedInvokeView('current');
                     console.info('[Startup Catch-up] Invoke DB snapshot unchanged; skipped SQLite sync.', {
                         dbPath: currentSnapshot.dbPath,
                         checkMs: elapsedMs(snapshotStartedAt)
@@ -810,6 +834,7 @@ export const SyncProvider: React.FC<{
                 watcherToSyncStartMs: livePerfContext ? elapsedMs(livePerfContext.firstEventAt) : undefined
             });
         } else {
+            setInvokeSyncActivityKind(isStartupMode ? 'startup' : 'manual');
             if (!isStartupMode) {
                 setSyncStatus('syncing');
                 setSyncProgress({ current: 0, total: 0, message: 'Preparing...' });
@@ -855,9 +880,12 @@ export const SyncProvider: React.FC<{
 
         try {
             const { syncImages } = await import('../services/invoke/syncService');
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncImages(
+            const syncResultPromise = syncImages(
                 capturedRootPath,
                 (c, t, msg) => {
+                    if (isStartupMode) {
+                        announcePreparedInvokeView('catchup');
+                    }
                     if (options.mode === 'live') {
                         // Keep message undefined to prevent ActivityDock from exploding on screen
                         setSyncProgress({ current: c, total: t, message: undefined });
@@ -890,6 +918,7 @@ export const SyncProvider: React.FC<{
                     reconcileSourceFacts: shouldReconcileSourceFacts
                 }
             );
+            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncResultPromise;
             if (!isCapturedScopeCurrent()) {
                 throw new Error('InvokeAI path or owner scope changed while synchronization was running.');
             }
@@ -1137,6 +1166,7 @@ export const SyncProvider: React.FC<{
                 activeInvokeSyncScopeRef.current = null;
             }
             setIsInvokeSyncActive(false);
+            setInvokeSyncActivityKind(null);
             setSyncAbortController(null);
             if (isStartupMode && !startupSyncVisible) {
                 setSyncStatus('idle');
@@ -1161,7 +1191,7 @@ export const SyncProvider: React.FC<{
             }
             startPendingInvokeLiveRerun();
         }
-    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {

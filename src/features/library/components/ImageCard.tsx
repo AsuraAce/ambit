@@ -47,6 +47,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
   const shouldBlur = isMasked && !isRevealed;
   const isMissing = !!image.isMissing;
   const invokeAssetLabel = getInvokeImageAssetLabel(image.invokeImageCategory);
+  const invokeAssetMarkerLabel = invokeAssetLabel ? `Asset · ${invokeAssetLabel}` : undefined;
 
   // Auto-blur when mouse leaves the card area for privacy
   const handleMouseLeave = () => {
@@ -175,10 +176,11 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {invokeAssetLabel && (
         <span
-          className="absolute top-2 left-10 z-20 rounded-md border border-white/20 bg-black/65 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-lg backdrop-blur-md pointer-events-none"
-          title={`InvokeAI image asset: ${invokeAssetLabel}`}
+          className="pointer-events-none absolute left-1/2 top-2 z-20 max-w-[calc(100%-6rem)] -translate-x-1/2 truncate whitespace-nowrap rounded-md border border-white/20 bg-black/70 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white shadow-lg backdrop-blur-md"
+          title={`InvokeAI image asset category: ${invokeAssetLabel}`}
+          aria-label={`InvokeAI image asset category: ${invokeAssetLabel}`}
         >
-          {invokeAssetLabel}
+          {invokeAssetMarkerLabel}
         </span>
       )}
 

@@ -254,6 +254,21 @@ describe('AppLayout', () => {
         expect(screen.queryByTestId('maintenance-view')).toBeNull();
     });
 
+    it('holds the privacy gate while initial preparation finishes presenting', () => {
+        const view = render(
+            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate />
+        );
+
+        expect(screen.getByTestId('privacy-protection-gate')).toBeTruthy();
+        expect(screen.queryByTestId('virtual-grid')).toBeNull();
+
+        view.rerender(
+            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate={false} />
+        );
+        expect(screen.queryByTestId('privacy-protection-gate')).toBeNull();
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
+    });
+
     it('renders VirtualGrid when viewMode is grid', () => {
         render(<AppLayout {...defaultProps} viewMode="grid" images={[{ id: '1' } as any]} />);
         expect(screen.getByTestId('virtual-grid')).toBeTruthy();

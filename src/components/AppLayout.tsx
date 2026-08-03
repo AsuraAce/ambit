@@ -72,6 +72,8 @@ type AppHandlers = ReturnType<typeof useAppHandlers> & {
 
 interface AppLayoutProps {
     // Sidebar Props
+    isInvokeCollectionCatchupPending?: boolean;
+    forcePrivacyProtectionGate?: boolean;
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
     isFilterPanelOpen: boolean;
@@ -132,6 +134,8 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
+    isInvokeCollectionCatchupPending = false,
+    forcePrivacyProtectionGate = false,
     filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
     colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
@@ -154,7 +158,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
-    const privacyExposureBlocked = privacyEnabled && privacyMaskIndexStatus !== 'ready';
+    const privacyExposureBlocked = forcePrivacyProtectionGate
+        || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const allCollections = useCollectionStore(s => s.collections);
@@ -307,6 +312,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             />
 
             <FilterPanel
+                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
                 filters={filters}
                 setFilters={setFilters}
                 filteredImages={images}

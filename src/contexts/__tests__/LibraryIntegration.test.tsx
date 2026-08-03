@@ -1577,14 +1577,17 @@ describe('Library Integration (Provider Stack)', () => {
                 files
             }
         });
-        mocks.syncImages.mockResolvedValueOnce({
-            imported: 0,
-            updated: 0,
-            maxTimestamp: 100,
-            syncedIds: new Set(),
-            boardMapping: new Map(),
-            touchedFacetTypes: [],
-            touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] }
+        mocks.syncImages.mockImplementationOnce(async (_rootPath: string, onProgress: (current: number, total: number, message?: string) => void) => {
+            onProgress(0, 0, 'Connecting to InvokeAI database...');
+            return {
+                imported: 0,
+                updated: 0,
+                maxTimestamp: 100,
+                syncedIds: new Set(),
+                boardMapping: new Map(),
+                touchedFacetTypes: [],
+                touchedFacetResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] }
+            };
         });
 
         await act(async () => {
@@ -1602,9 +1605,7 @@ describe('Library Integration (Provider Stack)', () => {
             expect(hook.settings.invokeAiPath).toBe('D:/AmbitFixtures/InvokeAI/databases');
         });
         await waitFor(() => expect(hook.invokeOwnerScopeState.status).toBe('ready'));
-        await waitFor(() => expect(screen.getByText(
-            'InvokeAI library upgrade complete. No images or collections were deleted.'
-        )).toBeTruthy());
+        expect(screen.queryByText(/Your InvokeAI view is ready/)).toBeNull();
 
         mocks.syncImages.mockClear();
         mocks.appRepository.update.mockClear();
@@ -1612,6 +1613,10 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => {
             await hook.startInvokeSync({ mode: 'startup' });
         });
+
+        expect(screen.getByText(
+            'Your InvokeAI view is ready. Ambit is catching up images and boards in the background. You can use your library now.'
+        )).toBeTruthy();
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).toHaveBeenCalledWith(
@@ -1667,7 +1672,7 @@ describe('Library Integration (Provider Stack)', () => {
                     importOrphans: false,
                     syncBoardsToCollections: false,
                     pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
-                    importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
+                    importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION - 1,
                     files: [
                         {
                             path: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
@@ -1692,6 +1697,9 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.getInvokeDbSnapshot).toHaveBeenCalled();
         expect(mocks.syncImages).not.toHaveBeenCalled();
+        expect(screen.getByText(
+            'Your saved InvokeAI view is available, but catch-up could not start because the InvokeAI database file is unavailable.'
+        )).toBeTruthy();
     });
 
     it('uses a current saved owner scope without reconciling sources or rebuilding caches', async () => {
@@ -1758,10 +1766,17 @@ describe('Library Integration (Provider Stack)', () => {
             removedVisibilityUpdated: 0,
             mode: selection?.mode ?? 'unselected',
         }));
+        mocks.syncImages.mockImplementationOnce(async (_rootPath: string, onProgress: (current: number, total: number, message?: string) => void) => {
+            onProgress(0, 0, 'Connecting to InvokeAI database...');
+            return createNoopInvokeSyncResult();
+        });
 
         renderSyncStack(h => libraryHook = h, h => syncHook = h);
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
-        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            invokeSyncBoards: false,
+        }));
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
 
         await act(async () => {
@@ -1784,6 +1799,58 @@ describe('Library Integration (Provider Stack)', () => {
                 scope: expect.objectContaining({ mode: 'owner', ownerId: 'owner-a' }),
             })
         );
+        expect(screen.getByText(
+            'Your InvokeAI view is ready. Ambit is catching up images in the background. You can use your library now.'
+        )).toBeTruthy();
+        expect(screen.queryByText(/catching up images and boards/i)).toBeNull();
+    });
+
+    it('does not claim catch-up started when the sync invocation fails immediately', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: {
+            selection?: { mode: 'owner' | 'all' };
+        }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+        mocks.syncImages.mockRejectedValueOnce(new Error('sync could not start'));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            invokeSyncBoards: false,
+        }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+
+        await act(async () => {
+            expect(await syncHook!.selectInvokeOwnerScope({
+                dbPath: discovery.dbPath,
+                mode: 'owner',
+                ownerId: 'owner-a',
+            })).toBe(true);
+            await syncHook!.startInvokeSync({ mode: 'startup' });
+        });
+
+        expect(screen.queryByText(/Your InvokeAI view is ready/)).toBeNull();
+        expect(screen.getByText('Sync failed: sync could not start')).toBeTruthy();
+        consoleError.mockRestore();
     });
 
     it('keeps the last verified owner view available when discovery cannot open InvokeAI', async () => {
@@ -1853,6 +1920,7 @@ describe('Library Integration (Provider Stack)', () => {
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
         await act(async () => libraryHook?.setSettings({
             invokeAiPath: 'D:/Invoke',
+            lastSyncedAt: 100,
             invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
             invokeDbSnapshot: {
                 dbPath: discovery.dbPath,
@@ -1889,6 +1957,15 @@ describe('Library Integration (Provider Stack)', () => {
         await expect(retryResult).resolves.toBe(true);
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
         expect(mocks.applyInvokeOwnerScope).not.toHaveBeenCalled();
+
+        mocks.getInvokeDbSnapshot.mockResolvedValueOnce({
+            status: 'ok',
+            data: { dbPath: discovery.dbPath, files: [] },
+        });
+        await act(async () => syncHook?.startInvokeSync({ mode: 'startup' }));
+        expect(mocks.syncImages).not.toHaveBeenCalled();
+        expect(screen.getByText('Your InvokeAI view is ready. You can use your library now.')).toBeTruthy();
+        expect(screen.queryByText(/catching up images and boards/i)).toBeNull();
     });
 
     it('blocks after preparation begins instead of falling back to a prior view', async () => {
@@ -1950,7 +2027,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.rebuildFacetCacheStrict).toHaveBeenCalledOnce();
         expect(mocks.clearLibraryStatsCache).toHaveBeenCalledOnce();
         expect(screen.queryByText(
-            'InvokeAI library upgrade complete. No images or collections were deleted.'
+            'Your InvokeAI view is ready. Ambit is catching up images and boards in the background. You can use your library now.'
         )).toBeNull();
     });
 
@@ -2377,6 +2454,7 @@ describe('Library Integration (Provider Stack)', () => {
             syncPromise = syncHook!.startInvokeSync({ mode: 'manual' });
         });
         await waitFor(() => expect(syncHook?.isInvokeSyncActive).toBe(true));
+        expect(useLibraryStore.getState().invokeSyncActivityKind).toBe('manual');
 
         let changed = true;
         await act(async () => {
@@ -2394,6 +2472,7 @@ describe('Library Integration (Provider Stack)', () => {
             await syncPromise;
         });
         expect(syncHook?.isInvokeSyncActive).toBe(false);
+        expect(useLibraryStore.getState().invokeSyncActivityKind).toBeNull();
     });
 
     it('rejects stale owner completion and re-applies programmatic owner drift without running orphan recovery', async () => {
@@ -2808,6 +2887,7 @@ describe('Library Integration (Provider Stack)', () => {
             startupPromise = hook!.startInvokeSync({ mode: 'startup' });
         });
         await waitFor(() => expect(hook?.isInvokeSyncActive).toBe(true));
+        expect(useLibraryStore.getState().invokeSyncActivityKind).toBe('startup');
 
         await act(async () => {
             await hook?.startInvokeSync({ mode: 'live' });

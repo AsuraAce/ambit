@@ -145,6 +145,29 @@ describe('MetadataInfoTab prompt revert control', () => {
         expect(screen.getByText('future-Category')).toBeTruthy();
     });
 
+    it('puts provenance first for assets and after generation details for normal images', () => {
+        const asset = image(metadata(), metadata(), {
+            invokeImageName: 'control-source.png',
+            invokeImageCategory: 'control',
+        });
+        const { rerender, props } = renderTab(asset);
+
+        const assetSource = screen.getByRole('heading', { name: 'Source' });
+        const assetPrompt = screen.getByRole('heading', { name: 'Positive Prompt' });
+        expect(assetSource.compareDocumentPosition(assetPrompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        rerender(<MetadataInfoTab {...props} image={image(metadata(), metadata(), {
+            invokeImageName: 'generation.png',
+            invokeImageCategory: 'general',
+        })} />);
+
+        const generationData = screen.getByRole('heading', { name: 'Generation Data' });
+        const generationSource = screen.getByRole('heading', { name: 'Source' });
+        const rawInspector = screen.getByText('raw inspector');
+        expect(generationData.compareDocumentPosition(generationSource) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(generationSource.compareDocumentPosition(rawInspector) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
     it('omits Source details for records without InvokeAI source facts', () => {
         renderTab(image(metadata(), metadata()));
         expect(screen.queryByRole('heading', { name: 'Source' })).toBeNull();

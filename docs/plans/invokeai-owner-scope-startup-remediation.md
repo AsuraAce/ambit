@@ -1,6 +1,6 @@
 # InvokeAI Owner-Scope Startup Remediation
 
-Status: Work Packages 1 through 3 release-verified (`2026-07-28`); Work Packages 2 and 3 owner acceptance pending
+Status: Work Packages 1 through 4 release-verified (`2026-07-30`); Work Package 4 owner-accepted, Work Packages 2 and 3 recovery acceptance pending
 
 ## Context
 
@@ -312,3 +312,64 @@ No blocking finding remains. A real native first-upgrade/retry/fast-restart
 replay remains owner acceptance because reproducing it would require resetting
 or replacing the user's completed owner snapshot, which is explicitly outside
 this package.
+
+## Work Package 4: Seamless startup handoff
+
+Status: Implemented, release-verified, and owner-accepted (`2026-07-30`)
+
+Primary invariant: short startup checks remain behind the branded splash, while
+any preparation card that becomes visible remains stable long enough to read.
+
+Scope:
+
+- delay database, initial InvokeAI, and privacy-protection preparation surfaces
+  for 700 milliseconds;
+- keep a revealed preparation card visible for at least 500 milliseconds;
+- keep the static splash authoritative until the initial owner and privacy view
+  is ready or sustained preparation intentionally takes over;
+- mount post-database initialization behind a revealed database card so the
+  next phase can make progress during its minimum display period;
+- keep owner selection, recovery failures, and post-startup scope changes
+  immediate;
+- cancel stale reveal timing when the configured InvokeAI root changes without
+  exposing the library.
+
+Non-goals:
+
+- no owner-scope, synchronization, import, metadata, SQLite, binding, or
+  persisted-setting changes;
+- no redesign of the existing splash or preparation cards;
+- no reset of a user's completed owner snapshot for testing.
+
+Targeted verification:
+
+- fake-timer coverage for quick completion, sustained work, minimum visibility,
+  root changes, and timer cleanup;
+- database-gate and App orchestration coverage for fast startup, stable handoff,
+  immediate actionable states, and immediate runtime scope changes;
+- lint, TypeScript, whitespace, focused frontend tests, release verification,
+  and a final desktop owner smoke test.
+
+Evidence (`2026-07-30`):
+
+- focused startup coverage passed: 5 files and 65 tests;
+- lint, TypeScript, and whitespace checks passed;
+- rendered browser-mock QA showed a settled library with no owner gate, static
+  splash, horizontal overflow, console warnings, or console errors;
+- the release gate passed 266 frontend test files with 3,070 tests passing and
+  1 skipped, 98.38% statement coverage, 556 Rust tests passing with 1 ignored,
+  the bundle-output guard, and the optimized no-bundle Tauri build;
+- native video review found the fading static splash overlapping a 100–150ms
+  `Preparing privacy protection` gate. Follow-up orchestration now keeps brief
+  privacy work behind the splash, replaces rather than cross-fades loading
+  surfaces, and gives owner and privacy stages independent stability timers;
+- follow-up verification passed 4 focused files with 93 tests, the complete 266
+  file frontend suite with 3,074 tests passing and 1 skipped, lint, TypeScript,
+  the production build, and the bundle-output guard;
+- native owner acceptance confirmed that the ordinary real-data desktop restart
+  no longer flashes the privacy-protection preparation surface;
+- browser-mock closure QA confirmed the splash detaches, the library and Assets
+  navigation render without owner, privacy, or database gates, the available
+  narrow viewport has no horizontal overflow, and the console is clean;
+- multi-owner selection and temporary-offline retry remain part of the separate
+  Work Package 2 and 3 recovery acceptance journey.

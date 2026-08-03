@@ -99,17 +99,12 @@ describe('StartupMaintenanceGate', () => {
             await vi.advanceTimersByTimeAsync(700);
         });
 
-        expect(staticLoader.style.opacity).toBe('0');
-        expect(staticLoader.style.pointerEvents).toBe('none');
+        expect(staticLoader.style.opacity).toBe('');
+        expect(staticLoader.style.pointerEvents).toBe('');
         expect(screen.getByText('Local database')).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Preparing Ambit' })).toBeTruthy();
         expect(screen.getByText('Preparing database')).toBeTruthy();
         expect(screen.getByText('Preparing the local database. Startup may take longer than usual this time.')).toBeTruthy();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(500);
-        });
-        expect(document.getElementById('static-loading')).toBeNull();
 
         await act(async () => {
             resolveDb();
@@ -117,6 +112,20 @@ describe('StartupMaintenanceGate', () => {
         });
 
         expect(screen.getByText('Library ready')).toBeTruthy();
+        expect(screen.getByRole('heading', { name: 'Preparing Ambit' })).toBeTruthy();
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(499);
+        });
+        expect(screen.getByRole('heading', { name: 'Preparing Ambit' })).toBeTruthy();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(screen.queryByRole('heading', { name: 'Preparing Ambit' })).toBeNull();
+        expect(screen.getByText('Library ready')).toBeTruthy();
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
     });
 
     it('shows an actionable error immediately when database preparation fails', async () => {
@@ -133,8 +142,8 @@ describe('StartupMaintenanceGate', () => {
 
         await flushAsyncWork();
 
-        expect(staticLoader.style.opacity).toBe('0');
-        expect(staticLoader.style.pointerEvents).toBe('none');
+        expect(staticLoader.style.opacity).toBe('');
+        expect(staticLoader.style.pointerEvents).toBe('');
         expect(screen.getByText('Local database')).toBeTruthy();
         expect(screen.getByText('Database startup failed')).toBeTruthy();
         expect(screen.getByText('Ambit could not prepare the local library database. Restart the app and contact support if this repeats.')).toBeTruthy();

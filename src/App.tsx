@@ -15,6 +15,7 @@ import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
+import { useLibraryStore } from './stores/libraryStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
 import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, type InvokeOwnerSelection } from './types';
@@ -34,7 +35,8 @@ import { useAppUpdater } from './hooks/useAppUpdater';
 import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
-import { useSync } from './contexts/SyncContext';
+import { useDelayedBusyPresentation } from './hooks/useDelayedBusyPresentation';
+import { useSync, type InvokeOwnerScopeState } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
@@ -46,6 +48,27 @@ import { isInvokeOwnerScopeAdmitted } from './stores/invokeOwnerScopeStore';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
+const STARTUP_PREPARATION_REVEAL_DELAY_MS = 700;
+const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
+
+const dismissStaticLoader = (immediate = false) => {
+    const loader = document.getElementById('static-loading');
+    if (!loader || loader.dataset.ambitDismissed === 'true') return;
+
+    loader.dataset.ambitDismissed = 'true';
+    loader.style.pointerEvents = 'none';
+
+    if (immediate) {
+        loader.remove();
+        return;
+    }
+
+    loader.style.opacity = '0';
+
+    window.setTimeout(() => {
+        loader.remove();
+    }, 500);
+};
 
 export default function App() {
     const { addToast } = useToast();
@@ -62,6 +85,11 @@ export default function App() {
     const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
     const referenceNavigationRequestRef = useRef(0);
     const wasInvokeOwnerScopeBlockingRef = useRef(false);
+    const lastInvokeOwnerBusyStateRef = useRef<InvokeOwnerScopeState | null>(null);
+    const [isInitialStartupPresentation, setIsInitialStartupPresentation] = useState(
+        () => document.getElementById('static-loading') !== null
+    );
+    const hasInitialInvokePreparationRevealedRef = useRef(false);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -76,6 +104,8 @@ export default function App() {
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
     const settings = useSettingsStore(s => s.settings);
+    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
+    const isStartupCatchupPending = useLibraryStore(s => s.isStartupCatchupPending);
     const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const setSettings = useSettingsStore(s => s.setSettings);
     const flushSettings = useSettingsStore(s => s.flushSettings);
@@ -290,10 +320,15 @@ export default function App() {
 
     const {
         startInvokeSync,
+        isInvokeSyncActive,
         invokeOwnerScopeState,
         selectInvokeOwnerScope,
         retryInvokeOwnerScope,
     } = useSync();
+    const isInvokeCollectionCatchupPending = Boolean(settings.invokeAiPath?.trim())
+        && settings.invokeSyncBoards !== false
+        && settings.syncBoardsToCollections
+        && (isStartupCatchupPending || isInvokeSyncActive);
     const isInvokeOwnerScopeAdmittedForRoot = isInvokeOwnerScopeAdmitted(
         settings.invokeAiPath,
         invokeOwnerScopeState
@@ -301,6 +336,59 @@ export default function App() {
     const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
         && invokeOwnerScopeState.status === 'offline_ready';
     const isInvokeOwnerScopeBlocking = !isInvokeOwnerScopeAdmittedForRoot;
+    const isInvokeOwnerScopeBusy = isInvokeOwnerScopeBlocking
+        && (invokeOwnerScopeState.status === 'idle'
+            || invokeOwnerScopeState.status === 'discovering'
+            || invokeOwnerScopeState.status === 'applying');
+    const isInitialInvokePreparationVisible = useDelayedBusyPresentation(
+        isLoaded && isInitialStartupPresentation && isInvokeOwnerScopeBusy,
+        {
+            revealDelayMs: STARTUP_PREPARATION_REVEAL_DELAY_MS,
+            minimumVisibleMs: STARTUP_PREPARATION_MIN_VISIBLE_MS,
+            resetKey: settings.invokeAiPath?.trim() || 'unconfigured',
+        }
+    );
+    React.useLayoutEffect(() => {
+        if (isInvokeOwnerScopeBusy) {
+            lastInvokeOwnerBusyStateRef.current = invokeOwnerScopeState;
+        }
+        if (isInitialInvokePreparationVisible) {
+            hasInitialInvokePreparationRevealedRef.current = true;
+        }
+    }, [invokeOwnerScopeState, isInitialInvokePreparationVisible, isInvokeOwnerScopeBusy]);
+    const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking
+        && privacyExposureBlocked
+        && privacyMaskIndexStatus !== 'failed';
+    const isInitialPrivacyPreparationVisible = useDelayedBusyPresentation(
+        isLoaded && isInitialStartupPresentation && isInitialPrivacyProtectionBusy,
+        {
+            revealDelayMs: STARTUP_PREPARATION_REVEAL_DELAY_MS,
+            minimumVisibleMs: STARTUP_PREPARATION_MIN_VISIBLE_MS,
+            resetKey: `${settings.invokeAiPath?.trim() || 'unconfigured'}:privacy`,
+        }
+    );
+    const isHoldingInvokeDuringPrivacyGrace = isInitialStartupPresentation
+        && hasInitialInvokePreparationRevealedRef.current
+        && isInitialPrivacyProtectionBusy
+        && !isInitialPrivacyPreparationVisible;
+    const isHoldingCompletedInvokePreparation = isInitialStartupPresentation
+        && !isInvokeOwnerScopeBlocking
+        && (invokeOwnerScopeState.status === 'ready'
+            || invokeOwnerScopeState.status === 'offline_ready')
+        && (isHoldingInvokeDuringPrivacyGrace
+            || (isInitialInvokePreparationVisible && !isInitialPrivacyProtectionBusy));
+    const shouldForceInitialPrivacyProtection = isInitialStartupPresentation
+        && isInitialPrivacyPreparationVisible
+        && !isInvokeOwnerScopeBlocking;
+    const shouldRenderInvokeOwnerScopeGate = isHoldingCompletedInvokePreparation
+        || (isInvokeOwnerScopeBlocking
+            && (!isInitialStartupPresentation
+                || !isInvokeOwnerScopeBusy
+                || hasInitialInvokePreparationRevealedRef.current
+                || isInitialInvokePreparationVisible));
+    const displayedInvokeOwnerScopeState = isHoldingCompletedInvokePreparation
+        ? lastInvokeOwnerBusyStateRef.current ?? invokeOwnerScopeState
+        : invokeOwnerScopeState;
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         if (await selectInvokeOwnerScope(selection)) {
             await startInvokeSync({ mode: 'startup' });
@@ -764,22 +852,41 @@ export default function App() {
 
 
 
-    // Handle static loading screen removal
+    // Keep brief owner and privacy verification behind the static splash. A
+    // preparation or error surface replaces it directly so two loading states
+    // are never visible through the splash fade at the same time.
     useEffect(() => {
-        if (isLoaded) {
-            const loader = document.getElementById('static-loading');
-            if (loader) {
-                // Trigger fade out
-                loader.style.opacity = '0';
-                loader.style.pointerEvents = 'none';
+        if (!isLoaded || !isInitialStartupPresentation) return;
+        if (isInvokeOwnerScopeBusy && !isInitialInvokePreparationVisible) return;
+        if (isInitialPrivacyProtectionBusy
+            && !isInitialPrivacyPreparationVisible
+            && !hasInitialInvokePreparationRevealedRef.current) return;
 
-                // Remove from DOM after transition completes
-                setTimeout(() => {
-                    loader.remove();
-                }, 500); // slightly longer than CSS transition (0.4s) to be safe
-            }
+        const replacesSplash = isInitialInvokePreparationVisible
+            || isInitialPrivacyPreparationVisible
+            || isHoldingInvokeDuringPrivacyGrace
+            || isInvokeOwnerScopeBlocking
+            || (privacyExposureBlocked && privacyMaskIndexStatus === 'failed');
+        dismissStaticLoader(replacesSplash);
+
+        if (!isInvokeOwnerScopeBusy
+            && !isInitialPrivacyProtectionBusy
+            && !isInitialInvokePreparationVisible
+            && !isInitialPrivacyPreparationVisible) {
+            setIsInitialStartupPresentation(false);
         }
-    }, [isLoaded]);
+    }, [
+        isHoldingInvokeDuringPrivacyGrace,
+        isInitialInvokePreparationVisible,
+        isInitialPrivacyPreparationVisible,
+        isInitialPrivacyProtectionBusy,
+        isInitialStartupPresentation,
+        isInvokeOwnerScopeBusy,
+        isInvokeOwnerScopeBlocking,
+        isLoaded,
+        privacyExposureBlocked,
+        privacyMaskIndexStatus,
+    ]);
 
     if (!isLoaded) return null;
 
@@ -796,16 +903,17 @@ export default function App() {
                 />
             )}
 
-            {isInvokeOwnerScopeBlocking ? (
+            {shouldRenderInvokeOwnerScopeGate ? (
                 <InvokeOwnerScopeGate
-                    state={invokeOwnerScopeState}
+                    state={displayedInvokeOwnerScopeState}
                     onSelect={handleInvokeOwnerSelection}
                     onRetry={handleInvokeOwnerRetry}
                     onOpenSettings={openInvokeSettings}
                 />
-            ) : (
+            ) : !isInvokeOwnerScopeBlocking ? (
                 <AppLayout
-
+                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
+                forcePrivacyProtectionGate={shouldForceInitialPrivacyProtection}
                 filters={filters}
                 setFilters={setFilters}
                 isFilterPanelOpen={isFilterPanelOpen}
@@ -859,7 +967,7 @@ export default function App() {
                 onSetCollectionMembership={handleSetCollectionMembership}
                 onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
                 />
-            )}
+            ) : null}
 
             {/* Overlays & Portals */}
             {shouldRenderOnboarding ? (

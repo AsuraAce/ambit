@@ -34,9 +34,11 @@ The roadmap is staged so each stage is independently useful:
 ## Locked Product Decisions
 
 - Known InvokeAI image assets are hidden from ordinary browsing by default.
-- A persisted View toggle reveals them; cards show category badges and the
-  viewer shows source details. There is no dedicated asset page or subtype
-  filter in this workstream.
+- A persisted View toggle reveals them; cards show stable, top-centered
+  `Asset · User`, `Asset · Control`, `Asset · Mask`, or `Asset · Other`
+  markers. Asset viewers lead with source and reference provenance, while
+  ordinary generation viewers keep that provenance near Raw Metadata. There
+  is no dedicated asset page or subtype filter in this workstream.
 - Existing records receive a one-time automatic classification reconciliation.
 - Known assets are excluded from Untagged maintenance, but remain eligible for
   missing-file, duplicate, thumbnail, and Removed workflows.

@@ -7,6 +7,7 @@ interface StartupPreparationProgress {
 
 interface StartupPreparationCardProps {
     phaseLabel: string;
+    title?: string;
     icon: React.ReactNode;
     description: string;
     statusMessage: string;
@@ -16,6 +17,7 @@ interface StartupPreparationCardProps {
 
 export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
     phaseLabel,
+    title = 'Preparing Ambit',
     icon,
     description,
     statusMessage,
@@ -42,7 +44,7 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                         {phaseLabel}
                     </p>
                     <h1 className="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">
-                        Preparing Ambit
+                        {title}
                     </h1>
                 </div>
             </div>

@@ -77,6 +77,7 @@ export interface ThumbnailOptimizationRunSummary {
 }
 
 export type SyncStatus = 'idle' | 'syncing' | 'complete' | 'error';
+export type InvokeSyncActivityKind = 'startup' | 'manual';
 export type LiveWatchSessionSource = 'generic' | 'invoke' | 'mixed';
 export type LiveWatchSessionPhase = 'watching' | 'syncing' | 'importing' | 'summary';
 export type ThumbnailMaintenanceOperation = 'repair' | 'cleanup' | 'sync';
@@ -174,6 +175,7 @@ interface LibraryState {
     // Sync State
     syncStatus: SyncStatus;
     syncProgress: SyncProgress;
+    invokeSyncActivityKind: InvokeSyncActivityKind | null;
     isLiveSyncing: boolean;
     syncAbortController: AbortController | null; // Added
 
@@ -237,6 +239,7 @@ interface LibraryState {
     // Actions
     setSyncStatus: (status: SyncStatus) => void;
     setSyncProgress: (progress: SyncProgress) => void;
+    setInvokeSyncActivityKind: (kind: InvokeSyncActivityKind | null) => void;
     setIsLiveSyncing: (isLive: boolean) => void;
     setSyncAbortController: (ctrl: AbortController | null) => void; // Added
     cancelSync: () => void; // Added
@@ -302,6 +305,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Initial State
     syncStatus: 'idle',
     syncProgress: { current: 0, total: 0, message: '' },
+    invokeSyncActivityKind: null,
     isLiveSyncing: false,
     syncAbortController: null,
 
@@ -362,12 +366,13 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     // Actions
     setSyncStatus: (status) => set({ syncStatus: status }),
     setSyncProgress: (progress) => set({ syncProgress: progress }),
+    setInvokeSyncActivityKind: (kind) => set({ invokeSyncActivityKind: kind }),
     setIsLiveSyncing: (isLive) => set({ isLiveSyncing: isLive }),
     setSyncAbortController: (ctrl) => set({ syncAbortController: ctrl }),
     cancelSync: () => set((state) => {
         if (state.syncAbortController) {
             state.syncAbortController.abort();
-            return { syncStatus: 'idle', syncProgress: { current: 0, total: 0, message: 'Cancelled' }, syncAbortController: null };
+            return { syncStatus: 'idle', syncProgress: { current: 0, total: 0, message: 'Cancelled' }, invokeSyncActivityKind: null, syncAbortController: null };
         }
         return {};
     }),
