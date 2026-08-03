@@ -16,11 +16,14 @@ Rust `1.77.2` is no longer a valid minimum. The current lockfile contains Editio
 
 Protect `main` with these required status checks:
 
+- `pr-title`
 - `frontend-checks`
 - `rust-tests`
 - `dependency-audits`
 
-`frontend-checks` validates the Conventional Commit PR title, version consistency, lint, TypeScript, Vitest coverage, and the production bundle guard.
+`pr-title` validates the Conventional Commit PR title on new commits and title or body edits without rerunning the heavyweight jobs.
+
+`frontend-checks` validates version consistency, release automation scripts, lint, TypeScript, Vitest coverage, and the production bundle guard.
 
 `rust-tests` runs on Windows with Rust `1.88.0`, restores the Rust cache, verifies generated bindings, runs Rust tests, and performs the Tauri no-bundle build.
 
@@ -44,7 +47,7 @@ When branch protection is available, configure `main` for a strict solo-maintain
 
 - Require a pull request before merging, with zero required approvals.
 - Require branches to be up to date before merging.
-- Require the three status checks listed above.
+- Require the four status checks listed above.
 - Require conversation resolution and linear history.
 - Apply the rules to administrators and disable bypass.
 - Block force pushes and branch deletion.
@@ -87,6 +90,7 @@ Release Please must use a short-lived GitHub App installation token. There is no
 The workflow further restricts each generated token to Contents, Pull Requests, and Issues write access. App-created release PRs and tags can trigger downstream workflows.
 
 Release Please remains the source of truth for version bumps, `CHANGELOG.md`, release PRs, tags, and GitHub Releases.
+Its `Cargo.lock` extra-file filter intentionally uses `name.value` because the pinned Generic TOML updater exposes parsed scalar values through tagged value objects.
 
 ## Updater Secrets
 
@@ -104,14 +108,14 @@ Use **Actions > updater-signing-preflight > Run workflow** before publishing. Th
 ## Release Flow
 
 1. Work on a feature branch and open a PR into `main`.
-2. Wait for all three required checks.
+2. Wait for all four required checks.
 3. Squash merge so the PR's Conventional Commit title becomes the commit on `main`.
 4. Confirm `release-please` opens or refreshes its release PR and that the PR receives the required checks automatically.
 5. Review the generated version and changelog.
 6. Merge the release PR only when a release should be published.
 7. Confirm the generated `vX.Y.Z` tag starts `release.yml`.
 
-The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. It copies the matching version section from `CHANGELOG.md` into the updater metadata so installed apps can show the same release notes. When `CURRENT_PARSER_VERSION` increases from the previous stable release, the extraction step prepends a metadata-refresh notice to the published GitHub and updater notes without modifying `CHANGELOG.md`. Release tags must use the exact `vX.Y.Z` format, match `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, and `src-tauri/Cargo.toml`, and point to a commit reachable from `main`.
+The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. It copies the matching version section from `CHANGELOG.md` into the updater metadata so installed apps can show the same release notes. When `CURRENT_PARSER_VERSION` increases from the previous stable release, the extraction step prepends a metadata-refresh notice to the published GitHub and updater notes without modifying `CHANGELOG.md`. Release tags must use the exact `vX.Y.Z` format, match `package.json`, both Tauri configuration files, `src-tauri/Cargo.toml`, the local `app` package in `src-tauri/Cargo.lock`, and `.github/.release-please-manifest.json`, and point to a commit reachable from `main`.
 
 Release Please remains the normal and preferred tag creator. Do not create manual release tags except for recovery work after confirming the tag target is already on `main` and all version files match.
 

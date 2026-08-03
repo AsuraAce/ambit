@@ -2,7 +2,7 @@ name: pr-ci
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
     branches:
       - main
   workflow_dispatch:
@@ -31,17 +31,11 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: validate pull request title
-        if: github.event_name == 'pull_request'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: node ./scripts/check-pr-title.mjs "$PR_TITLE"
-
       - name: verify version consistency
         run: pnpm check:versions
 
       - name: test release automation scripts
-        run: node --test scripts/check-release-tag.node-test.mjs scripts/extract-release-notes.node-test.mjs
+        run: node --test scripts/check-release-tag.node-test.mjs scripts/check-version-consistency.node-test.mjs scripts/extract-release-notes.node-test.mjs
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile

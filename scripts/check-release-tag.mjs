@@ -1,48 +1,10 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import process from 'node:process';
 
+import { readRepositoryVersions } from './version-files.mjs';
+
 const RELEASE_TAG_RE = /^v(\d+\.\d+\.\d+)$/;
-
-const VERSION_FILES = [
-  {
-    path: 'package.json',
-    readVersion: (contents) => JSON.parse(contents).version,
-  },
-  {
-    path: 'src-tauri/tauri.conf.json',
-    readVersion: (contents) => JSON.parse(contents).version,
-  },
-  {
-    path: 'src-tauri/tauri.dev.json',
-    readVersion: (contents) => JSON.parse(contents).version,
-  },
-  {
-    path: 'src-tauri/Cargo.toml',
-    readVersion: (contents) => {
-      const versionMatch = contents.match(/^version\s*=\s*"([^"]+)"$/m);
-
-      if (!versionMatch) {
-        throw new Error('Could not find Cargo package version.');
-      }
-
-      return versionMatch[1];
-    },
-  },
-];
-
-const readVersions = (rootDir) =>
-  VERSION_FILES.map((versionFile) => {
-    const absolutePath = path.join(rootDir, versionFile.path);
-    const contents = fs.readFileSync(absolutePath, 'utf8');
-
-    return {
-      path: versionFile.path,
-      version: versionFile.readVersion(contents),
-    };
-  });
 
 export const createGit = (rootDir) => ({
   text(args) {
@@ -92,7 +54,7 @@ export const validateReleaseTag = ({ env = process.env, rootDir = process.cwd(),
 
   const tagName = env.GITHUB_REF_NAME;
   const tagVersion = parseReleaseTag(tagName);
-  const versions = readVersions(rootDir);
+  const versions = readRepositoryVersions(rootDir);
   const mismatches = versions.filter(({ version }) => version !== tagVersion);
 
   if (mismatches.length > 0) {
