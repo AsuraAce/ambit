@@ -1,6 +1,6 @@
 # Refactor Notes
 Status: Deferred
-Last reviewed: 2026-07-07
+Last reviewed: 2026-07-27
 
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
@@ -209,8 +209,8 @@ Status: Deferred
 Status: Deferred
 
 ### Why Cleanup Is Needed
-- `src/App.tsx` is a 487-line integration shell that coordinates view mode, selection, import and export, modals, viewer state, drag and drop, shortcuts, and maintenance hooks.
-- `src/contexts/SearchContext.tsx` is a 287-line bridge between React Query, persisted settings, SQL clause generation, and a mirrored Zustand store.
+- `src/App.tsx` remains a broad integration shell that coordinates view mode, selection, import and export, modals, viewer state, drag and drop, shortcuts, and maintenance hooks.
+- `src/contexts/SearchContext.tsx` remains a broad bridge between React Query, persisted settings, SQL clause generation, and a mirrored Zustand store.
 
 ### Current Pain Points
 - Images, filters, and recent-search state are shared across contexts, hooks, and stores.
@@ -235,6 +235,41 @@ Status: Deferred
 ### Related Docs
 - `docs/architecture.md#frontend-app-shell-and-feature-surfaces`
 - `docs/architecture.md#query-state-and-persistence-adapters`
+
+## Shared Image Viewer Integration Boundary
+Status: Deferred
+Priority: P3
+
+### Current Architecture
+- Gallery and Maintenance use the same `ImageViewer` component rather than separate viewer implementations.
+- Gallery owns its frozen viewer-session list and normal library actions in `src/App.tsx`.
+- Maintenance owns navigation over the active maintenance result set plus maintenance-specific cleanup and recovered-image state in `MaintenanceView.tsx`.
+
+### Why Cleanup Is Needed
+- The two entry points repeat a broad callback and capability contract when mounting `ImageViewer`.
+- Maintenance currently represents some unsupported integrations with no-op callbacks and omits other Gallery capabilities. This makes intentional context differences difficult to distinguish from incomplete wiring.
+- Adding a shared viewer feature can appear complete after updating the Gallery entry point while remaining unavailable or inert in Maintenance.
+
+### Suggested Future Direction
+- Keep `ImageViewer` as the shared presentation and interaction component.
+- Keep Gallery and Maintenance navigation, deletion, recovery, and other context-specific policies in separate controllers.
+- Introduce thin Gallery and Maintenance viewer adapters, or make optional capabilities explicit in the shared viewer contract, when another parity issue or viewer feature justifies the change.
+- Replace no-op callbacks with intentionally unavailable capabilities or real shared handlers, and add focused coverage for capabilities expected in both entry points.
+
+### Safe-Change Warning
+- Do not move both viewer sessions into one global controller merely to remove prop duplication; their list stability, cleanup, and recovery semantics differ.
+- Do not expand this into a broad `App.tsx` or state-management rewrite.
+
+### Acceptance Direction
+- A contributor can tell which viewer capabilities are shared and which are context-specific from the component contracts.
+- Adding a shared viewer capability has an explicit verification path for both Gallery and Maintenance.
+- Maintenance does not expose controls backed by no-op handlers.
+
+### Related Code
+- `src/features/viewer/components/ImageViewer.tsx`
+- `src/App.tsx`
+- `src/features/maintenance/components/MaintenanceView.tsx`
+- `src/components/AppLayout.tsx`
 
 ## Backend-Supported Timeline Buckets
 Status: Deferred

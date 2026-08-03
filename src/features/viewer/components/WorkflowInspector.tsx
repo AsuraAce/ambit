@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity } from 'lucide-react';
+import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
@@ -55,6 +55,25 @@ const getDiagnosticLayerTitle = (layer: string | null | undefined) => {
     return formatDiagnosticLabel(layer ?? '');
 };
 
+const getTraversalIssueTitle = (reason: string) => {
+    switch (reason) {
+        case 'unresolved_link':
+            return 'The workflow declares a connection that could not be resolved.';
+        case 'missing_source_node':
+            return 'The connected source node is missing from the embedded graph.';
+        case 'unsupported_node':
+            return 'The selected output path reaches a node this parser cannot resolve for this field.';
+        case 'generated_value_unavailable':
+            return 'The value is generated at runtime and no literal result is embedded in the image.';
+        case 'cycle_detected':
+            return 'Traversal stopped after detecting a cycle.';
+        case 'depth_limit':
+            return 'Traversal stopped at the diagnostic depth limit.';
+        default:
+            return formatDiagnosticLabel(reason);
+    }
+};
+
 const buildDiagnosticsClipboardPayload = (
     imageId: string,
     chunks: Record<string, string>,
@@ -69,8 +88,15 @@ const buildDiagnosticsClipboardPayload = (
         chunkKeys: diagnostics.chunkKeys,
         chunkLengths,
         graphNodeCount: diagnostics.graphNodeCount,
+        outputSelection: {
+            selectedOutputCandidateCount: diagnostics.selectedOutputCandidateCount,
+            uniqueOutputRootSamplerCount: diagnostics.uniqueOutputRootSamplerCount,
+            ambiguous: diagnostics.outputAmbiguous
+        },
         attemptedLayers: diagnostics.attemptedLayers,
         fieldSources: diagnostics.fieldSources,
+        traversalIssues: diagnostics.traversalIssues,
+        traversalIssuesTruncated: diagnostics.traversalIssuesTruncated,
         metadata: diagnostics.metadata
     };
 };
@@ -124,6 +150,10 @@ const ComfyDiagnosticsPanel: React.FC<{
     const fieldSources = diagnostics
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
         : [];
+    const visibleTraversalIssues = diagnostics?.traversalIssues.slice(0, 4) ?? [];
+    const hiddenTraversalIssueCount = diagnostics
+        ? Math.max(0, diagnostics.traversalIssues.length - visibleTraversalIssues.length)
+        : 0;
 
     const handleCopyDiagnostics = async () => {
         const payload = buildDiagnosticsClipboardPayload(imageId, chunks!, diagnostics!);
@@ -177,6 +207,23 @@ const ComfyDiagnosticsPanel: React.FC<{
                         </div>
                     </div>
 
+                    <div>
+                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Output Selection</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+                            <span className="rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5">
+                                {diagnostics.selectedOutputCandidateCount} output{diagnostics.selectedOutputCandidateCount === 1 ? '' : 's'} / {diagnostics.uniqueOutputRootSamplerCount} root{diagnostics.uniqueOutputRootSamplerCount === 1 ? '' : 's'}
+                            </span>
+                            {diagnostics.outputAmbiguous && (
+                                <span
+                                    title="Multiple saved-output roots were found, so no branch received strong traversal authority."
+                                    className="rounded-md border border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 px-1.5 py-0.5 text-rose-900 dark:text-rose-100"
+                                >
+                                    Ambiguous
+                                </span>
+                            )}
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                         <div>
                             <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Model</div>
@@ -217,6 +264,34 @@ const ComfyDiagnosticsPanel: React.FC<{
                             )}
                         </div>
                     </div>
+
+                    {visibleTraversalIssues.length > 0 && (
+                        <div>
+                            <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">
+                                <AlertTriangle className="w-3 h-3" />
+                                Traversal Blockers
+                            </div>
+                            <div className="mt-1 space-y-1">
+                                {visibleTraversalIssues.map((issue, index) => (
+                                    <div
+                                        key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
+                                        title={getTraversalIssueTitle(issue.reason)}
+                                        className="rounded-md border border-orange-300/70 dark:border-orange-400/30 bg-orange-50/70 dark:bg-orange-500/10 px-2 py-1 font-mono text-[10px] text-orange-950 dark:text-orange-100"
+                                    >
+                                        <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
+                                        {' at '}{issue.nodeId} ({issue.nodeType})
+                                        {issue.inputName ? ` / ${issue.inputName}` : ''}
+                                        {': '}{formatDiagnosticLabel(issue.reason)}
+                                    </div>
+                                ))}
+                                {(hiddenTraversalIssueCount > 0 || diagnostics.traversalIssuesTruncated) && (
+                                    <div className="text-[10px] text-amber-800/70 dark:text-amber-200/70">
+                                        +{hiddenTraversalIssueCount}{diagnostics.traversalIssuesTruncated ? ' or more' : ' more'} in copied diagnostics
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : null}
         </div>

@@ -21,7 +21,7 @@ import type { ActiveImageStateAdapter } from './activeImageState';
 interface AppActionFileOps {
     deleteImages: (ids: string[]) => void | Promise<void>;
     exportImages: (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => Promise<void>;
-    recoverMetadata?: (targetId: string, style: RecoveryStyle, onComplete: () => void) => Promise<void>;
+    recoverMetadata?: (targetId: string, style: RecoveryStyle) => Promise<AIImage | null>;
 }
 
 interface AppActionModalManager {
@@ -51,6 +51,11 @@ interface SingleImageActionOptions {
     showToast?: boolean;
 }
 
+interface PendingMetadataRecovery {
+    targetId: string;
+    onRecovered?: (image: AIImage) => void;
+}
+
 export const useAppActions = ({
     viewingImageId,
     selectedImageIndex,
@@ -67,6 +72,7 @@ export const useAppActions = ({
 }: UseAppActionsProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
+    const pendingMetadataRecoveryRef = React.useRef<PendingMetadataRecovery | null>(null);
 
     // Store access
     const images = useSearchStore(s => s.images);
@@ -333,12 +339,44 @@ export const useAppActions = ({
         addToast(next ? "Privacy Mode Enabled" : "Privacy Mode Disabled (Hidden/Blurred items revealed)", "info");
     };
 
-    const executeMetadataRecovery = async (style: RecoveryStyle) => {
-        const targetId = viewingImageId || (selectedImageIndex !== null ? images[selectedImageIndex]?.id : null) || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null);
-        if (!targetId) return;
+    const resolveMetadataRecoveryTargetId = (targetId?: string) => (
+        targetId
+        || viewingImageId
+        || (selectedImageIndex !== null ? viewerImages[selectedImageIndex]?.id : null)
+        || (selectedIds.size > 0 ? Array.from(selectedIds)[0] : null)
+    );
 
-        const { geminiApiKey } = useSettingsStore.getState();
-        if (!settings.enableAI || !geminiApiKey) {
+    const openMetadataRecovery = (targetId?: string, onRecovered?: (image: AIImage) => void) => {
+        const resolvedTargetId = resolveMetadataRecoveryTargetId(targetId);
+        if (!resolvedTargetId) {
+            addToast('Select an image before starting Prompt Recovery.', 'error');
+            return;
+        }
+
+        const currentSettings = useSettingsStore.getState();
+        if (!currentSettings.settings.enableAI || !currentSettings.geminiApiKey) {
+            pendingMetadataRecoveryRef.current = null;
+            modals.setInitialSettingsTab?.('intelligence');
+            openModal('settings');
+            addToast('Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.', 'info');
+            return;
+        }
+
+        pendingMetadataRecoveryRef.current = { targetId: resolvedTargetId, onRecovered };
+        openModal('recovery');
+    };
+
+    const executeMetadataRecovery = async (style: RecoveryStyle) => {
+        const pendingRecovery = pendingMetadataRecoveryRef.current;
+        const targetId = pendingRecovery?.targetId ?? resolveMetadataRecoveryTargetId();
+        if (!targetId) {
+            addToast('Select an image before starting Prompt Recovery.', 'error');
+            return;
+        }
+
+        const currentSettings = useSettingsStore.getState();
+        if (!currentSettings.settings.enableAI || !currentSettings.geminiApiKey) {
+            pendingMetadataRecoveryRef.current = null;
             closeModal('recovery');
             modals.setInitialSettingsTab?.('intelligence');
             openModal('settings');
@@ -351,7 +389,12 @@ export const useAppActions = ({
             return;
         }
 
-        fileOps.recoverMetadata(targetId, style, () => closeModal('recovery'));
+        const recoveredImage = await fileOps.recoverMetadata(targetId, style);
+        if (!recoveredImage) return;
+
+        pendingMetadataRecoveryRef.current = null;
+        closeModal('recovery');
+        pendingRecovery?.onRecovered?.(recoveredImage);
     };
 
     const handlePinImage = (id: string, newPinned: boolean, options: SingleImageActionOptions = { showToast: true }) => {
@@ -426,6 +469,7 @@ export const useAppActions = ({
         handleBulkPin,
         handleBulkMask,
         handleTogglePrivacy,
+        openMetadataRecovery,
         executeMetadataRecovery,
         handleFavoriteImage,
         handlePinImage,

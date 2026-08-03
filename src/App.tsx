@@ -455,17 +455,6 @@ export default function App() {
         fileOps.fileInputRef.current?.click();
     }, [fileOps]);
 
-    const handleOpenRecovery = useCallback(() => {
-        if (!settings.enableAI || !geminiApiKey) {
-            modals.setInitialSettingsTab('intelligence');
-            modals.openModal('settings');
-            addToast('Enable AI features and configure a Gemini API key in Settings to use Prompt Recovery.', 'info');
-            return;
-        }
-
-        modals.openModal('recovery');
-    }, [settings.enableAI, geminiApiKey, modals, addToast]);
-
     useFolderMonitor({
         isLoaded,
         monitoredFolders: settings.monitoredFolders,
@@ -1122,7 +1111,7 @@ export default function App() {
                                 setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
                             }}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
-                            onRecoverMetadata={handleOpenRecovery}
+                            onRecoverMetadata={() => actions.openMetadataRecovery()}
                             onSetCollectionMembership={handleSetViewerCollectionMembership}
                             availableTags={availableTags}
                             isSidebarOpen={!settings.defaultTheaterMode}

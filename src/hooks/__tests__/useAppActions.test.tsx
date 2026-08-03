@@ -59,7 +59,7 @@ vi.mock('../../stores/settingsStore', () => {
         privacyEnabled: mockPrivacyEnabled,
         setPrivacyEnabled: mockSetPrivacyEnabled,
     });
-    useSettingsStore.getState = () => ({ geminiApiKey: mockGeminiApiKey });
+    useSettingsStore.getState = () => ({ settings: mockSettings, geminiApiKey: mockGeminiApiKey });
     return { useSettingsStore };
 });
 
@@ -581,38 +581,81 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Privacy Mode Disabled (Hidden/Blurred items revealed)', 'info');
     });
 
-    it('routes recovery to settings when AI configuration is missing', async () => {
+    it('routes recovery launch to settings when AI configuration is missing', () => {
         const setInitialSettingsTab = vi.fn();
-        const recoveryProps = { ...props, viewingImageId: '1', modalManager: { ...mockModalManager, setInitialSettingsTab } };
+        const recoveryProps = { ...props, modalManager: { ...mockModalManager, setInitialSettingsTab } };
         const { result } = renderHook(() => useAppActions(recoveryProps));
-        await act(async () => result.current.executeMetadataRecovery('generic'));
-        expect(mockModalManager.closeModal).toHaveBeenCalledWith('recovery');
+        act(() => result.current.openMetadataRecovery('1'));
         expect(setInitialSettingsTab).toHaveBeenCalledWith('intelligence');
         expect(mockModalManager.openModal).toHaveBeenCalledWith('settings');
+        expect(mockModalManager.openModal).not.toHaveBeenCalledWith('recovery');
     });
 
-    it('routes recovery to settings without an initial-tab callback', async () => {
-        const { result } = renderHook(() => useAppActions({ ...props, viewingImageId: '1' }));
-        await act(async () => result.current.executeMetadataRecovery('generic'));
+    it('routes recovery launch to settings without an initial-tab callback', () => {
+        const { result } = renderHook(() => useAppActions(props));
+        act(() => result.current.openMetadataRecovery('1'));
         expect(mockModalManager.openModal).toHaveBeenCalledWith('settings');
     });
 
-    it('reports unavailable recovery and recovers targets by viewer, index, then selection', async () => {
+    it('recovers the current Gallery viewer image before index or selection targets', async () => {
         mockSettings = { ...mockSettings, enableAI: true };
         mockGeminiApiKey = 'key';
-        const unavailable = renderHook(() => useAppActions({ ...props, viewingImageId: '1' }));
+        const recoveredImage = mockStoreImages[0] as AIImage;
+        const recoverMetadata = vi.fn().mockResolvedValue(recoveredImage);
+        const { result } = renderHook(() => useAppActions({
+            ...props,
+            viewingImageId: '1',
+            selectedImageIndex: 1,
+            selectedIds: new Set(['2']),
+            fileOps: { ...mockFileOps, recoverMetadata },
+        }));
+
+        act(() => result.current.openMetadataRecovery());
+        await act(async () => result.current.executeMetadataRecovery('midjourney'));
+
+        expect(mockModalManager.openModal).toHaveBeenCalledWith('recovery');
+        expect(recoverMetadata).toHaveBeenCalledWith('1', 'midjourney');
+        expect(mockModalManager.closeModal).toHaveBeenCalledWith('recovery');
+    });
+
+    it('resolves indexed Gallery recovery from the frozen viewer session', async () => {
+        mockSettings = { ...mockSettings, enableAI: true };
+        mockGeminiApiKey = 'key';
+        const frozenViewerImages = [mockStoreImages[1], mockStoreImages[0]] as AIImage[];
+        const recoverMetadata = vi.fn().mockResolvedValue(frozenViewerImages[0]);
+        const { result } = renderHook(() => useAppActions({
+            ...props,
+            selectedImageIndex: 0,
+            viewerImages: frozenViewerImages,
+            selectedIds: new Set(['1']),
+            fileOps: { ...mockFileOps, recoverMetadata },
+        }));
+
+        act(() => result.current.openMetadataRecovery());
+        await act(async () => result.current.executeMetadataRecovery('generic'));
+
+        expect(recoverMetadata).toHaveBeenCalledWith('2', 'generic');
+    });
+
+    it('reports unavailable recovery and recovers targets by index then selection', async () => {
+        mockSettings = { ...mockSettings, enableAI: true };
+        mockGeminiApiKey = 'key';
+        const unavailable = renderHook(() => useAppActions(props));
+        act(() => unavailable.result.current.openMetadataRecovery('1'));
         await act(async () => unavailable.result.current.executeMetadataRecovery('sdxl'));
         expect(mockAddToast).toHaveBeenCalledWith('Prompt Recovery is unavailable in this runtime.', 'error');
         unavailable.unmount();
 
-        const recoverMetadata = vi.fn(async (_id, _style, onComplete) => onComplete());
+        const recoverMetadata = vi.fn(async (id: string) => mockStoreImages.find(image => image.id === id) as AIImage);
         const byIndex = renderHook(() => useAppActions({
             ...props,
             selectedImageIndex: 1,
+            selectedIds: new Set(),
             fileOps: { ...mockFileOps, recoverMetadata },
         }));
+        act(() => byIndex.result.current.openMetadataRecovery());
         await act(async () => byIndex.result.current.executeMetadataRecovery('generic'));
-        expect(recoverMetadata).toHaveBeenCalledWith('2', 'generic', expect.any(Function));
+        expect(recoverMetadata).toHaveBeenCalledWith('2', 'generic');
         expect(mockModalManager.closeModal).toHaveBeenCalledWith('recovery');
         byIndex.unmount();
 
@@ -622,14 +665,54 @@ describe('useAppActions', () => {
             selectedIds: new Set(['1']),
             fileOps: { ...mockFileOps, recoverMetadata },
         }));
+        act(() => bySelection.result.current.openMetadataRecovery());
         await act(async () => bySelection.result.current.executeMetadataRecovery('sdxl'));
-        expect(recoverMetadata).toHaveBeenCalledWith('1', 'sdxl', expect.any(Function));
+        expect(recoverMetadata).toHaveBeenCalledWith('1', 'sdxl');
     });
 
-    it('no-ops recovery without a target', async () => {
-        const { result } = renderHook(() => useAppActions({ ...props, selectedIds: new Set(), lastSelectedId: null }));
+    it('recovers an explicit Maintenance target and publishes the updated image', async () => {
+        mockSettings = { ...mockSettings, enableAI: true };
+        mockGeminiApiKey = 'key';
+        const recoveredImage = { ...mockStoreImages[0], id: 'maintenance-image' } as AIImage;
+        const recoverMetadata = vi.fn().mockResolvedValue(recoveredImage);
+        const onRecovered = vi.fn();
+        const { result } = renderHook(() => useAppActions({
+            ...props,
+            viewingImageId: 'gallery-image',
+            fileOps: { ...mockFileOps, recoverMetadata },
+        }));
+
+        act(() => result.current.openMetadataRecovery('maintenance-image', onRecovered));
         await act(async () => result.current.executeMetadataRecovery('generic'));
-        expect(mockAddToast).not.toHaveBeenCalled();
+
+        expect(mockModalManager.openModal).toHaveBeenCalledWith('recovery');
+        expect(recoverMetadata).toHaveBeenCalledWith('maintenance-image', 'generic');
+        expect(onRecovered).toHaveBeenCalledWith(recoveredImage);
+        expect(mockModalManager.closeModal).toHaveBeenCalledWith('recovery');
+    });
+
+    it('keeps recovery retryable when the operation fails', async () => {
+        mockSettings = { ...mockSettings, enableAI: true };
+        mockGeminiApiKey = 'key';
+        const recoverMetadata = vi.fn().mockResolvedValue(null);
+        const onRecovered = vi.fn();
+        const { result } = renderHook(() => useAppActions({
+            ...props,
+            fileOps: { ...mockFileOps, recoverMetadata },
+        }));
+
+        act(() => result.current.openMetadataRecovery('maintenance-image', onRecovered));
+        await act(async () => result.current.executeMetadataRecovery('generic'));
+
+        expect(onRecovered).not.toHaveBeenCalled();
+        expect(mockModalManager.closeModal).not.toHaveBeenCalledWith('recovery');
+    });
+
+    it('reports recovery launch without a target', () => {
+        const { result } = renderHook(() => useAppActions({ ...props, selectedIds: new Set(), lastSelectedId: null }));
+        act(() => result.current.openMetadataRecovery());
+        expect(mockAddToast).toHaveBeenCalledWith('Select an image before starting Prompt Recovery.', 'error');
+        expect(mockModalManager.openModal).not.toHaveBeenCalledWith('recovery');
     });
 
     it('routes favorite and pin shortcuts between viewer and bulk actions', async () => {

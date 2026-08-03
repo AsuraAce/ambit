@@ -1,8 +1,10 @@
 # AGENTS.md
-Agent doc system: agent-doc-system v1.2.0
 
 ## Purpose
 Ambit is a local-first desktop image manager for large AI-generated image libraries. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
+
+## Delivery Posture
+Use **Assure** by default. Ambit is public open-source desktop software distributed through signed installers and an auto-updater, and changes can affect existing local libraries, filesystem scope, migrations, privacy behavior, or release compatibility. Keep ceremony proportional for low-risk work, but use explicit regression coverage and release-aware verification for those boundaries.
 
 ## Priorities
 When working in this repository, optimize for:
@@ -27,7 +29,14 @@ Start here for common tasks:
 - App shell and cross-feature UI orchestration: `src/App.tsx`, `src/components/`, `src/features/`
 - Search, query, and persisted UI state: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 - Rust commands, DB migrations, and metadata extraction: `src-tauri/src/lib.rs`, `src-tauri/src/db/`, `src-tauri/src/metadata/`, `src-tauri/src/scanner/`
+- Thumbnail generation and background optimization: `src-tauri/src/thumb/`, `src/services/thumbnailService.ts`, `src/hooks/useThumbnailQueue.ts`, `src/hooks/useThumbnailOps.ts`
 - Release automation and versioning: `docs/WORKFLOW_SETUP.md`, `.github/workflows/`
+
+## Sources of Truth
+- Current version and toolchain facts come from `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, `.node-version`, and `rust-toolchain.toml`; the version files must agree.
+- Commands and release gates come from `package.json` and the workflow YAML. Documentation explains intent but does not override those executable sources.
+- Current architecture comes from the code and migrations, with `docs/architecture.md` as the routed explanation.
+- `docs/progress.md` owns moving repository state. A file under `docs/plans/` is active only when its own status says so; completed or superseded plans are historical evidence.
 
 ## Commands
 - Install dependencies: `pnpm install`
@@ -40,6 +49,9 @@ Start here for common tasks:
 - Frontend tests: `pnpm run test` for watch mode, `pnpm run test:run` for CI-style one-shot runs
 - Coverage: `pnpm run coverage`
 - Rust tests: `pnpm run test:rust`
+- Generate Specta bindings: `pnpm run bindings:generate`
+- Check generated binding drift: `pnpm run bindings:check`
+- Tauri compatibility build without packaging: `pnpm run tauri:check`
 - Release verification gate: `pnpm run verify:release`
 
 Production app builds run `verify:release` before `tauri build --ci`.
@@ -68,6 +80,7 @@ Production app builds run `verify:release` before `tauri build --ci`.
 - `src/stores/settingsStore.ts` and `src/services/TauriFsRepository.ts`: settings persistence, keyring migration, and path scope registration.
 - `src-tauri/src/db/`: migrations, PRAGMAs, and query behavior affect data integrity and large-library performance.
 - `src-tauri/src/metadata/comfyui/`: heuristic parsing with a broad regression-test surface.
+- `src-tauri/src/thumb/` and `src/hooks/useThumbnailQueue.ts`: cancellable background work, SQLite writes, cache recovery, and foreground-activity throttling interact.
 
 ## Doc Routing
 Use this file as the entry point. Do not bulk-read `docs/` unless one of the routes below is relevant.

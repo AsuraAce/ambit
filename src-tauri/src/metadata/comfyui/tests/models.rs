@@ -28,6 +28,44 @@ fn test_extract_comfyui_unet_loader() {
 }
 
 #[test]
+fn connected_api_unet_loader_gguf_uses_sampler_traversal() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "UnetLoaderGGUF",
+            "inputs": { "unet_name": "models/Qwen-Image-Edit-2511-Q4_K_M.GGUF" }
+        },
+        "2": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["1", 0],
+                "seed": 42,
+                "steps": 4,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "3": {
+            "class_type": "VAEDecode",
+            "inputs": { "samples": ["2", 0] }
+        },
+        "4": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["3", 0] }
+        }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "qwen_image_edit_2511_q4_k_m");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
 fn test_extract_comfyui_easy_loader() {
     // A graph using EasyLoader (Flux)
     let prompt = r#"{
@@ -389,6 +427,175 @@ fn z_image_model_patch_is_a_controlnet_not_the_primary_model() {
         diagnostics
             .field_sources
             .get(&ComfyMetadataField::ControlNets),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn anima_lllite_model_patch_is_a_deduplicated_controlnet_not_the_primary_model() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "anima-base-v1.0.safetensors" } },
+        "2": { "class_type": "ModelPatchLoader", "inputs": { "name": "anima-lllite-depth-1.safetensors" } },
+        "3": { "class_type": "AnimaLLLiteApply", "inputs": { "model": ["1", 0], "model_patch": ["2", 0] } },
+        "4": { "class_type": "AnimaLLLiteApply", "inputs": { "model": ["3", 0], "model_patch": ["2", 0] } },
+        "5": { "class_type": "CLIPTextEncode", "inputs": { "text": "Anima prompt" } },
+        "6": { "class_type": "KSampler", "inputs": { "model": ["4", 0], "positive": ["5", 0], "seed": 42, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple" } },
+        "7": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
+        "8": { "class_type": "SaveImage", "inputs": { "images": ["7", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "anima_base_v1.0");
+    assert_eq!(meta.control_nets, ["anima_lllite_depth_1"]);
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::ControlNets),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn anima_lllite_patch_links_override_widgets_and_fail_closed() {
+    let extract = |patch_source: &str, source_value: Option<&str>| {
+        let source = source_value
+            .map(|value| {
+                format!(
+                    r#", "8": {{ "class_type": "String", "inputs": {{ "value": "{value}" }} }}"#
+                )
+            })
+            .unwrap_or_default();
+        let prompt = format!(
+            r#"{{
+                "1": {{ "class_type": "UNETLoader", "inputs": {{ "unet_name": "anima-base-v1.0.safetensors" }} }},
+                "2": {{ "class_type": "ModelPatchLoader", "inputs": {{ "name": ["{patch_source}", 0] }}, "widgets_values": ["stale-patch.safetensors"] }},
+                "3": {{ "class_type": "AnimaLLLiteApply", "inputs": {{ "model": ["1", 0], "model_patch": ["2", 0] }} }},
+                "4": {{ "class_type": "CLIPTextEncode", "inputs": {{ "text": "Anima prompt" }} }},
+                "5": {{ "class_type": "KSampler", "inputs": {{ "model": ["3", 0], "positive": ["4", 0], "seed": 42, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple" }} }},
+                "6": {{ "class_type": "VAEDecode", "inputs": {{ "samples": ["5", 0] }} }},
+                "7": {{ "class_type": "SaveImage", "inputs": {{ "images": ["6", 0] }} }},
+                "9": {{ "class_type": "ModelPatchLoader", "inputs": {{ "name": "disconnected-patch.safetensors" }} }},
+                "10": {{ "class_type": "AnimaLLLiteApply", "inputs": {{ "model": ["1", 0], "model_patch": ["9", 0] }} }}
+                {source}
+            }}"#
+        );
+        let chunks = HashMap::from([("prompt".to_string(), prompt)]);
+        extract_comfyui_metadata(&chunks)
+    };
+
+    let linked = extract("8", Some("intended-patch.safetensors"));
+    assert_eq!(linked.model, "anima_base_v1.0");
+    assert_eq!(linked.control_nets, ["intended_patch"]);
+
+    let empty = extract("8", Some(""));
+    assert_eq!(empty.model, "anima_base_v1.0");
+    assert!(empty.control_nets.is_empty());
+
+    let unresolved = extract("999", None);
+    assert_eq!(unresolved.model, "anima_base_v1.0");
+    assert!(unresolved.control_nets.is_empty());
+}
+
+#[test]
+fn inactive_anima_lllite_wrappers_do_not_report_model_patches() {
+    let extract = |mode: i64| {
+        let prompt = format!(
+            r#"{{
+                "1": {{ "class_type": "UNETLoader", "inputs": {{ "unet_name": "anima-base-v1.0.safetensors" }} }},
+                "2": {{ "class_type": "ModelPatchLoader", "inputs": {{ "name": "inactive-patch.safetensors" }} }},
+                "3": {{ "class_type": "AnimaLLLiteApply", "mode": {mode}, "inputs": {{ "model": ["1", 0], "model_patch": ["2", 0] }} }},
+                "4": {{ "class_type": "CLIPTextEncode", "inputs": {{ "text": "Anima prompt" }} }},
+                "5": {{ "class_type": "KSampler", "inputs": {{ "model": ["3", 0], "positive": ["4", 0], "seed": 42, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple" }} }},
+                "6": {{ "class_type": "VAEDecode", "inputs": {{ "samples": ["5", 0] }} }},
+                "7": {{ "class_type": "SaveImage", "inputs": {{ "images": ["6", 0] }} }}
+            }}"#
+        );
+        let chunks = HashMap::from([("prompt".to_string(), prompt)]);
+        extract_comfyui_metadata(&chunks)
+    };
+
+    for mode in [2, 4] {
+        let meta = extract(mode);
+        assert!(meta.control_nets.is_empty(), "mode {mode}");
+    }
+}
+
+#[test]
+fn unresolved_anima_lllite_patch_socket_does_not_discover_a_loader() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "anima-base-v1.0.safetensors" } },
+        "2": { "class_type": "ModelPatchLoader", "inputs": { "name": "wireless-patch.safetensors" } },
+        "3": { "class_type": "AnimaLLLiteApply", "inputs": { "model": ["1", 0], "model_patch": ["999", 0] } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "Anima prompt" } },
+        "5": { "class_type": "KSampler", "inputs": { "model": ["3", 0], "positive": ["4", 0], "seed": 42, "steps": 30, "cfg": 4.0, "sampler_name": "euler", "scheduler": "simple" } },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let meta = extract_comfyui_metadata(&chunks);
+
+    assert_eq!(meta.model, "anima_base_v1.0");
+    assert!(meta.control_nets.is_empty());
+}
+
+#[test]
+fn uso_style_reference_collects_upstream_lora_without_promoting_projector() {
+    let prompt = r#"{
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": { "unet_name": "flux1-dev-fp8.safetensors" }
+        },
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": "uso-flux1-dit-lora-v1.safetensors",
+                "strength_model": 1.0
+            }
+        },
+        "3": {
+            "class_type": "ModelPatchLoader",
+            "inputs": { "model_patch_name": "uso-flux1-projector-v1.safetensors" }
+        },
+        "4": {
+            "class_type": "USOStyleReference",
+            "inputs": {
+                "model": ["2", 0],
+                "model_patch": ["3", 0]
+            }
+        },
+        "5": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "USO prompt" }
+        },
+        "6": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["4", 0],
+                "positive": ["5", 0],
+                "seed": 42,
+                "steps": 20,
+                "cfg": 1.0,
+                "sampler_name": "euler",
+                "scheduler": "simple"
+            }
+        },
+        "7": { "class_type": "VAEDecode", "inputs": { "samples": ["6", 0] } },
+        "8": { "class_type": "SaveImage", "inputs": { "images": ["7", 0] } }
+    }"#;
+    let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux1_dev_fp8");
+    assert_eq!(meta.loras, ["uso_flux1_dit_lora_v1"]);
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Loras),
         Some(&ComfyParseLayer::SamplerTraversal)
     );
 }

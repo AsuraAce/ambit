@@ -35,7 +35,7 @@ impl GuidanceClassifier {
             .to_lowercase()
             .trim()
             .to_string();
-        let without_extension = [".safetensors", ".ckpt", ".pth", ".bin", ".pt"]
+        let without_extension = [".safetensors", ".ckpt", ".pth", ".bin", ".pt", ".gguf"]
             .iter()
             .find_map(|extension| normalized.strip_suffix(extension))
             .unwrap_or(&normalized);
@@ -370,6 +370,14 @@ mod tests {
         assert_eq!(
             GuidanceClassifier::clean_name("C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS"),
             "t2i_adapter_depth"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.GGUF"),
+            "qwen_image_edit_2511_q4_k_m"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.gguf"),
+            "qwen_image_edit_2511_q4_k_m"
         );
 
         // Consolidation tests

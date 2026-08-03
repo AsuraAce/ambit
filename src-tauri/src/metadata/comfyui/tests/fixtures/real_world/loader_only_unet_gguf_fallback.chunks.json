@@ -1,0 +1,1 @@
+{"workflow":{"id":"ad18abd3-bdee-4f80-8fae-d15d4f845b9d","nodes":[{"id":12,"type":"UNETLoader","widgets_values":["qwen_image_edit_2511_bf16.safetensors","default"]},{"id":89,"type":"UnetLoaderGGUF","widgets_values":["qwen-image-edit-2511-Q4_K_M.gguf"]},{"id":65,"type":"KSampler","widgets_values":[0,"randomize",4,1,"euler","simple",1]}],"links":[]}}

@@ -132,6 +132,59 @@ fn unconnected_sampler_custom_core_sockets_do_not_use_wireless_candidates() {
 }
 
 #[test]
+fn selected_sampler_custom_reports_connected_lcm_sampler() {
+    let prompt = json!({
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "hidream.safetensors" } },
+        "2": { "class_type": "SamplerLCM", "inputs": {} },
+        "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "normal", "steps": 28 } },
+        "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "literal prompt" } },
+        "5": {
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0], "positive": ["4", 0], "sampler": ["2", 0],
+                "sigmas": ["3", 0], "noise_seed": 42, "cfg": 1.0
+            }
+        },
+        "6": { "class_type": "VAEDecode", "inputs": { "samples": ["5", 0] } },
+        "7": { "class_type": "SaveImage", "inputs": { "images": ["6", 0] } }
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string()));
+
+    assert_eq!(meta.sampler, "lcm (normal)");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Sampler,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn disconnected_lcm_sampler_does_not_override_selected_sampler() {
+    let prompt = json!({
+        "0": { "class_type": "SamplerLCM", "inputs": {} },
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "selected.safetensors" } },
+        "2": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "3": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 4 } },
+        "4": {
+            "class_type": "SamplerCustom",
+            "inputs": {
+                "model": ["1", 0], "sampler": ["2", 0], "sigmas": ["3", 0],
+                "noise_seed": 7, "cfg": 1.0
+            }
+        },
+        "5": { "class_type": "VAEDecode", "inputs": { "samples": ["4", 0] } },
+        "6": { "class_type": "SaveImage", "inputs": { "images": ["5", 0] } }
+    });
+
+    let (meta, _) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(&prompt.to_string()));
+
+    assert_eq!(meta.sampler, "euler (simple)");
+}
+
+#[test]
 fn saved_output_reroute_reaches_sampler_custom() {
     // API Reroute uses the empty input name. It is transparent on the bounded
     // saved-output walk, so the connected SamplerCustom remains authoritative.
@@ -642,7 +695,7 @@ fn linked_flux_guidance_supplies_cfg_for_sampler_custom_advanced() {
 }
 
 #[test]
-fn workflow_flux_guidance_widget_value_supplies_cfg() {
+fn workflow_flux_guidance_and_zero_noise_widgets_supply_metadata() {
     // Workflow-only imports rely on FluxGuidance.widgets_values[0] because API
     // input names are not available in the UI-format node body.
     let workflow = r#"{
@@ -676,7 +729,7 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
             {
                 "id": 5,
                 "type": "RandomNoise",
-                "widgets_values": [123456789]
+                "widgets_values": [0]
             },
             {
                 "id": 6,
@@ -734,6 +787,7 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
     let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
 
     assert_eq!(meta.model, "flux_ui");
+    assert_eq!(meta.seed, Some(0));
     assert_eq!(meta.steps, 12);
     assert_eq!(meta.cfg, 4.25);
     assert_eq!(meta.sampler, "euler (simple)");
@@ -741,6 +795,11 @@ fn workflow_flux_guidance_widget_value_supplies_cfg() {
     assert_field_source(
         &diagnostics,
         ComfyMetadataField::Cfg,
+        ComfyParseLayer::SamplerTraversal,
+    );
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::Seed,
         ComfyParseLayer::SamplerTraversal,
     );
 }
@@ -1194,6 +1253,155 @@ fn connected_dual_cfg_guider_uses_primary_conditioning_and_ignores_disconnected_
     ] {
         assert_field_source(&diagnostics, field, ComfyParseLayer::SamplerTraversal);
     }
+}
+
+#[test]
+fn dual_cfg_guider_uses_instruct_pix_to_pix_output_slots_for_prompt_roles() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "edit-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "edit positive" } },
+        "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "edit negative" } },
+        "4": {
+            "class_type": "InstructPixToPixConditioning",
+            "inputs": { "positive": ["2", 0], "negative": ["3", 0] }
+        },
+        "5": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0], "cond1": ["4", 0], "cond2": ["4", 1],
+                "negative": ["2", 0], "cfg_conds": 3.0
+            }
+        },
+        "6": { "class_type": "RandomNoise", "inputs": { "noise_seed": 55 } },
+        "7": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "8": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": { "noise": ["6", 0], "guider": ["5", 0], "sampler": ["7", 0], "sigmas": ["8", 0] }
+        },
+        "10": { "class_type": "VAEDecode", "inputs": { "samples": ["9", 0] } },
+        "11": { "class_type": "SaveImage", "inputs": { "images": ["10", 0] } }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.positive_prompt, "edit positive");
+    assert_eq!(meta.negative_prompt, "edit negative");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::PositivePrompt,
+        ComfyParseLayer::SamplerTraversal,
+    );
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::NegativePrompt,
+        ComfyParseLayer::SamplerTraversal,
+    );
+}
+
+#[test]
+fn unresolved_instruct_pix_to_pix_negative_output_fails_closed() {
+    let prompt = r#"{
+        "1": { "class_type": "UNETLoader", "inputs": { "unet_name": "edit-model.safetensors" } },
+        "2": { "class_type": "CLIPTextEncode", "inputs": { "text": "edit positive" } },
+        "4": {
+            "class_type": "InstructPixToPixConditioning",
+            "inputs": { "positive": ["2", 0], "negative": ["99", 0] }
+        },
+        "5": {
+            "class_type": "DualCFGGuider",
+            "inputs": {
+                "model": ["1", 0], "cond1": ["4", 0], "cond2": ["4", 1],
+                "negative": ["2", 0], "cfg_conds": 3.0
+            }
+        },
+        "6": { "class_type": "RandomNoise", "inputs": { "noise_seed": 55 } },
+        "7": { "class_type": "KSamplerSelect", "inputs": { "sampler_name": "euler" } },
+        "8": { "class_type": "BasicScheduler", "inputs": { "scheduler": "simple", "steps": 20 } },
+        "9": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": { "noise": ["6", 0], "guider": ["5", 0], "sampler": ["7", 0], "sigmas": ["8", 0] }
+        },
+        "10": { "class_type": "VAEDecode", "inputs": { "samples": ["9", 0] } },
+        "11": { "class_type": "SaveImage", "inputs": { "images": ["10", 0] } }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.positive_prompt, "edit positive");
+    assert_eq!(meta.negative_prompt, "");
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::NegativePrompt),
+        None
+    );
+}
+
+#[test]
+fn workflow_dual_cfg_preserves_instruct_pix_to_pix_output_slots() {
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["edit-ui-model.safetensors"] },
+            { "id": 2, "type": "CLIPTextEncode", "widgets_values": ["ui edit positive"] },
+            { "id": 3, "type": "CLIPTextEncode", "widgets_values": ["ui edit negative"] },
+            {
+                "id": 4,
+                "type": "InstructPixToPixConditioning",
+                "inputs": [
+                    { "name": "positive", "link": 1 },
+                    { "name": "negative", "link": 2 }
+                ]
+            },
+            {
+                "id": 5,
+                "type": "DualCFGGuider",
+                "inputs": [
+                    { "name": "model", "link": 3 },
+                    { "name": "cond1", "link": 4 },
+                    { "name": "cond2", "link": 5 },
+                    { "name": "negative", "link": 6 }
+                ],
+                "widgets_values": [3.0, 1.0, "regular"]
+            },
+            { "id": 6, "type": "RandomNoise", "widgets_values": [55] },
+            { "id": 7, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 8, "type": "BasicScheduler", "widgets_values": ["simple", 20, 1.0] },
+            {
+                "id": 9,
+                "type": "SamplerCustomAdvanced",
+                "inputs": [
+                    { "name": "noise", "link": 7 },
+                    { "name": "guider", "link": 8 },
+                    { "name": "sampler", "link": 9 },
+                    { "name": "sigmas", "link": 10 }
+                ]
+            },
+            { "id": 10, "type": "VAEDecode", "inputs": [{ "name": "samples", "link": 11 }] },
+            { "id": 11, "type": "SaveImage", "inputs": [{ "name": "images", "link": 12 }] }
+        ],
+        "links": [
+            [1, 2, 0, 4, 0, "CONDITIONING"], [2, 3, 0, 4, 1, "CONDITIONING"],
+            [3, 1, 0, 5, 0, "MODEL"], [4, 4, 0, 5, 1, "CONDITIONING"],
+            [5, 4, 1, 5, 2, "CONDITIONING"], [6, 2, 0, 5, 3, "CONDITIONING"],
+            [7, 6, 0, 9, 0, "NOISE"], [8, 5, 0, 9, 1, "GUIDER"],
+            [9, 7, 0, 9, 2, "SAMPLER"], [10, 8, 0, 9, 3, "SIGMAS"],
+            [11, 9, 0, 10, 0, "LATENT"], [12, 10, 0, 11, 0, "IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.positive_prompt, "ui edit positive");
+    assert_eq!(meta.negative_prompt, "ui edit negative");
+    assert_field_source(
+        &diagnostics,
+        ComfyMetadataField::NegativePrompt,
+        ComfyParseLayer::SamplerTraversal,
+    );
 }
 
 #[test]
@@ -2189,6 +2397,48 @@ fn sampler_custom_traces_split_sigmas_to_upstream_scheduler() {
 
     assert_eq!(meta.steps, 20);
     assert_eq!(meta.sampler, "res_multistep (simple)");
+}
+
+#[test]
+fn sampler_custom_advanced_traces_set_first_sigma_to_scheduler() {
+    // SetFirstSigma changes the leading sigma but does not define schedule
+    // identity or length. Those fields still belong to its connected scheduler.
+    let workflow = r#"{
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "widgets_values": ["model.safetensors","default"] },
+            { "id": 2, "type": "BasicGuider", "inputs": [{"name":"model","link":1}] },
+            { "id": 3, "type": "KSamplerSelect", "widgets_values": ["euler"] },
+            { "id": 4, "type": "BasicScheduler", "inputs": [{"name":"model","link":2}], "widgets_values": ["normal",1,1] },
+            { "id": 5, "type": "SetFirstSigma", "inputs": [{"name":"sigmas","link":5}], "widgets_values": [999.0] },
+            { "id": 6, "type": "SamplerCustomAdvanced", "inputs": [
+                {"name":"guider","link":3},{"name":"sampler","link":4},
+                {"name":"sigmas","link":6}
+            ] },
+            { "id": 7, "type": "VAEDecode", "inputs": [{"name":"samples","link":7}] },
+            { "id": 8, "type": "SaveImage", "inputs": [{"name":"images","link":8}] }
+        ],
+        "links": [
+            [1,1,0,2,0,"MODEL"], [2,1,0,4,0,"MODEL"],
+            [3,2,0,6,0,"GUIDER"], [4,3,0,6,1,"SAMPLER"],
+            [5,4,0,5,0,"SIGMAS"], [6,5,0,6,2,"SIGMAS"],
+            [7,6,0,7,0,"LATENT"], [8,7,0,8,0,"IMAGE"]
+        ]
+    }"#;
+    let chunks = HashMap::from([("workflow".to_string(), workflow.to_string())]);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "model");
+    assert_eq!(meta.steps, 1);
+    assert_eq!(meta.sampler, "euler (normal)");
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Steps),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Sampler),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
 }
 
 #[test]
