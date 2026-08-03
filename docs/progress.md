@@ -1,6 +1,6 @@
 # Progress
 Status: Current
-Last reviewed: 2026-08-01
+Last reviewed: 2026-08-03
 
 ## Current Baseline
 - The current release manifests are version `0.9.1`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. Hosted release state still belongs to GitHub rather than this file.
@@ -8,6 +8,8 @@ Last reviewed: 2026-08-01
 - Production packaging runs `verify:release` before Tauri builds. The gate checks version consistency, generated binding drift, lint, TypeScript, guarded frontend output, coverage, Rust tests, and a no-bundle Tauri compatibility build.
 - ComfyUI metadata milestones 22 through 61 are complete on the unmerged integration stack. The pinned v0.11.18 core target remains all 93 workflows: 86 golden, 2 pattern-covered, 5 partial, and 0 unassessed. Milestones 58 through 61 add a separate 16-workflow extended image scope for official utility and custom-node workflows: 15 golden and 1 partial, bringing the whole manifest to 101 golden, 2 pattern-covered, 6 partial, and 469 excluded. The SUPIR partial retains exact sampler metadata but cannot recover its selected generated caption because the `TextGenerate` result is not embedded. The two remaining pattern-covered entries are intentionally disconnected or bypassed starter workflows. Non-generative utility outputs now suppress weak sampler/global fallback when the authored workflow contains no sampler definition, preventing utility checkpoints and selector text from becoming generation metadata. The path-parity gate covers 109 official catalog fixtures and 21 real-world fixtures across direct extraction, scanner-style merging, reparse, and developer diagnostics. Parser version is 46; the integration stack remains intentionally unmerged so users receive one later metadata refresh rather than repeated refreshes.
 - The search-transition, prompt-masking, setup-guide replay, and tooltip-dismissal packages recorded in `docs/plans/release-0.9.0-ux-readiness.md` landed before the `v0.9.0` release.
+- InvokeAI synchronization now applies one durable legacy, All users, or selected-owner scope across manual, startup, and Live Watch queries. Selected-owner mode includes owned boards and collections, disables filesystem-only orphan recovery without erasing its preference, and preserves hidden rows for later scope changes.
+- InvokeAI image source classification, asset visibility, high-value metadata extraction, reference provenance/navigation, and owner-scope startup remediation are implementation-complete and release-verified. Brief database, owner, and privacy checks remain behind the branded splash; sustained preparation is delayed, progress is stable, and the handoff into background catch-up is explicit. The real-data desktop restart is owner-accepted; multi-owner selection and temporary-offline retry remain recovery acceptance. See `docs/plans/invokeai-image-assets-and-metadata.md` and `docs/plans/invokeai-owner-scope-startup-remediation.md`.
 
 ## Current Constraints
 - Specta binding generation is explicit. Do not expect a debug Tauri launch to update `src/bindings.ts`; run `pnpm run bindings:generate`, then `pnpm run bindings:check`.
@@ -17,6 +19,7 @@ Last reviewed: 2026-08-01
 - The `io.github.asuraace.ambit` identifier is current. Startup migration and reset/repair paths still account for legacy `com.ambit.app` Local and Roaming AppData during the public-beta transition.
 
 ## Active Follow-Ups
+- Complete the remaining owner-acceptance recovery journey for InvokeAI owner scope: multi-owner selection, temporary offline startup, retry, and scope changes without missing or deleted Ambit records. The normal-restart presentation is accepted.
 - `docs/plans/release-0.9.0-ux-readiness.md` was overtaken by the `v0.9.0` release and is no longer a live release gate. Its Work Package 3 (initial Smart Collection thumbnail hydration) and Work Package 4 (discoverable duplicate-group navigation) remain unversioned product follow-ups.
 - Add browser smoke coverage for lazy-loaded app surfaces, including settings, statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editing.
 - Add coverage thresholds after the public-beta baseline is intentionally reviewed.

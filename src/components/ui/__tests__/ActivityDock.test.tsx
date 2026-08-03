@@ -60,14 +60,29 @@ describe('ActivityDock', () => {
     it('renders the manual syncing card with cancel controls', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
+            invokeSyncActivityKind: 'manual',
             syncProgress: { current: 2, total: 5, message: 'Syncing collections...' }
         });
 
         render(<ActivityDock />);
 
-        expect(screen.getByText('Syncing')).toBeTruthy();
+        expect(screen.getByText('InvokeAI Sync')).toBeTruthy();
+        expect(screen.getByText('You can keep using the library while Ambit synchronizes InvokeAI.')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
         expect(screen.queryByText('Live Watch')).toBeNull();
+    });
+
+    it('identifies startup synchronization as InvokeAI catch-up', () => {
+        useLibraryStore.setState({
+            syncStatus: 'syncing',
+            invokeSyncActivityKind: 'startup',
+            syncProgress: { current: 2, total: 5, message: 'Synchronizing boards...' }
+        });
+
+        render(<ActivityDock />);
+
+        expect(screen.getByText('InvokeAI Catch-up')).toBeTruthy();
+        expect(screen.getByText('You can keep using the library while Ambit catches up.')).toBeTruthy();
     });
 
     it('renders duplicate scan progress with cancel controls', () => {
@@ -264,7 +279,7 @@ describe('ActivityDock', () => {
 
         render(<ActivityDock />);
 
-        expect(screen.getByText('Metadata Refresh')).toBeTruthy();
+        expect(screen.getByText('Updating Metadata')).toBeTruthy();
         expect(screen.getByText('126,700 / 288,222 images | 44% | 123,981 updated')).toBeTruthy();
         expect(screen.queryByText('Refreshing Metadata')).toBeNull();
         expect(screen.queryByText('126,700 / 288,222')).toBeNull();
@@ -868,13 +883,15 @@ describe('ActivityDock', () => {
     it('minimizes and expands high- and low-priority activities', () => {
         useLibraryStore.setState({
             syncStatus: 'syncing',
+            invokeSyncActivityKind: 'startup',
             syncProgress: { current: 1, total: 4, message: 'Syncing' }
         });
         const view = render(<ActivityDock />);
         fireEvent.click(screen.getByRole('button', { name: 'Minimize Activity Details' }));
         expect(screen.getByRole('button', { name: 'Expand Activity Details' })).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
-        expect(screen.getAllByText('Syncing')).toHaveLength(2);
+        expect(screen.getByText('InvokeAI Catch-up')).toBeTruthy();
+        expect(screen.getByText('Syncing')).toBeTruthy();
 
         view.unmount();
         resetLibraryStore();

@@ -15,6 +15,8 @@ Use the left sidebar to switch between:
 
 The filter button opens or closes the library panel. Favorites Only and Pinned Only buttons narrow the current view without changing your source files.
 
+When hidden content is available, the View menu offers controls for showing it. `Show InvokeAI Image Assets` reveals InvokeAI user, control, mask, and other source images, which are hidden from ordinary browsing by default. The preference persists across restarts and applies to the current library result set, including collections, pinned results, statistics, and slideshows. Collection sidebar counts and saved collection thumbnails do not change with this display preference.
+
 ## Grid Browsing
 
 Grid View is designed for large libraries. Ambit uses virtualized rendering so it can browse many images without drawing every record at once.
@@ -26,6 +28,8 @@ Typical grid actions:
 - mark images as favorites
 - pin images for quick resurfacing
 - right-click images for context-specific actions
+
+Revealed InvokeAI image assets carry an `Asset · User`, `Asset · Control`, `Asset · Mask`, or `Asset · Other` badge centered along the top of the card. The badge stays in place when the selection control appears in the upper-left corner. Missing or unrecognized InvokeAI categories are not hidden or marked.
 
 ## Timeline Browsing
 

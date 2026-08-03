@@ -292,6 +292,9 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: SqlParam[] = [];
 
+    // Owner scope applies to every library query, including recursive facet queries.
+    conditions.push('invoke_scope_hidden = 0');
+
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
 
@@ -301,6 +304,10 @@ export const buildSqlWhereClause = (
         if (!filters.showGrids) {
             // Use indexed is_grid_gen column only - no json_extract needed
             conditions.push("IFNULL(is_grid_gen, 0) = 0");
+        }
+        if (!filters.showInvokeImageAssets) {
+            // NULL means missing or unknown InvokeAI category and must remain visible.
+            conditions.push("IFNULL(is_invoke_asset_gen, 0) = 0");
         }
     }
 

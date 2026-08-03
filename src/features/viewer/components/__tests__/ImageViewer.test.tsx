@@ -247,6 +247,20 @@ describe('ImageViewer full metadata loading', () => {
         expect(onNext).not.toHaveBeenCalled();
     });
 
+    it('ignores arrow shortcuts when the active image is outside the current result list', () => {
+        const onNext = vi.fn();
+        const onPrev = vi.fn();
+        renderViewer({ onNext, onPrev, canNavigateNext: false, canNavigatePrevious: false });
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+        });
+
+        expect(onNext).not.toHaveBeenCalled();
+        expect(onPrev).not.toHaveBeenCalled();
+    });
+
     it('handles navigation, actions, theater mode, and input shortcut guards', async () => {
         const onNext = vi.fn();
         const onPrev = vi.fn();

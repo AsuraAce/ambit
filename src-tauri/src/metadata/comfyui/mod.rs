@@ -109,8 +109,9 @@ fn merge_flat_parameters(base: &mut ImageMetadata, flat: &ImageMetadata) {
     if base.steps == 0 && flat.steps > 0 {
         base.steps = flat.steps;
     }
-    if base.cfg == 0.0 && flat.cfg > 0.0 {
+    if !base.cfg_present && flat.cfg_present {
         base.cfg = flat.cfg;
+        base.cfg_present = true;
     }
     if base.seed.is_none() {
         base.seed = flat.seed;
@@ -188,7 +189,7 @@ fn record_flat_parameter_sources(
             .field_sources
             .insert(ComfyMetadataField::Steps, layer);
     }
-    if flat.cfg > 0.0 && selected.cfg == flat.cfg {
+    if flat.cfg_present && selected.cfg == flat.cfg {
         diagnostics
             .field_sources
             .insert(ComfyMetadataField::Cfg, layer);
@@ -307,6 +308,7 @@ fn merge_graph_metadata(
             selected_graph_layer(graph_diagnostics, ComfyMetadataField::Cfg, base.cfg == 0.0)
         {
             base.cfg = graph.cfg;
+            base.cfg_present = true;
             diagnostics
                 .field_sources
                 .insert(ComfyMetadataField::Cfg, layer);
@@ -852,6 +854,7 @@ fn clear_core_fields(meta: &mut ImageMetadata) {
     meta.seed = None;
     meta.steps = 0;
     meta.cfg = 0.0;
+    meta.cfg_present = false;
     meta.sampler = "Unknown".to_string();
     meta.positive_prompt.clear();
     meta.negative_prompt.clear();

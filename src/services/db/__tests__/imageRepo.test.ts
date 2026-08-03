@@ -117,6 +117,9 @@ describe('imageRepo batch removal', () => {
             notes: image.notes,
             boardId: image.boardId,
             groupId: image.groupId,
+            invokeImageName: image.invokeImageName,
+            invokeImageCategory: image.invokeImageCategory,
+            invokeImageOrigin: image.invokeImageOrigin,
         });
         const browserImages = [
             makeBrowserImage({
@@ -184,6 +187,17 @@ describe('imageRepo batch removal', () => {
                 isIntermediate: false,
                 metadata: promptMetadata,
             }),
+            makeBrowserImage({
+                id: 'invoke-control',
+                timestamp: 1,
+                fileSize: 1,
+                isDeleted: false,
+                isIntermediate: false,
+                metadata: promptMetadata,
+                invokeImageName: 'invoke-control.png',
+                invokeImageCategory: 'control',
+                invokeImageOrigin: 'internal',
+            }),
         ];
         getBrowserMockImagesMock.mockReturnValue(browserImages);
 
@@ -238,6 +252,7 @@ describe('imageRepo batch removal', () => {
         await expect(isImageNew('regular')).resolves.toBe(false);
         await expect(isImageNew('new-image')).resolves.toBe(true);
         await expect(getAllImages(2, 0, true)).resolves.toEqual([browserImages[1], browserImages[0]]);
+        await expect(getAllImages(undefined, 0, false, false, false, true)).resolves.toContain(browserImages[7]);
         await expect(getImagesByIds([])).resolves.toEqual([]);
         await expect(getImagesByIds(['regular', 'pinned'])).resolves.toEqual([browserImages[0], browserImages[1]]);
         await expect(getFlatInvokeImageIdsForRoot('D:/Invoke/')).resolves.toEqual(['D:/Invoke/outputs/images/flat.png']);
@@ -259,7 +274,11 @@ describe('imageRepo batch removal', () => {
         await expect(updatePinned('regular', true)).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], 'board-a')).resolves.toBeUndefined();
         await expect(updateImagesBoard(['regular'], null)).resolves.toBeUndefined();
-        await expect(checkHiddenContentAvailability()).resolves.toEqual({ hasIntermediates: true, hasGrids: true });
+        await expect(checkHiddenContentAvailability()).resolves.toEqual({
+            hasIntermediates: true,
+            hasGrids: true,
+            hasInvokeImageAssets: true,
+        });
         await expect(clearAllThumbnailPaths()).resolves.toBe(0);
         await expect(updateThumbnailPath('regular', 'thumb.webp')).resolves.toBeUndefined();
         await expect(updateThumbnailPathsBatch([{ id: 'regular', thumbnailPath: 'thumb.webp', microThumbnail: 'data', thumbnailSource: 'ambit' }])).resolves.toBeUndefined();
@@ -347,6 +366,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
+                if (normalizedSql.includes('select 1 from images where is_invoke_asset_gen')) return [{ 1: 1 }];
                 if (sql.includes('FROM images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
@@ -612,9 +632,18 @@ describe('imageRepo batch removal', () => {
             original_parsed_json: null,
             original_state_json: null,
             is_corrupt: 0,
+            invoke_image_name: `${index}.png`,
+            invoke_image_category: 'control',
+            invoke_image_origin: 'internal',
         }]));
         const membershipRowsById = new Map(ids.map(id => [id, [{ image_id: id, collection_id: 'collection-a' }]]));
-        const removedRows = new Map<string, { id: string; collectionIdsJson: string | null }>();
+        const removedRows = new Map<string, {
+            id: string;
+            invokeImageName: string | null;
+            invokeImageCategory: string | null;
+            invokeImageOrigin: string | null;
+            collectionIdsJson: string | null;
+        }>();
         const deletedImageIds = new Set<string>();
 
         const enforceParamLimit = (params: unknown[] = []) => {
@@ -640,7 +669,10 @@ describe('imageRepo batch removal', () => {
                 if (sql.includes('INSERT OR REPLACE INTO removed_images')) {
                     removedRows.set(params[0] as string, {
                         id: params[0] as string,
-                        collectionIdsJson: (params[22] as string | null) ?? null,
+                        invokeImageName: (params[21] as string | null) ?? null,
+                        invokeImageCategory: (params[22] as string | null) ?? null,
+                        invokeImageOrigin: (params[23] as string | null) ?? null,
+                        collectionIdsJson: (params[27] as string | null) ?? null,
                     });
                     return;
                 }
@@ -664,12 +696,61 @@ describe('imageRepo batch removal', () => {
         expect(deletedImageIds.size).toBe(ids.length);
         expect(db.select).toHaveBeenCalled();
         expect(db.execute).toHaveBeenCalled();
+        expect(db.select.mock.calls.some(([sql]) =>
+            typeof sql === 'string'
+            && sql.includes('FROM images')
+            && sql.includes('invoke_scope_hidden = 0')
+            && sql.includes('invoke_image_name')
+            && sql.includes('invoke_image_category')
+            && sql.includes('invoke_image_origin')
+        )).toBe(true);
 
         const allSelectParamCounts = db.select.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
         const allExecuteParamCounts = db.execute.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
         expect(Math.max(...allSelectParamCounts)).toBeLessThanOrEqual(900);
         expect(Math.max(...allExecuteParamCounts)).toBeLessThanOrEqual(900);
         expect(removedRows.get(ids[0])?.collectionIdsJson).toBe(JSON.stringify(['collection-a']));
+        expect(removedRows.get(ids[0])).toMatchObject({
+            invokeImageName: '0.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'internal',
+        });
+    });
+
+    it('never removes requested ids that are outside the active owner scope', async () => {
+        const visibleId = 'C:/images/visible.png';
+        const hiddenId = 'C:/images/hidden.png';
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.includes('FROM images')) {
+                    return [{
+                        id: visibleId,
+                        path: visibleId,
+                        timestamp: 1,
+                        metadata_json: '{}',
+                        invoke_scope_hidden: 0,
+                    }];
+                }
+                return [];
+            }),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { removeImagesFromLibrary } = await import('../imageRepo');
+        await removeImagesFromLibrary([visibleId, hiddenId]);
+
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            [visibleId, hiddenId]
+        );
+        const destructiveCalls = db.execute.mock.calls.filter(([sql]) =>
+            typeof sql === 'string' && sql.startsWith('DELETE FROM')
+        );
+        expect(destructiveCalls.length).toBeGreaterThan(0);
+        for (const [, params] of destructiveCalls) {
+            expect(params).toEqual([visibleId]);
+        }
     });
 
     it('skips thumbnail trashing when the thumbnail path is the source image path', async () => {
@@ -794,6 +875,7 @@ describe('imageRepo batch removal', () => {
             expect.stringContaining('AND id IN (?,?)'),
             ['C:/images/a.png', 'C:/images/b.png']
         );
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_scope_hidden = 0');
         expect(db.select).toHaveBeenCalledWith(
             expect.stringContaining('FROM collection_images'),
             ['C:/images/a.png', 'C:/images/b.png']
@@ -1066,8 +1148,8 @@ describe('imageRepo batch removal', () => {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.toLowerCase();
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
-                if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
-                if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
+                if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_intermediate_gen')) return [{ 1: 1 }];
+                if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_grid_gen')) return [];
                 if (sql.includes('FROM images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
@@ -1110,6 +1192,7 @@ describe('imageRepo batch removal', () => {
         await expect(checkHiddenContentAvailability()).resolves.toEqual({
             hasIntermediates: true,
             hasGrids: false,
+            hasInvokeImageAssets: true,
         });
         await updateThumbnailPath('C:/images/thumb.png', 'C:/thumbs/thumb.webp');
 
@@ -1254,6 +1337,9 @@ describe('imageRepo batch removal', () => {
                 group_id: null,
                 board_id: null,
                 notes: null,
+                invoke_image_name: 'restore.png',
+                invoke_image_category: 'mask',
+                invoke_image_origin: 'internal',
                 original_metadata_json: null,
                 original_parsed_json: null,
                 original_state_json: null,
@@ -1269,6 +1355,17 @@ describe('imageRepo batch removal', () => {
         await restoreRemovedImages(['C:/removed/restore.png']);
 
         expect(commands.saveImagesBatch).toHaveBeenCalledTimes(1);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            ['C:/removed/restore.png']
+        );
+        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                invokeImageName: 'restore.png',
+                invokeImageCategory: 'mask',
+                invokeImageOrigin: 'internal',
+            }),
+        ]);
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('INSERT OR IGNORE INTO collection_images'),
             ['collection-a', 'C:/removed/restore.png', 'collection-a']
@@ -1329,6 +1426,15 @@ describe('imageRepo batch removal', () => {
             thumbnailWarningIds: ['C:/removed/ok.png'],
         });
         expect(commands.deleteThumbnail).toHaveBeenCalledTimes(1);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_scope_hidden = 0'),
+            [
+                'C:/removed/ok.png',
+                'C:/removed/source-thumb.png',
+                'C:/removed/fail.png',
+                'C:/removed/missing.png',
+            ]
+        );
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('DELETE FROM removed_images WHERE id IN (?,?)'),
             ['C:/removed/ok.png', 'C:/removed/source-thumb.png']
@@ -1355,7 +1461,7 @@ describe('imageRepo batch removal', () => {
         await expect(clearAllThumbnailPaths()).resolves.toBe(4);
 
         expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('UPDATE images SET thumbnail_path = NULL')
+            expect.stringContaining('WHERE invoke_scope_hidden = 0')
         );
     });
 
@@ -1540,7 +1646,8 @@ describe('imageRepo batch removal', () => {
             fileSize: 0, fileHash: null, thumbnailPath: '', microThumbnail: null,
             thumbnailSource: null, isPinned: false, isDeleted: false, isMissing: false,
             userMasked: null, groupId: null, boardId: null, notes: null,
-            originalMetadataJson: null, originalStateJson: null, isCorrupt: false
+            originalMetadataJson: null, originalStateJson: null, isCorrupt: false,
+            invokeImageName: null, invokeImageCategory: null, invokeImageOrigin: null
         });
         expect(db.execute).not.toHaveBeenCalled();
 

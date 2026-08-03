@@ -42,6 +42,7 @@ interface MaintenanceViewProps {
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     availableTags?: string[];
     onViewerOpenChange: (isOpen: boolean) => void;
+    onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isShortcutBlocked: boolean;
 }
 
@@ -66,6 +67,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onSetCollectionMembership,
     availableTags,
     onViewerOpenChange,
+    onOpenReferencedImage,
     isShortcutBlocked
 }) => {
     // --- State ---
@@ -210,6 +212,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             setViewingImageId(id);
         });
     }, [handleImageClick, setViewingImageId]);
+
+    const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
+        const opened = await onOpenReferencedImage(imageId);
+        if (opened) setViewingImageId(null);
+        return opened;
+    }, [onOpenReferencedImage]);
 
     const handleSelectAll = useCallback(() => {
         const ids = currentList.map(i => i.id);
@@ -647,6 +655,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     availableTags={availableTags}
                     onOpenSettings={() => { }}
                     onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
+                    onOpenReferencedImage={handleOpenReferencedImage}
                 />
             )}
 

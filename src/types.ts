@@ -65,7 +65,7 @@ export interface ImageMetadata {
   hiresSteps?: number;
   hiresUpscaler?: string;
   modelHash?: string;
-  generationType?: 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
+  generationType?: string;
   isFavorite?: boolean; // Extracted from legacy metadata (e.g. Subject: favorite)
 }
 
@@ -129,6 +129,10 @@ export interface AIImage {
   userMasked?: boolean; // Explicit manual mask
   groupId?: string; // ID linking multiple versions/upscales
   boardId?: string; // ID linking to external board/collection
+  invokeImageName?: string; // Stable image name from the InvokeAI database
+  invokeImageCategory?: string; // InvokeAI source category, independent of generation metadata
+  invokeImageOrigin?: string; // Supplementary InvokeAI source provenance
+  invokeOwnerId?: string; // Stable owner ID from the configured InvokeAI database
   stack?: AIImage[]; // UI ONLY: List of images collapsed under this one
   notes?: string;
   metadata: ImageMetadata;
@@ -160,6 +164,7 @@ export interface FilterState {
   pinnedOnly?: boolean;
   showIntermediates?: boolean;
   showGrids?: boolean;
+  showInvokeImageAssets?: boolean;
   sortOption?: SortOption;
   matchModes?: Record<string, 'any' | 'all'>; // Key: filter key (e.g. 'loras'), Value: 'any' (OR) | 'all' (AND)
   assetFilterAliases?: Partial<Record<'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters', Record<string, string[]>>>;
@@ -185,6 +190,7 @@ export interface Collection {
   filters?: FilterState; // Added for Smart/Hybrid logic
   manualExclusions?: string[]; // Added for Hybrid override logic
   source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
+  invokeOwnerId?: string; // Owner of an InvokeAI board; omitted for Ambit collections and legacy schemas
 }
 
 export interface SmartCollection extends Collection {
@@ -249,8 +255,30 @@ export interface InvokeDbSnapshotState {
   importIntermediates: boolean;
   importOrphans: boolean;
   syncBoardsToCollections: boolean;
+  scopeMode: 'legacy' | 'all' | 'owner';
+  scopeOwnerId: string | null;
   pathRepairVersion: number;
+  importSchemaVersion: number;
   files: InvokeDbSnapshotFile[];
+}
+
+export type InvokeOwnerSelection =
+  | { dbPath: string; mode: 'owner'; ownerId: string }
+  | { dbPath: string; mode: 'all' };
+
+export interface InvokeOwnerSummary {
+  ownerId: string;
+  displayName?: string;
+  imageCount: number;
+  isStale?: boolean;
+}
+
+export interface InvokeOwnerDiscovery {
+  schemaMode: 'legacy' | 'multi_user';
+  dbPath: string;
+  imagesRoot: string;
+  owners: InvokeOwnerSummary[];
+  unassignedImageCount: number;
 }
 
 export interface AppSettings {
@@ -281,10 +309,12 @@ export interface AppSettings {
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
   invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
+  invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
+  libraryShowInvokeImageAssets?: boolean; // Persisted InvokeAI image-asset visibility preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
   resourceSortOptions?: Record<string, SidebarSortOption>; // Persisted sort option per sidebar resource or collection section

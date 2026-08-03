@@ -132,10 +132,12 @@ fn path_is_known_media_file(
         .query_row(
             "SELECT EXISTS(
                 SELECT 1 FROM images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
                 UNION ALL
                 SELECT 1 FROM removed_images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
             )",
             params![requested, canonical],
             |row| row.get(0),
@@ -342,9 +344,15 @@ mod tests {
     #[test]
     fn known_media_file_matches_images_and_removed_images_only() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
-        conn.execute("CREATE TABLE removed_images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE removed_images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
         conn.execute(
             "INSERT INTO images (id, path) VALUES (?1, ?1)",
@@ -354,6 +362,16 @@ mod tests {
         conn.execute(
             "INSERT INTO removed_images (id, path) VALUES (?1, ?1)",
             ["C:/library/removed.png"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            ["C:/library/owner-hidden.png"],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO removed_images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            ["C:/library/removed-owner-hidden.png"],
         )
         .unwrap();
 
@@ -373,6 +391,18 @@ mod tests {
             &conn,
             "C:/library/untracked.png",
             Path::new("C:/library/untracked.png")
+        )
+        .unwrap());
+        assert!(!path_is_known_media_file(
+            &conn,
+            "C:/library/owner-hidden.png",
+            Path::new("C:/library/owner-hidden.png")
+        )
+        .unwrap());
+        assert!(!path_is_known_media_file(
+            &conn,
+            "C:/library/removed-owner-hidden.png",
+            Path::new("C:/library/removed-owner-hidden.png")
         )
         .unwrap());
     }

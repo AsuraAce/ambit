@@ -760,6 +760,7 @@ describe('collectionRepo membership helpers', () => {
             clearAllCollectionThumbnailCaches,
             ensureCollectionSchema,
             upsertCollection,
+            upsertInvokeBoardCollection,
             setCollectionCustomThumbnail,
             deleteCollectionFromDb,
             addImagesToCollection,
@@ -781,6 +782,12 @@ describe('collectionRepo membership helpers', () => {
         await expect(clearAllCollectionThumbnailCaches()).resolves.toBeUndefined();
         await expect(ensureCollectionSchema()).resolves.toBeUndefined();
         await expect(upsertCollection({ id: 'new', name: 'New' })).resolves.toBeUndefined();
+        await expect(upsertInvokeBoardCollection({
+            id: 'invoke-board',
+            name: 'Invoke Board',
+            createdAt: 1,
+            invokeOwnerId: 'owner-a',
+        })).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', 'img-1')).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', null)).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('missing', 'img-1')).rejects.toThrow('Collection not found: missing');
@@ -826,6 +833,14 @@ describe('collectionRepo membership helpers', () => {
         await expect(purgeInvokeCollections()).resolves.toBeUndefined();
 
         expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({ id: 'new', name: 'New' });
+        expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({
+            id: 'invoke-board',
+            name: 'Invoke Board',
+            createdAt: 1,
+            invokeOwnerId: 'owner-a',
+            imageIds: [],
+            source: 'invoke',
+        });
         expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({
             ...collections[0],
             customThumbnail: 'img-1',
@@ -1177,5 +1192,54 @@ describe('collectionRepo membership helpers', () => {
 
         expect(dbMocks.dispatch).toHaveBeenCalledTimes(1);
         expect(dbMocks.execute).toHaveBeenCalledWith("DELETE FROM collections WHERE source = 'invoke'");
+    });
+
+    it('loads collections through fail-closed owner visibility and preserves the mapped board owner', async () => {
+        dbMocks.select
+            .mockResolvedValueOnce([makeCollectionRow({
+                id: 'owned-board',
+                source: 'invoke',
+                invoke_owner_id: 'owner-a',
+            })])
+            .mockResolvedValueOnce([]);
+
+        const { getAllCollectionsWithStats, upsertCollection } = await import('../collectionRepo');
+        await expect(getAllCollectionsWithStats({ includeThumbnails: false })).resolves.toEqual([
+            expect.objectContaining({ id: 'owned-board', source: 'invoke', invokeOwnerId: 'owner-a' }),
+        ]);
+
+        const visibilitySql = dbMocks.select.mock.calls[0][0] as string;
+        expect(visibilitySql).toContain("s.scope_mode IN ('legacy', 'all')");
+        expect(visibilitySql).toContain("s.scope_mode = 'owner' AND c.invoke_owner_id = s.owner_id");
+
+        await upsertCollection({
+            id: 'owned-board',
+            name: 'Owned board',
+            source: 'invoke',
+            invokeOwnerId: 'owner-a',
+        });
+        const params = dbMocks.execute.mock.calls.at(-1)?.[1] as unknown[];
+        expect(params[10]).toBe('owner-a');
+    });
+
+    it('refreshes Invoke board identity without overwriting Ambit collection customizations', async () => {
+        const { upsertInvokeBoardCollection } = await import('../collectionRepo');
+
+        await upsertInvokeBoardCollection({
+            id: 'owned-board',
+            name: 'Renamed upstream',
+            createdAt: 10,
+            invokeOwnerId: 'owner-a',
+        });
+
+        const sql = dbMocks.execute.mock.calls[0][0] as string;
+        const params = dbMocks.execute.mock.calls[0][1] as unknown[];
+        expect(sql).toContain("source = 'invoke'");
+        expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
+        expect(sql).not.toContain('color = excluded.color');
+        expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
+        expect(sql).not.toContain('is_archived = excluded.is_archived');
+        expect(sql).not.toContain('is_pinned = excluded.is_pinned');
+        expect(params.slice(0, 4)).toEqual(['owned-board', 'Renamed upstream', 10, 'owner-a']);
     });
 });

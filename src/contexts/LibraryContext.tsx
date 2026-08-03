@@ -18,7 +18,7 @@ export type LibraryContextType =
   & ReturnType<typeof useCollections>
   & ReturnType<typeof useSearch>
   & ReturnType<typeof useWatchers>
-  & Pick<ReturnType<typeof useSync>, 'syncState' | 'startInvokeSync' | 'cancelSync' | 'cleanLibrary' | 'isLiveSyncing'>
+  & Pick<ReturnType<typeof useSync>, 'syncState' | 'startInvokeSync' | 'cancelSync' | 'cleanLibrary' | 'isLiveSyncing' | 'isInvokeSyncActive' | 'invokeOwnerScopeState' | 'selectInvokeOwnerScope' | 'retryInvokeOwnerScope'>
   & Pick<
     LibraryStoreState,
     | 'syncStatus'
@@ -67,7 +67,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode }> = ({ children })
 
 // Wrappers to inject cross-context callbacks
 const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { fetchData, refreshMetadata } = useSearch();
+  const { refreshMetadata, refreshHiddenAvailability } = useSearch();
 
   const handleSyncComplete = useCallback(async (scope: MetadataRefreshScope) => {
     // SearchContext owns the scope-aware metadata refresh strategy.
@@ -75,7 +75,10 @@ const SyncProviderWrapper: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [refreshMetadata]);
 
   return (
-    <SyncProvider onSyncComplete={handleSyncComplete}>
+    <SyncProvider
+      onSyncComplete={handleSyncComplete}
+      onInvokeContentChanged={refreshHiddenAvailability}
+    >
       {children}
     </SyncProvider>
   );
@@ -135,12 +138,16 @@ const LibraryContextWrapper: React.FC<{ children: ReactNode }> = ({ children }) 
     lastModelResolutionResult,
     setLastModelResolutionResult,
     isLiveSyncing: syncCtx.isLiveSyncing,
+    isInvokeSyncActive: syncCtx.isInvokeSyncActive,
     syncState: syncCtx.syncState,
     startInvokeSync: syncCtx.startInvokeSync,
     cancelSync: syncCtx.cancelSync,
     cleanLibrary: syncCtx.cleanLibrary,
+    invokeOwnerScopeState: syncCtx.invokeOwnerScopeState,
+    selectInvokeOwnerScope: syncCtx.selectInvokeOwnerScope,
+    retryInvokeOwnerScope: syncCtx.retryInvokeOwnerScope,
     isLoaded: settingsCtx.isLoaded && collectionCtx.isLoaded
-  }), [settingsCtx, collectionCtx, searchCtx, watcherCtx, syncStatus, isActivityDockDismissed, setIsActivityDockDismissed, isImporting, setIsImporting, setImportProgress, isRegeneratingThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, isResolvingModels, setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress, lastModelResolutionResult, setLastModelResolutionResult, syncCtx.isLiveSyncing, syncCtx.syncState, syncCtx.startInvokeSync, syncCtx.cancelSync, syncCtx.cleanLibrary]);
+  }), [settingsCtx, collectionCtx, searchCtx, watcherCtx, syncStatus, isActivityDockDismissed, setIsActivityDockDismissed, isImporting, setIsImporting, setImportProgress, isRegeneratingThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, isResolvingModels, setIsResolvingModels, modelResolutionProgress, setModelResolutionProgress, lastModelResolutionResult, setLastModelResolutionResult, syncCtx.isLiveSyncing, syncCtx.isInvokeSyncActive, syncCtx.syncState, syncCtx.startInvokeSync, syncCtx.cancelSync, syncCtx.cleanLibrary, syncCtx.invokeOwnerScopeState, syncCtx.selectInvokeOwnerScope, syncCtx.retryInvokeOwnerScope]);
 
   return (
     <LibraryContext.Provider value={value}>

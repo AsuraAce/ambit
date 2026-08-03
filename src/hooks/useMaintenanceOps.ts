@@ -20,19 +20,23 @@ import {
     getEffectiveAiThinkingMode,
     getEffectiveSystemPrompts
 } from '../utils/settingsUtils';
+import type { ActiveImageStateAdapter } from './activeImageState';
+import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 
 interface UseMaintenanceOpsProps {
     images: AIImage[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
     refreshCollections: () => Promise<void>;
     settings: AppSettings;
+    activeImageState?: ActiveImageStateAdapter;
 }
 
 export const useMaintenanceOps = ({
     images,
     setImages,
     refreshCollections,
-    settings
+    settings,
+    activeImageState
 }: UseMaintenanceOpsProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
@@ -75,6 +79,8 @@ export const useMaintenanceOps = ({
                 }
             }
 
+            await invalidateInvokeReferenceQueries(queryClient);
+
             try {
                 console.info(`${logPrefix}: rebuilding facet cache`);
                 await rebuildFacetCache();
@@ -92,12 +98,13 @@ export const useMaintenanceOps = ({
             console.error(`${logPrefix}: mutation failed`, e);
             addToast("Failed to update library state", "error");
         }
-    }, [setImages, addToast, refreshCollections, incrementFacetCacheVersion]);
+    }, [setImages, addToast, refreshCollections, incrementFacetCacheVersion, queryClient]);
 
     const recoverMetadata = useCallback(async (targetId: string, style: RecoveryStyle): Promise<AIImage | null> => {
         setIsRecoveringMetadata(true);
         try {
-            const img = images.find(i => i.id === targetId)
+            const img = activeImageState?.getImage(targetId)
+                ?? images.find(i => i.id === targetId)
                 ?? (await getImagesByIds([targetId]))[0];
             if (!img) {
                 addToast("Prompt Recovery could not find this image in the library.", "error");
@@ -129,7 +136,11 @@ export const useMaintenanceOps = ({
             };
 
             await updateImageMetadataFields(img.id, { positivePrompt: recoveredPrompt });
-            setImages(prev => prev.map(pImg => pImg.id === img.id ? updatedImg : pImg));
+            if (activeImageState) {
+                activeImageState.updateImage(img.id, () => updatedImg);
+            } else {
+                setImages(prev => prev.map(pImg => pImg.id === img.id ? updatedImg : pImg));
+            }
             updateImagesQueryCaches(queryClient, cachedImage => (
                 cachedImage.id === img.id ? updatedImg : cachedImage
             ));
@@ -143,7 +154,7 @@ export const useMaintenanceOps = ({
         } finally {
             setIsRecoveringMetadata(false);
         }
-    }, [images, effectiveAiModel, effectiveAiThinkingMode, effectiveSystemPrompts, setImages, addToast, queryClient]);
+    }, [images, effectiveAiModel, effectiveAiThinkingMode, effectiveSystemPrompts, setImages, addToast, queryClient, activeImageState]);
 
     return {
         isRecoveringMetadata,

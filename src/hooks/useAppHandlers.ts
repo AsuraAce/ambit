@@ -14,15 +14,19 @@ import {
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { updateImagesQueryCaches } from '../utils/imageQueryCache';
+import type { ActiveImageStateAdapter } from './activeImageState';
+import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 import type { ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
 
 interface UseAppHandlersProps {
     images: AIImage[];
     setImages: (update: AIImage[] | ((prev: AIImage[]) => AIImage[])) => void;
     refreshMaintenanceCounts: () => void;
+    refreshHiddenAvailability: () => Promise<void>;
+    activeImageState?: ActiveImageStateAdapter;
 }
 
-export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: UseAppHandlersProps) => {
+export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState }: UseAppHandlersProps) => {
     const { addToast } = useToast();
     const queryClient = useQueryClient();
     const incrementFacetCacheVersion = useLibraryStore(state => state.incrementFacetCacheVersion);
@@ -32,9 +36,17 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             .then(() => incrementFacetCacheVersion())
             .catch(error => console.error('Failed to refresh facet cache', error));
     };
+    const getImage = (id: string) => activeImageState?.getImage(id) ?? images.find(image => image.id === id);
+    const updateImage = (id: string, updater: (image: AIImage) => AIImage) => {
+        if (activeImageState) {
+            activeImageState.updateImage(id, updater);
+            return;
+        }
+        setImages(prev => prev.map(image => image.id === id ? updater(image) : image));
+    };
 
     const handleUpdatePrompt = async (id: string, prompt: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -44,13 +56,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             metadata: { ...img.metadata, positivePrompt: prompt }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { positivePrompt: prompt });
         addToast('Updated', 'success');
     };
 
     const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -60,13 +72,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             metadata: { ...img.metadata, negativePrompt }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { negativePrompt });
         addToast('Updated', 'success');
     };
 
     const handleUpdateModel = async (id: string, model: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -76,7 +88,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             metadata: { ...img.metadata, overrideModel: model }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { overrideModel: model });
 
         // Ensure filter panel is updated
@@ -86,7 +98,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
@@ -96,7 +108,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             metadata: { ...img.metadata, tool }
         };
 
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageMetadataFields(id, { tool });
 
         // Ensure filter panel is updated
@@ -138,7 +150,10 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
                 } : image;
             }));
         try {
-            await queryClient.invalidateQueries({ queryKey: ['images'] });
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                invalidateInvokeReferenceQueries(queryClient),
+            ]);
         } catch (error) {
             console.error('Failed to refresh image queries after resolving duplicates', error);
         }
@@ -149,12 +164,13 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
     const handleRestoreImages = async (ids: string[]) => {
         await restoreRemovedImages(ids);
-        const restoredImages = await getImagesByIds(ids);
-        setImages(p => {
-            const existingIds = new Set(p.map(image => image.id));
-            const uniqueRestored = restoredImages.filter(image => !existingIds.has(image.id));
-            return uniqueRestored.length > 0 ? [...uniqueRestored, ...p] : p;
-        });
+        await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['images'] }),
+            invalidateInvokeReferenceQueries(queryClient),
+            refreshHiddenAvailability().catch(error => {
+                console.error('[Restore] Failed to refresh hidden-content availability after restoring images', error);
+            }),
+        ]);
         addToast(`Restored ${ids.length} image${ids.length === 1 ? '' : 's'} to the library`, 'success');
         refreshMaintenanceCounts();
         refreshFacets();
@@ -162,6 +178,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
         await removeImagesFromLibrary(ids);
+        await invalidateInvokeReferenceQueries(queryClient);
         setImages(p => p.filter(i => !ids.includes(i.id)));
         addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
@@ -172,6 +189,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
         const result = await deleteRemovedImagesFromDisk(ids);
 
         if (result.deletedIds.length > 0) {
+            await invalidateInvokeReferenceQueries(queryClient);
             if (result.failedIds.length === 0 && result.thumbnailWarningIds.length === 0) {
                 addToast(`Moved ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.deletedIds.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
             } else {
@@ -194,11 +212,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     };
 
     const handleUpdateNotes = async (id: string, notes: string) => {
-        const img = images.find(i => i.id === id);
+        const img = getImage(id);
         if (!img) return;
 
         const updatedImg = { ...img, notes };
-        setImages(prev => prev.map(i => i.id === id ? updatedImg : i));
+        updateImage(id, () => updatedImg);
         await updateImageNotesCol(id, notes);
         addToast('Saved', 'success');
     };
@@ -216,7 +234,11 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
                 ? { ...revertedImage, stack: current.stack }
                 : current
         );
-        setImages(prev => prev.map(applyRevertedImage));
+        if (activeImageState) {
+            activeImageState.updateImage(id, applyRevertedImage);
+        } else {
+            setImages(prev => prev.map(applyRevertedImage));
+        }
         updateImagesQueryCaches(queryClient, applyRevertedImage);
 
         // Revert can change tools and models, so we rebuild both incrementally

@@ -122,6 +122,7 @@ fn load_eligible_duplicate_record(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
          FROM images
          WHERE id = ?1
+           AND invoke_scope_hidden = 0
            AND is_deleted = 0
            AND is_missing = 0
            AND group_id IS NULL
@@ -233,7 +234,8 @@ fn persist_removed_duplicate(
                 micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
-                collection_ids_json
+                collection_ids_json, invoke_image_name, invoke_image_category,
+                invoke_image_origin, invoke_owner_id, invoke_scope_hidden
              )
              SELECT
                 id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
@@ -252,7 +254,9 @@ fn persist_removed_duplicate(
                         )
                     )
                     ELSE NULL
-                END
+                END,
+                invoke_image_name, invoke_image_category, invoke_image_origin,
+                invoke_owner_id, invoke_scope_hidden
              FROM images
              WHERE id = ?1",
             params![image_id, removed_at],
@@ -462,11 +466,15 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         let app_log_dir = app_clone.path().app_log_dir().map_err(|e| e.to_string())?;
         let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
         let deleted_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE is_deleted = 1",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
                 [],
                 |r| r.get(0),
             )
@@ -479,7 +487,7 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             .unwrap_or(0);
         let tool_null_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -541,7 +549,8 @@ pub async fn backfill_image_file_hashes(
                     "
                     SELECT id, path
                     FROM images
-                    WHERE is_deleted = 0
+                    WHERE invoke_scope_hidden = 0
+                      AND is_deleted = 0
                       AND is_missing = 0
                       AND group_id IS NULL
                       AND IFNULL(is_intermediate_gen, 0) = 0
@@ -551,7 +560,8 @@ pub async fn backfill_image_file_hashes(
                       AND file_size IN (
                         SELECT file_size
                         FROM images
-                        WHERE is_deleted = 0
+                        WHERE invoke_scope_hidden = 0
+                          AND is_deleted = 0
                           AND is_missing = 0
                           AND group_id IS NULL
                           AND IFNULL(is_intermediate_gen, 0) = 0
@@ -639,7 +649,8 @@ pub async fn backfill_image_file_hashes(
                 "
                 SELECT COUNT(*)
                 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0
+                  AND is_deleted = 0
                   AND is_missing = 0
                   AND group_id IS NULL
                   AND IFNULL(is_intermediate_gen, 0) = 0
@@ -649,7 +660,8 @@ pub async fn backfill_image_file_hashes(
                   AND file_size IN (
                     SELECT file_size
                     FROM images
-                    WHERE is_deleted = 0
+                    WHERE invoke_scope_hidden = 0
+                      AND is_deleted = 0
                       AND is_missing = 0
                       AND group_id IS NULL
                       AND IFNULL(is_intermediate_gen, 0) = 0
@@ -974,6 +986,133 @@ mod tests {
             )
             .unwrap();
         assert_eq!(active_removed_count, 0);
+    }
+
+    #[test]
+    fn exact_duplicate_resolution_preserves_invoke_source_facts_in_removed_state() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(
+            &conn,
+            "keeper",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "invoke-copy",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute(
+            "UPDATE images
+             SET invoke_image_name = 'control.png',
+                 invoke_image_category = 'control',
+                 invoke_image_origin = 'internal',
+                 invoke_owner_id = 'owner-a'
+             WHERE id = 'invoke-copy'",
+            [],
+        )
+        .expect("seed InvokeAI source facts");
+
+        resolve_exact_duplicate_groups_inner(
+            &conn,
+            &[ExactDuplicateResolution {
+                keep_id: "keeper".to_string(),
+                remove_ids: vec!["invoke-copy".to_string()],
+            }],
+        )
+        .expect("resolve InvokeAI duplicate");
+
+        let source_facts: (String, String, String, String, i64) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        invoke_owner_id, invoke_scope_hidden
+                 FROM removed_images WHERE id = 'invoke-copy'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("load removed InvokeAI source facts");
+        assert_eq!(
+            source_facts,
+            (
+                "control.png".to_string(),
+                "control".to_string(),
+                "internal".to_string(),
+                "owner-a".to_string(),
+                0,
+            )
+        );
+    }
+
+    #[test]
+    fn exact_duplicate_resolution_rejects_owner_hidden_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(
+            &conn,
+            "keeper",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "hidden-copy",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'hidden-copy'",
+            [],
+        )
+        .expect("hide out-of-scope duplicate");
+
+        let error = resolve_exact_duplicate_groups_inner(
+            &conn,
+            &[ExactDuplicateResolution {
+                keep_id: "keeper".to_string(),
+                remove_ids: vec!["hidden-copy".to_string()],
+            }],
+        )
+        .expect_err("owner-hidden duplicate must be rejected");
+
+        assert!(error.contains("no longer available"));
+        let active_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .expect("count active images");
+        let removed_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM removed_images", [], |row| row.get(0))
+            .expect("count removed images");
+        assert_eq!(active_count, 2);
+        assert_eq!(removed_count, 0);
     }
 
     #[test]

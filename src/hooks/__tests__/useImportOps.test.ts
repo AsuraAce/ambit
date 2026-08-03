@@ -21,8 +21,7 @@ const mocks = vi.hoisted(() => ({
     refreshHiddenAvailability: vi.fn(),
     refreshMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
-    syncCollectionImages: vi.fn(),
-    syncImages: vi.fn()
+    syncCollectionImages: vi.fn()
 }));
 
 vi.mock('../../bindings', () => ({
@@ -45,10 +44,6 @@ vi.mock('../../services/thumbnailService', () => ({
 vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCache: mocks.rebuildFacetCache,
     syncCollectionImages: mocks.syncCollectionImages
-}));
-
-vi.mock('../../services/invoke/syncService', () => ({
-    syncImages: mocks.syncImages
 }));
 
 vi.mock('../../contexts/SearchContext', () => ({
@@ -154,50 +149,6 @@ describe('useImportOps', () => {
         mocks.processFoldersUnified.mockResolvedValue(emptyImportResult());
         mocks.rebuildFacetCache.mockResolvedValue(1);
         mocks.syncCollectionImages.mockResolvedValue(undefined);
-        mocks.syncImages.mockResolvedValue({
-            imported: 0,
-            updated: 0,
-            maxTimestamp: 0,
-            syncedIds: new Set(),
-            boardMapping: new Map(),
-            touchedFacetTypes: [],
-            touchedFacetResources: {
-                checkpoints: [],
-                loras: [],
-                embeddings: [],
-                hypernetworks: [],
-                controlNets: [],
-                ipAdapters: [],
-                tools: []
-            }
-        });
-    });
-
-    it('uses persisted InvokeAI preferences for managed resyncs', async () => {
-        const { result } = renderImportOps({
-            invokeAiPath: 'D:/InvokeAI',
-            invokeSyncFavorites: false,
-            invokeSyncBoards: false,
-            importIntermediates: true,
-            starredAs: 'both'
-        });
-
-        await act(async () => {
-            await result.current.handleInvokeSync();
-        });
-
-        expect(mocks.syncImages).toHaveBeenCalledWith(
-            'D:/InvokeAI',
-            expect.any(Function),
-            expect.any(AbortSignal),
-            expect.objectContaining({
-                syncFavorites: false,
-                syncBoards: false,
-                importIntermediates: true,
-                starredAs: 'both',
-                afterTimestamp: 0
-            })
-        );
     });
 
     it('shows a cancellation toast for manual path imports', async () => {
@@ -866,62 +817,6 @@ describe('useImportOps', () => {
         const second = renderImportOps();
         await act(async () => second.result.current.scanDirectory('C:/scan'));
         expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
-    });
-
-    it('handles InvokeAI configuration, progress, cancellation, contention, and failure', async () => {
-        const missing = renderImportOps();
-        await act(async () => missing.result.current.handleInvokeSync());
-        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI not configured', 'error');
-        missing.unmount();
-
-        mocks.syncImages.mockImplementationOnce(async (_path, progress) => {
-            progress(1, 3, 'Syncing');
-            return { imported: 2, updated: 1 };
-        });
-        const success = renderImportOps({ invokeAiPath: 'D:/Invoke' });
-        await act(async () => success.result.current.handleInvokeSync());
-        expect(mocks.syncCollectionImages).toHaveBeenCalledTimes(1);
-        expect(mocks.rebuildFacetCache).toHaveBeenCalledTimes(1);
-        expect(success.refreshCollections).toHaveBeenCalledTimes(1);
-        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI sync complete: 2 imported, 1 updated', 'success');
-        success.unmount();
-
-        useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
-        const busy = renderImportOps({ invokeAiPath: 'D:/Invoke' });
-        await act(async () => busy.result.current.handleInvokeSync());
-        expect(mocks.addToast).toHaveBeenCalledWith('Import already in progress', 'info');
-        busy.unmount();
-        useLibraryStore.getState().finishImportRun(useLibraryStore.getState().importRunId!);
-
-        mocks.syncImages.mockRejectedValueOnce(new Error('failed'));
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        const failed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
-        await act(async () => failed.result.current.handleInvokeSync());
-        expect(mocks.addToast).toHaveBeenCalledWith('InvokeAI sync failed', 'error');
-        errorSpy.mockRestore();
-    });
-
-    it('handles InvokeAI cancellation both after sync and through the error path', async () => {
-        mocks.syncImages.mockImplementationOnce(async (_path, _progress, signal) => {
-            useLibraryStore.getState().importAbortController?.abort();
-            expect(signal.aborted).toBe(true);
-            return { imported: 0, updated: 0 };
-        });
-        const completed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
-        await act(async () => completed.result.current.handleInvokeSync());
-        expect(mocks.addToast).toHaveBeenCalledWith('Import cancelled', 'info');
-        expect(mocks.syncCollectionImages).not.toHaveBeenCalled();
-        completed.unmount();
-
-        mocks.syncImages.mockImplementationOnce(async () => {
-            useLibraryStore.getState().importAbortController?.abort();
-            throw new Error('cancelled');
-        });
-        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        const failed = renderImportOps({ invokeAiPath: 'D:/Invoke' });
-        await act(async () => failed.result.current.handleInvokeSync());
-        expect(mocks.addToast).toHaveBeenCalledWith('Import cancelled', 'info');
-        errorSpy.mockRestore();
     });
 
     it('resyncs full and incremental folders and preserves cancellation results', async () => {

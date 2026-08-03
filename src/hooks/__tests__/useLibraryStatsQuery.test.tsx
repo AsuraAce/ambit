@@ -7,7 +7,7 @@ import { AppSettings, Collection, FilterState, GeneratorTool } from '../../types
 import type { AssetScope } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { useLibraryStore } from '../../stores/libraryStore';
-import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from '../../services/db/searchRepo';
+import type { Facets, GetFacetsOptions, LibraryStats, LibraryStatsSummary, ValidFacetNames } from '../../services/db/searchRepo';
 import { SIDE_QUERY_SEARCH_DEBOUNCE_MS } from '../useDebouncedSideQueryFilters';
 
 const searchRepoMocks = vi.hoisted(() => ({
@@ -155,6 +155,13 @@ describe('useLibraryStatsQuery valid facets', () => {
         searchRepoMocks.getBrowserMockStatsSummary.mockReturnValue(emptySummary);
         searchRepoMocks.getBrowserMockKeywordStats.mockReturnValue(emptyKeywordStats);
         searchRepoMocks.getBrowserMockValidFacetNames.mockReturnValue(validNames);
+    });
+
+    it('passes the React Query cancellation signal into keyword batches', async () => {
+        renderStatsHook();
+
+        await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledOnce());
+        expect(searchRepoMocks.getKeywordStats.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
     });
 
     afterEach(() => {
@@ -776,11 +783,37 @@ describe('useLibraryStatsQuery valid facets', () => {
         );
     });
 
-    it('skips scoped count overrides when tools are the only disjunctive facet', async () => {
-        renderStatsHook(createDefaultFilters({ tools: [GeneratorTool.COMFYUI] }));
+    it('keeps alternative tools visible when one Match Any tool is selected', async () => {
+        searchRepoMocks.getValidFacetNames.mockResolvedValue({
+            ...validNames,
+            tools: [GeneratorTool.COMFYUI, GeneratorTool.INVOKEAI]
+        });
+        searchRepoMocks.getFacets.mockImplementation((
+            _where: string,
+            _params: unknown[],
+            _types: unknown[],
+            options: GetFacetsOptions
+        ) => {
+            const selfExcludedParams = options.scopedCountOverrides?.tools?.params;
+            return Promise.resolve({
+                ...emptyFacets,
+                tools: selfExcludedParams && !selfExcludedParams.includes(GeneratorTool.COMFYUI)
+                    ? [GeneratorTool.COMFYUI, GeneratorTool.INVOKEAI]
+                    : [GeneratorTool.COMFYUI]
+            });
+        });
+        const { result } = renderStatsHook(createDefaultFilters({ tools: [GeneratorTool.COMFYUI] }));
 
-        await waitFor(() => expect(searchRepoMocks.getFacets).toHaveBeenCalled());
-        expect(searchRepoMocks.getFacets.mock.calls[0][3].scopedCountOverrides).toBeUndefined();
+        await waitFor(() => expect(result.current.data.facets.tools).toEqual([
+            GeneratorTool.COMFYUI,
+            GeneratorTool.INVOKEAI
+        ]));
+        expect(result.current.data.validNames?.tools).toEqual([
+            GeneratorTool.COMFYUI,
+            GeneratorTool.INVOKEAI
+        ]);
+        expect(searchRepoMocks.getFacets.mock.calls[0][3].scopedCountOverrides?.tools?.params)
+            .not.toContain(GeneratorTool.COMFYUI);
     });
 
     it('invalidates all valid names when a self-excluded facet query fails', async () => {

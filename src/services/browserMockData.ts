@@ -3,6 +3,8 @@ import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
 import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
+import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
+import { createDefaultFilters } from '../utils/filterState';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -34,6 +36,7 @@ const PROMPTS = [
     'surreal mountain observatory, clouds below, matte painting',
     'isometric workshop, tiny tools, clean product render',
 ];
+const INVOKE_IMAGE_CATEGORIES = ['general', 'user', 'control', 'mask', 'other', 'future-category', undefined] as const;
 
 const colorForIndex = (index: number): string => {
     const colors = ['#3b6f6a', '#8b5e34', '#5e6f9f', '#7b4f72', '#637047', '#9a5b54'];
@@ -69,6 +72,10 @@ const createMockImages = (): AIImage[] => {
                 : GeneratorTool.COMFYUI;
         const model = MODELS[index % MODELS.length];
         const prompt = PROMPTS[index % PROMPTS.length];
+        const filename = `mock_generation_${String(index + 1).padStart(4, '0')}.png`;
+        const invokeImageCategory = tool === GeneratorTool.INVOKEAI
+            ? INVOKE_IMAGE_CATEGORIES[Math.floor(index / 4) % INVOKE_IMAGE_CATEGORIES.length]
+            : undefined;
         const timestamp = now - (index * 6 * 60 * 60 * 1000);
         const loras = index % 2 === 0 ? [LORAS[index % LORAS.length]] : [];
         const embeddings = index % 7 === 0 ? [EMBEDDINGS[index % EMBEDDINGS.length]] : [];
@@ -80,7 +87,7 @@ const createMockImages = (): AIImage[] => {
             url: makeImageDataUrl(index, width, height),
             thumbnailUrl: makeImageDataUrl(index, 360, 360),
             microThumbnail: makeImageDataUrl(index, 48, 48),
-            filename: `mock_generation_${String(index + 1).padStart(4, '0')}.png`,
+            filename,
             fileSize: 1_200_000 + index * 17_321,
             timestamp,
             width,
@@ -90,6 +97,11 @@ const createMockImages = (): AIImage[] => {
             isIntermediate: index % 11 === 0,
             userMasked: index % 37 === 0,
             notes: index % 10 === 0 ? 'Browser mock note for UI review.' : undefined,
+            invokeImageName: tool === GeneratorTool.INVOKEAI ? filename : undefined,
+            invokeImageCategory,
+            invokeImageOrigin: tool === GeneratorTool.INVOKEAI
+                ? (index % 2 === 0 ? 'internal' : 'external')
+                : undefined,
             metadata: {
                 tool,
                 model,
@@ -155,6 +167,7 @@ const createMockCollections = (images: AIImage[]): Collection[] => [
             collectionId: null,
             showIntermediates: false,
             showGrids: false,
+            showInvokeImageAssets: false,
         },
     },
 ];
@@ -260,18 +273,23 @@ export const getBrowserMockImages = (): AIImage[] => loadStoredState().images;
 
 export const getBrowserMockCollections = (): Collection[] => {
     const current = loadStoredState();
-    return [...current.collections, ...current.smartCollections].map((collection) => ({
+    const collections = [...current.collections, ...current.smartCollections];
+    return collections.map((collection) => ({
         ...collection,
-        count: getCollectionCount(collection),
+        count: getCollectionCount(collection, collections),
         thumbnail: collection.customThumbnail
             ? current.images.find((image) => image.id === collection.customThumbnail)?.thumbnailUrl
             : collection.thumbnail,
     }));
 };
 
-const getCollectionCount = (collection: Collection): number => {
+const getCollectionCount = (collection: Collection, collections: Collection[]): number => {
     if (collection.filters) {
-        return filterImages(state.images, collection.filters, state.collections).length;
+        return filterImages(
+            state.images,
+            createDefaultFilters({ collectionId: collection.id }),
+            collections
+        ).length;
     }
 
     return collection.imageIds.length;
@@ -424,7 +442,12 @@ const matchesSearchQuery = (image: AIImage, query: string): boolean => {
     return true;
 };
 
-const filterImages = (images: AIImage[], filters: FilterState, collections: Collection[]): AIImage[] => {
+const filterImages = (
+    images: AIImage[],
+    filters: FilterState,
+    collections: Collection[],
+    applyVisibilityFilters = true
+): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateBounds = getDateFilterBounds(filters);
     const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
@@ -442,13 +465,14 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
         }
         : null;
     const smartMatches = smartFilters
-        ? new Set(filterImages(images, smartFilters, collections).map((image) => image.id))
+        ? new Set(filterImages(images, smartFilters, collections, false).map((image) => image.id))
         : null;
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
-        if (!filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
-        if (!filters.showGrids && image.metadata.isGrid) return false;
+        if (applyVisibilityFilters && !filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
+        if (applyVisibilityFilters && !filters.showGrids && image.metadata.isGrid) return false;
+        if (applyVisibilityFilters && !filters.showInvokeImageAssets && isKnownInvokeImageAsset(image.invokeImageCategory)) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
         if (filters.pinnedOnly && !image.isPinned) return false;
         if (!timestampMatchesDateBounds(image.timestamp, dateBounds)) return false;

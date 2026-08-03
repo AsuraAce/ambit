@@ -375,7 +375,9 @@ const getDiskModifiedAtForFacetRow = (
     );
 };
 
-const DEFAULT_VISIBLE_WHERE = "WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const BASE_VISIBLE_WHERE = "WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
+const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
+const BASE_PRIVACY_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const PRIVACY_VISIBLE_WHERE = `${DEFAULT_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const KEYWORD_BATCH_SIZE = 500;
 
@@ -390,6 +392,10 @@ const isDefaultGlobalScope = (
 };
 
 const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
+const hasInvokeAssetVisibilityFilter = (whereClause: string) =>
+    whereClause.includes('IFNULL(is_invoke_asset_gen, 0) = 0');
+const hasInvokeOwnerVisibilityFilter = (whereClause: string) =>
+    whereClause.includes('invoke_scope_hidden = 0');
 const hasFastSortVisibilityPrefix = (whereClause: string) =>
     whereClause.includes('is_deleted = 0') &&
     whereClause.includes('IFNULL(is_intermediate_gen, 0) = 0') &&
@@ -399,6 +405,10 @@ const selectImageSortIndex = (whereClause: string, sortField: string): string | 
     if (!hasFastSortVisibilityPrefix(whereClause)) return null;
 
     if (sortField === 'timestamp') {
+        if (hasInvokeOwnerVisibilityFilter(whereClause) && hasInvokeAssetVisibilityFilter(whereClause)) {
+            return 'idx_images_invoke_scope_fast_sort_v1';
+        }
+        if (hasInvokeAssetVisibilityFilter(whereClause)) return 'idx_images_invoke_asset_fast_sort_v1';
         return hasPrivacyFilter(whereClause) ? 'idx_images_privacy_fast_sort_v1' : 'idx_images_fast_sort_v3';
     }
     if (sortField === 'path') return 'idx_images_name_sort_v1';
@@ -419,8 +429,20 @@ const selectAverageStepsScopeIndex = (
     loraName?: string
 ): string | null => {
     if (collectionId || loraName || params.length > 0) return null;
-    if (whereClause === DEFAULT_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
-    if (whereClause === PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
+    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
+        return 'idx_images_invoke_scope_fast_sort_v1';
+    }
+    if (whereClause === BASE_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
+    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
+    return null;
+};
+
+const selectCountVisibilityIndex = (whereClause: string, params: unknown[]): string | null => {
+    if (params.length > 0) return null;
+    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
+        return 'idx_images_invoke_scope_fast_sort_v1';
+    }
+    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
     return null;
 };
 
@@ -473,9 +495,8 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const fromClause = hasPrivacyFilter(finalWhere) && hasFastSortVisibilityPrefix(finalWhere)
-        ? 'FROM images INDEXED BY idx_images_privacy_fast_sort_v1'
-        : 'FROM images';
+    const countIndex = selectCountVisibilityIndex(finalWhere, params);
+    const fromClause = countIndex ? `FROM images INDEXED BY ${countIndex}` : 'FROM images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
@@ -489,7 +510,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
     const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
-        `SELECT count(*) as count FROM images WHERE is_deleted = 0`
+        `SELECT count(*) as count FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
     ));
     return result[0]?.count || 0;
 };
@@ -799,6 +820,13 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
                 GROUP BY ${nameExpr}
             `;
         }
+        case 'tools':
+            return `
+                ${cteSql}
+                SELECT COALESCE(tool, 'Unknown') AS name, count(*) AS count
+                FROM scoped_images
+                GROUP BY name
+            `;
         default:
             return null;
     }
@@ -815,11 +843,11 @@ const getScopedFacetCountMaps = async (
     const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
         'images.id AS id',
         'images.resolved_model_name AS resolved_model_name',
-        'images.model_name AS model_name'
+        'images.model_name AS model_name',
+        'images.tool AS tool'
     ], {});
 
     const queries = cacheTypes
-        .filter(cacheType => cacheType !== 'tools')
         .map(async (cacheType) => {
             const sql = buildScopedFacetCountSql(cacheType, scopedParts.cteSql);
             if (!sql) return [cacheType, new Map<string, number>()] as const;
@@ -961,7 +989,14 @@ export const getLibraryStats = async (whereClause: string = '', params: unknown[
     }
 };
 
-export const getKeywordStats = async (whereClause: string = '', params: unknown[] = [], collectionId?: string, loraName?: string): Promise<{ text: string; value: number }[]> => {
+export const getKeywordStats = async (
+    whereClause: string = '',
+    params: unknown[] = [],
+    collectionId?: string,
+    loraName?: string,
+    signal?: AbortSignal
+): Promise<{ text: string; value: number }[]> => {
+    signal?.throwIfAborted();
     const db = await getDb();
 
     try {
@@ -970,6 +1005,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
         let lastRowId = 0;
 
         for (;;) {
+            signal?.throwIfAborted();
             const scopedParts = buildScopedImageQueryParts(
                 whereClause,
                 params,
@@ -998,6 +1034,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
                 scopedParts.reason,
                 () => db.select<PromptBatchRow[]>(promptQuery, scopedParts.queryParams)
             );
+            signal?.throwIfAborted();
 
             rows.forEach(r => {
                 const tokens = (r.positive_prompt || '')
@@ -1025,6 +1062,7 @@ export const getKeywordStats = async (whereClause: string = '', params: unknown[
             .slice(0, 40);
 
     } catch (e) {
+        if (signal?.aborted) throw e;
         console.error('[DB] Failed to get keyword stats', e);
         return [];
     }
@@ -1076,14 +1114,12 @@ export const getFacets = async (
         const shouldUseScopedFacetOverlayByCacheType = new Map<string, boolean>();
 
         for (const facetType of types) {
-            if (facetType === 'tools') continue;
-
             const cacheType = cacheTypeMap[facetType];
             const scopedInput = options.scopedCountOverrides?.[facetType] ?? defaultScopedCountInput;
             scopedCountInputsByCacheType.set(cacheType, scopedInput);
             shouldUseScopedFacetOverlayByCacheType.set(
                 cacheType,
-                assetScope !== 'local'
+                (cacheType === 'tools' || assetScope !== 'local')
                     && !isDefaultGlobalScope(
                         scopedInput.whereClause,
                         scopedInput.params,
@@ -1145,7 +1181,12 @@ export const getFacets = async (
 
         for (const row of cacheRows) {
             if (row.facet_type === 'tools') {
-                result.tools.push(row.resource_name || 'Unknown');
+                const name = row.resource_name || 'Unknown';
+                const shouldUseScopedFacetOverlay = shouldUseScopedFacetOverlayByCacheType.get('tools') ?? false;
+                const count = shouldUseScopedFacetOverlay
+                    ? scopedCountMaps.get('tools')?.get(normalizeFacetCountKey(name)) ?? 0
+                    : row.count ?? 0;
+                if (count > 0) result.tools.push(name);
                 continue;
             }
 

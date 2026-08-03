@@ -130,6 +130,15 @@ pub struct ImageRecord {
     pub original_metadata_json: Option<String>,
     #[serde(rename = "originalStateJson")]
     pub original_state_json: Option<String>,
+    // A non-null InvokeAI name marks category and origin as an authoritative source snapshot.
+    #[serde(rename = "invokeImageName")]
+    pub invoke_image_name: Option<String>,
+    #[serde(rename = "invokeImageCategory")]
+    pub invoke_image_category: Option<String>,
+    #[serde(rename = "invokeImageOrigin")]
+    pub invoke_image_origin: Option<String>,
+    #[serde(rename = "invokeOwnerId")]
+    pub invoke_owner_id: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]

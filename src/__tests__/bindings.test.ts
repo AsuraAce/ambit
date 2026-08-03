@@ -22,6 +22,67 @@ const commandCases: CommandCase[] = [
     { name: 'loadApiKey', invokeName: 'load_api_key', args: [], returnsResult: true },
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },
     { name: 'saveImagesBatch', invokeName: 'save_images_batch', args: [[]], payload: { images: [] }, returnsResult: true },
+    {
+        name: 'reconcileInvokeImageSources',
+        invokeName: 'reconcile_invoke_image_sources',
+        args: [[{
+            id: 'C:/invoke/asset.png',
+            invokeImageName: 'asset.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: null,
+            invokeOwnerId: 'owner-a',
+        }]],
+        payload: {
+            updates: [{
+                id: 'C:/invoke/asset.png',
+                invokeImageName: 'asset.png',
+                invokeImageCategory: 'control',
+                invokeImageOrigin: null,
+                invokeOwnerId: 'owner-a',
+            }],
+        },
+        returnsResult: true,
+    },
+    {
+        name: 'refreshInvokeOwnerScope',
+        invokeName: 'refresh_invoke_owner_scope',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            imagesRoot: 'C:/invoke',
+            mode: 'owner',
+            ownerId: 'owner-a',
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                imagesRoot: 'C:/invoke',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        },
+        returnsResult: true,
+    },
+    {
+        name: 'replaceInvokeImageReferences',
+        invokeName: 'replace_invoke_image_references',
+        args: [[{
+            sourceImageId: 'C:/invoke/result.png',
+            references: [{
+                role: 't2i_adapter_image',
+                targetInvokeImageName: 'reference.png',
+            }],
+        }]],
+        payload: {
+            referenceSets: [{
+                sourceImageId: 'C:/invoke/result.png',
+                references: [{
+                    role: 't2i_adapter_image',
+                    targetInvokeImageName: 'reference.png',
+                }],
+            }],
+        },
+        returnsResult: true,
+    },
     { name: 'moveImagePathIdentities', invokeName: 'move_image_path_identities', args: [[]], payload: { moves: [] }, returnsResult: true },
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },

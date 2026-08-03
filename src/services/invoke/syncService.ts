@@ -1,9 +1,10 @@
 import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands } from '../../bindings';
+import { commands, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
-import { fetchBoardMappings } from './connection';
+import { fetchBoardMappings, type InvokeBoardInfo } from './connection';
+import { resolveInvokePaths } from './connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage, FacetType } from '../../types';
 import {
@@ -30,11 +31,15 @@ import {
     moveImagePathIdentity,
     syncCollectionImages
 } from '../db/imageRepo';
-import { upsertCollection } from '../db/collectionRepo';
+import { upsertInvokeBoardCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
+import { reconcileInvokeSourceFacts } from './sourceReconciliation';
+import { extractInvokeImageReferences } from './referenceExtractor';
+import { invokeOwnerPredicate, type InvokeSyncScope } from './syncScope';
 
-interface InvokeSyncOptions {
+export interface InvokeSyncOptions {
+    scope: InvokeSyncScope;
     syncFavorites?: boolean;
     syncBoards?: boolean;
     afterTimestamp?: number | null;
@@ -42,6 +47,7 @@ interface InvokeSyncOptions {
     starredAs?: 'favorite' | 'pin' | 'both' | 'none';
     perfContext?: InvokeLiveWatchPerfContext;
     mode?: 'manual' | 'startup' | 'live';
+    reconcileSourceFacts?: boolean;
 }
 
 interface CountRow {
@@ -51,7 +57,7 @@ interface CountRow {
 interface InvokeImageRow {
     image_name: string;
     image_subfolder?: string | null;
-    metadata_blob: string | null;
+    metadata_blob: unknown;
     created_at: string;
     updated_at?: string | null;
     width?: number | null;
@@ -61,6 +67,9 @@ interface InvokeImageRow {
     thumbnail_name?: string | null;
     has_workflow?: number | boolean | null;
     is_intermediate?: number | boolean | null;
+    image_category?: string | null;
+    image_origin?: string | null;
+    user_id?: string | null;
 }
 
 interface InvokeRepairCandidate {
@@ -75,9 +84,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const syncImages = async (
     rootPath: string,
     onProgress: (current: number, total: number, message?: string) => void,
-    signal?: AbortSignal,
-    options: InvokeSyncOptions = { syncFavorites: true, syncBoards: true, importIntermediates: false, starredAs: 'favorite' }
-): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, { name: string, createdAt: number }>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
+    signal: AbortSignal | undefined,
+    options: InvokeSyncOptions
+): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, InvokeBoardInfo>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
@@ -95,16 +104,14 @@ export const syncImages = async (
     };
     if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
-    let imagesRoot = rootPath.replace(/[\\/]$/, '');
-    const isFile = rootPath.endsWith('.db');
-    if (isFile) {
-        imagesRoot = imagesRoot.replace(/[\\/](databases)?[\\/]?invokeai\.db$/i, '');
-    } else if (imagesRoot.endsWith('databases')) {
-        imagesRoot = imagesRoot.replace(/[\\/]databases$/i, '');
+    const resolvedPaths = resolveInvokePaths(rootPath);
+    const scope = options.scope;
+    if (normalizePath(resolvedPaths.dbPath) !== normalizePath(scope.dbPath)
+        || normalizePath(resolvedPaths.imagesRoot) !== normalizePath(scope.imagesRoot)) {
+        throw new Error('InvokeAI sync scope does not match the configured database and image root.');
     }
-
-    let dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-    const connectionString = `sqlite:${dbPath.replace(/\\/g, '/')}`;
+    const { dbPath, imagesRoot } = scope;
+    const connectionString = `sqlite:${dbPath}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb: Database;
@@ -143,6 +150,12 @@ export const syncImages = async (
     const hasHasWorkflow = columns.includes('has_workflow');
     const hasUpdatedAt = columns.includes('updated_at');
     const hasImageSubfolder = columns.includes('image_subfolder');
+    const hasImageCategory = columns.includes('image_category');
+    const hasImageOrigin = columns.includes('image_origin');
+    const hasUserId = columns.includes('user_id');
+    if (scope.mode === 'owner' && !hasUserId) {
+        throw new Error('This InvokeAI database cannot enforce the selected owner because images.user_id is missing.');
+    }
 
     const metaCol = hasMetadataJson ? 'metadata_json' : (hasMetadata ? 'metadata' : null);
 
@@ -151,6 +164,13 @@ export const syncImages = async (
     }
 
     const conditions: string[] = [];
+    const queryParams: string[] = [];
+
+    const ownerPredicate = invokeOwnerPredicate(scope, 'i');
+    if (ownerPredicate.clause) {
+        conditions.push(ownerPredicate.clause);
+        queryParams.push(...ownerPredicate.params);
+    }
 
     // Filter out intermediates unless explicitly enabled
     if (!options.importIntermediates && hasIsIntermediate) {
@@ -160,22 +180,28 @@ export const syncImages = async (
     if (options.afterTimestamp && options.afterTimestamp > 0) {
         const bufferedTimestamp = options.afterTimestamp;
         const isoDate = new Date(bufferedTimestamp).toISOString().replace('T', ' ').replace('Z', '');
-        const timeCond = `i.created_at > '${isoDate}'`;
+        const timeCond = 'i.created_at > ?';
         if (hasUpdatedAt) {
-            conditions.push(`(${timeCond} OR i.updated_at > '${isoDate}')`);
+            conditions.push(`(${timeCond} OR i.updated_at > ?)`);
+            queryParams.push(isoDate, isoDate);
         } else {
             conditions.push(timeCond);
+            queryParams.push(isoDate);
         }
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')} ` : '';
     let totalToImport = 0;
     let hasCandidates = true;
-    let boards = new Map<string, { name: string, createdAt: number }>();
+    let boards = new Map<string, InvokeBoardInfo>();
+    let shouldApplyBoardMappings = false;
 
     if (options.mode === 'live' || (options.mode === 'startup' && options.afterTimestamp && options.afterTimestamp > 0)) {
         const candidateCheckStartedAt = liveWatchNow();
-        const candidateRes = await invokeDb.select<Array<{ found: number }>>(`SELECT 1 as found FROM images i ${whereClause} LIMIT 1`);
+        const candidateRes = await invokeDb.select<Array<{ found: number }>>(
+            `SELECT 1 as found FROM images i ${whereClause} LIMIT 1`,
+            queryParams
+        );
         hasCandidates = candidateRes.length > 0;
         logSyncDebug('Invoke candidate detection complete', {
             mode: options.mode,
@@ -192,7 +218,10 @@ export const syncImages = async (
 
     if (hasCandidates) {
         const countStartedAt = liveWatchNow();
-        const countRes = await invokeDb.select<CountRow[]>(`SELECT count(*) as count FROM images i ${whereClause} `);
+        const countRes = await invokeDb.select<CountRow[]>(
+            `SELECT count(*) as count FROM images i ${whereClause} `,
+            queryParams
+        );
         totalToImport = countRes[0]?.count || 0;
         logSyncDebug('Invoke sync candidate count computed', {
             totalToImport,
@@ -217,6 +246,16 @@ export const syncImages = async (
     const pathResolver = createInvokeImagePathResolver(imagesRoot, async () =>
         unwrap(commands.listInvokeaiImages(imagesRoot))
     );
+    const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
+        ? await reconcileInvokeSourceFacts({
+            db: invokeDb,
+            columns: new Set(columns),
+            pathResolver,
+            scope,
+            onProgress,
+            signal,
+        })
+        : 0;
 
     const resolveThumbnailPathsForRows = async (
         rows: InvokeImageRow[],
@@ -265,6 +304,11 @@ export const syncImages = async (
         });
 
         const repairConditions: string[] = [];
+        const repairParams: string[] = [];
+        if (ownerPredicate.clause) {
+            repairConditions.push(ownerPredicate.clause);
+            repairParams.push(...ownerPredicate.params);
+        }
         if (!options.importIntermediates && hasIsIntermediate) {
             repairConditions.push('i.is_intermediate = 0');
         }
@@ -311,7 +355,7 @@ export const syncImages = async (
                 FROM images i
                 WHERE ${repairWhereClause}
                 ORDER BY i.created_at ASC, i.image_name ASC
-            `, nameChunk);
+            `, [...nameChunk, ...repairParams]);
             addRepairRows(repairRows);
         }
 
@@ -325,7 +369,7 @@ export const syncImages = async (
                 FROM images i
                 WHERE ${relativeRepairWhereClause}
                 ORDER BY i.created_at ASC, i.image_name ASC
-            `);
+            `, repairParams);
             relativeRowsScanned = relativeRepairRows.length;
             addRepairRows(relativeRepairRows);
         }
@@ -359,7 +403,7 @@ export const syncImages = async (
                 console.warn('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', error);
                 sizes = new Array(targetPaths.length).fill(0);
             }
-            const existingImagesInBatch = await getImagesByIds(lookupPaths);
+            const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
             const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
             const sizeByPath = new Map(targetPaths.map((path, index) => [path, sizes[index] || 0]));
             const thumbnailPaths = await resolveThumbnailPathsForRows(repairRows, resolvedPaths);
@@ -465,15 +509,16 @@ export const syncImages = async (
         repairedExistingCount = await repairStaleInvokeImagePaths();
     }
 
-    if (totalToImport === 0) {
+    const shouldReconcileBoardCollections = options.reconcileSourceFacts === true && options.syncBoards === true;
+    if (totalToImport === 0 && !shouldReconcileBoardCollections) {
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
-            updatedCount: repairedExistingCount,
+            updatedCount: repairedExistingCount + reconciledExistingCount,
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: repairedExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let hasBoardsTable = false;
@@ -486,9 +531,12 @@ export const syncImages = async (
     if (options.syncBoards && hasBoardsTable) {
         onProgress(0, 0, 'Fetching board mappings...');
         const boardMappingStartedAt = liveWatchNow();
-        const result = await fetchBoardMappings(invokeDb);
-        imageToBoardId = result.imageToBoardId;
-        boards = result.boards;
+        const result = await fetchBoardMappings(invokeDb, scope);
+        shouldApplyBoardMappings = result.isAuthoritative;
+        if (shouldApplyBoardMappings) {
+            imageToBoardId = result.imageToBoardId;
+            boards = result.boards;
+        }
         logSyncDebug('Invoke board mappings loaded', {
             boardCount: boards.size,
             imageBoardLinks: imageToBoardId.size,
@@ -496,9 +544,25 @@ export const syncImages = async (
         });
     }
 
+    const createdBoardIds = new Set<string>();
+    if (shouldReconcileBoardCollections && shouldApplyBoardMappings) {
+        const usedBoardIds = new Set(imageToBoardId.values());
+        for (const boardId of usedBoardIds) {
+            const boardInfo = boards.get(boardId);
+            if (!boardInfo) continue;
+            await upsertInvokeBoardCollection({
+                id: boardId,
+                name: boardInfo.name,
+                createdAt: boardInfo.createdAt || Date.now(),
+                invokeOwnerId: boardInfo.ownerId,
+            });
+            createdBoardIds.add(boardId);
+        }
+    }
+
     let processed = 0;
     let newImportedCount = 0;
-    let totalUpdated = repairedExistingCount;
+    let totalUpdated = repairedExistingCount + reconciledExistingCount;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -509,8 +573,10 @@ export const syncImages = async (
     const updatedCol = hasUpdatedAt ? ', i.updated_at' : '';
     const intermediateCol = hasIsIntermediate ? ', i.is_intermediate' : '';
     const imageSubfolderCol = hasImageSubfolder ? ', i.image_subfolder' : '';
+    const imageCategoryCol = hasImageCategory ? ', i.image_category' : ', NULL AS image_category';
+    const imageOriginCol = hasImageOrigin ? ', i.image_origin' : ', NULL AS image_origin';
+    const ownerCol = hasUserId ? ', CAST(i.user_id AS TEXT) AS user_id' : ', NULL AS user_id';
 
-    const createdBoardIds = new Set<string>();
     let batchCount = 0;
 
     while (true) {
@@ -520,7 +586,7 @@ export const syncImages = async (
         const batchIndex = batchCount + 1;
         const metaSelect = `i.${metaCol} as metadata_blob`;
         const query = `
-            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol}
+            SELECT i.image_name, ${metaSelect}, i.created_at, i.width, i.height ${favCol} ${thumbCol} ${hasWfCol} ${updatedCol} ${intermediateCol} ${imageSubfolderCol} ${imageCategoryCol} ${imageOriginCol} ${ownerCol}
             FROM images i
             ${whereClause}
             ORDER BY i.created_at ASC, ${hasUpdatedAt ? 'i.updated_at ASC' : 'i.image_name ASC'}
@@ -528,7 +594,7 @@ export const syncImages = async (
 `;
 
         const batchQueryStartedAt = liveWatchNow();
-        const rows = await invokeDb.select<InvokeImageRow[]>(query);
+        const rows = await invokeDb.select<InvokeImageRow[]>(query, queryParams);
         const batchQueryMs = elapsedMs(batchQueryStartedAt);
         if (rows.length === 0) break;
         batchCount++;
@@ -556,12 +622,13 @@ export const syncImages = async (
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(lookupPaths);
+        const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
         const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
+        const referenceSets: InvokeImageReferenceSet[] = [];
         const batchBuildStartedAt = liveWatchNow();
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
@@ -669,7 +736,7 @@ export const syncImages = async (
                 }
 
                 // Determine board with smart sync
-                const invokeBoard = options.syncBoards ? imageToBoardId.get(row.image_name) : undefined;
+                const invokeBoard = shouldApplyBoardMappings ? imageToBoardId.get(row.image_name) : undefined;
                 let boardId: string | undefined;
 
                 if (existing) {
@@ -684,7 +751,7 @@ export const syncImages = async (
                         if (userModifiedBoard) {
                             // User explicitly changed it - preserve their choice
                             boardId = existing.boardId;
-                        } else if (options.syncBoards) {
+                        } else if (shouldApplyBoardMappings) {
                             // User hasn't touched it - apply InvokeAI's current value
                             boardId = invokeBoard;
                         } else {
@@ -710,17 +777,19 @@ export const syncImages = async (
                     let formatLooksMapped = false;
                     const rawChunkValue = existing.originalChunks?.invokeai_metadata;
                     if (rawChunkValue) {
-                        const parsedMeta: unknown = typeof rawChunkValue === 'string'
-                            ? JSON.parse(rawChunkValue)
-                            : rawChunkValue;
-                        const meta = isRecord(parsedMeta) ? parsedMeta : {};
+                        try {
+                            const parsedMeta: unknown = typeof rawChunkValue === 'string'
+                                ? JSON.parse(rawChunkValue)
+                                : rawChunkValue;
+                            const meta = isRecord(parsedMeta) ? parsedMeta : {};
 
-                        // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
-                        // Check for both snake_case and camelCase to determine if it's already mapped
-                        if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
-                            (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
-                            formatLooksMapped = true;
-                        }
+                            // If it has positivePrompt (camelCase) it's already mapped data, not truly raw
+                            // Check for both snake_case and camelCase to determine if it's already mapped
+                            if ((meta.positivePrompt !== undefined && meta.positive_prompt === undefined) ||
+                                (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
+                                formatLooksMapped = true;
+                            }
+                        } catch { }
                     }
 
                     if (isMissingRaw || formatLooksMapped) needsUpdate = true;
@@ -729,9 +798,22 @@ export const syncImages = async (
                     if (isFavorite !== existing.isFavorite) needsUpdate = true;
                     if (isPinned !== (existing.isPinned || false)) needsUpdate = true;
                     if (boardId !== existing.boardId) needsUpdate = true;
+                    if ((existing.invokeImageName ?? null) !== row.image_name) needsUpdate = true;
+                    if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
+                    if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
+                    if ((existing.invokeOwnerId ?? null) !== (row.user_id?.trim() || null)) needsUpdate = true;
                 }
 
+                const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
+                const referenceSet = referenceExtraction.status === 'valid'
+                    ? {
+                        sourceImageId: fullPath,
+                        references: referenceExtraction.references,
+                    }
+                    : undefined;
+
                 if (!needsUpdate) {
+                    if (referenceSet) referenceSets.push(referenceSet);
                     if (pathRepaired) totalUpdated++;
                     processed++;
                     syncedIds.add(row.image_name);
@@ -755,10 +837,11 @@ export const syncImages = async (
                 const finalMetadata = existing ? existing.metadata : metadata;
                 const finalOriginalMetadata = existing?.originalMetadata || (existing ? existing.metadata : metadata);
 
-                // Ensure we store the RAW object, not a string, to avoid double-stringification
-                const rawInvokeMeta = row.metadata_blob
+                // Preserve the raw object; the DB adapter serializes the complete chunk map once.
+                const parsedRawInvokeMeta: unknown = row.metadata_blob
                     ? (typeof row.metadata_blob === 'string' ? JSON.parse(row.metadata_blob) : row.metadata_blob)
                     : {};
+                const rawInvokeMeta = isRecord(parsedRawInvokeMeta) ? { ...parsedRawInvokeMeta } : {};
 
                 // Inject the hint status so it survives in original chunks/originalMetadata
                 if (hasHasWorkflow && row.has_workflow !== undefined) {
@@ -784,9 +867,13 @@ export const syncImages = async (
                     metadata: finalMetadata,
                     originalMetadata: finalOriginalMetadata,
                     originalChunks: {
-                        'invokeai_metadata': rawInvokeMeta
+                        'invokeai_metadata': rawInvokeMeta as unknown as string
                     },
-                    originalState: originalState
+                    originalState: originalState,
+                    invokeImageName: row.image_name,
+                    invokeImageCategory: row.image_category ?? undefined,
+                    invokeImageOrigin: row.image_origin ?? undefined,
+                    invokeOwnerId: row.user_id?.trim() || undefined,
                 };
 
                 if (!existing) {
@@ -804,6 +891,7 @@ export const syncImages = async (
                 );
 
                 currentBatch.push(newImg);
+                if (referenceSet) referenceSets.push(referenceSet);
                 syncedIds.add(row.image_name);
                 syncedIds.add(resolvedPath.relativePath as string);
                 processed++;
@@ -813,20 +901,21 @@ export const syncImages = async (
 
         let boardCreateMs = 0;
         let insertMs = 0;
+        let referenceWriteMs = 0;
         let collectionSyncMs = 0;
         if (currentBatch.length > 0) {
             // Lazy Board Creation
-            if (options.syncBoards) {
+            if (shouldApplyBoardMappings) {
                 const boardCreateStartedAt = liveWatchNow();
                 const batchBoardIds = new Set(currentBatch.map(img => img.boardId).filter(id => id && !createdBoardIds.has(id)));
                 for (const bId of batchBoardIds) {
                     const boardInfo = boards.get(bId!);
                     if (boardInfo) {
-                        await upsertCollection({
+                        await upsertInvokeBoardCollection({
                             id: bId!,
                             name: boardInfo.name,
                             createdAt: boardInfo.createdAt || Date.now(),
-                            source: 'invoke'
+                            invokeOwnerId: boardInfo.ownerId,
                         });
                         createdBoardIds.add(bId!);
                     }
@@ -839,11 +928,16 @@ export const syncImages = async (
             insertMs = elapsedMs(insertStartedAt);
 
             // Incremental Linking
-            if (options.syncBoards) {
+            if (shouldApplyBoardMappings) {
                 const collectionSyncStartedAt = liveWatchNow();
                 await syncCollectionImages(currentBatch.map(img => img.id));
                 collectionSyncMs = elapsedMs(collectionSyncStartedAt);
             }
+        }
+        if (referenceSets.length > 0) {
+            const referenceWriteStartedAt = liveWatchNow();
+            await unwrap(commands.replaceInvokeImageReferences(referenceSets));
+            referenceWriteMs = elapsedMs(referenceWriteStartedAt);
         }
         logSyncDebug('Invoke sync batch complete', {
             batchIndex,
@@ -855,6 +949,7 @@ export const syncImages = async (
             batchBuildMs,
             boardCreateMs,
             insertMs,
+            referenceWriteMs,
             collectionSyncMs,
             batchMs: elapsedMs(batchStartedAt)
         });
@@ -864,7 +959,7 @@ export const syncImages = async (
     }
 
     // Final cleanup / sync (optional fallback)
-    if (options.syncBoards && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
+    if (shouldApplyBoardMappings && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
         // We've already done incremental sync, but this ensures everything is correct
         // especially for images that might have been updated/synced without being in a new batch
         const finalCollectionSyncStartedAt = liveWatchNow();

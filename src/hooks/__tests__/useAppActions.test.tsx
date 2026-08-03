@@ -1,6 +1,7 @@
 
 import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage } from '../../types';
@@ -286,6 +287,105 @@ describe('useAppActions', () => {
 
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
+    it('applies favorite and pin actions to a directly opened asset outside the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: true, isPinned: true }));
+        expect(mockToggleImageFavorite).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockToggleImagePin).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockSetImages).not.toHaveBeenCalled();
+    });
+
+    it('invalidates image queries after a direct pin so cached collections can restore pinned-first order', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, activeImageState }),
+            queryClient: useQueryClient(),
+        }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        act(() => result.current.actions.handlePinImage(directImage.id, true, { showToast: false }));
+
+        await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] }));
+    });
+
+    it('rolls back failed direct-asset flags without replacing the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
+        mockToggleImagePin.mockRejectedValueOnce(new Error('pin failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error'));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: false, isPinned: false }));
+        expect(mockSetImages).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+    });
+
+    it('closes a directly opened asset when it is deleted', () => {
+        mockSettings = { ...mockSettings, confirmDelete: false };
+        const removeImage = vi.fn();
+        const activeImageState = {
+            getImage: vi.fn(),
+            updateImage: vi.fn(),
+            removeImage,
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.requestDeleteForId('hidden-control'));
+
+        expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['hidden-control']);
+        expect(removeImage).toHaveBeenCalledWith('hidden-control');
+        expect(mockSetSelectedImageIndex).not.toHaveBeenCalled();
     });
 
     it('shows single-image unpin feedback', async () => {

@@ -19,6 +19,7 @@ import { createDefaultFilters } from '../../utils/filterState';
 import { createDefaultAppSettings } from '../../constants/defaultSettings';
 import type { AppState } from '../repository';
 import { GeneratorTool } from '../../types';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 describe('browserMockData filtering', () => {
     beforeEach(() => {
@@ -149,6 +150,7 @@ describe('browserMockData filtering', () => {
                 collectionId,
                 showIntermediates: true,
                 showGrids: true,
+                showInvokeImageAssets: true,
             }));
 
             expect(summary.totalImages).toBe(4);
@@ -185,6 +187,7 @@ describe('browserMockData filtering', () => {
                 collectionId,
                 showIntermediates: true,
                 showGrids: true,
+                showInvokeImageAssets: true,
             }));
 
             expect(summary.totalImages).toBe(3);
@@ -311,13 +314,13 @@ describe('browserMockData filtering', () => {
 
         const hiddenGenerated = searchBrowserMockImages(createDefaultFilters({ searchQuery: 'file:0001' }), 'date_desc', 10);
         const shownGenerated = searchBrowserMockImages(createDefaultFilters({
-            searchQuery: 'file:0001', showIntermediates: true, showGrids: true
+            searchQuery: 'file:0001', showIntermediates: true, showGrids: true, showInvokeImageAssets: true
         }), 'date_desc', 10);
         expect(hiddenGenerated.totalCount).toBe(0);
         expect(shownGenerated.totalCount).toBe(1);
 
         const collectionResult = searchBrowserMockImages(createDefaultFilters({
-            collectionId: 'mock_showcase', showIntermediates: true, showGrids: true
+            collectionId: 'mock_showcase', showIntermediates: true, showGrids: true, showInvokeImageAssets: true
         }), 'date_desc', 1000);
         expect(collectionResult.totalCount).toBeGreaterThan(0);
         expect(collectionResult.images.every(image => Number(image.id.slice(5)) <= 18)).toBe(true);
@@ -326,6 +329,124 @@ describe('browserMockData filtering', () => {
         expect(searchBrowserMockImages(createDefaultFilters({
             dateRange: 'custom', dateFrom: future, dateTo: future
         }), 'date_desc', 1000).totalCount).toBe(0);
+    });
+
+    it('hides known InvokeAI image assets while keeping unknown categories visible', () => {
+        const hidden = searchBrowserMockImages(createDefaultFilters({
+            showIntermediates: true,
+            showGrids: true,
+        }), 'date_desc', 1000);
+        const revealed = searchBrowserMockImages(createDefaultFilters({
+            showIntermediates: true,
+            showGrids: true,
+            showInvokeImageAssets: true,
+        }), 'date_desc', 1000);
+
+        expect(hidden.images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory))).toBe(false);
+        expect(hidden.images.some(image => image.invokeImageCategory === 'future-category')).toBe(true);
+        expect(revealed.images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory))).toBe(true);
+        expect(revealed.totalCount).toBeGreaterThan(hidden.totalCount);
+    });
+
+    it('excludes asset-only facets and asset usage from default facet counts', () => {
+        const images = getBrowserMockImages();
+        const asset = images.find((image) => isKnownInvokeImageAsset(image.invokeImageCategory));
+        const visible = images.find((image) => !isKnownInvokeImageAsset(image.invokeImageCategory));
+        expect(asset).toBeDefined();
+        expect(visible).toBeDefined();
+        if (!asset || !visible) return;
+
+        try {
+            updateBrowserMockImage(asset.id, {
+                metadata: {
+                    ...asset.metadata,
+                    tool: GeneratorTool.FORGE,
+                    model: 'SharedAssetModel',
+                    loras: ['SharedAssetLora', 'AssetOnlyLora'],
+                },
+            });
+            updateBrowserMockImage(visible.id, {
+                metadata: {
+                    ...visible.metadata,
+                    model: 'SharedAssetModel',
+                    loras: ['SharedAssetLora'],
+                },
+            });
+
+            const hidden = getBrowserMockFacets(createDefaultFilters({
+                showIntermediates: true,
+                showGrids: true,
+            }));
+            const revealed = getBrowserMockFacets(createDefaultFilters({
+                showIntermediates: true,
+                showGrids: true,
+                showInvokeImageAssets: true,
+            }));
+
+            expect(hidden.tools).not.toContain(GeneratorTool.FORGE);
+            expect(hidden.loras.find((item) => item.name === 'AssetOnlyLora')).toBeUndefined();
+            expect(hidden.loras.find((item) => item.name === 'SharedAssetLora')?.count).toBe(1);
+            expect(revealed.tools).toContain(GeneratorTool.FORGE);
+            expect(revealed.loras.find((item) => item.name === 'AssetOnlyLora')?.count).toBe(1);
+            expect(revealed.loras.find((item) => item.name === 'SharedAssetLora')?.count).toBe(2);
+        } finally {
+            updateBrowserMockImage(asset.id, asset);
+            updateBrowserMockImage(visible.id, visible);
+        }
+    });
+
+    it('applies the current asset visibility after smart-collection membership', () => {
+        const hidden = searchBrowserMockImages(createDefaultFilters({
+            collectionId: 'mock_favorites',
+            showIntermediates: true,
+            showGrids: true,
+        }), 'date_desc', 1000);
+        const revealed = searchBrowserMockImages(createDefaultFilters({
+            collectionId: 'mock_favorites',
+            showIntermediates: true,
+            showGrids: true,
+            showInvokeImageAssets: true,
+        }), 'date_desc', 1000);
+
+        expect(hidden.images.some(image => image.id === 'mock_9')).toBe(false);
+        expect(revealed.images.find(image => image.id === 'mock_9')).toMatchObject({
+            isFavorite: true,
+            invokeImageCategory: 'control',
+        });
+    });
+
+    it('keeps smart collection counts on fixed default visibility regardless of saved toggles', () => {
+        const hiddenId = 'smart-count-hidden-assets';
+        const shownId = 'smart-count-shown-assets';
+        const favoriteFilters = createDefaultFilters({ favoritesOnly: true });
+
+        try {
+            upsertBrowserMockCollection({
+                id: hiddenId,
+                name: 'Hidden Asset Count',
+                filters: { ...favoriteFilters, showInvokeImageAssets: false },
+            });
+            upsertBrowserMockCollection({
+                id: shownId,
+                name: 'Shown Asset Count',
+                filters: { ...favoriteFilters, showInvokeImageAssets: true },
+            });
+
+            const collections = getBrowserMockCollections();
+            const hiddenCount = collections.find(collection => collection.id === hiddenId)?.count;
+            const shownCount = collections.find(collection => collection.id === shownId)?.count;
+            const expectedCount = searchBrowserMockImages(
+                createDefaultFilters({ collectionId: hiddenId }),
+                'date_desc',
+                1000
+            ).totalCount;
+
+            expect(hiddenCount).toBe(expectedCount);
+            expect(shownCount).toBe(expectedCount);
+        } finally {
+            deleteBrowserMockCollection(hiddenId);
+            deleteBrowserMockCollection(shownId);
+        }
     });
 
     it('supports quoted, bang-negative, date, upscaled, and unknown scoped search tokens', () => {
@@ -413,7 +534,7 @@ describe('browserMockData filtering', () => {
         expect(searchBrowserMockImages(createDefaultFilters({ searchQuery: 'OR neon' }), 'date_desc', 1000).totalCount).toBeGreaterThan(0);
 
         const smart = searchBrowserMockImages(createDefaultFilters({
-            collectionId: 'mock_favorites', showIntermediates: true, showGrids: true
+            collectionId: 'mock_favorites', showIntermediates: true, showGrids: true, showInvokeImageAssets: true
         }), 'date_desc', 1000);
         expect(smart.totalCount).toBeGreaterThan(0);
         expect(smart.images.every(image => image.isFavorite)).toBe(true);
@@ -452,7 +573,7 @@ describe('browserMockData filtering', () => {
         });
 
         for (const searchQuery of ['lora:missing', 'cn:missing', 'ip:missing']) {
-            expect(searchBrowserMockImages(createDefaultFilters({ searchQuery, showIntermediates: true, showGrids: true }), 'date_desc', 1000).totalCount).toBe(0);
+            expect(searchBrowserMockImages(createDefaultFilters({ searchQuery, showIntermediates: true, showGrids: true, showInvokeImageAssets: true }), 'date_desc', 1000).totalCount).toBe(0);
         }
         expect(searchBrowserMockImages(createDefaultFilters({ searchQuery: '-model:flux' }), 'date_desc', 1000).totalCount).toBeGreaterThan(0);
         expect(searchBrowserMockImages(createDefaultFilters({ generationTypes: ['unknown'] }), 'date_desc', 1000).totalCount).toBeGreaterThan(0);
@@ -462,16 +583,16 @@ describe('browserMockData filtering', () => {
             filters: createDefaultFilters({ favoritesOnly: true })
         });
         const smartWithDate = searchBrowserMockImages(createDefaultFilters({
-            collectionId: 'dated-smart', dateRange: 'today', showIntermediates: true, showGrids: true
+            collectionId: 'dated-smart', dateRange: 'today', showIntermediates: true, showGrids: true, showInvokeImageAssets: true
         }), 'date_desc', 1000);
         expect(smartWithDate.images.every(image => image.isFavorite)).toBe(true);
         deleteBrowserMockCollection('dated-smart');
 
         for (const sortOption of ['date_asc', 'date_desc', 'size_asc', 'size_desc'] as const) {
-            const result = searchBrowserMockImages(createDefaultFilters({ showIntermediates: true, showGrids: true }), sortOption, 1000);
+            const result = searchBrowserMockImages(createDefaultFilters({ showIntermediates: true, showGrids: true, showInvokeImageAssets: true }), sortOption, 1000);
             expect(result.images).toHaveLength(179);
         }
-        expect(getBrowserMockStatsSummary(createDefaultFilters({ showIntermediates: true, showGrids: true })).estSizeMB).toMatch(/^\d+\.\d$/);
+        expect(getBrowserMockStatsSummary(createDefaultFilters({ showIntermediates: true, showGrids: true, showInvokeImageAssets: true })).estSizeMB).toMatch(/^\d+\.\d$/);
     });
 
     it('infers the prompt masking switch for legacy browser-mock settings', async () => {

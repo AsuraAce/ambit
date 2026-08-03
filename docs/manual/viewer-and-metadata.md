@@ -63,6 +63,15 @@ The Negative Prompt section appears when negative prompt data exists.
 
 The Color Palette section shows extracted colors when Ambit can derive them from the image. Select a swatch to copy its color value.
 
+For images imported with InvokeAI source facts, Source identifies InvokeAI and can show the original image name, category, and origin. This section is available even when the image has no generation parameters. Unrecognized source categories are displayed as recorded instead of being guessed or discarded.
+
+When InvokeAI recorded image-to-image inputs, the Info tab can also show:
+
+- Source Images: images used to produce the current image, labelled by their roles such as Initial image, ControlNet input, or IP-Adapter input
+- Used By: other Ambit images that used the current image as an input
+
+Select an available entry to open it directly in the same viewer. This also works for InvokeAI assets hidden by the normal library View setting and does not change the current search, collection, or asset-visibility setting. A directly opened hidden asset has the normal viewer metadata and catalog actions, but Previous and Next navigation is unavailable because the asset is outside the current result list. References whose target has not been imported, and backlinks from Removed images, remain visible as disabled entries so the recorded provenance is not mistaken for a broken control.
+
 Generation Data is an expandable section for generation parameters and source-compatible copies. It can show:
 
 - Copy Workflow when workflow JSON exists

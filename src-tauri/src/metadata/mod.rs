@@ -49,6 +49,9 @@ pub struct ImageMetadata {
     pub raw_parameters: Option<String>,
     pub steps: u32,
     pub cfg: f32,
+    #[serde(skip)]
+    #[specta(skip)]
+    pub(crate) cfg_present: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<i64>,
     pub sampler: String,
@@ -112,8 +115,9 @@ impl ImageMetadata {
         if self.steps == 0 {
             self.steps = other.steps;
         }
-        if self.cfg == 0.0 {
+        if !self.cfg_present && self.cfg == 0.0 {
             self.cfg = other.cfg;
+            self.cfg_present = other.cfg_present || other.cfg != 0.0;
         }
         if self.seed.is_none() {
             self.seed = other.seed;
@@ -179,6 +183,7 @@ impl Default for ImageMetadata {
             raw_parameters: None,
             steps: 0,
             cfg: 0.0,
+            cfg_present: false,
             seed: None,
             sampler: "Unknown".to_string(),
             positive_prompt: String::new(),
@@ -223,8 +228,13 @@ pub fn merge_metadata(base: &mut ImageMetadata, secondary: ImageMetadata) {
     if base.steps == 0 || (secondary.tool == "ComfyUI" && secondary.steps > 0) {
         base.steps = secondary.steps;
     }
-    if base.cfg == 0.0 || (secondary.tool == "ComfyUI" && secondary.cfg > 0.0) {
+    let base_cfg_present = base.cfg_present || base.cfg != 0.0;
+    let secondary_cfg_present = secondary.cfg_present || secondary.cfg != 0.0;
+    if (!base_cfg_present && secondary_cfg_present)
+        || (secondary.tool == "ComfyUI" && secondary.cfg > 0.0)
+    {
         base.cfg = secondary.cfg;
+        base.cfg_present = secondary_cfg_present;
     }
     if base.seed.is_none() || (secondary.tool == "ComfyUI" && secondary.seed.is_some()) {
         base.seed = secondary.seed;

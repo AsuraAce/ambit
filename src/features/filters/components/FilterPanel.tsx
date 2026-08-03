@@ -20,6 +20,7 @@ import { openExternalUrl } from '../../../utils/externalLinks';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface FilterPanelProps {
+    isInvokeCollectionCatchupPending?: boolean;
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
     filteredImages?: AIImage[];
@@ -45,6 +46,7 @@ interface FilterPanelProps {
 type FilterTab = 'organize' | 'generate' | 'resources';
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
+    isInvokeCollectionCatchupPending = false,
     filteredImages,
     onCreateCollection,
     onSaveSmartCollection,
@@ -192,7 +194,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 // We'll pass it as is, strict type compliance.
                 collectionId: null, // Don't save circular self-ref
                 showGrids: saved.showGrids, // Preserve
-                showIntermediates: saved.showIntermediates // Preserve
+                showIntermediates: saved.showIntermediates, // Preserve
+                showInvokeImageAssets: saved.showInvokeImageAssets // Preserve
             } as FilterState;
 
             onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);
@@ -351,6 +354,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {activeTab === 'organize' && (
                         <div className="space-y-6 animate-in slide-in-from-left-4 fade-in duration-300 ease-spring">
                             <CollectionsSection
+                                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
                                 collections={[...collections, ...smartCollections]}
                                 filters={filters} setFilters={setFilters}
                                 isOpen={expanded.collections} onToggle={() => toggleSection('collections')}

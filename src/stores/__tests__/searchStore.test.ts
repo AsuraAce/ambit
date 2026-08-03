@@ -38,7 +38,7 @@ describe('searchStore', () => {
         const state = useSearchStore.getState();
         state.setImages([]);
         state.setRecentSearches([]);
-        state.setFilters({ showIntermediates: false, showGrids: false });
+        state.setFilters({ showIntermediates: false, showGrids: false, showInvokeImageAssets: false });
         state.clearAllFilters();
         state.setSortOption('date_desc');
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -78,6 +78,7 @@ describe('searchStore', () => {
             maxCfg: 8,
             showIntermediates: true,
             showGrids: true,
+            showInvokeImageAssets: true,
         });
 
         state.clearAllFilters();
@@ -92,6 +93,7 @@ describe('searchStore', () => {
             generationTypes: [],
             showIntermediates: true,
             showGrids: true,
+            showInvokeImageAssets: true,
         });
     });
 

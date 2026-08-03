@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool } from '../../../types';
-import { getImageFieldsFull, getImageFieldsLight, mapRowToImage } from '../repoUtils';
+import { getImageFieldsFull, getImageFieldsLight, mapRowToImage, REMOVED_IMAGE_FIELDS } from '../repoUtils';
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
@@ -25,6 +25,9 @@ const baseLightRow = {
     group_id: null,
     board_id: null,
     notes: null,
+    invoke_image_name: 'sample.png',
+    invoke_image_category: 'control',
+    invoke_image_origin: 'internal',
     is_intermediate_gen: 0,
     is_grid_gen: 0,
     model_name: 'Fallback Model',
@@ -46,6 +49,7 @@ describe('repoUtils lightweight image rows', () => {
 
         expect(fields).toContain('images.positive_prompt');
         expect(fields).toContain('images.seed');
+        expect(fields).toContain('images.invoke_image_category');
         expect(fields).not.toContain('metadata_json');
         expect(fields).not.toContain('original_metadata_json');
         expect(fields).not.toContain('original_parsed_json');
@@ -65,6 +69,12 @@ describe('repoUtils lightweight image rows', () => {
         expect(getImageFieldsFull('')).toContain('metadata_json');
     });
 
+    it('keeps InvokeAI source facts in Removed lifecycle selections', () => {
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_name');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_category');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_origin');
+    });
+
     it('maps prompt metadata from scalar columns without original metadata JSON', () => {
         const image = mapRowToImage(baseLightRow);
 
@@ -74,6 +84,11 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.metadata.steps).toBe(28);
         expect(image.metadata.seed).toBe(0);
         expect(image.originalMetadata).toBeUndefined();
+        expect(image).toMatchObject({
+            invokeImageName: 'sample.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'internal',
+        });
     });
 
     it('keeps an unavailable lightweight seed unknown', () => {

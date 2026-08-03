@@ -3,7 +3,7 @@ import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -22,6 +22,7 @@ import {
     clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 type PersistableImageRecord = {
     id: string;
@@ -46,6 +47,10 @@ type PersistableImageRecord = {
     originalMetadataJson: string | null;
     originalStateJson: string | null;
     isCorrupt: boolean;
+    invokeImageName: string | null;
+    invokeImageCategory: string | null;
+    invokeImageOrigin: string | null;
+    invokeOwnerId: string | null;
 };
 
 export interface DeleteRemovedImagesResult {
@@ -120,7 +125,13 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
         ? (Object.keys(image.originalChunks).length > 0 ? JSON.stringify(image.originalChunks) : null)
         : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
-    isCorrupt: !!image.isCorrupt
+    isCorrupt: !!image.isCorrupt,
+    // InvokeAI rows always have a name. Native upsert uses it to distinguish an
+    // authoritative nullable source snapshot from omitted generic-scan fields.
+    invokeImageName: image.invokeImageName || null,
+    invokeImageCategory: image.invokeImageCategory || null,
+    invokeImageOrigin: image.invokeImageOrigin || null,
+    invokeOwnerId: image.invokeOwnerId || null
 });
 
 const persistImageRecords = async (
@@ -430,6 +441,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
             SELECT board_id, id 
             FROM images 
             WHERE board_id IS NOT NULL
+              AND invoke_scope_hidden = 0
         `;
 
         const params: unknown[] = [];
@@ -631,13 +643,15 @@ export const getAllImages = async (
     offset: number = 0,
     prioritizePinned: boolean = false,
     showIntermediates: boolean = false,
-    showGrids: boolean = false
+    showGrids: boolean = false,
+    showInvokeImageAssets: boolean = false
 ): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages()
             .filter(image => !image.isDeleted)
             .filter(image => showIntermediates || !(image.isIntermediate || image.metadata.isIntermediate))
             .filter(image => showGrids || !image.metadata.isGrid)
+            .filter(image => showInvokeImageAssets || !isKnownInvokeImageAsset(image.invokeImageCategory))
             .sort((a, b) => prioritizePinned && a.isPinned !== b.isPinned
                 ? (a.isPinned ? -1 : 1)
                 : b.timestamp - a.timestamp);
@@ -648,12 +662,15 @@ export const getAllImages = async (
     const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
 
     // Optimize: Use STORED generated columns instead of LIKE scan
-    let filterClauses = 'WHERE is_deleted = 0';
+    let filterClauses = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0';
     if (!showIntermediates) {
         filterClauses += ' AND IFNULL(is_intermediate_gen, 0) = 0';
     }
     if (!showGrids) {
         filterClauses += ' AND IFNULL(is_grid_gen, 0) = 0';
+    }
+    if (!showInvokeImageAssets) {
+        filterClauses += ' AND IFNULL(is_invoke_asset_gen, 0) = 0';
     }
 
     const query = limit
@@ -664,7 +681,10 @@ export const getAllImages = async (
     return rows.map(mapRowToImage);
 };
 
-export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
+export const getImagesByIds = async (
+    ids: string[],
+    options: { includeOwnerHidden?: boolean } = {}
+): Promise<AIImage[]> => {
     if (ids.length === 0) return [];
     if (isBrowserMockMode()) {
         const idSet = new Set(ids);
@@ -679,7 +699,8 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})`;
+        const ownerScope = options.includeOwnerHidden ? '' : ' AND invoke_scope_hidden = 0';
+        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})${ownerScope}`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -719,7 +740,7 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders})`;
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -734,7 +755,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -864,19 +885,22 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
             const chunkRows = await db.select<RemovedImageRow[]>(
                 `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt
+                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                        ${INVOKE_IMAGE_SOURCE_FIELDS}, invoke_scope_hidden
                  FROM images
-                 WHERE id IN (${placeholders})`,
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
         }
 
         if (rows.length === 0) return;
+        const removableIds = rows.map(row => row.id);
 
         const membershipRows: { image_id: string; collection_id: string }[] = [];
-        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
+        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: removableIds.length });
+        for (const chunk of chunkItems(removableIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkMembershipRows = await db.select<{ image_id: string; collection_id: string }[]>(
                 `SELECT image_id, collection_id
@@ -900,8 +924,10 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                 `INSERT OR REPLACE INTO removed_images (
                     id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
                     is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                    ${INVOKE_IMAGE_SOURCE_FIELDS}, invoke_scope_hidden,
+                    removed_at, collection_ids_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     row.id,
                     row.path,
@@ -924,15 +950,20 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                     row.original_parsed_json ?? null,
                     row.original_state_json ?? null,
                     row.is_corrupt ?? 0,
+                    row.invoke_image_name ?? null,
+                    row.invoke_image_category ?? null,
+                    row.invoke_image_origin ?? null,
+                    row.invoke_owner_id ?? null,
+                    row.invoke_scope_hidden ?? 0,
                     removedAt,
                     memberships[row.id] ? JSON.stringify(memberships[row.id]) : null
                 ]
             );
         }
 
-        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: normalizedIds.length });
-        await clearCollectionThumbnailCacheForImages(normalizedIds);
-        for (const chunk of chunkItems(normalizedIds)) {
+        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: removableIds.length });
+        await clearCollectionThumbnailCacheForImages(removableIds);
+        for (const chunk of chunkItems(removableIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, chunk);
             await db.execute(`DELETE FROM image_loras WHERE image_id IN (${placeholders})`, chunk);
@@ -955,7 +986,10 @@ export const restoreRemovedImages = async (ids: string[]) => {
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
+                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json
+                 FROM removed_images
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
@@ -996,7 +1030,7 @@ export const restoreRemovedImages = async (ids: string[]) => {
         }
 
         await clearCollectionThumbnailCacheForCollections(restoredCollectionIds);
-        await removeTombstones(db, normalizedIds);
+        await removeTombstones(db, rows.map(row => row.id));
     });
 };
 
@@ -1054,7 +1088,10 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, thumbnail_path FROM removed_images WHERE id IN (${placeholders})`,
+                `SELECT id, path, thumbnail_path
+                 FROM removed_images
+                 WHERE invoke_scope_hidden = 0
+                   AND id IN (${placeholders})`,
                 chunk
             );
             rows.push(...chunkRows);
@@ -1218,25 +1255,32 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
-export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
+export const checkHiddenContentAvailability = async (): Promise<{
+    hasIntermediates: boolean;
+    hasGrids: boolean;
+    hasInvokeImageAssets: boolean;
+}> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
             hasIntermediates: images.some(image => image.isIntermediate || image.metadata.isIntermediate),
-            hasGrids: images.some(image => image.metadata.isGrid === true)
+            hasGrids: images.some(image => image.metadata.isGrid === true),
+            hasInvokeImageAssets: images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory)),
         };
     }
 
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
-    const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
+    const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
         hasIntermediates: intermediateCheck.length > 0,
-        hasGrids: gridCheck.length > 0
+        hasGrids: gridCheck.length > 0,
+        hasInvokeImageAssets: invokeAssetCheck.length > 0,
     };
 };
 
@@ -1253,7 +1297,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {

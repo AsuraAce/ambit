@@ -17,14 +17,20 @@ const STARRED_AS_VALUES = ['favorite', 'pin', 'both', 'none'] as const satisfies
 const isStarredAs = (value: string): value is StarredAs => (STARRED_AS_VALUES as readonly string[]).includes(value);
 
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
-    const { syncState, startInvokeSync, cancelSync, isLiveSyncing } = useLibrary();
+    const { syncState, startInvokeSync, cancelSync, isInvokeSyncActive, invokeOwnerScopeState } = useLibrary();
     const { status } = syncState;
     const { addToast } = useToast();
     const [isFullResyncConfirmOpen, setIsFullResyncConfirmOpen] = React.useState(false);
 
     const syncFavorites = settings.invokeSyncFavorites !== false;
     const syncBoards = settings.invokeSyncBoards !== false;
-    const isInvokeSyncActive = status === 'syncing' || isLiveSyncing;
+    const selectedOwnerMode = invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
+        && settings.invokeOwnerSelection?.dbPath === invokeOwnerScopeState.discovery.dbPath
+        && settings.invokeOwnerSelection.mode === 'owner';
+    const ownerSyncBlocked = invokeOwnerScopeState.status !== 'ready'
+        || (invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
+            && settings.invokeOwnerSelection?.dbPath !== invokeOwnerScopeState.discovery.dbPath);
+    const orphanRecoveryEnabled = !selectedOwnerMode && settings.importOrphans === true;
 
     const handleStarredAsChange = (value: string) => {
         if (!isStarredAs(value)) return;
@@ -96,6 +102,12 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     Automate the bridge between InvokeAI and your {APP_NAME} library.
                 </p>
 
+                {ownerSyncBlocked && (
+                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-300">
+                        Resolve the InvokeAI owner scope above before synchronization can run.
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {/* Favorites Group */}
                     <div className={`p-4 rounded-xl border transition-all duration-300 ${syncFavorites ? 'bg-sage-50 dark:bg-sage-500/5 border-sage-500/20' : 'bg-transparent border-gray-100 dark:border-white/5 opacity-60'}`}>
@@ -166,14 +178,18 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                             </div>
                         </label>
 
-                        <label className="flex items-start gap-3 cursor-pointer group/toggle">
-                            <input type="checkbox" role="switch" aria-label="Orphan Recovery" aria-checked={settings.importOrphans === true} className="peer sr-only" checked={settings.importOrphans === true} onChange={e => handleImportOrphansToggle(e.target.checked)} />
-                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${settings.importOrphans === true ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
-                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${settings.importOrphans === true ? 'translate-x-5' : 'translate-x-0'}`} />
+                        <label className={`flex items-start gap-3 group/toggle ${selectedOwnerMode ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
+                            <input type="checkbox" role="switch" aria-label="Orphan Recovery" aria-checked={orphanRecoveryEnabled} className="peer sr-only" checked={orphanRecoveryEnabled} disabled={selectedOwnerMode} onChange={e => handleImportOrphansToggle(e.target.checked)} />
+                            <div className={`mt-1 w-10 h-5 rounded-full relative transition-colors shrink-0 peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${orphanRecoveryEnabled ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}>
+                                <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full pointer-events-none transition-transform ${orphanRecoveryEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                             </div>
                             <div>
                                 <span className="text-[11px] font-bold text-gray-700 dark:text-gray-200 block">Orphan Recovery</span>
-                                <span className="text-[9px] text-gray-500 leading-tight">Manual full output-folder recovery sweep.</span>
+                                <span className="text-[9px] text-gray-500 leading-tight">
+                                    {selectedOwnerMode
+                                        ? 'Unavailable for one owner because output files do not carry reliable ownership. Your saved preference is preserved.'
+                                        : 'Manual full output-folder recovery sweep.'}
+                                </span>
                             </div>
                         </label>
                     </div>
@@ -207,8 +223,11 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleSync}
-                                className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3"
-                                title="Start synchronization with InvokeAI"
+                                disabled={ownerSyncBlocked || isInvokeSyncActive}
+                                className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-sage-600"
+                                title={ownerSyncBlocked
+                                    ? 'Resolve owner scope before synchronization'
+                                    : (isInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Start synchronization with InvokeAI')}
                             >
                                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}

@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { fireEvent, render, screen } from '../../../../test/testUtils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '../../../../test/testUtils';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilterState, SortOption } from '../../../../types';
 import { ViewControls } from '../ViewControls';
 
 const mocks = vi.hoisted(() => ({
-    availableHiddenContent: { hasIntermediates: false, hasGrids: false },
-    filters: { showIntermediates: false, showGrids: false } as FilterState,
+    availableHiddenContent: { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false },
+    filters: { showIntermediates: false, showGrids: false, showInvokeImageAssets: false } as FilterState,
     sortOption: 'date_desc' as SortOption,
     setSortOption: vi.fn(),
     setFilters: vi.fn()
@@ -24,7 +24,8 @@ vi.mock('../../../../contexts/SearchContext', () => ({
 
 const baseFilters = (): FilterState => ({
     searchQuery: '', models: [], tools: [], loras: [], embeddings: [], hypernetworks: [], samplers: [], generationTypes: [],
-    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null, showIntermediates: false, showGrids: false
+    controlNets: [], ipAdapters: [], dateRange: 'all', favoritesOnly: false, collectionId: null, showIntermediates: false, showGrids: false,
+    showInvokeImageAssets: false
 });
 
 const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {}) => {
@@ -40,10 +41,14 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {
 describe('ViewControls', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false };
+        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = baseFilters();
         mocks.sortOption = 'date_desc';
         mocks.setFilters.mockImplementation((update: (previous: FilterState) => FilterState) => { mocks.filters = update(mocks.filters); });
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
     });
 
     it('routes every layout, slideshow, and thumbnail-size control', () => {
@@ -78,13 +83,14 @@ describe('ViewControls', () => {
         expect(screen.queryByText('Oldest')).toBeNull();
     });
 
-    it('toggles both hidden-content controls and closes only on outside clicks', () => {
-        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: true };
+    it('toggles all hidden-content controls and closes only on outside clicks', () => {
+        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true };
         const { rerender, props } = setup();
         fireEvent.click(screen.getByTitle('View Options'));
         fireEvent.click(screen.getByText('Show Intermediates'));
         fireEvent.click(screen.getByText('Show Image Grids'));
-        expect(mocks.filters).toMatchObject({ showIntermediates: true, showGrids: true });
+        fireEvent.click(screen.getByText('Show InvokeAI Image Assets'));
+        expect(mocks.filters).toMatchObject({ showIntermediates: true, showGrids: true, showInvokeImageAssets: true });
 
         rerender(<ViewControls {...props} />);
         fireEvent.mouseDown(screen.getByText('Display'));
@@ -95,11 +101,12 @@ describe('ViewControls', () => {
         fireEvent.click(screen.getByTitle('View Options'));
         fireEvent.click(screen.getByText('Show Intermediates'));
         fireEvent.click(screen.getByText('Show Image Grids'));
-        expect(mocks.filters).toMatchObject({ showIntermediates: false, showGrids: false });
+        fireEvent.click(screen.getByText('Show InvokeAI Image Assets'));
+        expect(mocks.filters).toMatchObject({ showIntermediates: false, showGrids: false, showInvokeImageAssets: false });
     });
 
     it('renders active layout, sort, and hidden-content variants', () => {
-        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false };
+        mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showIntermediates: true };
         mocks.sortOption = 'name_desc';
         const { container, rerender, props } = setup({ layoutMode: 'grid' });
@@ -108,7 +115,7 @@ describe('ViewControls', () => {
         fireEvent.click(screen.getByTitle('View Options'));
         expect(container.querySelector('[class~="right-0.5"]')).toBeTruthy();
 
-        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true };
+        mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showGrids: true };
         mocks.sortOption = 'future' as SortOption;
         rerender(<ViewControls {...props} layoutMode="justified" showLayoutSwitcher={false} showSlideshowButton={false} />);
@@ -120,7 +127,7 @@ describe('ViewControls', () => {
         expect(screen.getByRole('button', { name: 'Use Justified Layout' }).className).toContain('bg-white');
     });
 
-    it('formats match, search, loading, and scope counters', () => {
+    it('formats settled match and scope counters', () => {
         const { rerender, props } = setup({ displayedCount: 5, totalCount: 20 });
         const matchLabel = screen.getByText('MATCHES IN Library');
         expect(matchLabel.getAttribute('title')).toBe('MATCHES IN Library');
@@ -130,19 +137,120 @@ describe('ViewControls', () => {
         expect(matchLabel.className).toContain('normal-case');
         expect(matchLabel.className).toContain('tracking-normal');
         expect(matchLabel.className).not.toContain('opacity-60');
-        rerender(<ViewControls {...props} displayedCount={0} totalCount={0} isFiltering />);
-        expect(screen.getByText('LOADING...')).toBeTruthy();
-        expect(screen.getByText('...')).toBeTruthy();
-        rerender(<ViewControls {...props} displayedCount={0} totalCount={20} isFiltering />);
-        expect(screen.getByText('SEARCHING...')).toBeTruthy();
-        expect(screen.getByText('20')).toBeTruthy();
-        rerender(<ViewControls {...props} displayedCount={5} totalCount={0} isFiltering />);
-        expect(screen.getByText('...')).toBeTruthy();
         rerender(<ViewControls {...props} displayedCount={10} totalCount={10} scopeName="A Very Long Collection Name" />);
         const scopeLabel = screen.getByText('A Very Long Collection Name');
         expect(scopeLabel.getAttribute('title')).toBe('A Very Long Collection Name');
         expect(scopeLabel.className).toContain('max-w-[40ch]');
         expect(scopeLabel.className).toContain('normal-case');
         expect(screen.queryByText(/TOTAL A Very Long Collection Name/)).toBeNull();
+    });
+
+    it('switches fast board counts atomically without flashing a loading placeholder', () => {
+        vi.useFakeTimers();
+        const { rerender, props } = setup({
+            displayedCount: 10,
+            totalCount: 10,
+            scopeName: 'Demo - Gallery',
+            isFiltering: false
+        });
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={10}
+            totalCount={84}
+            scopeName="Demo - Assets"
+            isFiltering
+        />);
+
+        expect(screen.getByText('10')).toBeTruthy();
+        expect(screen.getByText('Demo - Gallery')).toBeTruthy();
+        expect(screen.queryByText('...')).toBeNull();
+        expect(screen.queryByText('LOADING Demo - Assets')).toBeNull();
+
+        act(() => vi.advanceTimersByTime(179));
+        expect(screen.getByText('Demo - Gallery')).toBeTruthy();
+        expect(screen.queryByText('...')).toBeNull();
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={84}
+            totalCount={84}
+            scopeName="Demo - Assets"
+            isFiltering={false}
+        />);
+
+        expect(screen.getByText('84')).toBeTruthy();
+        expect(screen.getByText('Demo - Assets')).toBeTruthy();
+        expect(screen.queryByText('Demo - Gallery')).toBeNull();
+        expect(screen.queryByText('...')).toBeNull();
+    });
+
+    it('keeps a newly mounted fast query visually empty until its first count settles', () => {
+        vi.useFakeTimers();
+        const { rerender, props } = setup({
+            displayedCount: 0,
+            totalCount: 0,
+            scopeName: 'Library',
+            isFiltering: true
+        });
+
+        expect(screen.queryByText('...')).toBeNull();
+        expect(screen.queryByText('LOADING Library')).toBeNull();
+        expect(screen.queryByText('0')).toBeNull();
+
+        act(() => vi.advanceTimersByTime(179));
+        expect(screen.queryByText('...')).toBeNull();
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={84}
+            totalCount={84}
+            scopeName="Library"
+            isFiltering={false}
+        />);
+
+        expect(screen.getByText('84')).toBeTruthy();
+        expect(screen.getByText('Library')).toBeTruthy();
+        expect(screen.queryByText('...')).toBeNull();
+    });
+
+    it('shows a stable loading state only for a sustained board query', () => {
+        vi.useFakeTimers();
+        const { rerender, props } = setup({
+            displayedCount: 10,
+            totalCount: 10,
+            scopeName: 'Demo - Gallery',
+            isFiltering: false
+        });
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={10}
+            totalCount={1254}
+            scopeName="Reference Poses - Collection Part 1"
+            isFiltering
+        />);
+
+        act(() => vi.advanceTimersByTime(180));
+        const loadingLabel = screen.getByText('LOADING Reference Poses - Collection Part 1');
+        expect(loadingLabel.getAttribute('title')).toBe('LOADING Reference Poses - Collection Part 1');
+        expect(screen.getByText('...')).toBeTruthy();
+        expect(screen.queryByText('10')).toBeNull();
+        expect(screen.queryByText('1,254')).toBeNull();
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={1254}
+            totalCount={1254}
+            scopeName="Reference Poses - Collection Part 1"
+            isFiltering={false}
+        />);
+        act(() => vi.advanceTimersByTime(299));
+        expect(screen.getByText('...')).toBeTruthy();
+
+        act(() => vi.advanceTimersByTime(1));
+        expect(screen.getByText('1,254')).toBeTruthy();
+        expect(screen.getByText('Reference Poses - Collection Part 1')).toBeTruthy();
+        expect(screen.queryByText('...')).toBeNull();
     });
 });

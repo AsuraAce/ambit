@@ -1,10 +1,12 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen } from 'lucide-react';
+import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen, Users } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
+import { useLibrary } from '../../../contexts/LibraryContext';
+import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
 
 interface TabProps {
     settings: AppSettings;
@@ -37,11 +39,38 @@ interface InvokeDiagnostics {
 }
 
 export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettings }) => {
+    const {
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+        startInvokeSync,
+        isInvokeSyncActive,
+    } = useLibrary();
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
+    const ownerDiscovery = invokeOwnerScopeState.discovery;
+    const ownerSelection = settings.invokeOwnerSelection?.dbPath === ownerDiscovery?.dbPath
+        ? settings.invokeOwnerSelection
+        : undefined;
+    const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering'
+        || invokeOwnerScopeState.status === 'applying';
+    const ownerScopeBusy = ownerScopeInProgress || invokeOwnerScopeState.isRetrying === true;
+    const scopeControlsBusy = ownerScopeBusy || isInvokeSyncActive;
+
+    const handleOwnerSelection = async (selection: Parameters<typeof selectInvokeOwnerScope>[0]) => {
+        if (await selectInvokeOwnerScope(selection)) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    };
+
+    const handleOwnerRetry = async () => {
+        if (await retryInvokeOwnerScope()) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    };
 
     const runDiagnostics = async () => {
         setIsDiagLoading(true);
@@ -112,6 +141,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 <input
                                     type="text"
                                     value={settings.invokeAiPath || ''}
+                                    disabled={scopeControlsBusy}
                                     onChange={(e) => setSettings(prev => ({ ...prev, invokeAiPath: e.target.value }))}
                                     placeholder="e.g. C:\\AI\\invokeai"
                                     className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:border-sage-500 focus:ring-1 focus:ring-sage-500/50 outline-none text-gray-900 dark:text-white font-mono transition-all"
@@ -121,6 +151,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <button
                                 type="button"
                                 onClick={handleBrowse}
+                                disabled={scopeControlsBusy}
                                 className="px-4 py-2.5 bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-white/20 active:scale-95 transition-all text-sm font-bold"
                             >
                                 Browse
@@ -129,12 +160,17 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         <p className="text-[10px] text-gray-500 mt-3 flex items-center gap-1.5 opacity-80">
                             <Info className="w-3 h-3" /> Select the folder containing <code>databases/invokeai.db</code>.
                         </p>
+                        {isInvokeSyncActive && (
+                            <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-2">
+                                The InvokeAI path and owner scope are locked until synchronization finishes.
+                            </p>
+                        )}
                     </div>
 
                     <div className="pt-4 border-t border-black/5 dark:border-white/5 flex items-center justify-between">
                         <button
                             onClick={handleTestConnection}
-                            disabled={isTesting || !settings.invokeAiPath}
+                            disabled={ownerScopeBusy || isTesting || !settings.invokeAiPath}
                             className={`px-6 py-2.5 rounded-xl text-sm font-black tracking-wide transition-all flex items-center gap-2.5 ${!settings.invokeAiPath
                                 ? 'bg-gray-100 dark:bg-white/5 text-gray-400 cursor-not-allowed'
                                 : 'bg-sage-600 hover:bg-sage-500 text-white shadow-xl shadow-sage-500/20 active:scale-95'
@@ -165,6 +201,103 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     </div>
                 </div>
             </section>
+
+            {settings.invokeAiPath && (
+                <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
+                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-5 flex items-center gap-3">
+                        <Users className="w-4 h-4" /> InvokeAI Owner Scope
+                    </h4>
+
+                    {ownerScopeInProgress && (
+                        <div className="flex items-start gap-3 text-sm text-gray-500" role="status" aria-live="polite">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>
+                                <span className="block">
+                                    {invokeOwnerScopeState.progress?.message
+                                        ?? (invokeOwnerScopeState.status === 'discovering'
+                                            ? 'Checking InvokeAI owner information...'
+                                            : 'Preparing your InvokeAI library...')}
+                                </span>
+                                {(invokeOwnerScopeState.progress?.total ?? 0) > 0 && (
+                                    <span className="mt-1 block text-[10px] font-mono text-gray-400">
+                                        {invokeOwnerScopeState.progress?.current.toLocaleString()} / {invokeOwnerScopeState.progress?.total.toLocaleString()}
+                                    </span>
+                                )}
+                            </span>
+                        </div>
+                    )}
+
+                    {invokeOwnerScopeState.status === 'error' && (
+                        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300">
+                            <p className="text-xs font-bold">
+                                {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
+                                    ? 'InvokeAI connection unavailable'
+                                    : 'InvokeAI library preparation failed'}
+                            </p>
+                            <p className="mt-1 text-[10px] leading-4">
+                                {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
+                                    ? 'Ambit could not verify this InvokeAI database, so its content remains hidden.'
+                                    : 'Ambit could not finish verifying owner visibility, so its content remains hidden.'}
+                            </p>
+                            {invokeOwnerScopeState.error && (
+                                <details className="mt-3 text-[10px]">
+                                    <summary className="cursor-pointer font-bold">Technical details</summary>
+                                    <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
+                                </details>
+                            )}
+                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
+                                Retry
+                            </button>
+                        </div>
+                    )}
+
+                    {invokeOwnerScopeState.status === 'offline_ready' && (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-800 dark:text-amber-200">
+                            <p className="text-xs font-bold">Using the last verified local view</p>
+                            <p className="mt-1 text-[10px] leading-4">
+                                InvokeAI is unavailable. Your verified library remains visible, but Sync and Live Watch are paused.
+                            </p>
+                            {invokeOwnerScopeState.error && (
+                                <details className="mt-3 text-[10px]">
+                                    <summary className="cursor-pointer font-bold">Technical details</summary>
+                                    <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
+                                </details>
+                            )}
+                            <button
+                                type="button"
+                                disabled={invokeOwnerScopeState.isRetrying}
+                                onClick={() => void handleOwnerRetry()}
+                                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
+                            >
+                                {invokeOwnerScopeState.isRetrying && <Loader2 className="h-3 w-3 animate-spin" />}
+                                {invokeOwnerScopeState.isRetrying ? 'Retrying…' : 'Retry connection'}
+                            </button>
+                        </div>
+                    )}
+
+                    {!ownerScopeBusy
+                        && invokeOwnerScopeState.status !== 'error'
+                        && invokeOwnerScopeState.status !== 'offline_ready'
+                        && ownerDiscovery?.schemaMode === 'legacy' && (
+                        <div className="p-4 rounded-xl bg-sage-500/10 border border-sage-500/20 text-xs text-gray-600 dark:text-gray-300">
+                            This InvokeAI database predates per-user ownership. Ambit keeps the existing unscoped behavior.
+                        </div>
+                    )}
+
+                    {!ownerScopeBusy
+                        && invokeOwnerScopeState.status !== 'error'
+                        && invokeOwnerScopeState.status !== 'offline_ready'
+                        && ownerDiscovery?.schemaMode === 'multi_user' && (
+                        <InvokeOwnerScopeSelector
+                            discovery={ownerDiscovery}
+                            selection={ownerSelection}
+                            disabled={scopeControlsBusy}
+                            selectionRequired={invokeOwnerScopeState.status === 'selection_required'}
+                            onSelect={handleOwnerSelection}
+                        />
+                    )}
+                </section>
+            )}
 
             {developerFeaturesEnabled && (
                 <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">

@@ -163,6 +163,33 @@ mod tests {
     }
 
     #[test]
+    fn test_reparse_invokeai_high_value_metadata_and_t2i_resources() {
+        let original = r#"{
+            "guidance": 3.5,
+            "denoising_strength": 0.4,
+            "generation_mode": "sdxl_txt2img",
+            "vae": { "name": "sdxl-vae" },
+            "t2iAdapters": [
+                { "model": { "name": "t2iadapter_depth_sd15v2.pth" } }
+            ]
+        }"#;
+
+        let result = reparse_from_json(original, "InvokeAI").expect("reparse metadata");
+        let serialized: serde_json::Value =
+            serde_json::from_str(&result.metadata_json).expect("serialized metadata");
+
+        assert_eq!(result.metadata.cfg, 3.5);
+        assert_eq!(result.metadata.denoising_strength, Some(0.4));
+        assert_eq!(result.metadata.generation_type, "sdxl_txt2img");
+        assert_eq!(result.metadata.vae.as_deref(), Some("sdxl-vae"));
+        assert_eq!(
+            result.metadata.control_nets,
+            vec!["t2iadapter_depth_sd15v2".to_string()]
+        );
+        assert_eq!(serialized["controlNets"][0], "t2iadapter_depth_sd15v2");
+    }
+
+    #[test]
     fn test_reparse_a1111() {
         let original =
             "a beautiful cat\nNegative prompt: ugly\nSteps: 30, CFG scale: 7, Seed: 12345";

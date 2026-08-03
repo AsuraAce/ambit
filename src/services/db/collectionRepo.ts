@@ -27,6 +27,7 @@ export interface DbCollection {
     manual_exclusions?: string;
     custom_thumbnail?: string;
     source: 'ambit' | 'invoke';
+    invoke_owner_id?: string | null;
     updated_at?: number;
     dynamic_thumbnail_path?: string | null;
     dynamic_safe_thumbnail_path?: string | null;
@@ -47,11 +48,13 @@ interface ImageThumbnailLookupRow {
     path: string;
     thumb?: string | null;
     privacy_hidden?: number | null;
+    invoke_scope_hidden?: number | null;
 }
 
 interface CustomThumbnailMatch {
     thumb?: string | null;
     privacyHidden?: number | null;
+    ownerHidden?: boolean;
 }
 
 export interface SmartCollectionSummary {
@@ -150,7 +153,7 @@ const loadImageThumbnailLookup = async (
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
-            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden
+            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden, invoke_scope_hidden
              FROM images
              WHERE ${column} IN (${placeholders})`,
             batch
@@ -160,7 +163,8 @@ const loadImageThumbnailLookup = async (
             const key = column === 'id' ? row.id : row.path;
             matches.set(key, {
                 thumb: row.thumb,
-                privacyHidden: row.privacy_hidden
+                privacyHidden: row.privacy_hidden,
+                ownerHidden: row.invoke_scope_hidden === 1,
             });
         });
     }
@@ -321,6 +325,20 @@ export const clearAllCollectionThumbnailCaches = async () => {
     );
 };
 
+export const clearCollectionOwnerScopeCaches = async () => {
+    if (isBrowserMockMode()) return;
+
+    const db = await getDb();
+    await db.execute(
+        `UPDATE collections
+         SET dynamic_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_path END,
+             dynamic_safe_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_safe_thumbnail_path END,
+             dynamic_thumbnail_is_sensitive = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_is_sensitive END,
+             dynamic_thumbnail_cached_at = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_cached_at END,
+             dynamic_count = CASE WHEN filter_state IS NOT NULL THEN NULL ELSE dynamic_count END`
+    );
+};
+
 const buildCollectionThumbnailSummaries = async (
     db: Awaited<ReturnType<typeof getDb>>,
     collections: CollectionThumbnailInput[]
@@ -354,6 +372,7 @@ const buildCollectionThumbnailSummaries = async (
                 FROM collection_images ci
                 INNER JOIN images i ON ci.image_id = i.id
                 WHERE ci.collection_id IN (${placeholders})
+                    AND i.invoke_scope_hidden = 0
                     AND i.is_deleted = 0
                     AND i.thumbnail_path IS NOT NULL
                     AND i.thumbnail_path != ''
@@ -390,7 +409,12 @@ const buildCollectionThumbnailSummaries = async (
         let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
 
         if (collection.custom_thumbnail) {
-            if (customThumb) {
+            if (customThumb?.ownerHidden) {
+                rawThumb = undefined;
+                safeThumb = undefined;
+                thumbnailIsSensitive = false;
+                thumbnailSourceKind = 'customImage';
+            } else if (customThumb) {
                 rawThumb = customThumb.thumb || collection.custom_thumbnail;
                 safeThumb = undefined;
                 thumbnailIsSensitive = customThumb.privacyHidden === 1;
@@ -497,6 +521,10 @@ export const ensureCollectionSchema = async () => {
                 'dynamic_count',
                 'ALTER TABLE collections ADD COLUMN dynamic_count INTEGER'
             );
+            await addColumnIfMissing(
+                'invoke_owner_id',
+                'ALTER TABLE collections ADD COLUMN invoke_owner_id TEXT'
+            );
         } catch (e) {
             console.error('[DB] Failed to ensure collection schema', e);
         }
@@ -518,8 +546,8 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
 
         try {
             await db.execute(
-                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, invoke_owner_id, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 color = excluded.color,
@@ -536,6 +564,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                 manual_exclusions = excluded.manual_exclusions,
                 custom_thumbnail = excluded.custom_thumbnail,
                 source = excluded.source,
+                invoke_owner_id = excluded.invoke_owner_id,
                 updated_at = CASE
                     WHEN collections.filter_state IS excluded.filter_state
                      AND collections.manual_exclusions IS excluded.manual_exclusions
@@ -553,6 +582,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
                     collection.customThumbnail || null,
                     collection.source || 'ambit',
+                    collection.invokeOwnerId || null,
                     collection.updatedAt || now,
                     now
                 ]
@@ -561,6 +591,43 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
             console.error(`[DB] Failed to upsert collection ${collection.id}`, e);
             throw e;
         }
+    });
+};
+
+export const upsertInvokeBoardCollection = async (board: {
+    id: string;
+    name: string;
+    createdAt: number;
+    invokeOwnerId?: string;
+}) => {
+    if (isBrowserMockMode()) {
+        upsertBrowserMockCollection({
+            ...board,
+            imageIds: [],
+            source: 'invoke',
+        });
+        return;
+    }
+
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const now = Date.now();
+        await db.execute(
+            `INSERT INTO collections (
+                id, name, is_archived, is_pinned, created_at, source, invoke_owner_id, updated_at
+             ) VALUES (?, ?, 0, 0, ?, 'invoke', ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                source = 'invoke',
+                invoke_owner_id = excluded.invoke_owner_id,
+                updated_at = CASE
+                    WHEN collections.name IS excluded.name
+                     AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                    THEN collections.updated_at
+                    ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
+                END`,
+            [board.id, board.name, board.createdAt, board.invokeOwnerId || null, now, now]
+        );
     });
 };
 
@@ -641,12 +708,28 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     const startedAt = nowMs();
     const db = await getDb();
 
-    // Get all collections
-    const collections = await db.select<DbCollection[]>('SELECT * FROM collections');
+    // Invoke boards are fail-closed until an approved owner scope has been durably applied.
+    const collections = await db.select<DbCollection[]>(`
+        SELECT * FROM collections c
+        WHERE COALESCE(c.source, 'ambit') != 'invoke'
+           OR EXISTS (
+                SELECT 1
+                FROM invoke_owner_scope_state s
+                WHERE s.state_key = 'current'
+                  AND (
+                    s.scope_mode IN ('legacy', 'all')
+                    OR (s.scope_mode = 'owner' AND c.invoke_owner_id = s.owner_id)
+                  )
+           )
+    `);
 
     // Get counts from junction table
     const counts = await db.select<{ collection_id: string, count: number }[]>(
-        'SELECT collection_id, COUNT(*) as count FROM collection_images GROUP BY collection_id'
+        `SELECT ci.collection_id, COUNT(*) as count
+         FROM collection_images ci
+         INNER JOIN images i ON i.id = ci.image_id
+         WHERE i.invoke_scope_hidden = 0
+         GROUP BY ci.collection_id`
     );
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
@@ -665,7 +748,8 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             customThumbnail: c.custom_thumbnail,
             filters,
             manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
-            source: c.source
+            source: c.source,
+            invokeOwnerId: c.invoke_owner_id || undefined,
         };
         const cachedThumbnail = getCachedDynamicThumbnailSummary(c);
         return cachedThumbnail ? { ...collection, ...cachedThumbnail } : collection;
@@ -897,6 +981,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
                 SELECT thumbnail_path as path, timestamp, is_pinned
                 FROM images 
                 WHERE (id IN (${placeholders}) OR path IN (${placeholders}))
+                AND invoke_scope_hidden = 0
                 AND is_deleted = 0 
                 ORDER BY is_pinned DESC, timestamp DESC 
                 LIMIT 1

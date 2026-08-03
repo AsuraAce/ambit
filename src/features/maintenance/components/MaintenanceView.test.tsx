@@ -240,7 +240,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, isShortcutBlocked }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -251,6 +251,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
+        onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
         onRecoverMetadata?: () => void;
         isShortcutBlocked?: boolean;
     }) => (
@@ -266,6 +267,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
             {onRecoverMetadata && <button onClick={onRecoverMetadata}>Recover Viewer Prompt</button>}
+            {onOpenReferencedImage && <button onClick={() => void onOpenReferencedImage('hidden-reference')}>Open Viewer Reference</button>}
         </div>
     )
 }));
@@ -309,6 +311,7 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onToggleFavorite: vi.fn(),
     onTogglePin: vi.fn(),
     onViewerOpenChange: vi.fn(),
+    onOpenReferencedImage: vi.fn().mockResolvedValue(true),
     isShortcutBlocked: false,
     onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });
@@ -646,6 +649,20 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Range Missing'));
         fireEvent.click(screen.getByText('Clear Missing Selection'));
+    });
+
+    it('hands reference navigation to the global viewer and closes the maintenance viewer on success', async () => {
+        maintenanceDataMock.localMissingImages = [createImage({ id: 'missing-a' })];
+        const onOpenReferencedImage = vi.fn().mockResolvedValue(true);
+        const onViewerOpenChange = vi.fn();
+        renderView({ onOpenReferencedImage, onViewerOpenChange });
+
+        fireEvent.click(screen.getByText('Select Missing Item'));
+        fireEvent.click(screen.getByText('Open Viewer Reference'));
+
+        await waitFor(() => expect(onOpenReferencedImage).toHaveBeenCalledWith('hidden-reference'));
+        await waitFor(() => expect(screen.queryByTestId('maintenance-viewer')).toBeNull());
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(false);
     });
 
     it('covers global thumbnail work, non-duplicate scans, and viewer cleanup variants', async () => {

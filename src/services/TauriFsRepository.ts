@@ -121,7 +121,7 @@ const isPersistedFilterState = (value: unknown): boolean => {
         'controlNets', 'ipAdapters'
     ];
     const numberKeys = ['minSteps', 'maxSteps', 'minCfg', 'maxCfg'];
-    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids'];
+    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids', 'showInvokeImageAssets'];
     const aliasKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
 
     return hasValidOptionalValue(value, 'searchQuery', item => typeof item === 'string')
@@ -186,7 +186,10 @@ const isPersistedInvokeSnapshot = (value: unknown): boolean => {
         && typeof value.importIntermediates === 'boolean'
         && typeof value.importOrphans === 'boolean'
         && typeof value.syncBoardsToCollections === 'boolean'
+        && hasValidOptionalValue(value, 'scopeMode', item => isEnumValue(item, ['legacy', 'all', 'owner']))
+        && hasValidOptionalValue(value, 'scopeOwnerId', item => item === null || typeof item === 'string')
         && hasValidOptionalValue(value, 'pathRepairVersion', item => typeof item === 'number')
+        && hasValidOptionalValue(value, 'importSchemaVersion', item => typeof item === 'number')
         && value.files.every(file => isRecord(file)
             && typeof file.path === 'string'
             && typeof file.exists === 'boolean'
@@ -201,6 +204,7 @@ const isPersistedSettings = (value: unknown): boolean => {
         'hasCompletedOnboarding', 'autoCheckForUpdates', 'confirmDelete', 'defaultTheaterMode',
         'enableAI', 'syncBoardsToCollections', 'invokeSyncFavorites', 'invokeSyncBoards',
         'importIntermediates', 'importOrphans', 'libraryShowGrids', 'libraryShowIntermediates',
+        'libraryShowInvokeImageAssets',
         'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails',
         'promptMaskingEnabled'
     ];
@@ -562,7 +566,10 @@ export class TauriFsRepository implements IRepository {
         const invokeDbSnapshot = savedSettings.invokeDbSnapshot
             ? {
                 ...savedSettings.invokeDbSnapshot,
-                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0
+                scopeMode: savedSettings.invokeDbSnapshot.scopeMode ?? 'legacy',
+                scopeOwnerId: savedSettings.invokeDbSnapshot.scopeOwnerId ?? null,
+                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
+                importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0
             }
             : undefined;
         return {
@@ -576,6 +583,8 @@ export class TauriFsRepository implements IRepository {
                 promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
                 maskedKeywords: savedSettings.maskedKeywords ?? [],
                 libraryShowGrids: savedSettings.libraryShowGrids ?? false,
+                libraryShowIntermediates: savedSettings.libraryShowIntermediates ?? false,
+                libraryShowInvokeImageAssets: savedSettings.libraryShowInvokeImageAssets ?? false,
                 resourceFolders: savedSettings.resourceFolders ?? [],
                 invokeDbSnapshot
             })
