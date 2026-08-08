@@ -108,8 +108,10 @@ diagnostics. Intentional minimization may produce legitimate differences; normal
 comparison reports those differences without treating them as command failure.
 Comparison ignores app and parser version changes and does not compare raw bytes.
 
-The candidate SHA-256 is based on its canonical key-sorted chunk map, so JSON
-whitespace and root key ordering do not change its identity.
+The candidate SHA-256 is based on its canonical key-sorted chunk map, so outer
+candidate-file whitespace and root key ordering do not change its identity.
+Whitespace inside a chunk string, including embedded `prompt` or `workflow`
+JSON, remains byte-sensitive and does change the hash.
 
 ## 6. Register An Approved Regression
 
