@@ -1,4 +1,6 @@
-use super::{extract_a1111_metadata, is_missing_prompt_value, ImageMetadata};
+use super::{
+    extract_a1111_metadata, is_missing_prompt_value, ImageMetadata, CURRENT_PARSER_VERSION,
+};
 use std::collections::{BTreeMap, HashMap};
 
 mod conditioning;
@@ -489,7 +491,7 @@ fn merge_unique(values: &mut Vec<String>, additions: impl IntoIterator<Item = St
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyMetadataPreview {
     pub tool: String,
@@ -510,7 +512,7 @@ pub struct ComfyMetadataPreview {
     pub has_workflow_json: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyTraversalIssueReport {
     pub field: String,
@@ -520,9 +522,11 @@ pub struct ComfyTraversalIssueReport {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
+    pub app_version: String,
+    pub parser_version: u32,
     pub chunk_keys: Vec<String>,
     pub has_prompt_chunk: bool,
     pub has_workflow_chunk: bool,
@@ -557,6 +561,8 @@ pub(crate) fn build_comfyui_diagnostics_report(
     chunk_keys.sort();
 
     ComfyParserDiagnosticsReport {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        parser_version: CURRENT_PARSER_VERSION,
         chunk_keys,
         has_prompt_chunk: chunks.contains_key("prompt"),
         has_workflow_chunk: chunks.contains_key("workflow"),
@@ -681,9 +687,6 @@ fn extract_comfyui_graph_with_diagnostics(
     chunks: &HashMap<String, String>,
     collect_traversal_issues: bool,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
-    // Breadcrumb for ComfyUI parsing
-    println!("[ComfyUI] Parsing metadata...");
-
     let mut meta = ImageMetadata {
         tool: "ComfyUI".to_string(),
         ..ImageMetadata::default()

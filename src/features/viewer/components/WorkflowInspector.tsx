@@ -7,6 +7,11 @@ import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 import { commands, type ComfyParserDiagnosticsReport } from '../../../bindings';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import {
+    buildComfySupportBundle,
+    buildDiagnosticsClipboardPayload
+} from './comfySupportBundle';
 import {
     isWorkflowGraph,
     selectWorkflowGraphSource,
@@ -74,41 +79,17 @@ const getTraversalIssueTitle = (reason: string) => {
     }
 };
 
-const buildDiagnosticsClipboardPayload = (
-    imageId: string,
-    chunks: Record<string, string>,
-    diagnostics: ComfyParserDiagnosticsReport
-) => {
-    const chunkLengths = Object.fromEntries(
-        Object.entries(chunks).map(([key, value]) => [key, value.length])
-    ) as Record<string, number>;
-
-    return {
-        imageId,
-        chunkKeys: diagnostics.chunkKeys,
-        chunkLengths,
-        graphNodeCount: diagnostics.graphNodeCount,
-        outputSelection: {
-            selectedOutputCandidateCount: diagnostics.selectedOutputCandidateCount,
-            uniqueOutputRootSamplerCount: diagnostics.uniqueOutputRootSamplerCount,
-            ambiguous: diagnostics.outputAmbiguous
-        },
-        attemptedLayers: diagnostics.attemptedLayers,
-        fieldSources: diagnostics.fieldSources,
-        traversalIssues: diagnostics.traversalIssues,
-        traversalIssuesTruncated: diagnostics.traversalIssuesTruncated,
-        metadata: diagnostics.metadata
-    };
-};
-
 const ComfyDiagnosticsPanel: React.FC<{
-    imageId: string;
+    image: Pick<AIImage, 'filename' | 'width' | 'height'>;
     chunks?: Record<string, string>;
-}> = ({ imageId, chunks }) => {
+}> = ({ image, chunks }) => {
     const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
+    const [isExportConfirmOpen, setIsExportConfirmOpen] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [exportError, setExportError] = useState<string | null>(null);
     const chunkCount = chunks ? Object.keys(chunks).length : 0;
 
     React.useEffect(() => {
@@ -145,7 +126,7 @@ const ComfyDiagnosticsPanel: React.FC<{
         return () => {
             cancelled = true;
         };
-    }, [chunks, chunkCount, imageId]);
+    }, [chunks, chunkCount]);
 
     const fieldSources = diagnostics
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
@@ -156,13 +137,47 @@ const ComfyDiagnosticsPanel: React.FC<{
         : 0;
 
     const handleCopyDiagnostics = async () => {
-        const payload = buildDiagnosticsClipboardPayload(imageId, chunks!, diagnostics!);
+        const payload = buildDiagnosticsClipboardPayload(image, chunks!, diagnostics!);
         await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
         setCopiedDiagnostics(true);
         setTimeout(() => setCopiedDiagnostics(false), 2000);
     };
 
+    const handleExportDiagnostics = async () => {
+        setIsExporting(true);
+        setExportError(null);
+
+        try {
+            const bundle = buildComfySupportBundle(
+                image,
+                chunks!,
+                diagnostics!,
+                new Date().toISOString()
+            );
+            const contents = JSON.stringify(bundle, null, 2);
+            const [{ save }, { writeTextFile }] = await Promise.all([
+                import('@tauri-apps/plugin-dialog'),
+                import('@tauri-apps/plugin-fs')
+            ]);
+            const filePath = await save({
+                filters: [{ name: 'JSON', extensions: ['json'] }],
+                defaultPath: 'ambit-comfyui-support.json'
+            });
+
+            if (filePath) {
+                await writeTextFile(filePath, contents);
+            }
+            setIsExportConfirmOpen(false);
+        } catch (err) {
+            setIsExportConfirmOpen(false);
+            setExportError(err instanceof Error ? err.message : String(err));
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     return (
+        <>
         <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-3 text-xs">
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
@@ -179,6 +194,17 @@ const ComfyDiagnosticsPanel: React.FC<{
                             >
                                 {copiedDiagnostics ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 {copiedDiagnostics ? 'Copied' : 'Copy Diagnostics'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setExportError(null);
+                                    setIsExportConfirmOpen(true);
+                                }}
+                                title="Export parser support bundle"
+                                className="flex items-center gap-1 rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-amber-900 dark:text-amber-200 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                            >
+                                <Download className="w-3 h-3" />
+                                Export Bundle
                             </button>
                             <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
                                 {diagnostics.graphNodeCount} nodes
@@ -294,7 +320,22 @@ const ComfyDiagnosticsPanel: React.FC<{
                     )}
                 </div>
             ) : null}
+            {exportError && (
+                <div className="mt-2 text-rose-700 dark:text-rose-300">
+                    Support bundle export failed: {exportError}
+                </div>
+            )}
         </div>
+        <ConfirmDialog
+            isOpen={isExportConfirmOpen}
+            title="Export ComfyUI support bundle?"
+            message="This local JSON file includes the image's raw metadata chunks. It may contain prompts, model names, workflow settings, and local filenames. Ambit will not upload it."
+            confirmLabel="Export Bundle"
+            isLoading={isExporting}
+            onConfirm={handleExportDiagnostics}
+            onCancel={() => setIsExportConfirmOpen(false)}
+        />
+        </>
     );
 };
 
@@ -511,7 +552,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 )}
 
                 {showParserDiagnostics && (
-                    <ComfyDiagnosticsPanel imageId={image.id} chunks={image.originalChunks} />
+                    <ComfyDiagnosticsPanel image={image} chunks={image.originalChunks} />
                 )}
             </div>
 

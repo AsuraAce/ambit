@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-const result = spawnSync('cargo', ['test', '--lib'], {
+const result = spawnSync('cargo', ['test', '--lib', '--bins'], {
   cwd: fileURLToPath(new URL('../src-tauri/', import.meta.url)),
   env: {
     ...process.env,

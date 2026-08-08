@@ -15,6 +15,9 @@ coverage
 coverage-*/
 *.local
 
+# ComfyUI parser support bundles contain exact private metadata chunks.
+ambit-comfyui-support*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -42,6 +45,7 @@ docs/*
 !docs/plans/*.md
 !docs/WORKFLOW_SETUP.md
 !docs/architecture.md
+!docs/comfyui-support-workflow.md
 !docs/experimental-unix-builds.md
 !docs/progress.md
 !docs/refactor.md
