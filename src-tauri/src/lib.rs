@@ -9,6 +9,8 @@ mod thumb;
 mod watcher;
 
 #[doc(hidden)]
+pub use comfy_support_replay::prepare_comfyui_fixture_candidate;
+#[doc(hidden)]
 pub use comfy_support_replay::{replay_comfyui_support_bundle, COMFY_SUPPORT_BUNDLE_MAX_BYTES};
 
 #[cfg(not(test))]

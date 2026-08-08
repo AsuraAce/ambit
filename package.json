@@ -37,6 +37,7 @@
     "audit:rust": "node ./scripts/audit-rust.mjs",
     "audit:comfyui-catalog": "node ./scripts/audit-comfyui-catalog.mjs",
     "inspect:comfyui-support": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support --",
+    "prepare:comfyui-fixture": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support -- --prepare-fixture",
     "test": "vitest",
     "test:run": "vitest run",
     "test:ui": "vitest --ui",

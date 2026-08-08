@@ -1,6 +1,6 @@
 use std::env;
 use std::ffi::OsString;
-use std::fs::File;
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -9,9 +9,11 @@ const EXIT_OK: u8 = 0;
 const EXIT_ERROR: u8 = 1;
 const EXIT_MISMATCH: u8 = 2;
 
+#[derive(Debug)]
 enum ParsedArgs {
     Help,
     Inspect { path: PathBuf, verify: bool },
+    Prepare { path: PathBuf, output: PathBuf },
 }
 
 fn main() -> ExitCode {
@@ -24,19 +26,22 @@ fn main() -> ExitCode {
         &mut stderr.lock(),
         app_lib::COMFY_SUPPORT_BUNDLE_MAX_BYTES,
         app_lib::replay_comfyui_support_bundle,
+        app_lib::prepare_comfyui_fixture_candidate,
     );
     ExitCode::from(code)
 }
 
-fn run<F>(
+fn run<F, G>(
     args: Vec<OsString>,
     stdout: &mut impl Write,
     stderr: &mut impl Write,
     max_bytes: usize,
     replay: F,
+    prepare: G,
 ) -> u8
 where
     F: Fn(&[u8]) -> Result<(String, bool), String>,
+    G: Fn(&[u8]) -> Result<Vec<u8>, String>,
 {
     let parsed = match parse_args(args) {
         Ok(parsed) => parsed,
@@ -47,9 +52,13 @@ where
         }
     };
 
-    let ParsedArgs::Inspect { path, verify } = parsed else {
-        let _ = writeln!(stdout, "{}", usage());
-        return EXIT_OK;
+    let (path, mode) = match parsed {
+        ParsedArgs::Help => {
+            let _ = writeln!(stdout, "{}", usage());
+            return EXIT_OK;
+        }
+        ParsedArgs::Inspect { path, verify } => (path, RunMode::Inspect { verify }),
+        ParsedArgs::Prepare { path, output } => (path, RunMode::Prepare { output }),
     };
 
     let input = match read_bounded(&path, max_bytes) {
@@ -59,32 +68,60 @@ where
             return EXIT_ERROR;
         }
     };
-    let (report, matches) = match replay(&input) {
-        Ok(result) => result,
-        Err(error) => {
-            let _ = writeln!(stderr, "error: {error}");
-            return EXIT_ERROR;
-        }
-    };
+    match mode {
+        RunMode::Inspect { verify } => {
+            let (report, matches) = match replay(&input) {
+                Ok(result) => result,
+                Err(error) => {
+                    let _ = writeln!(stderr, "error: {error}");
+                    return EXIT_ERROR;
+                }
+            };
 
-    if writeln!(stdout, "{report}").is_err() {
-        let _ = writeln!(stderr, "error: failed to write replay report");
-        return EXIT_ERROR;
-    }
-    if verify && !matches {
-        let _ = writeln!(
-            stderr,
-            "error: parser output does not match the recorded diagnostics"
-        );
-        return EXIT_MISMATCH;
+            if writeln!(stdout, "{report}").is_err() {
+                let _ = writeln!(stderr, "error: failed to write replay report");
+                return EXIT_ERROR;
+            }
+            if verify && !matches {
+                let _ = writeln!(
+                    stderr,
+                    "error: parser output does not match the recorded diagnostics"
+                );
+                return EXIT_MISMATCH;
+            }
+        }
+        RunMode::Prepare { output } => {
+            let candidate = match prepare(&input) {
+                Ok(candidate) => candidate,
+                Err(error) => {
+                    let _ = writeln!(stderr, "error: {error}");
+                    return EXIT_ERROR;
+                }
+            };
+            if let Err(error) = write_candidate(&output, &candidate) {
+                let _ = writeln!(stderr, "error: {error}");
+                return EXIT_ERROR;
+            }
+            if writeln!(stdout, "Fixture candidate written to {}", output.display()).is_err() {
+                let _ = writeln!(stderr, "error: failed to write success message");
+                return EXIT_ERROR;
+            }
+        }
     }
 
     EXIT_OK
 }
 
+enum RunMode {
+    Inspect { verify: bool },
+    Prepare { output: PathBuf },
+}
+
 fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
-    let mut path = None;
+    let mut paths = Vec::new();
     let mut verify = false;
+    let mut prepare = false;
+    let mut acknowledged = false;
 
     for arg in args {
         // pnpm forwards the documented script separator to the child command.
@@ -101,6 +138,20 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
             verify = true;
             continue;
         }
+        if arg == "--prepare-fixture" {
+            if prepare {
+                return Err("--prepare-fixture may only be supplied once".to_string());
+            }
+            prepare = true;
+            continue;
+        }
+        if arg == "--acknowledge-sensitive-data" {
+            if acknowledged {
+                return Err("--acknowledge-sensitive-data may only be supplied once".to_string());
+            }
+            acknowledged = true;
+            continue;
+        }
         if arg
             .to_str()
             .map(|value| value.starts_with('-'))
@@ -108,13 +159,44 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
         {
             return Err("unknown option".to_string());
         }
-        if path.replace(PathBuf::from(arg)).is_some() {
-            return Err("exactly one support bundle path is required".to_string());
-        }
+        paths.push(PathBuf::from(arg));
     }
 
-    let path = path.ok_or_else(|| "a support bundle path is required".to_string())?;
-    Ok(ParsedArgs::Inspect { path, verify })
+    if prepare {
+        if verify {
+            return Err("--verify cannot be combined with --prepare-fixture".to_string());
+        }
+        if !acknowledged {
+            return Err("--prepare-fixture requires --acknowledge-sensitive-data".to_string());
+        }
+        if paths.len() != 2 {
+            return Err("fixture preparation requires input and output paths".to_string());
+        }
+        let output = paths.pop().unwrap();
+        let path = paths.pop().unwrap();
+        if !has_chunks_json_suffix(&output) {
+            return Err("fixture output must end with .chunks.json".to_string());
+        }
+        return Ok(ParsedArgs::Prepare { path, output });
+    }
+
+    if acknowledged {
+        return Err("--acknowledge-sensitive-data requires --prepare-fixture".to_string());
+    }
+    if paths.len() != 1 {
+        return Err("exactly one support bundle path is required".to_string());
+    }
+    Ok(ParsedArgs::Inspect {
+        path: paths.pop().unwrap(),
+        verify,
+    })
+}
+
+fn has_chunks_json_suffix(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.ends_with(".chunks.json"))
+        .unwrap_or(false)
 }
 
 fn read_bounded(path: &Path, max_bytes: usize) -> Result<Vec<u8>, String> {
@@ -144,8 +226,40 @@ fn size_limit_message(max_bytes: usize) -> String {
     )
 }
 
+fn write_candidate(path: &Path, contents: &[u8]) -> Result<(), String> {
+    write_candidate_with(path, contents, |file, contents| {
+        file.write_all(contents)?;
+        file.sync_all()
+    })
+}
+
+fn write_candidate_with<F>(path: &Path, contents: &[u8], write: F) -> Result<(), String>
+where
+    F: FnOnce(&mut File, &[u8]) -> std::io::Result<()>,
+{
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if !parent.is_dir() {
+        return Err("fixture output directory does not exist".to_string());
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "fixture output already exists or cannot be created".to_string())?;
+    if write(&mut file, contents).is_err() {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err("failed to write fixture candidate".to_string());
+    }
+    Ok(())
+}
+
 fn usage() -> &'static str {
-    "Usage: pnpm run inspect:comfyui-support -- <bundle-path> [--verify]"
+    "Usage:\n  pnpm run inspect:comfyui-support -- <bundle-path> [--verify]\n  pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data"
 }
 
 #[cfg(test)]
@@ -172,6 +286,10 @@ mod tests {
         move |_| Ok((format!(r#"{{"parserOutputMatches":{matches}}}"#), matches))
     }
 
+    fn fake_prepare(contents: &'static [u8]) -> impl Fn(&[u8]) -> Result<Vec<u8>, String> {
+        move |_| Ok(contents.to_vec())
+    }
+
     #[test]
     fn normal_mode_reports_drift_with_success_exit() {
         let path = temp_file("normal_mismatch", b"PRIVATE_RAW_BODY");
@@ -184,6 +302,7 @@ mod tests {
             &mut stderr,
             1024,
             fake_replay(false),
+            fake_prepare(b"{}\n"),
         );
 
         assert_eq!(code, EXIT_OK);
@@ -206,6 +325,7 @@ mod tests {
             &mut stderr,
             1024,
             fake_replay(false),
+            fake_prepare(b"{}\n"),
         );
 
         assert_eq!(code, EXIT_MISMATCH);
@@ -230,6 +350,7 @@ mod tests {
             &mut stderr,
             1024,
             fake_replay(true),
+            fake_prepare(b"{}\n"),
         );
 
         assert_eq!(code, EXIT_OK);
@@ -247,7 +368,8 @@ mod tests {
                 &mut stdout,
                 &mut stderr,
                 1024,
-                fake_replay(true)
+                fake_replay(true),
+                fake_prepare(b"{}\n")
             ),
             EXIT_OK
         );
@@ -261,7 +383,8 @@ mod tests {
                 &mut stdout,
                 &mut stderr,
                 1024,
-                fake_replay(true)
+                fake_replay(true),
+                fake_prepare(b"{}\n")
             ),
             EXIT_ERROR
         );
@@ -276,7 +399,8 @@ mod tests {
                 &mut stdout,
                 &mut stderr,
                 1024,
-                fake_replay(true)
+                fake_replay(true),
+                fake_prepare(b"{}\n")
             ),
             EXIT_ERROR
         );
@@ -290,7 +414,8 @@ mod tests {
                 &mut stdout,
                 &mut stderr,
                 3,
-                fake_replay(true)
+                fake_replay(true),
+                fake_prepare(b"{}\n")
             ),
             EXIT_ERROR
         );
@@ -310,6 +435,7 @@ mod tests {
             &mut stderr,
             1024,
             |_| Err("invalid bundle".to_string()),
+            fake_prepare(b"{}\n"),
         );
 
         assert_eq!(code, EXIT_ERROR);
@@ -320,5 +446,106 @@ mod tests {
             .unwrap()
             .contains("DO_NOT_ECHO_PRIVATE_BODY"));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn prepare_mode_requires_acknowledgement_and_valid_arguments() {
+        assert_eq!(
+            parse_args(vec![
+                "--prepare-fixture".into(),
+                "bundle.json".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap_err(),
+            "--prepare-fixture requires --acknowledge-sensitive-data"
+        );
+        assert_eq!(
+            parse_args(vec![
+                "--prepare-fixture".into(),
+                "--acknowledge-sensitive-data".into(),
+                "--verify".into(),
+                "bundle.json".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap_err(),
+            "--verify cannot be combined with --prepare-fixture"
+        );
+        assert_eq!(
+            parse_args(vec![
+                "--prepare-fixture".into(),
+                "--acknowledge-sensitive-data".into(),
+                "bundle.json".into(),
+                "candidate.json".into(),
+            ])
+            .unwrap_err(),
+            "fixture output must end with .chunks.json"
+        );
+    }
+
+    #[test]
+    fn prepare_mode_writes_private_candidate_without_echoing_contents() {
+        let input = temp_file("prepare_input", b"PRIVATE_RAW_INPUT");
+        let output = env::temp_dir().join(format!(
+            "ambit_comfy_support_candidate_{}_{}.chunks.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let candidate = br#"{"prompt":"PRIVATE_CANDIDATE_BODY"}
+"#;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = run(
+            vec![
+                "--prepare-fixture".into(),
+                input.clone().into_os_string(),
+                output.clone().into_os_string(),
+                "--acknowledge-sensitive-data".into(),
+            ],
+            &mut stdout,
+            &mut stderr,
+            1024,
+            fake_replay(true),
+            fake_prepare(candidate),
+        );
+
+        assert_eq!(code, EXIT_OK);
+        assert_eq!(fs::read(&output).unwrap(), candidate);
+        assert!(!String::from_utf8(stdout)
+            .unwrap()
+            .contains("PRIVATE_CANDIDATE_BODY"));
+        assert!(stderr.is_empty());
+        let _ = fs::remove_file(input);
+        let _ = fs::remove_file(output);
+    }
+
+    #[test]
+    fn prepare_mode_refuses_overwrite_and_cleans_partial_writes() {
+        let output = temp_file("existing.chunks", b"KEEP_EXISTING");
+        assert_eq!(
+            write_candidate(&output, b"REPLACEMENT").unwrap_err(),
+            "fixture output already exists or cannot be created"
+        );
+        assert_eq!(fs::read(&output).unwrap(), b"KEEP_EXISTING");
+        let _ = fs::remove_file(output);
+
+        let partial = env::temp_dir().join(format!(
+            "ambit_comfy_support_partial_{}_{}.chunks.json",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let error = write_candidate_with(&partial, b"FULL", |file, _| {
+            file.write_all(b"PARTIAL")?;
+            Err(std::io::Error::other("simulated failure"))
+        })
+        .unwrap_err();
+        assert_eq!(error, "failed to write fixture candidate");
+        assert!(!partial.exists());
     }
 }

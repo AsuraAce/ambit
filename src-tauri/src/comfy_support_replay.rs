@@ -64,25 +64,15 @@ pub fn replay_comfyui_support_bundle(input: &[u8]) -> Result<(String, bool), Str
     replay_comfyui_support_bundle_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
 }
 
+pub fn prepare_comfyui_fixture_candidate(input: &[u8]) -> Result<Vec<u8>, String> {
+    prepare_comfyui_fixture_candidate_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
+}
+
 fn replay_comfyui_support_bundle_with_limit(
     input: &[u8],
     max_bytes: usize,
 ) -> Result<(String, bool), String> {
-    if input.len() > max_bytes {
-        return Err(format!(
-            "Support bundle exceeds the {} MiB size limit",
-            max_bytes / (1024 * 1024)
-        ));
-    }
-
-    let bundle: SupportBundle = serde_json::from_slice(input).map_err(|error| {
-        format!(
-            "Invalid support bundle JSON at line {} column {}",
-            error.line(),
-            error.column()
-        )
-    })?;
-    validate_bundle(&bundle)?;
+    let bundle = parse_bundle_with_limit(input, max_bytes)?;
 
     let chunks: HashMap<String, String> = bundle
         .chunks
@@ -108,6 +98,40 @@ fn replay_comfyui_support_bundle_with_limit(
         .map_err(|_| "Failed to serialize support bundle replay report".to_string())?;
 
     Ok((output, parser_output_matches))
+}
+
+fn prepare_comfyui_fixture_candidate_with_limit(
+    input: &[u8],
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let bundle = parse_bundle_with_limit(input, max_bytes)?;
+    if bundle.chunks.is_empty() {
+        return Err("Support bundle contains no metadata chunks".to_string());
+    }
+
+    let mut output = serde_json::to_vec(&bundle.chunks)
+        .map_err(|_| "Failed to serialize fixture candidate".to_string())?;
+    output.push(b'\n');
+    Ok(output)
+}
+
+fn parse_bundle_with_limit(input: &[u8], max_bytes: usize) -> Result<SupportBundle, String> {
+    if input.len() > max_bytes {
+        return Err(format!(
+            "Support bundle exceeds the {} MiB size limit",
+            max_bytes / (1024 * 1024)
+        ));
+    }
+
+    let bundle: SupportBundle = serde_json::from_slice(input).map_err(|error| {
+        format!(
+            "Invalid support bundle JSON at line {} column {}",
+            error.line(),
+            error.column()
+        )
+    })?;
+    validate_bundle(&bundle)?;
+    Ok(bundle)
 }
 
 fn validate_bundle(bundle: &SupportBundle) -> Result<(), String> {
@@ -449,5 +473,47 @@ mod tests {
         let error = replay_comfyui_support_bundle_with_limit(&input, input.len() - 1).unwrap_err();
         assert!(error.contains("size limit"));
         assert!(!error.contains("prompt"));
+    }
+
+    #[test]
+    fn fixture_candidate_is_exact_deterministic_chunks_without_bundle_envelope() {
+        let chunks = BTreeMap::from([
+            (
+                "privateRaw".to_string(),
+                "DO_NOT_PRINT_PRIVATE_BODY".to_string(),
+            ),
+            (
+                "prompt".to_string(),
+                r#"{"1":{"class_type":"KSampler"}}"#.to_string(),
+            ),
+        ]);
+        let input = serde_json::to_vec(&bundle_value(chunks.clone())).unwrap();
+
+        let first = prepare_comfyui_fixture_candidate(&input).unwrap();
+        let second = prepare_comfyui_fixture_candidate(&input).unwrap();
+
+        assert_eq!(first, second);
+        assert_eq!(first.last(), Some(&b'\n'));
+        let candidate: BTreeMap<String, String> = serde_json::from_slice(&first).unwrap();
+        assert_eq!(candidate, chunks);
+        let candidate_json: Value = serde_json::from_slice(&first).unwrap();
+        assert!(candidate_json.get("schemaVersion").is_none());
+        assert!(candidate_json.get("createdAt").is_none());
+        assert!(candidate_json.get("diagnostics").is_none());
+        assert!(candidate_json.get("image").is_none());
+    }
+
+    #[test]
+    fn fixture_candidate_rejects_empty_and_oversized_bundles() {
+        let empty = serde_json::to_vec(&bundle_value(BTreeMap::new())).unwrap();
+        assert_eq!(
+            prepare_comfyui_fixture_candidate(&empty).unwrap_err(),
+            "Support bundle contains no metadata chunks"
+        );
+
+        let input = serde_json::to_vec(&bundle_value(minimal_chunks())).unwrap();
+        let error =
+            prepare_comfyui_fixture_candidate_with_limit(&input, input.len() - 1).unwrap_err();
+        assert!(error.contains("size limit"));
     }
 }
