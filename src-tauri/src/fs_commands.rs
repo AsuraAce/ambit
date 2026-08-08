@@ -1,5 +1,7 @@
+use crate::db::commands::maintenance::lock_removed_lifecycle;
 use crate::db::{configure_connection, resolve_db_path};
 use rusqlite::{params, Connection};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -22,6 +24,18 @@ pub struct InvokeDbSnapshot {
     pub files: Vec<InvokeDbSnapshotFile>,
 }
 
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRemovedImagesResult {
+    pub cleared_ids: Vec<String>,
+    pub trashed_ids: Vec<String>,
+    pub already_missing_ids: Vec<String>,
+    pub failed_ids: Vec<String>,
+    pub cleanup_pending_ids: Vec<String>,
+    pub thumbnail_warning_ids: Vec<String>,
+    pub not_found_ids: Vec<String>,
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub fn move_to_trash(app: tauri::AppHandle<Wry>, path: String) -> Result<(), String> {
@@ -33,6 +47,28 @@ pub fn move_to_trash(app: tauri::AppHandle<Wry>, path: String) -> Result<(), Str
     }
 
     trash::delete(&canonical_file).map_err(|e| format!("Failed to move to trash: {}", e))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn delete_removed_images_from_disk(
+    app: tauri::AppHandle<Wry>,
+    ids: Vec<String>,
+) -> Result<DeleteRemovedImagesResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut conn = open_configured_app_db(&app)?;
+        let thumbnail_dir = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| format!("Failed to resolve app local data directory: {}", e))?
+            .join(".thumbnails");
+
+        delete_removed_images_with(&mut conn, &thumbnail_dir, &ids, |path| {
+            trash::delete(path).map_err(|error| format!("Failed to move to trash: {}", error))
+        })
+    })
+    .await
+    .map_err(|error| format!("Removed-file deletion task failed: {}", error))?
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -261,11 +297,189 @@ fn normalize_path_string(path: &str) -> String {
     path.trim().replace('\\', "/")
 }
 
+fn delete_removed_images_with<F>(
+    conn: &mut Connection,
+    thumbnail_dir: &Path,
+    ids: &[String],
+    mut trash_file: F,
+) -> Result<DeleteRemovedImagesResult, String>
+where
+    F: FnMut(&Path) -> Result<(), String>,
+{
+    // Keep the tombstone stable while its source is inspected, trashed, and cleared.
+    // Otherwise a concurrent restore could recreate an active row before this finishes.
+    let _lifecycle_guard = lock_removed_lifecycle();
+    let normalized_ids = ids
+        .iter()
+        .map(|id| normalize_path_string(id))
+        .filter(|id| !id.is_empty())
+        .fold(
+            (Vec::new(), HashSet::new()),
+            |(mut ordered, mut seen), id| {
+                if seen.insert(id.clone()) {
+                    ordered.push(id);
+                }
+                (ordered, seen)
+            },
+        )
+        .0;
+    if normalized_ids.is_empty() {
+        return Ok(DeleteRemovedImagesResult::default());
+    }
+
+    let mut rows = Vec::new();
+    {
+        let mut statement = conn
+            .prepare(
+                "SELECT id, path, thumbnail_path
+                 FROM removed_images
+                 WHERE invoke_scope_hidden = 0 AND id = ?1",
+            )
+            .map_err(|error| error.to_string())?;
+        for id in &normalized_ids {
+            let row = statement.query_row([id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            });
+            match row {
+                Ok(row) => rows.push(row),
+                Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                Err(error) => return Err(error.to_string()),
+            }
+        }
+    }
+
+    let found_ids = rows
+        .iter()
+        .map(|(id, _, _)| id.as_str())
+        .collect::<HashSet<_>>();
+    let mut result = DeleteRemovedImagesResult {
+        not_found_ids: normalized_ids
+            .iter()
+            .filter(|id| !found_ids.contains(id.as_str()))
+            .cloned()
+            .collect(),
+        ..DeleteRemovedImagesResult::default()
+    };
+
+    for (id, source_path, thumbnail_path) in rows {
+        let source = PathBuf::from(&source_path);
+        match fs::symlink_metadata(&source) {
+            Ok(metadata) if metadata.is_file() => {
+                let canonical_source = match fs::canonicalize(&source) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        log::error!(
+                            "[Removed] Failed to resolve source before trashing {}: {}",
+                            source_path,
+                            error
+                        );
+                        result.failed_ids.push(id);
+                        continue;
+                    }
+                };
+                if let Err(error) = trash_file(&canonical_source) {
+                    log::error!(
+                        "[Removed] Failed to move source to trash {}: {}",
+                        source_path,
+                        error
+                    );
+                    result.failed_ids.push(id);
+                    continue;
+                }
+                result.trashed_ids.push(id.clone());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                result.already_missing_ids.push(id.clone());
+            }
+            Ok(_) => {
+                log::error!("[Removed] Source is not a regular file: {}", source_path);
+                result.failed_ids.push(id);
+                continue;
+            }
+            Err(error) => {
+                log::error!(
+                    "[Removed] Failed to inspect source {}: {}",
+                    source_path,
+                    error
+                );
+                result.failed_ids.push(id);
+                continue;
+            }
+        }
+
+        if let Some(thumbnail_path) = thumbnail_path {
+            match resolve_eligible_thumbnail_file(&thumbnail_path, thumbnail_dir) {
+                Ok(Some(thumbnail)) => {
+                    if let Err(error) = trash_file(&thumbnail) {
+                        log::warn!(
+                            "[Removed] Failed to move thumbnail to trash {}: {}",
+                            thumbnail_path,
+                            error
+                        );
+                        result.thumbnail_warning_ids.push(id.clone());
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    log::warn!(
+                        "[Removed] Failed to inspect thumbnail {}: {}",
+                        thumbnail_path,
+                        error
+                    );
+                    result.thumbnail_warning_ids.push(id.clone());
+                }
+            }
+        }
+
+        let cleanup = (|| -> Result<(), String> {
+            let tx = conn.transaction().map_err(|error| error.to_string())?;
+            tx.execute(
+                "UPDATE collections
+                 SET custom_thumbnail = NULL,
+                     dynamic_thumbnail_path = NULL,
+                     dynamic_safe_thumbnail_path = NULL,
+                     dynamic_thumbnail_is_sensitive = NULL,
+                     dynamic_thumbnail_cached_at = NULL
+                 WHERE custom_thumbnail = ?1 OR custom_thumbnail = ?2",
+                params![id, source_path],
+            )
+            .map_err(|error| error.to_string())?;
+            let deleted = tx
+                .execute(
+                    "DELETE FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                    [&id],
+                )
+                .map_err(|error| error.to_string())?;
+            if deleted != 1 {
+                return Err("Removed entry changed before cleanup completed".to_string());
+            }
+            tx.commit().map_err(|error| error.to_string())
+        })();
+        match cleanup {
+            Ok(()) => result.cleared_ids.push(id),
+            Err(error) => {
+                log::error!(
+                    "[Removed] Database cleanup remains pending for {}: {}",
+                    id,
+                    error
+                );
+                result.cleanup_pending_ids.push(id);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        get_invoke_db_snapshot, path_is_known_media_file, resolve_eligible_thumbnail_file,
-        resolve_invoke_db_path, validate_library_scope_directory,
+        delete_removed_images_with, get_invoke_db_snapshot, path_is_known_media_file,
+        resolve_eligible_thumbnail_file, resolve_invoke_db_path, validate_library_scope_directory,
     };
     use rusqlite::Connection;
     use std::fs;
@@ -451,6 +665,241 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(app_data);
+    }
+
+    #[test]
+    fn removed_delete_trashes_files_and_clears_visible_tombstones() {
+        let root = temp_dir("removed_delete_success");
+        let thumbnail_dir = root.join(".thumbnails");
+        fs::create_dir_all(&thumbnail_dir).unwrap();
+        let source = root.join("source.png");
+        let thumbnail = thumbnail_dir.join("source.webp");
+        fs::write(&source, b"source").unwrap();
+        fs::write(&thumbnail, b"thumbnail").unwrap();
+        let mut conn = removed_images_connection();
+        insert_removed_image(
+            &conn,
+            "C:/normalized/source.png",
+            &source,
+            Some(&thumbnail),
+            false,
+        );
+        conn.execute(
+            "INSERT INTO collections (
+                id, custom_thumbnail, dynamic_thumbnail_path,
+                dynamic_safe_thumbnail_path, dynamic_thumbnail_is_sensitive,
+                dynamic_thumbnail_cached_at
+             ) VALUES ('custom', 'C:/normalized/source.png', 'stale.webp', 'safe.webp', 1, 123)",
+            [],
+        )
+        .unwrap();
+
+        let result = delete_removed_images_with(
+            &mut conn,
+            &thumbnail_dir,
+            &["C:\\normalized\\source.png".to_string()],
+            |path| fs::remove_file(path).map_err(|error| error.to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(result.cleared_ids, ["C:/normalized/source.png"]);
+        assert_eq!(result.trashed_ids, ["C:/normalized/source.png"]);
+        assert!(result.failed_ids.is_empty());
+        assert!(!source.exists());
+        assert!(!thumbnail.exists());
+        assert_eq!(removed_image_count(&conn), 0);
+        let collection_thumbnail = conn
+            .query_row(
+                "SELECT custom_thumbnail, dynamic_thumbnail_path
+                 FROM collections WHERE id = 'custom'",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(collection_thumbnail, (None, None));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removed_delete_clears_an_explicit_tombstone_when_source_is_already_missing() {
+        let root = temp_dir("removed_delete_missing");
+        let mut conn = removed_images_connection();
+        let missing = root.join("already-gone.png");
+        insert_removed_image(&conn, "missing", &missing, None, false);
+
+        let result = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &["missing".to_string()],
+            |_| panic!("missing files must not be sent to trash"),
+        )
+        .unwrap();
+
+        assert_eq!(result.cleared_ids, ["missing"]);
+        assert_eq!(result.already_missing_ids, ["missing"]);
+        assert_eq!(removed_image_count(&conn), 0);
+    }
+
+    #[test]
+    fn removed_delete_preserves_tombstone_when_source_trash_fails() {
+        let root = temp_dir("removed_delete_trash_failure");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let mut conn = removed_images_connection();
+        insert_removed_image(&conn, "source", &source, None, false);
+
+        let result = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &["source".to_string()],
+            |_| Err("trash unavailable".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(result.failed_ids, ["source"]);
+        assert!(result.cleared_ids.is_empty());
+        assert_eq!(removed_image_count(&conn), 1);
+        assert!(source.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removed_delete_reports_cleanup_pending_and_succeeds_on_missing_file_retry() {
+        let root = temp_dir("removed_delete_cleanup_retry");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.png");
+        fs::write(&source, b"source").unwrap();
+        let mut conn = removed_images_connection();
+        insert_removed_image(&conn, "source", &source, None, false);
+        conn.execute(
+            "INSERT INTO collections (id, custom_thumbnail) VALUES ('custom', 'source')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER block_removed_delete BEFORE DELETE ON removed_images
+             BEGIN SELECT RAISE(ABORT, 'cleanup blocked'); END;",
+        )
+        .unwrap();
+
+        let first = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &["source".to_string()],
+            |path| fs::remove_file(path).map_err(|error| error.to_string()),
+        )
+        .unwrap();
+        assert_eq!(first.cleanup_pending_ids, ["source"]);
+        assert_eq!(removed_image_count(&conn), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT custom_thumbnail FROM collections WHERE id = 'custom'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .unwrap(),
+            Some("source".to_string())
+        );
+        assert!(!source.exists());
+
+        conn.execute_batch("DROP TRIGGER block_removed_delete;")
+            .unwrap();
+        let retry = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &["source".to_string()],
+            |_| panic!("the retry source is already missing"),
+        )
+        .unwrap();
+        assert_eq!(retry.already_missing_ids, ["source"]);
+        assert_eq!(retry.cleared_ids, ["source"]);
+        assert_eq!(removed_image_count(&conn), 0);
+        assert_eq!(
+            conn.query_row(
+                "SELECT custom_thumbnail FROM collections WHERE id = 'custom'",
+                [],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .unwrap(),
+            None
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removed_delete_rejects_hidden_and_unknown_rows() {
+        let root = temp_dir("removed_delete_visibility");
+        let mut conn = removed_images_connection();
+        insert_removed_image(&conn, "hidden", &root.join("hidden.png"), None, true);
+
+        let result = delete_removed_images_with(
+            &mut conn,
+            &root.join(".thumbnails"),
+            &["hidden".to_string(), "unknown".to_string()],
+            |_| panic!("invisible rows must never reach filesystem deletion"),
+        )
+        .unwrap();
+
+        assert_eq!(result.not_found_ids, ["hidden", "unknown"]);
+        assert_eq!(removed_image_count(&conn), 1);
+    }
+
+    fn removed_images_connection() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute(
+            "CREATE TABLE removed_images (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                thumbnail_path TEXT,
+                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE collections (
+                id TEXT PRIMARY KEY,
+                custom_thumbnail TEXT,
+                dynamic_thumbnail_path TEXT,
+                dynamic_safe_thumbnail_path TEXT,
+                dynamic_thumbnail_is_sensitive INTEGER,
+                dynamic_thumbnail_cached_at INTEGER
+            )",
+            [],
+        )
+        .unwrap();
+        conn
+    }
+
+    fn insert_removed_image(
+        conn: &Connection,
+        id: &str,
+        path: &Path,
+        thumbnail_path: Option<&Path>,
+        hidden: bool,
+    ) {
+        conn.execute(
+            "INSERT INTO removed_images (id, path, thumbnail_path, invoke_scope_hidden)
+             VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![
+                id,
+                path.to_string_lossy(),
+                thumbnail_path.map(|path| path.to_string_lossy().to_string()),
+                i64::from(hidden)
+            ],
+        )
+        .unwrap();
+    }
+
+    fn removed_image_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM removed_images", [], |row| row.get(0))
+            .unwrap()
     }
 
     fn normalize(path: PathBuf) -> String {

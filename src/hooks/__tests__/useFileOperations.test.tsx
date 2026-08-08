@@ -63,12 +63,16 @@ vi.mock('../../services/thumbnailService', () => ({
 
 // Mock Repositories
 vi.mock('../../services/db/imageRepo', () => ({
-    removeImagesFromLibrary: vi.fn(),
-    deleteImageFromDisk: vi.fn(),
+    removeImagesFromLibrary: vi.fn(async (ids: string[]) => ({
+        affectedIds: ids,
+        notFoundIds: [],
+        membershipWarningIds: [],
+        touchedResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+    })),
     updateFavorite: vi.fn(),
     updatePinned: vi.fn(),
     getImagesByIds: vi.fn().mockResolvedValue([]),
-    rebuildFacetCache: vi.fn().mockResolvedValue(0),
+    refreshFacetCacheForResourcesStrict: vi.fn().mockResolvedValue(0),
 }));
 
 describe('useFileOperations', () => {
@@ -122,7 +126,7 @@ describe('useFileOperations', () => {
             const { result } = renderFileOperations();
 
             await act(async () => {
-                await result.current.deleteImages(['1'], false);
+                await result.current.deleteImages(['1']);
             });
 
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
@@ -140,7 +144,7 @@ describe('useFileOperations', () => {
             const { result } = renderFileOperations();
 
             await act(async () => {
-                await result.current.deleteImages(['1'], false);
+                await result.current.deleteImages(['1']);
             });
 
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
@@ -151,36 +155,20 @@ describe('useFileOperations', () => {
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });
 
-        it('should perform permanent delete and remove from local state', async () => {
-            const { deleteImageFromDisk, getImagesByIds } = await import('../../services/db/imageRepo');
-            (getImagesByIds as any).mockResolvedValue([mockImages[1]]);
-            const { result } = renderFileOperations();
-
-            await act(async () => {
-                await result.current.deleteImages(['2'], true);
-            });
-
-            expect(deleteImageFromDisk).toHaveBeenCalledWith('2', '2', 'thumb2');
-            expect(mockSetImages).toHaveBeenCalled();
-            const updateImages = mockSetImages.mock.calls[0][0] as (images: typeof mockImages) => typeof mockImages;
-            expect(updateImages(mockImages).map(image => image.id)).toEqual(['1', '3']);
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Moved 1 file to OS trash'), 'success');
-        });
-
-        it('keeps the delete successful when facet cache rebuilding fails', async () => {
-            const { rebuildFacetCache } = await import('../../services/db/imageRepo');
-            vi.mocked(rebuildFacetCache).mockRejectedValueOnce(new Error('cache failed'));
+        it('keeps the delete successful when targeted facet refresh fails', async () => {
+            const { refreshFacetCacheForResourcesStrict } = await import('../../services/db/imageRepo');
+            vi.mocked(refreshFacetCacheForResourcesStrict).mockRejectedValueOnce(new Error('cache failed'));
             const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
             const { result } = renderFileOperations();
 
-            await act(async () => result.current.deleteImages(['1'], false));
+            await act(async () => result.current.deleteImages(['1']));
 
             expect(mockAddToast).toHaveBeenCalledWith(
                 'Library update succeeded, but filters may take a moment to refresh.',
                 'info'
             );
             expect(error).toHaveBeenCalledWith(
-                '[MaintenanceOps] removeFromLibrary: facet rebuild failed',
+                '[MaintenanceOps] removeFromLibrary: facet refresh failed',
                 expect.any(Error)
             );
             error.mockRestore();
@@ -192,7 +180,7 @@ describe('useFileOperations', () => {
             const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
             const { result } = renderFileOperations();
 
-            await act(async () => result.current.deleteImages(['1'], false));
+            await act(async () => result.current.deleteImages(['1']));
 
             expect(mockSetImages).not.toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith('Failed to update library state', 'error');

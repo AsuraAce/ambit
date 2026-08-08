@@ -64,4 +64,54 @@ describe('ConfirmDialog', () => {
     fireEvent.click(closeButton);
     expect(document.activeElement).toBe(launcher);
   });
+
+  it('closes on Escape and traps Tab focus inside the dialog', () => {
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        isOpen
+        title="Delete item?"
+        message="Confirm deletion."
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    const close = screen.getByRole('button', { name: 'Close Dialog' });
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(close, { key: 'Tab' });
+    expect(document.activeElement).toBe(confirm);
+    fireEvent.keyDown(confirm, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(close);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
+  it('blocks dismissal and destructive controls while loading', () => {
+    const onCancel = vi.fn();
+    render(
+      <ConfirmDialog
+        isOpen
+        isLoading
+        title="Delete item?"
+        message="Confirm deletion."
+        onConfirm={vi.fn()}
+        onCancel={onCancel}
+      />
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('dialog');
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(dialog);
+    expect(screen.getByRole('button', { name: 'Processing...' })).toHaveProperty('disabled', true);
+    expect(screen.getByText('Processing...')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Close Dialog' })).toHaveProperty('disabled', true);
+  });
 });

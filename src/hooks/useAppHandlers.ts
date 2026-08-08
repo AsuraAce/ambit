@@ -6,6 +6,7 @@ import {
     getImagesByIds,
     rebuildFacetCache,
     rebuildFacetCacheIncremental,
+    refreshFacetCacheForResourcesStrict,
     removeImagesFromLibrary,
     restoreRemovedImages,
     revertImageMetadata,
@@ -13,10 +14,10 @@ import {
     updateImageNotesCol,
 } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
-import { updateImagesQueryCaches } from '../utils/imageQueryCache';
+import { removeImagesFromQueryCaches, updateImagesQueryCaches } from '../utils/imageQueryCache';
 import type { ActiveImageStateAdapter } from './activeImageState';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
-import type { ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
+import type { DeleteRemovedImagesResult, ExactDuplicateResolution, ExactDuplicateResolutionResult } from '../bindings';
 
 interface UseAppHandlersProps {
     images: AIImage[];
@@ -138,17 +139,20 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
 
         const removedIds = new Set(result.removedIds);
         const keeperStates = new Map(result.keepers.map(keeper => [keeper.id, keeper]));
+        const applyKeeperState = (image: AIImage): AIImage => {
+            const keeper = keeperStates.get(image.id);
+            return keeper ? {
+                ...image,
+                isFavorite: keeper.isFavorite,
+                isPinned: keeper.isPinned,
+                userMasked: keeper.userMasked ?? undefined,
+            } : image;
+        };
         setImages(previous => previous
             .filter(image => !removedIds.has(image.id))
-            .map(image => {
-                const keeper = keeperStates.get(image.id);
-                return keeper ? {
-                    ...image,
-                    isFavorite: keeper.isFavorite,
-                    isPinned: keeper.isPinned,
-                    userMasked: keeper.userMasked ?? undefined,
-                } : image;
-            }));
+            .map(applyKeeperState));
+        removeImagesFromQueryCaches(queryClient, removedIds);
+        updateImagesQueryCaches(queryClient, applyKeeperState);
         try {
             await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['images'] }),
@@ -163,47 +167,117 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     };
 
     const handleRestoreImages = async (ids: string[]) => {
-        await restoreRemovedImages(ids);
-        await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['images'] }),
-            invalidateInvokeReferenceQueries(queryClient),
-            refreshHiddenAvailability().catch(error => {
-                console.error('[Restore] Failed to refresh hidden-content availability after restoring images', error);
-            }),
-        ]);
-        addToast(`Restored ${ids.length} image${ids.length === 1 ? '' : 's'} to the library`, 'success');
+        const result = await restoreRemovedImages(ids).catch(error => {
+            console.error('[Restore] Failed to restore removed images', error);
+            addToast('Could not restore the selected images. Their Removed entries were kept.', 'error');
+            throw error;
+        });
+
+        let refreshFailed = false;
+        try {
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                invalidateInvokeReferenceQueries(queryClient),
+                refreshHiddenAvailability(),
+            ]);
+        } catch (error) {
+            refreshFailed = true;
+            console.error('[Restore] Restored images, but failed to refresh dependent views', error);
+        }
+        addToast(`Restored ${result.affectedIds.length} image${result.affectedIds.length === 1 ? '' : 's'} to the library`, 'success');
+        if (refreshFailed) {
+            addToast('Images were restored, but some views may need a refresh.', 'warning');
+        }
+        if (result.membershipWarningIds.length > 0) {
+            addToast(`${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'image has' : 'images have'} legacy collection data that could not be recovered.`, 'warning');
+        }
         refreshMaintenanceCounts();
-        refreshFacets();
+        void refreshFacetCacheForResourcesStrict(result.touchedResources)
+            .then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh restored facet resources', error));
     };
 
     const handleRemoveFromLibrary = async (ids: string[]) => {
-        await removeImagesFromLibrary(ids);
-        await invalidateInvokeReferenceQueries(queryClient);
-        setImages(p => p.filter(i => !ids.includes(i.id)));
-        addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
+        const result = await removeImagesFromLibrary(ids).catch(error => {
+            console.error('[Removed] Failed to remove images from the library', error);
+            addToast('Could not remove the selected images. The library was left unchanged.', 'error');
+            throw error;
+        });
+
+        const affectedIds = new Set(result.affectedIds);
+        setImages(p => p.filter(i => !affectedIds.has(i.id)));
+        removeImagesFromQueryCaches(queryClient, affectedIds);
+        addToast(`Removed ${result.affectedIds.length} image${result.affectedIds.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
-        refreshFacets();
+        try {
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                invalidateInvokeReferenceQueries(queryClient),
+            ]);
+        } catch (error) {
+            console.error('[Removed] Images were removed, but dependent views failed to refresh', error);
+            addToast('Images were removed, but some views may need a refresh.', 'warning');
+        }
+        void refreshFacetCacheForResourcesStrict(result.touchedResources)
+            .then(() => incrementFacetCacheVersion())
+            .catch(error => console.error('Failed to refresh affected facet resources', error));
     };
 
-    const handleDeleteFile = async (ids: string[]) => {
-        const result = await deleteRemovedImagesFromDisk(ids);
+    const handleDeleteFile = async (ids: string[]): Promise<DeleteRemovedImagesResult> => {
+        try {
+            const result = await deleteRemovedImagesFromDisk(ids);
+            const unresolvedCount = result.failedIds.length + result.cleanupPendingIds.length;
+            let dependentRefreshFailed = false;
 
-        if (result.deletedIds.length > 0) {
-            await invalidateInvokeReferenceQueries(queryClient);
-            if (result.failedIds.length === 0 && result.thumbnailWarningIds.length === 0) {
-                addToast(`Moved ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.deletedIds.length === 1 ? 'it' : 'them'} from Ambit`, 'success');
-            } else {
+            if (result.clearedIds.length > 0) {
+                const clearedIds = new Set(result.clearedIds);
+                setImages(previous => previous.filter(image => !clearedIds.has(image.id)));
+                removeImagesFromQueryCaches(queryClient, clearedIds);
+                refreshMaintenanceCounts();
+                try {
+                    await Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ['images'] }),
+                        invalidateInvokeReferenceQueries(queryClient),
+                    ]);
+                } catch (error) {
+                    dependentRefreshFailed = true;
+                    console.error('[Removed] Files were deleted, but dependent views failed to refresh', error);
+                }
+            }
+
+            if (unresolvedCount === 0 && result.thumbnailWarningIds.length === 0 && result.notFoundIds.length === 0) {
+                const recoveredCount = result.alreadyMissingIds.length;
+                const message = recoveredCount > 0
+                    ? `Removed ${result.clearedIds.length} ${result.clearedIds.length === 1 ? 'entry' : 'entries'} from Ambit; ${recoveredCount} source ${recoveredCount === 1 ? 'file was' : 'files were'} already missing.`
+                    : `Moved ${result.trashedIds.length} file${result.trashedIds.length === 1 ? '' : 's'} to OS trash and removed ${result.clearedIds.length === 1 ? 'it' : 'them'} from Ambit`;
+                addToast(message, 'success');
+            } else if (result.clearedIds.length > 0 || result.cleanupPendingIds.length > 0 || result.notFoundIds.length > 0) {
+                const details = [
+                    unresolvedCount > 0 ? `${unresolvedCount} still need attention` : null,
+                    result.thumbnailWarningIds.length > 0
+                        ? `${result.thumbnailWarningIds.length} had thumbnail cleanup warnings`
+                        : null,
+                    result.notFoundIds.length > 0
+                        ? `${result.notFoundIds.length} selected ${result.notFoundIds.length === 1 ? 'entry was' : 'entries were'} already unavailable`
+                        : null,
+                ].filter((detail): detail is string => detail !== null);
                 addToast(
-                    `Deleted ${result.deletedIds.length} file${result.deletedIds.length === 1 ? '' : 's'} from Ambit, but ${result.failedIds.length} failed and ${result.thumbnailWarningIds.length} had thumbnail cleanup warnings.`,
+                    `Removed ${result.clearedIds.length} ${result.clearedIds.length === 1 ? 'entry' : 'entries'} from Ambit; ${details.join(' and ')}.`,
                     'warning'
                 );
+            } else {
+                addToast('Failed to move selected files to OS trash. The Removed entries were kept.', 'error');
             }
-            refreshMaintenanceCounts();
-            refreshFacets();
-            return;
-        }
+            if (dependentRefreshFailed) {
+                addToast('Files were deleted, but some views may need a refresh.', 'warning');
+            }
 
-        addToast('Failed to move selected files to OS trash.', 'error');
+            return result;
+        } catch (error) {
+            console.error('[Removed] Failed to delete selected files', error);
+            addToast('Could not finish deleting the selected files. The Removed entries were kept.', 'error');
+            throw error;
+        }
     };
 
     const handleEmptyTrash = async () => {

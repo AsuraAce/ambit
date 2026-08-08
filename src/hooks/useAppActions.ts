@@ -19,7 +19,7 @@ import type { ImagesQueryKey } from './useImagesQuery';
 import type { ActiveImageStateAdapter } from './activeImageState';
 
 interface AppActionFileOps {
-    deleteImages: (ids: string[]) => void | Promise<void>;
+    deleteImages: (ids: string[]) => Promise<boolean>;
     exportImages: (filename: string, ids: Set<string> | string[], destinationFolder: string, onComplete?: () => void) => Promise<void>;
     recoverMetadata?: (targetId: string, style: RecoveryStyle) => Promise<AIImage | null>;
 }
@@ -172,8 +172,9 @@ export const useAppActions = ({
         }
     }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, activeImageState]);
 
-    const executeDeleteByIds = React.useCallback((ids: string[], targetDeleteId: string | null) => {
-        fileOps.deleteImages(ids);
+    const executeDeleteByIds = React.useCallback(async (ids: string[], targetDeleteId: string | null) => {
+        const deleted = await fileOps.deleteImages(ids);
+        if (!deleted) return;
 
         if (targetDeleteId) {
             const idx = viewerImages.findIndex(img => img.id === targetDeleteId);
@@ -194,9 +195,9 @@ export const useAppActions = ({
         setPendingViewerDeleteId(null);
     }, [fileOps, viewerImages, setViewerSessionImages, setSelectedImageIndex, setSelectedIds, closeModal, setPendingViewerDeleteId, activeImageState]);
 
-    const executeDelete = React.useCallback(() => {
+    const executeDelete = React.useCallback(async () => {
         const ids = pendingViewerDeleteId ? [pendingViewerDeleteId] : Array.from(selectedIds);
-        executeDeleteByIds(ids, pendingViewerDeleteId);
+        await executeDeleteByIds(ids, pendingViewerDeleteId);
     }, [pendingViewerDeleteId, selectedIds, executeDeleteByIds]);
 
     const requestDeleteForId = React.useCallback((id: string) => {
@@ -206,7 +207,7 @@ export const useAppActions = ({
             return;
         }
 
-        executeDeleteByIds([id], id);
+        void executeDeleteByIds([id], id);
     }, [settings.confirmDelete, openModal, setPendingViewerDeleteId, executeDeleteByIds]);
 
     const handleDeleteViewerImage = (id: string) => {
