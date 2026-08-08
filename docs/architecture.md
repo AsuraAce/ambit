@@ -26,7 +26,7 @@ Purpose: scan image files, extract metadata and workflows, resolve models, and w
 Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
 Risks: parser heuristics and watcher behavior can create wrong metadata or miss library changes; external path handling must stay scoped and local
-Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`
+Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`, `docs/comfyui-support-workflow.md`
 
 ### Thumbnail Generation and Optimization
 Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in the background, expose maintenance controls, and throttle or cancel native work around foreground activity.
