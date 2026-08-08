@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.11.0](https://github.com/AsuraAce/ambit/compare/v0.10.0...v0.11.0) (2026-08-08)
+
+
+### Features
+
+* add ComfyUI parser support workflow ([#275](https://github.com/AsuraAce/ambit/issues/275)) ([986422f](https://github.com/AsuraAce/ambit/commit/986422f6078ce478a40eb4236d4ca0c18d5226a6))
+
+
+### Bug Fixes
+
+* harden image removal lifecycle ([#277](https://github.com/AsuraAce/ambit/issues/277)) ([d22fe4b](https://github.com/AsuraAce/ambit/commit/d22fe4b9c19463e304454aca695c71f6c4c52003))
+
 ## [0.10.0](https://github.com/AsuraAce/ambit/compare/v0.9.1...v0.10.0) (2026-08-03)
 
 
