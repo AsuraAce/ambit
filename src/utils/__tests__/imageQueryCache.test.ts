@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../types';
 import {
     patchImageFlagsInQueryCaches,
+    removeImagesFromQueryCaches,
     restoreImagesInQueryCaches,
     updateImagesQueryCaches,
 } from '../imageQueryCache';
@@ -33,6 +34,45 @@ const image = (id: string, flags: Partial<AIImage> = {}): AIImage => ({
 });
 
 describe('imageQueryCache', () => {
+    it('evicts removed images from every cached page and updates visible counts', () => {
+        const queryClient = new QueryClient();
+        const key = ['images', { scope: 'library' }] as const;
+        const first = image('1');
+        const second = image('2');
+        const third = image('3');
+        queryClient.setQueryData(key, {
+            pages: [
+                { images: [first, second], totalCount: 3, globalCount: 3 },
+                { images: [third], totalCount: -1, globalCount: -1 },
+            ],
+            pageParams: [undefined, { id: '2', val: 1 }],
+        });
+
+        removeImagesFromQueryCaches(queryClient, ['2', '3']);
+
+        const data = queryClient.getQueryData<{
+            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+        }>(key);
+        expect(data?.pages.map(page => page.images.map(item => item.id))).toEqual([['1'], []]);
+        expect(data?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
+        expect(data?.pages[1]).toMatchObject({ totalCount: -1, globalCount: -1 });
+    });
+
+    it('does not adjust an image cache that no longer contains the removed ids', () => {
+        const queryClient = new QueryClient();
+        const key = ['images', { scope: 'already-removed' }] as const;
+        const data = {
+            pages: [{ images: [image('1')], totalCount: 1, globalCount: 1 }],
+            pageParams: [undefined],
+        };
+        queryClient.setQueryData(key, data);
+
+        removeImagesFromQueryCaches(queryClient, ['missing']);
+        removeImagesFromQueryCaches(queryClient, []);
+
+        expect(queryClient.getQueryData(key)).toBe(data);
+    });
+
     it('patches all cached image result pages so optimistic flags survive query re-emissions', () => {
         const queryClient = new QueryClient();
         const first = image('1');

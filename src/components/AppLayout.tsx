@@ -329,7 +329,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     }
                 }}
                 onRenameCollection={colOps.renameCollection}
-                onDeleteCollection={colOps.deleteCollection}
+                onDeleteCollection={(id) => {
+                    modals.setCollectionToDelete(id);
+                    modals.openModal('deleteCollection');
+                }}
                 onToggleArchiveCollection={colOps.toggleArchiveCollection}
                 onTogglePinCollection={colOps.togglePinCollection}
                 onSetCollectionColor={colOps.setCollectionColor}

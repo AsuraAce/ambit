@@ -44,6 +44,9 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::maintenance::get_db_diagnostics,
         db::commands::maintenance::show_app_log_folder,
         db::commands::maintenance::resolve_exact_duplicate_groups,
+        db::commands::maintenance::remove_images_from_library,
+        db::commands::maintenance::restore_removed_images,
+        db::commands::maintenance::mutate_collection_membership,
         db::commands::maintenance::backfill_image_file_hashes,
         db::commands::maintenance::cancel_image_file_hash_backfill,
         db::commands::image_commands::refresh_boards_native,
@@ -110,6 +113,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         metadata::models::set_resource_thumbnail_sensitivity,
         // fs commands
         fs_commands::move_to_trash,
+        fs_commands::delete_removed_images_from_disk,
         fs_commands::delete_thumbnail,
         fs_commands::register_library_path,
         fs_commands::get_invoke_db_snapshot,

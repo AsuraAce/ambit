@@ -93,6 +93,30 @@ async resolveExactDuplicateGroups(resolutions: ExactDuplicateResolution[]) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async removeImagesFromLibrary(ids: string[]) : Promise<Result<RemovedLifecycleMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_images_from_library", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreRemovedImages(ids: string[]) : Promise<Result<RemovedLifecycleMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_removed_images", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mutateCollectionMembership(input: CollectionMembershipMutationInput) : Promise<Result<CollectionMembershipMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mutate_collection_membership", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async backfillImageFileHashes(limit: number | null) : Promise<Result<FileHashBackfillResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("backfill_image_file_hashes", { limit }) };
@@ -566,6 +590,14 @@ async moveToTrash(path: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async deleteRemovedImagesFromDisk(ids: string[]) : Promise<Result<DeleteRemovedImagesResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_removed_images_from_disk", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async deleteThumbnail(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("delete_thumbnail", { path }) };
@@ -605,10 +637,14 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
+export type CollectionMembershipMutationInput = { operation: CollectionMembershipOperation; imageIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
+export type CollectionMembershipMutationResult = { affectedIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
+export type CollectionMembershipOperation = "add" | "remove" | "move"
 export type ComfyMetadataPreview = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; generationType: string; hasWorkflowHint: boolean; hasWorkflowJson: boolean }
 export type ComfyParserDiagnosticsReport = { appVersion: string; parserVersion: number; chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; selectedOutputCandidateCount: number; uniqueOutputRootSamplerCount: number; outputAmbiguous: boolean; traversalIssues: ComfyTraversalIssueReport[]; traversalIssuesTruncated: boolean; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; metadata: ComfyMetadataPreview }
 export type ComfyTraversalIssueReport = { field: string; nodeId: string; nodeType: string; inputName: string | null; reason: string }
 export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath: string; roamingDbPath: string; appLogDir: string; appLogPath: string; isUsingRoamingFallback: boolean; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
+export type DeleteRemovedImagesResult = { clearedIds: string[]; trashedIds: string[]; alreadyMissingIds: string[]; failedIds: string[]; cleanupPendingIds: string[]; thumbnailWarningIds: string[]; notFoundIds: string[] }
 export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPinned: boolean; userMasked: boolean | null }
 export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
@@ -646,6 +682,7 @@ export type MetadataStats = { total: number; with_raw: number; with_pv: number; 
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
 export type PrivacyMaskRefreshResult = { changed: boolean; updated: number }
+export type RemovedLifecycleMutationResult = { affectedIds: string[]; notFoundIds: string[]; membershipWarningIds: string[]; touchedResources: FacetResourceTouches }
 export type ReparseBatchResult = { processed: number; updated: number; errors: number }
 /**
  * Result of a reparse job.

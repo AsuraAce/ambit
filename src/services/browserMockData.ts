@@ -694,9 +694,13 @@ export const deleteBrowserMockCollection = (id: string): void => {
 export const addBrowserMockImagesToCollection = (collectionId: string, imageIds: string[]): void => {
     const collection = getBrowserMockCollections().find((item) => item.id === collectionId);
     if (!collection) return;
+    const addedIds = new Set(imageIds);
     upsertBrowserMockCollection({
         ...collection,
         imageIds: Array.from(new Set([...collection.imageIds, ...imageIds])),
+        manualExclusions: collection.filters
+            ? (collection.manualExclusions ?? []).filter((id) => !addedIds.has(id))
+            : collection.manualExclusions,
     });
 };
 
@@ -707,9 +711,26 @@ export const removeBrowserMockImagesFromCollection = (collectionId: string, imag
     upsertBrowserMockCollection({
         ...collection,
         imageIds: collection.imageIds.filter((id) => !removeIds.has(id)),
+        manualExclusions: collection.filters
+            ? Array.from(new Set([...(collection.manualExclusions ?? []), ...imageIds]))
+            : collection.manualExclusions,
     });
 };
 
 export const updateBrowserMockImage = (id: string, update: Partial<AIImage>): void => {
     state.images = state.images.map((image) => image.id === id ? { ...image, ...update } : image);
+};
+
+export const deleteBrowserMockImages = (ids: string[]): void => {
+    const deletedIds = new Set(ids);
+    state.images = state.images.filter((image) => !deletedIds.has(image.id));
+    state.collections = state.collections.map((collection) => ({
+        ...collection,
+        imageIds: collection.imageIds.filter((id) => !deletedIds.has(id)),
+    }));
+    state.smartCollections = state.smartCollections.map((collection) => ({
+        ...collection,
+        imageIds: collection.imageIds.filter((id) => !deletedIds.has(id)),
+    }));
+    persistState();
 };

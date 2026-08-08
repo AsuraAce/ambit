@@ -2,11 +2,68 @@ use super::{configure_connection, resolve_db_path, ProgressPayload};
 use regex::Regex;
 use rusqlite::{params, types::Value, OptionalExtension};
 use std::collections::BTreeSet;
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 use tauri::Emitter;
 
 const SLOW_RESOURCE_REFRESH_LOG_THRESHOLD_MS: u128 = 100;
 const RESOURCE_INDEX_PROGRESS_INTERVAL_MS: u128 = 250;
+
+static FACET_BUILD_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn lock_facet_builds() -> Result<MutexGuard<'static, ()>, String> {
+    FACET_BUILD_COORDINATOR
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .map_err(|_| "Facet build coordinator is unavailable".to_string())
+}
+
+fn create_facet_staging_table(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS temp.facet_cache;
+         CREATE TEMP TABLE facet_cache (
+            facet_type TEXT NOT NULL,
+            resource_name TEXT NOT NULL,
+            resource_hash TEXT,
+            count INTEGER DEFAULT 0,
+            thumbnail_path TEXT,
+            preview_url TEXT,
+            last_used_at INTEGER,
+            created_at INTEGER,
+            is_manual INTEGER DEFAULT 0,
+            has_sidecar INTEGER DEFAULT 0,
+            is_user_override INTEGER DEFAULT 0,
+            guidance_subtype TEXT,
+            safe_thumbnail_path TEXT,
+            thumbnail_image_id TEXT,
+            thumbnail_is_sensitive INTEGER DEFAULT 0,
+            thumbnail_sensitivity_override INTEGER,
+            PRIMARY KEY (facet_type, resource_name)
+         );",
+    )
+    .map_err(|error| error.to_string())
+}
+
+fn swap_staged_facet_cache(conn: &mut rusqlite::Connection) -> Result<usize, String> {
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM temp.facet_cache", [], |row| {
+            row.get(0)
+        })
+        .map_err(|error| error.to_string())?;
+    let tx = conn.transaction().map_err(|error| error.to_string())?;
+    tx.execute("DELETE FROM main.facet_cache", [])
+        .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT INTO main.facet_cache
+         SELECT * FROM temp.facet_cache",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    conn.execute("DROP TABLE temp.facet_cache", [])
+        .map_err(|error| error.to_string())?;
+    Ok(count as usize)
+}
 
 fn should_log_resource_refresh(elapsed: std::time::Duration) -> bool {
     elapsed.as_millis() >= SLOW_RESOURCE_REFRESH_LOG_THRESHOLD_MS
@@ -16,6 +73,7 @@ fn should_log_resource_refresh(elapsed: std::time::Duration) -> bool {
 #[specta::specta]
 pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -55,6 +113,9 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
         }
 
         // --- PHASE 2: BUILD CACHE ---
+        // A TEMP table shadows the live cache on this connection. The expensive build
+        // therefore keeps only a WAL read snapshot; normal library writes remain available.
+        create_facet_staging_table(&conn)?;
         let count_result = {
             let tx = conn.transaction().map_err(|e| e.to_string())?;
 
@@ -164,10 +225,8 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
 
             tx.commit().map_err(|e| e.to_string())?;
 
-            // Return total cache entries
-            let count: i64 = conn
-                .query_row("SELECT COUNT(*) FROM facet_cache", [], |row| row.get(0))
-                .map_err(|e| e.to_string())?;
+            // Replace the live cache in one short transaction after the staged build.
+            let count = swap_staged_facet_cache(&mut conn)?;
 
             // Update stats after rebuild
             let _ = conn.execute("ANALYZE facet_cache", []);
@@ -190,7 +249,7 @@ pub async fn rebuild_facet_cache(app: tauri::AppHandle) -> Result<usize, String>
             },
         );
 
-        Ok(count_result as usize)
+        Ok(count_result)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -221,7 +280,9 @@ fn normalize_facet_type(facet_type: &str) -> Result<&'static str, String> {
     }
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, specta::Type)]
+#[derive(
+    Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FacetResourceTouches {
     pub checkpoints: Vec<String>,
@@ -1306,6 +1367,7 @@ pub async fn refresh_facet_cache_for_resources(
     touches: FacetResourceTouches,
 ) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -1390,6 +1452,7 @@ pub async fn rebuild_facet_cache_incremental_batch(
     facet_types: Vec<String>,
 ) -> Result<usize, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let _coordinator = lock_facet_builds()?;
         let start_total = std::time::Instant::now();
         let db_path = resolve_db_path(&app)?;
         let mut conn = rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?;
@@ -2422,6 +2485,45 @@ mod tests {
         .unwrap();
 
         conn
+    }
+
+    #[test]
+    fn staged_facet_build_keeps_live_cache_valid_until_atomic_swap() {
+        let mut conn = create_valid_facet_conn();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'LiveBeforeBuild', 1)",
+            [],
+        )
+        .unwrap();
+
+        create_facet_staging_table(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO temp.facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'StagedReplacement', 2)",
+            [],
+        )
+        .unwrap();
+
+        let live_before_swap: String = conn
+            .query_row(
+                "SELECT resource_name FROM main.facet_cache
+                 WHERE facet_type = 'tools' AND resource_name = 'LiveBeforeBuild'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(live_before_swap, "LiveBeforeBuild");
+
+        assert_eq!(swap_staged_facet_cache(&mut conn).unwrap(), 1);
+        let live_after_swap: (String, i64) = conn
+            .query_row(
+                "SELECT resource_name, count FROM facet_cache WHERE facet_type = 'tools'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(live_after_swap, ("StagedReplacement".to_string(), 2));
     }
 
     #[test]

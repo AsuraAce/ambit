@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { fireEvent, render, screen, waitFor } from '../../test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from '../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage, type Collection } from '../../types';
 import { createDefaultAppSettings } from '../../constants/defaultSettings';
@@ -178,17 +178,77 @@ describe('GlobalModals', () => {
         ]));
     });
 
-    it('routes confirmation actions and uses selected-count delete copy', () => {
+    it('routes confirmation actions and uses selected-count delete copy', async () => {
         const props = setup();
         expect(captures.confirms).toHaveLength(2);
         expect(captures.confirms[0].message).toContain('Remove 2 image(s)');
-        (captures.confirms[0].onConfirm as () => void)();
+        expect(captures.confirms[1].message).toContain('"regular"');
+        expect(captures.confirms[1].confirmLabel).toBe('Delete Collection');
+        await act(async () => {
+            await (captures.confirms[0].onConfirm as () => Promise<void>)();
+        });
         (captures.confirms[0].onCancel as () => void)();
         (captures.confirms[1].onConfirm as () => void)();
         (captures.confirms[1].onCancel as () => void)();
         expect(props.onDeleteConfirm).toHaveBeenCalledOnce();
         expect(props.onDeleteCollectionConfirm).toHaveBeenCalledOnce();
         expect(props.setModals).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps image removal busy until completion and blocks duplicate confirmation', async () => {
+        let resolveDelete: (() => void) | undefined;
+        const onDeleteConfirm = vi.fn(() => new Promise<void>(resolve => {
+            resolveDelete = resolve;
+        }));
+        setup({ onDeleteConfirm });
+        const latestDeleteConfirm = () => [...captures.confirms]
+            .reverse()
+            .find(confirm => confirm.title === 'Remove from Library?');
+        const initialConfirm = latestDeleteConfirm();
+        let firstConfirmation: Promise<void> | undefined;
+        let duplicateConfirmation: Promise<void> | undefined;
+
+        act(() => {
+            firstConfirmation = (initialConfirm?.onConfirm as () => Promise<void>)();
+            duplicateConfirmation = (initialConfirm?.onConfirm as () => Promise<void>)();
+        });
+
+        await waitFor(() => expect(latestDeleteConfirm()?.isLoading).toBe(true));
+        expect(onDeleteConfirm).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            resolveDelete?.();
+            await Promise.all([firstConfirmation, duplicateConfirmation]);
+        });
+        expect(latestDeleteConfirm()?.isLoading).toBe(false);
+    });
+
+    it('keeps collection deletion busy until completion and blocks duplicate confirmation', async () => {
+        let resolveDelete: (() => void) | undefined;
+        const onDeleteCollectionConfirm = vi.fn(() => new Promise<void>(resolve => {
+            resolveDelete = resolve;
+        }));
+        setup({ onDeleteCollectionConfirm });
+        const latestCollectionConfirm = () => [...captures.confirms]
+            .reverse()
+            .find(confirm => confirm.title === 'Delete Collection');
+        const initialConfirm = latestCollectionConfirm();
+        let firstConfirmation: Promise<void> | undefined;
+        let duplicateConfirmation: Promise<void> | undefined;
+
+        act(() => {
+            firstConfirmation = (initialConfirm?.onConfirm as () => Promise<void>)();
+            duplicateConfirmation = (initialConfirm?.onConfirm as () => Promise<void>)();
+        });
+
+        await waitFor(() => expect(latestCollectionConfirm()?.isLoading).toBe(true));
+        expect(onDeleteCollectionConfirm).toHaveBeenCalledOnce();
+
+        await act(async () => {
+            resolveDelete?.();
+            await Promise.all([firstConfirmation, duplicateConfirmation]);
+        });
+        expect(latestCollectionConfirm()?.isLoading).toBe(false);
     });
 
     it('uses export and compare fallbacks and viewer-delete singular copy', async () => {

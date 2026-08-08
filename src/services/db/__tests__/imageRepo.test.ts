@@ -6,6 +6,7 @@ const scanImageNativeMock = vi.hoisted(() => vi.fn());
 const browserMockModeMock = vi.hoisted(() => vi.fn());
 const getBrowserMockImagesMock = vi.hoisted(() => vi.fn());
 const updateBrowserMockImageMock = vi.hoisted(() => vi.fn());
+const deleteBrowserMockImagesMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
@@ -17,6 +18,9 @@ vi.mock('../../../bindings', () => ({
         saveImagesBatch: vi.fn(),
         moveImagePathIdentities: vi.fn(),
         moveToTrash: vi.fn(),
+        deleteRemovedImagesFromDisk: vi.fn(),
+        removeImagesFromLibrary: vi.fn(),
+        restoreRemovedImages: vi.fn(),
         deleteThumbnail: vi.fn(),
         rebuildFacetCache: vi.fn(),
         rebuildFacetCacheIncremental: vi.fn(),
@@ -33,6 +37,7 @@ vi.mock('../../runtime', () => ({
 }));
 
 vi.mock('../../browserMockData', () => ({
+    deleteBrowserMockImages: deleteBrowserMockImagesMock,
     getBrowserMockImages: getBrowserMockImagesMock,
     updateBrowserMockImage: updateBrowserMockImageMock,
 }));
@@ -59,10 +64,26 @@ vi.mock('../connection', () => ({
 }));
 
 describe('imageRepo batch removal', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         vi.clearAllMocks();
         browserMockModeMock.mockReturnValue(false);
         getBrowserMockImagesMock.mockReturnValue([]);
+        const { commands } = await import('../../../bindings');
+        const lifecycleResult = (ids: string[]) => ({
+            affectedIds: ids,
+            notFoundIds: [],
+            membershipWarningIds: [],
+            touchedResources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+        });
+        vi.mocked(commands.removeImagesFromLibrary).mockImplementation(async ids => ({
+            status: 'ok', data: lifecycleResult(ids),
+        }));
+        vi.mocked(commands.restoreRemovedImages).mockImplementation(async ids => ({
+            status: 'ok', data: lifecycleResult(ids),
+        }));
     });
 
     afterEach(() => {
@@ -221,7 +242,6 @@ describe('imageRepo batch removal', () => {
             toggleImageMask,
             toggleImageIntermediate,
             deleteImage,
-            deleteImageFromDisk,
             markAsDeleted,
             updateImageWorkflow,
             updateImageWorkflowHint,
@@ -264,7 +284,6 @@ describe('imageRepo batch removal', () => {
         await expect(toggleImageIntermediate('regular', true)).resolves.toBeUndefined();
         await expect(toggleImageIntermediate('missing-source', true)).resolves.toBeUndefined();
         await expect(deleteImage('regular')).resolves.toBeUndefined();
-        await expect(deleteImageFromDisk('regular', 'regular', 'thumb.webp')).resolves.toBeUndefined();
         await expect(markAsDeleted(['regular', 'pinned'], true)).resolves.toBeUndefined();
         await expect(updateImageWorkflow('regular', '{"nodes":[]}')).resolves.toBeUndefined();
         await expect(updateImageWorkflow('missing-source', '{"nodes":[]}')).resolves.toBeUndefined();
@@ -689,32 +708,12 @@ describe('imageRepo batch removal', () => {
 
         const { removeImagesFromLibrary } = await import('../imageRepo');
 
-        await expect(removeImagesFromLibrary(ids)).resolves.toBeUndefined();
-
-        expect(dispatchMock).toHaveBeenCalledTimes(1);
-        expect(removedRows.size).toBe(ids.length);
-        expect(deletedImageIds.size).toBe(ids.length);
-        expect(db.select).toHaveBeenCalled();
-        expect(db.execute).toHaveBeenCalled();
-        expect(db.select.mock.calls.some(([sql]) =>
-            typeof sql === 'string'
-            && sql.includes('FROM images')
-            && sql.includes('invoke_scope_hidden = 0')
-            && sql.includes('invoke_image_name')
-            && sql.includes('invoke_image_category')
-            && sql.includes('invoke_image_origin')
-        )).toBe(true);
-
-        const allSelectParamCounts = db.select.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
-        const allExecuteParamCounts = db.execute.mock.calls.map(([, params]) => (params as unknown[] | undefined)?.length ?? 0);
-        expect(Math.max(...allSelectParamCounts)).toBeLessThanOrEqual(900);
-        expect(Math.max(...allExecuteParamCounts)).toBeLessThanOrEqual(900);
-        expect(removedRows.get(ids[0])?.collectionIdsJson).toBe(JSON.stringify(['collection-a']));
-        expect(removedRows.get(ids[0])).toMatchObject({
-            invokeImageName: '0.png',
-            invokeImageCategory: 'control',
-            invokeImageOrigin: 'internal',
-        });
+        await expect(removeImagesFromLibrary(ids)).resolves.toMatchObject({ affectedIds: ids });
+        const { commands } = await import('../../../bindings');
+        expect(commands.removeImagesFromLibrary).toHaveBeenCalledWith(ids);
+        expect(dispatchMock).not.toHaveBeenCalled();
+        expect(db.select).not.toHaveBeenCalled();
+        expect(db.execute).not.toHaveBeenCalled();
     });
 
     it('never removes requested ids that are outside the active owner scope', async () => {
@@ -736,46 +735,24 @@ describe('imageRepo batch removal', () => {
             execute: vi.fn(),
         };
         getDbMock.mockResolvedValue(db);
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.removeImagesFromLibrary).mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                affectedIds: [visibleId],
+                notFoundIds: [hiddenId],
+                membershipWarningIds: [],
+                touchedResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+            },
+        });
 
         const { removeImagesFromLibrary } = await import('../imageRepo');
-        await removeImagesFromLibrary([visibleId, hiddenId]);
+        const result = await removeImagesFromLibrary([visibleId, hiddenId]);
 
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining('invoke_scope_hidden = 0'),
-            [visibleId, hiddenId]
-        );
-        const destructiveCalls = db.execute.mock.calls.filter(([sql]) =>
-            typeof sql === 'string' && sql.startsWith('DELETE FROM')
-        );
-        expect(destructiveCalls.length).toBeGreaterThan(0);
-        for (const [, params] of destructiveCalls) {
-            expect(params).toEqual([visibleId]);
-        }
-    });
-
-    it('skips thumbnail trashing when the thumbnail path is the source image path', async () => {
-        const db = {
-            select: vi.fn(),
-            execute: vi.fn(),
-        };
-        getDbMock.mockResolvedValue(db);
-
-        const { commands } = await import('../../../bindings');
-        vi.mocked(commands.moveToTrash).mockResolvedValue({ status: 'ok', data: null });
-        vi.mocked(commands.deleteThumbnail).mockResolvedValue({ status: 'ok', data: null });
-
-        const { deleteImageFromDisk, shouldTrashThumbnail } = await import('../imageRepo');
-
-        expect(shouldTrashThumbnail('C:/images/source.png', 'C:\\images\\source.png')).toBe(false);
-        expect(shouldTrashThumbnail('C:/images/source.png', 'C:/thumbs/source.webp')).toBe(true);
-        expect(shouldTrashThumbnail('C:/images/source.png', null)).toBe(false);
-        expect(shouldTrashThumbnail(null, 'C:/thumbs/source.webp')).toBe(true);
-
-        await deleteImageFromDisk('C:/images/source.png', 'C:/images/source.png', 'C:\\images\\source.png');
-
-        expect(commands.moveToTrash).toHaveBeenCalledWith('C:/images/source.png');
-        expect(commands.deleteThumbnail).not.toHaveBeenCalled();
-        expect(db.execute).toHaveBeenCalledWith('DELETE FROM images WHERE id = $1', ['C:/images/source.png']);
+        expect(result.affectedIds).toEqual([visibleId]);
+        expect(result.notFoundIds).toEqual([hiddenId]);
+        expect(db.select).not.toHaveBeenCalled();
+        expect(db.execute).not.toHaveBeenCalled();
     });
 
     it('inserts a single image and syncs its board membership', async () => {
@@ -1349,103 +1326,102 @@ describe('imageRepo batch removal', () => {
         };
         getDbMock.mockResolvedValue(db);
         const { commands } = await import('../../../bindings');
-        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+        vi.mocked(commands.restoreRemovedImages).mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                affectedIds: ['C:/removed/restore.png'],
+                notFoundIds: [],
+                membershipWarningIds: [],
+                touchedResources: { checkpoints: ['Checkpoint'], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: ['InvokeAI'] },
+            },
+        });
 
         const { restoreRemovedImages } = await import('../imageRepo');
-        await restoreRemovedImages(['C:/removed/restore.png']);
+        const result = await restoreRemovedImages(['C:/removed/restore.png']);
 
-        expect(commands.saveImagesBatch).toHaveBeenCalledTimes(1);
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining('invoke_scope_hidden = 0'),
-            ['C:/removed/restore.png']
-        );
-        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({
-                invokeImageName: 'restore.png',
-                invokeImageCategory: 'mask',
-                invokeImageOrigin: 'internal',
-            }),
-        ]);
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('INSERT OR IGNORE INTO collection_images'),
-            ['collection-a', 'C:/removed/restore.png', 'collection-a']
-        );
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('DELETE FROM removed_images WHERE id IN (?)'),
-            ['C:/removed/restore.png']
-        );
+        expect(result.affectedIds).toEqual(['C:/removed/restore.png']);
+        expect(commands.restoreRemovedImages).toHaveBeenCalledWith(['C:/removed/restore.png']);
+        expect(commands.saveImagesBatch).not.toHaveBeenCalled();
+        expect(db.select).not.toHaveBeenCalled();
+        expect(db.execute).not.toHaveBeenCalled();
     });
 
-    it('reports deleted, missing, and thumbnail-warning ids when permanently deleting tombstones', async () => {
-        const db = {
-            select: vi.fn(async () => [
-                {
-                    id: 'C:/removed/ok.png',
-                    path: 'C:/removed/ok.png',
-                    thumbnail_path: 'C:/thumbs/ok.webp',
-                },
-                {
-                    id: 'C:/removed/source-thumb.png',
-                    path: 'C:/removed/source-thumb.png',
-                    thumbnail_path: 'C:/removed/source-thumb.png',
-                },
-                {
-                    id: 'C:/removed/fail.png',
-                    path: 'C:/removed/fail.png',
-                    thumbnail_path: null,
-                },
-            ]),
-            execute: vi.fn(),
-        };
-        getDbMock.mockResolvedValue(db);
+    it('delegates explicit Removed deletion to the retry-safe native command', async () => {
         const { commands } = await import('../../../bindings');
-        vi.mocked(commands.moveToTrash)
-            .mockResolvedValueOnce({ status: 'ok', data: null })
-            .mockResolvedValueOnce({ status: 'ok', data: null })
-            .mockResolvedValueOnce({ status: 'error', error: 'trash failed' });
-        vi.mocked(commands.deleteThumbnail)
-            .mockResolvedValueOnce({ status: 'error', error: 'thumbnail failed' });
+        const nativeResult = {
+            clearedIds: ['C:/removed/ok.png', 'C:/removed/already-gone.png'],
+            trashedIds: ['C:/removed/ok.png'],
+            alreadyMissingIds: ['C:/removed/already-gone.png'],
+            failedIds: ['C:/removed/fail.png'],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: ['C:/removed/ok.png'],
+            notFoundIds: ['C:/removed/unknown.png'],
+        };
+        vi.mocked(commands.deleteRemovedImagesFromDisk).mockResolvedValue({ status: 'ok', data: nativeResult });
 
         const { deleteRemovedImagesFromDisk, deleteRemovedImageFromDisk } = await import('../imageRepo');
         await expect(deleteRemovedImagesFromDisk([])).resolves.toEqual({
-            deletedIds: [],
+            clearedIds: [],
+            trashedIds: [],
+            alreadyMissingIds: [],
             failedIds: [],
+            cleanupPendingIds: [],
             thumbnailWarningIds: [],
+            notFoundIds: [],
         });
+        expect(commands.deleteRemovedImagesFromDisk).not.toHaveBeenCalled();
 
-        const result = await deleteRemovedImagesFromDisk([
+        await expect(deleteRemovedImagesFromDisk([
             'C:/removed/ok.png',
-            'C:/removed/source-thumb.png',
+            'C:/removed/already-gone.png',
             'C:/removed/fail.png',
-            'C:/removed/missing.png',
+            'C:/removed/unknown.png',
+        ])).resolves.toEqual(nativeResult);
+        expect(commands.deleteRemovedImagesFromDisk).toHaveBeenCalledWith([
+            'C:/removed/ok.png',
+            'C:/removed/already-gone.png',
+            'C:/removed/fail.png',
+            'C:/removed/unknown.png',
         ]);
 
-        expect(result).toEqual({
-            deletedIds: ['C:/removed/ok.png', 'C:/removed/source-thumb.png'],
-            failedIds: ['C:/removed/fail.png', 'C:/removed/missing.png'],
-            thumbnailWarningIds: ['C:/removed/ok.png'],
-        });
-        expect(commands.deleteThumbnail).toHaveBeenCalledTimes(1);
-        expect(db.select).toHaveBeenCalledWith(
-            expect.stringContaining('invoke_scope_hidden = 0'),
-            [
-                'C:/removed/ok.png',
-                'C:/removed/source-thumb.png',
-                'C:/removed/fail.png',
-                'C:/removed/missing.png',
-            ]
-        );
-        expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('DELETE FROM removed_images WHERE id IN (?,?)'),
-            ['C:/removed/ok.png', 'C:/removed/source-thumb.png']
-        );
+        await deleteRemovedImageFromDisk('C:/removed/absent.png');
+        expect(commands.deleteRemovedImagesFromDisk).toHaveBeenLastCalledWith(['C:/removed/absent.png']);
+    });
 
-        db.select.mockResolvedValueOnce([]);
-        await expect(deleteRemovedImageFromDisk('C:/removed/absent.png')).resolves.toEqual({
-            deletedIds: [],
-            failedIds: ['C:/removed/absent.png'],
-            thumbnailWarningIds: [],
+    it('purges final deletions from the browser mock store', async () => {
+        browserMockModeMock.mockReturnValue(true);
+        getBrowserMockImagesMock.mockReturnValue([
+            { id: 'mock_1', isDeleted: true },
+            { id: 'mock_2', isDeleted: true },
+            { id: 'active', isDeleted: false },
+        ]);
+        const { commands } = await import('../../../bindings');
+        const { deleteRemovedImagesFromDisk } = await import('../imageRepo');
+
+        await expect(deleteRemovedImagesFromDisk(['mock_1', 'mock_1', 'mock_2', 'active', 'missing'])).resolves.toMatchObject({
+            clearedIds: ['mock_1', 'mock_2'],
+            trashedIds: ['mock_1', 'mock_2'],
+            notFoundIds: ['active', 'missing'],
         });
+
+        expect(deleteBrowserMockImagesMock).toHaveBeenCalledWith(['mock_1', 'mock_2']);
+        expect(commands.deleteRemovedImagesFromDisk).not.toHaveBeenCalled();
+    });
+
+    it('treats targeted facet refresh as a no-op in browser mock mode', async () => {
+        browserMockModeMock.mockReturnValue(true);
+        const { refreshFacetCacheForResourcesStrict } = await import('../imageRepo');
+
+        await expect(refreshFacetCacheForResourcesStrict({
+            checkpoints: ['Model'],
+            loras: [],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: [],
+            ipAdapters: [],
+            tools: [],
+        })).resolves.toBe(0);
+        expect(invokeMock).not.toHaveBeenCalled();
     });
 
     it('clears all thumbnail paths with retry and updates collection thumbnail caches only after changes', async () => {
@@ -1607,27 +1583,10 @@ describe('imageRepo batch removal', () => {
         await restoreRemovedImages(['C:/missing.png']);
         await restoreRemovedImages(['C:/removed/a.png']);
         await restoreRemovedImages(['C:/removed/bad.png']);
-        expect(console.warn).toHaveBeenCalledWith(
-            '[DB] Failed to restore collection membership for removed image',
-            'C:/removed/a.png',
-            expect.any(Error)
-        );
-    });
-
-    it('logs source and thumbnail trash failures while still deleting the database row', async () => {
-        const db = { select: vi.fn(), execute: vi.fn() };
-        getDbMock.mockResolvedValue(db);
-        const { commands } = await import('../../../bindings');
-        vi.mocked(commands.moveToTrash).mockResolvedValue({ status: 'error', error: 'trash failed' });
-        vi.mocked(commands.deleteThumbnail).mockResolvedValue({ status: 'error', error: 'thumb failed' });
-        vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-        const { deleteImageFromDisk } = await import('../imageRepo');
-
-        await deleteImageFromDisk('C:/image.png', 'C:/image.png', 'C:/thumb.webp');
-        expect(console.error).toHaveBeenCalledWith('[Repo] Failed to move file to trash:', 'C:/image.png', 'trash failed');
-        expect(console.warn).toHaveBeenCalledWith('[Repo] Failed to trash thumbnail:', 'C:/thumb.webp', 'thumb failed');
-        expect(db.execute).toHaveBeenCalledWith('DELETE FROM images WHERE id = $1', ['C:/image.png']);
+        const { commands: lifecycleCommands } = await import('../../../bindings');
+        expect(lifecycleCommands.removeImagesFromLibrary).toHaveBeenCalledWith(['C:/missing.png']);
+        expect(lifecycleCommands.restoreRemovedImages).toHaveBeenCalledTimes(3);
+        expect(console.warn).not.toHaveBeenCalled();
     });
 
     it('persists minimal images and browser path moves using default record values', async () => {
@@ -1697,7 +1656,7 @@ describe('imageRepo batch removal', () => {
         expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ?', [1, 'C:/a.png']);
     });
 
-    it('stores null-heavy tombstones without memberships and permanently deletes pathless rows', async () => {
+    it('passes null-heavy removal records to native lifecycle handling and deletes pathless tombstones', async () => {
         const tombstone = {
             id: 'C:/nulls.png', path: '', timestamp: 1,
             width: null, height: null, file_size: null, metadata_json: null,
@@ -1716,13 +1675,26 @@ describe('imageRepo batch removal', () => {
             execute: vi.fn()
         };
         getDbMock.mockResolvedValue(db);
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.deleteRemovedImagesFromDisk).mockResolvedValue({
+            status: 'ok',
+            data: {
+                clearedIds: [tombstone.id],
+                trashedIds: [],
+                alreadyMissingIds: [tombstone.id],
+                failedIds: [],
+                cleanupPendingIds: [],
+                thumbnailWarningIds: [],
+                notFoundIds: [],
+            },
+        });
         const { removeImagesFromLibrary, deleteRemovedImagesFromDisk } = await import('../imageRepo');
         await removeImagesFromLibrary([tombstone.id]);
-        const insert = db.execute.mock.calls.find(([sql]) => String(sql).includes('INSERT OR REPLACE INTO removed_images'));
-        expect(insert?.[1]).toEqual(expect.arrayContaining([null]));
+        expect(commands.removeImagesFromLibrary).toHaveBeenCalledWith([tombstone.id]);
+        expect(db.execute).not.toHaveBeenCalled();
 
         const result = await deleteRemovedImagesFromDisk([tombstone.id]);
-        expect(result).toEqual({ deletedIds: [tombstone.id], failedIds: [], thumbnailWarningIds: [] });
+        expect(result.clearedIds).toEqual([tombstone.id]);
     });
 
     it('maps nullable existing metadata fields and browser thumbnail batch defaults', async () => {
@@ -1773,7 +1745,7 @@ describe('imageRepo batch removal', () => {
         expect(records[1].userMasked).toBe(false);
     });
 
-    it('stores multiple memberships for one tombstone and reports all-trash-failed deletion batches', async () => {
+    it('delegates membership preservation natively and reports all-trash-failed deletion batches', async () => {
         const row = {
             id: 'C:/member.png', path: 'C:/member.png', width: 1, height: 1, file_size: 1,
             timestamp: 1, metadata_json: '{}', thumbnail_path: null, micro_thumbnail: null,
@@ -1799,15 +1771,26 @@ describe('imageRepo batch removal', () => {
         };
         getDbMock.mockResolvedValue(db);
         const { commands } = await import('../../../bindings');
-        vi.mocked(commands.moveToTrash).mockResolvedValue({ status: 'error', error: 'failed' });
+        vi.mocked(commands.deleteRemovedImagesFromDisk).mockResolvedValue({
+            status: 'ok',
+            data: {
+                clearedIds: [],
+                trashedIds: [],
+                alreadyMissingIds: [],
+                failedIds: [row.id],
+                cleanupPendingIds: [],
+                thumbnailWarningIds: [],
+                notFoundIds: [],
+            },
+        });
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { removeImagesFromLibrary, deleteRemovedImagesFromDisk } = await import('../imageRepo');
         await removeImagesFromLibrary([row.id]);
-        const tombstoneInsert = db.execute.mock.calls.find(([sql]) => String(sql).includes('INSERT OR REPLACE INTO removed_images'));
-        expect(tombstoneInsert?.[1]).toContain(JSON.stringify(['one', 'two']));
+        expect(commands.removeImagesFromLibrary).toHaveBeenCalledWith([row.id]);
+        expect(db.execute).not.toHaveBeenCalled();
 
         const result = await deleteRemovedImagesFromDisk([row.id]);
-        expect(result).toEqual({ deletedIds: [], failedIds: [row.id], thumbnailWarningIds: [] });
+        expect(result.failedIds).toEqual([row.id]);
     });
 
     it('handles string lock failures, repeated thumbnail failures, and truthy browser metadata fields', async () => {
@@ -1867,7 +1850,7 @@ describe('imageRepo batch removal', () => {
         vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
         const {
             insertImage, updateImageMetadataFields, revertImageMetadata,
-            getAllImages, getImageWithFullMetadata, deleteImageFromDisk
+            getAllImages, getImageWithFullMetadata
         } = await import('../imageRepo');
 
         await insertImage({
@@ -1885,7 +1868,6 @@ describe('imageRepo batch removal', () => {
         await expect(getAllImages(undefined, 0, true, true, false)).resolves.toHaveLength(1);
         await expect(getImageWithFullMetadata('C:/read.png')).resolves.toBeTruthy();
         await expect(getImageWithFullMetadata('C:/a1111.png')).resolves.toBeTruthy();
-        await deleteImageFromDisk('C:/no-path.png', '', null);
 
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('positive_prompt = ?'),

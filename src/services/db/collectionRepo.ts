@@ -1,4 +1,5 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { commands, type CollectionMembershipMutationResult } from '../../bindings';
 import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
@@ -7,6 +8,7 @@ import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
 import { buildSqlWhereClause } from '../../utils/sqlHelpers';
+import { unwrap } from '../../utils/spectaUtils';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -661,42 +663,67 @@ export const deleteCollectionFromDb = async (id: string) => {
     await db.execute('DELETE FROM collections WHERE id = ?', [id]);
 };
 
-export const addImagesToCollection = async (collectionId: string, imageIds: string[]) => {
+const browserMembershipResult = (
+    imageIds: string[],
+    sourceCollectionId: string | null,
+    targetCollectionId: string | null
+): CollectionMembershipMutationResult => ({
+    affectedIds: [...new Set(imageIds.map(normalizePath))],
+    sourceCollectionId,
+    targetCollectionId,
+});
+
+export const addImagesToCollection = async (
+    collectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         addBrowserMockImagesToCollection(collectionId, imageIds);
-        return;
+        return browserMembershipResult(imageIds, null, collectionId);
     }
 
-    return dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const now = Date.now();
-        for (const imgId of imageIds) {
-            await db.execute(
-                'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-                [collectionId, normalizePath(imgId)]
-            );
-        }
-        // Update collection timestamp
-        await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [now, collectionId]);
-        await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
-    });
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'add',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId: null,
+        targetCollectionId: collectionId,
+    }));
 };
 
-export const removeImagesFromCollection = async (collectionId: string, imageIds: string[]) => {
+export const removeImagesFromCollection = async (
+    collectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         removeBrowserMockImagesFromCollection(collectionId, imageIds);
-        return;
+        return browserMembershipResult(imageIds, collectionId, null);
     }
 
-    const db = await getDb();
-    const placeholders = imageIds.map(() => '?').join(',');
-    await db.execute(
-        `DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (${placeholders})`,
-        [collectionId, ...imageIds.map(normalizePath)]
-    );
-    // Update collection timestamp
-    await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [Date.now(), collectionId]);
-    await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'remove',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId: collectionId,
+        targetCollectionId: null,
+    }));
+};
+
+export const moveImagesBetweenCollections = async (
+    sourceCollectionId: string,
+    targetCollectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
+    if (isBrowserMockMode()) {
+        removeBrowserMockImagesFromCollection(sourceCollectionId, imageIds);
+        addBrowserMockImagesToCollection(targetCollectionId, imageIds);
+        return browserMembershipResult(imageIds, sourceCollectionId, targetCollectionId);
+    }
+
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'move',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId,
+        targetCollectionId,
+    }));
 };
 
 export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {

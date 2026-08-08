@@ -19,6 +19,16 @@ const browserMocks = vi.hoisted(() => ({
     upsertBrowserMockCollection: vi.fn(),
 }));
 
+const bindingMocks = vi.hoisted(() => ({
+    mutateCollectionMembership: vi.fn(),
+}));
+
+vi.mock('../../../bindings', () => ({
+    commands: {
+        mutateCollectionMembership: bindingMocks.mutateCollectionMembership,
+    },
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
 }));
@@ -99,6 +109,18 @@ const resetRepoMocks = () => {
     browserMocks.isBrowserMockMode.mockReturnValue(false);
     browserMocks.getBrowserMockCollections.mockReturnValue([]);
     browserMocks.getBrowserMockImages.mockReturnValue([]);
+    bindingMocks.mutateCollectionMembership.mockImplementation(async (input: {
+        imageIds: string[];
+        sourceCollectionId: string | null;
+        targetCollectionId: string | null;
+    }) => ({
+        status: 'ok',
+        data: {
+            affectedIds: input.imageIds,
+            sourceCollectionId: input.sourceCollectionId,
+            targetCollectionId: input.targetCollectionId,
+        },
+    }));
     dbMocks.execute.mockResolvedValue(undefined);
     dbMocks.getDb.mockResolvedValue({ select: dbMocks.select, execute: dbMocks.execute });
 };
@@ -792,8 +814,8 @@ describe('collectionRepo membership helpers', () => {
         await expect(setCollectionCustomThumbnail('c1', null)).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('missing', 'img-1')).rejects.toThrow('Collection not found: missing');
         await expect(deleteCollectionFromDb('c1')).resolves.toBeUndefined();
-        await expect(addImagesToCollection('c1', ['img-2'])).resolves.toBeUndefined();
-        await expect(removeImagesFromCollection('c1', ['img-1'])).resolves.toBeUndefined();
+        await expect(addImagesToCollection('c1', ['img-2'])).resolves.toMatchObject({ affectedIds: ['img-2'] });
+        await expect(removeImagesFromCollection('c1', ['img-1'])).resolves.toMatchObject({ affectedIds: ['img-1'] });
         await expect(getAllCollectionsWithStats()).resolves.toEqual(collections);
         await expect(getCollectionThumbnailSummaries([
             makeCollection({ id: 'c1' }),
@@ -1054,38 +1076,32 @@ describe('collectionRepo membership helpers', () => {
         errorSpy.mockRestore();
     });
 
-    it('adds images to a collection, updates recency, and clears stale dynamic thumbnails', async () => {
+    it('delegates collection additions to the atomic native mutation', async () => {
         const { addImagesToCollection } = await import('../collectionRepo');
 
         await addImagesToCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-            ['c1', 'C:/images/a.png']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'UPDATE collections SET updated_at = ? WHERE id = ?',
-            [expect.any(Number), 'c1']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path = NULL'),
-            ['c1']
-        );
+        expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
+            operation: 'add',
+            imageIds: ['C:/images/a.png', 'C:/images/b.png'],
+            sourceCollectionId: null,
+            targetCollectionId: 'c1',
+        });
+        expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
-    it('removes images from a collection with normalized image ids', async () => {
+    it('delegates collection removals to the atomic native mutation', async () => {
         const { removeImagesFromCollection } = await import('../collectionRepo');
 
         await removeImagesFromCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (?,?)',
-            ['c1', 'C:/images/a.png', 'C:/images/b.png']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path = NULL'),
-            ['c1']
-        );
+        expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
+            operation: 'remove',
+            imageIds: ['C:/images/a.png', 'C:/images/b.png'],
+            sourceCollectionId: 'c1',
+            targetCollectionId: null,
+        });
+        expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
     it('selects the best collection thumbnail across query batches with pinned images first', async () => {

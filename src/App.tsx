@@ -996,10 +996,13 @@ export default function App() {
                     setExportIds(new Set());
                 }}
                 onDeleteConfirm={actions.executeDelete}
-                onDeleteCollectionConfirm={() => {
-                    if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
-                    modals.closeModal('deleteCollection');
-                    modals.setCollectionToDelete(null);
+                onDeleteCollectionConfirm={async () => {
+                    if (!modals.collectionToDelete) return;
+                    const deleted = await colOps.deleteCollection(modals.collectionToDelete);
+                    if (deleted) {
+                        modals.closeModal('deleteCollection');
+                        modals.setCollectionToDelete(null);
+                    }
                 }}
                 onRecoverMetadata={actions.executeMetadataRecovery}
                 onCollectionAction={async (ids, targetId, mode, sourceId) => {

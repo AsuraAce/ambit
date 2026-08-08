@@ -6,15 +6,13 @@ import { useToast } from './useToast';
 import { imageToBase64 } from '../services/imageService';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
-import { urlToPath } from '../utils/pathUtils';
 import {
-    deleteImageFromDisk,
     getImagesByIds,
-    rebuildFacetCache,
+    refreshFacetCacheForResourcesStrict,
     removeImagesFromLibrary,
     updateImageMetadataFields,
 } from '../services/db/imageRepo';
-import { updateImagesQueryCaches } from '../utils/imageQueryCache';
+import { removeImagesFromQueryCaches, updateImagesQueryCaches } from '../utils/imageQueryCache';
 import {
     getEffectiveAiModel,
     getEffectiveAiThinkingMode,
@@ -46,47 +44,42 @@ export const useMaintenanceOps = ({
     const effectiveAiThinkingMode = getEffectiveAiThinkingMode(settings);
     const effectiveSystemPrompts = getEffectiveSystemPrompts(settings);
 
-    const deleteImages = useCallback(async (ids: string[], permanent = false) => {
-        const logPrefix = permanent ? '[MaintenanceOps] deleteFiles' : '[MaintenanceOps] removeFromLibrary';
+    const deleteImages = useCallback(async (ids: string[]): Promise<boolean> => {
+        const logPrefix = '[MaintenanceOps] removeFromLibrary';
         let rebuildSucceeded = false;
 
         try {
-            if (permanent) {
-                console.info(`${logPrefix}: fetching images`, { count: ids.length });
-                const imagesToDelete = await getImagesByIds(ids);
-                for (const img of imagesToDelete) {
-                    const path = img.id;
-                    const thumbnailPath = img.thumbnailUrl ? urlToPath(img.thumbnailUrl) : null;
-                    console.info(`${logPrefix}: deleting file`, { id: img.id });
-                    await deleteImageFromDisk(img.id, path, thumbnailPath);
-                }
-                setImages(prev => prev.filter(img => !ids.includes(img.id)));
-                addToast(`Moved ${ids.length} file${ids.length === 1 ? '' : 's'} to OS trash`, 'success');
-            } else {
-                console.info(`${logPrefix}: tombstoning images`, { count: ids.length });
-                await removeImagesFromLibrary(ids);
-                setImages(prev => prev.filter(img => !ids.includes(img.id)));
-                addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
-            }
-
-            if (!permanent) {
-                try {
-                    console.info(`${logPrefix}: refreshing collections`);
-                    await refreshCollections();
-                } catch (collectionRefreshError) {
-                    console.error(`${logPrefix}: collection refresh failed`, collectionRefreshError);
-                    addToast('Removed from library, but collections may need a refresh.', 'warning');
-                }
-            }
-
-            await invalidateInvokeReferenceQueries(queryClient);
+            console.info(`${logPrefix}: tombstoning images`, { count: ids.length });
+            const result = await removeImagesFromLibrary(ids);
+            const affectedIds = new Set(result.affectedIds);
+            setImages(prev => prev.filter(img => !affectedIds.has(img.id)));
+            removeImagesFromQueryCaches(queryClient, affectedIds);
+            addToast(`Removed ${affectedIds.size} image${affectedIds.size === 1 ? '' : 's'} from the library`, 'success');
 
             try {
-                console.info(`${logPrefix}: rebuilding facet cache`);
-                await rebuildFacetCache();
+                console.info(`${logPrefix}: refreshing collections`);
+                await refreshCollections();
+            } catch (collectionRefreshError) {
+                console.error(`${logPrefix}: collection refresh failed`, collectionRefreshError);
+                addToast('Removed from library, but collections may need a refresh.', 'warning');
+            }
+
+            try {
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['images'] }),
+                    invalidateInvokeReferenceQueries(queryClient),
+                ]);
+            } catch (queryRefreshError) {
+                console.error(`${logPrefix}: dependent view refresh failed`, queryRefreshError);
+                addToast('Removed from library, but some views may need a refresh.', 'warning');
+            }
+
+            try {
+                console.info(`${logPrefix}: refreshing affected facet resources`);
+                await refreshFacetCacheForResourcesStrict(result.touchedResources);
                 rebuildSucceeded = true;
             } catch (facetError) {
-                console.error(`${logPrefix}: facet rebuild failed`, facetError);
+                console.error(`${logPrefix}: facet refresh failed`, facetError);
             }
 
             if (rebuildSucceeded) {
@@ -94,9 +87,11 @@ export const useMaintenanceOps = ({
             } else {
                 addToast('Library update succeeded, but filters may take a moment to refresh.', 'info');
             }
+            return true;
         } catch (e) {
             console.error(`${logPrefix}: mutation failed`, e);
             addToast("Failed to update library state", "error");
+            return false;
         }
     }, [setImages, addToast, refreshCollections, incrementFacetCacheVersion, queryClient]);
 
