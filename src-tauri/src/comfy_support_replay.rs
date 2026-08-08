@@ -1,6 +1,7 @@
 use crate::metadata::comfyui::{build_comfyui_diagnostics_report, ComfyParserDiagnosticsReport};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 pub const COMFY_SUPPORT_BUNDLE_MAX_BYTES: usize = 64 * 1024 * 1024;
 const SUPPORT_BUNDLE_SCHEMA_VERSION: u32 = 1;
@@ -35,7 +36,28 @@ struct ReplayReport {
     chunk_lengths: BTreeMap<String, usize>,
     recorded_diagnostics: ComfyParserDiagnosticsReport,
     current_diagnostics: ComfyParserDiagnosticsReport,
+    difference_count: usize,
+    differences: Vec<ReplayDifference>,
     parser_output_matches: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayDifference {
+    path: String,
+    kind: ReplayDifferenceKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recorded: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ReplayDifferenceKind {
+    Added,
+    Removed,
+    Changed,
 }
 
 pub fn replay_comfyui_support_bundle(input: &[u8]) -> Result<(String, bool), String> {
@@ -68,7 +90,9 @@ fn replay_comfyui_support_bundle_with_limit(
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     let current_diagnostics = build_comfyui_diagnostics_report(&chunks);
-    let parser_output_matches = diagnostics_match(&bundle.diagnostics, &current_diagnostics);
+    let differences = diagnostics_differences(&bundle.diagnostics, &current_diagnostics)?;
+    let difference_count = differences.len();
+    let parser_output_matches = differences.is_empty();
     let report = ReplayReport {
         support_bundle_schema_version: bundle.schema_version,
         image: bundle.image,
@@ -76,6 +100,8 @@ fn replay_comfyui_support_bundle_with_limit(
         chunk_lengths: bundle.chunk_lengths,
         recorded_diagnostics: bundle.diagnostics,
         current_diagnostics,
+        difference_count,
+        differences,
         parser_output_matches,
     };
     let output = serde_json::to_string_pretty(&report)
@@ -119,17 +145,76 @@ fn validate_bundle(bundle: &SupportBundle) -> Result<(), String> {
     Ok(())
 }
 
-fn diagnostics_match(
+fn diagnostics_differences(
     recorded: &ComfyParserDiagnosticsReport,
     current: &ComfyParserDiagnosticsReport,
-) -> bool {
+) -> Result<Vec<ReplayDifference>, String> {
     let mut recorded = recorded.clone();
     let mut current = current.clone();
     recorded.app_version.clear();
     recorded.parser_version = 0;
     current.app_version.clear();
     current.parser_version = 0;
-    recorded == current
+
+    let recorded = serde_json::to_value(recorded)
+        .map_err(|_| "Failed to compare recorded diagnostics".to_string())?;
+    let current = serde_json::to_value(current)
+        .map_err(|_| "Failed to compare current diagnostics".to_string())?;
+    let mut differences = Vec::new();
+    collect_differences("", &recorded, &current, &mut differences);
+    Ok(differences)
+}
+
+fn collect_differences(
+    path: &str,
+    recorded: &Value,
+    current: &Value,
+    differences: &mut Vec<ReplayDifference>,
+) {
+    if recorded == current {
+        return;
+    }
+
+    if let (Value::Object(recorded), Value::Object(current)) = (recorded, current) {
+        let keys: BTreeSet<&str> = recorded
+            .keys()
+            .chain(current.keys())
+            .map(String::as_str)
+            .collect();
+        for key in keys {
+            let child_path = format!("{path}/{}", escape_json_pointer_token(key));
+            match (recorded.get(key), current.get(key)) {
+                (Some(recorded), Some(current)) => {
+                    collect_differences(&child_path, recorded, current, differences);
+                }
+                (Some(recorded), None) => differences.push(ReplayDifference {
+                    path: child_path,
+                    kind: ReplayDifferenceKind::Removed,
+                    recorded: Some(recorded.clone()),
+                    current: None,
+                }),
+                (None, Some(current)) => differences.push(ReplayDifference {
+                    path: child_path,
+                    kind: ReplayDifferenceKind::Added,
+                    recorded: None,
+                    current: Some(current.clone()),
+                }),
+                (None, None) => unreachable!(),
+            }
+        }
+        return;
+    }
+
+    differences.push(ReplayDifference {
+        path: path.to_string(),
+        kind: ReplayDifferenceKind::Changed,
+        recorded: Some(recorded.clone()),
+        current: Some(current.clone()),
+    });
+}
+
+fn escape_json_pointer_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
 }
 
 #[cfg(test)]
@@ -188,6 +273,8 @@ mod tests {
         assert!(!first.contains("DO_NOT_PRINT_PRIVATE_CHUNK_BODY"));
         let report: Value = serde_json::from_str(&first).unwrap();
         assert_eq!(report["parserOutputMatches"], true);
+        assert_eq!(report["differenceCount"], 0);
+        assert_eq!(report["differences"], json!([]));
         assert_eq!(
             report["chunkKeys"],
             json!(["privateRaw", "prompt", "workflow"])
@@ -197,6 +284,7 @@ mod tests {
     #[test]
     fn diagnostic_drift_is_reported_without_rejecting_the_bundle() {
         let mut bundle = bundle_value(minimal_chunks());
+        let current_model = bundle["diagnostics"]["metadata"]["model"].clone();
         bundle["diagnostics"]["metadata"]["model"] = json!("recorded_model");
         let input = serde_json::to_vec(&bundle).unwrap();
 
@@ -205,6 +293,16 @@ mod tests {
         assert!(!matches);
         let report: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(report["parserOutputMatches"], false);
+        assert_eq!(report["differenceCount"], 1);
+        assert_eq!(
+            report["differences"],
+            json!([{
+                "path": "/metadata/model",
+                "kind": "changed",
+                "recorded": "recorded_model",
+                "current": current_model
+            }])
+        );
         assert_eq!(
             report["recordedDiagnostics"]["metadata"]["model"],
             "recorded_model"
@@ -220,9 +318,79 @@ mod tests {
         bundle["diagnostics"]["parserVersion"] = json!(12);
         let input = serde_json::to_vec(&bundle).unwrap();
 
-        let (_, matches) = replay_comfyui_support_bundle(&input).unwrap();
+        let (output, matches) = replay_comfyui_support_bundle(&input).unwrap();
 
         assert!(matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["differenceCount"], 0);
+        assert_eq!(report["differences"], json!([]));
+    }
+
+    #[test]
+    fn object_entries_use_added_removed_and_escaped_paths() {
+        let recorded = json!({
+            "fieldSources": {
+                "removed/key~": "flat_parameters"
+            }
+        });
+        let current = json!({
+            "fieldSources": {
+                "added/key~": "sampler_traversal"
+            }
+        });
+        let mut differences = Vec::new();
+
+        collect_differences("", &recorded, &current, &mut differences);
+
+        assert_eq!(
+            differences,
+            vec![
+                ReplayDifference {
+                    path: "/fieldSources/added~1key~0".to_string(),
+                    kind: ReplayDifferenceKind::Added,
+                    recorded: None,
+                    current: Some(json!("sampler_traversal")),
+                },
+                ReplayDifference {
+                    path: "/fieldSources/removed~1key~0".to_string(),
+                    kind: ReplayDifferenceKind::Removed,
+                    recorded: Some(json!("flat_parameters")),
+                    current: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn arrays_are_reported_atomically_in_deterministic_path_order() {
+        let recorded = json!({
+            "metadata": { "loras": ["old"] },
+            "traversalIssues": [{ "reason": "unsupported_node" }]
+        });
+        let current = json!({
+            "metadata": { "loras": ["new"] },
+            "traversalIssues": [{ "reason": "cycle_detected" }]
+        });
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+
+        collect_differences("", &recorded, &current, &mut first);
+        collect_differences("", &recorded, &current, &mut second);
+
+        assert_eq!(first, second);
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[0].path, "/metadata/loras");
+        assert_eq!(first[0].recorded, Some(json!(["old"])));
+        assert_eq!(first[0].current, Some(json!(["new"])));
+        assert_eq!(first[1].path, "/traversalIssues");
+        assert_eq!(
+            first[1].recorded,
+            Some(json!([{ "reason": "unsupported_node" }]))
+        );
+        assert_eq!(
+            first[1].current,
+            Some(json!([{ "reason": "cycle_detected" }]))
+        );
     }
 
     #[test]
