@@ -12,8 +12,19 @@ const EXIT_MISMATCH: u8 = 2;
 #[derive(Debug)]
 enum ParsedArgs {
     Help,
-    Inspect { path: PathBuf, verify: bool },
-    Prepare { path: PathBuf, output: PathBuf },
+    Inspect {
+        path: PathBuf,
+        verify: bool,
+    },
+    Prepare {
+        path: PathBuf,
+        output: PathBuf,
+    },
+    InspectFixture {
+        path: PathBuf,
+        compare_support: Option<PathBuf>,
+        verify: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -27,21 +38,24 @@ fn main() -> ExitCode {
         app_lib::COMFY_SUPPORT_BUNDLE_MAX_BYTES,
         app_lib::replay_comfyui_support_bundle,
         app_lib::prepare_comfyui_fixture_candidate,
+        app_lib::inspect_comfyui_fixture_candidate,
     );
     ExitCode::from(code)
 }
 
-fn run<F, G>(
+fn run<F, G, H>(
     args: Vec<OsString>,
     stdout: &mut impl Write,
     stderr: &mut impl Write,
     max_bytes: usize,
     replay: F,
     prepare: G,
+    inspect_fixture: H,
 ) -> u8
 where
     F: Fn(&[u8]) -> Result<(String, bool), String>,
     G: Fn(&[u8]) -> Result<Vec<u8>, String>,
+    H: Fn(&[u8], Option<&[u8]>) -> Result<(String, bool), String>,
 {
     let parsed = match parse_args(args) {
         Ok(parsed) => parsed,
@@ -59,9 +73,24 @@ where
         }
         ParsedArgs::Inspect { path, verify } => (path, RunMode::Inspect { verify }),
         ParsedArgs::Prepare { path, output } => (path, RunMode::Prepare { output }),
+        ParsedArgs::InspectFixture {
+            path,
+            compare_support,
+            verify,
+        } => (
+            path,
+            RunMode::InspectFixture {
+                compare_support,
+                verify,
+            },
+        ),
     };
 
-    let input = match read_bounded(&path, max_bytes) {
+    let input_kind = match &mode {
+        RunMode::InspectFixture { .. } => "fixture candidate",
+        _ => "support bundle",
+    };
+    let input = match read_bounded(&path, max_bytes, input_kind) {
         Ok(input) => input,
         Err(error) => {
             let _ = writeln!(stderr, "error: {error}");
@@ -107,23 +136,67 @@ where
                 return EXIT_ERROR;
             }
         }
+        RunMode::InspectFixture {
+            compare_support,
+            verify,
+        } => {
+            let support_input = match compare_support {
+                Some(path) => match read_bounded(&path, max_bytes, "support bundle") {
+                    Ok(input) => Some(input),
+                    Err(error) => {
+                        let _ = writeln!(stderr, "error: {error}");
+                        return EXIT_ERROR;
+                    }
+                },
+                None => None,
+            };
+            let (report, matches) = match inspect_fixture(&input, support_input.as_deref()) {
+                Ok(result) => result,
+                Err(error) => {
+                    let _ = writeln!(stderr, "error: {error}");
+                    return EXIT_ERROR;
+                }
+            };
+            if writeln!(stdout, "{report}").is_err() {
+                let _ = writeln!(stderr, "error: failed to write fixture candidate report");
+                return EXIT_ERROR;
+            }
+            if verify && !matches {
+                let _ = writeln!(
+                    stderr,
+                    "error: fixture candidate output does not match the support bundle"
+                );
+                return EXIT_MISMATCH;
+            }
+        }
     }
 
     EXIT_OK
 }
 
 enum RunMode {
-    Inspect { verify: bool },
-    Prepare { output: PathBuf },
+    Inspect {
+        verify: bool,
+    },
+    Prepare {
+        output: PathBuf,
+    },
+    InspectFixture {
+        compare_support: Option<PathBuf>,
+        verify: bool,
+    },
 }
 
 fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
     let mut paths = Vec::new();
     let mut verify = false;
     let mut prepare = false;
+    let mut inspect_fixture = false;
     let mut acknowledged = false;
+    let mut compare_support = None;
+    let mut args = args.into_iter();
 
-    for arg in args {
+    while let Some(arg) = args.next() {
         // pnpm forwards the documented script separator to the child command.
         if arg == "--" {
             continue;
@@ -145,6 +218,29 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
             prepare = true;
             continue;
         }
+        if arg == "--inspect-fixture" {
+            if inspect_fixture {
+                return Err("--inspect-fixture may only be supplied once".to_string());
+            }
+            inspect_fixture = true;
+            continue;
+        }
+        if arg == "--compare-support" {
+            if compare_support.is_some() {
+                return Err("--compare-support may only be supplied once".to_string());
+            }
+            let path = args
+                .next()
+                .filter(|value| {
+                    !value
+                        .to_str()
+                        .map(|value| value.starts_with('-'))
+                        .unwrap_or(false)
+                })
+                .ok_or_else(|| "--compare-support requires a bundle path".to_string())?;
+            compare_support = Some(PathBuf::from(path));
+            continue;
+        }
         if arg == "--acknowledge-sensitive-data" {
             if acknowledged {
                 return Err("--acknowledge-sensitive-data may only be supplied once".to_string());
@@ -162,9 +258,15 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
         paths.push(PathBuf::from(arg));
     }
 
+    if prepare && inspect_fixture {
+        return Err("--prepare-fixture cannot be combined with --inspect-fixture".to_string());
+    }
     if prepare {
         if verify {
             return Err("--verify cannot be combined with --prepare-fixture".to_string());
+        }
+        if compare_support.is_some() {
+            return Err("--compare-support cannot be combined with --prepare-fixture".to_string());
         }
         if !acknowledged {
             return Err("--prepare-fixture requires --acknowledge-sensitive-data".to_string());
@@ -180,8 +282,35 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
         return Ok(ParsedArgs::Prepare { path, output });
     }
 
+    if inspect_fixture {
+        if acknowledged {
+            return Err(
+                "--acknowledge-sensitive-data cannot be combined with --inspect-fixture"
+                    .to_string(),
+            );
+        }
+        if verify && compare_support.is_none() {
+            return Err("fixture --verify requires --compare-support".to_string());
+        }
+        if paths.len() != 1 {
+            return Err("fixture inspection requires exactly one candidate path".to_string());
+        }
+        let path = paths.pop().unwrap();
+        if !has_chunks_json_suffix(&path) {
+            return Err("fixture candidate must end with .chunks.json".to_string());
+        }
+        return Ok(ParsedArgs::InspectFixture {
+            path,
+            compare_support,
+            verify,
+        });
+    }
+
     if acknowledged {
         return Err("--acknowledge-sensitive-data requires --prepare-fixture".to_string());
+    }
+    if compare_support.is_some() {
+        return Err("--compare-support requires --inspect-fixture".to_string());
     }
     if paths.len() != 1 {
         return Err("exactly one support bundle path is required".to_string());
@@ -199,29 +328,29 @@ fn has_chunks_json_suffix(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn read_bounded(path: &Path, max_bytes: usize) -> Result<Vec<u8>, String> {
+fn read_bounded(path: &Path, max_bytes: usize, input_kind: &str) -> Result<Vec<u8>, String> {
     let metadata = path
         .metadata()
-        .map_err(|_| "unable to read support bundle metadata".to_string())?;
+        .map_err(|_| format!("unable to read {input_kind} metadata"))?;
     if metadata.len() > max_bytes as u64 {
-        return Err(size_limit_message(max_bytes));
+        return Err(size_limit_message(max_bytes, input_kind));
     }
 
-    let file = File::open(path).map_err(|_| "unable to open support bundle".to_string())?;
+    let file = File::open(path).map_err(|_| format!("unable to open {input_kind}"))?;
     let mut input = Vec::with_capacity(metadata.len() as usize);
     file.take(max_bytes as u64 + 1)
         .read_to_end(&mut input)
-        .map_err(|_| "unable to read support bundle".to_string())?;
+        .map_err(|_| format!("unable to read {input_kind}"))?;
     if input.len() > max_bytes {
-        return Err(size_limit_message(max_bytes));
+        return Err(size_limit_message(max_bytes, input_kind));
     }
 
     Ok(input)
 }
 
-fn size_limit_message(max_bytes: usize) -> String {
+fn size_limit_message(max_bytes: usize, input_kind: &str) -> String {
     format!(
-        "support bundle exceeds the {} MiB size limit",
+        "{input_kind} exceeds the {} MiB size limit",
         max_bytes / (1024 * 1024)
     )
 }
@@ -259,7 +388,7 @@ where
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  pnpm run inspect:comfyui-support -- <bundle-path> [--verify]\n  pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data"
+    "Usage:\n  pnpm run inspect:comfyui-support -- <bundle-path> [--verify]\n  pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data\n  pnpm run inspect:comfyui-fixture -- <candidate.chunks.json> [--compare-support <bundle-path>] [--verify]"
 }
 
 #[cfg(test)]
@@ -282,12 +411,37 @@ mod tests {
         path
     }
 
+    fn temp_chunks_file(name: &str, contents: &[u8]) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = env::temp_dir().join(format!(
+            "ambit_comfy_fixture_{name}_{}_{}.chunks.json",
+            std::process::id(),
+            nonce
+        ));
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
     fn fake_replay(matches: bool) -> impl Fn(&[u8]) -> Result<(String, bool), String> {
         move |_| Ok((format!(r#"{{"parserOutputMatches":{matches}}}"#), matches))
     }
 
     fn fake_prepare(contents: &'static [u8]) -> impl Fn(&[u8]) -> Result<Vec<u8>, String> {
         move |_| Ok(contents.to_vec())
+    }
+
+    fn fake_fixture_inspect(
+        matches: bool,
+    ) -> impl Fn(&[u8], Option<&[u8]>) -> Result<(String, bool), String> {
+        move |_, _| {
+            Ok((
+                format!(r#"{{"candidateOutputMatchesSupport":{matches}}}"#),
+                matches,
+            ))
+        }
     }
 
     #[test]
@@ -303,6 +457,7 @@ mod tests {
             1024,
             fake_replay(false),
             fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_OK);
@@ -326,6 +481,7 @@ mod tests {
             1024,
             fake_replay(false),
             fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_MISMATCH);
@@ -351,6 +507,7 @@ mod tests {
             1024,
             fake_replay(true),
             fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_OK);
@@ -369,7 +526,8 @@ mod tests {
                 &mut stderr,
                 1024,
                 fake_replay(true),
-                fake_prepare(b"{}\n")
+                fake_prepare(b"{}\n"),
+                fake_fixture_inspect(true)
             ),
             EXIT_OK
         );
@@ -384,7 +542,8 @@ mod tests {
                 &mut stderr,
                 1024,
                 fake_replay(true),
-                fake_prepare(b"{}\n")
+                fake_prepare(b"{}\n"),
+                fake_fixture_inspect(true)
             ),
             EXIT_ERROR
         );
@@ -400,7 +559,8 @@ mod tests {
                 &mut stderr,
                 1024,
                 fake_replay(true),
-                fake_prepare(b"{}\n")
+                fake_prepare(b"{}\n"),
+                fake_fixture_inspect(true)
             ),
             EXIT_ERROR
         );
@@ -415,7 +575,8 @@ mod tests {
                 &mut stderr,
                 3,
                 fake_replay(true),
-                fake_prepare(b"{}\n")
+                fake_prepare(b"{}\n"),
+                fake_fixture_inspect(true)
             ),
             EXIT_ERROR
         );
@@ -436,6 +597,7 @@ mod tests {
             1024,
             |_| Err("invalid bundle".to_string()),
             fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_ERROR);
@@ -510,6 +672,7 @@ mod tests {
             1024,
             fake_replay(true),
             fake_prepare(candidate),
+            fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_OK);
@@ -547,5 +710,119 @@ mod tests {
         .unwrap_err();
         assert_eq!(error, "failed to write fixture candidate");
         assert!(!partial.exists());
+    }
+
+    #[test]
+    fn fixture_inspection_arguments_require_a_candidate_and_comparison_for_verify() {
+        assert!(matches!(
+            parse_args(vec![
+                "--inspect-fixture".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap(),
+            ParsedArgs::InspectFixture {
+                compare_support: None,
+                verify: false,
+                ..
+            }
+        ));
+        assert_eq!(
+            parse_args(vec![
+                "--inspect-fixture".into(),
+                "candidate.chunks.json".into(),
+                "--verify".into(),
+            ])
+            .unwrap_err(),
+            "fixture --verify requires --compare-support"
+        );
+        assert_eq!(
+            parse_args(vec!["--inspect-fixture".into(), "candidate.json".into()]).unwrap_err(),
+            "fixture candidate must end with .chunks.json"
+        );
+        assert_eq!(
+            parse_args(vec![
+                "--compare-support".into(),
+                "bundle.json".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap_err(),
+            "--compare-support requires --inspect-fixture"
+        );
+        assert!(matches!(
+            parse_args(vec![
+                "--inspect-fixture".into(),
+                "candidate.chunks.json".into(),
+                "--compare-support".into(),
+                "bundle.json".into(),
+                "--verify".into(),
+            ])
+            .unwrap(),
+            ParsedArgs::InspectFixture {
+                compare_support: Some(_),
+                verify: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn fixture_inspection_reports_candidate_without_writing_or_echoing_raw_input() {
+        let candidate = temp_chunks_file("inspect", b"PRIVATE_RAW_CANDIDATE");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = run(
+            vec![
+                "--inspect-fixture".into(),
+                candidate.clone().into_os_string(),
+            ],
+            &mut stdout,
+            &mut stderr,
+            1024,
+            fake_replay(true),
+            fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
+        );
+
+        assert_eq!(code, EXIT_OK);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains(r#""candidateOutputMatchesSupport":true"#));
+        assert!(!stdout.contains("PRIVATE_RAW_CANDIDATE"));
+        assert!(stderr.is_empty());
+        let _ = fs::remove_file(candidate);
+    }
+
+    #[test]
+    fn fixture_verify_uses_exit_two_for_support_drift() {
+        let candidate = temp_chunks_file("verify", b"PRIVATE_CANDIDATE");
+        let support = temp_file("fixture_support", b"PRIVATE_SUPPORT");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = run(
+            vec![
+                "--inspect-fixture".into(),
+                candidate.clone().into_os_string(),
+                "--compare-support".into(),
+                support.clone().into_os_string(),
+                "--verify".into(),
+            ],
+            &mut stdout,
+            &mut stderr,
+            1024,
+            fake_replay(true),
+            fake_prepare(b"{}\n"),
+            fake_fixture_inspect(false),
+        );
+
+        assert_eq!(code, EXIT_MISMATCH);
+        assert!(String::from_utf8(stderr)
+            .unwrap()
+            .contains("fixture candidate output does not match"));
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(!stdout.contains("PRIVATE_CANDIDATE"));
+        assert!(!stdout.contains("PRIVATE_SUPPORT"));
+        let _ = fs::remove_file(candidate);
+        let _ = fs::remove_file(support);
     }
 }

@@ -1,10 +1,14 @@
 use crate::metadata::comfyui::{build_comfyui_diagnostics_report, ComfyParserDiagnosticsReport};
+use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fmt;
 
 pub const COMFY_SUPPORT_BUNDLE_MAX_BYTES: usize = 64 * 1024 * 1024;
 const SUPPORT_BUNDLE_SCHEMA_VERSION: u32 = 1;
+const FIXTURE_CANDIDATE_REPORT_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +31,41 @@ struct SupportBundle {
     chunks: BTreeMap<String, String>,
 }
 
+struct FixtureChunks(BTreeMap<String, String>);
+
+impl<'de> Deserialize<'de> for FixtureChunks {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FixtureChunksVisitor;
+
+        impl<'de> Visitor<'de> for FixtureChunksVisitor {
+            type Value = FixtureChunks;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a JSON object containing unique string chunk values")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut chunks = BTreeMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if chunks.contains_key(&key) {
+                        return Err(serde::de::Error::custom("duplicate metadata chunk key"));
+                    }
+                    chunks.insert(key, map.next_value::<String>()?);
+                }
+                Ok(FixtureChunks(chunks))
+            }
+        }
+
+        deserializer.deserialize_map(FixtureChunksVisitor)
+    }
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ReplayReport {
@@ -39,6 +78,38 @@ struct ReplayReport {
     difference_count: usize,
     differences: Vec<ReplayDifference>,
     parser_output_matches: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixtureCandidateReport {
+    fixture_candidate_report_version: u32,
+    candidate_sha256: String,
+    chunk_keys: Vec<String>,
+    chunk_lengths: BTreeMap<String, usize>,
+    current_diagnostics: ComfyParserDiagnosticsReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_comparison: Option<FixtureCandidateComparison>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixtureCandidateComparison {
+    support_bundle_schema_version: u32,
+    difference_count: usize,
+    differences: Vec<FixtureCandidateDifference>,
+    candidate_output_matches_support: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FixtureCandidateDifference {
+    path: String,
+    kind: ReplayDifferenceKind,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    support: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    candidate: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -66,6 +137,17 @@ pub fn replay_comfyui_support_bundle(input: &[u8]) -> Result<(String, bool), Str
 
 pub fn prepare_comfyui_fixture_candidate(input: &[u8]) -> Result<Vec<u8>, String> {
     prepare_comfyui_fixture_candidate_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
+}
+
+pub fn inspect_comfyui_fixture_candidate(
+    candidate: &[u8],
+    support_bundle: Option<&[u8]>,
+) -> Result<(String, bool), String> {
+    inspect_comfyui_fixture_candidate_with_limit(
+        candidate,
+        support_bundle,
+        COMFY_SUPPORT_BUNDLE_MAX_BYTES,
+    )
 }
 
 fn replay_comfyui_support_bundle_with_limit(
@@ -113,6 +195,100 @@ fn prepare_comfyui_fixture_candidate_with_limit(
         .map_err(|_| "Failed to serialize fixture candidate".to_string())?;
     output.push(b'\n');
     Ok(output)
+}
+
+fn inspect_comfyui_fixture_candidate_with_limit(
+    candidate: &[u8],
+    support_bundle: Option<&[u8]>,
+    max_bytes: usize,
+) -> Result<(String, bool), String> {
+    let chunks = parse_fixture_candidate_with_limit(candidate, max_bytes)?;
+    let canonical = canonical_fixture_candidate(&chunks)?;
+    let candidate_sha256 = hex::encode(Sha256::digest(&canonical));
+    let chunk_keys = chunks.keys().cloned().collect();
+    let chunk_lengths = chunks
+        .iter()
+        .map(|(key, value)| (key.clone(), value.encode_utf16().count()))
+        .collect();
+    let current_diagnostics = diagnostics_for_chunks(&chunks);
+
+    let (source_comparison, matches) = match support_bundle {
+        Some(input) => {
+            let bundle = parse_bundle_with_limit(input, max_bytes)?;
+            let support_diagnostics = diagnostics_for_chunks(&bundle.chunks);
+            let differences = diagnostics_differences(&support_diagnostics, &current_diagnostics)?
+                .into_iter()
+                .map(|difference| FixtureCandidateDifference {
+                    path: difference.path,
+                    kind: difference.kind,
+                    support: difference.recorded,
+                    candidate: difference.current,
+                })
+                .collect::<Vec<_>>();
+            let matches = differences.is_empty();
+            (
+                Some(FixtureCandidateComparison {
+                    support_bundle_schema_version: bundle.schema_version,
+                    difference_count: differences.len(),
+                    differences,
+                    candidate_output_matches_support: matches,
+                }),
+                matches,
+            )
+        }
+        None => (None, true),
+    };
+
+    let report = FixtureCandidateReport {
+        fixture_candidate_report_version: FIXTURE_CANDIDATE_REPORT_VERSION,
+        candidate_sha256,
+        chunk_keys,
+        chunk_lengths,
+        current_diagnostics,
+        source_comparison,
+    };
+    let output = serde_json::to_string_pretty(&report)
+        .map_err(|_| "Failed to serialize fixture candidate report".to_string())?;
+    Ok((output, matches))
+}
+
+fn parse_fixture_candidate_with_limit(
+    input: &[u8],
+    max_bytes: usize,
+) -> Result<BTreeMap<String, String>, String> {
+    if input.len() > max_bytes {
+        return Err(format!(
+            "Fixture candidate exceeds the {} MiB size limit",
+            max_bytes / (1024 * 1024)
+        ));
+    }
+
+    let FixtureChunks(chunks) = serde_json::from_slice(input).map_err(|error| {
+        format!(
+            "Invalid fixture candidate JSON at line {} column {}",
+            error.line(),
+            error.column()
+        )
+    })?;
+    if chunks.is_empty() {
+        return Err("Fixture candidate contains no metadata chunks".to_string());
+    }
+    Ok(chunks)
+}
+
+fn canonical_fixture_candidate(chunks: &BTreeMap<String, String>) -> Result<Vec<u8>, String> {
+    let mut canonical = serde_json::to_vec(chunks)
+        .map_err(|_| "Failed to serialize fixture candidate".to_string())?;
+    canonical.push(b'\n');
+    Ok(canonical)
+}
+
+fn diagnostics_for_chunks(chunks: &BTreeMap<String, String>) -> ComfyParserDiagnosticsReport {
+    let chunks: HashMap<String, String> = chunks
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
+    build_comfyui_diagnostics_report(&chunks)
 }
 
 fn parse_bundle_with_limit(input: &[u8], max_bytes: usize) -> Result<SupportBundle, String> {
@@ -515,5 +691,121 @@ mod tests {
         let error =
             prepare_comfyui_fixture_candidate_with_limit(&input, input.len() - 1).unwrap_err();
         assert!(error.contains("size limit"));
+    }
+
+    #[test]
+    fn fixture_candidate_report_is_canonical_and_omits_raw_chunk_bodies() {
+        let first = br#"{
+            "workflow": "{\"nodes\":[],\"links\":[]}",
+            "privateRaw": "DO_NOT_PRINT_PRIVATE_CHUNK_BODY",
+            "prompt": "{}"
+        }"#;
+        let second = br#"{"prompt":"{}","privateRaw":"DO_NOT_PRINT_PRIVATE_CHUNK_BODY","workflow":"{\"nodes\":[],\"links\":[]}"}"#;
+
+        let (first_report, first_matches) = inspect_comfyui_fixture_candidate(first, None).unwrap();
+        let (second_report, second_matches) =
+            inspect_comfyui_fixture_candidate(second, None).unwrap();
+
+        assert!(first_matches);
+        assert!(second_matches);
+        assert_eq!(first_report, second_report);
+        assert!(!first_report.contains("DO_NOT_PRINT_PRIVATE_CHUNK_BODY"));
+        let report: Value = serde_json::from_str(&first_report).unwrap();
+        assert_eq!(report["fixtureCandidateReportVersion"], 1);
+        assert_eq!(report["candidateSha256"].as_str().unwrap().len(), 64);
+        assert_eq!(
+            report["chunkKeys"],
+            json!(["privateRaw", "prompt", "workflow"])
+        );
+        assert_eq!(report["chunkLengths"]["prompt"], 2);
+        assert!(report.get("sourceComparison").is_none());
+    }
+
+    #[test]
+    fn fixture_candidate_comparison_reports_deterministic_diagnostic_drift() {
+        let support_chunks = BTreeMap::from([(
+            "parameters".to_string(),
+            "Steps: 20, Sampler: euler, CFG scale: 5, Seed: 7, Model: support-model, Version: ComfyUI"
+                .to_string(),
+        )]);
+        let bundle = serde_json::to_vec(&bundle_value(support_chunks)).unwrap();
+        let candidate = br#"{"parameters":"Steps: 30, Sampler: euler, CFG scale: 5, Seed: 7, Model: candidate-model, Version: ComfyUI"}"#;
+
+        let (first, matches) = inspect_comfyui_fixture_candidate(candidate, Some(&bundle)).unwrap();
+        let (second, second_matches) =
+            inspect_comfyui_fixture_candidate(candidate, Some(&bundle)).unwrap();
+
+        assert!(!matches);
+        assert!(!second_matches);
+        assert_eq!(first, second);
+        let report: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(
+            report["sourceComparison"]["candidateOutputMatchesSupport"],
+            false
+        );
+        assert_eq!(report["sourceComparison"]["differenceCount"], 2);
+        assert_eq!(
+            report["sourceComparison"]["differences"],
+            json!([
+                {
+                    "path": "/metadata/model",
+                    "kind": "changed",
+                    "support": "support-model",
+                    "candidate": "candidate-model"
+                },
+                {
+                    "path": "/metadata/steps",
+                    "kind": "changed",
+                    "support": 20,
+                    "candidate": 30
+                }
+            ])
+        );
+    }
+
+    #[test]
+    fn fixture_candidate_comparison_uses_fresh_diagnostics_and_ignores_versions() {
+        let chunks = minimal_chunks();
+        let candidate = serde_json::to_vec(&chunks).unwrap();
+        let mut bundle = bundle_value(chunks);
+        bundle["appVersion"] = json!("0.1.0");
+        bundle["parserVersion"] = json!(1);
+        bundle["diagnostics"]["appVersion"] = json!("0.1.0");
+        bundle["diagnostics"]["parserVersion"] = json!(1);
+        bundle["diagnostics"]["metadata"]["model"] = json!("stale_recording");
+        let bundle = serde_json::to_vec(&bundle).unwrap();
+
+        let (report, matches) =
+            inspect_comfyui_fixture_candidate(&candidate, Some(&bundle)).unwrap();
+
+        assert!(matches);
+        let report: Value = serde_json::from_str(&report).unwrap();
+        assert_eq!(report["sourceComparison"]["differenceCount"], 0);
+        assert_eq!(report["sourceComparison"]["differences"], json!([]));
+    }
+
+    #[test]
+    fn fixture_candidate_validation_rejects_empty_nested_and_oversized_inputs_privately() {
+        assert_eq!(
+            inspect_comfyui_fixture_candidate(b"{}", None).unwrap_err(),
+            "Fixture candidate contains no metadata chunks"
+        );
+
+        let nested = br#"{"prompt":{"secret":"DO_NOT_ECHO"}}"#;
+        let error = inspect_comfyui_fixture_candidate(nested, None).unwrap_err();
+        assert!(error.starts_with("Invalid fixture candidate JSON at line"));
+        assert!(!error.contains("DO_NOT_ECHO"));
+
+        let duplicate = br#"{"prompt":"first","prompt":"DO_NOT_ECHO_DUPLICATE"}"#;
+        let error = inspect_comfyui_fixture_candidate(duplicate, None).unwrap_err();
+        assert!(error.starts_with("Invalid fixture candidate JSON at line"));
+        assert!(!error.contains("DO_NOT_ECHO_DUPLICATE"));
+
+        let candidate = br#"{"prompt":"{}"}"#;
+        let error =
+            inspect_comfyui_fixture_candidate_with_limit(candidate, None, candidate.len() - 1)
+                .unwrap_err();
+        assert!(error.contains("size limit"));
+        assert!(!error.contains("prompt"));
     }
 }

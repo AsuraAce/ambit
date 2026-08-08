@@ -687,9 +687,6 @@ fn extract_comfyui_graph_with_diagnostics(
     chunks: &HashMap<String, String>,
     collect_traversal_issues: bool,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
-    // Breadcrumb for ComfyUI parsing
-    println!("[ComfyUI] Parsing metadata...");
-
     let mut meta = ImageMetadata {
         tool: "ComfyUI".to_string(),
         ..ImageMetadata::default()
