@@ -275,6 +275,11 @@ fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
 
     let report = build_comfyui_diagnostics_report(&chunks);
 
+    assert_eq!(report.app_version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        report.parser_version,
+        super::super::super::CURRENT_PARSER_VERSION
+    );
     assert_eq!(report.chunk_keys, vec!["prompt", "workflow"]);
     assert!(report.has_prompt_chunk);
     assert!(report.has_workflow_chunk);

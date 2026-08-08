@@ -7,6 +7,8 @@ import { WorkflowInspector } from '../WorkflowInspector';
 const mockInspectComfyuiMetadataChunks = vi.hoisted(() => vi.fn());
 const mockSettings = vi.hoisted(() => ({ devMode: true }));
 const mockClipboardWriteText = vi.hoisted(() => vi.fn());
+const mockSave = vi.hoisted(() => vi.fn());
+const mockWriteTextFile = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -27,6 +29,9 @@ vi.mock('../../../../services/db/imageRepo', () => ({
     updateImageWorkflow: vi.fn(),
     updateImageWorkflowHint: vi.fn()
 }));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mockSave }));
+vi.mock('@tauri-apps/plugin-fs', () => ({ writeTextFile: mockWriteTextFile }));
 
 const workflowJson = JSON.stringify({
     nodes: [
@@ -50,6 +55,8 @@ const promptJson = JSON.stringify({
 });
 
 const diagnosticsReport = {
+    appVersion: '0.10.0',
+    parserVersion: 46,
     chunkKeys: ['prompt', 'workflow'],
     hasPromptChunk: true,
     hasWorkflowChunk: true,
@@ -116,6 +123,10 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
         mockSettings.devMode = true;
         mockClipboardWriteText.mockReset();
+        mockSave.mockReset();
+        mockWriteTextFile.mockReset();
+        mockSave.mockResolvedValue('C:/exports/ambit-comfyui-support.json');
+        mockWriteTextFile.mockResolvedValue(undefined);
         mockInspectComfyuiMetadataChunks.mockReset();
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
@@ -154,7 +165,9 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         });
         const copied = mockClipboardWriteText.mock.calls[0][0] as string;
         const parsed = JSON.parse(copied) as {
-            imageId: string;
+            appVersion: string;
+            parserVersion: number;
+            image: { format: string; width: number; height: number };
             chunkKeys: string[];
             chunkLengths: Record<string, number>;
             graphNodeCount: number;
@@ -172,7 +185,9 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             workflow?: unknown;
         };
 
-        expect(parsed.imageId).toBe('C:/library/comfy.png');
+        expect(parsed.appVersion).toBe('0.10.0');
+        expect(parsed.parserVersion).toBe(46);
+        expect(parsed.image).toEqual({ format: 'png', width: 512, height: 512 });
         expect(parsed.chunkKeys).toEqual(['prompt', 'workflow']);
         expect(parsed.chunkLengths).toEqual({
             prompt: promptJson.length,
@@ -191,7 +206,59 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(parsed).not.toHaveProperty('chunks');
         expect(parsed).not.toHaveProperty('prompt');
         expect(parsed).not.toHaveProperty('workflow');
+        expect(parsed).not.toHaveProperty('imageId');
+        expect(copied).not.toContain('C:/library/comfy.png');
         expect(await screen.findByText('Copied')).toBeTruthy();
+    });
+
+    it('confirms and saves a local support bundle with raw chunks', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        expect(screen.getByText('Export ComfyUI support bundle?')).toBeTruthy();
+        expect(screen.getByText(/Ambit will not upload it/i)).toBeTruthy();
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        await waitFor(() => expect(mockWriteTextFile).toHaveBeenCalledTimes(1));
+        expect(mockSave).toHaveBeenCalledWith({
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+            defaultPath: 'ambit-comfyui-support.json'
+        });
+        const [path, contents] = mockWriteTextFile.mock.calls[0] as [string, string];
+        expect(path).toBe('C:/exports/ambit-comfyui-support.json');
+        const bundle = JSON.parse(contents) as {
+            schemaVersion: number;
+            chunks: Record<string, string>;
+            image: Record<string, unknown>;
+        };
+        expect(bundle.schemaVersion).toBe(1);
+        expect(bundle.chunks).toEqual({ prompt: promptJson, workflow: workflowJson });
+        expect(bundle.image).toEqual({ format: 'png', width: 512, height: 512 });
+        expect(bundle).not.toHaveProperty('imageId');
+    });
+
+    it('treats support bundle save cancellation as a no-op', async () => {
+        mockSave.mockResolvedValueOnce(null);
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+        expect(mockWriteTextFile).not.toHaveBeenCalled();
+        expect(screen.queryByText(/Support bundle export failed/i)).toBeNull();
+    });
+
+    it('shows support bundle write failures without breaking diagnostics', async () => {
+        mockWriteTextFile.mockRejectedValueOnce(new Error('disk full'));
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        expect(await screen.findByText(/Support bundle export failed: disk full/i)).toBeTruthy();
+        expect(screen.getByText('Parser Diagnostics')).toBeTruthy();
     });
 
     it('resets copied diagnostics feedback after its display interval', async () => {

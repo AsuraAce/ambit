@@ -1,4 +1,6 @@
-use super::{extract_a1111_metadata, is_missing_prompt_value, ImageMetadata};
+use super::{
+    extract_a1111_metadata, is_missing_prompt_value, ImageMetadata, CURRENT_PARSER_VERSION,
+};
 use std::collections::{BTreeMap, HashMap};
 
 mod conditioning;
@@ -523,6 +525,8 @@ pub struct ComfyTraversalIssueReport {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
+    pub app_version: String,
+    pub parser_version: u32,
     pub chunk_keys: Vec<String>,
     pub has_prompt_chunk: bool,
     pub has_workflow_chunk: bool,
@@ -557,6 +561,8 @@ pub(crate) fn build_comfyui_diagnostics_report(
     chunk_keys.sort();
 
     ComfyParserDiagnosticsReport {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        parser_version: CURRENT_PARSER_VERSION,
         chunk_keys,
         has_prompt_chunk: chunks.contains_key("prompt"),
         has_workflow_chunk: chunks.contains_key("workflow"),
