@@ -491,7 +491,7 @@ fn merge_unique(values: &mut Vec<String>, additions: impl IntoIterator<Item = St
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyMetadataPreview {
     pub tool: String,
@@ -512,7 +512,7 @@ pub struct ComfyMetadataPreview {
     pub has_workflow_json: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyTraversalIssueReport {
     pub field: String,
@@ -522,7 +522,7 @@ pub struct ComfyTraversalIssueReport {
     pub reason: String,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
     pub app_version: String,
