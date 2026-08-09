@@ -771,7 +771,106 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByTitle('Multiple saved-output roots were found, so no branch received strong traversal authority.')).toBeTruthy();
         expect(screen.getByText('Traversal Blockers')).toBeTruthy();
         const blocker = screen.getByTitle('The value is generated at runtime and no literal result is embedded in the image.');
-        expect(blocker.textContent).toContain('Positive Prompt at 30:19 (TextGenerate) / text: Generated Value Unavailable');
+        expect(blocker.textContent).toContain('Positive Prompt at #30:19 (TextGenerate) / text: Generated Value Unavailable');
+        expect(screen.getByTitle('Traversal blocker node 30:19 is not available in the normalized workflow graph.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /traversal blocker node.*30:19/i })).toBeNull();
+    });
+
+    it('navigates to an available traversal blocker and leaves selected-branch mode', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                traversalIssues: [{
+                    field: 'model',
+                    nodeId: '12',
+                    nodeType: 'CheckpointLoaderSimple',
+                    inputName: 'model',
+                    reason: 'unsupported_node'
+                }]
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        title: 'Disconnected Loader',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Jump to traversal blocker node Disconnected Loader (12)'
+        }));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const blockerNode = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(blockerNode));
+        expect(blockerNode?.className).toContain('ring-2');
+    });
+
+    it('expands and collapses every returned traversal blocker', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(100 + index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: { ...diagnosticsReport, traversalIssues }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('#103')).toBeTruthy();
+        expect(screen.queryByText('#104')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Show all (6)' }));
+        expect(screen.getByText('#105')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
+        expect(screen.queryByText('#104')).toBeNull();
+    });
+
+    it('resets expanded blockers when diagnostics change to another image', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(200 + index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: { ...diagnosticsReport, traversalIssues }
+        });
+        const view = render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Show all (6)' }));
+        expect(screen.getByText('#205')).toBeTruthy();
+
+        view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
+
+        await waitFor(() => expect(screen.queryByText('#205')).toBeNull());
+        expect(screen.getByRole('button', { name: 'Show all (6)' }).getAttribute('aria-expanded')).toBe('false');
     });
 
     it('copies the complete capped blocker list without raw metadata bodies', async () => {
@@ -805,7 +904,8 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(copied.traversalIssuesTruncated).toBe(true);
         expect(copied).not.toHaveProperty('prompt');
         expect(copied).not.toHaveProperty('workflow');
-        expect(screen.getByText('+2 or more in copied diagnostics')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Show all (6)' })).toBeTruthy();
+        expect(screen.getByText('Additional traversal blockers were omitted after the diagnostics limit.')).toBeTruthy();
     });
 
     it('hides parser diagnostics outside developer mode', () => {

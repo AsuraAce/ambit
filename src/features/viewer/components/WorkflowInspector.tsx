@@ -151,7 +151,7 @@ const WorkflowOutputAnchors: React.FC<{
 };
 
 const ComfyDiagnosticsPanel: React.FC<{
-    image: Pick<AIImage, 'filename' | 'width' | 'height'>;
+    image: Pick<AIImage, 'id' | 'filename' | 'width' | 'height'>;
     chunks?: Record<string, string>;
     nodeById: Map<string, WorkflowDisplayNode>;
     onFocusNode: (nodeId: string) => void;
@@ -163,9 +163,12 @@ const ComfyDiagnosticsPanel: React.FC<{
     const [isExportConfirmOpen, setIsExportConfirmOpen] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [exportError, setExportError] = useState<string | null>(null);
+    const [showAllTraversalIssues, setShowAllTraversalIssues] = useState(false);
     const chunkCount = chunks ? Object.keys(chunks).length : 0;
 
     React.useEffect(() => {
+        setShowAllTraversalIssues(false);
+
         if (!chunks || chunkCount === 0) {
             setDiagnostics(null);
             setError(null);
@@ -199,15 +202,16 @@ const ComfyDiagnosticsPanel: React.FC<{
         return () => {
             cancelled = true;
         };
-    }, [chunks, chunkCount]);
+    }, [chunks, chunkCount, image.id]);
 
     const fieldSources = diagnostics
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
         : [];
-    const visibleTraversalIssues = diagnostics?.traversalIssues.slice(0, 4) ?? [];
-    const hiddenTraversalIssueCount = diagnostics
-        ? Math.max(0, diagnostics.traversalIssues.length - visibleTraversalIssues.length)
-        : 0;
+    const traversalIssues = diagnostics?.traversalIssues ?? [];
+    const hasHiddenTraversalIssues = traversalIssues.length > 4;
+    const visibleTraversalIssues = showAllTraversalIssues
+        ? traversalIssues
+        : traversalIssues.slice(0, 4);
 
     const handleCopyDiagnostics = async () => {
         const payload = buildDiagnosticsClipboardPayload(image, chunks!, diagnostics!);
@@ -392,26 +396,65 @@ const ComfyDiagnosticsPanel: React.FC<{
 
                     {visibleTraversalIssues.length > 0 && (
                         <div>
-                            <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">
-                                <AlertTriangle className="w-3 h-3" />
-                                Traversal Blockers
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Traversal Blockers
+                                </div>
+                                {hasHiddenTraversalIssues && (
+                                    <button
+                                        type="button"
+                                        aria-expanded={showAllTraversalIssues}
+                                        onClick={() => setShowAllTraversalIssues((current) => !current)}
+                                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-amber-800 transition-colors hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                                    >
+                                        {showAllTraversalIssues ? (
+                                            <ChevronDown className="h-3 w-3" />
+                                        ) : (
+                                            <ChevronRight className="h-3 w-3" />
+                                        )}
+                                        {showAllTraversalIssues ? 'Show less' : `Show all (${traversalIssues.length})`}
+                                    </button>
+                                )}
                             </div>
                             <div className="mt-1 space-y-1">
-                                {visibleTraversalIssues.map((issue, index) => (
-                                    <div
-                                        key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
-                                        title={getTraversalIssueTitle(issue.reason)}
-                                        className="rounded-md border border-orange-300/70 dark:border-orange-400/30 bg-orange-50/70 dark:bg-orange-500/10 px-2 py-1 font-mono text-[10px] text-orange-950 dark:text-orange-100"
-                                    >
-                                        <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
-                                        {' at '}{issue.nodeId} ({issue.nodeType})
-                                        {issue.inputName ? ` / ${issue.inputName}` : ''}
-                                        {': '}{formatDiagnosticLabel(issue.reason)}
-                                    </div>
-                                ))}
-                                {(hiddenTraversalIssueCount > 0 || diagnostics.traversalIssuesTruncated) && (
+                                {visibleTraversalIssues.map((issue, index) => {
+                                    const node = nodeById.get(issue.nodeId);
+                                    return (
+                                        <div
+                                            key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
+                                            title={getTraversalIssueTitle(issue.reason)}
+                                            className="rounded-md border border-orange-300/70 bg-orange-50/70 px-2 py-1 font-mono text-[10px] text-orange-950 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100"
+                                        >
+                                            <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
+                                            {' at '}
+                                            {node ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => onFocusNode(issue.nodeId)}
+                                                    aria-label={`Jump to traversal blocker node ${node.title} (${issue.nodeId})`}
+                                                    title={`Jump to traversal blocker node ${issue.nodeId}: ${node.title}`}
+                                                    className="rounded border border-orange-400/50 bg-white/70 px-1 py-0.5 font-mono text-[10px] font-bold text-orange-900 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-orange-300/30 dark:bg-black/20 dark:text-orange-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                >
+                                                    #{issue.nodeId}
+                                                </button>
+                                            ) : (
+                                                <span
+                                                    title={`Traversal blocker node ${issue.nodeId} is not available in the normalized workflow graph.`}
+                                                    className="rounded border border-dashed border-orange-400/40 px-1 py-0.5 font-mono text-[10px] text-orange-800/70 dark:border-orange-300/20 dark:text-orange-200/60"
+                                                >
+                                                    #{issue.nodeId}
+                                                </span>
+                                            )}
+                                            {' '}{`(${issue.nodeType})`}
+                                            {issue.inputName ? ` / ${issue.inputName}` : ''}
+                                            {': '}{formatDiagnosticLabel(issue.reason)}
+                                        </div>
+                                    );
+                                })}
+                                {diagnostics.traversalIssuesTruncated && (
                                     <div className="text-[10px] text-amber-800/70 dark:text-amber-200/70">
-                                        +{hiddenTraversalIssueCount}{diagnostics.traversalIssuesTruncated ? ' or more' : ' more'} in copied diagnostics
+                                        Additional traversal blockers were omitted after the diagnostics limit.
                                     </div>
                                 )}
                             </div>
