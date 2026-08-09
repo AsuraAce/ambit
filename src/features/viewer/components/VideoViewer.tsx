@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { ExternalLink, Heart, Pin, RotateCcw, RotateCw, Save, Trash2, X, EyeOff } from 'lucide-react';
+import { ExternalLink, Heart, Pin, RotateCcw, RotateCw, Save, Trash2, X } from 'lucide-react';
 import { commands } from '../../../bindings';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { VideoAsset } from '../../../types';
@@ -9,10 +9,12 @@ import { updateVideoPlaybackStatus } from '../../../services/db/imageRepo';
 import { getCollectionsForImage } from '../../../services/db/collectionRepo';
 import { unwrap } from '../../../utils/spectaUtils';
 import { useToast } from '../../../hooks/useToast';
+import { MaskedViewerGate } from './MaskedViewerGate';
 
 interface VideoViewerProps {
     video: VideoAsset;
     isMasked: boolean;
+    initiallyRevealed?: boolean;
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
@@ -26,6 +28,7 @@ interface VideoViewerProps {
 export const VideoViewer: React.FC<VideoViewerProps> = ({
     video,
     isMasked,
+    initiallyRevealed = false,
     onClose,
     onNext,
     onPrev,
@@ -41,7 +44,10 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     const activeVideoIdRef = React.useRef(video.id);
     const membershipRequestIdRef = React.useRef(0);
     const pendingMembershipKeysRef = React.useRef(new Set<string>());
-    const [revealed, setRevealed] = React.useState(!isMasked);
+    const [revealedVideoId, setRevealedVideoId] = React.useState<string | null>(
+        initiallyRevealed ? video.id : null
+    );
+    const revealed = !isMasked || initiallyRevealed || revealedVideoId === video.id;
     const [playerKey, setPlayerKey] = React.useState(0);
     const [playbackStatus, setPlaybackStatus] = React.useState(video.playbackStatus);
     const [notes, setNotes] = React.useState(video.notes ?? '');
@@ -69,11 +75,11 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     }, [video.id]);
 
     React.useEffect(() => {
-        setRevealed(!isMasked);
+        setRevealedVideoId(initiallyRevealed ? video.id : null);
         setPlaybackStatus(video.playbackStatus);
         setNotes(video.notes ?? '');
         setPlaybackUrl(null);
-    }, [video.id, video.notes, video.playbackStatus, isMasked]);
+    }, [video.id, video.notes, video.playbackStatus, initiallyRevealed]);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -101,7 +107,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     }, [video.id, membershipRetryToken]);
 
     React.useEffect(() => {
-        if (!revealed) return;
+        if (!revealed || video.isMissing) return;
         let cancelled = false;
         void unwrap(commands.prepareVideoPlayback(video.id))
             .then(path => {
@@ -112,7 +118,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                 if (!cancelled) setPlaybackStatus('external_required');
             });
         return () => { cancelled = true; };
-    }, [revealed, video.id, playerKey]);
+    }, [revealed, video.id, video.isMissing, playerKey]);
 
     const seekBy = React.useCallback((seconds: number) => {
         const player = playerRef.current;
@@ -157,7 +163,10 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
             const destination = await open({ directory: true, multiple: false });
             if (typeof destination !== 'string') return;
             const result = await unwrap(commands.exportAssetOriginal(video.id, destination));
-            addToast(`Exported ${result.outputPath}`, 'success');
+            const displayPath = result.outputPath
+                .replace(/^\/\/\?\/UNC\//i, '//')
+                .replace(/^\/\/\?\//, '');
+            addToast(`Exported ${displayPath}`, 'success');
         } catch (error) {
             addToast(`Could not export original: ${String(error)}`, 'error');
         }
@@ -168,25 +177,34 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
         if (result.status === 'error') addToast(result.error, 'error');
     };
 
+    if (!revealed && !video.isMissing) {
+        return (
+            <MaskedViewerGate
+                filename={video.filename}
+                mediaLabel="video"
+                onReveal={() => setRevealedVideoId(video.id)}
+                onClose={onClose}
+            />
+        );
+    }
+
     return (
         <div role="dialog" aria-modal="true" aria-label={`Video viewer: ${video.filename}`} className="fixed inset-0 z-[100] flex bg-black text-white">
             <main className="relative flex min-w-0 flex-1 items-center justify-center bg-black">
                 <div className="absolute left-4 top-4 z-20 rounded-lg bg-black/70 px-3 py-2 text-sm font-mono">{video.filename}</div>
                 <div className="absolute right-4 top-4 z-20 flex gap-2">
-                    <button aria-label="Open in default app" onClick={() => void handleOpenExternal()} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><ExternalLink className="h-5 w-5" /></button>
-                    <button aria-label="Export original" onClick={() => void handleExport()} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><Save className="h-5 w-5" /></button>
+                    {!video.isMissing && <button aria-label="Open in default app" onClick={() => void handleOpenExternal()} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><ExternalLink className="h-5 w-5" /></button>}
+                    {!video.isMissing && <button aria-label="Export original" onClick={() => void handleExport()} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><Save className="h-5 w-5" /></button>}
                     <button aria-label={video.isFavorite ? 'Remove from favorites' : 'Add to favorites'} onClick={() => onToggleFavorite(video.id)} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><Heart className={`h-5 w-5 ${video.isFavorite ? 'fill-red-500 text-red-500' : ''}`} /></button>
                     {onTogglePin && <button aria-label={video.isPinned ? 'Unpin' : 'Pin'} onClick={() => onTogglePin(video.id, !video.isPinned)} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><Pin className={`h-5 w-5 ${video.isPinned ? 'fill-current text-sage-400' : ''}`} /></button>}
                     {onDelete && <button aria-label="Remove from library" onClick={() => onDelete(video.id)} className="rounded-full bg-black/70 p-2.5 hover:bg-red-500/20"><Trash2 className="h-5 w-5" /></button>}
                     <button aria-label="Close video viewer" onClick={onClose} className="rounded-full bg-black/70 p-2.5 hover:bg-white/15"><X className="h-5 w-5" /></button>
                 </div>
 
-                {!revealed ? (
-                    <div className="flex max-w-md flex-col items-center rounded-2xl border border-white/10 bg-zinc-900 p-8 text-center shadow-2xl">
-                        <EyeOff className="mb-4 h-10 w-10 text-sage-400" />
-                        <h2 className="text-xl font-bold">Hidden video</h2>
-                        <p className="mt-2 text-sm text-zinc-400">Playback is not initialized until you reveal this item.</p>
-                        <button onClick={() => setRevealed(true)} className="mt-6 rounded-lg bg-sage-500 px-5 py-2.5 font-bold text-white">Reveal video</button>
+                {video.isMissing ? (
+                    <div className="flex max-w-md flex-col items-center rounded-2xl border border-red-500/30 bg-zinc-900 p-8 text-center shadow-2xl">
+                        <h2 className="text-xl font-bold">Source file missing</h2>
+                        <p className="mt-2 text-sm text-zinc-400">Ambit still keeps this library record. Restore the file at its original location or remove the record.</p>
                     </div>
                 ) : playbackStatus === 'external_required' ? (
                     <div className="flex max-w-md flex-col items-center rounded-2xl border border-white/10 bg-zinc-900 p-8 text-center">

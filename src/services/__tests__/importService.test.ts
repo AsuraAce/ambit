@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
     getExistingMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
     dbSelect: vi.fn(),
-    incrementFacetCacheVersion: vi.fn()
+    incrementFacetCacheVersion: vi.fn(),
+    importVideoPaths: vi.fn(),
+    cancelVideoImport: vi.fn()
 }));
 
 const abortSignalOnRead = (abortOnRead: number): AbortSignal => {
@@ -62,6 +64,11 @@ vi.mock('../db/connection', () => ({
     }))
 }));
 
+vi.mock('../videoService', () => ({
+    importVideoPaths: mocks.importVideoPaths,
+    cancelVideoImport: mocks.cancelVideoImport
+}));
+
 vi.mock('../../stores/libraryStore', () => ({
     useLibraryStore: {
         getState: vi.fn(() => ({
@@ -96,6 +103,16 @@ describe('processTargetedFiles', () => {
                     size: 333
                 }
             ]
+        });
+        mocks.importVideoPaths.mockResolvedValue({
+            imported: 0,
+            duplicate: 0,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: [],
+            failedPaths: []
         });
         mocks.getExistingMetadata.mockResolvedValue(new Map([
             [
@@ -709,6 +726,90 @@ describe('processTargetedFiles', () => {
         expect(progressMessages).not.toContain('Stale metadata progress');
     });
 
+    it('imports image and video candidates from one folder through the shared queue', async () => {
+        mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
+        mocks.scanDirectoryWithStats.mockResolvedValueOnce({
+            status: 'ok',
+            data: [
+                { path: 'C:/library/still.png', modified: 2000, size: 100, mediaType: 'image' },
+                { path: 'C:/library/clip.mp4', modified: 1000, size: 200, mediaType: 'video' }
+            ]
+        });
+        mocks.scanImagesBulk.mockResolvedValueOnce([{
+            metadata: { tool: 'ComfyUI', model: 'Still Model' },
+            timestamp: 2000,
+            width: 512,
+            height: 512,
+            fileSize: 100,
+            thumbnail: 'C:/thumbs/still.webp',
+            thumbnailSource: 'ambit',
+            microThumbnail: 'mini-still',
+            originalChunks: {}
+        }]);
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 1,
+            duplicate: 0,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [{
+                mediaType: 'video',
+                id: 'C:/library/clip.mp4',
+                url: 'asset://C:/library/clip.mp4',
+                thumbnailUrl: 'asset://C:/thumbs/clip.webp',
+                filename: 'clip.mp4',
+                fileSize: 200,
+                timestamp: 1000,
+                width: 1280,
+                height: 720,
+                isFavorite: false,
+                isPinned: false,
+                metadata: {
+                    tool: GeneratorTool.UNKNOWN,
+                    model: 'Unknown',
+                    steps: 0,
+                    cfg: 0,
+                    sampler: 'Unknown',
+                    positivePrompt: '',
+                    negativePrompt: '',
+                    generationType: 'unknown'
+                },
+                durationMs: 1000,
+                videoCodec: 'h264',
+                audioPresent: false,
+                rotationDegrees: 0,
+                probeStatus: 'ready',
+                playbackStatus: 'unknown'
+            }],
+            handledPaths: ['C:/library/clip.mp4'],
+            failedPaths: []
+        });
+
+        const result = await processFoldersUnified(
+            [{ path: 'C:/library', variant: GeneratorTool.COMFYUI }],
+            { forceRescan: true }
+        );
+
+        expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
+            ['C:/library/still.png'],
+            '',
+            true,
+            true,
+            GeneratorTool.COMFYUI,
+            expect.any(String)
+        );
+        expect(mocks.importVideoPaths).toHaveBeenCalledWith(
+            ['C:/library/clip.mp4'],
+            expect.any(Function),
+            expect.any(Function),
+            expect.any(Function)
+        );
+        expect(result.images.map(asset => asset.mediaType ?? 'image')).toEqual(['image', 'video']);
+        expect(result.stats).toEqual({ processed: 2, imported: 2, skipped: 0, errors: 0 });
+        expect(result.videoSummary).toMatchObject({ imported: 1, rejected: 0, posterFailures: 0 });
+        expect(result.completedSourcePaths).toEqual(['C:/library']);
+    });
+
     it('falls back to treating a failed directory scan as a direct image file', async () => {
         mocks.scanDirectoryWithStats.mockRejectedValueOnce(new Error('not a directory'));
         mocks.getExistingMetadata.mockResolvedValueOnce(new Map());
@@ -760,7 +861,7 @@ describe('processTargetedFiles', () => {
 
         expect(result.stats.processed).toBe(0);
         expect(result.completedSourcePaths).toEqual(['C:/library/readme.txt']);
-        expect(progressMessages).toContain('No valid images found.');
+        expect(progressMessages).toContain('No supported media found.');
         expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
     });
 

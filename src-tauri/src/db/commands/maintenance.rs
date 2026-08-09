@@ -1,6 +1,6 @@
 use super::run_blocking;
 use crate::db::{resolve_db_path, resolve_db_path_info, resolve_main_database_url};
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, File};
@@ -114,6 +114,79 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+fn load_file_hash_candidates(
+    conn: &Connection,
+    requested_limit: i64,
+) -> Result<Vec<(String, String)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT id, path
+            FROM images
+            WHERE is_deleted = 0
+              AND is_missing = 0
+              AND group_id IS NULL
+              AND IFNULL(is_intermediate_gen, 0) = 0
+              AND (file_hash IS NULL OR file_hash = '')
+              AND path NOT LIKE 'blob:%'
+              AND path NOT LIKE 'data:%'
+              AND file_size IN (
+                SELECT file_size
+                FROM images
+                WHERE is_deleted = 0
+                  AND is_missing = 0
+                  AND group_id IS NULL
+                  AND IFNULL(is_intermediate_gen, 0) = 0
+                  AND path NOT LIKE 'blob:%'
+                  AND path NOT LIKE 'data:%'
+                GROUP BY file_size
+                HAVING COUNT(*) > 1
+              )
+            ORDER BY file_size DESC, timestamp DESC
+            LIMIT ?1
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([requested_limit], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn count_remaining_file_hash_candidates(conn: &Connection) -> usize {
+    conn.query_row(
+        "
+        SELECT COUNT(*)
+        FROM images
+        WHERE is_deleted = 0
+          AND is_missing = 0
+          AND group_id IS NULL
+          AND IFNULL(is_intermediate_gen, 0) = 0
+          AND (file_hash IS NULL OR file_hash = '')
+          AND path NOT LIKE 'blob:%'
+          AND path NOT LIKE 'data:%'
+          AND file_size IN (
+            SELECT file_size
+            FROM images
+            WHERE is_deleted = 0
+              AND is_missing = 0
+              AND group_id IS NULL
+              AND IFNULL(is_intermediate_gen, 0) = 0
+              AND path NOT LIKE 'blob:%'
+              AND path NOT LIKE 'data:%'
+            GROUP BY file_size
+            HAVING COUNT(*) > 1
+          )
+        ",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap_or(0) as usize
+}
+
 fn load_eligible_duplicate_record(
     tx: &Transaction<'_>,
     id: &str,
@@ -122,7 +195,6 @@ fn load_eligible_duplicate_record(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
          FROM images
          WHERE id = ?1
-           AND media_type = 'image'
            AND is_deleted = 0
            AND is_missing = 0
            AND group_id IS NULL
@@ -234,7 +306,10 @@ fn persist_removed_duplicate(
                 micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
-                collection_ids_json
+                collection_ids_json, media_type, media_container, media_mime_type,
+                duration_ms, video_codec, video_profile, audio_present, audio_codec,
+                frame_rate_num, frame_rate_den, rotation_degrees, probe_status,
+                playback_status
              )
              SELECT
                 id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
@@ -253,7 +328,10 @@ fn persist_removed_duplicate(
                         )
                     )
                     ELSE NULL
-                END
+                END,
+                media_type, media_container, media_mime_type, duration_ms, video_codec,
+                video_profile, audio_present, audio_codec, frame_rate_num, frame_rate_den,
+                rotation_degrees, probe_status, playback_status
              FROM images
              WHERE id = ?1",
             params![image_id, removed_at],
@@ -536,46 +614,7 @@ pub async fn backfill_image_file_hashes(
     let is_cancelled = state.is_cancelled.clone();
     run_blocking(app, move |conn| {
         let requested_limit = limit.unwrap_or(u32::MAX) as i64;
-        let rows: Vec<(String, String)> = {
-            let mut stmt = conn
-                .prepare(
-                    "
-                    SELECT id, path
-                    FROM images
-                    WHERE is_deleted = 0
-                      AND media_type = 'image'
-                      AND is_missing = 0
-                      AND group_id IS NULL
-                      AND IFNULL(is_intermediate_gen, 0) = 0
-                      AND (file_hash IS NULL OR file_hash = '')
-                      AND path NOT LIKE 'blob:%'
-                      AND path NOT LIKE 'data:%'
-                      AND file_size IN (
-                        SELECT file_size
-                        FROM images
-                        WHERE is_deleted = 0
-                          AND media_type = 'image'
-                          AND is_missing = 0
-                          AND group_id IS NULL
-                          AND IFNULL(is_intermediate_gen, 0) = 0
-                          AND path NOT LIKE 'blob:%'
-                          AND path NOT LIKE 'data:%'
-                        GROUP BY file_size
-                        HAVING COUNT(*) > 1
-                      )
-                    ORDER BY file_size DESC, timestamp DESC
-                    LIMIT ?1
-                    ",
-                )
-                .map_err(|e| e.to_string())?;
-
-            let mapped = stmt
-                .query_map([requested_limit], |row| Ok((row.get(0)?, row.get(1)?)))
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| e.to_string())?;
-            mapped
-        };
+        let rows = load_file_hash_candidates(conn, requested_limit)?;
 
         let total = rows.len();
         let mut scanned = 0;
@@ -614,7 +653,7 @@ pub async fn backfill_image_file_hashes(
                         updated += 1;
                     }
                     Err(e) => {
-                        log::warn!("[Maintenance] Failed to hash image {}: {}", path, e);
+                        log::warn!("[Maintenance] Failed to hash media file {}: {}", path, e);
                         errors += 1;
                     }
                 }
@@ -627,7 +666,7 @@ pub async fn backfill_image_file_hashes(
                     FileHashBackfillProgress {
                         current: index + 1,
                         total,
-                        message: "Hashing images for exact duplicate detection...".to_string(),
+                        message: "Hashing media for exact duplicate detection...".to_string(),
                     },
                 );
                 last_emit = std::time::Instant::now();
@@ -637,37 +676,7 @@ pub async fn backfill_image_file_hashes(
         drop(update_hash);
         drop(mark_missing);
 
-        let remaining = conn
-            .query_row(
-                "
-                SELECT COUNT(*)
-                FROM images
-                WHERE is_deleted = 0
-                  AND media_type = 'image'
-                  AND is_missing = 0
-                  AND group_id IS NULL
-                  AND IFNULL(is_intermediate_gen, 0) = 0
-                  AND (file_hash IS NULL OR file_hash = '')
-                  AND path NOT LIKE 'blob:%'
-                  AND path NOT LIKE 'data:%'
-                  AND file_size IN (
-                    SELECT file_size
-                    FROM images
-                    WHERE is_deleted = 0
-                      AND media_type = 'image'
-                      AND is_missing = 0
-                      AND group_id IS NULL
-                      AND IFNULL(is_intermediate_gen, 0) = 0
-                      AND path NOT LIKE 'blob:%'
-                      AND path NOT LIKE 'data:%'
-                    GROUP BY file_size
-                    HAVING COUNT(*) > 1
-                  )
-                ",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0) as usize;
+        let remaining = count_remaining_file_hash_candidates(conn);
 
         Ok(FileHashBackfillResult {
             scanned,
@@ -738,7 +747,7 @@ pub async fn schedule_purge_transaction(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_log_directory, hash_file_sha256, resolve_app_log_path,
+        ensure_log_directory, hash_file_sha256, load_file_hash_candidates, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, ExactDuplicateResolution,
     };
     use crate::db::migrations::init_db;
@@ -804,6 +813,32 @@ mod tests {
             first_hash,
             "f10266197016b8e8842aeba6800100997ce04f35a45a3bff974711e9615ea597"
         );
+    }
+
+    #[test]
+    fn file_hash_candidates_include_images_and_videos_with_matching_sizes() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "", false, false, None, "{}", None, None);
+        seed_image(&conn, "video", "", false, false, None, "{}", None, None);
+        seed_image(&conn, "unique", "", false, false, None, "{}", None, None);
+        conn.execute(
+            "UPDATE images
+             SET media_type = 'video', duration_ms = 1000, video_codec = 'h264',
+                 audio_present = 0, rotation_degrees = 0, probe_status = 'ready',
+                 playback_status = 'playable'
+             WHERE id = 'video'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE images SET file_size = 200 WHERE id = 'unique'", [])
+            .unwrap();
+
+        let candidates = load_file_hash_candidates(&conn, i64::MAX).unwrap();
+        let mut ids = candidates.into_iter().map(|(id, _)| id).collect::<Vec<_>>();
+        ids.sort();
+
+        assert_eq!(ids, ["image", "video"]);
     }
 
     #[test]
@@ -979,6 +1014,103 @@ mod tests {
             )
             .unwrap();
         assert_eq!(active_removed_count, 0);
+    }
+
+    #[test]
+    fn exact_duplicate_resolution_preserves_removed_video_metadata() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(
+            &conn,
+            "keeper",
+            "video-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "copy",
+            "video-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        for id in ["keeper", "copy"] {
+            conn.execute(
+                "UPDATE images
+                 SET media_type = 'video', media_container = 'mp4', media_mime_type = 'video/mp4',
+                     duration_ms = 2500, video_codec = 'h264', video_profile = 'High',
+                     audio_present = 1, audio_codec = 'aac', frame_rate_num = 30,
+                     frame_rate_den = 1, rotation_degrees = 90, probe_status = 'ready',
+                     playback_status = 'playable'
+                 WHERE id = ?1",
+                [id],
+            )
+            .unwrap();
+        }
+
+        resolve_exact_duplicate_groups_inner(
+            &conn,
+            &[ExactDuplicateResolution {
+                keep_id: "keeper".to_string(),
+                remove_ids: vec!["copy".to_string()],
+            }],
+        )
+        .unwrap();
+
+        let removed: (
+            String,
+            String,
+            i64,
+            String,
+            i64,
+            String,
+            i64,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT media_type, media_container, duration_ms, video_codec, audio_present,
+                        audio_codec, rotation_degrees, probe_status, playback_status
+                 FROM removed_images WHERE id = 'copy'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(
+            removed,
+            (
+                "video".into(),
+                "mp4".into(),
+                2500,
+                "h264".into(),
+                1,
+                "aac".into(),
+                90,
+                "ready".into(),
+                "playable".into()
+            )
+        );
     }
 
     #[test]

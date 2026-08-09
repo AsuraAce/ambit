@@ -3,7 +3,7 @@ import {
     type FileHashBackfillResult,
 } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import type { AIImage, MissingFileAuditResult } from '../../types';
+import { isVideoAsset, type AIImage, type MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
@@ -163,7 +163,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
 
 export const getIntermediateImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
+        return getBrowserMockImages().filter(image => !isVideoAsset(image) && !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
     }
 
     const db = await getDb();
@@ -190,7 +190,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 
 export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !image.isDeleted && !image.metadata.positivePrompt);
+        return getBrowserMockImages().filter(image => !isVideoAsset(image) && !image.isDeleted && !image.metadata.positivePrompt);
     }
 
     const db = await getDb();
@@ -410,7 +410,6 @@ export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
             SELECT id, file_hash
             FROM images
             WHERE is_deleted = 0
-              AND media_type = 'image'
               AND is_missing = 0
               AND group_id IS NULL
               AND IFNULL(is_intermediate_gen, 0) = 0
@@ -442,9 +441,9 @@ export const getMaintenanceCounts = async () => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
-            untagged: images.filter(image => !image.metadata.positivePrompt && !image.isDeleted).length,
+            untagged: images.filter(image => !isVideoAsset(image) && !image.metadata.positivePrompt && !image.isDeleted).length,
             orphans: 0,
-            intermediates: images.filter(image => image.isIntermediate || image.metadata.isIntermediate).length,
+            intermediates: images.filter(image => !isVideoAsset(image) && (image.isIntermediate || image.metadata.isIntermediate)).length,
             missing: images.filter(image => image.isMissing).length,
             trash: images.filter(image => image.isDeleted).length,
             duplicates: 0
@@ -456,9 +455,9 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
+            COUNT(*) FILTER (WHERE media_type = 'image' AND (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
             COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
-            COUNT(*) FILTER (WHERE IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
+            COUNT(*) FILTER (WHERE media_type = 'image' AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
             (SELECT COUNT(*) FROM removed_images) as trash
         FROM images
     `);

@@ -23,6 +23,7 @@ const commandCases: CommandCase[] = [
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },
     { name: 'saveImagesBatch', invokeName: 'save_images_batch', args: [[]], payload: { images: [] }, returnsResult: true },
     { name: 'moveImagePathIdentities', invokeName: 'move_image_path_identities', args: [[]], payload: { moves: [] }, returnsResult: true },
+    { name: 'markImagePathIdentitiesMissing', invokeName: 'mark_image_path_identities_missing', args: [['id']], payload: { ids: ['id'] }, returnsResult: true },
     { name: 'getMainDatabaseUrl', invokeName: 'get_main_database_url', args: [], returnsResult: true },
     { name: 'getDbDiagnostics', invokeName: 'get_db_diagnostics', args: [], returnsResult: true },
     { name: 'showAppLogFolder', invokeName: 'show_app_log_folder', args: [], returnsResult: true },

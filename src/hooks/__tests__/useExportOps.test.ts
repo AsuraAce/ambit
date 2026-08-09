@@ -89,7 +89,7 @@ describe('useExportOps', () => {
 
         await act(async () => result.current.exportImages('out.zip', ['missing'], 'C:/out'));
 
-        expect(mocks.addToast).toHaveBeenCalledWith('No valid images found to export', 'error');
+        expect(mocks.addToast).toHaveBeenCalledWith('No valid items found to export', 'error');
         expect(mocks.exportImagesToZip).not.toHaveBeenCalled();
         expect(result.current.isExporting).toBe(false);
     });

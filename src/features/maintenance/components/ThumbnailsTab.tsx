@@ -16,7 +16,7 @@ interface ThumbnailsTabProps {
     images: AIImage[];
     totalCount: number;
     selectedIds: Set<string>;
-    onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
+    onItemClick: (id: string, index: number, e: React.MouseEvent, revealGranted?: boolean) => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
     onRegenerate: (ids?: string[]) => void;
@@ -58,7 +58,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 img={img}
                 style={style}
                 isSelected={selectedIds.has(img.id)}
-                onClick={(e) => onItemClick(img.id, index, e)}
+                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
                 maskedKeywords={maskedKeywords}
             />
         );

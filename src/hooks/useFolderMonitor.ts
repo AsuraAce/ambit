@@ -80,8 +80,12 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
         // STARTUP LOGIC: Smart Scan
         const hasStartups = monitoredFolders.length > 0 || !!invokeAiPath;
-        if (hasStartups && !hasScannedOnStartup.current) {
+        if (!hasScannedOnStartup.current) {
             hasScannedOnStartup.current = true;
+            if (!hasStartups) {
+                prevFoldersRef.current = monitoredFolders;
+                return;
+            }
             const activeFolders = monitoredFolders.filter(f => f.isActive && !f.initialScanCancelled);
 
             console.log('[FolderMonitor] Startup Check:', {
@@ -455,7 +459,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
             await refreshMetadata();
 
-            addToast(`${source}: Synced ${totalFilesFound} new images`, 'success');
+            addToast(`${source}: Synced ${totalFilesFound} new items`, 'success');
         } else {
             console.log(`[FolderMonitor] ${source}: No new files found.`);
         }

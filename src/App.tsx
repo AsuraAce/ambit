@@ -36,7 +36,7 @@ import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
-import { cancelVideoImport, importVideoPaths, pickVideoPaths } from './services/videoService';
+import { pickVideoPaths } from './services/videoService';
 import { isImageMasked } from './utils/maskingUtils';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
@@ -55,6 +55,7 @@ export default function App() {
     const [selectedImageIndex, setSelectedImageIndexState] = useState<number | null>(null);
     const [viewingImageId, setViewingImageIdState] = useState<string | null>(null);
     const [viewerSessionImages, setViewerSessionImages] = useState<AIImage[] | null>(null);
+    const [viewerRevealGrantId, setViewerRevealGrantId] = useState<string | null>(null);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -64,8 +65,6 @@ export default function App() {
 
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isCompletingOnboarding, setIsCompletingOnboarding] = useState(false);
-    const activeVideoImportRef = useRef<string | null>(null);
-    const videoImportCancelledRef = useRef(false);
     const openImportModal = useCallback(() => setIsImportModalOpen(true), []);
 
     // --- Store Subscriptions ---
@@ -180,6 +179,18 @@ export default function App() {
         selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
         handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
     } = useSelection(images);
+    const handleViewerImageClick = useCallback((
+        event: React.MouseEvent,
+        id: string,
+        index: number,
+        setViewerIndex: (nextIndex: number) => void,
+        revealGranted = false,
+    ) => {
+        handleImageClick(event, id, index, nextIndex => {
+            setViewerRevealGrantId(revealGranted ? id : null);
+            setViewerIndex(nextIndex);
+        });
+    }, [handleImageClick]);
 
     const setAllCollections = useCollectionStore(s => s.setCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
@@ -277,37 +288,11 @@ export default function App() {
         try {
             const paths = await pickVideoPaths();
             if (paths.length === 0) return;
-            videoImportCancelledRef.current = false;
-            addToast(
-                `Importing ${paths.length} video${paths.length === 1 ? '' : 's'}…`,
-                'info',
-                {
-                    label: 'Cancel',
-                    onClick: () => {
-                        videoImportCancelledRef.current = true;
-                        const operationId = activeVideoImportRef.current;
-                        if (operationId) void cancelVideoImport(operationId);
-                    }
-                }
-            );
-            const summary = await importVideoPaths(paths, operationId => {
-                activeVideoImportRef.current = operationId;
-            }, () => videoImportCancelledRef.current);
-            activeVideoImportRef.current = null;
-            videoImportCancelledRef.current = false;
-            await queryClient.invalidateQueries({ queryKey: imagesQueryKey });
-            const accepted = summary.imported + summary.duplicate;
-            addToast(
-                `${accepted} video${accepted === 1 ? '' : 's'} ready${summary.cancelled ? ', import cancelled' : ''}${summary.rejected ? `, ${summary.rejected} rejected` : ''}${summary.posterFailures ? `, ${summary.posterFailures} using a generic poster` : ''}`,
-                summary.rejected > 0 || summary.cancelled > 0 ? 'warning' : 'success'
-            );
+            await fileOps.handleImportPaths(paths);
         } catch (error) {
-            activeVideoImportRef.current = null;
-            videoImportCancelledRef.current = false;
-            await queryClient.invalidateQueries({ queryKey: imagesQueryKey });
             addToast(`Video import failed: ${String(error)}`, 'error');
         }
-    }, [addToast, imagesQueryKey, queryClient]);
+    }, [addToast, fileOps]);
 
     useFolderMonitor({
         isLoaded,
@@ -473,6 +458,7 @@ export default function App() {
     // --- Effects ---
     useEffect(() => {
         if (!privacyExposureBlocked) return;
+        setViewerRevealGrantId(null);
         setSelectedImageIndex(null);
         setViewingImageId(null);
     }, [privacyExposureBlocked, setSelectedImageIndex, setViewingImageId]);
@@ -525,7 +511,10 @@ export default function App() {
         isViewerOpen: viewingImageId !== null || selectedImageIndex !== null || isMaintenanceViewerOpen,
         gridRef,
         searchInputRef: inputRef,
-        setSelectedImageIndex,
+        setSelectedImageIndex: (index) => {
+            setViewerRevealGrantId(null);
+            setSelectedImageIndex(index);
+        },
         setSelectedIds,
         setLastSelectedId,
         clearSelection,
@@ -695,7 +684,7 @@ export default function App() {
                 actions={actions}
                 availableTags={availableTags}
                 selectedIds={selectedIds}
-                handleImageClick={handleImageClick}
+                handleImageClick={handleViewerImageClick}
                 setSelectedImageIndex={setSelectedImageIndex}
                 handleSelectionToggle={handleSelectionToggle}
                 activeCollection={activeCollection}
@@ -833,12 +822,19 @@ export default function App() {
                             key={`video-viewer:${displayedViewerImage.id}`}
                             video={displayedViewerImage}
                             isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, settings.promptMaskingEnabled === false ? [] : settings.maskedKeywords)}
-                            onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
+                            initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
+                            onClose={() => { setViewerRevealGrantId(null); setSelectedImageIndex(null); setViewingImageId(null); }}
                             onNext={() => {
-                                if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) setSelectedImageIndex(selectedImageIndex + 1);
+                                if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) {
+                                    setViewerRevealGrantId(null);
+                                    setSelectedImageIndex(selectedImageIndex + 1);
+                                }
                             }}
                             onPrev={() => {
-                                if (selectedImageIndex !== null && selectedImageIndex > 0) setSelectedImageIndex(selectedImageIndex - 1);
+                                if (selectedImageIndex !== null && selectedImageIndex > 0) {
+                                    setViewerRevealGrantId(null);
+                                    setSelectedImageIndex(selectedImageIndex - 1);
+                                }
                             }}
                             onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
                             onTogglePin={(id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })}
@@ -851,15 +847,19 @@ export default function App() {
                             key="image-viewer"
                             image={displayedViewerImage}
                             isOpen={true}
+                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, settings.promptMaskingEnabled === false ? [] : settings.maskedKeywords)}
+                            initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
                             isShortcutBlocked={isViewerShortcutBlocked}
-                            onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
+                            onClose={() => { setViewerRevealGrantId(null); setSelectedImageIndex(null); setViewingImageId(null); }}
                             onNext={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) {
+                                    setViewerRevealGrantId(null);
                                     setSelectedImageIndex(selectedImageIndex + 1);
                                 }
                             }}
                             onPrev={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex > 0) {
+                                    setViewerRevealGrantId(null);
                                     setSelectedImageIndex(selectedImageIndex - 1);
                                 }
                             }}

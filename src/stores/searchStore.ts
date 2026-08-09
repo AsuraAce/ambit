@@ -34,6 +34,7 @@ interface SearchState {
 }
 
 const INITIAL_FILTERS: FilterState = {
+    mediaType: 'all',
     searchQuery: '',
     models: [],
     tools: [],

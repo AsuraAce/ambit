@@ -24,6 +24,13 @@ type AppLayoutProbe = {
     onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
     isViewerShortcutBlocked: boolean;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
+    handleImageClick: (
+        event: React.MouseEvent,
+        id: string,
+        index: number,
+        callback: (index: number) => void,
+        revealGranted?: boolean,
+    ) => void;
     searchProps: {
         onFocus: () => void;
         onBlur: () => void;
@@ -77,6 +84,8 @@ type ImportModalProbe = {
 
 type ViewerProbe = {
     image: AIImage;
+    isMasked: boolean;
+    initiallyRevealed: boolean;
     isShortcutBlocked: boolean;
     onClose: () => void;
     onNext: () => void;
@@ -281,6 +290,7 @@ vi.mock('./stores/settingsStore', () => {
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
         flushSettings: mocks.flushSettings,
+        privacyEnabled: true,
     });
     const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) => selector({
         isLoaded: mocks.settingsLoaded,
@@ -288,7 +298,8 @@ vi.mock('./stores/settingsStore', () => {
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
-        flushSettings: mocks.flushSettings
+        flushSettings: mocks.flushSettings,
+        privacyEnabled: true,
     });
     useSettingsStore.getState = storeState;
     return { useSettingsStore };
@@ -961,6 +972,40 @@ describe('App orchestration', () => {
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
         expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('grants one revealed card opening without reusing it for a direct reopen', async () => {
+        mocks.images = [
+            { ...image('one'), userMasked: true },
+            { ...image('two'), userMasked: true },
+        ];
+        mocks.handleImageClick.mockImplementationOnce((
+            _event: React.MouseEvent,
+            _id: string,
+            index: number,
+            callback: (nextIndex: number) => void,
+        ) => callback(index));
+        render(<App />);
+
+        const layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.handleImageClick({} as React.MouseEvent, 'one', 0, layout.setSelectedImageIndex, true));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: true,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: false,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.initiallyRevealed).toBe(false));
+        expect(requireProbe(captured.viewer, 'ImageViewer').isMasked).toBe(true);
     });
 
     it('keeps the open viewer bound to its original result session when search results are replaced', async () => {

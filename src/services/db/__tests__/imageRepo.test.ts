@@ -16,6 +16,7 @@ vi.mock('../../../bindings', () => ({
     commands: {
         saveImagesBatch: vi.fn(),
         moveImagePathIdentities: vi.fn(),
+        markImagePathIdentitiesMissing: vi.fn(),
         moveToTrash: vi.fn(),
         deleteThumbnail: vi.fn(),
         rebuildFacetCache: vi.fn(),
@@ -1493,14 +1494,19 @@ describe('imageRepo batch removal', () => {
         );
     });
 
-    it('handles empty batches and delegates normalized path identity moves', async () => {
+    it('handles empty batches and delegates normalized path identity writes', async () => {
         const { commands } = await import('../../../bindings');
         vi.mocked(commands.moveImagePathIdentities).mockResolvedValue({
             status: 'ok',
             data: { moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 }
         });
+        vi.mocked(commands.markImagePathIdentitiesMissing).mockResolvedValue({
+            status: 'ok',
+            data: 1
+        });
         const {
             insertImagesBatch,
+            markImagePathIdentitiesMissing,
             moveImagePathIdentities,
             moveImagePathIdentity,
             getRemovedImagesByIds,
@@ -1510,6 +1516,8 @@ describe('imageRepo batch removal', () => {
         } = await import('../imageRepo');
 
         await insertImagesBatch([]);
+        await expect(markImagePathIdentitiesMissing([])).resolves.toBe(0);
+        await expect(markImagePathIdentitiesMissing(['C:\\gone.webm'])).resolves.toBe(1);
         await expect(moveImagePathIdentities([])).resolves.toEqual({ moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 });
         await expect(moveImagePathIdentity('C:\\old.png', 'C:\\new.png', 'C:\\thumb.webp', 'source')).resolves.toBe(true);
         await expect(getRemovedImagesByIds([])).resolves.toEqual([]);
@@ -1523,6 +1531,7 @@ describe('imageRepo batch removal', () => {
             thumbnailPath: 'C:/thumb.webp',
             thumbnailSource: 'source'
         }]);
+        expect(commands.markImagePathIdentitiesMissing).toHaveBeenCalledWith(['C:/gone.webm']);
         expect(getDbMock).not.toHaveBeenCalled();
     });
 

@@ -160,6 +160,7 @@ export type LibraryAsset = AIImage | VideoAsset;
 export const isVideoAsset = (asset: AIImage): asset is VideoAsset => asset.mediaType === 'video';
 
 export interface FilterState {
+  mediaType?: 'all' | 'image' | 'video';
   searchQuery: string;
   models: string[];
   tools: GeneratorTool[];

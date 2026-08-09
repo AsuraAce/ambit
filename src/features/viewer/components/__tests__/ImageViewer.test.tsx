@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
@@ -189,6 +189,28 @@ describe('ImageViewer full metadata loading', () => {
     afterEach(() => {
         vi.clearAllTimers();
         vi.useRealTimers();
+    });
+
+    it('does not load a masked image until the viewer reveal is confirmed', async () => {
+        renderViewer({ isMasked: true });
+
+        expect(screen.getByRole('button', { name: 'Reveal image' })).toBeTruthy();
+        expect(screen.queryByTestId('image-canvas')).toBeNull();
+        expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
+        expect(assetAccessMock).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reveal image' }));
+        await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
+        expect(assetAccessMock).toHaveBeenCalledWith(lightImage.url);
+    });
+
+    it('uses a card reveal grant without showing a second image gate', async () => {
+        renderViewer({ isMasked: true, initiallyRevealed: true });
+
+        expect(screen.queryByRole('button', { name: 'Reveal image' })).toBeNull();
+        await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
     });
 
     it('keeps persisted original metadata when a lightweight image omits it after restart', async () => {

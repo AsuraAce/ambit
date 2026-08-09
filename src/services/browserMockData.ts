@@ -447,6 +447,7 @@ const filterImages = (images: AIImage[], filters: FilterState, collections: Coll
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
+        if (filters.mediaType && filters.mediaType !== 'all' && (image.mediaType ?? 'image') !== filters.mediaType) return false;
         if (!filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
         if (!filters.showGrids && image.metadata.isGrid) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
@@ -588,12 +589,15 @@ export const getBrowserMockStatsSummary = (filters: FilterState): LibraryStatsSu
     });
 
     return {
-        totalImages: images.length,
+        totalItems: images.length,
+        totalImages: images.filter(image => (image.mediaType ?? 'image') === 'image').length,
+        totalVideos: images.filter(image => image.mediaType === 'video').length,
+        totalBytes: images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0),
         totalGenerations: images.length,
         avgSteps: recordedSteps.length
             ? Math.round(recordedSteps.reduce((sum, steps) => sum + steps, 0) / recordedSteps.length)
             : 0,
-        estSizeMB: (images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0) / 1_000_000).toFixed(1),
+        estSizeMB: (images.reduce((sum, image) => sum + (image.fileSize ?? 0), 0) / (1024 * 1024)).toFixed(1),
         modelStats: Array.from(modelCounts.entries())
             .sort((a, b) => b[1] - a[1])
             .map(([name, count]) => ({ name, fullName: name, count }))

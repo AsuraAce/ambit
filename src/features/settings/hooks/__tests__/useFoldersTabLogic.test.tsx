@@ -136,7 +136,7 @@ describe('useFoldersTabLogic', () => {
             .mockImplementation(updateLastScannedMock);
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }]
         });
         vi.mocked(processNativePaths).mockResolvedValueOnce({
             images: [],
@@ -197,7 +197,7 @@ describe('useFoldersTabLogic', () => {
         });
         vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({
             status: 'ok',
-            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10 }]
+            data: [{ path: 'D:/AmbitFixtures/Comfy/output/new.png', modified: 100, size: 10, mediaType: 'image' }]
         });
         const settings = {
             ...baseSettings,
@@ -600,7 +600,7 @@ describe('useFoldersTabLogic', () => {
             ...baseSettings,
             monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10, variant: GeneratorTool.COMFYUI }]
         };
-        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/Watch/new.png', modified: 1, size: 1 }] });
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'C:/Watch/new.png', modified: 1, size: 1, mediaType: 'image' }] });
         vi.mocked(processNativePaths).mockImplementationOnce(async (_paths, _thumbs, progress) => {
             progress?.(1, 1, 'done');
             return emptyImportResult({ images: [{ id: 'new' } as never], handledPaths: ['C:/Watch/new.png'] });
@@ -620,7 +620,7 @@ describe('useFoldersTabLogic', () => {
         };
         vi.mocked(commands.scanDirectorySince).mockResolvedValue({ status: 'ok', data: [] });
         vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({
-            status: 'ok', data: [{ path: 'a', modified: 1, size: 1 }, { path: 'b', modified: 1, size: 1 }]
+            status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }, { path: 'b', modified: 1, size: 1, mediaType: 'image' }]
         });
         vi.mocked(processNativePaths).mockResolvedValueOnce(emptyImportResult({ images: [{ id: 'new' } as never] }));
         const repair = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
@@ -628,7 +628,7 @@ describe('useFoldersTabLogic', () => {
         expect(addToastMock).toHaveBeenCalledWith('Repair scan imported 1 missing files', 'success');
         repair.unmount();
 
-        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1 }] });
+        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }] });
         const noChange = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
         await act(async () => noChange.result.current.handleRescan('one', 'C:/Watch', GeneratorTool.COMFYUI));
         expect(addToastMock).toHaveBeenCalledWith('No changes detected', 'info');
@@ -685,7 +685,7 @@ describe('useFoldersTabLogic', () => {
             ...baseSettings,
             monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 1, lastScanned: 10 }]
         };
-        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'bad', modified: 1, size: 1 }] });
+        vi.mocked(commands.scanDirectorySince).mockResolvedValueOnce({ status: 'ok', data: [{ path: 'bad', modified: 1, size: 1, mediaType: 'image' }] });
         vi.mocked(processNativePaths).mockResolvedValueOnce(emptyImportResult({ failedPaths: ['bad'] }));
         const { result } = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));
         await act(async () => result.current.handleRescan('one', 'C:/Watch'));
@@ -701,7 +701,7 @@ describe('useFoldersTabLogic', () => {
             monitoredFolders: [{ id: 'one', path: 'C:/Watch', isActive: true, imageCount: 0, lastScanned: 10 }]
         };
         vi.mocked(commands.scanDirectorySince).mockResolvedValue({ status: 'ok', data: [] });
-        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValue({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1 }] });
+        vi.mocked(commands.scanDirectoryWithStats).mockResolvedValue({ status: 'ok', data: [{ path: 'a', modified: 1, size: 1, mediaType: 'image' }] });
 
         useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
         const busy = renderHook(() => useFoldersTabLogic({ settings, setSettings: vi.fn(), onScanFolder: vi.fn() }));

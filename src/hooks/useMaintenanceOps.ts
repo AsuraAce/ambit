@@ -62,7 +62,7 @@ export const useMaintenanceOps = ({
                 console.info(`${logPrefix}: tombstoning images`, { count: ids.length });
                 await removeImagesFromLibrary(ids);
                 setImages(prev => prev.filter(img => !ids.includes(img.id)));
-                addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
+                addToast(`Removed ${ids.length} item${ids.length === 1 ? '' : 's'} from the library`, 'success');
             }
 
             if (!permanent) {

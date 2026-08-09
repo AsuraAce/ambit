@@ -115,6 +115,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 }) => {
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
     const imageOnlyResults = filteredImages.filter(image => !isVideoAsset(image));
+    const deleteTargetCount = pendingViewerDeleteId ? 1 : selectedIds.size;
 
     return (
         <>
@@ -158,7 +159,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                 onCancel={() => closeModal('deleteConfirm')}
                 onConfirm={() => onDeleteConfirm()}
                 title="Remove from Library?"
-                message={`Remove ${pendingViewerDeleteId ? 1 : selectedIds.size} image(s) from Ambit while keeping the original file(s) on disk? You can restore them later from Maintenance > Removed.`}
+                message={`Remove ${deleteTargetCount} ${deleteTargetCount === 1 ? 'item' : 'items'} from Ambit while keeping the original ${deleteTargetCount === 1 ? 'file' : 'files'} on disk? You can restore them later from Maintenance > Removed.`}
                 isDangerous={true}
             />
 

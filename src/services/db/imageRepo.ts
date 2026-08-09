@@ -347,6 +347,24 @@ export const moveImagePathIdentity = async (
     return result.moved === 1;
 };
 
+export const markImagePathIdentitiesMissing = async (ids: string[]): Promise<number> => {
+    if (ids.length === 0) return 0;
+
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (isBrowserMockMode()) {
+        let marked = 0;
+        normalizedIds.forEach(id => {
+            const existing = getBrowserMockImages().find(image => image.id === id);
+            if (!existing || existing.isMissing) return;
+            updateBrowserMockImage(id, { isMissing: true });
+            marked++;
+        });
+        return marked;
+    }
+
+    return unwrap(commands.markImagePathIdentitiesMissing(normalizedIds));
+};
+
 /**
  * Rebuilds the facet_cache table with pre-computed counts for all resources.
  * This runs the expensive queries once per import, so getFacets becomes instant.

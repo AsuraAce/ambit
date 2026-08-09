@@ -110,7 +110,7 @@ interface AppLayoutProps {
     actions: ReturnType<typeof useAppActions>;
     availableTags: string[];
     selectedIds: Set<string>;
-    handleImageClick: (e: React.MouseEvent, id: string, index: number, callback: (index: number) => void) => void;
+    handleImageClick: (e: React.MouseEvent, id: string, index: number, callback: (index: number) => void, revealGranted?: boolean) => void;
     setSelectedImageIndex: (index: number | null) => void;
     handleSelectionToggle: (e: React.MouseEvent | undefined, id: string) => void;
     activeCollection: Collection | null | undefined;
@@ -250,6 +250,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         settings.thumbnailSize ?? 'default-size',
         sortOption,
         filters.collectionId ?? 'library',
+        filters.mediaType ?? 'all-media',
         filters.favoritesOnly ? 'favorites' : 'all-images',
         filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
         filters.showGrids ? 'show-grids' : 'hide-grids',
@@ -259,6 +260,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         settings.thumbnailSize,
         sortOption,
         filters.collectionId,
+        filters.mediaType,
         filters.favoritesOnly,
         filters.pinnedOnly,
         filters.showGrids,
@@ -276,7 +278,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             selectedIds={selectedIds}
             maskedKeywords={effectiveMaskedKeywords}
             setImages={handlers.setImages}
-            onClick={(e, id, idx) => handleImageClick(e, id, idx, setSelectedImageIndex)}
+            onClick={(e, id, idx, revealGranted) => handleImageClick(e, id, idx, setSelectedImageIndex, revealGranted)}
             onToggleSelection={handleSelectionToggle}
             onToggleFavorite={(e, id) => toggleFavorite(id)}
             onTogglePin={(e, id) => {
@@ -440,7 +442,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             thumbnailSize={settings.thumbnailSize}
                                             sortOption={sortOption}
                                             maskedKeywords={effectiveMaskedKeywords}
-                                            onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
+                                            onImageClick={(e, id, index, revealGranted) => handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)}
                                             onSelectionToggle={handleSelectionToggle}
                                             onToggleFavorite={(e, id) => { toggleFavorite(id); }}
                                             onTogglePin={(e, id) => {
@@ -464,7 +466,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                     selectedIds={selectedIds}
                                                     maskedKeywords={effectiveMaskedKeywords}
                                                     setImages={handlers.setImages}
-                                                    onImageClick={(e, id, index) => handleImageClick(e, id, index, setSelectedImageIndex)}
+                                                    onImageClick={(e, id, index, revealGranted) => handleImageClick(e, id, index, setSelectedImageIndex, revealGranted)}
                                                     onToggleSelection={handleSelectionToggle}
                                                     onToggleFavorite={(e, id) => toggleFavorite(id)}
                                                     onTogglePin={(e, id) => {

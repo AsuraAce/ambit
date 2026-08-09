@@ -155,7 +155,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
             const uniqueRestored = restoredImages.filter(image => !existingIds.has(image.id));
             return uniqueRestored.length > 0 ? [...uniqueRestored, ...p] : p;
         });
-        addToast(`Restored ${ids.length} image${ids.length === 1 ? '' : 's'} to the library`, 'success');
+        addToast(`Restored ${ids.length} item${ids.length === 1 ? '' : 's'} to the library`, 'success');
         refreshMaintenanceCounts();
         refreshFacets();
     };
@@ -163,7 +163,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts }: 
     const handleRemoveFromLibrary = async (ids: string[]) => {
         await removeImagesFromLibrary(ids);
         setImages(p => p.filter(i => !ids.includes(i.id)));
-        addToast(`Removed ${ids.length} image${ids.length === 1 ? '' : 's'} from the library`, 'success');
+        addToast(`Removed ${ids.length} item${ids.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
         refreshFacets();
     };

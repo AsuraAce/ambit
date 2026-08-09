@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
     updateVideoPlaybackStatus: vi.fn().mockResolvedValue(undefined),
     openFileInDefaultApp: vi.fn().mockResolvedValue({ status: 'ok', data: null }),
     prepareVideoPlayback: vi.fn().mockResolvedValue({ status: 'ok', data: 'C:/videos/clip.mp4' }),
+    exportAssetOriginal: vi.fn(),
+    open: vi.fn(),
     convertFileSrc: vi.fn((path: string) => `asset://localhost/${path}`),
     getCollectionsForImage: vi.fn().mockResolvedValue([]),
     addToast: vi.fn()
@@ -28,13 +30,16 @@ vi.mock('../../../../hooks/useToast', () => ({
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: mocks.convertFileSrc
 }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({
+    open: mocks.open
+}));
 vi.mock('../../../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: { collections: Array<{ id: string; name: string }> }) => unknown) =>
         selector({ collections: [{ id: 'collection-1', name: 'Favorites set' }] })
 }));
 vi.mock('../../../../bindings', () => ({
     commands: {
-        exportAssetOriginal: vi.fn(),
+        exportAssetOriginal: mocks.exportAssetOriginal,
         prepareVideoPlayback: mocks.prepareVideoPlayback
     }
 }));
@@ -70,10 +75,11 @@ const video: VideoAsset = {
     }
 };
 
-const setup = (isMasked = false) => {
+const setup = (isMasked = false, videoOverrides: Partial<VideoAsset> = {}, initiallyRevealed = false) => {
     const props: React.ComponentProps<typeof VideoViewer> = {
-        video,
+        video: { ...video, ...videoOverrides },
         isMasked,
+        initiallyRevealed,
         onClose: vi.fn(),
         onNext: vi.fn(),
         onPrev: vi.fn(),
@@ -90,6 +96,7 @@ describe('VideoViewer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getCollectionsForImage.mockResolvedValue([]);
+        mocks.prepareVideoPlayback.mockResolvedValue({ status: 'ok', data: 'C:/videos/clip.mp4' });
     });
 
     it('does not create or scope a player before a masked video is revealed', async () => {
@@ -107,6 +114,14 @@ describe('VideoViewer', () => {
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/videos/clip.mp4');
     });
 
+    it('uses a card reveal grant without showing a second viewer gate', async () => {
+        setup(true, {}, true);
+
+        expect(screen.queryByRole('button', { name: 'Reveal video' })).toBeNull();
+        await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('clip.mp4'));
+        expect(mocks.prepareVideoPlayback).toHaveBeenCalledOnce();
+    });
+
     it('records decode success and renders an external fallback after a playback error', async () => {
         setup();
         const player = await waitFor(() => {
@@ -121,6 +136,35 @@ describe('VideoViewer', () => {
         fireEvent.error(player);
         expect(await screen.findByText('Playback unavailable here')).toBeTruthy();
         expect(mocks.updateVideoPlaybackStatus).toHaveBeenCalledWith(video.id, 'external_required');
+    });
+
+    it('explains a missing source without preparing playback or offering file actions', () => {
+        setup(false, { isMissing: true, playbackStatus: 'playable' });
+
+        expect(screen.getByText('Source file missing')).toBeTruthy();
+        expect(screen.getByText(/Restore the file at its original location/)).toBeTruthy();
+        expect(mocks.prepareVideoPlayback).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: 'Open in default app' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Export original' })).toBeNull();
+        expect(screen.queryByText('Open externally')).toBeNull();
+    });
+
+    it('exports the original and hides the Windows verbatim prefix in the toast', async () => {
+        mocks.open.mockResolvedValueOnce('C:/exports');
+        mocks.exportAssetOriginal.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                assetId: video.id,
+                outputPath: '//?/C:/exports/clip.mp4',
+                bytesCopied: 2_500
+            }
+        });
+        setup();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Export original' }));
+
+        await waitFor(() => expect(mocks.exportAssetOriginal).toHaveBeenCalledWith(video.id, 'C:/exports'));
+        expect(mocks.addToast).toHaveBeenCalledWith('Exported C:/exports/clip.mp4', 'success');
     });
 
     it('persists notes and collection membership through generic asset actions', async () => {

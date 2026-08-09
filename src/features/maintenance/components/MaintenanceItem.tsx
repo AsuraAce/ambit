@@ -9,12 +9,12 @@ interface MaintenanceItemProps {
     img: AIImage;
     style: React.CSSProperties;
     isSelected?: boolean;
-    onClick: (e: React.MouseEvent) => void;
+    onClick: (e: React.MouseEvent, revealGranted?: boolean) => void;
     maskedKeywords: string[];
     children?: React.ReactNode;
     showFilename?: boolean;
     imageClassName?: string;
-    overlayActions?: React.ReactNode;
+    overlayActions?: (revealGranted: boolean) => React.ReactNode;
     isMissing?: boolean;
 }
 
@@ -32,12 +32,14 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
 }) => {
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
-    const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
+    const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
+    const isMasked = !isRevealed && effectiveMasked;
+    const revealGranted = effectiveMasked && isRevealed;
 
     return (
         <div style={style} className="p-1">
             <div
-                onClick={onClick}
+                onClick={(event) => onClick(event, revealGranted)}
                 className={`h-full w-full rounded-xl overflow-hidden border-2 transition-all cursor-pointer relative ${isSelected ? 'border-sage-500 ring-2 ring-sage-500/30 shadow-lg shadow-sage-500/10' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 bg-gray-100 dark:bg-slate-800'}`}
                 onMouseLeave={() => isRevealed && setRevealed(false)}
             >
@@ -73,7 +75,7 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
 
                     {overlayActions && !isMasked && (
                         <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition-colors flex items-center justify-center z-20">
-                            {overlayActions}
+                            {overlayActions(revealGranted)}
                         </div>
                     )}
 

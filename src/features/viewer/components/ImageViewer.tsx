@@ -21,9 +21,12 @@ import {
     getEffectiveAiThinkingMode,
     getEffectiveSystemPrompts
 } from '../../../utils/settingsUtils';
+import { MaskedViewerGate } from './MaskedViewerGate';
 
 interface ImageViewerProps {
     image: AIImage;
+    isMasked?: boolean;
+    initiallyRevealed?: boolean;
     availableTags?: string[];
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onClose: () => void;
@@ -106,6 +109,8 @@ const ViewerStatusHud: React.FC<ViewerStatusHudProps> = ({ isFavorite, isPinned,
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
     image,
+    isMasked = false,
+    initiallyRevealed = false,
     availableTags = [],
     onSetCollectionMembership,
     onClose,
@@ -133,6 +138,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const privacyExposureBlocked = useSettingsStore(state => (
         state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
     ));
+    const [revealedImageId, setRevealedImageId] = useState<string | null>(
+        initiallyRevealed ? image.id : null
+    );
+    const itemExposureBlocked = isMasked
+        && !initiallyRevealed
+        && revealedImageId !== image.id;
+    const mediaExposureBlocked = privacyExposureBlocked || itemExposureBlocked;
     const collections = useCollectionStore(s => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
@@ -147,7 +159,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // Reset local version and/or fetch full metadata when image or version changes
     useEffect(() => {
-        if (privacyExposureBlocked) {
+        if (mediaExposureBlocked) {
             setFullImage(null);
             setIsLoadingFull(false);
             return;
@@ -163,7 +175,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (res) setFullImage(res);
             setIsLoadingFull(false);
         }).catch(() => setIsLoadingFull(false));
-    }, [image.id, activeVersionId, privacyExposureBlocked]);
+    }, [image.id, activeVersionId, mediaExposureBlocked]);
 
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
@@ -205,7 +217,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
     const { palette, isLoading: isPaletteLoading } = usePalette(
-        privacyExposureBlocked ? null : displayImage.url
+        mediaExposureBlocked ? null : displayImage.url
     );
     const { addToast } = useToast();
     const ai = useImageAI({
@@ -245,10 +257,15 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     ]);
 
     useEffect(() => {
+        setRevealedImageId(initiallyRevealed ? image.id : null);
+    }, [image.id, initiallyRevealed]);
+
+    useEffect(() => {
+        if (mediaExposureBlocked) return;
         void ensureAssetPathAccessible(displayImage.url).catch((error) => {
             console.warn('[ImageViewer] Failed to register image path for viewer', error);
         });
-    }, [displayImage.url]);
+    }, [displayImage.url, mediaExposureBlocked]);
 
     const revealStatusHud = useCallback((duration = 1600) => {
         setShowStatusHud(true);
@@ -339,6 +356,17 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     }, [isOpen, onClose, privacyExposureBlocked]);
 
     if (!isOpen || privacyExposureBlocked) return null;
+
+    if (itemExposureBlocked) {
+        return (
+            <MaskedViewerGate
+                filename={image.filename}
+                mediaLabel="image"
+                onReveal={() => setRevealedImageId(image.id)}
+                onClose={onClose}
+            />
+        );
+    }
 
     const isSidebarVisible = isSidebarOpen && !isTheaterMode;
 

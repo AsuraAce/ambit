@@ -262,7 +262,7 @@ describe('useMaintenanceOps metadata recovery', () => {
         await act(async () => result.current.deleteImages([image.id]));
 
         expect(imageRepoMocks.removeImagesFromLibrary).toHaveBeenCalledWith([image.id]);
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 1 image from the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Removed 1 item from the library', 'success');
         expect(mockAddToast).toHaveBeenCalledWith('Removed from library, but collections may need a refresh.', 'warning');
         expect(mockAddToast).toHaveBeenCalledWith('Library update succeeded, but filters may take a moment to refresh.', 'info');
         expect(mockIncrementFacetCacheVersion).not.toHaveBeenCalled();
@@ -315,6 +315,6 @@ describe('useMaintenanceOps metadata recovery', () => {
         await act(async () => result.current.deleteImages([image.id, other.id]));
 
         expect(mockAddToast).toHaveBeenCalledWith('Moved 1 file to OS trash', 'success');
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 images from the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 items from the library', 'success');
     });
 });

@@ -169,12 +169,23 @@ describe('DuplicateFinder', () => {
         fireEvent.click(screen.getAllByRole('button', { name: 'Compare with Another Copy' })[0]);
         fireEvent.click(screen.getAllByText('Keep Only This')[1]);
 
-        expect(onViewImage).toHaveBeenCalledWith('exact-0');
+        expect(onViewImage).toHaveBeenCalledWith('exact-0', false);
         expect(onCompareImages).toHaveBeenCalledWith(
             expect.objectContaining({ id: 'exact-2' }),
             expect.objectContaining({ id: 'exact-0' })
         );
         expect(mocks.handleResolve).toHaveBeenCalledWith('exact-1', ['exact-0', 'exact-1', 'exact-2']);
+    });
+
+    it('keeps comparison unavailable for exact duplicate videos', () => {
+        const videos = exact().images.map(item => ({ ...item, mediaType: 'video' as const }));
+        mocks.groups = [{ id: 'video-group', images: videos, latestModifiedId: videos[1].id }];
+        mocks.totalRedundantCount = 1;
+
+        render(<DuplicateFinder {...baseProps()} onCompareImages={vi.fn()} />);
+
+        const compareButtons = screen.getAllByRole('button', { name: 'Compare with Another Copy' }) as HTMLButtonElement[];
+        expect(compareButtons.every(button => button.disabled)).toBe(true);
     });
 
     it('contains rejected resolution actions after the persistence layer reports the failure', async () => {

@@ -421,14 +421,8 @@ pub async fn prepare_video_playback(
         return Err("Asset ID cannot be empty".to_string());
     }
     let path = run_blocking(app.clone(), move |conn| {
-        conn.query_row(
-            "SELECT path FROM images WHERE id = ?1 AND media_type = 'video' AND is_deleted = 0",
-            [&asset_id],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?
-        .ok_or_else(|| "Video asset is not present in the active library".to_string())
+        load_video_playback_path(conn, &asset_id)?
+            .ok_or_else(|| "Video asset is not present in the library or Removed".to_string())
     })
     .await?;
     let canonical = resolve_existing_regular_file(&path, "video")?;
@@ -439,6 +433,24 @@ pub async fn prepare_video_playback(
         .allow_file(&canonical)
         .map_err(|error| format!("Failed to scope video asset URL: {error}"))?;
     Ok(normalize_path(&canonical))
+}
+
+fn load_video_playback_path(
+    conn: &rusqlite::Connection,
+    asset_id: &str,
+) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT path FROM images
+         WHERE id = ?1 AND media_type = 'video' AND is_deleted = 0
+         UNION ALL
+         SELECT path FROM removed_images
+         WHERE id = ?1 AND media_type = 'video'
+         LIMIT 1",
+        [asset_id],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -962,7 +974,7 @@ fn copy_without_overwrite(source: &Path, destination: &Path) -> Result<(PathBuf,
 #[cfg(test)]
 mod tests {
     use super::{
-        collision_safe_output_path, copy_without_overwrite, normalize_rotation,
+        collision_safe_output_path, copy_without_overwrite, load_video_playback_path, normalize_rotation,
         parse_mediainfo_json, upsert_video_asset, VideoAssetRecord,
     };
     use std::fs;
@@ -1002,6 +1014,28 @@ mod tests {
         assert_eq!(normalize_rotation(-90.0).unwrap(), 270);
         assert_eq!(normalize_rotation(360.0).unwrap(), 0);
         assert!(normalize_rotation(45.0).is_err());
+    }
+
+    #[test]
+    fn playback_path_can_be_loaded_from_removed_video_records() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE images (
+                id TEXT PRIMARY KEY, path TEXT NOT NULL, media_type TEXT NOT NULL,
+                is_deleted INTEGER NOT NULL DEFAULT 0
+             );
+             CREATE TABLE removed_images (
+                id TEXT PRIMARY KEY, path TEXT NOT NULL, media_type TEXT NOT NULL
+             );
+             INSERT INTO removed_images (id, path, media_type)
+             VALUES ('removed-video', 'C:/videos/removed.webm', 'video');",
+        )
+        .expect("setup playback lookup schema");
+
+        assert_eq!(
+            load_video_playback_path(&conn, "removed-video").unwrap().as_deref(),
+            Some("C:/videos/removed.webm")
+        );
     }
 
     #[test]

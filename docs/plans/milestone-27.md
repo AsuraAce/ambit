@@ -1,6 +1,6 @@
 # Milestone 27: GenAI Video Library Support
 
-Status: In progress - WP1 accepted; WP2 is the next delivery package
+Status: In progress - WP1 and WP2 accepted; WP3 is next
 Delivery posture: Assure
 Baseline: `origin/main` at `a6ee3ec7b9f33bba070d98dc481722f4dac10957`
 (`chore(main): release 0.9.1 (#261)`, fetched 2026-07-29)
@@ -427,6 +427,91 @@ Completion criteria:
   metadata.
 - Large-library browsing remains responsive under the existing performance
   expectations and no new unbounded startup scan is introduced.
+
+Implementation checkpoint (2026-07-30): configured-folder discovery and the
+shared import queue now admit the WP0 video extension set with the same duplicate,
+stability, cancellation, progress, and failure-isolation behavior as images. Live
+Watch emits typed create/modify/rename/remove changes; rename preserves record
+identity and user state, and removal converges through the existing missing-link
+path. Mixed-library exact hashing, Removed preservation, ZIP export, collections,
+flags, notes, privacy, and missing audit accept videos while comparison,
+intermediate/grid maintenance, thumbnail work, slideshow, and Gemini recovery
+remain image-only. The gallery adds All/Images/Videos filtering, smart collections
+can preserve the media rule, and statistics report distinct item/image/video
+counts plus stored file bytes instead of the old per-item estimate. ZIP source
+reads are bounded to four concurrent files and include video technical fields in
+the manifest.
+
+Automated evidence at this checkpoint: 321 focused frontend regressions passed;
+the complete frontend suite reached 2,916 passing tests with one intentional skip
+after its single task-related expectation was updated; all 541 Rust tests passed
+with one existing ignored parser test; lint, strict TypeScript, generated binding
+drift, frontend production build, and the Tauri release-profile no-bundle build
+passed. The all-repository single-worker coverage command exceeded the local
+six-minute tool limit and briefly reported eight order-sensitive UI failures; all
+83 affected tests, including the changed statistics surface, passed together both
+normally and under coverage instrumentation. Owner smoke and the final closure
+review remain the WP2 acceptance gates.
+
+Owner-smoke remediation checkpoint (2026-08-09): adding the first monitored
+folder after an empty startup imported its image and video successfully but could
+also emit a false "completed with import errors" warning. The startup catch-up
+effect was still eligible to claim that newly queued folder, competing with the
+Settings-owned initial scan. Startup eligibility now closes after the first
+loaded pass even when no folders are configured, leaving later queued folders to
+their owning scan. The exact empty-startup-to-queued-folder regression and the
+adjacent folder/integration suites pass; owner smoke remains in progress.
+
+A second owner-smoke failure showed that native create, modify, and rename
+notifications were logged but did not update the library. The typed Specta event
+was declared but never mounted during Tauri setup, so the first background emit
+terminated the forwarding task. Tauri now mounts the event registry before any
+watcher can start. Windows `RenameMode::From`/`RenameMode::To` fragments are also
+coalesced into one typed rename so record identity and user state can move with
+the path. Five focused Rust watcher tests, two startup-order tests, generated
+binding drift, and 81 frontend watcher/integration tests pass. A full app restart
+and owner re-smoke of create, modify, rename, and remove remain required.
+
+The restarted owner smoke then accepted create and modify but exposed a Windows
+rename identity mismatch: imported videos used canonical `//?/C:/...` IDs while
+watcher payloads used `C:/...`, so the move missed the source and the subsequent
+import created a second row without the source favorite or pin state. Native
+identity moves now match normal, verbatim-drive, and verbatim-UNC forms while
+retaining the stored identity style, thumbnail provenance, flags, and
+relationships; the restarted owner re-smoke accepted rename with one preserved
+record.
+
+The following remove smoke confirmed that the watcher event reached the app but
+the frontend missing-link update did not match the stored verbatim identity, so
+the absent video remained `is_missing = 0` and appeared playable until viewer
+preparation failed. Watcher removals now use a native identity-aware command that
+marks the matching record missing while preserving favorite and pin state. The
+video viewer now identifies this state as a missing source and does not offer
+playback, external-open, or original-export actions for the absent file. The
+focused Rust identity regression, 112 frontend repository/watcher/integration
+tests with one intentional skip, strict TypeScript, formatting, and generated
+binding drift pass. The restarted owner smoke accepted removal with exactly one
+missing record, no watched source file, and preserved favorite and pin state.
+The remaining mixed-library owner smoke accepted media filtering, mixed
+collections, favorite and pin persistence, Removed and restore, original and ZIP
+export, and the shared privacy policy. Masked images and videos now follow one
+explicit rule: hover never reveals, card reveal expires on mouse leave, an
+already-revealed card can open its viewer without a second prompt, direct or
+keyboard viewer entry remains gated, and no full media or video playback is
+initialized before viewer reveal. The momentary protection frame shown while
+`Shift+H` rebuilds the privacy-filtered query remains intentionally fail-closed;
+its split-second duration can read as a visual flicker but does not expose media.
+
+WP2 closure review (2026-08-09) found and fixed three bounded edge cases: a
+verbatim UNC rename target could be prefixed twice, Maintenance always opened
+videos in the image viewer, and Removed videos were excluded from playback path
+preparation. Regression coverage now protects verbatim UNC identity, native
+Maintenance video routing, and Removed-video playback lookup. Generic
+favorite/pin/collection copy and the smart-collection media lock glyph were also
+normalized. Final automated evidence is 2,924 passing frontend tests with one
+intentional skip and 547 passing Rust tests with one existing ignored parser
+test; lint, strict TypeScript, generated binding drift, and diff checks pass. No
+blocking WP2 finding remains.
 
 ### WP3 — GenAI Video Metadata and Provenance
 

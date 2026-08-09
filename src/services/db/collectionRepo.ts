@@ -773,6 +773,7 @@ export const getSmartCollectionSummaries = async (
     try {
         const queries = smartCollections.map(c => {
             const statsFilters: FilterState = {
+                mediaType: 'all',
                 collectionId: c.id,
                 dateRange: 'all',
                 favoritesOnly: false,

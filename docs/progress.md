@@ -1,6 +1,6 @@
 # Progress
 Status: Current
-Last reviewed: 2026-07-30
+Last reviewed: 2026-08-09
 
 ## Current Baseline
 - The current checkout and release manifests are version `0.9.1`: `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.dev.json`, `src-tauri/Cargo.toml`, and `.github/.release-please-manifest.json` agree. Hosted release state still belongs to GitHub rather than this file.
@@ -17,7 +17,7 @@ Last reviewed: 2026-07-30
 - The `io.github.asuraace.ambit` identifier is current. Startup migration and reset/repair paths still account for legacy `com.ambit.app` Local and Roaming AppData during the public-beta transition.
 
 ## Active Follow-Ups
-- `docs/plans/milestone-27.md` is the active GenAI video-support plan. WP1 manual import-to-viewer support is accepted after owner smoke, closure review, and the full release gate. WP2 folder discovery, Live Watch, and mixed-library operations are the next package; they are not implemented yet.
+- `docs/plans/milestone-27.md` is the active GenAI video-support plan. WP1 manual import-to-viewer support and WP2 folder discovery, typed Live Watch convergence, mixed-library operations, and aligned image/video privacy behavior are accepted. Owner smoke and closure review covered create, modify, rename, removal, filters, collections, flags, Removed/restore, export, privacy gating, Windows normal/verbatim/UNC identity, and Maintenance video routing. The momentary `Shift+H` privacy-protection frame remains intentionally fail-closed. WP3 metadata/provenance has not started and is the next planned package.
 - `docs/plans/release-0.9.0-ux-readiness.md` was overtaken by the `v0.9.0` release and is no longer a live release gate. Its Work Package 3 (initial Smart Collection thumbnail hydration) and Work Package 4 (discoverable duplicate-group navigation) remain unversioned product follow-ups.
 - Add browser smoke coverage for lazy-loaded app surfaces, including settings, statistics, maintenance, command palette, export, viewer, compare, recovery, slideshow, and collection editing.
 - Add coverage thresholds after the public-beta baseline is intentionally reviewed.

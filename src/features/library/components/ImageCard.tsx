@@ -13,7 +13,7 @@ interface ImageCardProps {
   isSelected: boolean;
   isMasked?: boolean;
   isThumbnail?: boolean; // New Prop
-  onClick: (e: React.MouseEvent) => void;
+  onClick: (e: React.MouseEvent, revealGranted?: boolean) => void;
   onToggleSelection: (e: React.MouseEvent) => void;
   onToggleFavorite: (e: React.MouseEvent) => void;
   onTogglePin?: (e: React.MouseEvent) => void;
@@ -67,7 +67,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
       `}
       onMouseDown={onMouseDown}
-      onClick={onClick}
+      onClick={(e) => onClick(e, isMasked && isRevealed)}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
@@ -128,11 +128,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               setIsRevealed(true);
-              if (isVideo) onClick(e);
             }}
             className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
           >
-            {isVideo ? 'Reveal and open' : 'Reveal'}
+            Reveal
           </button>
         </div>
       )}

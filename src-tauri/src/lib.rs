@@ -25,93 +25,96 @@ use watcher::WatcherState;
 /// This is shared between the app runtime and the export test.
 #[cfg(not(test))]
 pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
-        // security commands
-        security::save_api_key,
-        security::load_api_key,
-        security::delete_api_key,
-        // db commands
-        db::commands::image_commands::save_images_batch,
-        db::commands::image_commands::move_image_path_identities,
-        db::commands::maintenance::get_main_database_url,
-        db::commands::maintenance::get_db_diagnostics,
-        db::commands::maintenance::show_app_log_folder,
-        db::commands::maintenance::resolve_exact_duplicate_groups,
-        db::commands::maintenance::backfill_image_file_hashes,
-        db::commands::maintenance::cancel_image_file_hash_backfill,
-        db::commands::image_commands::refresh_boards_native,
-        db::commands::image_commands::get_image_count_for_path_prefix,
-        db::commands::image_commands::refresh_privacy_mask_index,
-        db::commands::maintenance::optimize_database,
-        db::commands::maintenance::schedule_purge_transaction,
-        db::commands::filter_commands::get_parameter_ranges,
-        db::commands::filter_commands::backfill_parameter_columns,
-        db::facets::rebuild_facet_cache,
-        db::facets::rebuild_facet_cache_incremental,
-        db::facets::rebuild_facet_cache_incremental_batch,
-        db::facets::refresh_facet_cache_for_resources,
-        db::facets::get_valid_facet_names,
-        db::commands::image_commands::mark_images_corrupt,
-        db::commands::image_commands::verify_library_integrity,
-        // db reparse commands
-        db::reparse::start_reparse_job,
-        db::reparse::cancel_reparse_job,
-        db::commands::reparse_commands::get_images_needing_reparse,
-        db::commands::reparse_commands::get_reparse_count,
-        db::commands::reparse_commands::reparse_metadata_batch,
-        db::commands::reparse_commands::reset_parser_versions,
-        db::commands::filter_commands::get_metadata_stats,
-        // db backup commands
-        db::backup::get_backups,
-        db::backup::backup_database,
-        db::backup::check_and_run_autobackup,
-        // scanner commands
-        scanner::scan_image,
-        scanner::scan_images_bulk,
-        scanner::scan_image_workflow,
-        scanner::read_image_metadata,
-        scanner::get_file_sizes_bulk,
-        scanner::verify_image_paths,
-        scanner::audit_invokeai_folder,
-        scanner::list_invokeai_images,
-        scanner::scan_directory_recursive,
-        scanner::open_file,
-        scanner::show_in_folder,
-        scanner::scan_directory_with_stats,
-        scanner::scan_directory_since,
-        scanner::a1111::discover_a1111_folders,
-        thumb::optimizer::start_thumbnail_optimization_job,
-        thumb::optimizer::cancel_thumbnail_optimization_job,
-        thumb::optimizer::set_thumbnail_optimization_throttled,
-        thumb::optimizer::get_thumbnail_optimization_failures,
-        thumb::optimizer::retry_failed_thumbnail_optimizations,
-        // watcher commands
-        watcher::start_native_folder_watcher,
-        // metadata commands
-        metadata::civitai::import_a1111_cache,
-        metadata::civitai::resolve_hashes_online,
-        metadata::comfyui::inspect_comfyui_metadata_chunks,
-        metadata::models::clear_model_cache,
-        metadata::models::cancel_model_resolution,
-        metadata::models::cancel_model_discovery,
-        metadata::thumbs_scan::scan_model_thumbnails,
-        metadata::thumbs_scan::purge_resource_folder_assets,
-        metadata::models::set_model_thumbnail,
-        metadata::models::unset_model_thumbnail,
-        metadata::models::clear_all_thumbnails,
-        metadata::models::set_resource_thumbnail_sensitivity,
-        // video media commands
-        media::import_video_asset,
-        media::cancel_video_import,
-        media::store_video_poster,
-        media::prepare_video_playback,
-        media::export_asset_original,
-        // fs commands
-        fs_commands::move_to_trash,
-        fs_commands::delete_thumbnail,
-        fs_commands::register_library_path,
-        fs_commands::get_invoke_db_snapshot,
-    ])
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(tauri_specta::collect_commands![
+            // security commands
+            security::save_api_key,
+            security::load_api_key,
+            security::delete_api_key,
+            // db commands
+            db::commands::image_commands::save_images_batch,
+            db::commands::image_commands::move_image_path_identities,
+            db::commands::image_commands::mark_image_path_identities_missing,
+            db::commands::maintenance::get_main_database_url,
+            db::commands::maintenance::get_db_diagnostics,
+            db::commands::maintenance::show_app_log_folder,
+            db::commands::maintenance::resolve_exact_duplicate_groups,
+            db::commands::maintenance::backfill_image_file_hashes,
+            db::commands::maintenance::cancel_image_file_hash_backfill,
+            db::commands::image_commands::refresh_boards_native,
+            db::commands::image_commands::get_image_count_for_path_prefix,
+            db::commands::image_commands::refresh_privacy_mask_index,
+            db::commands::maintenance::optimize_database,
+            db::commands::maintenance::schedule_purge_transaction,
+            db::commands::filter_commands::get_parameter_ranges,
+            db::commands::filter_commands::backfill_parameter_columns,
+            db::facets::rebuild_facet_cache,
+            db::facets::rebuild_facet_cache_incremental,
+            db::facets::rebuild_facet_cache_incremental_batch,
+            db::facets::refresh_facet_cache_for_resources,
+            db::facets::get_valid_facet_names,
+            db::commands::image_commands::mark_images_corrupt,
+            db::commands::image_commands::verify_library_integrity,
+            // db reparse commands
+            db::reparse::start_reparse_job,
+            db::reparse::cancel_reparse_job,
+            db::commands::reparse_commands::get_images_needing_reparse,
+            db::commands::reparse_commands::get_reparse_count,
+            db::commands::reparse_commands::reparse_metadata_batch,
+            db::commands::reparse_commands::reset_parser_versions,
+            db::commands::filter_commands::get_metadata_stats,
+            // db backup commands
+            db::backup::get_backups,
+            db::backup::backup_database,
+            db::backup::check_and_run_autobackup,
+            // scanner commands
+            scanner::scan_image,
+            scanner::scan_images_bulk,
+            scanner::scan_image_workflow,
+            scanner::read_image_metadata,
+            scanner::get_file_sizes_bulk,
+            scanner::verify_image_paths,
+            scanner::audit_invokeai_folder,
+            scanner::list_invokeai_images,
+            scanner::scan_directory_recursive,
+            scanner::open_file,
+            scanner::show_in_folder,
+            scanner::scan_directory_with_stats,
+            scanner::scan_directory_since,
+            scanner::a1111::discover_a1111_folders,
+            thumb::optimizer::start_thumbnail_optimization_job,
+            thumb::optimizer::cancel_thumbnail_optimization_job,
+            thumb::optimizer::set_thumbnail_optimization_throttled,
+            thumb::optimizer::get_thumbnail_optimization_failures,
+            thumb::optimizer::retry_failed_thumbnail_optimizations,
+            // watcher commands
+            watcher::start_native_folder_watcher,
+            // metadata commands
+            metadata::civitai::import_a1111_cache,
+            metadata::civitai::resolve_hashes_online,
+            metadata::comfyui::inspect_comfyui_metadata_chunks,
+            metadata::models::clear_model_cache,
+            metadata::models::cancel_model_resolution,
+            metadata::models::cancel_model_discovery,
+            metadata::thumbs_scan::scan_model_thumbnails,
+            metadata::thumbs_scan::purge_resource_folder_assets,
+            metadata::models::set_model_thumbnail,
+            metadata::models::unset_model_thumbnail,
+            metadata::models::clear_all_thumbnails,
+            metadata::models::set_resource_thumbnail_sensitivity,
+            // video media commands
+            media::import_video_asset,
+            media::cancel_video_import,
+            media::store_video_poster,
+            media::prepare_video_playback,
+            media::export_asset_original,
+            // fs commands
+            fs_commands::move_to_trash,
+            fs_commands::delete_thumbnail,
+            fs_commands::register_library_path,
+            fs_commands::get_invoke_db_snapshot,
+        ])
+        .events(tauri_specta::collect_events![watcher::FolderChangeEvent])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -187,7 +190,8 @@ pub fn run() {
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
         .invoke_handler(builder.invoke_handler())
-        .setup(|app| {
+        .setup(move |app| {
+            builder.mount_events(app);
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
@@ -248,6 +252,15 @@ mod startup_order_tests {
         assert!(
             single_instance < sql,
             "same-profile process exclusion must be active before SQLite opens"
+        );
+    }
+
+    #[test]
+    fn typed_events_are_mounted_during_setup() {
+        let source = include_str!("lib.rs");
+        assert!(
+            source.contains("builder.mount_events(app);"),
+            "typed Tauri events must be mounted before background emitters start"
         );
     }
 }

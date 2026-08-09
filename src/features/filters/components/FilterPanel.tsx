@@ -132,6 +132,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Check for Manual Edits (ignoring the collection ID itself)
     const hasManualEdits = !!(
         filters.searchQuery ||
+        (filters.mediaType !== undefined && filters.mediaType !== 'all') ||
         filters.models.length > 0 ||
         filters.tools.length > 0 ||
         filters.loras.length > 0 ||
@@ -171,6 +172,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
                 favoritesOnly: manual.favoritesOnly || !!saved.favoritesOnly,
                 pinnedOnly: manual.pinnedOnly || !!saved.pinnedOnly,
+                mediaType: manual.mediaType && manual.mediaType !== 'all' ? manual.mediaType : saved.mediaType,
                 minSteps: manual.minSteps || saved.minSteps,
                 maxSteps: manual.maxSteps || saved.maxSteps,
                 minCfg: manual.minCfg || saved.minCfg,
@@ -212,6 +214,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 dateTo: undefined,
                 favoritesOnly: false,
                 pinnedOnly: false,
+                mediaType: 'all',
                 minSteps: undefined,
                 maxSteps: undefined,
                 minCfg: undefined,

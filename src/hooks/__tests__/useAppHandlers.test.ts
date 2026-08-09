@@ -312,7 +312,7 @@ describe('useAppHandlers', () => {
         await act(async () => result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2', 'img3'] }]));
         expect(mockAddToast).toHaveBeenCalledWith('Moved 2 duplicates to Removed', 'success');
         await act(async () => result.current.handleRemoveFromLibrary(['img1', 'img2']));
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 images from the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 items from the library', 'success');
     });
 
     it('keeps local images unchanged and reports a failed duplicate transaction', async () => {
@@ -369,13 +369,13 @@ describe('useAppHandlers', () => {
         const { result } = renderHandlers();
         await act(async () => result.current.handleRestoreImages(['img1', 'img2']));
         expect(dispatchedImages.map(image => image.id)).toEqual(['img2', 'img1']);
-        expect(mockAddToast).toHaveBeenCalledWith('Restored 2 images to the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Restored 2 items to the library', 'success');
 
         mockGetImagesByIds.mockResolvedValueOnce([mockImages[0]]);
         const before = dispatchedImages;
         await act(async () => result.current.handleRestoreImages(['img1']));
         expect(dispatchedImages).toBe(before);
-        expect(mockAddToast).toHaveBeenCalledWith('Restored 1 image to the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Restored 1 item to the library', 'success');
     });
 
     it('covers successful plural deletion, warning cleanup, and total failure', async () => {

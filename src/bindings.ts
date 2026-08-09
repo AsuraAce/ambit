@@ -45,6 +45,14 @@ async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<I
     else return { status: "error", error: e  as any };
 }
 },
+async markImagePathIdentitiesMissing(ids: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_image_path_identities_missing", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMainDatabaseUrl() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_main_database_url") };
@@ -611,6 +619,11 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+folderChangeEvent: FolderChangeEvent
+}>({
+folderChangeEvent: "folder-change-event"
+})
 
 /** user-defined constants **/
 
@@ -629,9 +642,12 @@ export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
 export type ExportOriginalResult = { assetId: string; outputPath: string; bytesCopied: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
-export type FileEntry = { path: string; modified: number; size: number }
+export type FileEntry = { path: string; modified: number; size: number; mediaType: MediaCandidateKind }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
-export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
+export type FolderChange = { kind: FolderChangeKind; paths: string[] }
+export type FolderChangeEvent = FolderChange[]
+export type FolderChangeKind = "create" | "modify" | "rename" | "remove"
+export type FolderStats = { totalFiles: number; imageFiles: number; videoFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed?: number | null; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean; hasWorkflowHint?: boolean }
 export type ImagePathIdentityMove = { oldId: string; newId: string; thumbnailPath: string | null; thumbnailSource: string | null }
 export type ImagePathIdentityMoveResult = { moved: number; skippedTargetExists: number; skippedSourceMissing: number }
@@ -649,6 +665,7 @@ export type ImportResult = { added: number; totalFound: number; message: string 
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
+export type MediaCandidateKind = "image" | "video"
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }

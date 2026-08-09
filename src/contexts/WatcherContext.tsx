@@ -4,8 +4,11 @@ import { useSettings } from './SettingsContext';
 import { useSync } from './SyncContext';
 import { watcherService } from '../services/WatcherService';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
+import { markImagePathIdentitiesMissing, moveImagePathIdentities } from '../services/db/imageRepo';
 import { useLibraryStore } from '../stores/libraryStore';
 import { normalizeInvokeRoot } from '../utils/pathUtils';
+import { useSearch } from './SearchContext';
+import type { FolderChange } from '../bindings';
 import {
     createLiveWatchPerfId,
     debugLiveWatchPerf,
@@ -86,6 +89,7 @@ const mergeInvokePerfContext = (
 export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { settings, isLoaded } = useSettings();
     const { startInvokeSync, startTargetedLiveSync, syncStatus } = useSync();
+    const { refreshMetadata } = useSearch();
 
     // Zustand State
     const isLiveWatching = useLibraryStore(s => s.isLiveWatching);
@@ -122,7 +126,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const invokePathConfig = settings.invokeAiPath;
 
     // Stable ref for callbacks to avoid restarting watcher on every render
-    const callbacksRef = useRef({ refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
+    const callbacksRef = useRef({ refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus });
     const invokeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingGenericPathsRef = useRef<Set<string>>(new Set());
     const pendingGenericPerfRef = useRef<TargetedLiveSyncPerfContext | null>(null);
@@ -131,7 +135,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
     const invokeActivationCatchupRootRef = useRef<string | null>(null);
 
     useEffect(() => {
-        callbacksRef.current = { refreshMaintenanceCounts, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
+        callbacksRef.current = { refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
@@ -229,11 +233,13 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 return;
             }
 
-            await watcherService.startWatching(pathsToWatch, async (paths?: string[]) => {
-                if (!paths || paths.length === 0) return;
+            await watcherService.startWatching(pathsToWatch, async (changes?: FolderChange[]) => {
+                if (!changes || changes.length === 0) return;
                 const eventReceivedAt = liveWatchNow();
+                const pathCount = changes.reduce((total, change) => total + change.paths.length, 0);
                 debugLiveWatchPerf('folder-change-event received', {
-                    pathCount: paths.length
+                    changeCount: changes.length,
+                    pathCount
                 });
                 
                 const cb = callbacksRef.current;
@@ -245,44 +251,86 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 })();
 
                 const invokePaths: string[] = [];
-                const genericPaths: string[] = [];
+                const genericChanges: FolderChange[] = [];
 
-                paths.forEach(p => {
-                    const normalized = p.replace(/\\/g, '/').toLowerCase();
-                    if (activeInvokeRoot && normalized.startsWith(activeInvokeRoot)) {
-                        // We only care about .db or .db-wal files in the Invoke database folder
-                        if (normalized.endsWith('.db') || normalized.endsWith('.db-wal')) {
-                            invokePaths.push(p);
+                changes.forEach(change => {
+                    const genericPaths: string[] = [];
+                    change.paths.forEach(path => {
+                        const normalized = path.replace(/\\/g, '/').toLowerCase();
+                        if (activeInvokeRoot && normalized.startsWith(activeInvokeRoot)) {
+                            if (normalized.endsWith('.db') || normalized.endsWith('.db-wal')) {
+                                invokePaths.push(path);
+                            }
+                        } else {
+                            genericPaths.push(path);
                         }
+                    });
+                    if (genericPaths.length > 0) {
+                        genericChanges.push({ ...change, paths: genericPaths });
+                    }
+                });
+
+                const genericImportPaths: string[] = [];
+                const missingPaths: string[] = [];
+                const identityMoves: Array<{ oldId: string; newId: string }> = [];
+
+                genericChanges.forEach(change => {
+                    if (change.kind === 'rename' && change.paths.length >= 2) {
+                        const oldId = change.paths[0].replace(/\\/g, '/');
+                        const newId = change.paths[change.paths.length - 1].replace(/\\/g, '/');
+                        identityMoves.push({ oldId, newId });
+                        missingPaths.push(oldId);
+                        genericImportPaths.push(newId);
+                    } else if (change.kind === 'remove') {
+                        missingPaths.push(...change.paths);
                     } else {
-                        genericPaths.push(p);
+                        genericImportPaths.push(...change.paths);
                     }
                 });
 
                 debugLiveWatchPerf('folder-change-event split', {
-                    totalPathCount: paths.length,
-                    genericPathCount: genericPaths.length,
+                    totalPathCount: pathCount,
+                    genericPathCount: genericChanges.reduce((total, change) => total + change.paths.length, 0),
+                    genericImportPathCount: genericImportPaths.length,
+                    missingPathCount: missingPaths.length,
+                    renameCount: identityMoves.length,
                     invokePathCount: invokePaths.length
                 });
 
+                if (identityMoves.length > 0 || missingPaths.length > 0) {
+                    try {
+                        if (identityMoves.length > 0) {
+                            await moveImagePathIdentities(identityMoves);
+                        }
+                        const uniqueMissingPaths = Array.from(new Set(missingPaths.map(path => path.replace(/\\/g, '/'))));
+                        const markedMissing = await markImagePathIdentitiesMissing(uniqueMissingPaths);
+                        if (identityMoves.length > 0 || markedMissing > 0) {
+                            await cb.refreshMetadata();
+                            await cb.refreshMaintenanceCounts();
+                        }
+                    } catch (error) {
+                        console.error('[Watcher] Failed to apply rename/remove changes', error);
+                    }
+                }
+
                 // Use O(1) targeted import strictly for non-Invoke generic folder drops
-                if (genericPaths.length > 0) {
+                if (genericImportPaths.length > 0) {
                     startLiveWatchSession('generic', {
                         phase: 'watching',
                         message: 'Checking monitored folders...'
                     });
                     pendingGenericPerfRef.current = mergeTargetedPerfContext(
                         pendingGenericPerfRef.current,
-                        genericPaths.length,
+                        genericImportPaths.length,
                         eventReceivedAt
                     );
                     debugLiveWatchPerf('Generic live activity detected', {
                         cycleId: pendingGenericPerfRef.current.cycleId,
-                        receivedPathCount: genericPaths.length,
+                        receivedPathCount: genericImportPaths.length,
                         eventCount: pendingGenericPerfRef.current.eventCount,
                         pathCount: pendingGenericPerfRef.current.pathCount
                     });
-                    void drainGenericLiveChanges(genericPaths);
+                    void drainGenericLiveChanges(genericImportPaths);
                 }
 
                 // Signal consumers (like useFolderMonitor) that a change occurred

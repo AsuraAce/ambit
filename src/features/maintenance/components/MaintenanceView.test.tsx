@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '../../../test/testUtils
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaintenanceTab } from '../../../hooks/useMaintenanceData';
 import { useLibraryStore } from '../../../stores/libraryStore';
-import { type AIImage, GeneratorTool } from '../../../types';
+import { type AIImage, type VideoAsset, GeneratorTool } from '../../../types';
 import { MaintenanceView } from './MaintenanceView';
 
 const maintenanceDataMock = vi.hoisted(() => ({
@@ -58,6 +58,22 @@ const createImage = (overrides: Partial<AIImage> = {}): AIImage => ({
         negativePrompt: ''
     },
     ...overrides
+});
+
+const createVideo = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
+    ...createImage(),
+    id: 'video-1',
+    url: 'file:///video-1.webm',
+    thumbnailUrl: 'file:///video-thumb-1.webp',
+    filename: 'video-1.webm',
+    mediaType: 'video',
+    durationMs: 1_000,
+    videoCodec: 'vp9',
+    audioPresent: false,
+    rotationDegrees: 0,
+    probeStatus: 'ready',
+    playbackStatus: 'playable',
+    ...overrides,
 });
 
 vi.mock('../../../hooks/useMaintenanceData', () => ({
@@ -270,6 +286,27 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
     )
 }));
 
+vi.mock('../../../features/viewer/components/VideoViewer', () => ({
+    VideoViewer: ({ video, onDelete, onClose, onToggleFavorite, onTogglePin, onUpdateNotes, onSetCollectionMembership }: {
+        video: VideoAsset;
+        onDelete?: (id: string) => void;
+        onClose: () => void;
+        onToggleFavorite: (id: string) => void;
+        onTogglePin?: (id: string, pinned: boolean) => void;
+        onUpdateNotes?: (id: string, notes: string) => void;
+        onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    }) => (
+        <div data-testid="maintenance-video-viewer" data-video-id={video.id}>
+            {onDelete && <button onClick={() => onDelete(video.id)}>Video Cleanup</button>}
+            <button onClick={onClose}>Close Video Viewer</button>
+            <button onClick={() => onToggleFavorite(video.id)}>Favorite Video Viewer</button>
+            {onTogglePin && <button onClick={() => onTogglePin(video.id, true)}>Pin Video Viewer</button>}
+            {onUpdateNotes && <button onClick={() => onUpdateNotes(video.id, 'video notes')}>Update Video Notes</button>}
+            <button onClick={() => void onSetCollectionMembership(video.id, 'collection', true)}>Add Video Collection</button>
+        </div>
+    )
+}));
+
 vi.mock('../../../features/viewer/components/CompareModal', () => ({
     CompareModal: ({ imageA, imageB, onClose, onToggleFavorite, onTogglePin }: {
         imageA: AIImage;
@@ -373,6 +410,38 @@ describe('MaintenanceView', () => {
             includeUpgradeable: undefined,
             runHashBackfill: false
         });
+    });
+
+    it('opens maintenance videos in the video viewer and forwards generic actions', async () => {
+        maintenanceDataMock.localMissingImages = [createVideo({ id: 'missing-video', isMissing: true })];
+        const onRemoveFromLibrary = vi.fn().mockResolvedValue(undefined);
+        const onToggleFavorite = vi.fn();
+        const onTogglePin = vi.fn();
+        const onUpdateNotes = vi.fn();
+        const onSetCollectionMembership = vi.fn().mockResolvedValue(true);
+
+        renderView({
+            onRemoveFromLibrary,
+            onToggleFavorite,
+            onTogglePin,
+            onUpdateNotes,
+            onSetCollectionMembership,
+        });
+        fireEvent.click(screen.getByText('Open Missing Viewer'));
+
+        expect(screen.getByTestId('maintenance-video-viewer').getAttribute('data-video-id')).toBe('missing-video');
+        expect(screen.queryByTestId('maintenance-viewer')).toBeNull();
+        fireEvent.click(screen.getByText('Favorite Video Viewer'));
+        fireEvent.click(screen.getByText('Pin Video Viewer'));
+        fireEvent.click(screen.getByText('Update Video Notes'));
+        fireEvent.click(screen.getByText('Add Video Collection'));
+        fireEvent.click(screen.getByText('Video Cleanup'));
+
+        expect(onToggleFavorite).toHaveBeenCalledWith('missing-video');
+        expect(onTogglePin).toHaveBeenCalledWith('missing-video', true);
+        expect(onUpdateNotes).toHaveBeenCalledWith('missing-video', 'video notes');
+        expect(onSetCollectionMembership).toHaveBeenCalledWith('missing-video', 'collection', true);
+        await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenCalledWith(['missing-video']));
     });
 
     it('fetches missing audit results from both the store and LibraryHealth', async () => {

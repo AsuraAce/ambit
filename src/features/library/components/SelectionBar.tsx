@@ -118,7 +118,7 @@ export function SelectionBar({
                 <TooltipButton label={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} content={allFavorite ? "Remove Selected from Favorites" : "Add Selected to Favorites"} aria-pressed={favoritePressed} onClick={onToggleFavorite} className={allFavorite ? ACTIVE_FAVORITE_BUTTON_CLASS : NEUTRAL_BUTTON_CLASS}>
                     <Heart className={`w-5 h-5 ${allFavorite ? 'fill-current' : ''}`} />
                 </TooltipButton>
-                <TooltipButton label={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} content={allPinned ? "Unpin Selected Images" : "Pin Selected Images"} aria-pressed={pinPressed} onClick={onTogglePin} className={allPinned ? ACTIVE_PIN_BUTTON_CLASS : NEUTRAL_BUTTON_CLASS}>
+                <TooltipButton label={allPinned ? "Unpin Selected Items" : "Pin Selected Items"} content={allPinned ? "Unpin Selected Items" : "Pin Selected Items"} aria-pressed={pinPressed} onClick={onTogglePin} className={allPinned ? ACTIVE_PIN_BUTTON_CLASS : NEUTRAL_BUTTON_CLASS}>
                     <Pin className={`w-5 h-5 ${allPinned ? 'fill-current' : ''}`} />
                 </TooltipButton>
                 <TooltipButton
@@ -141,10 +141,10 @@ export function SelectionBar({
 
 
                 <TooltipButton
-                    label={hasSelectedVideo ? 'Use the video viewer to export originals' : 'Export Selected Images'}
-                    content={hasSelectedVideo ? 'ZIP export is image-only. Open a video to export its original file.' : 'Export Selected Images'}
+                    label="Export Selected Items"
+                    content="Export Selected Items"
                     onClick={onExport}
-                    disabled={isExporting || hasSelectedVideo}
+                    disabled={isExporting}
                     className={`${NEUTRAL_BUTTON_CLASS} disabled:opacity-50`}
                 >
                     <Share className="w-5 h-5" />

@@ -1,6 +1,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands, type VideoImportOutcome } from '../bindings';
-import { normalizePath } from '../utils/pathUtils';
+import { commands, type VideoAssetRecord, type VideoImportOutcome } from '../bindings';
+import { GeneratorTool, type VideoAsset } from '../types';
+import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
 
 const VIDEO_FILTER_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'mkv'];
@@ -11,6 +12,9 @@ export interface VideoImportSummary {
     rejected: number;
     cancelled: number;
     posterFailures: number;
+    assets: VideoAsset[];
+    handledPaths: string[];
+    failedPaths: string[];
 }
 
 export const pickVideoPaths = async (): Promise<string[]> => {
@@ -28,14 +32,18 @@ export const pickVideoPaths = async (): Promise<string[]> => {
 export const importVideoPaths = async (
     paths: string[],
     onOperationStarted?: (operationId: string) => void,
-    shouldCancel?: () => boolean
+    shouldCancel?: () => boolean,
+    onProgress?: (current: number, total: number) => void
 ): Promise<VideoImportSummary> => {
     const summary: VideoImportSummary = {
         imported: 0,
         duplicate: 0,
         rejected: 0,
         cancelled: 0,
-        posterFailures: 0
+        posterFailures: 0,
+        assets: [],
+        handledPaths: [],
+        failedPaths: []
     };
 
     for (const path of paths) {
@@ -47,26 +55,91 @@ export const importVideoPaths = async (
             outcome = await unwrap(commands.importVideoAsset(path, operationId));
         } catch (error) {
             summary.rejected += 1;
+            summary.failedPaths.push(normalizePath(path));
             console.warn('[VideoImport] Failed to import video; continuing batch', path, error);
+            onProgress?.(summary.handledPaths.length + summary.failedPaths.length + summary.cancelled, paths.length);
             if (shouldCancel?.()) break;
             continue;
         }
         countOutcome(summary, outcome);
 
-        if (outcome.status === 'cancelled' || shouldCancel?.()) break;
+        if (outcome.status === 'cancelled') {
+            onProgress?.(summary.handledPaths.length + summary.failedPaths.length + summary.cancelled, paths.length);
+            break;
+        }
+        const cancellationRequested = !!shouldCancel?.();
+
+        if (outcome.status === 'rejected') {
+            summary.handledPaths.push(normalizePath(path));
+        }
 
         if (outcome.asset && outcome.status !== 'rejected' && outcome.status !== 'cancelled') {
-            try {
-                const poster = await captureVideoPoster(path, outcome.asset.durationMs);
-                await unwrap(commands.storeVideoPoster(outcome.asset.id, poster));
-            } catch (error) {
-                summary.posterFailures += 1;
-                console.warn('[VideoImport] Imported video without generated poster', path, error);
+            let thumbnailPath: string | undefined;
+            if (!cancellationRequested) {
+                try {
+                    const poster = await captureVideoPoster(path, outcome.asset.durationMs);
+                    const stored = await unwrap(commands.storeVideoPoster(outcome.asset.id, poster));
+                    thumbnailPath = stored.thumbnailPath;
+                } catch (error) {
+                    summary.posterFailures += 1;
+                    console.warn('[VideoImport] Imported video without generated poster', path, error);
+                }
+            }
+            summary.handledPaths.push(normalizePath(path));
+            if (outcome.status !== 'duplicate') {
+                summary.assets.push(mapVideoRecordToAsset(outcome.asset, thumbnailPath));
             }
         }
+        onProgress?.(summary.handledPaths.length + summary.failedPaths.length + summary.cancelled, paths.length);
+        if (cancellationRequested) break;
     }
 
     return summary;
+};
+
+const mapVideoRecordToAsset = (
+    record: VideoAssetRecord,
+    thumbnailPath?: string
+): VideoAsset => {
+    const normalizedPath = normalizePath(record.path);
+    return {
+        mediaType: 'video',
+        id: record.id,
+        url: convertFileSrc(normalizedPath),
+        thumbnailUrl: thumbnailPath ? convertFileSrc(normalizePath(thumbnailPath)) : '',
+        filename: getFilename(normalizedPath),
+        fileSize: record.fileSize,
+        timestamp: record.timestamp,
+        width: record.width,
+        height: record.height,
+        isFavorite: false,
+        isPinned: false,
+        isDeleted: false,
+        isMissing: false,
+        isCorrupt: false,
+        metadata: {
+            tool: GeneratorTool.UNKNOWN,
+            model: 'Unknown',
+            steps: 0,
+            cfg: 0,
+            sampler: 'Unknown',
+            positivePrompt: '',
+            negativePrompt: '',
+            generationType: 'unknown'
+        },
+        mediaContainer: record.mediaContainer ?? undefined,
+        mediaMimeType: record.mediaMimeType ?? undefined,
+        durationMs: record.durationMs,
+        videoCodec: record.videoCodec,
+        videoProfile: record.videoProfile ?? undefined,
+        audioPresent: record.audioPresent,
+        audioCodec: record.audioCodec ?? undefined,
+        frameRateNum: record.frameRateNum ?? undefined,
+        frameRateDen: record.frameRateDen ?? undefined,
+        rotationDegrees: record.rotationDegrees as VideoAsset['rotationDegrees'],
+        probeStatus: 'ready',
+        playbackStatus: 'unknown'
+    };
 };
 
 export const cancelVideoImport = async (operationId: string): Promise<boolean> =>

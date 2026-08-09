@@ -42,7 +42,7 @@ describe('MaintenanceItem', () => {
                 style={{ width: 200 }}
                 onClick={onClick}
                 maskedKeywords={['secret']}
-                overlayActions={<button>Open</button>}
+                overlayActions={(revealGranted) => <button data-reveal-granted={revealGranted}>Open</button>}
             >
                 <span>Child badge</span>
             </MaintenanceItem>
@@ -54,7 +54,9 @@ describe('MaintenanceItem', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reveal' }));
         expect(onClick).not.toHaveBeenCalled();
         expect(photo.className).not.toContain('blur-xl');
-        expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Open' }).getAttribute('data-reveal-granted')).toBe('true');
+        fireEvent.click(photo.closest('.cursor-pointer') as Element);
+        expect(onClick).toHaveBeenCalledWith(expect.anything(), true);
         expect(screen.getByText('Child badge')).toBeTruthy();
         expect(screen.getByText('image-1.png')).toBeTruthy();
 
