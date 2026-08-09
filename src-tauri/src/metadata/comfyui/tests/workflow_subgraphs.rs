@@ -127,6 +127,91 @@ fn assert_traversal_source(
 }
 
 #[test]
+fn workflow_only_subgraph_resource_source_uses_namespaced_loader_id() {
+    let definition = json!({
+        "id": "lora_subgraph",
+        "inputNode": { "id": -10 },
+        "outputNode": { "id": -20 },
+        "inputs": [],
+        "outputs": [{ "name": "IMAGE", "type": "IMAGE" }],
+        "nodes": [
+            {
+                "id": 1,
+                "type": "UNETLoader",
+                "inputs": [],
+                "widgets_values": ["resource-model.safetensors", "default"]
+            },
+            {
+                "id": 2,
+                "type": "LoraLoaderModelOnly",
+                "inputs": [{ "name": "model", "type": "MODEL", "link": 1 }],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [2] }],
+                "widgets_values": ["subgraph-style.safetensors", 1.0]
+            },
+            {
+                "id": 3,
+                "type": "CLIPTextEncode",
+                "inputs": [],
+                "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [3] }],
+                "widgets_values": ["subgraph resource prompt"]
+            },
+            {
+                "id": 4,
+                "type": "KSampler",
+                "inputs": [
+                    { "name": "model", "type": "MODEL", "link": 2 },
+                    { "name": "positive", "type": "CONDITIONING", "link": 3 }
+                ],
+                "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [4] }],
+                "widgets_values": [7, "fixed", 4, 1.0, "euler", "simple", 1.0]
+            },
+            {
+                "id": 5,
+                "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "type": "LATENT", "link": 4 }],
+                "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [5] }],
+                "widgets_values": []
+            }
+        ],
+        "links": [
+            { "id": 1, "origin_id": 1, "origin_slot": 0, "target_id": 2, "target_slot": 0, "type": "MODEL" },
+            { "id": 2, "origin_id": 2, "origin_slot": 0, "target_id": 4, "target_slot": 0, "type": "MODEL" },
+            { "id": 3, "origin_id": 3, "origin_slot": 0, "target_id": 4, "target_slot": 1, "type": "CONDITIONING" },
+            { "id": 4, "origin_id": 4, "origin_slot": 0, "target_id": 5, "target_slot": 0, "type": "LATENT" },
+            { "id": 5, "origin_id": 5, "origin_slot": 0, "target_id": -20, "target_slot": 0, "type": "IMAGE" }
+        ]
+    });
+    let workflow = json!({
+        "nodes": [
+            {
+                "id": 30,
+                "type": "lora_subgraph",
+                "mode": 0,
+                "inputs": [],
+                "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [1] }],
+                "widgets_values": []
+            },
+            save_node(40, 1)
+        ],
+        "links": [[1, 30, 0, 40, 0, "IMAGE"]],
+        "definitions": { "subgraphs": [definition] },
+        "version": 0.4
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.loras, ["subgraph_style"]);
+    let source = diagnostics
+        .resource_sources
+        .get(&ComfyMetadataField::Loras)
+        .and_then(|resources| resources.get("subgraph_style"))
+        .expect("namespaced LoRA provenance");
+    assert_eq!(source.layer, ComfyParseLayer::SamplerTraversal);
+    assert_eq!(source.node_ids, ["30:2"]);
+}
+
+#[test]
 fn krea_workflow_only_expands_official_subgraph_metadata() {
     let raw: HashMap<String, Value> =
         serde_json::from_str(KREA_FIXTURE).expect("Krea chunk fixture");

@@ -119,6 +119,37 @@ fn strong_sampler_traversal_overrides_flat_core_fields_and_unions_resources() {
     ] {
         assert_source(&diagnostics, field, ComfyParseLayer::SamplerTraversal);
     }
+
+    let lora_sources = diagnostics
+        .resource_sources
+        .get(&ComfyMetadataField::Loras)
+        .expect("LoRA item provenance should be recorded");
+    let flat = lora_sources
+        .get("flat_style (0.50)")
+        .expect("flat-only LoRA should retain flat provenance");
+    assert_eq!(flat.layer, ComfyParseLayer::FlatParameters);
+    assert!(flat.node_ids.is_empty());
+    let graph = lora_sources
+        .get("graph_style")
+        .expect("duplicate graph LoRA should use stronger graph provenance");
+    assert_eq!(graph.layer, ComfyParseLayer::SamplerTraversal);
+    assert_eq!(graph.node_ids, ["2"]);
+
+    let report = build_comfyui_diagnostics_report(&chunks);
+    let flat_report = report
+        .resource_sources
+        .iter()
+        .find(|source| source.value == "flat_style (0.50)")
+        .expect("flat-only LoRA report");
+    assert_eq!(flat_report.layer.as_deref(), Some("flat_parameters"));
+    assert!(flat_report.node_ids.is_empty());
+    let graph_report = report
+        .resource_sources
+        .iter()
+        .find(|source| source.value == "graph_style")
+        .expect("graph LoRA report");
+    assert_eq!(graph_report.layer.as_deref(), Some("sampler_traversal"));
+    assert_eq!(graph_report.node_ids, ["2"]);
 }
 
 #[test]

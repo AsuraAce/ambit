@@ -79,6 +79,7 @@ const diagnosticsReport = {
         model: ['3'],
         positive_prompt: ['404']
     },
+    resourceSources: [],
     metadata: {
         tool: 'ComfyUI',
         model: 'diagnostic_model',
@@ -528,6 +529,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 ambiguous: boolean;
             };
             fieldSources: Record<string, string>;
+            resourceSources: Array<{ field: string; value: string; layer: string | null; nodeIds: string[] }>;
             traversalIssues: unknown[];
             traversalIssuesTruncated: boolean;
             metadata: { model: string };
@@ -551,6 +553,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             ambiguous: false
         });
         expect(parsed.fieldSources.model).toBe('sampler_traversal');
+        expect(parsed.resourceSources).toEqual([]);
         expect(parsed.traversalIssues).toEqual([]);
         expect(parsed.traversalIssuesTruncated).toBe(false);
         expect(parsed.metadata.model).toBe('diagnostic_model');
@@ -745,6 +748,88 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(
             await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
         ).toBeTruthy();
+    });
+
+    it('navigates to an available resource source and leaves selected-branch mode', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                resourceSources: [{
+                    field: 'loras',
+                    value: 'disconnected_style',
+                    layer: 'sampler_traversal',
+                    nodeIds: ['12']
+                }]
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'LoraLoaderModelOnly',
+                        title: 'Disconnected LoRA',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Jump to LoRAs resource source node Disconnected LoRA (12)'
+        }));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const sourceNode = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(sourceNode));
+        expect(sourceNode?.className).toContain('ring-2');
+    });
+
+    it('keeps flat and unavailable resource sources visible without fake navigation', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                resourceSources: [
+                    {
+                        field: 'embeddings',
+                        value: 'flat_detail',
+                        layer: 'flat_parameters',
+                        nodeIds: []
+                    },
+                    {
+                        field: 'ip_adapters',
+                        value: 'missing_adapter',
+                        layer: 'sampler_traversal',
+                        nodeIds: ['404']
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('Resource Sources')).toBeTruthy();
+        expect(screen.getByText('flat_detail')).toBeTruthy();
+        expect(screen.getByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')).toBeTruthy();
+        expect(screen.getByText('missing_adapter')).toBeTruthy();
+        expect(screen.getByTitle('Resource source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /resource source node.*404/i })).toBeNull();
     });
 
     it('renders compact traversal blockers and output ambiguity', async () => {

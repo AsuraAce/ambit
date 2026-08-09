@@ -40,6 +40,15 @@ const formatDiagnosticLabel = (value: string) =>
 const formatDiagnosticValue = (value: string | number | null | undefined) =>
     value === null || value === undefined || value === '' ? 'None' : String(value);
 
+const formatResourceFieldLabel = (field: string) => {
+    switch (field) {
+        case 'loras': return 'LoRAs';
+        case 'control_nets': return 'ControlNets';
+        case 'ip_adapters': return 'IP-Adapters';
+        default: return formatDiagnosticLabel(field);
+    }
+};
+
 const getDiagnosticLayerBadgeClass = (layer: string | null | undefined) => {
     switch (layer) {
         case 'sampler_traversal':
@@ -207,6 +216,7 @@ const ComfyDiagnosticsPanel: React.FC<{
     const fieldSources = diagnostics
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
         : [];
+    const resourceSources = diagnostics?.resourceSources ?? [];
     const traversalIssues = diagnostics?.traversalIssues ?? [];
     const hasHiddenTraversalIssues = traversalIssues.length > 4;
     const visibleTraversalIssues = showAllTraversalIssues
@@ -393,6 +403,54 @@ const ComfyDiagnosticsPanel: React.FC<{
                             )}
                         </div>
                     </div>
+
+                    {resourceSources.length > 0 && (
+                        <div className="border-t border-amber-300/40 pt-3 dark:border-amber-400/15">
+                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Resource Sources</div>
+                            <div className="mt-1.5 space-y-1.5">
+                                {resourceSources.map((source) => (
+                                    <div
+                                        key={`${source.field}:${source.value}`}
+                                        className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]"
+                                    >
+                                        <span className="font-bold text-amber-900 dark:text-amber-100">
+                                            {formatResourceFieldLabel(source.field)}:
+                                        </span>
+                                        <span className="break-all text-amber-950 dark:text-amber-50">{source.value}</span>
+                                        <span
+                                            title={getDiagnosticLayerTitle(source.layer)}
+                                            className={`rounded-md border px-1.5 py-0.5 ${getDiagnosticLayerBadgeClass(source.layer)}`}
+                                        >
+                                            {formatDiagnosticLabel(source.layer ?? 'unknown')}
+                                        </span>
+                                        {source.nodeIds.map((nodeId) => {
+                                            const node = nodeById.get(nodeId);
+                                            return node ? (
+                                                <button
+                                                    key={nodeId}
+                                                    type="button"
+                                                    onClick={() => onFocusNode(nodeId)}
+                                                    aria-label={`Jump to ${formatResourceFieldLabel(source.field)} resource source node ${node.title} (${nodeId})`}
+                                                    title={`Jump to resource source node ${nodeId}: ${node.title}`}
+                                                    className="rounded-md border border-amber-300/70 bg-white/80 px-1.5 py-0.5 text-amber-950 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-amber-400/20 dark:bg-black/20 dark:text-amber-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                >
+                                                    #{nodeId}
+                                                </button>
+                                            ) : (
+                                                <span
+                                                    key={nodeId}
+                                                    title={`Resource source node ${nodeId} is not available in the normalized workflow graph.`}
+                                                    className="rounded-md border border-dashed border-amber-300/50 px-1.5 py-0.5 text-amber-800/60 dark:border-amber-400/20 dark:text-amber-200/50"
+                                                >
+                                                    #{nodeId}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {visibleTraversalIssues.length > 0 && (
                         <div>

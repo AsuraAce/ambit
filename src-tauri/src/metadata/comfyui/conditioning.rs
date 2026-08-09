@@ -1,3 +1,6 @@
+use super::diagnostics::{
+    push_resource_source_node_id, ComfyMetadataField, ComfyResourceSourceNodeIds,
+};
 use super::graph::{
     get_input_connection, get_input_source, get_node_input_link, get_node_param, get_node_type,
     get_reroute_source_id, get_source_id, get_strict_source_id, get_switch_branch_input,
@@ -501,6 +504,7 @@ pub fn find_connected_controlnets(
     start_node_id: &str,
     input_name: &str,
     ip_adapters: &mut Vec<String>,
+    resource_source_node_ids: &mut ComfyResourceSourceNodeIds,
 ) -> Vec<String> {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
@@ -528,7 +532,9 @@ pub fn find_connected_controlnets(
             if t.contains("ControlNetApply") {
                 // Extract the ControlNet name
                 if let Some(cn_source) = get_source_id(graph, &current_id, "control_net") {
-                    if let Some(cn_name) = trace_controlnet_name_valid(graph, &cn_source) {
+                    if let Some((cn_name, loader_id)) =
+                        trace_controlnet_name_valid(graph, &cn_source)
+                    {
                         let (category, _) =
                             crate::metadata::guidance::GuidanceClassifier::classify(&cn_name, None)
                                 .unwrap_or((
@@ -539,13 +545,25 @@ pub fn find_connected_controlnets(
                         match category {
                             crate::metadata::guidance::GuidanceCategory::IPAdapter => {
                                 if !ip_adapters.contains(&cn_name) {
-                                    ip_adapters.push(cn_name);
+                                    ip_adapters.push(cn_name.clone());
                                 }
+                                push_resource_source_node_id(
+                                    resource_source_node_ids,
+                                    ComfyMetadataField::IpAdapters,
+                                    &cn_name,
+                                    &loader_id,
+                                );
                             }
                             _ => {
                                 if !controlnets.contains(&cn_name) {
-                                    controlnets.push(cn_name);
+                                    controlnets.push(cn_name.clone());
                                 }
+                                push_resource_source_node_id(
+                                    resource_source_node_ids,
+                                    ComfyMetadataField::ControlNets,
+                                    &cn_name,
+                                    &loader_id,
+                                );
                             }
                         }
                     }
@@ -683,7 +701,7 @@ fn get_conditioning_source_id(
     }
 }
 
-fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<String> {
+fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<(String, String)> {
     let mut current_id = node_id.to_string();
     for _ in 0..10 {
         if let Some(node) = graph.get_node(&current_id) {
@@ -692,13 +710,17 @@ fn trace_controlnet_name_valid(graph: &ComfyGraph, node_id: &str) -> Option<Stri
                 if let Some(name) =
                     get_node_param(node, "control_net_name").and_then(|v| v.as_str())
                 {
-                    return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
-                        name,
+                    return Some((
+                        crate::metadata::guidance::GuidanceClassifier::clean_name(name),
+                        current_id,
                     ));
                 }
                 if let Some(arr) = node.get("widgets_values").and_then(|v| v.as_array()) {
                     if let Some(s) = arr.first().and_then(|v| v.as_str()) {
-                        return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(s));
+                        return Some((
+                            crate::metadata::guidance::GuidanceClassifier::clean_name(s),
+                            current_id,
+                        ));
                     }
                 }
             }

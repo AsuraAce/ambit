@@ -1,4 +1,4 @@
-use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
+use super::super::diagnostics::{ComfyMetadataField, ComfyParseDiagnostics, ComfyParseLayer};
 use crate::metadata::comfyui::{
     build_comfyui_diagnostics_report, extract_comfyui_metadata,
     extract_comfyui_metadata_with_diagnostics, ComfyParserDiagnosticsReport,
@@ -180,6 +180,139 @@ fn test_diagnostics_records_sampler_traversal_fields() {
             .get(&ComfyMetadataField::NegativePrompt),
         Some(&vec!["7".to_string()])
     );
+}
+
+#[test]
+fn test_diagnostics_records_item_level_resource_sources() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": 7.0,
+                "model": ["30", 0],
+                "positive": ["20", 0],
+                "negative": ["7", 0],
+                "seed": 12345,
+                "steps": 25,
+                "sampler_name": "euler",
+                "scheduler": "normal"
+            }
+        },
+        "4": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "resource-model.safetensors" }
+        },
+        "6": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {
+                "text": "scene <lora:prompt-style:0.5> embedding:detail <hypernet:prompt-hn:0.7>"
+            }
+        },
+        "7": {
+            "class_type": "CLIPTextEncode",
+            "inputs": { "text": "bad quality" }
+        },
+        "10": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": { "model": ["11", 0], "lora_name": "loader-style.safetensors" }
+        },
+        "11": {
+            "class_type": "HypernetworkLoader",
+            "inputs": {
+                "model": ["4", 0],
+                "hypernetwork_name": "loader-hn.pt",
+                "strength": 0.8
+            }
+        },
+        "20": {
+            "class_type": "ControlNetApplyAdvanced",
+            "inputs": {
+                "positive": ["6", 0],
+                "negative": ["7", 0],
+                "control_net": ["21", 0]
+            }
+        },
+        "21": {
+            "class_type": "ControlNetLoader",
+            "inputs": { "control_net_name": "control-depth.safetensors" }
+        },
+        "30": {
+            "class_type": "IPAdapterApply",
+            "inputs": { "model": ["10", 0], "ipadapter": ["31", 0] }
+        },
+        "31": {
+            "class_type": "IPAdapterModelLoader",
+            "inputs": { "ipadapter_file": "ip-adapter-plus.safetensors" }
+        },
+        "9": {
+            "class_type": "SaveImage",
+            "inputs": { "images": ["3", 0] }
+        }
+    }"#;
+    let chunks = chunks_with_prompt(prompt);
+
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    let expected = [
+        (ComfyMetadataField::Loras, "loader_style", "10"),
+        (ComfyMetadataField::Loras, "prompt_style (0.50)", "6"),
+        (ComfyMetadataField::ControlNets, "control_depth", "21"),
+        (ComfyMetadataField::IpAdapters, "ip_adapter_plus", "31"),
+        (ComfyMetadataField::Embeddings, "detail", "6"),
+        (ComfyMetadataField::Hypernetworks, "loader_hn (0.80)", "11"),
+        (ComfyMetadataField::Hypernetworks, "prompt_hn (0.70)", "6"),
+    ];
+    for (field, value, node_id) in expected {
+        assert!(
+            super::super::diagnostics::metadata_resource_values(&meta, field)
+                .contains(&value.to_string())
+        );
+        let source = diagnostics
+            .resource_sources
+            .get(&field)
+            .and_then(|resources| resources.get(value))
+            .unwrap_or_else(|| panic!("missing resource source for {value}"));
+        assert_eq!(source.layer, ComfyParseLayer::SamplerTraversal);
+        assert_eq!(source.node_ids, [node_id]);
+    }
+
+    let report = build_comfyui_diagnostics_report(&chunks);
+    assert_eq!(report.resource_sources.len(), expected.len());
+    for (field, value, node_id) in expected {
+        let field = super::super::metadata_field_label(field);
+        let source = report
+            .resource_sources
+            .iter()
+            .find(|source| source.field == field && source.value == value)
+            .unwrap_or_else(|| panic!("missing public resource source for {value}"));
+        assert_eq!(source.layer.as_deref(), Some("sampler_traversal"));
+        assert_eq!(source.node_ids, [node_id]);
+    }
+}
+
+#[test]
+fn test_same_layer_resource_sources_union_node_ids_in_numeric_order() {
+    let mut diagnostics = ComfyParseDiagnostics::default();
+    diagnostics.record_resource_source(
+        ComfyMetadataField::Loras,
+        "shared_style",
+        ComfyParseLayer::SamplerTraversal,
+        &["30:10".to_string(), "30:2".to_string()],
+    );
+    diagnostics.record_resource_source(
+        ComfyMetadataField::Loras,
+        "shared_style",
+        ComfyParseLayer::SamplerTraversal,
+        &["30:2".to_string(), "7".to_string()],
+    );
+
+    let source = diagnostics
+        .resource_sources
+        .get(&ComfyMetadataField::Loras)
+        .and_then(|resources| resources.get("shared_style"))
+        .expect("shared LoRA provenance");
+    assert_eq!(source.layer, ComfyParseLayer::SamplerTraversal);
+    assert_eq!(source.node_ids, ["7", "30:10", "30:2"]);
 }
 
 #[test]
@@ -462,9 +595,14 @@ fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
         .as_object_mut()
         .expect("diagnostics report should be an object")
         .remove("fieldSourceNodeIds");
+    legacy
+        .as_object_mut()
+        .expect("diagnostics report should be an object")
+        .remove("resourceSources");
     let legacy: ComfyParserDiagnosticsReport =
         serde_json::from_value(legacy).expect("deserialize legacy diagnostics report");
     assert!(legacy.field_source_node_ids.is_empty());
+    assert!(legacy.resource_sources.is_empty());
 }
 
 #[test]

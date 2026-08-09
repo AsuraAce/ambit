@@ -20,7 +20,8 @@ mod workflow_normalizer;
 mod tests;
 
 use self::diagnostics::{
-    ComfyMetadataField, ComfyMetadataSnapshot, ComfyParseDiagnostics, ComfyParseLayer,
+    metadata_resource_values, resource_fields, ComfyMetadataField, ComfyMetadataSnapshot,
+    ComfyParseDiagnostics, ComfyParseLayer,
 };
 use self::evaluator::{is_sampler_node, ComfyEvaluator};
 use self::graph::ComfyGraph;
@@ -251,6 +252,15 @@ fn record_flat_parameter_sources(
     ] {
         if contributes {
             diagnostics.field_sources.insert(field, layer);
+        }
+    }
+
+    for field in resource_fields() {
+        for value in metadata_resource_values(flat, field)
+            .iter()
+            .filter(|value| metadata_resource_values(selected, field).contains(value))
+        {
+            diagnostics.record_resource_source(field, value, layer, &[]);
         }
     }
 }
@@ -509,7 +519,21 @@ fn merge_graph_resources(
     diagnostics: &mut ComfyParseDiagnostics,
 ) {
     let contributed = !graph_values.is_empty();
-    merge_unique(selected, graph_values);
+    for value in graph_values {
+        if !selected.contains(&value) {
+            selected.push(value.clone());
+        }
+
+        if let Some(source) = graph_diagnostics
+            .resource_sources
+            .get(&field)
+            .and_then(|resources| resources.get(&value))
+        {
+            diagnostics.record_resource_source(field, &value, source.layer, &source.node_ids);
+        } else if let Some(layer) = graph_diagnostics.field_sources.get(&field) {
+            diagnostics.record_resource_source(field, &value, *layer, &[]);
+        }
+    }
     if !contributed {
         return;
     }
@@ -566,6 +590,15 @@ pub struct ComfyTraversalIssueReport {
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
+pub struct ComfyResourceSourceReport {
+    pub field: String,
+    pub value: String,
+    pub layer: Option<String>,
+    pub node_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
     pub app_version: String,
     pub parser_version: u32,
@@ -582,6 +615,8 @@ pub struct ComfyParserDiagnosticsReport {
     pub field_sources: BTreeMap<String, String>,
     #[serde(default)]
     pub field_source_node_ids: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub resource_sources: Vec<ComfyResourceSourceReport>,
     pub metadata: ComfyMetadataPreview,
 }
 
@@ -656,8 +691,40 @@ pub(crate) fn build_comfyui_diagnostics_report(
                 )
             })
             .collect(),
+        resource_sources: resource_source_reports(&metadata, &diagnostics),
         metadata: ComfyMetadataPreview::from_metadata(&metadata),
     }
+}
+
+fn resource_source_reports(
+    metadata: &ImageMetadata,
+    diagnostics: &ComfyParseDiagnostics,
+) -> Vec<ComfyResourceSourceReport> {
+    let mut reports = Vec::new();
+    for field in resource_fields() {
+        for value in metadata_resource_values(metadata, field) {
+            let source = diagnostics
+                .resource_sources
+                .get(&field)
+                .and_then(|resources| resources.get(value));
+            reports.push(ComfyResourceSourceReport {
+                field: metadata_field_label(field).to_string(),
+                value: value.clone(),
+                layer: source.map(|source| parse_layer_label(source.layer).to_string()),
+                node_ids: source
+                    .map(|source| {
+                        source
+                            .node_ids
+                            .iter()
+                            .take(16)
+                            .map(|node_id| bounded_diagnostic_label(node_id))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            });
+        }
+    }
+    reports
 }
 
 fn is_core_source_field(field: ComfyMetadataField) -> bool {
@@ -824,11 +891,12 @@ fn extract_comfyui_graph_with_diagnostics(
     }
     let before = ComfyMetadataSnapshot::from_metadata(&meta);
     meta.merge_if_missing(traversal_meta);
-    diagnostics.record_diff_with_sources(
+    diagnostics.record_diff_with_all_sources(
         &before,
         &meta,
         ComfyParseLayer::SamplerTraversal,
         &output_diagnostics.field_source_node_ids,
+        &output_diagnostics.resource_source_node_ids,
     );
 
     // Layer 3.5: Sampler Scan (Fragment Fallback)
@@ -836,7 +904,8 @@ fn extract_comfyui_graph_with_diagnostics(
     // scan specifically for standard KSamplers using the smart evaluator logic.
     if meta.is_incomplete() && !selected_samplerless_output {
         diagnostics.attempt(ComfyParseLayer::SamplerFallback);
-        let (mut sampler_meta, sampler_sources) = evaluator.extract_from_all_samplers();
+        let (mut sampler_meta, sampler_sources, sampler_resource_sources) =
+            evaluator.extract_from_all_samplers();
         if output_diagnostics.authoritative_model {
             sampler_meta.model = "Unknown".to_string();
             sampler_meta.model_hash = None;
@@ -855,11 +924,12 @@ fn extract_comfyui_graph_with_diagnostics(
         }
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge_if_missing(sampler_meta);
-        diagnostics.record_diff_with_sources(
+        diagnostics.record_diff_with_all_sources(
             &before,
             &meta,
             ComfyParseLayer::SamplerFallback,
             &sampler_sources,
+            &sampler_resource_sources,
         );
     }
 

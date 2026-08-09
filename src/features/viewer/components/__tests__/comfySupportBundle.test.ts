@@ -20,6 +20,12 @@ const diagnostics: ComfyParserDiagnosticsReport = {
     attemptedLayers: ['workflow_chunk', 'sampler_traversal'],
     fieldSources: { model: 'sampler_traversal' },
     fieldSourceNodeIds: { model: ['3'] },
+    resourceSources: [{
+        field: 'loras',
+        value: 'detail_style',
+        layer: 'sampler_traversal',
+        nodeIds: ['7']
+    }],
     metadata: {
         tool: 'ComfyUI',
         model: 'model',
@@ -94,6 +100,7 @@ describe('ComfyUI support bundle', () => {
             workflow: chunks.workflow.length
         });
         expect(payload.fieldSourceNodeIds).toEqual({ model: ['3'] });
+        expect(payload.resourceSources).toEqual(diagnostics.resourceSources);
         expect(payload).not.toHaveProperty('chunks');
         expect(payload).not.toHaveProperty('imageId');
         expect(serialized).not.toContain('private-name');

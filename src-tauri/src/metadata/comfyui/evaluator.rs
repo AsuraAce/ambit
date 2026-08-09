@@ -1,4 +1,7 @@
-use super::diagnostics::{ComfyFieldSourceNodeIds, ComfyMetadataField, ComfyTraversalIssue};
+use super::diagnostics::{
+    metadata_resource_values, resource_fields, ComfyFieldSourceNodeIds, ComfyMetadataField,
+    ComfyResourceSourceNodeIds, ComfyTraversalIssue,
+};
 use super::graph::{
     compare_node_ids, get_input_connection, get_input_source_by_slot, get_node_input_link,
     get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
@@ -31,6 +34,7 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) traversal_issues: Vec<ComfyTraversalIssue>,
     pub(crate) traversal_issues_truncated: bool,
     pub(crate) field_source_node_ids: ComfyFieldSourceNodeIds,
+    pub(crate) resource_source_node_ids: ComfyResourceSourceNodeIds,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -114,15 +118,17 @@ impl<'a> ComfyEvaluator<'a> {
         let mut loras = Vec::new();
         let mut ip_adapters = Vec::new();
         let mut hypernetworks = Vec::new();
-        let (metadata, field_source_node_ids) = super::eval_core::extract_from_sampler(
-            self.graph,
-            root_sampler_id,
-            root_node,
-            &mut loras,
-            &mut ip_adapters,
-            &mut hypernetworks,
-        );
+        let (metadata, field_source_node_ids, resource_source_node_ids) =
+            super::eval_core::extract_from_sampler(
+                self.graph,
+                root_sampler_id,
+                root_node,
+                &mut loras,
+                &mut ip_adapters,
+                &mut hypernetworks,
+            );
         diagnostics.field_source_node_ids = field_source_node_ids;
+        diagnostics.resource_source_node_ids = resource_source_node_ids;
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(
@@ -226,9 +232,16 @@ impl<'a> ComfyEvaluator<'a> {
         branch_node_ids
     }
 
-    pub fn extract_from_all_samplers(&self) -> (ImageMetadata, ComfyFieldSourceNodeIds) {
+    pub fn extract_from_all_samplers(
+        &self,
+    ) -> (
+        ImageMetadata,
+        ComfyFieldSourceNodeIds,
+        ComfyResourceSourceNodeIds,
+    ) {
         let mut meta = ImageMetadata::default();
         let mut field_source_node_ids = ComfyFieldSourceNodeIds::new();
+        let mut resource_source_node_ids = ComfyResourceSourceNodeIds::new();
 
         let mut sampler_nodes: Vec<(&String, &Value)> = self
             .graph
@@ -247,14 +260,15 @@ impl<'a> ComfyEvaluator<'a> {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
                     let mut hypernetworks = Vec::new();
-                    let (partial, partial_sources) = super::eval_core::extract_from_sampler(
-                        self.graph,
-                        id,
-                        node,
-                        &mut loras,
-                        &mut ip_adapters,
-                        &mut hypernetworks,
-                    );
+                    let (partial, partial_sources, partial_resource_sources) =
+                        super::eval_core::extract_from_sampler(
+                            self.graph,
+                            id,
+                            node,
+                            &mut loras,
+                            &mut ip_adapters,
+                            &mut hypernetworks,
+                        );
                     if partial.steps > 0 || !partial.model.is_empty() {
                         let before = meta.clone();
                         meta.merge(partial);
@@ -264,14 +278,20 @@ impl<'a> ComfyEvaluator<'a> {
                             &partial_sources,
                             &mut field_source_node_ids,
                         );
+                        copy_changed_resource_sources(
+                            &before,
+                            &meta,
+                            &partial_resource_sources,
+                            &mut resource_source_node_ids,
+                        );
                         if meta.steps > 0 && !meta.model.is_empty() {
-                            return (meta, field_source_node_ids);
+                            return (meta, field_source_node_ids, resource_source_node_ids);
                         }
                     }
                 }
             }
         }
-        (meta, field_source_node_ids)
+        (meta, field_source_node_ids, resource_source_node_ids)
     }
 
     fn find_output_nodes(&self) -> Vec<String> {
@@ -672,6 +692,31 @@ fn copy_changed_core_sources(
                 selected.insert(field, node_ids.clone());
             } else {
                 selected.remove(&field);
+            }
+        }
+    }
+}
+
+fn copy_changed_resource_sources(
+    before: &ImageMetadata,
+    after: &ImageMetadata,
+    additions: &ComfyResourceSourceNodeIds,
+    selected: &mut ComfyResourceSourceNodeIds,
+) {
+    for field in resource_fields() {
+        let before_values = metadata_resource_values(before, field);
+        for value in metadata_resource_values(after, field)
+            .iter()
+            .filter(|value| !before_values.contains(value))
+        {
+            if let Some(node_ids) = additions
+                .get(&field)
+                .and_then(|resources| resources.get(value))
+            {
+                selected
+                    .entry(field)
+                    .or_default()
+                    .insert(value.clone(), node_ids.clone());
             }
         }
     }

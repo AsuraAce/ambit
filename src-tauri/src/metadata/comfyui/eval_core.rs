@@ -2,7 +2,10 @@ use super::conditioning::{
     find_connected_controlnets, find_reachable_prompts_with_role_and_sources,
     find_reachable_prompts_with_sources,
 };
-use super::diagnostics::{ComfyFieldSourceNodeIds, ComfyMetadataField};
+use super::diagnostics::{
+    push_resource_source_node_id, ComfyFieldSourceNodeIds, ComfyMetadataField,
+    ComfyResourceSourceNodeIds,
+};
 use super::eval_utils::{
     evaluate_float, evaluate_float_link_first, evaluate_number, evaluate_number_link_first,
     evaluate_string, evaluate_string_link_first, get_source_id,
@@ -28,9 +31,14 @@ pub fn extract_from_sampler(
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
-) -> (ImageMetadata, ComfyFieldSourceNodeIds) {
+) -> (
+    ImageMetadata,
+    ComfyFieldSourceNodeIds,
+    ComfyResourceSourceNodeIds,
+) {
     let mut meta = ImageMetadata::default();
     let mut source_node_ids = ComfyFieldSourceNodeIds::new();
+    let mut resource_source_node_ids = ComfyResourceSourceNodeIds::new();
     let is_sampler_custom = get_node_type(node) == "SamplerCustom";
 
     if !is_sampler_custom {
@@ -277,6 +285,7 @@ pub fn extract_from_sampler(
         ip_adapters,
         hypernetworks,
         &mut model_control_nets,
+        &mut resource_source_node_ids,
     ) {
         meta.model = model.name;
         source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
@@ -290,6 +299,7 @@ pub fn extract_from_sampler(
                 ip_adapters,
                 hypernetworks,
                 &mut model_control_nets,
+                &mut resource_source_node_ids,
                 true,
             ) {
                 meta.model = model.name;
@@ -308,6 +318,7 @@ pub fn extract_from_sampler(
                     ip_adapters,
                     hypernetworks,
                     &mut model_control_nets,
+                    &mut resource_source_node_ids,
                     strict_connections,
                 ) {
                     meta.model = model.name;
@@ -358,37 +369,82 @@ pub fn extract_from_sampler(
         source_node_ids.insert(ComfyMetadataField::NegativePrompt, neg.source_node_ids);
     }
 
+    let positive_prompt_source_ids = source_node_ids
+        .get(&ComfyMetadataField::PositivePrompt)
+        .cloned()
+        .unwrap_or_default();
+    let negative_prompt_source_ids = source_node_ids
+        .get(&ComfyMetadataField::NegativePrompt)
+        .cloned()
+        .unwrap_or_default();
+
     for emb in extract_explicit_embeddings_from_prompt(&meta.positive_prompt) {
         if !meta.embeddings.contains(&emb) {
-            meta.embeddings.push(emb);
+            meta.embeddings.push(emb.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Embeddings,
+            &emb,
+            &positive_prompt_source_ids,
+        );
     }
     for emb in extract_explicit_embeddings_from_prompt(&meta.negative_prompt) {
         if !meta.embeddings.contains(&emb) {
-            meta.embeddings.push(emb);
+            meta.embeddings.push(emb.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Embeddings,
+            &emb,
+            &negative_prompt_source_ids,
+        );
     }
 
     for lora in extract_loras_from_prompt(&meta.positive_prompt) {
         if !meta.loras.contains(&lora) {
-            meta.loras.push(lora);
+            meta.loras.push(lora.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Loras,
+            &lora,
+            &positive_prompt_source_ids,
+        );
     }
     for lora in extract_loras_from_prompt(&meta.negative_prompt) {
         if !meta.loras.contains(&lora) {
-            meta.loras.push(lora);
+            meta.loras.push(lora.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Loras,
+            &lora,
+            &negative_prompt_source_ids,
+        );
     }
 
     for hn in extract_hypernets_from_prompt(&meta.positive_prompt) {
         if !meta.hypernetworks.contains(&hn) {
-            meta.hypernetworks.push(hn);
+            meta.hypernetworks.push(hn.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Hypernetworks,
+            &hn,
+            &positive_prompt_source_ids,
+        );
     }
     for hn in extract_hypernets_from_prompt(&meta.negative_prompt) {
         if !meta.hypernetworks.contains(&hn) {
-            meta.hypernetworks.push(hn);
+            meta.hypernetworks.push(hn.clone());
         }
+        record_resource_source_nodes(
+            &mut resource_source_node_ids,
+            ComfyMetadataField::Hypernetworks,
+            &hn,
+            &negative_prompt_source_ids,
+        );
     }
 
     if !is_sampler_custom && meta.positive_prompt.is_empty() && cfg_guider.is_none() {
@@ -406,7 +462,13 @@ pub fn extract_from_sampler(
     }
 
     meta.control_nets.extend(model_control_nets);
-    let cnets = find_connected_controlnets(graph, node_id, "positive", ip_adapters);
+    let cnets = find_connected_controlnets(
+        graph,
+        node_id,
+        "positive",
+        ip_adapters,
+        &mut resource_source_node_ids,
+    );
     for cn in cnets {
         if !meta.control_nets.contains(&cn) {
             meta.control_nets.push(cn);
@@ -424,7 +486,13 @@ pub fn extract_from_sampler(
         node_ids.sort_by(|left, right| super::graph::compare_node_ids(left, right));
         node_ids.dedup();
     }
-    (meta, source_node_ids)
+    for resources in resource_source_node_ids.values_mut() {
+        for node_ids in resources.values_mut() {
+            node_ids.sort_by(|left, right| super::graph::compare_node_ids(left, right));
+            node_ids.dedup();
+        }
+    }
+    (meta, source_node_ids, resource_source_node_ids)
 }
 
 fn resolve_transparent_reroutes<'a>(graph: &'a ComfyGraph, source_id: &str) -> Option<&'a Value> {
@@ -510,6 +578,17 @@ fn push_source_node_id(
     let node_ids = sources.entry(field).or_default();
     if !node_ids.contains(&node_id) {
         node_ids.push(node_id);
+    }
+}
+
+fn record_resource_source_nodes(
+    sources: &mut ComfyResourceSourceNodeIds,
+    field: ComfyMetadataField,
+    value: &str,
+    node_ids: &[String],
+) {
+    for node_id in node_ids {
+        push_resource_source_node_id(sources, field, value, node_id);
     }
 }
 
@@ -794,6 +873,7 @@ fn trace_model_chain(
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
     control_nets: &mut Vec<String>,
+    resource_source_node_ids: &mut ComfyResourceSourceNodeIds,
 ) -> Option<ResolvedModel> {
     let strict_connections = get_node_type(start_node) == "SamplerCustom";
     trace_model_chain_with_mode(
@@ -804,6 +884,7 @@ fn trace_model_chain(
         ip_adapters,
         hypernetworks,
         control_nets,
+        resource_source_node_ids,
         strict_connections,
     )
 }
@@ -817,6 +898,7 @@ fn trace_model_chain_with_mode(
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
     control_nets: &mut Vec<String>,
+    resource_source_node_ids: &mut ComfyResourceSourceNodeIds,
     strict_connections: bool,
 ) -> Option<ResolvedModel> {
     let mut current_id =
@@ -861,8 +943,14 @@ fn trace_model_chain_with_mode(
             if let Some(name) = get_node_param(node, "lora_name").and_then(|v| v.as_str()) {
                 let name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                 if !loras.contains(&name) {
-                    loras.push(name);
+                    loras.push(name.clone());
                 }
+                push_resource_source_node_id(
+                    resource_source_node_ids,
+                    ComfyMetadataField::Loras,
+                    &name,
+                    &current_id,
+                );
             }
             if let Some(next) = get_model_chain_source_id(graph, node, "model", strict_connections)
             {
@@ -871,7 +959,14 @@ fn trace_model_chain_with_mode(
             }
             break;
         } else if t == "Lora Loader (LoraManager)" {
-            extract_lora_manager(node, loras);
+            for name in extract_lora_manager(node, loras) {
+                push_resource_source_node_id(
+                    resource_source_node_ids,
+                    ComfyMetadataField::Loras,
+                    &name,
+                    &current_id,
+                );
+            }
             if let Some(next) = get_model_chain_source_id(graph, node, "model", strict_connections)
             {
                 current_id = next;
@@ -879,7 +974,14 @@ fn trace_model_chain_with_mode(
             }
             break;
         } else if t == "HypernetworkLoader" {
-            extract_hypernetwork_loader(node, hypernetworks);
+            if let Some(name) = extract_hypernetwork_loader(node, hypernetworks) {
+                push_resource_source_node_id(
+                    resource_source_node_ids,
+                    ComfyMetadataField::Hypernetworks,
+                    &name,
+                    &current_id,
+                );
+            }
             if let Some(next) = get_model_chain_source_id(graph, node, "model", strict_connections)
             {
                 current_id = next;
@@ -915,8 +1017,14 @@ fn trace_model_chain_with_mode(
                     if get_node_type(patch_node) == "ModelPatchLoader" {
                         if let Some(name) = extract_model_patch_name(graph, patch_node) {
                             if !control_nets.contains(&name) {
-                                control_nets.push(name);
+                                control_nets.push(name.clone());
                             }
+                            push_resource_source_node_id(
+                                resource_source_node_ids,
+                                ComfyMetadataField::ControlNets,
+                                &name,
+                                &patch_id,
+                            );
                         }
                     }
                 }
@@ -968,8 +1076,14 @@ fn trace_model_chain_with_mode(
                             let name =
                                 crate::metadata::guidance::GuidanceClassifier::clean_name(name);
                             if !ip_adapters.contains(&name) {
-                                ip_adapters.push(name);
+                                ip_adapters.push(name.clone());
                             }
+                            push_resource_source_node_id(
+                                resource_source_node_ids,
+                                ComfyMetadataField::IpAdapters,
+                                &name,
+                                &ip_source,
+                            );
                         }
                     }
                 }
@@ -1148,7 +1262,7 @@ fn extract_model_patch_name(graph: &ComfyGraph, node: &Value) -> Option<String> 
     (!name.is_empty()).then_some(name)
 }
 
-fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {
+fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) -> Option<String> {
     if let Some(name) = get_node_param(node, "hypernetwork_name").and_then(|v| v.as_str()) {
         let cleaned_name = crate::metadata::guidance::GuidanceClassifier::clean_name(name);
         let strength = get_node_param(node, "strength").and_then(|v| {
@@ -1174,13 +1288,16 @@ fn extract_hypernetwork_loader(node: &Value, hypernetworks: &mut Vec<String>) {
         };
 
         if !hypernetworks.contains(&entry) {
-            hypernetworks.push(entry);
+            hypernetworks.push(entry.clone());
         }
+        return Some(entry);
     }
+    None
 }
 
-fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) {
+fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) -> Vec<String> {
     let mut values = None;
+    let mut extracted = Vec::new();
 
     if let Some(loras_obj) = node.get("inputs").and_then(|v| v.get("loras")) {
         if let Some(v) = loras_obj.get("__value__").and_then(|v| v.as_array()) {
@@ -1222,10 +1339,12 @@ fn extract_lora_manager(node: &Value, loras: &mut Vec<String>) {
                     };
 
                     if !loras.contains(&entry) {
-                        loras.push(entry);
+                        loras.push(entry.clone());
                     }
+                    extracted.push(entry);
                 }
             }
         }
     }
+    extracted
 }
