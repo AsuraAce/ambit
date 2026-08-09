@@ -577,6 +577,30 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(collections[0].thumbnail).toBe('asset://img-empty');
     });
 
+    it('does not fall back to a video source when a custom video thumbnail has no poster', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM collections')) return [makeCollectionRow({ custom_thumbnail: 'video-empty' })];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('ranked_thumbnails')) return [];
+            if (query.includes('WHERE id IN')) {
+                return [{
+                    id: 'video-empty',
+                    path: 'C:/videos/empty.mp4',
+                    thumb: null,
+                    privacy_hidden: 0,
+                    media_type: 'video'
+                }];
+            }
+            return [];
+        });
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+
+        const collections = await getAllCollectionsWithStats();
+
+        expect(collections[0].thumbnail).toBeUndefined();
+        expect(collections[0].thumbnailSourceKind).toBe('customImage');
+    });
+
     it('marks dynamic thumbnails sensitive, exposes a safe alternative, and orders pinned first', async () => {
         let dynamicQuery = '';
         dbMocks.select.mockImplementation(async (query: string) => {

@@ -513,6 +513,18 @@ intentional skip and 547 passing Rust tests with one existing ignored parser
 test; lint, strict TypeScript, generated binding drift, and diff checks pass. No
 blocking WP2 finding remains.
 
+A follow-up WP2 assurance pass tightened cancellation and poster safety for large
+video libraries. Cancelling an import now interrupts browser poster extraction
+instead of waiting for media-event timeouts; unchanged duplicate records no
+longer decode and store a redundant poster; posterless videos use generic
+placeholders in Maintenance, exact-duplicate results, and collection thumbnails
+instead of assigning the source video to an image element; and exact-hash
+cancellation is checked at every 1 MiB read boundary rather than only between
+files. The focused remediation set passed 148 frontend tests. The final gate
+passed 3,150 frontend tests with one intentional skip and all 771 Rust tests,
+plus lint, strict TypeScript, Rust formatting, generated binding drift, and diff
+checks. The closure review found no remaining blocking WP2 issue.
+
 Restore closure follow-up (2026-08-09): restore now preserves the original
 library timestamp and lets the active query reapply its configured sort and
 filters instead of prepending the restored item as newest. Native restore also

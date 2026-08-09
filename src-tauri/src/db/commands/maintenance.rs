@@ -141,13 +141,26 @@ struct FileHashBackfillProgress {
     message: String,
 }
 
+#[cfg(test)]
 fn hash_file_sha256(path: &str) -> Result<String, String> {
+    let is_cancelled = AtomicBool::new(false);
+    hash_file_sha256_cancellable(path, &is_cancelled)?
+        .ok_or_else(|| "File hashing was cancelled".to_string())
+}
+
+fn hash_file_sha256_cancellable(
+    path: &str,
+    is_cancelled: &AtomicBool,
+) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 1024 * 1024];
 
     loop {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         let read = reader.read(&mut buffer).map_err(|e| e.to_string())?;
         if read == 0 {
             break;
@@ -155,7 +168,7 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
         hasher.update(&buffer[..read]);
     }
 
-    Ok(hex::encode(hasher.finalize()))
+    Ok(Some(hex::encode(hasher.finalize())))
 }
 
 fn load_file_hash_candidates(
@@ -1304,12 +1317,16 @@ pub async fn backfill_image_file_hashes(
                     .map_err(|e| e.to_string())?;
                 missing += 1;
             } else {
-                match hash_file_sha256(path) {
-                    Ok(hash) => {
+                match hash_file_sha256_cancellable(path, &is_cancelled) {
+                    Ok(Some(hash)) => {
                         update_hash
                             .execute(params![hash, id])
                             .map_err(|e| e.to_string())?;
                         updated += 1;
+                    }
+                    Ok(None) => {
+                        was_cancelled = true;
+                        break;
                     }
                     Err(e) => {
                         log::warn!("[Maintenance] Failed to hash media file {}: {}", path, e);
@@ -1406,8 +1423,9 @@ pub async fn schedule_purge_transaction(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_log_directory, hash_file_sha256, load_file_hash_candidates,
-        mutate_collection_membership_inner, remove_images_from_library_inner, resolve_app_log_path,
+        ensure_log_directory, hash_file_sha256, hash_file_sha256_cancellable,
+        load_file_hash_candidates, mutate_collection_membership_inner,
+        remove_images_from_library_inner, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
         CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
     };
@@ -1415,6 +1433,7 @@ mod tests {
     use rusqlite::{params, Connection};
     use std::fs::File;
     use std::io::Write;
+    use std::sync::atomic::AtomicBool;
 
     fn apply_all_migrations(conn: &Connection) {
         for migration in init_db() {
@@ -1474,6 +1493,21 @@ mod tests {
             first_hash,
             "f10266197016b8e8842aeba6800100997ce04f35a45a3bff974711e9615ea597"
         );
+    }
+
+    #[test]
+    fn file_hashing_honors_cancellation_before_reading_the_next_chunk() {
+        let path = std::env::temp_dir().join("ambit_hash_cancel_test.bin");
+        File::create(&path)
+            .unwrap()
+            .write_all(b"bytes that must remain unhashed")
+            .unwrap();
+        let is_cancelled = AtomicBool::new(true);
+
+        let result = hash_file_sha256_cancellable(&path.to_string_lossy(), &is_cancelled).unwrap();
+
+        let _ = std::fs::remove_file(path);
+        assert_eq!(result, None);
     }
 
     #[test]

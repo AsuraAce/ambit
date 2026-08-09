@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { AIImage, isVideoAsset } from '../../../types';
-import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, GitCompare, X, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, GitCompare, X, RefreshCw, Video } from 'lucide-react';
 import { useDuplicateFinder, DuplicateGroup } from '../../../hooks/useDuplicateFinder';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -25,16 +25,23 @@ const DuplicateItem: React.FC<{
     const [isRevealed, setRevealed] = useState(false);
     const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
     const isMasked = !isRevealed && effectiveMasked;
+    const useVideoPlaceholder = isVideoAsset(img) && img.thumbnailSource !== 'ambit-video-v1';
 
     return (
         <div className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0" onMouseLeave={() => isRevealed && setRevealed(false)}>
             {/* Image Preview */}
             <div className="relative aspect-[2/3] bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 group-hover:border-sage-500/50 transition-colors">
-                <img
-                    src={img.thumbnailUrl}
-                    alt=""
-                    className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
-                />
+                {useVideoPlaceholder ? (
+                    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}>
+                        <Video className="h-10 w-10 text-white/30" aria-hidden="true" />
+                    </div>
+                ) : (
+                    <img
+                        src={img.thumbnailUrl}
+                        alt=""
+                        className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
+                    />
+                )}
 
                 {isMasked && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10">

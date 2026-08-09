@@ -182,10 +182,11 @@ describe('DuplicateFinder', () => {
         mocks.groups = [{ id: 'video-group', images: videos, latestModifiedId: videos[1].id }];
         mocks.totalRedundantCount = 1;
 
-        render(<DuplicateFinder {...baseProps()} onCompareImages={vi.fn()} />);
+        const { container } = render(<DuplicateFinder {...baseProps()} onCompareImages={vi.fn()} />);
 
         const compareButtons = screen.getAllByRole('button', { name: 'Compare with Another Copy' }) as HTMLButtonElement[];
         expect(compareButtons.every(button => button.disabled)).toBe(true);
+        expect(container.querySelectorAll('img')).toHaveLength(0);
     });
 
     it('contains rejected resolution actions after the persistence layer reports the failure', async () => {

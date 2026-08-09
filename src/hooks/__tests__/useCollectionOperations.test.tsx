@@ -870,6 +870,22 @@ describe('useCollectionOperations', () => {
         expect(thumbnailUpdater(mockCollections)[0].thumbnail).toBe('asset://C:/images/img2.png');
     });
 
+    it('does not optimistically use a posterless video source as a collection thumbnail', async () => {
+        const { result } = renderHook(() => useCollectionOperations(props));
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage({
+            mediaType: 'video',
+            url: 'asset://C:/videos/clip.mp4',
+            thumbnailUrl: 'asset://C:/videos/clip.mp4',
+            thumbnailSource: undefined,
+        })));
+
+        const thumbnailUpdater = mockSetAllCollections.mock.calls.at(-1)?.[0] as (collections: Collection[]) => Collection[];
+        expect(thumbnailUpdater(mockCollections)[0]).toMatchObject({
+            customThumbnail: 'img2',
+            thumbnail: undefined,
+        });
+    });
+
     it('logs background thumbnail reconciliation and invalidation failures', async () => {
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries').mockRejectedValue(new Error('invalidate failed'));

@@ -5,6 +5,14 @@ import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
 
 const VIDEO_FILTER_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'mkv'];
+const VIDEO_POSTER_CANCEL_POLL_MS = 50;
+
+class VideoPosterCancelledError extends Error {
+    constructor() {
+        super('Video poster generation cancelled');
+        this.name = 'VideoPosterCancelledError';
+    }
+}
 
 export interface VideoImportSummary {
     imported: number;
@@ -67,7 +75,7 @@ export const importVideoPaths = async (
             onProgress?.(summary.handledPaths.length + summary.failedPaths.length + summary.cancelled, paths.length);
             break;
         }
-        const cancellationRequested = !!shouldCancel?.();
+        let cancellationRequested = !!shouldCancel?.();
 
         if (outcome.status === 'rejected') {
             summary.handledPaths.push(normalizePath(path));
@@ -75,14 +83,17 @@ export const importVideoPaths = async (
 
         if (outcome.asset && outcome.status !== 'rejected' && outcome.status !== 'cancelled') {
             let thumbnailPath: string | undefined;
-            if (!cancellationRequested) {
+            if (!cancellationRequested && outcome.status !== 'duplicate') {
                 try {
-                    const poster = await captureVideoPoster(path, outcome.asset.durationMs);
+                    const poster = await captureVideoPoster(path, outcome.asset.durationMs, shouldCancel);
                     const stored = await unwrap(commands.storeVideoPoster(outcome.asset.id, poster));
                     thumbnailPath = stored.thumbnailPath;
                 } catch (error) {
-                    summary.posterFailures += 1;
-                    console.warn('[VideoImport] Imported video without generated poster', path, error);
+                    cancellationRequested = error instanceof VideoPosterCancelledError || !!shouldCancel?.();
+                    if (!cancellationRequested) {
+                        summary.posterFailures += 1;
+                        console.warn('[VideoImport] Imported video without generated poster', path, error);
+                    }
                 }
             }
             summary.handledPaths.push(normalizePath(path));
@@ -155,11 +166,17 @@ const countOutcome = (summary: VideoImportSummary, outcome: VideoImportOutcome) 
 const waitForVideoEvent = (
     video: HTMLVideoElement,
     successEvent: 'loadedmetadata' | 'seeked',
-    timeoutMs = 15_000
+    timeoutMs = 15_000,
+    shouldCancel?: () => boolean
 ): Promise<void> => new Promise((resolve, reject) => {
-    const timeout = window.setTimeout(() => finish(new Error(`Timed out waiting for ${successEvent}`)), timeoutMs);
+    let timeout: number | undefined;
+    let cancellationPoll: number | undefined;
+    let settled = false;
     const finish = (error?: Error) => {
-        window.clearTimeout(timeout);
+        if (settled) return;
+        settled = true;
+        if (timeout !== undefined) window.clearTimeout(timeout);
+        if (cancellationPoll !== undefined) window.clearInterval(cancellationPoll);
         video.removeEventListener(successEvent, handleSuccess);
         video.removeEventListener('error', handleError);
         error ? reject(error) : resolve();
@@ -168,28 +185,45 @@ const waitForVideoEvent = (
     const handleError = () => finish(new Error('Browser could not decode the video for poster generation'));
     video.addEventListener(successEvent, handleSuccess, { once: true });
     video.addEventListener('error', handleError, { once: true });
+    if (shouldCancel?.()) {
+        finish(new VideoPosterCancelledError());
+        return;
+    }
+    timeout = window.setTimeout(() => finish(new Error(`Timed out waiting for ${successEvent}`)), timeoutMs);
+    if (shouldCancel) {
+        cancellationPoll = window.setInterval(() => {
+            if (shouldCancel()) finish(new VideoPosterCancelledError());
+        }, VIDEO_POSTER_CANCEL_POLL_MS);
+    }
 });
 
-export const captureVideoPoster = async (path: string, durationMs: number): Promise<string> => {
+export const captureVideoPoster = async (
+    path: string,
+    durationMs: number,
+    shouldCancel?: () => boolean
+): Promise<string> => {
+    if (shouldCancel?.()) throw new VideoPosterCancelledError();
     const video = document.createElement('video');
     video.crossOrigin = 'anonymous';
     video.muted = true;
     video.preload = 'metadata';
 
     try {
-        const metadataReady = waitForVideoEvent(video, 'loadedmetadata');
+        const metadataReady = waitForVideoEvent(video, 'loadedmetadata', 15_000, shouldCancel);
         video.src = convertFileSrc(normalizePath(path));
         await metadataReady;
+        if (shouldCancel?.()) throw new VideoPosterCancelledError();
 
         const knownDuration = Number.isFinite(video.duration) && video.duration > 0
             ? video.duration
             : durationMs / 1000;
         const seekTarget = Math.min(1, knownDuration * 0.1);
         if (seekTarget > 0) {
-            const seeked = waitForVideoEvent(video, 'seeked');
+            const seeked = waitForVideoEvent(video, 'seeked', 15_000, shouldCancel);
             video.currentTime = seekTarget;
             await seeked;
         }
+        if (shouldCancel?.()) throw new VideoPosterCancelledError();
 
         const scale = Math.min(1, 512 / video.videoWidth, 512 / video.videoHeight);
         const width = Math.max(1, Math.round(video.videoWidth * scale));

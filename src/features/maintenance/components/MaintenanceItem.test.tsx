@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeneratorTool, type AIImage } from '../../../types';
+import { GeneratorTool, type AIImage, type VideoAsset } from '../../../types';
 import { MaintenanceItem } from './MaintenanceItem';
 
 const settingsState = vi.hoisted(() => ({ privacyEnabled: true }));
@@ -26,6 +26,18 @@ const image = (overrides: Partial<AIImage> = {}): AIImage => ({
         positivePrompt: 'contains secret material',
         negativePrompt: '',
     },
+    ...overrides,
+});
+
+const video = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
+    ...image(),
+    mediaType: 'video',
+    durationMs: 1000,
+    videoCodec: 'h264',
+    audioPresent: false,
+    rotationDegrees: 0,
+    probeStatus: 'ready',
+    playbackStatus: 'unknown',
     ...overrides,
 });
 
@@ -85,5 +97,42 @@ describe('MaintenanceItem', () => {
         expect((container.querySelector('img') as HTMLImageElement).className).toContain('custom-image');
         fireEvent.click(container.querySelector('.cursor-pointer') as Element);
         expect(onClick).toHaveBeenCalledOnce();
+    });
+
+    it('uses a generic placeholder instead of requesting a posterless video source', () => {
+        settingsState.privacyEnabled = false;
+        const { container } = render(
+            <MaintenanceItem
+                img={video({
+                    id: 'C:/videos/clip.mp4',
+                    url: 'asset://C:/videos/clip.mp4',
+                    thumbnailUrl: 'asset://C:/videos/clip.mp4',
+                    filename: 'clip.mp4',
+                })}
+                style={{ height: 180 }}
+                onClick={vi.fn()}
+                maskedKeywords={[]}
+            />
+        );
+
+        expect(container.querySelector('img')).toBeNull();
+        expect(screen.getByText('clip.mp4')).toBeTruthy();
+    });
+
+    it('renders an Ambit-owned video poster without falling back to the video source', () => {
+        settingsState.privacyEnabled = false;
+        const { container } = render(
+            <MaintenanceItem
+                img={video({
+                    thumbnailUrl: 'asset://poster.webp',
+                    thumbnailSource: 'ambit-video-v1',
+                })}
+                style={{ height: 180 }}
+                onClick={vi.fn()}
+                maskedKeywords={[]}
+            />
+        );
+
+        expect((container.querySelector('img') as HTMLImageElement).getAttribute('src')).toBe('asset://poster.webp');
     });
 });

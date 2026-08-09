@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { EyeOff, Eye, CheckSquare } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { EyeOff, Eye, CheckSquare, Video } from 'lucide-react';
+import { AIImage, isVideoAsset } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 
@@ -35,6 +35,8 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
     const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
     const isMasked = !isRevealed && effectiveMasked;
     const revealGranted = effectiveMasked && isRevealed;
+    const hasVideoPoster = isVideoAsset(img) && img.thumbnailSource === 'ambit-video-v1';
+    const useVideoPlaceholder = isVideoAsset(img) && !hasVideoPoster;
 
     return (
         <div style={style} className="p-1">
@@ -44,12 +46,18 @@ export const MaintenanceItem: React.FC<MaintenanceItemProps> = ({
                 onMouseLeave={() => isRevealed && setRevealed(false)}
             >
                 <div className="relative w-full h-full">
-                    <img
-                        src={img.thumbnailUrl}
-                        loading="lazy"
-                        className={`w-full h-full object-cover transition-all ${imageClassName} ${isMasked ? 'blur-xl scale-110' : ''} ${isMissing ? 'opacity-50 grayscale' : ''}`}
-                        alt=""
-                    />
+                    {useVideoPlaceholder ? (
+                        <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${imageClassName} ${isMasked ? 'blur-xl scale-110' : ''} ${isMissing ? 'opacity-50 grayscale' : ''}`}>
+                            <Video className="h-10 w-10 text-white/30" aria-hidden="true" />
+                        </div>
+                    ) : (
+                        <img
+                            src={img.thumbnailUrl}
+                            loading="lazy"
+                            className={`w-full h-full object-cover transition-all ${imageClassName} ${isMasked ? 'blur-xl scale-110' : ''} ${isMissing ? 'opacity-50 grayscale' : ''}`}
+                            alt=""
+                        />
+                    )}
 
                     {isMissing && (
                         <div className="absolute inset-0 flex flex-col items-center justify-center bg-red-900/10 pointer-events-none">

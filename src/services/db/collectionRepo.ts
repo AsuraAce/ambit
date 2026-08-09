@@ -51,12 +51,14 @@ interface ImageThumbnailLookupRow {
     thumb?: string | null;
     privacy_hidden?: number | null;
     invoke_scope_hidden?: number | null;
+    media_type?: string | null;
 }
 
 interface CustomThumbnailMatch {
     thumb?: string | null;
     privacyHidden?: number | null;
     ownerHidden?: boolean;
+    isVideo?: boolean;
 }
 
 export interface SmartCollectionSummary {
@@ -155,7 +157,12 @@ const loadImageThumbnailLookup = async (
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
-            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden, invoke_scope_hidden
+            `SELECT id, path,
+                    CASE
+                        WHEN media_type = 'video' THEN NULLIF(thumbnail_path, '')
+                        ELSE COALESCE(NULLIF(thumbnail_path, ''), path)
+                    END as thumb,
+                    privacy_hidden, invoke_scope_hidden, media_type
              FROM images
              WHERE ${column} IN (${placeholders})`,
             batch
@@ -167,6 +174,7 @@ const loadImageThumbnailLookup = async (
                 thumb: row.thumb,
                 privacyHidden: row.privacy_hidden,
                 ownerHidden: row.invoke_scope_hidden === 1,
+                isVideo: row.media_type === 'video',
             });
         });
     }
@@ -417,12 +425,14 @@ const buildCollectionThumbnailSummaries = async (
                 thumbnailIsSensitive = false;
                 thumbnailSourceKind = 'customImage';
             } else if (customThumb) {
-                rawThumb = customThumb.thumb || collection.custom_thumbnail;
+                rawThumb = customThumb.thumb || (customThumb.isVideo ? undefined : collection.custom_thumbnail);
                 safeThumb = undefined;
                 thumbnailIsSensitive = customThumb.privacyHidden === 1;
                 thumbnailSourceKind = 'customImage';
             } else {
-                rawThumb = collection.custom_thumbnail;
+                rawThumb = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i.test(collection.custom_thumbnail)
+                    ? undefined
+                    : collection.custom_thumbnail;
                 safeThumb = undefined;
                 thumbnailIsSensitive = false;
                 thumbnailSourceKind = 'customPath';
