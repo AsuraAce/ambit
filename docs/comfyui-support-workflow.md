@@ -55,6 +55,14 @@ pnpm run inspect:comfyui-support -- "C:\private\ambit-comfyui-support.json" --ve
 Reports omit complete raw chunk bodies, but their parsed metadata may still be
 sensitive.
 
+Schema-1 bundles created before newer diagnostics fields were introduced remain
+replayable. When a recorded bundle omitted `fieldSourceNodeIds` or
+`resourceSources`, replay excludes that missing field from both sides of the
+comparison and lists its JSON pointer in `comparisonIgnoredPaths`. A field that
+was explicitly recorded, including an empty object or array, is compared
+normally. All other metadata and diagnostics differences still count as parser
+drift and fail `--verify`.
+
 ## 3. Prepare A Candidate
 
 Create an exact, deterministic chunk-only candidate in a private working area:
@@ -107,6 +115,9 @@ Add `--verify` only when the candidate is expected to retain identical parsed
 diagnostics. Intentional minimization may produce legitimate differences; normal
 comparison reports those differences without treating them as command failure.
 Comparison ignores app and parser version changes and does not compare raw bytes.
+Fixture-candidate comparison always computes fresh diagnostics from both chunk
+maps, so it does not use the legacy-field compatibility exclusions described
+above.
 
 The candidate SHA-256 is based on its canonical key-sorted chunk map, so outer
 candidate-file whitespace and root key ordering do not change its identity.

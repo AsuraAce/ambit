@@ -505,12 +505,21 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            fake_replay(true),
+            |_| {
+                Ok((
+                    r#"{"parserOutputMatches":true,"comparisonIgnoredPaths":["/resourceSources"]}"#
+                        .to_string(),
+                    true,
+                ))
+            },
             fake_prepare(b"{}\n"),
             fake_fixture_inspect(true),
         );
 
         assert_eq!(code, EXIT_OK);
+        assert!(String::from_utf8(stdout)
+            .unwrap()
+            .contains(r#""comparisonIgnoredPaths":["/resourceSources"]"#));
         assert!(stderr.is_empty());
         let _ = fs::remove_file(path);
     }
