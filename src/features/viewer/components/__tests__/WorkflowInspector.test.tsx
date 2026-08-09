@@ -5,6 +5,7 @@ import { GeneratorTool, type AIImage } from '../../../../types';
 import { WorkflowInspector } from '../WorkflowInspector';
 
 const mockInspectComfyuiMetadataChunks = vi.hoisted(() => vi.fn());
+const mockInspectComfyuiWorkflowGraph = vi.hoisted(() => vi.fn());
 const mockSettings = vi.hoisted(() => ({ devMode: true }));
 const mockClipboardWriteText = vi.hoisted(() => vi.fn());
 const mockSave = vi.hoisted(() => vi.fn());
@@ -12,7 +13,8 @@ const mockWriteTextFile = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
-        inspectComfyuiMetadataChunks: (...args: unknown[]) => mockInspectComfyuiMetadataChunks(...args)
+        inspectComfyuiMetadataChunks: (...args: unknown[]) => mockInspectComfyuiMetadataChunks(...args),
+        inspectComfyuiWorkflowGraph: (...args: unknown[]) => mockInspectComfyuiWorkflowGraph(...args)
     }
 }));
 
@@ -92,6 +94,27 @@ const diagnosticsReport = {
     }
 };
 
+const workflowGraphReport = {
+    source: 'api_prompt',
+    nodeCount: 2,
+    nodes: [
+        {
+            id: '3',
+            nodeType: 'KSampler',
+            title: 'KSampler',
+            inputs: { steps: '8', cfg: '1', sampler_name: 'euler' },
+            subgraphPath: []
+        },
+        {
+            id: '9',
+            nodeType: 'SaveImage',
+            title: 'SaveImage',
+            inputs: { images: '["3",0]' },
+            subgraphPath: []
+        }
+    ]
+};
+
 const makeImage = (tool: GeneratorTool = GeneratorTool.COMFYUI): AIImage => ({
     id: 'C:/library/comfy.png',
     url: 'asset://comfy.png',
@@ -132,6 +155,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: diagnosticsReport
         });
+        mockInspectComfyuiWorkflowGraph.mockReset();
+        mockInspectComfyuiWorkflowGraph.mockResolvedValue({
+            status: 'ok',
+            data: workflowGraphReport
+        });
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText: mockClipboardWriteText },
             configurable: true
@@ -153,6 +181,63 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             workflow: workflowJson,
             prompt: promptJson
         });
+        expect(mockInspectComfyuiWorkflowGraph).toHaveBeenCalledWith({
+            workflow: workflowJson,
+            prompt: promptJson
+        });
+        expect(await screen.findByText('API Prompt')).toBeTruthy();
+    });
+
+    it('groups and searches backend-expanded workflow-only subgraph nodes', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                source: 'expanded_workflow',
+                nodeCount: 3,
+                nodes: [
+                    { id: '29', nodeType: 'SaveImage', title: 'SaveImage', inputs: {}, subgraphPath: [] },
+                    { id: '30:19', nodeType: 'StringConcatenate', title: 'Krea Positive Prompt', inputs: { string_a: 'scene' }, subgraphPath: ['30'] },
+                    { id: '30:7:4', nodeType: 'KSampler', title: 'Nested Sampler', inputs: {}, subgraphPath: ['30', '7'] }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('Expanded Workflow')).toBeTruthy();
+        expect(screen.getByText('Subgraph 30')).toBeTruthy();
+        expect(screen.getByText('Subgraph 30 / 7')).toBeTruthy();
+        expect(screen.getByTitle('Krea Positive Prompt')).toBeTruthy();
+
+        fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
+            target: { value: '30:19' }
+        });
+        expect(screen.getByTitle('Krea Positive Prompt')).toBeTruthy();
+        expect(screen.queryByTitle('Nested Sampler')).toBeNull();
+    });
+
+    it('falls back to the local graph when backend inspection fails', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'error',
+            error: 'normalizer unavailable'
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(mockInspectComfyuiWorkflowGraph).toHaveBeenCalledTimes(1));
+        expect(screen.getByTitle('KSampler')).toBeTruthy();
+        expect(screen.getByTitle('SaveImage')).toBeTruthy();
+        expect(screen.getByText('API Prompt')).toBeTruthy();
+    });
+
+    it('keeps copy pointed at the preserved workflow after displaying the API prompt', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('API Prompt')).toBeTruthy();
+        fireEvent.click(screen.getByTitle('Copy to clipboard'));
+
+        expect(mockClipboardWriteText).toHaveBeenCalledWith(workflowJson);
+        expect(mockClipboardWriteText).not.toHaveBeenCalledWith(promptJson);
     });
 
     it('copies compact parser diagnostics without raw chunk bodies', async () => {
@@ -471,6 +556,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
         expect(screen.queryByText('Parser Diagnostics')).toBeNull();
         expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();
+        expect(mockInspectComfyuiWorkflowGraph).not.toHaveBeenCalled();
     });
 
     it('renders a diagnostics failure without breaking workflow display', async () => {

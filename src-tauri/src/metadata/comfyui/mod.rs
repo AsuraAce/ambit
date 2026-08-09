@@ -13,6 +13,7 @@ mod heuristics;
 mod parse_helper;
 mod strategies;
 mod traversal_diagnostics;
+pub(crate) mod workflow_inspector;
 mod workflow_normalizer;
 
 #[cfg(test)]

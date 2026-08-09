@@ -5,7 +5,11 @@ import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
-import { commands, type ComfyParserDiagnosticsReport } from '../../../bindings';
+import {
+    commands,
+    type ComfyParserDiagnosticsReport,
+    type ComfyWorkflowGraphReport
+} from '../../../bindings';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import {
@@ -14,8 +18,10 @@ import {
 } from './comfySupportBundle';
 import {
     isWorkflowGraph,
+    groupWorkflowNodes,
     selectWorkflowGraphSource,
     selectWorkflowJsonForActions,
+    workflowGraphSourceFromBackend,
     type WorkflowInputs
 } from './workflowGraphUtils';
 
@@ -339,7 +345,12 @@ const ComfyDiagnosticsPanel: React.FC<{
     );
 };
 
-const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInputs }> = ({ title, type, inputs }) => {
+const WorkflowNode: React.FC<{
+    id: string | number;
+    title: string;
+    type: string;
+    inputs: WorkflowInputs;
+}> = ({ id, title, type, inputs }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const hasContent = Object.keys(inputs).length > 0;
 
@@ -355,7 +366,15 @@ const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInpu
                 <Box className={`w-3.5 h-3.5 shrink-0 ${isExpanded ? 'text-sage-500' : 'text-gray-400'}`} />
                 <div className="flex-1 min-w-0">
                     <div className="font-bold text-gray-800 dark:text-gray-200 truncate" title={title}>{title}</div>
-                    <div className="text-[10px] text-gray-400 font-mono truncate">{type}</div>
+                    <div className="flex min-w-0 items-center gap-1 text-[10px] text-gray-400 font-mono">
+                        <span className="truncate">{type}</span>
+                        <span
+                            className="max-w-[45%] truncate text-gray-300 dark:text-gray-600"
+                            title={`Node ${id}`}
+                        >
+                            #{id}
+                        </span>
+                    </div>
                 </div>
                 {hasContent && (
                     <div className="text-gray-400">
@@ -387,10 +406,50 @@ const WorkflowNode: React.FC<{ title: string; type: string; inputs: WorkflowInpu
     );
 };
 
+const WorkflowNodeSection: React.FC<{
+    path: string[];
+    nodes: ReturnType<typeof groupWorkflowNodes>[number]['nodes'];
+}> = ({ path, nodes }) => {
+    const nodeList = (
+        <div className="space-y-2">
+            {nodes.map((node) => (
+                <WorkflowNode
+                    key={String(node.id)}
+                    id={node.id}
+                    title={node.title}
+                    type={node.type}
+                    inputs={node.inputs}
+                />
+            ))}
+        </div>
+    );
+
+    if (path.length === 0) return nodeList;
+
+    return (
+        <section
+            className="border-l-2 border-sage-200 dark:border-sage-800/70 pl-3"
+            style={{ marginLeft: Math.min(path.length - 1, 3) * 12 }}
+        >
+            <div className="mb-2 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:text-sage-400">
+                <Workflow className="h-3 w-3 shrink-0" />
+                <span className="truncate" title={`Subgraph ${path.join(' / ')}`}>
+                    Subgraph {path.join(' / ')}
+                </span>
+            </div>
+            {nodeList}
+        </section>
+    );
+};
+
 export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onWorkflowLoaded }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [copied, setCopied] = useState(false);
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
+    const [backendWorkflowGraph, setBackendWorkflowGraph] = useState<{
+        chunks: Record<string, string>;
+        report: ComfyWorkflowGraphReport;
+    } | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
     const showParserDiagnostics = useSettingsStore((state) => state.settings.devMode === true)
@@ -406,13 +465,46 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         workflowJson: image.metadata.workflowJson,
         originalChunks
     });
-    const workflowGraphSource = useMemo(() => selectWorkflowGraphSource({
+    const fallbackWorkflowGraphSource = useMemo(() => selectWorkflowGraphSource({
         tool: image.metadata.tool,
         localWorkflowJson: localWorkflow,
         workflowJson: image.metadata.workflowJson,
         originalChunks
     }), [image.metadata.tool, image.metadata.workflowJson, localWorkflow, originalChunks]);
+    const backendGraphSource = useMemo(
+        () => workflowGraphSourceFromBackend(
+            backendWorkflowGraph?.chunks === originalChunks ? backendWorkflowGraph.report : null,
+            originalChunks
+        ),
+        [backendWorkflowGraph, originalChunks]
+    );
+    const workflowGraphSource = backendGraphSource ?? fallbackWorkflowGraphSource;
     const workflowNodes = workflowGraphSource?.nodes ?? [];
+
+    React.useEffect(() => {
+        if (image.metadata.tool !== 'ComfyUI' || Object.keys(originalChunks).length === 0) {
+            setBackendWorkflowGraph(null);
+            return;
+        }
+
+        let cancelled = false;
+        setBackendWorkflowGraph(null);
+
+        commands.inspectComfyuiWorkflowGraph(originalChunks)
+            .then((result) => {
+                if (cancelled) return;
+                setBackendWorkflowGraph(result.status === 'ok'
+                    ? { chunks: originalChunks, report: result.data }
+                    : null);
+            })
+            .catch(() => {
+                if (!cancelled) setBackendWorkflowGraph(null);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [image.metadata.tool, originalChunks]);
 
     // Lazy Load Workflow if missing
     React.useEffect(() => {
@@ -497,9 +589,19 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         const lowerQ = searchQuery.toLowerCase();
         return workflowNodes.filter(node =>
             node.title.toLowerCase().includes(lowerQ) ||
-            node.type.toLowerCase().includes(lowerQ)
+            node.type.toLowerCase().includes(lowerQ) ||
+            String(node.id).toLowerCase().includes(lowerQ) ||
+            node.subgraphPath?.some(segment => segment.toLowerCase().includes(lowerQ))
         );
     }, [workflowNodes, searchQuery]);
+    const filteredNodeGroups = useMemo(() => groupWorkflowNodes(filteredNodes), [filteredNodes]);
+    const graphSourceLabel = image.metadata.tool === 'ComfyUI' && workflowGraphSource
+        ? workflowGraphSource.source === 'prompt'
+            ? 'API Prompt'
+            : workflowGraphSource.normalizedByBackend
+                ? 'Expanded Workflow'
+                : 'Workflow'
+        : null;
 
     return (
         <div className="flex flex-col h-full overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
@@ -507,13 +609,18 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             {/* Header & Search */}
             <div className="p-6 pb-2 shrink-0 space-y-4">
                 <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider flex items-center gap-2">
-                            <Workflow className="w-4 h-4" /> Full Node Graph
+                            <Workflow className="w-4 h-4" /> Workflow Nodes
                         </h3>
                         <div className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full">
                             {workflowNodes.length}
                         </div>
+                        {graphSourceLabel && (
+                            <div className="rounded-full border border-sage-200 dark:border-sage-800 bg-sage-50 dark:bg-sage-900/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:text-sage-400">
+                                {graphSourceLabel}
+                            </div>
+                        )}
                     </div>
 
                     {workflowJsonForActions && (
@@ -559,9 +666,13 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             {/* Node List */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6">
                 {filteredNodes.length > 0 ? (
-                    <div className="space-y-2">
-                        {filteredNodes.map((node) => (
-                            <WorkflowNode key={node.id} title={node.title} type={node.type} inputs={node.inputs} />
+                    <div className="space-y-4">
+                        {filteredNodeGroups.map((group) => (
+                            <WorkflowNodeSection
+                                key={group.path.length === 0 ? 'workflow-root' : `subgraph:${group.key}`}
+                                path={group.path}
+                                nodes={group.nodes}
+                            />
                         ))}
                     </div>
                 ) : (

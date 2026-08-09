@@ -20,11 +20,30 @@ export interface WorkflowDisplayNode {
     title: string;
     type: string;
     inputs: WorkflowInputs;
+    subgraphPath?: string[];
 }
 
 export interface WorkflowGraphSource {
     json: string;
     source: 'workflow' | 'prompt';
+    nodes: WorkflowDisplayNode[];
+    normalizedByBackend?: boolean;
+}
+
+interface ComfyWorkflowGraphReportLike {
+    source: string;
+    nodes: Array<{
+        id: string;
+        nodeType: string;
+        title: string;
+        inputs: Partial<Record<string, string>>;
+        subgraphPath: string[];
+    }>;
+}
+
+export interface WorkflowNodeGroup {
+    key: string;
+    path: string[];
     nodes: WorkflowDisplayNode[];
 }
 
@@ -181,4 +200,47 @@ export const selectWorkflowGraphSource = ({
     }
 
     return undefined;
+};
+
+export const workflowGraphSourceFromBackend = (
+    report: ComfyWorkflowGraphReportLike | null | undefined,
+    originalChunks?: Record<string, string>
+): WorkflowGraphSource | undefined => {
+    if (!report || report.nodes.length === 0) return undefined;
+
+    if (report.source !== 'api_prompt' && report.source !== 'expanded_workflow') return undefined;
+
+    const source = report.source === 'api_prompt' ? 'prompt' : 'workflow';
+    const json = originalChunks?.[source];
+    if (!json) return undefined;
+
+    return {
+        json,
+        source,
+        normalizedByBackend: true,
+        nodes: report.nodes.map((node) => ({
+            id: node.id,
+            title: node.title,
+            type: node.nodeType,
+            inputs: node.inputs,
+            subgraphPath: node.subgraphPath
+        }))
+    };
+};
+
+export const groupWorkflowNodes = (nodes: WorkflowDisplayNode[]): WorkflowNodeGroup[] => {
+    const groups = new Map<string, WorkflowNodeGroup>();
+
+    for (const node of nodes) {
+        const path = node.subgraphPath ?? [];
+        const key = path.join(':');
+        const group = groups.get(key);
+        if (group) {
+            group.nodes.push(node);
+        } else {
+            groups.set(key, { key, path, nodes: [node] });
+        }
+    }
+
+    return [...groups.values()];
 };
