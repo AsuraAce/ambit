@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import { useMemo, useState } from 'react';
-import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle } from 'lucide-react';
+import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
@@ -19,10 +19,14 @@ import {
 import {
     isWorkflowGraph,
     groupWorkflowNodes,
+    indexWorkflowConnections,
     selectWorkflowGraphSource,
     selectWorkflowJsonForActions,
     workflowGraphSourceFromBackend,
-    type WorkflowInputs
+    type WorkflowDisplayEdge,
+    type WorkflowDisplayNode,
+    type WorkflowInputs,
+    type WorkflowNodeConnections
 } from './workflowGraphUtils';
 
 interface WorkflowInspectorProps {
@@ -84,6 +88,8 @@ const getTraversalIssueTitle = (reason: string) => {
             return formatDiagnosticLabel(reason);
     }
 };
+
+const workflowNodeElementId = (nodeId: string | number) => `workflow-node-${String(nodeId)}`;
 
 const ComfyDiagnosticsPanel: React.FC<{
     image: Pick<AIImage, 'filename' | 'width' | 'height'>;
@@ -350,12 +356,60 @@ const WorkflowNode: React.FC<{
     title: string;
     type: string;
     inputs: WorkflowInputs;
-}> = ({ id, title, type, inputs }) => {
+    connections: WorkflowNodeConnections;
+    nodeById: Map<string, WorkflowDisplayNode>;
+    isFocused: boolean;
+    focusRequestId: number | null;
+    onFollowConnection: (nodeId: string) => void;
+}> = ({ id, title, type, inputs, connections, nodeById, isFocused, focusRequestId, onFollowConnection }) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const hasContent = Object.keys(inputs).length > 0;
+    const hasInputs = Object.keys(inputs).length > 0;
+    const hasConnections = connections.incoming.length > 0 || connections.outgoing.length > 0;
+    const hasContent = hasInputs || hasConnections;
+
+    React.useEffect(() => {
+        if (isFocused && focusRequestId !== null && hasContent) setIsExpanded(true);
+    }, [focusRequestId, hasContent, isFocused]);
+
+    const renderConnection = (edge: WorkflowDisplayEdge, direction: 'incoming' | 'outgoing') => {
+        const connectedNodeId = direction === 'incoming' ? edge.sourceNodeId : edge.targetNodeId;
+        const connectedNode = nodeById.get(connectedNodeId);
+        const connectedTitle = connectedNode?.title ?? `Node ${connectedNodeId}`;
+        const sourceSlot = edge.sourceOutputSlot === null || edge.sourceOutputSlot === undefined
+            ? 'output'
+            : `output ${edge.sourceOutputSlot}`;
+        const endpoint = `${sourceSlot} -> ${edge.targetInputName}`;
+        const Icon = direction === 'incoming' ? ArrowDownToLine : ArrowUpFromLine;
+
+        return (
+            <button
+                key={`${edge.sourceNodeId}:${edge.sourceOutputSlot ?? ''}:${edge.targetNodeId}:${edge.targetInputSlot ?? ''}:${edge.targetInputName}`}
+                type="button"
+                aria-label={`Open ${direction} connected node ${connectedTitle} (${connectedNodeId})`}
+                title={`Open node ${connectedNodeId}`}
+                onClick={() => onFollowConnection(connectedNodeId)}
+                className="flex w-full items-start gap-2 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50/70 dark:bg-white/5 px-2 py-1.5 text-left transition-colors hover:border-sage-300 hover:bg-sage-50 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
+            >
+                <Icon className="mt-0.5 h-3 w-3 shrink-0 text-sage-600 dark:text-sage-400" />
+                <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200">
+                        {connectedTitle}
+                    </span>
+                    <span className="block truncate font-mono text-[9px] text-gray-400" title={`${endpoint} / node ${connectedNodeId}`}>
+                        {endpoint} / #{connectedNodeId}
+                    </span>
+                </span>
+            </button>
+        );
+    };
 
     return (
-        <div className="bg-white dark:bg-slate-800/40 border border-gray-200 dark:border-white/5 rounded-xl text-sm overflow-hidden transition-all">
+        <div
+            id={workflowNodeElementId(id)}
+            data-workflow-node-id={String(id)}
+            tabIndex={-1}
+            className={`bg-white dark:bg-slate-800/40 border rounded-xl text-sm overflow-hidden transition-all outline-none ${isFocused ? 'border-sage-500 ring-2 ring-sage-400/30' : 'border-gray-200 dark:border-white/5'}`}
+        >
             <button
                 type="button"
                 aria-expanded={hasContent ? isExpanded : undefined}
@@ -384,22 +438,44 @@ const WorkflowNode: React.FC<{
             </button>
 
             {isExpanded && hasContent && (
-                <div className="p-3 pt-0 border-t border-gray-100 dark:border-white/5 space-y-1 mt-2">
-                    {Object.entries(inputs).map(([key, val]) => {
-                        if (typeof val === 'object' && val !== null && !Array.isArray(val)) return null; // Skip complex objects/connections
-                        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].length > 50) {
-                            if (val.length === 2 && typeof val[1] === 'number') return null;
-                        }
+                <div className="p-3 pt-0 border-t border-gray-100 dark:border-white/5 space-y-3 mt-2">
+                    {hasInputs && (
+                        <div className="space-y-1">
+                            {Object.entries(inputs).map(([key, val]) => {
+                                if (typeof val === 'object' && val !== null && !Array.isArray(val)) return null; // Skip complex objects/connections
+                                if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'string' && val[0].length > 50) {
+                                    if (val.length === 2 && typeof val[1] === 'number') return null;
+                                }
 
-                        return (
-                            <div key={key} className="flex justify-between items-start gap-2 text-xs group py-1 border-b border-gray-100/50 dark:border-white/5 last:border-0">
-                                <span className="text-gray-500 dark:text-gray-400 truncate shrink-0 max-w-[40%] select-none">{key}:</span>
-                                <span className="text-gray-700 dark:text-gray-300 font-mono break-all text-right line-clamp-4 hover:line-clamp-none transition-all cursor-text select-text" title={String(val)}>
-                                    {String(val)}
-                                </span>
+                                return (
+                                    <div key={key} className="flex justify-between items-start gap-2 text-xs group py-1 border-b border-gray-100/50 dark:border-white/5 last:border-0">
+                                        <span className="text-gray-500 dark:text-gray-400 truncate shrink-0 max-w-[40%] select-none">{key}:</span>
+                                        <span className="text-gray-700 dark:text-gray-300 font-mono break-all text-right line-clamp-4 hover:line-clamp-none transition-all cursor-text select-text" title={String(val)}>
+                                            {String(val)}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {connections.incoming.length > 0 && (
+                        <section aria-label={`Incoming connections for node ${id}`}>
+                            <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-400">Incoming</div>
+                            <div className="space-y-1">
+                                {connections.incoming.map((edge) => renderConnection(edge, 'incoming'))}
                             </div>
-                        )
-                    })}
+                        </section>
+                    )}
+
+                    {connections.outgoing.length > 0 && (
+                        <section aria-label={`Outgoing connections for node ${id}`}>
+                            <div className="mb-1.5 text-[9px] font-bold uppercase tracking-wide text-gray-400">Outgoing</div>
+                            <div className="space-y-1">
+                                {connections.outgoing.map((edge) => renderConnection(edge, 'outgoing'))}
+                            </div>
+                        </section>
+                    )}
                 </div>
             )}
         </div>
@@ -409,7 +485,12 @@ const WorkflowNode: React.FC<{
 const WorkflowNodeSection: React.FC<{
     path: string[];
     nodes: ReturnType<typeof groupWorkflowNodes>[number]['nodes'];
-}> = ({ path, nodes }) => {
+    connectionIndex: Map<string, WorkflowNodeConnections>;
+    nodeById: Map<string, WorkflowDisplayNode>;
+    focusedNodeId: string | null;
+    focusRequestId: number | null;
+    onFollowConnection: (nodeId: string) => void;
+}> = ({ path, nodes, connectionIndex, nodeById, focusedNodeId, focusRequestId, onFollowConnection }) => {
     const nodeList = (
         <div className="space-y-2">
             {nodes.map((node) => (
@@ -419,6 +500,11 @@ const WorkflowNodeSection: React.FC<{
                     title={node.title}
                     type={node.type}
                     inputs={node.inputs}
+                    connections={connectionIndex.get(String(node.id)) ?? { incoming: [], outgoing: [] }}
+                    nodeById={nodeById}
+                    isFocused={focusedNodeId === String(node.id)}
+                    focusRequestId={focusedNodeId === String(node.id) ? focusRequestId : null}
+                    onFollowConnection={onFollowConnection}
                 />
             ))}
         </div>
@@ -450,6 +536,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         chunks: Record<string, string>;
         report: ComfyWorkflowGraphReport;
     } | null>(null);
+    const [focusedConnection, setFocusedConnection] = useState<{
+        nodeId: string;
+        requestId: number;
+    } | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
     const showParserDiagnostics = useSettingsStore((state) => state.settings.devMode === true)
@@ -480,6 +570,27 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     );
     const workflowGraphSource = backendGraphSource ?? fallbackWorkflowGraphSource;
     const workflowNodes = workflowGraphSource?.nodes ?? [];
+    const workflowEdges = workflowGraphSource?.edges ?? [];
+    const nodeById = useMemo(
+        () => new Map(workflowNodes.map((node) => [String(node.id), node])),
+        [workflowNodes]
+    );
+    const connectionIndex = useMemo(
+        () => indexWorkflowConnections(workflowNodes, workflowEdges),
+        [workflowEdges, workflowNodes]
+    );
+
+    const handleFollowConnection = React.useCallback((nodeId: string) => {
+        setSearchQuery('');
+        setFocusedConnection((current) => ({
+            nodeId,
+            requestId: (current?.requestId ?? 0) + 1
+        }));
+    }, []);
+
+    React.useEffect(() => {
+        setFocusedConnection(null);
+    }, [image.id, workflowGraphSource?.json, workflowGraphSource?.normalizedByBackend, workflowGraphSource?.source]);
 
     React.useEffect(() => {
         if (image.metadata.tool !== 'ComfyUI' || Object.keys(originalChunks).length === 0) {
@@ -595,6 +706,17 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         );
     }, [workflowNodes, searchQuery]);
     const filteredNodeGroups = useMemo(() => groupWorkflowNodes(filteredNodes), [filteredNodes]);
+
+    React.useEffect(() => {
+        if (!focusedConnection || searchQuery) return;
+
+        const element = document.getElementById(workflowNodeElementId(focusedConnection.nodeId));
+        if (!element) return;
+
+        element.focus({ preventScroll: true });
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, [filteredNodes, focusedConnection, searchQuery]);
+
     const graphSourceLabel = image.metadata.tool === 'ComfyUI' && workflowGraphSource
         ? workflowGraphSource.source === 'prompt'
             ? 'API Prompt'
@@ -672,6 +794,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                 key={group.path.length === 0 ? 'workflow-root' : `subgraph:${group.key}`}
                                 path={group.path}
                                 nodes={group.nodes}
+                                connectionIndex={connectionIndex}
+                                nodeById={nodeById}
+                                focusedNodeId={focusedConnection?.nodeId ?? null}
+                                focusRequestId={focusedConnection?.requestId ?? null}
+                                onFollowConnection={handleFollowConnection}
                             />
                         ))}
                     </div>

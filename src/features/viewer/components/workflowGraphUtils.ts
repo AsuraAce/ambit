@@ -23,15 +23,36 @@ export interface WorkflowDisplayNode {
     subgraphPath?: string[];
 }
 
+export interface WorkflowDisplayEdge {
+    sourceNodeId: string;
+    sourceOutputSlot?: number | null;
+    targetNodeId: string;
+    targetInputName: string;
+    targetInputSlot?: number | null;
+}
+
+export interface WorkflowNodeConnections {
+    incoming: WorkflowDisplayEdge[];
+    outgoing: WorkflowDisplayEdge[];
+}
+
 export interface WorkflowGraphSource {
     json: string;
     source: 'workflow' | 'prompt';
     nodes: WorkflowDisplayNode[];
+    edges: WorkflowDisplayEdge[];
     normalizedByBackend?: boolean;
 }
 
 interface ComfyWorkflowGraphReportLike {
     source: string;
+    edges?: Array<{
+        sourceNodeId: string;
+        sourceOutputSlot: number | null;
+        targetNodeId: string;
+        targetInputName: string;
+        targetInputSlot: number | null;
+    }>;
     nodes: Array<{
         id: string;
         nodeType: string;
@@ -187,7 +208,8 @@ export const selectWorkflowGraphSource = ({
         return {
             json: originalChunks.prompt,
             source: 'prompt',
-            nodes: promptNodes
+            nodes: promptNodes,
+            edges: []
         };
     }
 
@@ -195,7 +217,8 @@ export const selectWorkflowGraphSource = ({
         return {
             json: preservedWorkflow,
             source: 'workflow',
-            nodes: workflowNodes
+            nodes: workflowNodes,
+            edges: []
         };
     }
 
@@ -218,6 +241,7 @@ export const workflowGraphSourceFromBackend = (
         json,
         source,
         normalizedByBackend: true,
+        edges: report.edges ?? [],
         nodes: report.nodes.map((node) => ({
             id: node.id,
             title: node.title,
@@ -226,6 +250,28 @@ export const workflowGraphSourceFromBackend = (
             subgraphPath: node.subgraphPath
         }))
     };
+};
+
+export const indexWorkflowConnections = (
+    nodes: WorkflowDisplayNode[],
+    edges: WorkflowDisplayEdge[]
+): Map<string, WorkflowNodeConnections> => {
+    const connections = new Map<string, WorkflowNodeConnections>();
+
+    for (const node of nodes) {
+        connections.set(String(node.id), { incoming: [], outgoing: [] });
+    }
+
+    for (const edge of edges) {
+        const source = connections.get(edge.sourceNodeId);
+        const target = connections.get(edge.targetNodeId);
+        if (!source || !target) continue;
+
+        source.outgoing.push(edge);
+        target.incoming.push(edge);
+    }
+
+    return connections;
 };
 
 export const groupWorkflowNodes = (nodes: WorkflowDisplayNode[]): WorkflowNodeGroup[] => {

@@ -10,6 +10,7 @@ const mockSettings = vi.hoisted(() => ({ devMode: true }));
 const mockClipboardWriteText = vi.hoisted(() => vi.fn());
 const mockSave = vi.hoisted(() => vi.fn());
 const mockWriteTextFile = vi.hoisted(() => vi.fn());
+const mockScrollIntoView = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -97,6 +98,13 @@ const diagnosticsReport = {
 const workflowGraphReport = {
     source: 'api_prompt',
     nodeCount: 2,
+    edges: [{
+        sourceNodeId: '3',
+        sourceOutputSlot: 0,
+        targetNodeId: '9',
+        targetInputName: 'images',
+        targetInputSlot: null
+    }],
     nodes: [
         {
             id: '3',
@@ -160,6 +168,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: workflowGraphReport
         });
+        mockScrollIntoView.mockReset();
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            value: mockScrollIntoView,
+            configurable: true
+        });
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText: mockClipboardWriteText },
             configurable: true
@@ -214,6 +227,33 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         });
         expect(screen.getByTitle('Krea Positive Prompt')).toBeTruthy();
         expect(screen.queryByTitle('Nested Sampler')).toBeNull();
+    });
+
+    it('follows normalized connections across the filtered node list', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('API Prompt')).toBeTruthy();
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+
+        const samplerHeader = screen.getByTitle('KSampler').closest('button');
+        expect(samplerHeader).not.toBeNull();
+        fireEvent.click(samplerHeader!);
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node SaveImage (9)'));
+
+        await waitFor(() => expect(search.value).toBe(''));
+        const target = document.querySelector<HTMLElement>('[data-workflow-node-id="9"]');
+        expect(target).not.toBeNull();
+        await waitFor(() => expect(document.activeElement).toBe(target));
+        expect(target?.className).toContain('ring-2');
+        expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
+        expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+
+        fireEvent.click(target!.querySelector('button')!);
+        expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node SaveImage (9)'));
+        await waitFor(() => expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true'));
+        expect(mockScrollIntoView).toHaveBeenCalledTimes(2);
     });
 
     it('falls back to the local graph when backend inspection fails', async () => {
