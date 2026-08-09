@@ -20,6 +20,12 @@ enum StringEvaluationMode {
     TransformOperand,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ReachablePrompt {
+    pub(crate) text: String,
+    pub(crate) source_node_ids: Vec<String>,
+}
+
 /// Finds all prompts reachable from the given start node (usually KSampler) by traversing
 /// upstream "conditioning" inputs using Breadth-First Search (BFS).
 ///
@@ -53,9 +59,46 @@ pub(crate) fn find_reachable_prompts_with_role(
     prompt_role: &str,
     strict_connections: bool,
 ) -> String {
+    find_reachable_prompts_with_role_and_sources(
+        graph,
+        start_node_id,
+        input_name,
+        prompt_role,
+        strict_connections,
+    )
+    .text
+}
+
+pub(crate) fn find_reachable_prompts_with_sources(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    strict_connections: bool,
+) -> ReachablePrompt {
+    let prompt_role = match input_name {
+        "cond1" | "conditioning" => "positive",
+        _ => input_name,
+    };
+    find_reachable_prompts_with_role_and_sources(
+        graph,
+        start_node_id,
+        input_name,
+        prompt_role,
+        strict_connections,
+    )
+}
+
+pub(crate) fn find_reachable_prompts_with_role_and_sources(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    prompt_role: &str,
+    strict_connections: bool,
+) -> ReachablePrompt {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut prompts = Vec::new();
+    let mut source_node_ids = Vec::new();
 
     // Initial push: Get source of the KSampler's conditioning input
     let source_id = graph.get_node(start_node_id).and_then(|node| {
@@ -96,7 +139,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                 };
                 let Some(branch) = branch else {
                     if branch_strict_connections {
-                        return String::new();
+                        return ReachablePrompt::default();
                     }
                     continue;
                 };
@@ -109,7 +152,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                 ) {
                     queue.push_back((source_id, branch_strict_connections));
                 } else if branch_strict_connections {
-                    return String::new();
+                    return ReachablePrompt::default();
                 }
                 continue;
             }
@@ -145,6 +188,11 @@ pub(crate) fn find_reachable_prompts_with_role(
                             let parsed = parse_a1111_parameters(&text);
                             if !is_missing_prompt_value(&parsed.positive_prompt) {
                                 prompts.push(parsed.positive_prompt);
+                                source_node_ids.extend(prompt_value_source_node_ids(
+                                    graph,
+                                    &current_id,
+                                    node,
+                                ));
                             }
                             continue;
                         }
@@ -156,6 +204,11 @@ pub(crate) fn find_reachable_prompts_with_role(
                         }
 
                         prompts.push(text);
+                        source_node_ids.extend(prompt_value_source_node_ids(
+                            graph,
+                            &current_id,
+                            node,
+                        ));
                     }
                 }
                 // Usually a leaf for text/conditioning, but for some nodes we might want to continue.
@@ -175,7 +228,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                                 queue.push_back((source_id, branch_strict_connections))
                             }
                             InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
-                                return String::new()
+                                return ReachablePrompt::default()
                             }
                         }
                     } else if let Some(source_id) = get_source_id(graph, &current_id, branch) {
@@ -194,7 +247,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                                 queue.push_back((source_id, branch_strict_connections))
                             }
                             InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
-                                return String::new()
+                                return ReachablePrompt::default()
                             }
                         }
                     }
@@ -235,7 +288,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                 match get_input_connection(node, selected_input) {
                     InputConnection::Connected(source_id) => queue.push_back((source_id, true)),
                     InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
-                        return String::new();
+                        return ReachablePrompt::default();
                     }
                 }
                 continue;
@@ -247,7 +300,7 @@ pub(crate) fn find_reachable_prompts_with_role(
                         queue.push_back((source.node_id, branch_strict_connections));
                     }
                     InputSourceConnection::DeclaredUnresolved
-                    | InputSourceConnection::Unconnected => return String::new(),
+                    | InputSourceConnection::Unconnected => return ReachablePrompt::default(),
                 }
                 continue;
             }
@@ -373,7 +426,74 @@ pub(crate) fn find_reachable_prompts_with_role(
     // Dedup globally while preserving traversal order.
     let mut seen = HashSet::new();
     prompts.retain(|prompt| seen.insert(prompt.clone()));
-    prompts.join(", ")
+    source_node_ids.sort_by(|left, right| super::graph::compare_node_ids(left, right));
+    source_node_ids.dedup();
+    ReachablePrompt {
+        text: prompts.join(", "),
+        source_node_ids,
+    }
+}
+
+fn prompt_value_source_node_ids(graph: &ComfyGraph, node_id: &str, node: &Value) -> Vec<String> {
+    let mut sources = Vec::new();
+    for input_name in [
+        "text", "prompt", "text_g", "text_l", "clip_l", "t5xxl", "value", "string",
+    ] {
+        if let InputSourceConnection::Connected(source) = get_input_source(node, input_name) {
+            if let Some(source_id) = resolve_prompt_value_source_id(graph, source, 0) {
+                sources.push(source_id);
+            }
+        }
+    }
+    if sources.is_empty() {
+        sources.push(node_id.to_string());
+    }
+    sources
+}
+
+fn resolve_prompt_value_source_id(
+    graph: &ComfyGraph,
+    source: InputSource,
+    depth: usize,
+) -> Option<String> {
+    if depth > 16 {
+        return None;
+    }
+    let node = graph.get_node(&source.node_id)?;
+    let node_type = get_node_type(node);
+    if node_type == "Reroute" {
+        return get_reroute_input_source(node)
+            .and_then(|source| resolve_prompt_value_source_id(graph, source, depth + 1));
+    }
+    if node_type == "ComfySwitchNode" {
+        let branch = get_switch_branch_input_strict(graph, node)?;
+        return match get_input_source(node, branch) {
+            InputSourceConnection::Connected(source) => {
+                resolve_prompt_value_source_id(graph, source, depth + 1)
+            }
+            InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => None,
+        };
+    }
+    if matches!(
+        node_type,
+        "PrimitiveNode"
+            | "String"
+            | "Text String"
+            | "Text Multiline"
+            | "PrimitiveString"
+            | "PrimitiveStringMultiline"
+    ) {
+        for input_name in ["value", "string", "text", "input"] {
+            match get_input_source(node, input_name) {
+                InputSourceConnection::Connected(source) => {
+                    return resolve_prompt_value_source_id(graph, source, depth + 1)
+                }
+                InputSourceConnection::DeclaredUnresolved => return None,
+                InputSourceConnection::Unconnected => {}
+            }
+        }
+    }
+    Some(source.node_id)
 }
 
 pub fn find_connected_controlnets(

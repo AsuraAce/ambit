@@ -75,6 +75,10 @@ const diagnosticsReport = {
         positive_prompt: 'sampler_traversal',
         workflow_json: 'workflow_chunk'
     },
+    fieldSourceNodeIds: {
+        model: ['3'],
+        positive_prompt: ['404']
+    },
     metadata: {
         tool: 'ComfyUI',
         model: 'diagnostic_model',
@@ -375,6 +379,56 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         const rootNode = document.querySelector<HTMLElement>('[data-workflow-node-id="3"]');
         await waitFor(() => expect(document.activeElement).toBe(rootNode));
         expect(rootNode?.className).toContain('ring-2');
+    });
+
+    it('navigates every available metadata source node and leaves selected-branch mode when needed', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                fieldSourceNodeIds: {
+                    model: ['3', '12'],
+                    positive_prompt: ['404']
+                }
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        title: 'Disconnected Loader',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        expect(await screen.findByTitle('Jump to source node 3: KSampler')).toBeTruthy();
+        expect(screen.getByTitle('Jump to source node 12: Disconnected Loader')).toBeTruthy();
+        expect(screen.getByTitle('Source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(screen.getByTitle('Jump to source node 12: Disconnected Loader'));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const loader = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(loader));
+        expect(loader?.className).toContain('ring-2');
     });
 
     it('labels conflicting roots as candidates without claiming authority', async () => {

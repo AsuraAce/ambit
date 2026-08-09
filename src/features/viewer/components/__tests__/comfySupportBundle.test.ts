@@ -19,6 +19,7 @@ const diagnostics: ComfyParserDiagnosticsReport = {
     traversalIssuesTruncated: false,
     attemptedLayers: ['workflow_chunk', 'sampler_traversal'],
     fieldSources: { model: 'sampler_traversal' },
+    fieldSourceNodeIds: { model: ['3'] },
     metadata: {
         tool: 'ComfyUI',
         model: 'model',
@@ -92,6 +93,7 @@ describe('ComfyUI support bundle', () => {
             prompt: chunks.prompt.length,
             workflow: chunks.workflow.length
         });
+        expect(payload.fieldSourceNodeIds).toEqual({ model: ['3'] });
         expect(payload).not.toHaveProperty('chunks');
         expect(payload).not.toHaveProperty('imageId');
         expect(serialized).not.toContain('private-name');

@@ -1,4 +1,4 @@
-use super::diagnostics::ComfyTraversalIssue;
+use super::diagnostics::{ComfyFieldSourceNodeIds, ComfyMetadataField, ComfyTraversalIssue};
 use super::graph::{
     compare_node_ids, get_input_connection, get_input_source_by_slot, get_node_input_link,
     get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
@@ -30,6 +30,7 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) authoritative_negative_prompt: bool,
     pub(crate) traversal_issues: Vec<ComfyTraversalIssue>,
     pub(crate) traversal_issues_truncated: bool,
+    pub(crate) field_source_node_ids: ComfyFieldSourceNodeIds,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -113,7 +114,7 @@ impl<'a> ComfyEvaluator<'a> {
         let mut loras = Vec::new();
         let mut ip_adapters = Vec::new();
         let mut hypernetworks = Vec::new();
-        let metadata = super::eval_core::extract_from_sampler(
+        let (metadata, field_source_node_ids) = super::eval_core::extract_from_sampler(
             self.graph,
             root_sampler_id,
             root_node,
@@ -121,6 +122,7 @@ impl<'a> ComfyEvaluator<'a> {
             &mut ip_adapters,
             &mut hypernetworks,
         );
+        diagnostics.field_source_node_ids = field_source_node_ids;
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(
@@ -224,8 +226,9 @@ impl<'a> ComfyEvaluator<'a> {
         branch_node_ids
     }
 
-    pub fn extract_from_all_samplers(&self) -> ImageMetadata {
+    pub fn extract_from_all_samplers(&self) -> (ImageMetadata, ComfyFieldSourceNodeIds) {
         let mut meta = ImageMetadata::default();
+        let mut field_source_node_ids = ComfyFieldSourceNodeIds::new();
 
         let mut sampler_nodes: Vec<(&String, &Value)> = self
             .graph
@@ -244,7 +247,7 @@ impl<'a> ComfyEvaluator<'a> {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
                     let mut hypernetworks = Vec::new();
-                    let partial = super::eval_core::extract_from_sampler(
+                    let (partial, partial_sources) = super::eval_core::extract_from_sampler(
                         self.graph,
                         id,
                         node,
@@ -253,15 +256,22 @@ impl<'a> ComfyEvaluator<'a> {
                         &mut hypernetworks,
                     );
                     if partial.steps > 0 || !partial.model.is_empty() {
+                        let before = meta.clone();
                         meta.merge(partial);
+                        copy_changed_core_sources(
+                            &before,
+                            &meta,
+                            &partial_sources,
+                            &mut field_source_node_ids,
+                        );
                         if meta.steps > 0 && !meta.model.is_empty() {
-                            return meta;
+                            return (meta, field_source_node_ids);
                         }
                     }
                 }
             }
         }
-        meta
+        (meta, field_source_node_ids)
     }
 
     fn find_output_nodes(&self) -> Vec<String> {
@@ -633,6 +643,37 @@ impl<'a> ComfyEvaluator<'a> {
             }
         }
         None
+    }
+}
+
+fn copy_changed_core_sources(
+    before: &ImageMetadata,
+    after: &ImageMetadata,
+    additions: &ComfyFieldSourceNodeIds,
+    selected: &mut ComfyFieldSourceNodeIds,
+) {
+    for (field, changed) in [
+        (ComfyMetadataField::Model, before.model != after.model),
+        (ComfyMetadataField::Seed, before.seed != after.seed),
+        (ComfyMetadataField::Steps, before.steps != after.steps),
+        (ComfyMetadataField::Cfg, before.cfg != after.cfg),
+        (ComfyMetadataField::Sampler, before.sampler != after.sampler),
+        (
+            ComfyMetadataField::PositivePrompt,
+            before.positive_prompt != after.positive_prompt,
+        ),
+        (
+            ComfyMetadataField::NegativePrompt,
+            before.negative_prompt != after.negative_prompt,
+        ),
+    ] {
+        if changed {
+            if let Some(node_ids) = additions.get(&field) {
+                selected.insert(field, node_ids.clone());
+            } else {
+                selected.remove(&field);
+            }
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use super::super::diagnostics::{ComfyMetadataField, ComfyParseLayer};
 use crate::metadata::comfyui::{
     build_comfyui_diagnostics_report, extract_comfyui_metadata,
-    extract_comfyui_metadata_with_diagnostics,
+    extract_comfyui_metadata_with_diagnostics, ComfyParserDiagnosticsReport,
 };
 use std::collections::HashMap;
 
@@ -33,6 +33,7 @@ fn test_diagnostics_records_workflow_chunk_only() {
         vec![ComfyParseLayer::WorkflowChunk]
     );
     assert_eq!(diagnostics.field_sources.len(), 2);
+    assert!(diagnostics.field_source_node_ids.is_empty());
     assert_eq!(
         diagnostics
             .field_sources
@@ -81,6 +82,10 @@ fn test_diagnostics_records_explicit_node_fields() {
         assert_eq!(
             diagnostics.field_sources.get(&field),
             Some(&ComfyParseLayer::ExplicitNode)
+        );
+        assert_eq!(
+            diagnostics.field_source_node_ids.get(&field),
+            Some(&vec!["1".to_string()])
         );
     }
 }
@@ -145,6 +150,102 @@ fn test_diagnostics_records_sampler_traversal_fields() {
             Some(&ComfyParseLayer::SamplerTraversal)
         );
     }
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::Model),
+        Some(&vec!["4".to_string()])
+    );
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_eq!(
+            diagnostics.field_source_node_ids.get(&field),
+            Some(&vec!["3".to_string()]),
+            "{field:?}"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&vec!["6".to_string()])
+    );
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::NegativePrompt),
+        Some(&vec!["7".to_string()])
+    );
+}
+
+#[test]
+fn test_diagnostics_records_linked_and_composed_sampler_traversal_sources() {
+    let prompt = r#"{
+        "3": {
+            "class_type": "KSampler",
+            "inputs": {
+                "cfg": ["11", 0],
+                "model": ["4", 0],
+                "positive": ["15", 0],
+                "negative": ["8", 0],
+                "seed": ["12", 0],
+                "steps": ["10", 0],
+                "sampler_name": ["13", 0],
+                "scheduler": ["14", 0]
+            }
+        },
+        "4": {
+            "class_type": "CheckpointLoaderSimple",
+            "inputs": { "ckpt_name": "linked-model.safetensors" }
+        },
+        "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "first" } },
+        "7": { "class_type": "CLIPTextEncode", "inputs": { "text": "second" } },
+        "8": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative" } },
+        "10": { "class_type": "PrimitiveNode", "inputs": { "value": 24 } },
+        "11": { "class_type": "PrimitiveNode", "inputs": { "value": 6.5 } },
+        "12": { "class_type": "PrimitiveNode", "inputs": { "value": 99 } },
+        "13": { "class_type": "String", "inputs": { "value": "euler" } },
+        "14": { "class_type": "String", "inputs": { "value": "simple" } },
+        "15": {
+            "class_type": "ConditioningCombine",
+            "inputs": { "conditioning_1": ["6", 0], "conditioning_2": ["7", 0] }
+        },
+        "20": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0] } },
+        "21": { "class_type": "SaveImage", "inputs": { "images": ["20", 0] } }
+    }"#;
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_with_prompt(prompt));
+
+    assert_eq!(meta.positive_prompt, "first, second");
+    assert_eq!(meta.sampler, "euler (simple)");
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&vec!["6".to_string(), "7".to_string()])
+    );
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::Sampler),
+        Some(&vec!["13".to_string(), "14".to_string()])
+    );
+    for (field, node_id) in [
+        (ComfyMetadataField::Steps, "10"),
+        (ComfyMetadataField::Cfg, "11"),
+        (ComfyMetadataField::Seed, "12"),
+    ] {
+        assert_eq!(
+            diagnostics.field_source_node_ids.get(&field),
+            Some(&vec![node_id.to_string()]),
+            "{field:?}"
+        );
+    }
 }
 
 #[test]
@@ -194,6 +295,30 @@ fn test_diagnostics_records_sampler_fallback_and_global_scan_fields() {
             .field_sources
             .get(&ComfyMetadataField::PositivePrompt),
         Some(&ComfyParseLayer::GlobalScan)
+    );
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_eq!(
+            diagnostics.field_source_node_ids.get(&field),
+            Some(&vec!["3".to_string()]),
+            "{field:?}"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::PositivePrompt),
+        Some(&vec!["6".to_string()])
+    );
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::Model),
+        Some(&vec!["4".to_string()])
     );
 }
 
@@ -319,6 +444,27 @@ fn test_diagnostics_report_serializes_chunk_summary_and_field_sources() {
             .map(String::as_str),
         Some("sampler_traversal")
     );
+    assert_eq!(
+        report.field_source_node_ids.get("model"),
+        Some(&vec!["4".to_string()])
+    );
+    assert_eq!(
+        report.field_source_node_ids.get("positive_prompt"),
+        Some(&vec!["6".to_string()])
+    );
+    assert_eq!(
+        report.field_source_node_ids.get("sampler"),
+        Some(&vec!["3".to_string()])
+    );
+
+    let mut legacy = serde_json::to_value(&report).expect("serialize diagnostics report");
+    legacy
+        .as_object_mut()
+        .expect("diagnostics report should be an object")
+        .remove("fieldSourceNodeIds");
+    let legacy: ComfyParserDiagnosticsReport =
+        serde_json::from_value(legacy).expect("deserialize legacy diagnostics report");
+    assert!(legacy.field_source_node_ids.is_empty());
 }
 
 #[test]
@@ -351,6 +497,7 @@ fn test_diagnostics_report_includes_flat_parameters_without_graph_chunks() {
     assert_eq!(report.metadata.tool, "ComfyUI");
     assert_eq!(report.metadata.model, "flat_model");
     assert_eq!(report.metadata.seed, Some(0));
+    assert!(report.field_source_node_ids.is_empty());
     assert_eq!(report.metadata.steps, 12);
     assert_eq!(report.metadata.cfg, 5.0);
     assert_eq!(report.metadata.positive_prompt, "flat prompt");

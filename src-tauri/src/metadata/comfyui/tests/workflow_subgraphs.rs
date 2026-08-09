@@ -170,7 +170,23 @@ fn krea_workflow_only_expands_official_subgraph_metadata() {
         ComfyMetadataField::PositivePrompt,
     ] {
         assert_traversal_source(&diagnostics, field);
+        let source_ids = diagnostics
+            .field_source_node_ids
+            .get(&field)
+            .unwrap_or_else(|| panic!("workflow-only {field:?} should expose source nodes"));
+        assert!(
+            source_ids.iter().all(|node_id| normalized_ids.contains(node_id)),
+            "workflow-only {field:?} source IDs must resolve in the normalized graph: {source_ids:?}"
+        );
     }
+    assert!(
+        diagnostics
+            .field_source_node_ids
+            .values()
+            .flatten()
+            .any(|node_id| node_id.contains(':')),
+        "expanded subgraph provenance should retain namespaced node IDs"
+    );
     assert_eq!(
         diagnostics
             .field_sources

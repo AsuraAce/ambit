@@ -153,7 +153,9 @@ const WorkflowOutputAnchors: React.FC<{
 const ComfyDiagnosticsPanel: React.FC<{
     image: Pick<AIImage, 'filename' | 'width' | 'height'>;
     chunks?: Record<string, string>;
-}> = ({ image, chunks }) => {
+    nodeById: Map<string, WorkflowDisplayNode>;
+    onFocusNode: (nodeId: string) => void;
+}> = ({ image, chunks, nodeById, onFocusNode }) => {
     const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -348,15 +350,41 @@ const ComfyDiagnosticsPanel: React.FC<{
                     <div>
                         <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Field Sources</div>
                         <div className="mt-1 flex flex-wrap gap-1.5">
-                            {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => (
-                                <span
-                                    key={field}
-                                    title={getDiagnosticLayerTitle(layer)}
-                                    className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
-                                >
-                                    {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
-                                </span>
-                            )) : (
+                            {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => {
+                                const sourceNodeIds = diagnostics.fieldSourceNodeIds?.[field] ?? [];
+                                return (
+                                    <div key={field} className="flex flex-wrap items-center gap-1">
+                                        <span
+                                            title={getDiagnosticLayerTitle(layer)}
+                                            className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${getDiagnosticLayerBadgeClass(layer)}`}
+                                        >
+                                            {formatDiagnosticLabel(field)}: {formatDiagnosticLabel(layer ?? '')}
+                                        </span>
+                                        {sourceNodeIds.map((nodeId) => {
+                                            const node = nodeById.get(nodeId);
+                                            return node ? (
+                                                <button
+                                                    key={nodeId}
+                                                    type="button"
+                                                    onClick={() => onFocusNode(nodeId)}
+                                                    title={`Jump to source node ${nodeId}: ${node.title}`}
+                                                    className="rounded-md border border-amber-300/70 bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-amber-950 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-amber-400/20 dark:bg-black/20 dark:text-amber-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                >
+                                                    #{nodeId}
+                                                </button>
+                                            ) : (
+                                                <span
+                                                    key={nodeId}
+                                                    title={`Source node ${nodeId} is not available in the normalized workflow graph.`}
+                                                    className="rounded-md border border-dashed border-amber-300/50 px-1.5 py-0.5 font-mono text-[10px] text-amber-800/60 dark:border-amber-400/20 dark:text-amber-200/50"
+                                                >
+                                                    #{nodeId}
+                                                </span>
+                                            );
+                                        })}
+                                    </div>
+                                );
+                            }) : (
                                 <span className="text-amber-800/70 dark:text-amber-200/70">None</span>
                             )}
                         </div>
@@ -962,7 +990,12 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 />
 
                 {showParserDiagnostics && (
-                    <ComfyDiagnosticsPanel image={image} chunks={image.originalChunks} />
+                    <ComfyDiagnosticsPanel
+                        image={image}
+                        chunks={image.originalChunks}
+                        nodeById={nodeById}
+                        onFocusNode={handleFollowConnection}
+                    />
                 )}
             </div>
 

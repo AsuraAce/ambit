@@ -307,9 +307,14 @@ fn sampler_fallback_only_fills_fields_missing_from_flat_parameters() {
         ComfyMetadataField::PositivePrompt,
     ] {
         assert_source(&diagnostics, field, ComfyParseLayer::FlatParameters);
+        assert!(
+            !diagnostics.field_source_node_ids.contains_key(&field),
+            "flat metadata retained for {field:?} must not inherit a weak graph node"
+        );
     }
     for field in [ComfyMetadataField::Seed, ComfyMetadataField::NegativePrompt] {
         assert_source(&diagnostics, field, ComfyParseLayer::SamplerFallback);
+        assert!(diagnostics.field_source_node_ids.contains_key(&field));
     }
 }
 
@@ -343,9 +348,14 @@ fn global_scan_only_fills_fields_missing_from_flat_parameters() {
         ComfyMetadataField::PositivePrompt,
     ] {
         assert_source(&diagnostics, field, ComfyParseLayer::FlatParameters);
+        assert!(
+            !diagnostics.field_source_node_ids.contains_key(&field),
+            "flat metadata retained for {field:?} must not inherit a global-scan node"
+        );
     }
     for field in [ComfyMetadataField::Seed, ComfyMetadataField::NegativePrompt] {
         assert_source(&diagnostics, field, ComfyParseLayer::GlobalScan);
+        assert!(diagnostics.field_source_node_ids.contains_key(&field));
     }
 }
 

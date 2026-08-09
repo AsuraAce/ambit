@@ -1,13 +1,15 @@
 use super::conditioning::{
-    find_connected_controlnets, find_reachable_prompts, find_reachable_prompts_with_role,
+    find_connected_controlnets, find_reachable_prompts_with_role_and_sources,
+    find_reachable_prompts_with_sources,
 };
+use super::diagnostics::{ComfyFieldSourceNodeIds, ComfyMetadataField};
 use super::eval_utils::{
     evaluate_float, evaluate_float_link_first, evaluate_number, evaluate_number_link_first,
     evaluate_string, evaluate_string_link_first, get_source_id,
 };
 use super::graph::{
-    get_input_connection, get_input_source, get_node_input_link, get_node_param, get_node_type,
-    get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
+    get_input_connection, get_input_source, get_node_id, get_node_input_link, get_node_param,
+    get_node_type, get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
     get_switch_branch_source, ComfyGraph, InputConnection, InputSource, InputSourceConnection,
 };
 use super::heuristics::is_primary_model_loader_type;
@@ -26,13 +28,23 @@ pub fn extract_from_sampler(
     loras: &mut Vec<String>,
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
-) -> ImageMetadata {
+) -> (ImageMetadata, ComfyFieldSourceNodeIds) {
     let mut meta = ImageMetadata::default();
+    let mut source_node_ids = ComfyFieldSourceNodeIds::new();
     let is_sampler_custom = get_node_type(node) == "SamplerCustom";
 
     if !is_sampler_custom {
         if let Some(v) = evaluate_number(graph, node, "steps", 500) {
             meta.steps = v as u32;
+            record_value_source(
+                graph,
+                node_id,
+                node,
+                "steps",
+                true,
+                ComfyMetadataField::Steps,
+                &mut source_node_ids,
+            );
         }
     }
     let sampler_cfg = if is_sampler_custom {
@@ -42,27 +54,82 @@ pub fn extract_from_sampler(
     };
     if let Some(v) = sampler_cfg {
         meta.cfg = v as f32;
+        record_value_source(
+            graph,
+            node_id,
+            node,
+            "cfg",
+            !is_sampler_custom,
+            ComfyMetadataField::Cfg,
+            &mut source_node_ids,
+        );
     } else if !is_sampler_custom {
         if let Some(v) = extract_connected_cfg_guider(graph, node)
             .or_else(|| extract_connected_flux_guidance(graph, node))
         {
             meta.cfg = v as f32;
+            if let Some(source_id) = connected_cfg_source_node_id(graph, node)
+                .or_else(|| connected_flux_guidance_source_node_id(graph, node))
+            {
+                source_node_ids.insert(ComfyMetadataField::Cfg, vec![source_id]);
+            }
         }
     }
     if is_sampler_custom {
         if let Some(v) = evaluate_number_link_first(graph, node, "noise_seed", i64::MAX) {
             meta.seed = Some(v);
+            record_value_source(
+                graph,
+                node_id,
+                node,
+                "noise_seed",
+                false,
+                ComfyMetadataField::Seed,
+                &mut source_node_ids,
+            );
         }
     } else if let Some(v) = evaluate_number(graph, node, "seed", i64::MAX) {
         meta.seed = Some(v);
+        record_value_source(
+            graph,
+            node_id,
+            node,
+            "seed",
+            true,
+            ComfyMetadataField::Seed,
+            &mut source_node_ids,
+        );
     } else if let Some(v) = evaluate_number(graph, node, "noise_seed", i64::MAX) {
         meta.seed = Some(v);
+        record_value_source(
+            graph,
+            node_id,
+            node,
+            "noise_seed",
+            true,
+            ComfyMetadataField::Seed,
+            &mut source_node_ids,
+        );
     } else if let Some(noise_id) = get_source_id(graph, node, "noise") {
         if let Some(noise_node) = graph.get_node(&noise_id) {
             if let Some(v) = evaluate_number(graph, noise_node, "noise_seed", i64::MAX)
                 .or_else(|| evaluate_number(graph, noise_node, "seed", i64::MAX))
             {
                 meta.seed = Some(v);
+                let key = if evaluate_number(graph, noise_node, "noise_seed", i64::MAX).is_some() {
+                    "noise_seed"
+                } else {
+                    "seed"
+                };
+                record_value_source(
+                    graph,
+                    &noise_id,
+                    noise_node,
+                    key,
+                    true,
+                    ComfyMetadataField::Seed,
+                    &mut source_node_ids,
+                );
             }
         }
     }
@@ -73,9 +140,27 @@ pub fn extract_from_sampler(
     if !is_sampler_custom {
         if let Some(s) = evaluate_string(graph, node, "sampler_name") {
             sampler = s;
+            record_value_source(
+                graph,
+                node_id,
+                node,
+                "sampler_name",
+                true,
+                ComfyMetadataField::Sampler,
+                &mut source_node_ids,
+            );
         }
         if let Some(s) = evaluate_string(graph, node, "scheduler") {
             scheduler = s;
+            record_value_source(
+                graph,
+                node_id,
+                node,
+                "scheduler",
+                true,
+                ComfyMetadataField::Sampler,
+                &mut source_node_ids,
+            );
         }
     }
 
@@ -93,6 +178,15 @@ pub fn extract_from_sampler(
                 };
                 if let Some(v) = steps {
                     meta.steps = v as u32;
+                    record_value_source(
+                        graph,
+                        &get_node_id(sigmas_node),
+                        sigmas_node,
+                        "steps",
+                        !strict_scheduler_inputs,
+                        ComfyMetadataField::Steps,
+                        &mut source_node_ids,
+                    );
                 }
             }
             if scheduler.is_empty() && supports_scheduler_metadata {
@@ -106,8 +200,22 @@ pub fn extract_from_sampler(
                     };
                     if let Some(s) = scheduler_value {
                         scheduler = s;
+                        record_value_source(
+                            graph,
+                            &get_node_id(sigmas_node),
+                            sigmas_node,
+                            "scheduler",
+                            !strict_scheduler_inputs,
+                            ComfyMetadataField::Sampler,
+                            &mut source_node_ids,
+                        );
                     } else if sigmas_type == "BetaSamplingScheduler" {
                         scheduler = "beta".to_string();
+                        push_source_node_id(
+                            &mut source_node_ids,
+                            ComfyMetadataField::Sampler,
+                            get_node_id(sigmas_node),
+                        );
                     }
                 }
             }
@@ -135,6 +243,15 @@ pub fn extract_from_sampler(
                             .then_some("lcm".into())
                     }) {
                         sampler = s;
+                        record_value_source(
+                            graph,
+                            &get_node_id(samp_node),
+                            samp_node,
+                            "sampler_name",
+                            !is_sampler_custom,
+                            ComfyMetadataField::Sampler,
+                            &mut source_node_ids,
+                        );
                     }
                 }
             }
@@ -152,7 +269,7 @@ pub fn extract_from_sampler(
     let mut model_control_nets = Vec::new();
     let direct_model_unconnected =
         is_sampler_custom && get_input_connection(node, "model") == InputConnection::Unconnected;
-    if let Some(model_name) = trace_model_chain(
+    if let Some(model) = trace_model_chain(
         graph,
         node,
         "model",
@@ -161,10 +278,11 @@ pub fn extract_from_sampler(
         hypernetworks,
         &mut model_control_nets,
     ) {
-        meta.model = model_name;
+        meta.model = model.name;
+        source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
     } else if direct_model_unconnected {
         if let Some((_, guider_node)) = connected_cfg_guider(graph, node) {
-            if let Some(model_name) = trace_model_chain_with_mode(
+            if let Some(model) = trace_model_chain_with_mode(
                 graph,
                 guider_node,
                 "model",
@@ -174,14 +292,15 @@ pub fn extract_from_sampler(
                 &mut model_control_nets,
                 true,
             ) {
-                meta.model = model_name;
+                meta.model = model.name;
+                source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
             }
         }
     } else if !is_sampler_custom {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
             if let Some(guider_node) = graph.get_node(&guider_id) {
                 let strict_connections = cfg_guider_requires_strict_inputs(guider_node);
-                if let Some(model_name) = trace_model_chain_with_mode(
+                if let Some(model) = trace_model_chain_with_mode(
                     graph,
                     guider_node,
                     "model",
@@ -191,7 +310,8 @@ pub fn extract_from_sampler(
                     &mut model_control_nets,
                     strict_connections,
                 ) {
-                    meta.model = model_name;
+                    meta.model = model.name;
+                    source_node_ids.insert(ComfyMetadataField::Model, vec![model.node_id]);
                 }
             }
         }
@@ -205,26 +325,37 @@ pub fn extract_from_sampler(
             is_sampler_custom || cfg_guider_requires_strict_inputs(guider_node);
         let prompt = |input_name| {
             get_node_input_link(guider_node, input_name)
-                .map(|_| find_reachable_prompts(graph, &guider_id, input_name, strict_connections))
+                .map(|_| {
+                    find_reachable_prompts_with_sources(
+                        graph,
+                        guider_id,
+                        input_name,
+                        strict_connections,
+                    )
+                })
                 .unwrap_or_default()
         };
         let negative = if dual_cfg_uses_instruct_pix_to_pix_negative(graph, guider_node) {
-            find_reachable_prompts_with_role(graph, &guider_id, "cond2", "negative", true)
+            find_reachable_prompts_with_role_and_sources(
+                graph, guider_id, "cond2", "negative", true,
+            )
         } else {
             prompt(negative_input)
         };
         (prompt(positive_input), negative)
     } else {
         (
-            find_reachable_prompts(graph, node_id, "positive", is_sampler_custom),
-            find_reachable_prompts(graph, node_id, "negative", is_sampler_custom),
+            find_reachable_prompts_with_sources(graph, node_id, "positive", is_sampler_custom),
+            find_reachable_prompts_with_sources(graph, node_id, "negative", is_sampler_custom),
         )
     };
-    if !is_missing_prompt_value(&pos) {
-        meta.positive_prompt = pos;
+    if !is_missing_prompt_value(&pos.text) {
+        meta.positive_prompt = pos.text;
+        source_node_ids.insert(ComfyMetadataField::PositivePrompt, pos.source_node_ids);
     }
-    if !is_missing_prompt_value(&neg) {
-        meta.negative_prompt = neg;
+    if !is_missing_prompt_value(&neg.text) {
+        meta.negative_prompt = neg.text;
+        source_node_ids.insert(ComfyMetadataField::NegativePrompt, neg.source_node_ids);
     }
 
     for emb in extract_explicit_embeddings_from_prompt(&meta.positive_prompt) {
@@ -262,9 +393,14 @@ pub fn extract_from_sampler(
 
     if !is_sampler_custom && meta.positive_prompt.is_empty() && cfg_guider.is_none() {
         if let Some(guider_id) = get_source_id(graph, node, "guider") {
-            let pos_guider = find_reachable_prompts(graph, &guider_id, "conditioning", false);
-            if !is_missing_prompt_value(&pos_guider) {
-                meta.positive_prompt = pos_guider;
+            let pos_guider =
+                find_reachable_prompts_with_sources(graph, &guider_id, "conditioning", false);
+            if !is_missing_prompt_value(&pos_guider.text) {
+                meta.positive_prompt = pos_guider.text;
+                source_node_ids.insert(
+                    ComfyMetadataField::PositivePrompt,
+                    pos_guider.source_node_ids,
+                );
             }
         }
     }
@@ -284,7 +420,11 @@ pub fn extract_from_sampler(
     meta.hypernetworks.extend(hypernetworks.clone());
     meta.hypernetworks.dedup();
 
-    meta
+    for node_ids in source_node_ids.values_mut() {
+        node_ids.sort_by(|left, right| super::graph::compare_node_ids(left, right));
+        node_ids.dedup();
+    }
+    (meta, source_node_ids)
 }
 
 fn resolve_transparent_reroutes<'a>(graph: &'a ComfyGraph, source_id: &str) -> Option<&'a Value> {
@@ -362,6 +502,97 @@ fn get_first_connected_source(node: &Value, keys: &[&str]) -> Option<InputSource
     None
 }
 
+fn push_source_node_id(
+    sources: &mut ComfyFieldSourceNodeIds,
+    field: ComfyMetadataField,
+    node_id: String,
+) {
+    let node_ids = sources.entry(field).or_default();
+    if !node_ids.contains(&node_id) {
+        node_ids.push(node_id);
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_value_source(
+    graph: &ComfyGraph,
+    owner_id: &str,
+    owner: &Value,
+    input_name: &str,
+    direct_first: bool,
+    field: ComfyMetadataField,
+    sources: &mut ComfyFieldSourceNodeIds,
+) {
+    if let Some(node_id) = value_source_node_id(graph, owner_id, owner, input_name, direct_first) {
+        push_source_node_id(sources, field, node_id);
+    }
+}
+
+fn value_source_node_id(
+    graph: &ComfyGraph,
+    owner_id: &str,
+    owner: &Value,
+    input_name: &str,
+    direct_first: bool,
+) -> Option<String> {
+    let direct_value = get_node_param(owner, input_name)
+        .filter(|value| value.is_number() || value.is_string() || value.is_boolean());
+    if direct_first && direct_value.is_some() {
+        return Some(owner_id.to_string());
+    }
+    match get_input_source(owner, input_name) {
+        InputSourceConnection::Connected(source) => {
+            resolve_terminal_value_source_id(graph, source, &mut HashSet::new(), 0)
+        }
+        InputSourceConnection::DeclaredUnresolved => None,
+        InputSourceConnection::Unconnected => direct_value.map(|_| owner_id.to_string()),
+    }
+}
+
+fn resolve_terminal_value_source_id(
+    graph: &ComfyGraph,
+    source: InputSource,
+    visited: &mut HashSet<String>,
+    depth: usize,
+) -> Option<String> {
+    if depth > 16 || !visited.insert(source.node_id.clone()) {
+        return None;
+    }
+    let node = graph.get_node(&source.node_id)?;
+    let node_type = get_node_type(node);
+    let next = if node_type == "ComfySwitchNode" {
+        get_switch_branch_input_strict(graph, node).and_then(|branch| {
+            match get_input_source(node, branch) {
+                InputSourceConnection::Connected(source) => Some(source),
+                InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {
+                    None
+                }
+            }
+        })
+    } else if node_type == "Reroute" {
+        get_first_connected_source(node, &["", "value", "input", "any"])
+    } else if node_type == "ComfyNumberConvert" {
+        get_first_connected_source(node, &["value"])
+    } else if matches!(
+        node_type,
+        "PrimitiveNode"
+            | "String"
+            | "Text String"
+            | "Text Multiline"
+            | "PrimitiveString"
+            | "PrimitiveStringMultiline"
+    ) {
+        get_first_connected_source(node, &["value", "int", "float", "string", "text"])
+    } else {
+        None
+    };
+
+    match next {
+        Some(next) => resolve_terminal_value_source_id(graph, next, visited, depth + 1),
+        None => Some(source.node_id),
+    }
+}
+
 fn dual_cfg_uses_instruct_pix_to_pix_negative(graph: &ComfyGraph, guider_node: &Value) -> bool {
     if get_node_type(guider_node) != "DualCFGGuider" {
         return false;
@@ -428,6 +659,18 @@ fn extract_connected_cfg_guider(graph: &ComfyGraph, sampler_node: &Value) -> Opt
     }
 }
 
+fn connected_cfg_source_node_id(graph: &ComfyGraph, sampler_node: &Value) -> Option<String> {
+    let (guider_id, guider_node) = connected_cfg_guider(graph, sampler_node)?;
+    let (cfg_input, _, _) = cfg_guider_params(guider_node)?;
+    value_source_node_id(
+        graph,
+        &guider_id,
+        guider_node,
+        cfg_input,
+        !cfg_guider_requires_strict_inputs(guider_node),
+    )
+}
+
 pub(crate) fn cfg_guider_params(
     guider_node: &Value,
 ) -> Option<(&'static str, &'static str, &'static str)> {
@@ -448,6 +691,39 @@ fn extract_connected_flux_guidance(graph: &ComfyGraph, sampler_node: &Value) -> 
     let guider_node = graph.get_node(&guider_id)?;
     let conditioning_id = get_source_id(graph, guider_node, "conditioning")?;
     trace_flux_guidance(graph, &conditioning_id, 0)
+}
+
+fn connected_flux_guidance_source_node_id(
+    graph: &ComfyGraph,
+    sampler_node: &Value,
+) -> Option<String> {
+    let guider_id = get_source_id(graph, sampler_node, "guider")?;
+    let guider_node = graph.get_node(&guider_id)?;
+    let conditioning_id = get_source_id(graph, guider_node, "conditioning")?;
+    trace_flux_guidance_source_node_id(graph, &conditioning_id, 0)
+}
+
+fn trace_flux_guidance_source_node_id(
+    graph: &ComfyGraph,
+    node_id: &str,
+    depth: u32,
+) -> Option<String> {
+    if depth > 10 {
+        return None;
+    }
+    let node = graph.get_node(node_id)?;
+    if get_node_type(node) == "FluxGuidance" {
+        return value_source_node_id(graph, node_id, node, "guidance", false);
+    }
+    for input_name in ["conditioning", "CONDITIONING"] {
+        if let Some(next_id) = get_source_id(graph, node, input_name) {
+            if let Some(source_id) = trace_flux_guidance_source_node_id(graph, &next_id, depth + 1)
+            {
+                return Some(source_id);
+            }
+        }
+    }
+    None
 }
 
 fn trace_flux_guidance(graph: &ComfyGraph, node_id: &str, depth: u32) -> Option<f64> {
@@ -505,7 +781,12 @@ fn value_as_f64(value: &Value) -> Option<f64> {
         .or_else(|| value.as_str().and_then(|v| v.parse::<f64>().ok()))
 }
 
-pub fn trace_model_chain(
+struct ResolvedModel {
+    name: String,
+    node_id: String,
+}
+
+fn trace_model_chain(
     graph: &ComfyGraph,
     start_node: &Value,
     input_name: &str,
@@ -513,7 +794,7 @@ pub fn trace_model_chain(
     ip_adapters: &mut Vec<String>,
     hypernetworks: &mut Vec<String>,
     control_nets: &mut Vec<String>,
-) -> Option<String> {
+) -> Option<ResolvedModel> {
     let strict_connections = get_node_type(start_node) == "SamplerCustom";
     trace_model_chain_with_mode(
         graph,
@@ -537,7 +818,7 @@ fn trace_model_chain_with_mode(
     hypernetworks: &mut Vec<String>,
     control_nets: &mut Vec<String>,
     strict_connections: bool,
-) -> Option<String> {
+) -> Option<ResolvedModel> {
     let mut current_id =
         get_model_chain_source_id(graph, start_node, input_name, strict_connections)?;
     let mut visited = HashSet::new();
@@ -649,9 +930,10 @@ fn trace_model_chain_with_mode(
         } else if is_primary_model_loader_type(get_node_type(node)) {
             match evaluate_loader_model_name(graph, node, strict_connections) {
                 LoaderModelName::Resolved(name) => {
-                    return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
-                        &name,
-                    ));
+                    return Some(ResolvedModel {
+                        name: crate::metadata::guidance::GuidanceClassifier::clean_name(&name),
+                        node_id: current_id,
+                    });
                 }
                 LoaderModelName::AuthoritativeAbsent => return None,
                 LoaderModelName::Wrapper => {}
@@ -666,7 +948,10 @@ fn trace_model_chain_with_mode(
             };
             if let Some(n) = model_name.as_deref() {
                 if n != "None" {
-                    return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(n));
+                    return Some(ResolvedModel {
+                        name: crate::metadata::guidance::GuidanceClassifier::clean_name(n),
+                        node_id: current_id,
+                    });
                 }
             }
         }

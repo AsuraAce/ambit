@@ -44,6 +44,7 @@ export const buildDiagnosticsClipboardPayload = (
         },
         attemptedLayers: diagnostics.attemptedLayers,
         fieldSources: diagnostics.fieldSources,
+        fieldSourceNodeIds: diagnostics.fieldSourceNodeIds,
         traversalIssues: diagnostics.traversalIssues,
         traversalIssuesTruncated: diagnostics.traversalIssuesTruncated,
         metadata: diagnostics.metadata
