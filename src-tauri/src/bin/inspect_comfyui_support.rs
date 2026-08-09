@@ -15,6 +15,7 @@ enum ParsedArgs {
     Inspect {
         path: PathBuf,
         verify: bool,
+        summary: bool,
     },
     Prepare {
         path: PathBuf,
@@ -36,7 +37,13 @@ fn main() -> ExitCode {
         &mut stdout.lock(),
         &mut stderr.lock(),
         app_lib::COMFY_SUPPORT_BUNDLE_MAX_BYTES,
-        app_lib::replay_comfyui_support_bundle,
+        |input, summary| {
+            if summary {
+                app_lib::summarize_comfyui_support_bundle_replay(input)
+            } else {
+                app_lib::replay_comfyui_support_bundle(input)
+            }
+        },
         app_lib::prepare_comfyui_fixture_candidate,
         app_lib::inspect_comfyui_fixture_candidate,
     );
@@ -53,7 +60,7 @@ fn run<F, G, H>(
     inspect_fixture: H,
 ) -> u8
 where
-    F: Fn(&[u8]) -> Result<(String, bool), String>,
+    F: Fn(&[u8], bool) -> Result<(String, bool), String>,
     G: Fn(&[u8]) -> Result<Vec<u8>, String>,
     H: Fn(&[u8], Option<&[u8]>) -> Result<(String, bool), String>,
 {
@@ -71,7 +78,11 @@ where
             let _ = writeln!(stdout, "{}", usage());
             return EXIT_OK;
         }
-        ParsedArgs::Inspect { path, verify } => (path, RunMode::Inspect { verify }),
+        ParsedArgs::Inspect {
+            path,
+            verify,
+            summary,
+        } => (path, RunMode::Inspect { verify, summary }),
         ParsedArgs::Prepare { path, output } => (path, RunMode::Prepare { output }),
         ParsedArgs::InspectFixture {
             path,
@@ -98,8 +109,8 @@ where
         }
     };
     match mode {
-        RunMode::Inspect { verify } => {
-            let (report, matches) = match replay(&input) {
+        RunMode::Inspect { verify, summary } => {
+            let (report, matches) = match replay(&input, summary) {
                 Ok(result) => result,
                 Err(error) => {
                     let _ = writeln!(stderr, "error: {error}");
@@ -177,6 +188,7 @@ where
 enum RunMode {
     Inspect {
         verify: bool,
+        summary: bool,
     },
     Prepare {
         output: PathBuf,
@@ -190,6 +202,7 @@ enum RunMode {
 fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
     let mut paths = Vec::new();
     let mut verify = false;
+    let mut summary = false;
     let mut prepare = false;
     let mut inspect_fixture = false;
     let mut acknowledged = false;
@@ -209,6 +222,13 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
                 return Err("--verify may only be supplied once".to_string());
             }
             verify = true;
+            continue;
+        }
+        if arg == "--summary" {
+            if summary {
+                return Err("--summary may only be supplied once".to_string());
+            }
+            summary = true;
             continue;
         }
         if arg == "--prepare-fixture" {
@@ -262,6 +282,9 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
         return Err("--prepare-fixture cannot be combined with --inspect-fixture".to_string());
     }
     if prepare {
+        if summary {
+            return Err("--summary cannot be combined with --prepare-fixture".to_string());
+        }
         if verify {
             return Err("--verify cannot be combined with --prepare-fixture".to_string());
         }
@@ -283,6 +306,9 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
     }
 
     if inspect_fixture {
+        if summary {
+            return Err("--summary cannot be combined with --inspect-fixture".to_string());
+        }
         if acknowledged {
             return Err(
                 "--acknowledge-sensitive-data cannot be combined with --inspect-fixture"
@@ -318,6 +344,7 @@ fn parse_args(args: Vec<OsString>) -> Result<ParsedArgs, String> {
     Ok(ParsedArgs::Inspect {
         path: paths.pop().unwrap(),
         verify,
+        summary,
     })
 }
 
@@ -388,7 +415,7 @@ where
 }
 
 fn usage() -> &'static str {
-    "Usage:\n  pnpm run inspect:comfyui-support -- <bundle-path> [--verify]\n  pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data\n  pnpm run inspect:comfyui-fixture -- <candidate.chunks.json> [--compare-support <bundle-path>] [--verify]"
+    "Usage:\n  pnpm run inspect:comfyui-support -- <bundle-path> [--verify] [--summary]\n  pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data\n  pnpm run inspect:comfyui-fixture -- <candidate.chunks.json> [--compare-support <bundle-path>] [--verify]"
 }
 
 #[cfg(test)]
@@ -425,8 +452,8 @@ mod tests {
         path
     }
 
-    fn fake_replay(matches: bool) -> impl Fn(&[u8]) -> Result<(String, bool), String> {
-        move |_| Ok((format!(r#"{{"parserOutputMatches":{matches}}}"#), matches))
+    fn fake_replay(matches: bool) -> impl Fn(&[u8], bool) -> Result<(String, bool), String> {
+        move |_, _| Ok((format!(r#"{{"parserOutputMatches":{matches}}}"#), matches))
     }
 
     fn fake_prepare(contents: &'static [u8]) -> impl Fn(&[u8]) -> Result<Vec<u8>, String> {
@@ -455,7 +482,8 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            |_| {
+            |_, summary| {
+                assert!(!summary);
                 Ok((
                     r#"{"parserOutputMatches":false,"metadataOutputMatches":false,"diagnosticsMatch":true}"#
                         .to_string(),
@@ -475,17 +503,52 @@ mod tests {
     }
 
     #[test]
+    fn summary_mode_emits_the_summary_report() {
+        let path = temp_file("summary", b"PRIVATE_RAW_BODY");
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+
+        let code = run(
+            vec![path.clone().into_os_string(), "--summary".into()],
+            &mut stdout,
+            &mut stderr,
+            1024,
+            |_, summary| {
+                assert!(summary);
+                Ok((
+                    r#"{"supportReplaySummaryVersion":1,"parserOutputMatches":true}"#.to_string(),
+                    true,
+                ))
+            },
+            fake_prepare(b"{}\n"),
+            fake_fixture_inspect(true),
+        );
+
+        assert_eq!(code, EXIT_OK);
+        let stdout = String::from_utf8(stdout).unwrap();
+        assert!(stdout.contains(r#""supportReplaySummaryVersion":1"#));
+        assert!(!stdout.contains("PRIVATE_RAW_BODY"));
+        assert!(stderr.is_empty());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn verify_mode_uses_exit_two_for_diagnostics_only_drift() {
         let path = temp_file("verify_mismatch", b"{}");
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
 
         let code = run(
-            vec![path.clone().into_os_string(), "--verify".into()],
+            vec![
+                path.clone().into_os_string(),
+                "--summary".into(),
+                "--verify".into(),
+            ],
             &mut stdout,
             &mut stderr,
             1024,
-            |_| {
+            |_, summary| {
+                assert!(summary);
                 Ok((
                     r#"{"parserOutputMatches":false,"metadataOutputMatches":true,"diagnosticsMatch":false}"#
                         .to_string(),
@@ -517,7 +580,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            |_| {
+            |_, _| {
                 Ok((
                     r#"{"parserOutputMatches":true,"comparisonIgnoredPaths":["/resourceSources"]}"#
                         .to_string(),
@@ -616,7 +679,7 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            |_| Err("invalid bundle".to_string()),
+            |_, _| Err("invalid bundle".to_string()),
             fake_prepare(b"{}\n"),
             fake_fixture_inspect(true),
         );
@@ -633,6 +696,17 @@ mod tests {
 
     #[test]
     fn prepare_mode_requires_acknowledgement_and_valid_arguments() {
+        assert_eq!(
+            parse_args(vec![
+                "--prepare-fixture".into(),
+                "--summary".into(),
+                "--acknowledge-sensitive-data".into(),
+                "bundle.json".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap_err(),
+            "--summary cannot be combined with --prepare-fixture"
+        );
         assert_eq!(
             parse_args(vec![
                 "--prepare-fixture".into(),
@@ -757,6 +831,15 @@ mod tests {
             "fixture --verify requires --compare-support"
         );
         assert_eq!(
+            parse_args(vec![
+                "--inspect-fixture".into(),
+                "--summary".into(),
+                "candidate.chunks.json".into(),
+            ])
+            .unwrap_err(),
+            "--summary cannot be combined with --inspect-fixture"
+        );
+        assert_eq!(
             parse_args(vec!["--inspect-fixture".into(), "candidate.json".into()]).unwrap_err(),
             "fixture candidate must end with .chunks.json"
         );
@@ -768,6 +851,15 @@ mod tests {
             ])
             .unwrap_err(),
             "--compare-support requires --inspect-fixture"
+        );
+        assert_eq!(
+            parse_args(vec![
+                "bundle.json".into(),
+                "--summary".into(),
+                "--summary".into(),
+            ])
+            .unwrap_err(),
+            "--summary may only be supplied once"
         );
         assert!(matches!(
             parse_args(vec![

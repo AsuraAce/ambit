@@ -11,6 +11,7 @@ mod watcher;
 #[doc(hidden)]
 pub use comfy_support_replay::{
     inspect_comfyui_fixture_candidate, prepare_comfyui_fixture_candidate,
+    summarize_comfyui_support_bundle_replay,
 };
 #[doc(hidden)]
 pub use comfy_support_replay::{replay_comfyui_support_bundle, COMFY_SUPPORT_BUNDLE_MAX_BYTES};

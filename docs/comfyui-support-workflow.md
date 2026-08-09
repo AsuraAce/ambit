@@ -1,7 +1,7 @@
 # ComfyUI Parser Support Workflow
 
 Status: Canonical
-Last reviewed: 2026-08-08
+Last reviewed: 2026-08-09
 
 ## Purpose
 
@@ -54,6 +54,23 @@ pnpm run inspect:comfyui-support -- "C:\private\ambit-comfyui-support.json" --ve
 
 Reports omit complete raw chunk bodies, but their parsed metadata may still be
 sensitive.
+
+Use `--summary` when the full compared values are not needed:
+
+```powershell
+pnpm run inspect:comfyui-support -- `
+  "C:\private\ambit-comfyui-support.json" `
+  --summary
+```
+
+The deterministic JSON summary omits raw chunks, chunk names and lengths,
+complete diagnostics, metadata values, provenance values, and the
+recorded/current values behind each difference. It retains version and image
+shape information, prompt/workflow presence, graph and output-selection counts,
+strict verdicts, compatibility exclusions, and difference paths and kinds. It
+is value-redacted rather than automatically publication-safe; review it before
+sharing. `--summary --verify` retains the same strict exit-code behavior as the
+full report.
 
 Schema-1 bundles created before newer diagnostics fields were introduced remain
 replayable. When a recorded bundle omitted `fieldSourceNodeIds` or
@@ -151,7 +168,7 @@ support case is complete.
 ## Command Summary
 
 ```powershell
-pnpm run inspect:comfyui-support -- <bundle-path> [--verify]
+pnpm run inspect:comfyui-support -- <bundle-path> [--verify] [--summary]
 pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data
 pnpm run inspect:comfyui-fixture -- <candidate.chunks.json> [--compare-support <bundle-path>] [--verify]
 ```
