@@ -1,4 +1,4 @@
-# Milestone 27: GenAI Video Library Support
+# Milestone 68: GenAI Video Library Support
 
 Status: In progress - WP1 and WP2 accepted; WP3 is next
 Delivery posture: Assure
@@ -512,6 +512,16 @@ normalized. Final automated evidence is 2,924 passing frontend tests with one
 intentional skip and 547 passing Rust tests with one existing ignored parser
 test; lint, strict TypeScript, generated binding drift, and diff checks pass. No
 blocking WP2 finding remains.
+
+Restore closure follow-up (2026-08-09): restore now preserves the original
+library timestamp and lets the active query reapply its configured sort and
+filters instead of prepending the restored item as newest. Native restore also
+rechecks local source presence, restores missing sources with `is_missing = 1`,
+and preserves video probe/playback fields, flags, notes, and collection state.
+It intentionally does not merge a stale removed path into a separately renamed
+asset. Latest-main integration verification passed 3,144 frontend tests with one
+intentional skip and all 770 Rust tests, plus lint, strict TypeScript, Rust format,
+and generated-binding drift checks. WP3 is next.
 
 ### WP3 — GenAI Video Metadata and Provenance
 
