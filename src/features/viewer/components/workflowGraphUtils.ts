@@ -41,11 +41,17 @@ export interface WorkflowGraphSource {
     source: 'workflow' | 'prompt';
     nodes: WorkflowDisplayNode[];
     edges: WorkflowDisplayEdge[];
+    selectedOutputNodeIds: string[];
+    rootSamplerNodeIds: string[];
+    outputAmbiguous: boolean;
     normalizedByBackend?: boolean;
 }
 
 interface ComfyWorkflowGraphReportLike {
     source: string;
+    selectedOutputNodeIds?: string[];
+    rootSamplerNodeIds?: string[];
+    outputAmbiguous?: boolean;
     edges?: Array<{
         sourceNodeId: string;
         sourceOutputSlot: number | null;
@@ -209,7 +215,10 @@ export const selectWorkflowGraphSource = ({
             json: originalChunks.prompt,
             source: 'prompt',
             nodes: promptNodes,
-            edges: []
+            edges: [],
+            selectedOutputNodeIds: [],
+            rootSamplerNodeIds: [],
+            outputAmbiguous: false
         };
     }
 
@@ -218,7 +227,10 @@ export const selectWorkflowGraphSource = ({
             json: preservedWorkflow,
             source: 'workflow',
             nodes: workflowNodes,
-            edges: []
+            edges: [],
+            selectedOutputNodeIds: [],
+            rootSamplerNodeIds: [],
+            outputAmbiguous: false
         };
     }
 
@@ -242,6 +254,9 @@ export const workflowGraphSourceFromBackend = (
         source,
         normalizedByBackend: true,
         edges: report.edges ?? [],
+        selectedOutputNodeIds: report.selectedOutputNodeIds ?? [],
+        rootSamplerNodeIds: report.rootSamplerNodeIds ?? [],
+        outputAmbiguous: report.outputAmbiguous ?? false,
         nodes: report.nodes.map((node) => ({
             id: node.id,
             title: node.title,

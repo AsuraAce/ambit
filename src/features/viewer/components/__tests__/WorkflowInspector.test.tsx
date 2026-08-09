@@ -98,6 +98,9 @@ const diagnosticsReport = {
 const workflowGraphReport = {
     source: 'api_prompt',
     nodeCount: 2,
+    selectedOutputNodeIds: ['9'],
+    rootSamplerNodeIds: ['3'],
+    outputAmbiguous: false,
     edges: [{
         sourceNodeId: '3',
         sourceOutputSlot: 0,
@@ -256,6 +259,74 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(mockScrollIntoView).toHaveBeenCalledTimes(2);
     });
 
+    it('renders parser-selected output and root anchors and focuses either node', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        const outputAnchor = await screen.findByLabelText('Open selected output node SaveImage (9)');
+        expect(screen.getByLabelText('Open root sampler node KSampler (3)')).toBeTruthy();
+        expect(screen.getAllByText('Selected Output')).toHaveLength(2);
+        expect(screen.getAllByText('Root Sampler')).toHaveLength(2);
+
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(outputAnchor);
+
+        await waitFor(() => expect(search.value).toBe(''));
+        const outputNode = document.querySelector<HTMLElement>('[data-workflow-node-id="9"]');
+        await waitFor(() => expect(document.activeElement).toBe(outputNode));
+        expect(outputNode?.className).toContain('ring-2');
+
+        fireEvent.click(screen.getByLabelText('Open root sampler node KSampler (3)'));
+        const rootNode = document.querySelector<HTMLElement>('[data-workflow-node-id="3"]');
+        await waitFor(() => expect(document.activeElement).toBe(rootNode));
+        expect(rootNode?.className).toContain('ring-2');
+    });
+
+    it('labels conflicting roots as candidates without claiming authority', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                rootSamplerNodeIds: ['3', '7'],
+                outputAmbiguous: true,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '7',
+                        nodeType: 'KSampler',
+                        title: 'Alternate Sampler',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText(/Multiple root samplers were found/)).toBeTruthy();
+        expect(screen.getAllByText('Root Candidate')).toHaveLength(4);
+        expect(screen.queryByText('Root Sampler')).toBeNull();
+    });
+
+    it('keeps samplerless selected outputs visible without fabricating a root', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                rootSamplerNodeIds: [],
+                edges: [],
+                nodes: [workflowGraphReport.nodes[1]]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('No sampler root was found for the selected output.')).toBeTruthy();
+        expect(screen.getByLabelText('Open selected output node SaveImage (9)')).toBeTruthy();
+        expect(screen.queryByText('Root Sampler')).toBeNull();
+    });
+
     it('falls back to the local graph when backend inspection fails', async () => {
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'error',
@@ -268,6 +339,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByTitle('KSampler')).toBeTruthy();
         expect(screen.getByTitle('SaveImage')).toBeTruthy();
         expect(screen.getByText('API Prompt')).toBeTruthy();
+        expect(screen.queryByLabelText('Parser-selected workflow anchors')).toBeNull();
     });
 
     it('keeps copy pointed at the preserved workflow after displaying the API prompt', async () => {

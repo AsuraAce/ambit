@@ -91,6 +91,65 @@ const getTraversalIssueTitle = (reason: string) => {
 
 const workflowNodeElementId = (nodeId: string | number) => `workflow-node-${String(nodeId)}`;
 
+const WorkflowOutputAnchors: React.FC<{
+    selectedOutputNodeIds: string[];
+    rootSamplerNodeIds: string[];
+    outputAmbiguous: boolean;
+    nodeById: Map<string, WorkflowDisplayNode>;
+    onFocusNode: (nodeId: string) => void;
+}> = ({ selectedOutputNodeIds, rootSamplerNodeIds, outputAmbiguous, nodeById, onFocusNode }) => {
+    if (selectedOutputNodeIds.length === 0) return null;
+
+    const renderAnchor = (nodeId: string, kind: 'output' | 'root') => {
+        const node = nodeById.get(nodeId);
+        if (!node) return null;
+
+        const isRoot = kind === 'root';
+        const label = isRoot
+            ? outputAmbiguous ? 'Root Candidate' : 'Root Sampler'
+            : 'Selected Output';
+        const Icon = isRoot ? Activity : ArrowDownToLine;
+
+        return (
+            <button
+                key={`${kind}:${nodeId}`}
+                type="button"
+                onClick={() => onFocusNode(nodeId)}
+                aria-label={`Open ${label.toLowerCase()} node ${node.title} (${nodeId})`}
+                title={`Open ${label.toLowerCase()} node ${nodeId}`}
+                className="flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 text-left text-[10px] transition-colors hover:border-sage-300 hover:bg-sage-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
+            >
+                <Icon className={`h-3 w-3 shrink-0 ${isRoot ? 'text-sky-600 dark:text-sky-400' : 'text-sage-600 dark:text-sage-400'}`} />
+                <span className="min-w-0">
+                    <span className="block font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</span>
+                    <span className="block max-w-44 truncate font-mono text-gray-700 dark:text-gray-200" title={`${node.title} / #${nodeId}`}>
+                        {node.title} / #{nodeId}
+                    </span>
+                </span>
+            </button>
+        );
+    };
+
+    return (
+        <section aria-label="Parser-selected workflow anchors" className="space-y-2 border-y border-gray-200 py-2 dark:border-white/10">
+            <div className="flex flex-wrap items-center gap-2">
+                {selectedOutputNodeIds.map((nodeId) => renderAnchor(nodeId, 'output'))}
+                {rootSamplerNodeIds.map((nodeId) => renderAnchor(nodeId, 'root'))}
+            </div>
+            {outputAmbiguous ? (
+                <div className="flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-300">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                    Multiple root samplers were found. Ambit does not treat any candidate as authoritative.
+                </div>
+            ) : rootSamplerNodeIds.length === 0 ? (
+                <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                    No sampler root was found for the selected output.
+                </div>
+            ) : null}
+        </section>
+    );
+};
+
 const ComfyDiagnosticsPanel: React.FC<{
     image: Pick<AIImage, 'filename' | 'width' | 'height'>;
     chunks?: Record<string, string>;
@@ -358,10 +417,13 @@ const WorkflowNode: React.FC<{
     inputs: WorkflowInputs;
     connections: WorkflowNodeConnections;
     nodeById: Map<string, WorkflowDisplayNode>;
+    isSelectedOutput: boolean;
+    isRootSampler: boolean;
+    outputAmbiguous: boolean;
     isFocused: boolean;
     focusRequestId: number | null;
     onFollowConnection: (nodeId: string) => void;
-}> = ({ id, title, type, inputs, connections, nodeById, isFocused, focusRequestId, onFollowConnection }) => {
+}> = ({ id, title, type, inputs, connections, nodeById, isSelectedOutput, isRootSampler, outputAmbiguous, isFocused, focusRequestId, onFollowConnection }) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const hasInputs = Object.keys(inputs).length > 0;
     const hasConnections = connections.incoming.length > 0 || connections.outgoing.length > 0;
@@ -429,6 +491,20 @@ const WorkflowNode: React.FC<{
                             #{id}
                         </span>
                     </div>
+                    {(isSelectedOutput || isRootSampler) && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                            {isSelectedOutput && (
+                                <span className="rounded border border-sage-300 bg-sage-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sage-700 dark:border-sage-700 dark:bg-sage-900/20 dark:text-sage-300">
+                                    Selected Output
+                                </span>
+                            )}
+                            {isRootSampler && (
+                                <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${outputAmbiguous ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300'}`}>
+                                    {outputAmbiguous ? 'Root Candidate' : 'Root Sampler'}
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
                 {hasContent && (
                     <div className="text-gray-400">
@@ -487,10 +563,13 @@ const WorkflowNodeSection: React.FC<{
     nodes: ReturnType<typeof groupWorkflowNodes>[number]['nodes'];
     connectionIndex: Map<string, WorkflowNodeConnections>;
     nodeById: Map<string, WorkflowDisplayNode>;
+    selectedOutputNodeIdSet: Set<string>;
+    rootSamplerNodeIdSet: Set<string>;
+    outputAmbiguous: boolean;
     focusedNodeId: string | null;
     focusRequestId: number | null;
     onFollowConnection: (nodeId: string) => void;
-}> = ({ path, nodes, connectionIndex, nodeById, focusedNodeId, focusRequestId, onFollowConnection }) => {
+}> = ({ path, nodes, connectionIndex, nodeById, selectedOutputNodeIdSet, rootSamplerNodeIdSet, outputAmbiguous, focusedNodeId, focusRequestId, onFollowConnection }) => {
     const nodeList = (
         <div className="space-y-2">
             {nodes.map((node) => (
@@ -502,6 +581,9 @@ const WorkflowNodeSection: React.FC<{
                     inputs={node.inputs}
                     connections={connectionIndex.get(String(node.id)) ?? { incoming: [], outgoing: [] }}
                     nodeById={nodeById}
+                    isSelectedOutput={selectedOutputNodeIdSet.has(String(node.id))}
+                    isRootSampler={rootSamplerNodeIdSet.has(String(node.id))}
+                    outputAmbiguous={outputAmbiguous}
                     isFocused={focusedNodeId === String(node.id)}
                     focusRequestId={focusedNodeId === String(node.id) ? focusRequestId : null}
                     onFollowConnection={onFollowConnection}
@@ -578,6 +660,25 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const connectionIndex = useMemo(
         () => indexWorkflowConnections(workflowNodes, workflowEdges),
         [workflowEdges, workflowNodes]
+    );
+    const selectedOutputNodeIds = workflowGraphSource?.selectedOutputNodeIds ?? [];
+    const rootSamplerNodeIds = workflowGraphSource?.rootSamplerNodeIds ?? [];
+    const outputAmbiguous = workflowGraphSource?.outputAmbiguous ?? false;
+    const visibleSelectedOutputNodeIds = useMemo(
+        () => selectedOutputNodeIds.filter((nodeId) => nodeById.has(nodeId)),
+        [nodeById, selectedOutputNodeIds]
+    );
+    const visibleRootSamplerNodeIds = useMemo(
+        () => rootSamplerNodeIds.filter((nodeId) => nodeById.has(nodeId)),
+        [nodeById, rootSamplerNodeIds]
+    );
+    const selectedOutputNodeIdSet = useMemo(
+        () => new Set(visibleSelectedOutputNodeIds),
+        [visibleSelectedOutputNodeIds]
+    );
+    const rootSamplerNodeIdSet = useMemo(
+        () => new Set(visibleRootSamplerNodeIds),
+        [visibleRootSamplerNodeIds]
     );
 
     const handleFollowConnection = React.useCallback((nodeId: string) => {
@@ -780,6 +881,14 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     </div>
                 )}
 
+                <WorkflowOutputAnchors
+                    selectedOutputNodeIds={visibleSelectedOutputNodeIds}
+                    rootSamplerNodeIds={visibleRootSamplerNodeIds}
+                    outputAmbiguous={outputAmbiguous}
+                    nodeById={nodeById}
+                    onFocusNode={handleFollowConnection}
+                />
+
                 {showParserDiagnostics && (
                     <ComfyDiagnosticsPanel image={image} chunks={image.originalChunks} />
                 )}
@@ -796,6 +905,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                 nodes={group.nodes}
                                 connectionIndex={connectionIndex}
                                 nodeById={nodeById}
+                                selectedOutputNodeIdSet={selectedOutputNodeIdSet}
+                                rootSamplerNodeIdSet={rootSamplerNodeIdSet}
+                                outputAmbiguous={outputAmbiguous}
                                 focusedNodeId={focusedConnection?.nodeId ?? null}
                                 focusRequestId={focusedConnection?.requestId ?? null}
                                 onFollowConnection={handleFollowConnection}

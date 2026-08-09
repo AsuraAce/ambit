@@ -49,6 +49,9 @@ describe('workflow graph source selection', () => {
         expect(source?.json).toBe(richerApiPrompt);
         expect(source?.nodes).toHaveLength(4);
         expect(source?.edges).toEqual([]);
+        expect(source?.selectedOutputNodeIds).toEqual([]);
+        expect(source?.rootSamplerNodeIds).toEqual([]);
+        expect(source?.outputAmbiguous).toBe(false);
         expect(source?.nodes.some(node => node.id === '30:19' && node.title === 'Positive Prompt')).toBe(true);
     });
 
@@ -130,6 +133,9 @@ describe('workflow graph source selection', () => {
     it('maps backend-normalized nodes without changing their archival source JSON', () => {
         const source = workflowGraphSourceFromBackend({
             source: 'expanded_workflow',
+            selectedOutputNodeIds: ['29'],
+            rootSamplerNodeIds: ['30:3'],
+            outputAmbiguous: false,
             edges: [{
                 sourceNodeId: '30:19',
                 sourceOutputSlot: 0,
@@ -150,6 +156,9 @@ describe('workflow graph source selection', () => {
             json: compactTemplateWorkflow,
             source: 'workflow',
             normalizedByBackend: true,
+            selectedOutputNodeIds: ['29'],
+            rootSamplerNodeIds: ['30:3'],
+            outputAmbiguous: false,
             edges: [{
                 sourceNodeId: '30:19',
                 sourceOutputSlot: 0,

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::Value;
 
+use super::evaluator::ComfyEvaluator;
 use super::graph::{
     compare_node_ids, get_input_source, get_input_source_by_slot, get_node_title, get_node_type,
     get_source_id, parse_prompt_chunk, ComfyGraph, ComfyGraphSource, InputSourceConnection,
@@ -35,6 +36,9 @@ pub struct ComfyWorkflowGraphReport {
     pub node_count: usize,
     pub nodes: Vec<ComfyWorkflowDisplayNode>,
     pub edges: Vec<ComfyWorkflowDisplayEdge>,
+    pub selected_output_node_ids: Vec<String>,
+    pub root_sampler_node_ids: Vec<String>,
+    pub output_ambiguous: bool,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -58,6 +62,7 @@ pub(crate) fn build_comfyui_workflow_graph_report(
         ComfyGraph::from_chunks(chunks)
     };
     let edges = display_edges(&graph);
+    let output_selection = ComfyEvaluator::new(&graph).output_selection();
     let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
     nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
 
@@ -98,6 +103,9 @@ pub(crate) fn build_comfyui_workflow_graph_report(
         node_count: nodes.len(),
         nodes,
         edges,
+        selected_output_node_ids: output_selection.selected_output_node_ids,
+        root_sampler_node_ids: output_selection.root_sampler_node_ids,
+        output_ambiguous: output_selection.ambiguous,
     }
 }
 
@@ -302,6 +310,9 @@ mod tests {
             .edges
             .iter()
             .any(|edge| { edge.source_node_id.starts_with("30:") && edge.target_node_id == "29" }));
+        assert_eq!(report.selected_output_node_ids, ["29"]);
+        assert_eq!(report.root_sampler_node_ids, ["30:3"]);
+        assert!(!report.output_ambiguous);
     }
 
     #[test]
@@ -334,6 +345,88 @@ mod tests {
         assert_eq!(report.source, "expanded_workflow");
         assert_eq!(report.nodes.len(), 1);
         assert_eq!(report.nodes[0].id, "2");
+        assert!(report.selected_output_node_ids.is_empty());
+        assert!(report.root_sampler_node_ids.is_empty());
+        assert!(!report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_exposes_all_selected_outputs_that_share_one_root_sampler() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "2": { "class_type": "KSampler", "inputs": { "model": [1, 0], "positive": [3, 0], "negative": [4, 0], "latent_image": [5, 0] } },
+                "6": { "class_type": "VAEDecode", "inputs": { "samples": [2, 0], "vae": [1, 2] } },
+                "10": { "class_type": "SaveImage", "inputs": { "images": [6, 0] } },
+                "11": { "class_type": "Save Image w/Metadata", "inputs": { "images": [6, 0] } },
+                "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+                "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "positive", "clip": [1, 1] } },
+                "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative", "clip": [1, 1] } },
+                "5": { "class_type": "EmptyLatentImage", "inputs": {} }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.selected_output_node_ids, ["10", "11"]);
+        assert_eq!(report.root_sampler_node_ids, ["2"]);
+        assert!(!report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_preserves_ambiguous_root_candidates_without_selecting_one() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "2": { "class_type": "KSampler", "inputs": { "latent_image": [1, 0] } },
+                "3": { "class_type": "VAEDecode", "inputs": { "samples": [2, 0] } },
+                "4": { "class_type": "SaveImage", "inputs": { "images": [3, 0] } },
+                "10": { "class_type": "KSampler", "inputs": { "latent_image": [9, 0] } },
+                "11": { "class_type": "VAEDecode", "inputs": { "samples": [10, 0] } },
+                "12": { "class_type": "SaveImage", "inputs": { "images": [11, 0] } },
+                "1": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "9": { "class_type": "EmptyLatentImage", "inputs": {} }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.selected_output_node_ids, ["4", "12"]);
+        assert_eq!(report.root_sampler_node_ids, ["2", "10"]);
+        assert!(report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_uses_preview_only_outputs_and_keeps_samplerless_saves_visible() {
+        let preview_chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "KSampler", "inputs": { "latent_image": [2, 0] } },
+                "2": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "3": { "class_type": "VAEDecode", "inputs": { "samples": [1, 0] } },
+                "4": { "class_type": "PreviewImage", "inputs": { "images": [3, 0] } }
+            })
+            .to_string(),
+        )]);
+        let preview_report = build_comfyui_workflow_graph_report(&preview_chunks);
+        assert_eq!(preview_report.selected_output_node_ids, ["4"]);
+        assert_eq!(preview_report.root_sampler_node_ids, ["1"]);
+        assert!(!preview_report.output_ambiguous);
+
+        let samplerless_chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "LoadImage", "inputs": {} },
+                "2": { "class_type": "SaveImage", "inputs": { "images": [1, 0] } }
+            })
+            .to_string(),
+        )]);
+        let samplerless_report = build_comfyui_workflow_graph_report(&samplerless_chunks);
+        assert_eq!(samplerless_report.selected_output_node_ids, ["2"]);
+        assert!(samplerless_report.root_sampler_node_ids.is_empty());
+        assert!(!samplerless_report.output_ambiguous);
     }
 
     #[test]

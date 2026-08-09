@@ -31,6 +31,13 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) traversal_issues_truncated: bool,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct OutputSelection {
+    pub(crate) selected_output_node_ids: Vec<String>,
+    pub(crate) root_sampler_node_ids: Vec<String>,
+    pub(crate) ambiguous: bool,
+}
+
 pub struct ComfyEvaluator<'a> {
     pub graph: &'a ComfyGraph,
 }
@@ -56,36 +63,19 @@ impl<'a> ComfyEvaluator<'a> {
         &self,
         collect_traversal_issues: bool,
     ) -> (ImageMetadata, OutputTraversalDiagnostics) {
-        let output_nodes = self.find_output_nodes();
+        let output_selection = self.output_selection();
         let mut diagnostics = OutputTraversalDiagnostics {
-            selected_output_candidate_count: output_nodes.len(),
+            selected_output_candidate_count: output_selection.selected_output_node_ids.len(),
+            unique_root_sampler_count: output_selection.root_sampler_node_ids.len(),
+            ambiguous: output_selection.ambiguous,
             ..OutputTraversalDiagnostics::default()
         };
-        let mut root_sampler_ids = Vec::new();
-
-        for output_id in output_nodes {
-            let mut visited = HashSet::new();
-            let mut sampler_ids = Vec::new();
-            self.find_upstream_samplers(&output_id, &mut visited, 0, &mut sampler_ids);
-
-            for sampler_id in sampler_ids {
-                for root_sampler_id in self.find_root_sampler_ids(&sampler_id) {
-                    if !root_sampler_ids.contains(&root_sampler_id) {
-                        root_sampler_ids.push(root_sampler_id);
-                    }
-                }
-            }
-        }
-
-        root_sampler_ids.sort_by(|left, right| compare_node_ids(left, right));
-        diagnostics.unique_root_sampler_count = root_sampler_ids.len();
-        diagnostics.ambiguous = root_sampler_ids.len() > 1;
 
         if diagnostics.ambiguous {
             return (ImageMetadata::default(), diagnostics);
         }
 
-        let Some(root_sampler_id) = root_sampler_ids.first() else {
+        let Some(root_sampler_id) = output_selection.root_sampler_node_ids.first() else {
             return (ImageMetadata::default(), diagnostics);
         };
         let Some(root_node) = self.graph.get_node(root_sampler_id) else {
@@ -143,6 +133,32 @@ impl<'a> ComfyEvaluator<'a> {
         }
 
         (metadata, diagnostics)
+    }
+
+    pub(crate) fn output_selection(&self) -> OutputSelection {
+        let selected_output_node_ids = self.find_output_nodes();
+        let mut root_sampler_node_ids = Vec::new();
+
+        for output_id in &selected_output_node_ids {
+            let mut visited = HashSet::new();
+            let mut sampler_ids = Vec::new();
+            self.find_upstream_samplers(output_id, &mut visited, 0, &mut sampler_ids);
+
+            for sampler_id in sampler_ids {
+                for root_sampler_id in self.find_root_sampler_ids(&sampler_id) {
+                    if !root_sampler_node_ids.contains(&root_sampler_id) {
+                        root_sampler_node_ids.push(root_sampler_id);
+                    }
+                }
+            }
+        }
+
+        root_sampler_node_ids.sort_by(|left, right| compare_node_ids(left, right));
+        OutputSelection {
+            selected_output_node_ids,
+            ambiguous: root_sampler_node_ids.len() > 1,
+            root_sampler_node_ids,
+        }
     }
 
     pub fn extract_from_all_samplers(&self) -> ImageMetadata {
