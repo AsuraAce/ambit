@@ -455,7 +455,13 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            fake_replay(false),
+            |_| {
+                Ok((
+                    r#"{"parserOutputMatches":false,"metadataOutputMatches":false,"diagnosticsMatch":true}"#
+                        .to_string(),
+                    false,
+                ))
+            },
             fake_prepare(b"{}\n"),
             fake_fixture_inspect(true),
         );
@@ -463,13 +469,13 @@ mod tests {
         assert_eq!(code, EXIT_OK);
         assert!(String::from_utf8(stdout)
             .unwrap()
-            .contains(r#""parserOutputMatches":false"#));
+            .contains(r#""metadataOutputMatches":false"#));
         assert!(stderr.is_empty());
         let _ = fs::remove_file(path);
     }
 
     #[test]
-    fn verify_mode_uses_exit_two_for_drift() {
+    fn verify_mode_uses_exit_two_for_diagnostics_only_drift() {
         let path = temp_file("verify_mismatch", b"{}");
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
@@ -479,7 +485,13 @@ mod tests {
             &mut stdout,
             &mut stderr,
             1024,
-            fake_replay(false),
+            |_| {
+                Ok((
+                    r#"{"parserOutputMatches":false,"metadataOutputMatches":true,"diagnosticsMatch":false}"#
+                        .to_string(),
+                    false,
+                ))
+            },
             fake_prepare(b"{}\n"),
             fake_fixture_inspect(true),
         );
@@ -487,7 +499,7 @@ mod tests {
         assert_eq!(code, EXIT_MISMATCH);
         assert!(String::from_utf8(stdout)
             .unwrap()
-            .contains(r#""parserOutputMatches":false"#));
+            .contains(r#""diagnosticsMatch":false"#));
         assert!(String::from_utf8(stderr)
             .unwrap()
             .contains("parser output does not match"));

@@ -63,6 +63,14 @@ was explicitly recorded, including an empty object or array, is compared
 normally. All other metadata and diagnostics differences still count as parser
 drift and fail `--verify`.
 
+Replay reports separate the result into `metadataOutputMatches` for differences
+under the extracted metadata preview and `diagnosticsMatch` for graph,
+provenance, and traversal evidence. Their corresponding difference counts make
+the source of drift visible, while `parserOutputMatches` remains the strict
+combined verdict used by `--verify`. Unknown top-level diagnostics fields are
+rejected rather than silently discarded; use tooling from the same or a newer
+Ambit version to inspect such a bundle.
+
 ## 3. Prepare A Candidate
 
 Create an exact, deterministic chunk-only candidate in a private working area:
