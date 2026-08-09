@@ -20,6 +20,7 @@ is safe to publish. Human review remains mandatory.
 | Support bundle | Exact raw metadata chunks plus diagnostics and a minimal image descriptor | Private. Store outside the repository and never commit it. |
 | Fixture candidate | Exact chunk map copied from the support bundle, possibly edited | Private until every chunk has been manually reviewed and approved. |
 | Inspector report | Parsed diagnostics, hashes, summaries, and optional differences | Review before sharing because parsed prompt and resource values may be sensitive. |
+| Batch replay summary | Content hashes, status counts, and value-redacted per-bundle summaries | Review before sharing. It omits filenames, paths, and raw values, but still describes private parser cases. |
 
 The repository ignores the default `ambit-comfyui-support*.json` filename as a
 defense in depth. Renamed bundles are not guaranteed to be ignored. Always check
@@ -67,10 +68,38 @@ The deterministic JSON summary omits raw chunks, chunk names and lengths,
 complete diagnostics, metadata values, provenance values, and the
 recorded/current values behind each difference. It retains version and image
 shape information, prompt/workflow presence, graph and output-selection counts,
-strict verdicts, compatibility exclusions, and difference paths and kinds. It
-is value-redacted rather than automatically publication-safe; review it before
-sharing. `--summary --verify` retains the same strict exit-code behavior as the
-full report.
+strict verdicts, compatibility exclusions, difference paths and kinds, and the
+SHA-256 of the exact support-bundle bytes. It is value-redacted rather than
+automatically publication-safe; review it before sharing. `--summary --verify`
+retains the same strict exit-code behavior as the full report.
+
+Inspect a private directory of support bundles when several cases need the same
+replay pass:
+
+```powershell
+pnpm run inspect:comfyui-support-batch -- "C:\private\support-cases"
+```
+
+Batch intake is deliberately narrow. It reads at most 256 direct, regular
+`.json` files, does not recurse, ignores other entries and symbolic links, and
+processes files sequentially with the same 64 MiB per-file limit as single
+replay. A readable case is identified only by the SHA-256 of its exact bundle
+bytes. Renaming or moving an unchanged bundle therefore keeps its identity,
+while changing any byte produces a new identity. Duplicate bundle contents are
+reported as duplicate hash entries rather than silently collapsed.
+
+The compact JSON report contains aggregate intake and drift counts plus one
+value-redacted replay summary per valid bundle. Invalid readable bundles retain
+only their hash and `invalid` status. Unreadable and oversized files contribute
+only aggregate counts because their bytes cannot be safely identified. Cases
+are sorted by content hash, so output is deterministic and does not expose file
+or directory names.
+
+Without `--verify`, valid parser drift is reported with exit code `0`. With
+`--verify`, valid drift uses exit code `2`. Any unreadable, oversized, or invalid
+input uses exit code `1` and takes precedence over drift, while the completed
+batch report is still written. Batch mode is always value-redacted and cannot
+be combined with fixture modes, comparison, acknowledgement, or `--summary`.
 
 Schema-1 bundles created before newer diagnostics fields were introduced remain
 replayable. When a recorded bundle omitted `fieldSourceNodeIds` or
@@ -169,6 +198,7 @@ support case is complete.
 
 ```powershell
 pnpm run inspect:comfyui-support -- <bundle-path> [--verify] [--summary]
+pnpm run inspect:comfyui-support-batch -- <directory> [--verify]
 pnpm run prepare:comfyui-fixture -- <bundle-path> <output.chunks.json> --acknowledge-sensitive-data
 pnpm run inspect:comfyui-fixture -- <candidate.chunks.json> [--compare-support <bundle-path>] [--verify]
 ```

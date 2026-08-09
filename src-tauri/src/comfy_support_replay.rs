@@ -8,7 +8,7 @@ use std::fmt;
 
 pub const COMFY_SUPPORT_BUNDLE_MAX_BYTES: usize = 64 * 1024 * 1024;
 const SUPPORT_BUNDLE_SCHEMA_VERSION: u32 = 1;
-const SUPPORT_REPLAY_SUMMARY_VERSION: u32 = 1;
+pub const SUPPORT_REPLAY_SUMMARY_VERSION: u32 = 2;
 const FIXTURE_CANDIDATE_REPORT_VERSION: u32 = 1;
 const RECORDED_DIAGNOSTIC_FIELD_POLICIES: [RecordedDiagnosticFieldPolicy; 16] = [
     RecordedDiagnosticFieldPolicy::ignored("appVersion"),
@@ -175,6 +175,7 @@ struct ReplayReport {
 #[serde(rename_all = "camelCase")]
 struct ReplaySummaryReport {
     support_replay_summary_version: u32,
+    bundle_sha256: String,
     support_bundle_schema_version: u32,
     recorded_app_version: String,
     recorded_parser_version: u32,
@@ -315,7 +316,7 @@ fn summarize_comfyui_support_bundle_replay_with_limit(
 ) -> Result<(String, bool), String> {
     let report = build_replay_report(input, max_bytes)?;
     let parser_output_matches = report.parser_output_matches;
-    let summary = ReplaySummaryReport::from(&report);
+    let summary = ReplaySummaryReport::new(&report, input);
     let output = serde_json::to_string(&summary)
         .map_err(|_| "Failed to serialize support bundle replay summary".to_string())?;
 
@@ -356,12 +357,13 @@ fn build_replay_report(input: &[u8], max_bytes: usize) -> Result<ReplayReport, S
     })
 }
 
-impl From<&ReplayReport> for ReplaySummaryReport {
-    fn from(report: &ReplayReport) -> Self {
+impl ReplaySummaryReport {
+    fn new(report: &ReplayReport, input: &[u8]) -> Self {
         let recorded = &report.recorded_diagnostics;
         let current = &report.current_diagnostics;
         Self {
             support_replay_summary_version: SUPPORT_REPLAY_SUMMARY_VERSION,
+            bundle_sha256: hex::encode(Sha256::digest(input)),
             support_bundle_schema_version: report.support_bundle_schema_version,
             recorded_app_version: replay_summary_app_version(&recorded.app_version),
             recorded_parser_version: recorded.parser_version,
@@ -925,7 +927,9 @@ mod tests {
         }
 
         let report: Value = serde_json::from_str(&first).unwrap();
-        assert_eq!(report["supportReplaySummaryVersion"], 1);
+        assert_eq!(report["supportReplaySummaryVersion"], 2);
+        assert_eq!(report["bundleSha256"].as_str().unwrap().len(), 64);
+        assert_eq!(report["bundleSha256"], hex::encode(Sha256::digest(&input)));
         assert_eq!(report["supportBundleSchemaVersion"], 1);
         assert_eq!(report["recordedAppVersion"], "unavailable");
         assert_eq!(report["currentAppVersion"], env!("CARGO_PKG_VERSION"));
