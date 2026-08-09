@@ -43,6 +43,7 @@ export interface WorkflowGraphSource {
     edges: WorkflowDisplayEdge[];
     selectedOutputNodeIds: string[];
     rootSamplerNodeIds: string[];
+    selectedBranchNodeIds: string[];
     outputAmbiguous: boolean;
     normalizedByBackend?: boolean;
 }
@@ -51,6 +52,7 @@ interface ComfyWorkflowGraphReportLike {
     source: string;
     selectedOutputNodeIds?: string[];
     rootSamplerNodeIds?: string[];
+    selectedBranchNodeIds?: string[];
     outputAmbiguous?: boolean;
     edges?: Array<{
         sourceNodeId: string;
@@ -218,6 +220,7 @@ export const selectWorkflowGraphSource = ({
             edges: [],
             selectedOutputNodeIds: [],
             rootSamplerNodeIds: [],
+            selectedBranchNodeIds: [],
             outputAmbiguous: false
         };
     }
@@ -230,6 +233,7 @@ export const selectWorkflowGraphSource = ({
             edges: [],
             selectedOutputNodeIds: [],
             rootSamplerNodeIds: [],
+            selectedBranchNodeIds: [],
             outputAmbiguous: false
         };
     }
@@ -256,6 +260,7 @@ export const workflowGraphSourceFromBackend = (
         edges: report.edges ?? [],
         selectedOutputNodeIds: report.selectedOutputNodeIds ?? [],
         rootSamplerNodeIds: report.rootSamplerNodeIds ?? [],
+        selectedBranchNodeIds: report.selectedBranchNodeIds ?? [],
         outputAmbiguous: report.outputAmbiguous ?? false,
         nodes: report.nodes.map((node) => ({
             id: node.id,

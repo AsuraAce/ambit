@@ -38,6 +38,7 @@ pub struct ComfyWorkflowGraphReport {
     pub edges: Vec<ComfyWorkflowDisplayEdge>,
     pub selected_output_node_ids: Vec<String>,
     pub root_sampler_node_ids: Vec<String>,
+    pub selected_branch_node_ids: Vec<String>,
     pub output_ambiguous: bool,
 }
 
@@ -62,7 +63,9 @@ pub(crate) fn build_comfyui_workflow_graph_report(
         ComfyGraph::from_chunks(chunks)
     };
     let edges = display_edges(&graph);
-    let output_selection = ComfyEvaluator::new(&graph).output_selection();
+    let evaluator = ComfyEvaluator::new(&graph);
+    let output_selection = evaluator.output_selection();
+    let selected_branch_node_ids = evaluator.selected_branch_node_ids(&output_selection);
     let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
     nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
 
@@ -105,6 +108,7 @@ pub(crate) fn build_comfyui_workflow_graph_report(
         edges,
         selected_output_node_ids: output_selection.selected_output_node_ids,
         root_sampler_node_ids: output_selection.root_sampler_node_ids,
+        selected_branch_node_ids,
         output_ambiguous: output_selection.ambiguous,
     }
 }
@@ -312,6 +316,10 @@ mod tests {
             .any(|edge| { edge.source_node_id.starts_with("30:") && edge.target_node_id == "29" }));
         assert_eq!(report.selected_output_node_ids, ["29"]);
         assert_eq!(report.root_sampler_node_ids, ["30:3"]);
+        assert!(report.selected_branch_node_ids.contains(&"29".to_string()));
+        assert!(report
+            .selected_branch_node_ids
+            .contains(&"30:3".to_string()));
         assert!(!report.output_ambiguous);
     }
 
@@ -358,11 +366,12 @@ mod tests {
                 "2": { "class_type": "KSampler", "inputs": { "model": [1, 0], "positive": [3, 0], "negative": [4, 0], "latent_image": [5, 0] } },
                 "6": { "class_type": "VAEDecode", "inputs": { "samples": [2, 0], "vae": [1, 2] } },
                 "10": { "class_type": "SaveImage", "inputs": { "images": [6, 0] } },
-                "11": { "class_type": "Save Image w/Metadata", "inputs": { "images": [6, 0] } },
+                "11": { "class_type": "Save Image w/Metadata", "inputs": { "images": [6, 0], "model_name": [99, 0] } },
                 "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
                 "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "positive", "clip": [1, 1] } },
                 "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative", "clip": [1, 1] } },
-                "5": { "class_type": "EmptyLatentImage", "inputs": {} }
+                "5": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "99": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "stale.safetensors" } }
             })
             .to_string(),
         )]);
@@ -371,6 +380,10 @@ mod tests {
 
         assert_eq!(report.selected_output_node_ids, ["10", "11"]);
         assert_eq!(report.root_sampler_node_ids, ["2"]);
+        assert_eq!(
+            report.selected_branch_node_ids,
+            ["1", "2", "3", "4", "5", "6", "10", "11"]
+        );
         assert!(!report.output_ambiguous);
     }
 
@@ -395,6 +408,7 @@ mod tests {
 
         assert_eq!(report.selected_output_node_ids, ["4", "12"]);
         assert_eq!(report.root_sampler_node_ids, ["2", "10"]);
+        assert!(report.selected_branch_node_ids.is_empty());
         assert!(report.output_ambiguous);
     }
 
@@ -413,6 +427,10 @@ mod tests {
         let preview_report = build_comfyui_workflow_graph_report(&preview_chunks);
         assert_eq!(preview_report.selected_output_node_ids, ["4"]);
         assert_eq!(preview_report.root_sampler_node_ids, ["1"]);
+        assert_eq!(
+            preview_report.selected_branch_node_ids,
+            ["1", "2", "3", "4"]
+        );
         assert!(!preview_report.output_ambiguous);
 
         let samplerless_chunks = HashMap::from([(
@@ -426,7 +444,56 @@ mod tests {
         let samplerless_report = build_comfyui_workflow_graph_report(&samplerless_chunks);
         assert_eq!(samplerless_report.selected_output_node_ids, ["2"]);
         assert!(samplerless_report.root_sampler_node_ids.is_empty());
+        assert!(samplerless_report.selected_branch_node_ids.is_empty());
         assert!(!samplerless_report.output_ambiguous);
+    }
+
+    #[test]
+    fn selected_branch_follows_the_active_comfy_switch_dependency() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "active.safetensors" } },
+                "2": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "inactive.safetensors" } },
+                "3": { "class_type": "PrimitiveBoolean", "inputs": { "value": true } },
+                "4": { "class_type": "ComfySwitchNode", "inputs": { "switch": [3, 0], "on_true": [1, 0], "on_false": [2, 0] } },
+                "5": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "6": { "class_type": "KSampler", "inputs": { "model": [4, 0], "latent_image": [5, 0] } },
+                "7": { "class_type": "VAEDecode", "inputs": { "samples": [6, 0], "vae": [1, 2] } },
+                "8": { "class_type": "SaveImage", "inputs": { "images": [7, 0] } }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.root_sampler_node_ids, ["6"]);
+        assert_eq!(
+            report.selected_branch_node_ids,
+            ["1", "3", "4", "5", "6", "7", "8"]
+        );
+        assert!(!report.selected_branch_node_ids.contains(&"2".to_string()));
+    }
+
+    #[test]
+    fn unresolved_selected_switch_keeps_the_branch_unavailable() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "2": { "class_type": "PrimitiveBoolean", "inputs": { "value": true } },
+                "3": { "class_type": "ComfySwitchNode", "inputs": { "switch": [2, 0], "on_true": [99, 0], "on_false": [1, 0] } },
+                "4": { "class_type": "KSampler", "inputs": { "model": [3, 0], "latent_image": [1, 0] } },
+                "5": { "class_type": "VAEDecode", "inputs": { "samples": [4, 0] } },
+                "6": { "class_type": "SaveImage", "inputs": { "images": [5, 0] } }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.root_sampler_node_ids, ["4"]);
+        assert!(report.selected_branch_node_ids.is_empty());
     }
 
     #[test]

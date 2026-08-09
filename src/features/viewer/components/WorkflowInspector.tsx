@@ -612,6 +612,7 @@ const WorkflowNodeSection: React.FC<{
 
 export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onWorkflowLoaded }) => {
     const [searchQuery, setSearchQuery] = useState('');
+    const [nodeMode, setNodeMode] = useState<'all' | 'selected'>('all');
     const [copied, setCopied] = useState(false);
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [backendWorkflowGraph, setBackendWorkflowGraph] = useState<{
@@ -663,6 +664,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     );
     const selectedOutputNodeIds = workflowGraphSource?.selectedOutputNodeIds ?? [];
     const rootSamplerNodeIds = workflowGraphSource?.rootSamplerNodeIds ?? [];
+    const selectedBranchNodeIds = workflowGraphSource?.selectedBranchNodeIds ?? [];
     const outputAmbiguous = workflowGraphSource?.outputAmbiguous ?? false;
     const visibleSelectedOutputNodeIds = useMemo(
         () => selectedOutputNodeIds.filter((nodeId) => nodeById.has(nodeId)),
@@ -672,6 +674,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         () => rootSamplerNodeIds.filter((nodeId) => nodeById.has(nodeId)),
         [nodeById, rootSamplerNodeIds]
     );
+    const visibleSelectedBranchNodeIds = useMemo(
+        () => selectedBranchNodeIds.filter((nodeId) => nodeById.has(nodeId)),
+        [nodeById, selectedBranchNodeIds]
+    );
     const selectedOutputNodeIdSet = useMemo(
         () => new Set(visibleSelectedOutputNodeIds),
         [visibleSelectedOutputNodeIds]
@@ -680,18 +686,45 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         () => new Set(visibleRootSamplerNodeIds),
         [visibleRootSamplerNodeIds]
     );
+    const selectedBranchNodeIdSet = useMemo(
+        () => new Set(visibleSelectedBranchNodeIds),
+        [visibleSelectedBranchNodeIds]
+    );
+    const selectedBranchAvailable = workflowGraphSource?.normalizedByBackend === true
+        && !outputAmbiguous
+        && visibleRootSamplerNodeIds.length === 1
+        && visibleSelectedBranchNodeIds.length > 0;
+    const selectedBranchUnavailableTitle = outputAmbiguous
+        ? 'Unavailable because selected outputs resolve to different root samplers.'
+        : visibleSelectedOutputNodeIds.length === 0
+            ? 'Unavailable because no saved output was selected.'
+            : visibleRootSamplerNodeIds.length === 0
+                ? 'Unavailable because no root sampler was found.'
+                : workflowGraphSource?.normalizedByBackend !== true
+                    ? 'Unavailable without a normalized ComfyUI graph.'
+                    : 'Unavailable because the selected dependency branch could not be resolved.';
 
     const handleFollowConnection = React.useCallback((nodeId: string) => {
+        if (nodeMode === 'selected' && !selectedBranchNodeIdSet.has(nodeId)) {
+            setNodeMode('all');
+        }
         setSearchQuery('');
         setFocusedConnection((current) => ({
             nodeId,
             requestId: (current?.requestId ?? 0) + 1
         }));
-    }, []);
+    }, [nodeMode, selectedBranchNodeIdSet]);
 
     React.useEffect(() => {
         setFocusedConnection(null);
+        setNodeMode('all');
     }, [image.id, workflowGraphSource?.json, workflowGraphSource?.normalizedByBackend, workflowGraphSource?.source]);
+
+    React.useEffect(() => {
+        if (nodeMode === 'selected' && !selectedBranchAvailable) {
+            setNodeMode('all');
+        }
+    }, [nodeMode, selectedBranchAvailable]);
 
     React.useEffect(() => {
         if (image.metadata.tool !== 'ComfyUI' || Object.keys(originalChunks).length === 0) {
@@ -796,16 +829,22 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         }
     };
 
+    const modeNodes = useMemo(
+        () => nodeMode === 'selected' && selectedBranchAvailable
+            ? workflowNodes.filter((node) => selectedBranchNodeIdSet.has(String(node.id)))
+            : workflowNodes,
+        [nodeMode, selectedBranchAvailable, selectedBranchNodeIdSet, workflowNodes]
+    );
     const filteredNodes = useMemo(() => {
-        if (!searchQuery) return workflowNodes;
+        if (!searchQuery) return modeNodes;
         const lowerQ = searchQuery.toLowerCase();
-        return workflowNodes.filter(node =>
+        return modeNodes.filter(node =>
             node.title.toLowerCase().includes(lowerQ) ||
             node.type.toLowerCase().includes(lowerQ) ||
             String(node.id).toLowerCase().includes(lowerQ) ||
             node.subgraphPath?.some(segment => segment.toLowerCase().includes(lowerQ))
         );
-    }, [workflowNodes, searchQuery]);
+    }, [modeNodes, searchQuery]);
     const filteredNodeGroups = useMemo(() => groupWorkflowNodes(filteredNodes), [filteredNodes]);
 
     React.useEffect(() => {
@@ -837,7 +876,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             <Workflow className="w-4 h-4" /> Workflow Nodes
                         </h3>
                         <div className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full">
-                            {workflowNodes.length}
+                            {nodeMode === 'selected' ? `${modeNodes.length}/${workflowNodes.length}` : workflowNodes.length}
                         </div>
                         {graphSourceLabel && (
                             <div className="rounded-full border border-sage-200 dark:border-sage-800 bg-sage-50 dark:bg-sage-900/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:text-sage-400">
@@ -867,6 +906,39 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                         </div>
                     )}
                 </div>
+
+                {image.metadata.tool === 'ComfyUI' && workflowNodes.length > 0 && (
+                    <div
+                        role="group"
+                        aria-label="Workflow node view"
+                        className="grid grid-cols-2 rounded-md border border-gray-200 bg-gray-100 p-0.5 dark:border-white/10 dark:bg-black/20"
+                    >
+                        <button
+                            type="button"
+                            aria-pressed={nodeMode === 'all'}
+                            onClick={() => setNodeMode('all')}
+                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${nodeMode === 'all'
+                                ? 'bg-white text-gray-800 shadow-sm dark:bg-zinc-700 dark:text-gray-100'
+                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                        >
+                            All Nodes
+                        </button>
+                        <button
+                            type="button"
+                            aria-pressed={nodeMode === 'selected'}
+                            disabled={!selectedBranchAvailable}
+                            title={selectedBranchAvailable ? 'Show the parser-selected saved-output dependency branch.' : selectedBranchUnavailableTitle}
+                            onClick={() => setNodeMode('selected')}
+                            className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${nodeMode === 'selected'
+                                ? 'bg-sage-600 text-white shadow-sm dark:bg-sage-500 dark:text-zinc-950'
+                                : selectedBranchAvailable
+                                    ? 'text-gray-500 hover:text-sage-700 dark:text-gray-400 dark:hover:text-sage-300'
+                                    : 'cursor-not-allowed text-gray-300 dark:text-gray-600'}`}
+                        >
+                            Selected Branch
+                        </button>
+                    </div>
+                )}
 
                 {workflowNodes.length > 0 && (
                     <div className="relative group">

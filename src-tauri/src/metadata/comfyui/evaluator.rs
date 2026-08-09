@@ -1,7 +1,8 @@
 use super::diagnostics::ComfyTraversalIssue;
 use super::graph::{
-    compare_node_ids, get_input_connection, get_node_input_link, get_node_input_links,
-    get_node_type, get_source_id, ComfyGraph, InputConnection,
+    compare_node_ids, get_input_connection, get_input_source_by_slot, get_node_input_link,
+    get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
+    InputConnection, InputSourceConnection,
 };
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
@@ -159,6 +160,68 @@ impl<'a> ComfyEvaluator<'a> {
             ambiguous: root_sampler_node_ids.len() > 1,
             root_sampler_node_ids,
         }
+    }
+
+    pub(crate) fn selected_branch_node_ids(
+        &self,
+        output_selection: &OutputSelection,
+    ) -> Vec<String> {
+        if output_selection.ambiguous
+            || output_selection.selected_output_node_ids.is_empty()
+            || output_selection.root_sampler_node_ids.len() != 1
+        {
+            return Vec::new();
+        }
+
+        let root_sampler_id = &output_selection.root_sampler_node_ids[0];
+        let mut branch = HashSet::new();
+        let mut pending = Vec::new();
+
+        for output_id in &output_selection.selected_output_node_ids {
+            let Some(output_node) = self.graph.get_node(output_id) else {
+                return Vec::new();
+            };
+            branch.insert(output_id.clone());
+            pending.extend(self.direct_image_like_source_ids(output_id, output_node));
+        }
+
+        while let Some(node_id) = pending.pop() {
+            if !branch.insert(node_id.clone()) {
+                continue;
+            }
+
+            let Some(node) = self.graph.get_node(&node_id) else {
+                return Vec::new();
+            };
+
+            if get_node_type(node) == "ComfySwitchNode" {
+                let Some(branch_input) = get_switch_branch_input_strict(self.graph, node) else {
+                    return Vec::new();
+                };
+
+                match get_input_connection(node, branch_input) {
+                    InputConnection::Connected(source_id) => pending.push(source_id),
+                    InputConnection::DeclaredUnresolved => return Vec::new(),
+                    InputConnection::Unconnected => {}
+                }
+                match get_input_connection(node, "switch") {
+                    InputConnection::Connected(source_id) => pending.push(source_id),
+                    InputConnection::DeclaredUnresolved => return Vec::new(),
+                    InputConnection::Unconnected => {}
+                }
+                continue;
+            }
+
+            pending.extend(self.direct_connected_source_ids(&node_id, node));
+        }
+
+        if !branch.contains(root_sampler_id) {
+            return Vec::new();
+        }
+
+        let mut branch_node_ids = branch.into_iter().collect::<Vec<_>>();
+        branch_node_ids.sort_by(|left, right| compare_node_ids(left, right));
+        branch_node_ids
     }
 
     pub fn extract_from_all_samplers(&self) -> ImageMetadata {
@@ -405,6 +468,41 @@ impl<'a> ComfyEvaluator<'a> {
         if self.graph.get_node(&source_id).is_some() && !sources.contains(&source_id) {
             sources.push(source_id);
         }
+    }
+
+    fn direct_connected_source_ids(&self, node_id: &str, node: &Value) -> Vec<String> {
+        let mut sources = Vec::new();
+
+        match node.get("inputs") {
+            Some(Value::Object(inputs)) => {
+                for input_name in inputs.keys() {
+                    if let InputConnection::Connected(source_id) =
+                        get_input_connection(node, input_name)
+                    {
+                        self.push_existing_source(&mut sources, source_id);
+                    }
+                }
+            }
+            Some(Value::Array(inputs)) => {
+                for input_slot in 0..inputs.len() {
+                    if let InputSourceConnection::Connected(source) =
+                        get_input_source_by_slot(node, input_slot)
+                    {
+                        self.push_existing_source(&mut sources, source.node_id);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if get_node_type(node) == "GetNode" {
+            if let Some(source_id) = get_source_id(self.graph, node_id, "source") {
+                self.push_existing_source(&mut sources, source_id);
+            }
+        }
+
+        sources.sort_by(|left, right| compare_node_ids(left, right));
+        sources
     }
 
     fn find_root_sampler_ids(&self, start_sampler_id: &str) -> Vec<String> {

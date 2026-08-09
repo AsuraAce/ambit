@@ -51,6 +51,7 @@ describe('workflow graph source selection', () => {
         expect(source?.edges).toEqual([]);
         expect(source?.selectedOutputNodeIds).toEqual([]);
         expect(source?.rootSamplerNodeIds).toEqual([]);
+        expect(source?.selectedBranchNodeIds).toEqual([]);
         expect(source?.outputAmbiguous).toBe(false);
         expect(source?.nodes.some(node => node.id === '30:19' && node.title === 'Positive Prompt')).toBe(true);
     });
@@ -135,6 +136,7 @@ describe('workflow graph source selection', () => {
             source: 'expanded_workflow',
             selectedOutputNodeIds: ['29'],
             rootSamplerNodeIds: ['30:3'],
+            selectedBranchNodeIds: ['29', '30:3', '30:19'],
             outputAmbiguous: false,
             edges: [{
                 sourceNodeId: '30:19',
@@ -158,6 +160,7 @@ describe('workflow graph source selection', () => {
             normalizedByBackend: true,
             selectedOutputNodeIds: ['29'],
             rootSamplerNodeIds: ['30:3'],
+            selectedBranchNodeIds: ['29', '30:3', '30:19'],
             outputAmbiguous: false,
             edges: [{
                 sourceNodeId: '30:19',
