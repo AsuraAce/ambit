@@ -90,23 +90,29 @@ pub async fn get_parameter_ranges(
             _ => Value::Text(p.to_string()),
         }).collect();
 
-        let reactive_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
+        let requested_where = where_clause.unwrap_or_else(|| "WHERE is_deleted = 0".to_string());
+        let requested_conditions = requested_where
+            .trim()
+            .strip_prefix("WHERE ")
+            .or_else(|| requested_where.trim().strip_prefix("where "))
+            .unwrap_or(requested_where.trim());
+        let reactive_where = format!("WHERE invoke_scope_hidden = 0 AND ({requested_conditions})");
         let (from_clause, mut query_params) =
             build_parameter_scope_from_clause(collection_id.as_deref(), lora_name.as_deref());
         query_params.extend(sql_params);
 
         // Ranges
-        let steps = conn.query_row("SELECT MIN(steps), MAX(steps) FROM images WHERE is_deleted = 0 AND steps > 0", [], |row| {
+        let steps = conn.query_row("SELECT MIN(steps), MAX(steps) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND steps > 0", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
 
-        let cfg = conn.query_row("SELECT MIN(cfg), MAX(cfg) FROM images WHERE is_deleted = 0 AND cfg > 0", [], |row| {
+        let cfg = conn.query_row("SELECT MIN(cfg), MAX(cfg) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND cfg > 0", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
 
-        let denoising_strength = conn.query_row("SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) FROM images WHERE is_deleted = 0 AND json_extract(metadata_json, '$.denoisingStrength') IS NOT NULL", [], |row| {
+        let denoising_strength = conn.query_row("SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND json_extract(metadata_json, '$.denoisingStrength') IS NOT NULL", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
@@ -268,7 +274,7 @@ pub struct MetadataStats {
 #[specta::specta]
 pub async fn get_metadata_stats(app: AppHandle) -> Result<MetadataStats, String> {
     run_blocking(app, move |conn| {
-        let mut stmt = conn.prepare("SELECT COUNT(*), COUNT(original_metadata_json), COUNT(parser_version), SUM(CASE WHEN parser_version = 0 THEN 1 ELSE 0 END), SUM(CASE WHEN parser_version = 1 THEN 1 ELSE 0 END) FROM images WHERE is_deleted = 0").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT COUNT(*), COUNT(original_metadata_json), COUNT(parser_version), SUM(CASE WHEN parser_version = 0 THEN 1 ELSE 0 END), SUM(CASE WHEN parser_version = 1 THEN 1 ELSE 0 END) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0").map_err(|e| e.to_string())?;
         stmt.query_row([], |row| Ok(MetadataStats {
             total: row.get(0)?, with_raw: row.get(1)?, with_pv: row.get(2)?,
             v0: row.get::<_, Option<i64>>(3)?.unwrap_or(0),

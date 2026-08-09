@@ -1,4 +1,5 @@
 use super::run_blocking;
+use crate::db::facets::FacetResourceTouches;
 use crate::db::{resolve_db_path, resolve_db_path_info, resolve_main_database_url};
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
@@ -7,7 +8,7 @@ use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use tauri::{AppHandle, Manager};
 
 pub struct FileHashBackfillState {
@@ -74,6 +75,49 @@ pub struct ExactDuplicateResolutionResult {
     pub keepers: Vec<ExactDuplicateKeeperState>,
 }
 
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovedLifecycleMutationResult {
+    pub affected_ids: Vec<String>,
+    pub not_found_ids: Vec<String>,
+    pub membership_warning_ids: Vec<String>,
+    pub touched_resources: FacetResourceTouches,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CollectionMembershipOperation {
+    Add,
+    Remove,
+    Move,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionMembershipMutationInput {
+    pub operation: CollectionMembershipOperation,
+    pub image_ids: Vec<String>,
+    pub source_collection_id: Option<String>,
+    pub target_collection_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionMembershipMutationResult {
+    pub affected_ids: Vec<String>,
+    pub source_collection_id: Option<String>,
+    pub target_collection_id: Option<String>,
+}
+
+static REMOVED_LIFECYCLE_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
+
+pub(crate) fn lock_removed_lifecycle() -> MutexGuard<'static, ()> {
+    REMOVED_LIFECYCLE_COORDINATOR
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[derive(Debug, Clone)]
 struct DuplicateRecordState {
     id: String,
@@ -123,7 +167,8 @@ fn load_file_hash_candidates(
             "
             SELECT id, path
             FROM images
-            WHERE is_deleted = 0
+            WHERE invoke_scope_hidden = 0
+              AND is_deleted = 0
               AND is_missing = 0
               AND group_id IS NULL
               AND IFNULL(is_intermediate_gen, 0) = 0
@@ -133,7 +178,8 @@ fn load_file_hash_candidates(
               AND file_size IN (
                 SELECT file_size
                 FROM images
-                WHERE is_deleted = 0
+                WHERE invoke_scope_hidden = 0
+                  AND is_deleted = 0
                   AND is_missing = 0
                   AND group_id IS NULL
                   AND IFNULL(is_intermediate_gen, 0) = 0
@@ -161,7 +207,8 @@ fn count_remaining_file_hash_candidates(conn: &Connection) -> usize {
         "
         SELECT COUNT(*)
         FROM images
-        WHERE is_deleted = 0
+        WHERE invoke_scope_hidden = 0
+          AND is_deleted = 0
           AND is_missing = 0
           AND group_id IS NULL
           AND IFNULL(is_intermediate_gen, 0) = 0
@@ -171,7 +218,8 @@ fn count_remaining_file_hash_candidates(conn: &Connection) -> usize {
           AND file_size IN (
             SELECT file_size
             FROM images
-            WHERE is_deleted = 0
+            WHERE invoke_scope_hidden = 0
+              AND is_deleted = 0
               AND is_missing = 0
               AND group_id IS NULL
               AND IFNULL(is_intermediate_gen, 0) = 0
@@ -195,6 +243,7 @@ fn load_eligible_duplicate_record(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
          FROM images
          WHERE id = ?1
+           AND invoke_scope_hidden = 0
            AND is_deleted = 0
            AND is_missing = 0
            AND group_id IS NULL
@@ -302,17 +351,18 @@ fn persist_removed_duplicate(
     let inserted = tx
         .execute(
             "INSERT OR REPLACE INTO removed_images (
-                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
                 micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
                 collection_ids_json, media_type, media_container, media_mime_type,
                 duration_ms, video_codec, video_profile, audio_present, audio_codec,
                 frame_rate_num, frame_rate_den, rotation_degrees, probe_status,
-                playback_status
+                playback_status, invoke_image_name, invoke_image_category,
+                invoke_image_origin, invoke_owner_id, invoke_scope_hidden, parser_version
              )
              SELECT
-                id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
+                id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
                 micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, ?2,
@@ -331,7 +381,9 @@ fn persist_removed_duplicate(
                 END,
                 media_type, media_container, media_mime_type, duration_ms, video_codec,
                 video_profile, audio_present, audio_codec, frame_rate_num, frame_rate_den,
-                rotation_degrees, probe_status, playback_status
+                rotation_degrees, probe_status, playback_status,
+                invoke_image_name, invoke_image_category, invoke_image_origin,
+                invoke_owner_id, invoke_scope_hidden, parser_version
              FROM images
              WHERE id = ?1",
             params![image_id, removed_at],
@@ -374,10 +426,580 @@ fn delete_duplicate_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), S
     Ok(())
 }
 
+fn normalize_requested_ids(ids: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    ids.iter()
+        .map(|id| id.trim().replace('\\', "/"))
+        .filter(|id| !id.is_empty() && seen.insert(id.clone()))
+        .collect()
+}
+
+fn add_touched_resource(values: &mut Vec<String>, value: Option<&str>, fallback: Option<&str>) {
+    let Some(value) = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or(fallback)
+    else {
+        return;
+    };
+    let weighted_index = value.find(" (");
+    let colon_index = value.find(':');
+    let cut_index = [weighted_index, colon_index]
+        .into_iter()
+        .flatten()
+        .filter(|index| *index > 0)
+        .min();
+    let value = cut_index.map_or(value, |index| &value[..index]).trim();
+    let lower = value.to_ascii_lowercase();
+    let value = [".safetensors", ".ckpt", ".pt", ".bin", ".pth"]
+        .into_iter()
+        .find(|extension| lower.ends_with(extension))
+        .map_or(value, |extension| &value[..value.len() - extension.len()])
+        .trim();
+    if !value.is_empty() && !values.iter().any(|existing| existing == value) {
+        values.push(value.to_string());
+    }
+}
+
+fn collect_touched_resources(metadata_json: Option<&str>, touches: &mut FacetResourceTouches) {
+    let Some(metadata_json) = metadata_json else {
+        return;
+    };
+    let Ok(metadata) = serde_json::from_str::<serde_json::Value>(metadata_json) else {
+        return;
+    };
+
+    add_touched_resource(
+        &mut touches.checkpoints,
+        metadata
+            .get("overrideModel")
+            .and_then(|value| value.as_str())
+            .or_else(|| metadata.get("model").and_then(|value| value.as_str())),
+        Some("Unknown"),
+    );
+    add_touched_resource(
+        &mut touches.tools,
+        metadata.get("tool").and_then(|value| value.as_str()),
+        Some("Unknown"),
+    );
+
+    for (json_key, values) in [
+        ("loras", &mut touches.loras),
+        ("embeddings", &mut touches.embeddings),
+        ("hypernetworks", &mut touches.hypernetworks),
+        ("controlNets", &mut touches.control_nets),
+        ("ipAdapters", &mut touches.ip_adapters),
+    ] {
+        if let Some(resources) = metadata.get(json_key).and_then(|value| value.as_array()) {
+            for resource in resources {
+                add_touched_resource(values, resource.as_str(), None);
+            }
+        }
+    }
+}
+
+fn load_collection_ids(tx: &Transaction<'_>, image_id: &str) -> Result<Vec<String>, String> {
+    tx.prepare_cached("SELECT collection_id FROM collection_images WHERE image_id = ?1")
+        .map_err(|error| error.to_string())?
+        .query_map([image_id], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn clear_collection_thumbnail_caches(
+    tx: &Transaction<'_>,
+    collection_ids: impl IntoIterator<Item = String>,
+) -> Result<(), String> {
+    for collection_id in collection_ids.into_iter().collect::<BTreeSet<_>>() {
+        tx.execute(
+            "UPDATE collections
+             SET dynamic_thumbnail_path = NULL,
+                 dynamic_safe_thumbnail_path = NULL,
+                 dynamic_thumbnail_is_sensitive = NULL,
+                 dynamic_thumbnail_cached_at = NULL
+             WHERE id = ?1
+               AND (custom_thumbnail IS NULL OR custom_thumbnail = '')",
+            [collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn remove_images_from_library_inner(
+    conn: &rusqlite::Connection,
+    ids: &[String],
+) -> Result<RemovedLifecycleMutationResult, String> {
+    let _lifecycle_guard = lock_removed_lifecycle();
+    let normalized_ids = normalize_requested_ids(ids);
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let removed_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let mut result = RemovedLifecycleMutationResult::default();
+    let mut affected_collection_ids = Vec::new();
+
+    for id in normalized_ids {
+        let metadata_json = tx
+            .query_row(
+                "SELECT metadata_json FROM images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                [&id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some(metadata_json) = metadata_json else {
+            result.not_found_ids.push(id);
+            continue;
+        };
+
+        collect_touched_resources(metadata_json.as_deref(), &mut result.touched_resources);
+        affected_collection_ids.extend(load_collection_ids(&tx, &id)?);
+        persist_removed_duplicate(&tx, &id, removed_at)?;
+        delete_duplicate_record(&tx, &id)?;
+        result.affected_ids.push(id);
+    }
+
+    clear_collection_thumbnail_caches(&tx, affected_collection_ids)?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+fn restore_resource_junctions(tx: &Transaction<'_>, image_id: &str) -> Result<(), String> {
+    for (table, column, json_key) in [
+        ("image_loras", "lora_name", "loras"),
+        ("image_embeddings", "embedding_name", "embeddings"),
+        ("image_hypernetworks", "hypernetwork_name", "hypernetworks"),
+        ("image_controlnets", "controlnet_name", "controlNets"),
+        ("image_ipadapters", "ipadapter_name", "ipAdapters"),
+    ] {
+        let sql = format!(
+            "INSERT OR IGNORE INTO {table} (image_id, {column})
+             SELECT ?1,
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    CASE
+                        WHEN instr(value, ' (') > 0 THEN substr(value, 1, instr(value, ' (') - 1)
+                        WHEN instr(value, ':') > 0 THEN substr(value, 1, instr(value, ':') - 1)
+                        ELSE value
+                    END,
+                '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')
+             FROM json_each((SELECT metadata_json FROM images WHERE id = ?1), '$.{json_key}')
+             WHERE value IS NOT NULL AND value != ''"
+        );
+        tx.execute(&sql, [image_id])
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+fn stored_filesystem_path(path: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(rest) = path.strip_prefix("//?/UNC/") {
+            return PathBuf::from(format!(r"\\?\UNC\{}", rest.replace('/', "\\")));
+        }
+        if let Some(rest) = path.strip_prefix("//?/") {
+            return PathBuf::from(format!(r"\\?\{}", rest.replace('/', "\\")));
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn is_missing_filesystem_source(path: &str, invoke_image_name: Option<&str>) -> bool {
+    if invoke_image_name.is_some() || path.starts_with("blob:") || path.starts_with("data:") {
+        return false;
+    }
+    !stored_filesystem_path(path).is_file()
+}
+
+fn restore_removed_record(
+    tx: &Transaction<'_>,
+    image_id: &str,
+    is_missing: bool,
+) -> Result<(), String> {
+    let inserted = tx
+        .execute(
+            "INSERT INTO images (
+                id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
+                micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned,
+                is_deleted, is_missing, user_masked, group_id, board_id, notes,
+                original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id,
+                invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed,
+                cfg, sampler, generation_type, parser_version, positive_prompt, negative_prompt,
+                media_type, media_container, media_mime_type, duration_ms, video_codec,
+                video_profile, audio_present, audio_codec, frame_rate_num, frame_rate_den,
+                rotation_degrees, probe_status, playback_status
+             )
+             SELECT
+                id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
+                micro_thumbnail, thumbnail_source,
+                CASE WHEN thumbnail_source = 'ambit' AND thumbnail_path IS NOT NULL
+                           AND thumbnail_path != '' AND path != thumbnail_path THEN 1 ELSE 0 END,
+                is_favorite, is_pinned, 0, ?2, user_masked, group_id, board_id, notes,
+                original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
+                invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id,
+                invoke_scope_hidden,
+                json_extract(metadata_json, '$.modelHash'),
+                json_extract(metadata_json, '$.model'),
+                json_extract(metadata_json, '$.tool'),
+                COALESCE(
+                    (SELECT name FROM models WHERE hash = json_extract(metadata_json, '$.modelHash')),
+                    json_extract(metadata_json, '$.model')
+                ),
+                CAST(json_extract(metadata_json, '$.steps') AS INTEGER),
+                CAST(json_extract(metadata_json, '$.seed') AS INTEGER),
+                CAST(json_extract(metadata_json, '$.cfg') AS REAL),
+                REPLACE(REPLACE(LOWER(json_extract(metadata_json, '$.sampler')), '_', ' '), '-', ' '),
+                json_extract(metadata_json, '$.generationType'), COALESCE(parser_version, 0),
+                COALESCE(NULLIF(json_extract(metadata_json, '$.positivePrompt'), ''),
+                         NULLIF(json_extract(metadata_json, '$.positive_prompt'), '')),
+                COALESCE(NULLIF(json_extract(metadata_json, '$.negativePrompt'), ''),
+                         NULLIF(json_extract(metadata_json, '$.negative_prompt'), '')),
+                media_type, media_container, media_mime_type, duration_ms, video_codec,
+                video_profile, audio_present, audio_codec, frame_rate_num, frame_rate_den,
+                rotation_degrees, probe_status, playback_status
+             FROM removed_images
+             WHERE id = ?1 AND invoke_scope_hidden = 0",
+            params![image_id, i64::from(is_missing)],
+        )
+        .map_err(|error| error.to_string())?;
+    if inserted != 1 {
+        return Err(format!("Failed to restore removed record '{}'", image_id));
+    }
+    restore_resource_junctions(tx, image_id)
+}
+
+fn restore_removed_images_inner(
+    conn: &rusqlite::Connection,
+    ids: &[String],
+) -> Result<RemovedLifecycleMutationResult, String> {
+    let _lifecycle_guard = lock_removed_lifecycle();
+    let normalized_ids = normalize_requested_ids(ids);
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let mut result = RemovedLifecycleMutationResult::default();
+    let mut restored_collection_ids = Vec::new();
+
+    for id in normalized_ids {
+        let removed = tx
+            .query_row(
+                "SELECT metadata_json, collection_ids_json, path, invoke_image_name
+                 FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                [&id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(|error| error.to_string())?;
+        let Some((metadata_json, collection_ids_json, path, invoke_image_name)) = removed else {
+            result.not_found_ids.push(id);
+            continue;
+        };
+
+        collect_touched_resources(metadata_json.as_deref(), &mut result.touched_resources);
+        let is_missing = is_missing_filesystem_source(&path, invoke_image_name.as_deref());
+        restore_removed_record(&tx, &id, is_missing)?;
+
+        if let Some(collection_ids_json) = collection_ids_json {
+            match serde_json::from_str::<Vec<String>>(&collection_ids_json) {
+                Ok(collection_ids) => {
+                    for collection_id in collection_ids {
+                        let inserted = tx
+                            .execute(
+                                "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                                 SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?1)",
+                                params![collection_id, id],
+                            )
+                            .map_err(|error| error.to_string())?;
+                        if inserted > 0 {
+                            restored_collection_ids.push(collection_id);
+                        }
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "[Removed] Invalid collection membership JSON for {}: {}",
+                        id,
+                        error
+                    );
+                    result.membership_warning_ids.push(id.clone());
+                }
+            }
+        }
+
+        let deleted = tx
+            .execute(
+                "DELETE FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                [&id],
+            )
+            .map_err(|error| error.to_string())?;
+        if deleted != 1 {
+            return Err(format!("Failed to clear restored tombstone '{}'", id));
+        }
+        result.affected_ids.push(id);
+    }
+
+    clear_collection_thumbnail_caches(&tx, restored_collection_ids)?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct MembershipCollectionState {
+    id: String,
+    filter_state: Option<String>,
+    manual_exclusions: Option<String>,
+}
+
+fn load_membership_collection(
+    tx: &Transaction<'_>,
+    collection_id: &str,
+) -> Result<MembershipCollectionState, String> {
+    tx.query_row(
+        "SELECT id, filter_state, manual_exclusions FROM collections WHERE id = ?1",
+        [collection_id],
+        |row| {
+            Ok(MembershipCollectionState {
+                id: row.get(0)?,
+                filter_state: row.get(1)?,
+                manual_exclusions: row.get(2)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| format!("Collection '{}' is no longer available", collection_id))
+}
+
+fn add_manual_exclusions(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_ids: &[String],
+) -> Result<(), String> {
+    if collection.filter_state.is_none() {
+        return Ok(());
+    }
+    let mut exclusions = match collection.manual_exclusions.as_deref() {
+        Some(json) if !json.trim().is_empty() => serde_json::from_str::<Vec<String>>(json)
+            .map_err(|error| {
+                format!(
+                    "Invalid manual exclusions for '{}': {}",
+                    collection.id, error
+                )
+            })?,
+        _ => Vec::new(),
+    };
+    for image_id in image_ids {
+        if !exclusions.contains(image_id) {
+            exclusions.push(image_id.clone());
+        }
+    }
+    tx.execute(
+        "UPDATE collections SET manual_exclusions = ?1 WHERE id = ?2",
+        params![
+            serde_json::to_string(&exclusions).map_err(|error| error.to_string())?,
+            collection.id
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn remove_manual_exclusions(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_ids: &[String],
+) -> Result<(), String> {
+    if collection.filter_state.is_none() {
+        return Ok(());
+    }
+    let Some(exclusions_json) = collection
+        .manual_exclusions
+        .as_deref()
+        .filter(|json| !json.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let mut exclusions = serde_json::from_str::<Vec<String>>(exclusions_json).map_err(|error| {
+        format!(
+            "Invalid manual exclusions for '{}': {}",
+            collection.id, error
+        )
+    })?;
+    let restored_ids = image_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    exclusions.retain(|excluded_id| !restored_ids.contains(excluded_id.as_str()));
+    tx.execute(
+        "UPDATE collections SET manual_exclusions = ?1 WHERE id = ?2",
+        params![
+            serde_json::to_string(&exclusions).map_err(|error| error.to_string())?,
+            collection.id
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn touch_membership_collection(
+    tx: &Transaction<'_>,
+    collection_id: &str,
+    now: i64,
+) -> Result<(), String> {
+    let has_updated_at = tx
+        .query_row(
+            "SELECT EXISTS (
+                SELECT 1 FROM pragma_table_info('collections') WHERE name = 'updated_at'
+             )",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let sql = if has_updated_at {
+        "UPDATE collections
+         SET updated_at = ?1,
+             dynamic_count = CASE WHEN filter_state IS NOT NULL THEN NULL ELSE dynamic_count END,
+             dynamic_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_path END,
+             dynamic_safe_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_safe_thumbnail_path END,
+             dynamic_thumbnail_is_sensitive = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_is_sensitive END,
+             dynamic_thumbnail_cached_at = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_cached_at END
+         WHERE id = ?2"
+    } else {
+        "UPDATE collections
+         SET dynamic_count = CASE WHEN filter_state IS NOT NULL THEN NULL ELSE dynamic_count END,
+             dynamic_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_path END,
+             dynamic_safe_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_safe_thumbnail_path END,
+             dynamic_thumbnail_is_sensitive = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_is_sensitive END,
+             dynamic_thumbnail_cached_at = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_cached_at END
+         WHERE id = ?2"
+    };
+    tx.execute(sql, params![now, collection_id])
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn mutate_collection_membership_inner(
+    conn: &rusqlite::Connection,
+    input: &CollectionMembershipMutationInput,
+) -> Result<CollectionMembershipMutationResult, String> {
+    let image_ids = normalize_requested_ids(&input.image_ids);
+    if image_ids.is_empty() {
+        return Err("At least one image is required".to_string());
+    }
+
+    let source_id = input
+        .source_collection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let target_id = input
+        .target_collection_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    match input.operation {
+        CollectionMembershipOperation::Add if target_id.is_none() => {
+            return Err("Adding images requires a target collection".to_string())
+        }
+        CollectionMembershipOperation::Remove if source_id.is_none() => {
+            return Err("Removing images requires a source collection".to_string())
+        }
+        CollectionMembershipOperation::Move if source_id.is_none() || target_id.is_none() => {
+            return Err("Moving images requires source and target collections".to_string())
+        }
+        CollectionMembershipOperation::Move if source_id == target_id => {
+            return Err("Source and target collections must be different".to_string())
+        }
+        _ => {}
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let source = source_id
+        .map(|id| load_membership_collection(&tx, id))
+        .transpose()?;
+    let target = target_id
+        .map(|id| load_membership_collection(&tx, id))
+        .transpose()?;
+
+    for image_id in &image_ids {
+        let exists: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1 AND invoke_scope_hidden = 0)",
+                [image_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !exists {
+            return Err(format!("Image '{}' is no longer available", image_id));
+        }
+    }
+
+    if matches!(
+        input.operation,
+        CollectionMembershipOperation::Remove | CollectionMembershipOperation::Move
+    ) {
+        let source = source.as_ref().expect("source validated above");
+        add_manual_exclusions(&tx, source, &image_ids)?;
+        for image_id in &image_ids {
+            tx.execute(
+                "DELETE FROM collection_images WHERE collection_id = ?1 AND image_id = ?2",
+                params![source.id, image_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+
+    if matches!(
+        input.operation,
+        CollectionMembershipOperation::Add | CollectionMembershipOperation::Move
+    ) {
+        let target = target.as_ref().expect("target validated above");
+        remove_manual_exclusions(&tx, target, &image_ids)?;
+        for image_id in &image_ids {
+            tx.execute(
+                "INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?1, ?2)",
+                params![target.id, image_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    if let Some(source) = &source {
+        touch_membership_collection(&tx, &source.id, now)?;
+    }
+    if let Some(target) = &target {
+        touch_membership_collection(&tx, &target.id, now)?;
+    }
+    tx.commit().map_err(|error| error.to_string())?;
+
+    Ok(CollectionMembershipMutationResult {
+        affected_ids: image_ids,
+        source_collection_id: source.map(|collection| collection.id),
+        target_collection_id: target.map(|collection| collection.id),
+    })
+}
+
 fn resolve_exact_duplicate_groups_inner(
     conn: &rusqlite::Connection,
     resolutions: &[ExactDuplicateResolution],
 ) -> Result<ExactDuplicateResolutionResult, String> {
+    let _lifecycle_guard = lock_removed_lifecycle();
     if resolutions.is_empty() {
         return Ok(ExactDuplicateResolutionResult {
             resolved_groups: 0,
@@ -541,11 +1163,15 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         let app_log_dir = app_clone.path().app_log_dir().map_err(|e| e.to_string())?;
         let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM images", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
         let deleted_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE is_deleted = 1",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
                 [],
                 |r| r.get(0),
             )
@@ -558,7 +1184,7 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             .unwrap_or(0);
         let tool_null_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE json_extract(metadata_json, '$.tool') IS NULL",
+                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -598,6 +1224,39 @@ pub async fn resolve_exact_duplicate_groups(
 ) -> Result<ExactDuplicateResolutionResult, String> {
     run_blocking(app, move |conn| {
         resolve_exact_duplicate_groups_inner(conn, &resolutions)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn remove_images_from_library(
+    app: AppHandle,
+    ids: Vec<String>,
+) -> Result<RemovedLifecycleMutationResult, String> {
+    run_blocking(app, move |conn| {
+        remove_images_from_library_inner(conn, &ids)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn restore_removed_images(
+    app: AppHandle,
+    ids: Vec<String>,
+) -> Result<RemovedLifecycleMutationResult, String> {
+    run_blocking(app, move |conn| restore_removed_images_inner(conn, &ids)).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn mutate_collection_membership(
+    app: AppHandle,
+    input: CollectionMembershipMutationInput,
+) -> Result<CollectionMembershipMutationResult, String> {
+    run_blocking(app, move |conn| {
+        mutate_collection_membership_inner(conn, &input)
     })
     .await
 }
@@ -747,8 +1406,10 @@ pub async fn schedule_purge_transaction(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_log_directory, hash_file_sha256, load_file_hash_candidates, resolve_app_log_path,
-        resolve_exact_duplicate_groups_inner, ExactDuplicateResolution,
+        ensure_log_directory, hash_file_sha256, load_file_hash_candidates,
+        mutate_collection_membership_inner, remove_images_from_library_inner, resolve_app_log_path,
+        resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
+        CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
     };
     use crate::db::migrations::init_db;
     use rusqlite::{params, Connection};
@@ -864,6 +1525,464 @@ mod tests {
 
         assert!(log_dir.is_dir());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn removed_lifecycle_is_transactional_and_restores_memberships_and_resources() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let metadata = r#"{
+            "tool":"ComfyUI","model":"model.safetensors","steps":20,"seed":42,
+            "cfg":7.5,"sampler":"euler_a","positivePrompt":"prompt",
+            "loras":["detail.safetensors (0.8)"],"embeddings":["style.pt"],
+            "hypernetworks":["hyper.ckpt"],"controlNets":["control.safetensors"],
+            "ipAdapters":["adapter.bin"]
+        }"#;
+        seed_image(
+            &conn,
+            "C:/library/image.png",
+            "hash",
+            true,
+            true,
+            Some(false),
+            metadata,
+            Some("board-a"),
+            Some("notes"),
+        );
+        conn.execute(
+            "UPDATE images SET parser_version = 17 WHERE id = 'C:/library/image.png'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collections (
+                id, name, created_at, dynamic_thumbnail_path, dynamic_thumbnail_cached_at
+             ) VALUES ('collection-a', 'Collection', 1, 'cached.webp', 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id)
+             VALUES ('collection-a', 'C:/library/image.png')",
+            [],
+        )
+        .unwrap();
+
+        let removed = remove_images_from_library_inner(
+            &conn,
+            &["C:\\library\\image.png".to_string(), "unknown".to_string()],
+        )
+        .expect("remove image transactionally");
+
+        assert_eq!(removed.affected_ids, ["C:/library/image.png"]);
+        assert_eq!(removed.not_found_ids, ["unknown"]);
+        assert_eq!(removed.touched_resources.checkpoints, ["model"]);
+        assert_eq!(removed.touched_resources.loras, ["detail"]);
+        assert_eq!(removed.touched_resources.tools, ["ComfyUI"]);
+        assert_eq!(table_count(&conn, "images"), 0);
+        assert_eq!(table_count(&conn, "removed_images"), 1);
+        assert_eq!(table_count(&conn, "collection_images"), 0);
+        let cached_path: Option<String> = conn
+            .query_row(
+                "SELECT dynamic_thumbnail_path FROM collections WHERE id = 'collection-a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cached_path, None);
+
+        let restored = restore_removed_images_inner(&conn, &["C:/library/image.png".to_string()])
+            .expect("restore image transactionally");
+
+        assert_eq!(restored.affected_ids, ["C:/library/image.png"]);
+        assert!(restored.membership_warning_ids.is_empty());
+        assert_eq!(table_count(&conn, "images"), 1);
+        assert_eq!(table_count(&conn, "removed_images"), 0);
+        assert_eq!(table_count(&conn, "collection_images"), 1);
+        for table in [
+            "image_loras",
+            "image_embeddings",
+            "image_hypernetworks",
+            "image_controlnets",
+            "image_ipadapters",
+        ] {
+            assert_eq!(table_count(&conn, table), 1, "restored {table}");
+        }
+        let restored_state: (
+            i64,
+            i64,
+            Option<i64>,
+            String,
+            i64,
+            Option<i64>,
+            Option<String>,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT is_favorite, is_pinned, user_masked, model_name, steps, seed,
+                        file_hash, parser_version
+                 FROM images WHERE id = 'C:/library/image.png'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            restored_state,
+            (
+                1,
+                1,
+                Some(0),
+                "model.safetensors".to_string(),
+                20,
+                Some(42),
+                Some("hash".to_string()),
+                17,
+            )
+        );
+    }
+
+    #[test]
+    fn restore_preserves_video_state_and_rechecks_local_source_presence() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let root = std::env::temp_dir().join(format!(
+            "ambit_removed_video_restore_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let present_path = root.join("present.webm");
+        let missing_path = root.join("missing.webm");
+        std::fs::write(&present_path, b"present").unwrap();
+        std::fs::write(&missing_path, b"removed later").unwrap();
+        let present_id = present_path.to_string_lossy().replace('\\', "/");
+        let missing_id = missing_path.to_string_lossy().replace('\\', "/");
+
+        for id in [&present_id, &missing_id] {
+            seed_image(
+                &conn,
+                id,
+                "video-hash",
+                true,
+                true,
+                Some(true),
+                "{}",
+                None,
+                Some("video notes"),
+            );
+            conn.execute(
+                "UPDATE images
+                 SET timestamp = 4242, media_type = 'video', media_container = 'webm',
+                     media_mime_type = 'video/webm', duration_ms = 2000,
+                     video_codec = 'vp9', video_profile = '0', audio_present = 1,
+                     audio_codec = 'opus', frame_rate_num = 30, frame_rate_den = 1,
+                     rotation_degrees = 0, probe_status = 'ready', playback_status = 'playable'
+                 WHERE id = ?1",
+                [id],
+            )
+            .unwrap();
+        }
+
+        remove_images_from_library_inner(&conn, &[present_id.clone(), missing_id.clone()]).unwrap();
+        std::fs::remove_file(&missing_path).unwrap();
+        restore_removed_images_inner(&conn, &[present_id.clone(), missing_id.clone()]).unwrap();
+
+        let restored = |id: &str| {
+            conn.query_row(
+                "SELECT timestamp, is_missing, media_type, media_container, media_mime_type,
+                        duration_ms, video_codec, video_profile, audio_present, audio_codec,
+                        frame_rate_num, frame_rate_den, rotation_degrees, probe_status,
+                        playback_status, is_favorite, is_pinned, user_masked, notes
+                 FROM images WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        (
+                            (
+                                row.get::<_, String>(2)?,
+                                row.get::<_, String>(3)?,
+                                row.get::<_, String>(4)?,
+                                row.get::<_, i64>(5)?,
+                                row.get::<_, String>(6)?,
+                                row.get::<_, String>(7)?,
+                                row.get::<_, i64>(8)?,
+                                row.get::<_, String>(9)?,
+                            ),
+                            (
+                                row.get::<_, i64>(10)?,
+                                row.get::<_, i64>(11)?,
+                                row.get::<_, i64>(12)?,
+                                row.get::<_, String>(13)?,
+                                row.get::<_, String>(14)?,
+                                row.get::<_, i64>(15)?,
+                                row.get::<_, i64>(16)?,
+                                row.get::<_, Option<i64>>(17)?,
+                                row.get::<_, String>(18)?,
+                            ),
+                        ),
+                    ))
+                },
+            )
+            .unwrap()
+        };
+        let expected_state = (
+            (
+                "video".to_string(),
+                "webm".to_string(),
+                "video/webm".to_string(),
+                2000,
+                "vp9".to_string(),
+                "0".to_string(),
+                1,
+                "opus".to_string(),
+            ),
+            (
+                30,
+                1,
+                0,
+                "ready".to_string(),
+                "playable".to_string(),
+                1,
+                1,
+                Some(1),
+                "video notes".to_string(),
+            ),
+        );
+        let present = restored(&present_id);
+        let missing = restored(&missing_id);
+        assert_eq!(
+            present.0, 4242,
+            "restore must preserve the original library timestamp"
+        );
+        assert_eq!(
+            missing.0, 4242,
+            "restore must preserve the original library timestamp"
+        );
+        assert_eq!(
+            present.1, 0,
+            "an existing source must remain available after restore"
+        );
+        assert_eq!(
+            missing.1, 1,
+            "a removed source must restore as missing instead of playable"
+        );
+        assert_eq!(present.2, expected_state);
+        assert_eq!(missing.2, expected_state);
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_removed_rows_restore_as_needing_reparse() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        remove_images_from_library_inner(&conn, &["image".to_string()]).unwrap();
+        conn.execute(
+            "UPDATE removed_images SET file_hash = NULL, parser_version = NULL WHERE id = 'image'",
+            [],
+        )
+        .unwrap();
+
+        restore_removed_images_inner(&conn, &["image".to_string()]).unwrap();
+
+        let restored: (Option<String>, i64) = conn
+            .query_row(
+                "SELECT file_hash, parser_version FROM images WHERE id = 'image'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(restored, (None, 0));
+    }
+
+    #[test]
+    fn removed_lifecycle_rolls_back_tombstone_when_active_delete_fails() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        conn.execute_batch(
+            "CREATE TRIGGER block_image_delete BEFORE DELETE ON images
+             BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
+        )
+        .unwrap();
+
+        let error = remove_images_from_library_inner(&conn, &["image".to_string()])
+            .expect_err("failed delete must roll back the tombstone");
+
+        assert!(error.contains("blocked"));
+        assert_eq!(table_count(&conn, "images"), 1);
+        assert_eq!(table_count(&conn, "removed_images"), 0);
+    }
+
+    #[test]
+    fn restore_keeps_image_when_legacy_membership_json_is_malformed() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        remove_images_from_library_inner(&conn, &["image".to_string()]).unwrap();
+        conn.execute(
+            "UPDATE removed_images SET collection_ids_json = '{' WHERE id = 'image'",
+            [],
+        )
+        .unwrap();
+
+        let restored = restore_removed_images_inner(&conn, &["image".to_string()])
+            .expect("bad legacy membership data must not block image restore");
+
+        assert_eq!(restored.affected_ids, ["image"]);
+        assert_eq!(restored.membership_warning_ids, ["image"]);
+        assert_eq!(table_count(&conn, "images"), 1);
+        assert_eq!(table_count(&conn, "removed_images"), 0);
+    }
+
+    #[test]
+    fn collection_move_is_atomic_and_preserves_hybrid_exclusion_semantics() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        conn.execute(
+            r#"INSERT INTO collections (
+                id, name, created_at, filter_state, manual_exclusions,
+                dynamic_thumbnail_path, dynamic_thumbnail_cached_at
+             ) VALUES
+                ('smart-source', 'Smart', 1, '{}', '["existing"]', 'source.webp', 1),
+                ('target', 'Target', 1, '{}', '["image","target-existing"]', 'target.webp', 1)"#,
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id)
+             VALUES ('smart-source', 'image')",
+            [],
+        )
+        .unwrap();
+
+        let result = mutate_collection_membership_inner(
+            &conn,
+            &CollectionMembershipMutationInput {
+                operation: CollectionMembershipOperation::Move,
+                image_ids: vec!["image".to_string(), "image".to_string()],
+                source_collection_id: Some("smart-source".to_string()),
+                target_collection_id: Some("target".to_string()),
+            },
+        )
+        .expect("move membership transactionally");
+
+        assert_eq!(result.affected_ids, ["image"]);
+        let memberships = conn
+            .prepare("SELECT collection_id FROM collection_images WHERE image_id = 'image'")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(memberships, ["target"]);
+        let exclusions: String = conn
+            .query_row(
+                "SELECT manual_exclusions FROM collections WHERE id = 'smart-source'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(exclusions, r#"["existing","image"]"#);
+        let target_exclusions: String = conn
+            .query_row(
+                "SELECT manual_exclusions FROM collections WHERE id = 'target'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(target_exclusions, r#"["target-existing"]"#);
+        for collection_id in ["smart-source", "target"] {
+            let cached: Option<String> = conn
+                .query_row(
+                    "SELECT dynamic_thumbnail_path FROM collections WHERE id = ?1",
+                    [collection_id],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(cached, None);
+        }
+    }
+
+    #[test]
+    fn collection_move_rolls_back_source_changes_when_target_insert_fails() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        conn.execute(
+            r#"INSERT INTO collections (id, name, created_at, filter_state, manual_exclusions)
+             VALUES ('source', 'Source', 1, NULL, NULL),
+                    ('target', 'Target', 1, '{}', '["image"]')"#,
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id) VALUES ('source', 'image')",
+            [],
+        )
+        .unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER block_target_membership BEFORE INSERT ON collection_images
+             WHEN NEW.collection_id = 'target'
+             BEGIN SELECT RAISE(ABORT, 'target blocked'); END;",
+        )
+        .unwrap();
+
+        let error = mutate_collection_membership_inner(
+            &conn,
+            &CollectionMembershipMutationInput {
+                operation: CollectionMembershipOperation::Move,
+                image_ids: vec!["image".to_string()],
+                source_collection_id: Some("source".to_string()),
+                target_collection_id: Some("target".to_string()),
+            },
+        )
+        .expect_err("target failure must roll back the source removal");
+
+        assert!(error.contains("target blocked"));
+        let source_membership: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images
+                 WHERE collection_id = 'source' AND image_id = 'image'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(source_membership, 1);
+        assert_eq!(table_count(&conn, "collection_images"), 1);
+        let target_exclusions: String = conn
+            .query_row(
+                "SELECT manual_exclusions FROM collections WHERE id = 'target'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(target_exclusions, r#"["image"]"#);
+    }
+
+    fn table_count(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
     }
 
     #[test]
@@ -1017,13 +2136,13 @@ mod tests {
     }
 
     #[test]
-    fn exact_duplicate_resolution_preserves_removed_video_metadata() {
+    fn exact_duplicate_resolution_preserves_invoke_source_facts_in_removed_state() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         seed_image(
             &conn,
             "keeper",
-            "video-hash",
+            "same-hash",
             false,
             false,
             None,
@@ -1033,8 +2152,8 @@ mod tests {
         );
         seed_image(
             &conn,
-            "copy",
-            "video-hash",
+            "invoke-copy",
+            "same-hash",
             false,
             false,
             None,
@@ -1042,44 +2161,31 @@ mod tests {
             None,
             None,
         );
-        for id in ["keeper", "copy"] {
-            conn.execute(
-                "UPDATE images
-                 SET media_type = 'video', media_container = 'mp4', media_mime_type = 'video/mp4',
-                     duration_ms = 2500, video_codec = 'h264', video_profile = 'High',
-                     audio_present = 1, audio_codec = 'aac', frame_rate_num = 30,
-                     frame_rate_den = 1, rotation_degrees = 90, probe_status = 'ready',
-                     playback_status = 'playable'
-                 WHERE id = ?1",
-                [id],
-            )
-            .unwrap();
-        }
+        conn.execute(
+            "UPDATE images
+             SET invoke_image_name = 'control.png',
+                 invoke_image_category = 'control',
+                 invoke_image_origin = 'internal',
+                 invoke_owner_id = 'owner-a'
+             WHERE id = 'invoke-copy'",
+            [],
+        )
+        .expect("seed InvokeAI source facts");
 
         resolve_exact_duplicate_groups_inner(
             &conn,
             &[ExactDuplicateResolution {
                 keep_id: "keeper".to_string(),
-                remove_ids: vec!["copy".to_string()],
+                remove_ids: vec!["invoke-copy".to_string()],
             }],
         )
-        .unwrap();
+        .expect("resolve InvokeAI duplicate");
 
-        let removed: (
-            String,
-            String,
-            i64,
-            String,
-            i64,
-            String,
-            i64,
-            String,
-            String,
-        ) = conn
+        let source_facts: (String, String, String, String, i64) = conn
             .query_row(
-                "SELECT media_type, media_container, duration_ms, video_codec, audio_present,
-                        audio_codec, rotation_degrees, probe_status, playback_status
-                 FROM removed_images WHERE id = 'copy'",
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        invoke_owner_id, invoke_scope_hidden
+                 FROM removed_images WHERE id = 'invoke-copy'",
                 [],
                 |row| {
                     Ok((
@@ -1088,29 +2194,72 @@ mod tests {
                         row.get(2)?,
                         row.get(3)?,
                         row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                        row.get(7)?,
-                        row.get(8)?,
                     ))
                 },
             )
-            .unwrap();
-
+            .expect("load removed InvokeAI source facts");
         assert_eq!(
-            removed,
+            source_facts,
             (
-                "video".into(),
-                "mp4".into(),
-                2500,
-                "h264".into(),
-                1,
-                "aac".into(),
-                90,
-                "ready".into(),
-                "playable".into()
+                "control.png".to_string(),
+                "control".to_string(),
+                "internal".to_string(),
+                "owner-a".to_string(),
+                0,
             )
         );
+    }
+
+    #[test]
+    fn exact_duplicate_resolution_rejects_owner_hidden_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(
+            &conn,
+            "keeper",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "hidden-copy",
+            "same-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'hidden-copy'",
+            [],
+        )
+        .expect("hide out-of-scope duplicate");
+
+        let error = resolve_exact_duplicate_groups_inner(
+            &conn,
+            &[ExactDuplicateResolution {
+                keep_id: "keeper".to_string(),
+                remove_ids: vec!["hidden-copy".to_string()],
+            }],
+        )
+        .expect_err("owner-hidden duplicate must be rejected");
+
+        assert!(error.contains("no longer available"));
+        let active_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .expect("count active images");
+        let removed_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM removed_images", [], |row| row.get(0))
+            .expect("count removed images");
+        assert_eq!(active_count, 2);
+        assert_eq!(removed_count, 0);
     }
 
     #[test]

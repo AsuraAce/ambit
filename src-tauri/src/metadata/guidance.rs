@@ -27,17 +27,20 @@ impl GuidanceClassifier {
         // 1. Extract basename (handle both / and \)
         let basename = name.split(|c| c == '/' || c == '\\').last().unwrap_or(name);
 
-        // 2. Remove extensions and common generic suffixes, then normalize
-        basename
-            .replace(".safetensors", "")
-            .replace(".ckpt", "")
-            .replace(".pth", "")
-            .replace(".bin", "")
-            .replace(".pt", "")
+        // 2. Remove a terminal extension and common generic suffixes, then normalize
+        let normalized = basename
             .split('(')
             .next()
             .unwrap_or("")
             .to_lowercase()
+            .trim()
+            .to_string();
+        let without_extension = [".safetensors", ".ckpt", ".pth", ".bin", ".pt", ".gguf"]
+            .iter()
+            .find_map(|extension| normalized.strip_suffix(extension))
+            .unwrap_or(&normalized);
+
+        without_extension
             .replace(' ', "_")
             .replace('-', "_")
             .trim()
@@ -144,9 +147,10 @@ impl GuidanceClassifier {
 
         // IP-Adapter wins if prefix is present OR strong IP subtype is present AND no strong CNet subtype
         if is_ip_adapter_prefix
-            || (has_ip_subtype && !has_cnet_subtype)
-            || (has_shared_ip_keyword && !is_controlnet_prefix && !has_cnet_subtype)
-            || (n.contains("precise") && !is_controlnet_prefix && !has_cnet_subtype)
+            || (!is_t2i_prefix
+                && ((has_ip_subtype && !has_cnet_subtype)
+                    || (has_shared_ip_keyword && !is_controlnet_prefix && !has_cnet_subtype)
+                    || (n.contains("precise") && !is_controlnet_prefix && !has_cnet_subtype)))
         {
             // Note: "precise" can be Canny, but in a generic context (like "Precise Reference") it's often IPA.
             // If it also contains "canny", has_cnet_subtype will be true and we might want to prioritize CNet.
@@ -338,6 +342,22 @@ mod tests {
     }
 
     #[test]
+    fn test_t2i_prefix_wins_over_shared_ip_adapter_keywords() {
+        assert_eq!(
+            GuidanceClassifier::classify("t2i_adapter_face", None),
+            Some((GuidanceCategory::T2IAdapter, "other".to_string()))
+        );
+        assert_eq!(
+            GuidanceClassifier::classify("t2i_adapter_plus", None),
+            Some((GuidanceCategory::T2IAdapter, "other".to_string()))
+        );
+        assert_eq!(
+            GuidanceClassifier::classify("ip_adapter_plus_face_sdxl", None),
+            Some((GuidanceCategory::IPAdapter, "plus-face".to_string()))
+        );
+    }
+
+    #[test]
     fn test_path_cleaning() {
         assert_eq!(
             GuidanceClassifier::clean_name("C:\\models\\ip-adapter-plus.safetensors"),
@@ -346,6 +366,18 @@ mod tests {
         assert_eq!(
             GuidanceClassifier::clean_name("/usr/share/models/controlnet/canny.bin"),
             "canny"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS"),
+            "t2i_adapter_depth"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.GGUF"),
+            "qwen_image_edit_2511_q4_k_m"
+        );
+        assert_eq!(
+            GuidanceClassifier::clean_name("models/Qwen-Image-Edit-2511-Q4_K_M.gguf"),
+            "qwen_image_edit_2511_q4_k_m"
         );
 
         // Consolidation tests

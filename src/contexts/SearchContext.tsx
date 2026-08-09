@@ -31,6 +31,10 @@ import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
+import {
+    isInvokeOwnerScopeAdmitted,
+    useInvokeOwnerScopeStore,
+} from '../stores/invokeOwnerScopeStore';
 
 interface SearchContextType {
     images: AIImage[];
@@ -60,7 +64,7 @@ interface SearchContextType {
 
     // Transient state moved to useLibraryStore
 
-    availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean };
+    availableHiddenContent: { hasIntermediates: boolean; hasGrids: boolean; hasInvokeImageAssets: boolean };
     refreshHiddenAvailability: () => Promise<void>;
 
     isFacetsLoading: boolean;
@@ -121,6 +125,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const privacyQueryScopeKey = `${privacyEnabled ? 'enabled' : 'disabled'}\u001e${settings.maskingMode}\u001e${privacyMaskKey}`;
     const [lastSyncedPrivacyScope, setLastSyncedPrivacyScope] = useState<string | null>(null);
     const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
+    const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
+        state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
+    );
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
 
@@ -143,12 +150,20 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             return;
         }
 
+        if (!invokeQueriesAdmitted) {
+            privacyMaskRefreshCoordinator.discardPending();
+            setPrivacyMaskIndexState('pending');
+            return;
+        }
+
         let cancelled = false;
         setPrivacyMaskIndexState('pending');
 
         privacyMaskRefreshCoordinator.schedule(async () => {
             try {
+                if (cancelled) return;
                 await getDb();
+                if (cancelled) return;
                 const refreshStartedAt = performance.now();
                 const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
                 if (cancelled) return;
@@ -190,11 +205,24 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         requiresPrivacyMaskIndex,
         setPrivacyMaskIndexState,
         settingsLoaded,
+        invokeQueriesAdmitted,
     ]);
 
     const databaseQueriesEnabled = settingsLoaded
         && collectionsLoaded
+        && invokeQueriesAdmitted
         && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
+
+    React.useEffect(() => {
+        if (invokeQueriesAdmitted) return;
+
+        void Promise.all([
+            queryClient.cancelQueries({ queryKey: ['images'] }),
+            queryClient.cancelQueries({ queryKey: ['libraryStats'] }),
+            queryClient.cancelQueries({ queryKey: ['libraryKeywordStats'] }),
+            queryClient.cancelQueries({ queryKey: ['parameterRanges'] }),
+        ]);
+    }, [invokeQueriesAdmitted, queryClient]);
     const allCollections = React.useMemo(
         () => [...collections, ...smartCollections],
         [collections, smartCollections]
@@ -222,7 +250,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         && lastSyncedPrivacyScope !== privacyQueryScopeKey;
     const privacyIndexBlocked = requiresPrivacyMaskIndex
         && (!settingsLoaded || privacyMaskIndexStatus !== 'ready');
-    const privacyExposureBlocked = privacyIndexBlocked || privacyScopeTransitionBlocked;
+    const privacyExposureBlocked = !invokeQueriesAdmitted
+        || privacyIndexBlocked
+        || privacyScopeTransitionBlocked;
     const isFirstPageFetching = isFetching && !isFetchingNextPage;
 
     // Flatten pages into a single image array
@@ -387,9 +417,17 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const recentSearchHydrationGenerationRef = useRef(0);
     const recentSearchesHydratedRef = useRef(false);
     const recentSearchesMountedRef = useRef(true);
-    const viewSettingsHydrationTargetRef = useRef<{ showGrids: boolean; showIntermediates: boolean } | null>(null);
+    const viewSettingsHydrationTargetRef = useRef<{
+        showGrids: boolean;
+        showIntermediates: boolean;
+        showInvokeImageAssets: boolean;
+    } | null>(null);
     const [viewSettingsHydrated, setViewSettingsHydrated] = useState(false);
-    const [availableHiddenContent, setAvailableHiddenContent] = useState({ hasIntermediates: false, hasGrids: false });
+    const [availableHiddenContent, setAvailableHiddenContent] = useState({
+        hasIntermediates: false,
+        hasGrids: false,
+        hasInvokeImageAssets: false,
+    });
 
     const setRecentSearches = useCallback<React.Dispatch<React.SetStateAction<string[]>>>((mutation) => {
         recentSearchHydrationGenerationRef.current += 1;
@@ -467,9 +505,6 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
 
         void loadRecentSearches();
-        void checkHiddenContentAvailability()
-            .then(setAvailableHiddenContent)
-            .catch(error => console.error('[SearchContext] Failed to load hidden-content availability', error));
 
         return () => {
             cancelled = true;
@@ -479,18 +514,44 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         };
     }, []);
 
+    useEffect(() => {
+        if (!databaseQueriesEnabled) return;
+
+        let cancelled = false;
+        void checkHiddenContentAvailability()
+            .then(availability => {
+                if (!cancelled) setAvailableHiddenContent(availability);
+            })
+            .catch(error => console.error('[SearchContext] Failed to load hidden-content availability', error));
+
+        return () => {
+            cancelled = true;
+        };
+    }, [databaseQueriesEnabled]);
+
     // Hydrate persisted view settings before enabling the effects that write them back.
     useEffect(() => {
         if (!settingsLoaded || viewSettingsHydrated) return;
 
         const target = {
             showGrids: settings.libraryShowGrids ?? filters.showGrids ?? false,
-            showIntermediates: settings.libraryShowIntermediates ?? filters.showIntermediates ?? false
+            showIntermediates: settings.libraryShowIntermediates ?? filters.showIntermediates ?? false,
+            showInvokeImageAssets: settings.libraryShowInvokeImageAssets ?? filters.showInvokeImageAssets ?? false,
         };
         viewSettingsHydrationTargetRef.current = target;
         setFilters(prev => ({ ...prev, ...target }));
         setViewSettingsHydrated(true);
-    }, [filters.showGrids, filters.showIntermediates, settings.libraryShowGrids, settings.libraryShowIntermediates, settingsLoaded, setFilters, viewSettingsHydrated]);
+    }, [
+        filters.showGrids,
+        filters.showIntermediates,
+        filters.showInvokeImageAssets,
+        settings.libraryShowGrids,
+        settings.libraryShowIntermediates,
+        settings.libraryShowInvokeImageAssets,
+        settingsLoaded,
+        setFilters,
+        viewSettingsHydrated,
+    ]);
 
     // 2. Persist Grid Toggle Change to Settings
     useEffect(() => {
@@ -498,12 +559,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
         if (hydrationTarget
             && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates)) return;
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowGrids !== filters.showGrids) {
             setSettings({ libraryShowGrids: filters.showGrids });
         }
-    }, [filters.showGrids, filters.showIntermediates, setSettings, settings.libraryShowGrids, viewSettingsHydrated]);
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowGrids, viewSettingsHydrated]);
 
     // 3. Persist Intermediate Toggle Change to Settings
     useEffect(() => {
@@ -511,12 +573,27 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const hydrationTarget = viewSettingsHydrationTargetRef.current;
         if (hydrationTarget
             && (filters.showGrids !== hydrationTarget.showGrids
-                || filters.showIntermediates !== hydrationTarget.showIntermediates)) return;
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
         viewSettingsHydrationTargetRef.current = null;
         if (settings.libraryShowIntermediates !== filters.showIntermediates) {
             setSettings({ libraryShowIntermediates: filters.showIntermediates });
         }
-    }, [filters.showGrids, filters.showIntermediates, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
+
+    // 4. Persist InvokeAI Image Asset Toggle Change to Settings
+    useEffect(() => {
+        if (!viewSettingsHydrated) return;
+        const hydrationTarget = viewSettingsHydrationTargetRef.current;
+        if (hydrationTarget
+            && (filters.showGrids !== hydrationTarget.showGrids
+                || filters.showIntermediates !== hydrationTarget.showIntermediates
+                || filters.showInvokeImageAssets !== hydrationTarget.showInvokeImageAssets)) return;
+        viewSettingsHydrationTargetRef.current = null;
+        if (settings.libraryShowInvokeImageAssets !== filters.showInvokeImageAssets) {
+            setSettings({ libraryShowInvokeImageAssets: filters.showInvokeImageAssets });
+        }
+    }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowInvokeImageAssets, viewSettingsHydrated]);
 
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
@@ -530,6 +607,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             await queryClient.invalidateQueries({ queryKey: ['images'] });
         }
     }, [fetchNextPage, privacyExposureBlocked, queryClient]);
+
+    const clearAllFiltersAndRefresh = useCallback(() => {
+        clearAllFilters();
+        // Explicitly invalidate to ensure fresh data if cache was stale
+        queryClient.invalidateQueries({ queryKey: ['images'] });
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
+    }, [clearAllFilters, queryClient]);
 
 
 
@@ -552,12 +636,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                     await fetchNextPage();
                 }
             },
-            clearAllFilters: () => {
-                clearAllFilters();
-                // Explicitly invalidate to ensure fresh data if cache was stale
-                queryClient.invalidateQueries({ queryKey: ['images'] });
-                queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
-            },
+            clearAllFilters: clearAllFiltersAndRefresh,
             isFiltering: !privacyIndexBlocked
                 && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
             privacyExposureBlocked,

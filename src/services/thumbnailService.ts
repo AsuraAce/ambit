@@ -268,6 +268,7 @@ export const syncExistingThumbnailsToDB = async (
     const rows = await db.select<{ id: string }[]>(
         `SELECT id FROM images
          WHERE media_type = 'image'
+           AND invoke_scope_hidden = 0
            AND (thumbnail_path IS NULL OR thumbnail_path = '')`
     );
 
@@ -342,7 +343,7 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
     // Get all images with thumbnails
     const db = await getDb();
     const rows = await db.select<{ id: string; thumbnail_path: string }[]>(
-        'SELECT id, thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+        'SELECT id, thumbnail_path FROM images WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
     );
 
     let brokenCount = 0;

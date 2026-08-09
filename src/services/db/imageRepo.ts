@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
-import { commands } from '../../bindings';
+import { commands, type DeleteRemovedImagesResult, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -13,7 +13,7 @@ import {
     liveWatchNow,
 } from '../../utils/liveWatchPerf';
 import { isBrowserMockMode } from '../runtime';
-import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+import { deleteBrowserMockImages, getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { clearLibraryStatsCache } from './searchRepo';
 import {
     clearAllCollectionThumbnailCaches,
@@ -22,6 +22,7 @@ import {
     clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 type PersistableImageRecord = {
     id: string;
@@ -46,13 +47,11 @@ type PersistableImageRecord = {
     originalMetadataJson: string | null;
     originalStateJson: string | null;
     isCorrupt: boolean;
+    invokeImageName: string | null;
+    invokeImageCategory: string | null;
+    invokeImageOrigin: string | null;
+    invokeOwnerId: string | null;
 };
-
-export interface DeleteRemovedImagesResult {
-    deletedIds: string[];
-    failedIds: string[];
-    thumbnailWarningIds: string[];
-}
 
 interface CountRow {
     count: number;
@@ -93,19 +92,6 @@ const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] =
     return chunks;
 };
 
-export const shouldTrashThumbnail = (
-    imagePath: string | null | undefined,
-    thumbnailPath: string | null | undefined
-): boolean => {
-    if (!thumbnailPath) return false;
-    if (!imagePath) return true;
-
-    const normalizedImagePath = normalizePath(urlToPath(imagePath));
-    const normalizedThumbnailPath = normalizePath(urlToPath(thumbnailPath));
-
-    return normalizedImagePath.toLowerCase() !== normalizedThumbnailPath.toLowerCase();
-};
-
 const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => ({
     id: normalizePath(image.id),
     path: normalizePath(image.id),
@@ -130,7 +116,13 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
         ? (Object.keys(image.originalChunks).length > 0 ? JSON.stringify(image.originalChunks) : null)
         : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
-    isCorrupt: !!image.isCorrupt
+    isCorrupt: !!image.isCorrupt,
+    // InvokeAI rows always have a name. Native upsert uses it to distinguish an
+    // authoritative nullable source snapshot from omitted generic-scan fields.
+    invokeImageName: image.invokeImageName || null,
+    invokeImageCategory: image.invokeImageCategory || null,
+    invokeImageOrigin: image.invokeImageOrigin || null,
+    invokeOwnerId: image.invokeOwnerId || null
 });
 
 const persistImageRecords = async (
@@ -424,6 +416,8 @@ export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[]): 
 };
 
 export const refreshFacetCacheForResourcesStrict = async (resources: TouchedFacetResources): Promise<number> => {
+    if (isBrowserMockMode()) return 0;
+
     const count = await runRefreshFacetCacheForResources(resources);
     console.log('[DB] Refreshed live facet cache resources:', count);
     return count;
@@ -458,6 +452,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
             SELECT board_id, id 
             FROM images 
             WHERE board_id IS NOT NULL
+              AND invoke_scope_hidden = 0
         `;
 
         const params: unknown[] = [];
@@ -660,13 +655,15 @@ export const getAllImages = async (
     offset: number = 0,
     prioritizePinned: boolean = false,
     showIntermediates: boolean = false,
-    showGrids: boolean = false
+    showGrids: boolean = false,
+    showInvokeImageAssets: boolean = false
 ): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages()
             .filter(image => !image.isDeleted)
             .filter(image => showIntermediates || !(image.isIntermediate || image.metadata.isIntermediate))
             .filter(image => showGrids || !image.metadata.isGrid)
+            .filter(image => showInvokeImageAssets || !isKnownInvokeImageAsset(image.invokeImageCategory))
             .sort((a, b) => prioritizePinned && a.isPinned !== b.isPinned
                 ? (a.isPinned ? -1 : 1)
                 : b.timestamp - a.timestamp);
@@ -677,12 +674,15 @@ export const getAllImages = async (
     const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
 
     // Optimize: Use STORED generated columns instead of LIKE scan
-    let filterClauses = 'WHERE is_deleted = 0';
+    let filterClauses = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0';
     if (!showIntermediates) {
         filterClauses += ' AND IFNULL(is_intermediate_gen, 0) = 0';
     }
     if (!showGrids) {
         filterClauses += ' AND IFNULL(is_grid_gen, 0) = 0';
+    }
+    if (!showInvokeImageAssets) {
+        filterClauses += ' AND IFNULL(is_invoke_asset_gen, 0) = 0';
     }
 
     const query = limit
@@ -693,7 +693,10 @@ export const getAllImages = async (
     return rows.map(mapRowToImage);
 };
 
-export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
+export const getImagesByIds = async (
+    ids: string[],
+    options: { includeOwnerHidden?: boolean } = {}
+): Promise<AIImage[]> => {
     if (ids.length === 0) return [];
     if (isBrowserMockMode()) {
         const idSet = new Set(ids);
@@ -708,7 +711,8 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})`;
+        const ownerScope = options.includeOwnerHidden ? '' : ' AND invoke_scope_hidden = 0';
+        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})${ownerScope}`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -748,7 +752,7 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders})`;
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -763,7 +767,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -888,247 +892,51 @@ export const updateVideoPlaybackStatus = async (
     assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
 };
 
-const removeTombstones = async (db: Awaited<ReturnType<typeof getDb>>, ids: string[]) => {
-    for (const chunk of chunkItems(ids)) {
-        const placeholders = chunk.map(() => '?').join(',');
-        await db.execute(`DELETE FROM removed_images WHERE id IN (${placeholders})`, chunk);
-    }
-};
+const emptyRemovedLifecycleResult = (): RemovedLifecycleMutationResult => ({
+    affectedIds: [],
+    notFoundIds: [],
+    membershipWarningIds: [],
+    touchedResources: {
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: [],
+    },
+});
 
 export const removeImagesFromLibrary = async (ids: string[]) => {
-    if (ids.length === 0) return;
-
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: RemovedImageRow[] = [];
-
-        console.info('[Repo] removeImagesFromLibrary: loading images', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
-                        is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
-                        media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
-                        audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
-                 FROM images
-                 WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length !== normalizedIds.length) {
-            const foundIds = new Set(rows.map(row => row.id));
-            const missingIds = normalizedIds.filter(id => !foundIds.has(id));
-            throw new Error(`Could not remove ${missingIds.length} asset(s) because they were not found: ${missingIds.join(', ')}`);
-        }
-
-        const membershipRows: { image_id: string; collection_id: string }[] = [];
-        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkMembershipRows = await db.select<{ image_id: string; collection_id: string }[]>(
-                `SELECT image_id, collection_id
-                 FROM collection_images
-                 WHERE image_id IN (${placeholders})`,
-                chunk
-            );
-            membershipRows.push(...chunkMembershipRows);
-        }
-
-        const memberships = membershipRows.reduce<Record<string, string[]>>((acc, row) => {
-            if (!acc[row.image_id]) acc[row.image_id] = [];
-            acc[row.image_id].push(row.collection_id);
-            return acc;
-        }, {});
-
-        const removedAt = Date.now();
-        console.info('[Repo] removeImagesFromLibrary: persisting tombstones', { count: rows.length });
-        for (const row of rows) {
-            await db.execute(
-                `INSERT OR REPLACE INTO removed_images (
-                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
-                    is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json,
-                    media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
-                    audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    row.id,
-                    row.path,
-                    row.width ?? null,
-                    row.height ?? null,
-                    row.file_size ?? null,
-                    row.timestamp,
-                    row.metadata_json ?? null,
-                    row.thumbnail_path ?? null,
-                    row.micro_thumbnail ?? null,
-                    row.thumbnail_source ?? null,
-                    row.is_favorite ?? 0,
-                    row.is_pinned ?? 0,
-                    row.is_missing ?? 0,
-                    row.user_masked ?? null,
-                    row.group_id ?? null,
-                    row.board_id ?? null,
-                    row.notes ?? null,
-                    row.original_metadata_json ?? null,
-                    row.original_parsed_json ?? null,
-                    row.original_state_json ?? null,
-                    row.is_corrupt ?? 0,
-                    removedAt,
-                    memberships[row.id] ? JSON.stringify(memberships[row.id]) : null,
-                    row.media_type ?? 'image',
-                    row.media_container ?? null,
-                    row.media_mime_type ?? null,
-                    row.duration_ms ?? null,
-                    row.video_codec ?? null,
-                    row.video_profile ?? null,
-                    row.audio_present ?? null,
-                    row.audio_codec ?? null,
-                    row.frame_rate_num ?? null,
-                    row.frame_rate_den ?? null,
-                    row.rotation_degrees ?? null,
-                    row.probe_status ?? 'not_applicable',
-                    row.playback_status ?? 'not_applicable'
-                ]
-            );
-        }
-
-        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: normalizedIds.length });
-        await clearCollectionThumbnailCacheForImages(normalizedIds);
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_loras WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_embeddings WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_hypernetworks WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_controlnets WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_ipadapters WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM images WHERE id IN (${placeholders})`, chunk);
-        }
-    });
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath).filter(Boolean)));
+    if (normalizedIds.length === 0) return emptyRemovedLifecycleResult();
+    if (isBrowserMockMode()) {
+        const activeIds = new Set(getBrowserMockImages().filter(image => !image.isDeleted).map(image => image.id));
+        const affectedIds = normalizedIds.filter(id => activeIds.has(id));
+        affectedIds.forEach(id => updateBrowserMockImage(id, { isDeleted: true }));
+        return {
+            ...emptyRemovedLifecycleResult(),
+            affectedIds,
+            notFoundIds: normalizedIds.filter(id => !activeIds.has(id)),
+        };
+    }
+    return unwrap(commands.removeImagesFromLibrary(normalizedIds));
 };
 
 export const restoreRemovedImages = async (ids: string[]) => {
-    if (ids.length === 0) return;
-
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: RemovedImageRow[] = [];
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length !== normalizedIds.length) {
-            const foundIds = new Set(rows.map(row => row.id));
-            const missingIds = normalizedIds.filter(id => !foundIds.has(id));
-            throw new Error(`Could not restore ${missingIds.length} asset(s) because they were not found: ${missingIds.join(', ')}`);
-        }
-
-        const restoredImages = rows.filter(row => row.media_type !== 'video').map(row => ({
-            ...mapRowToImage(row),
-            isDeleted: false
-        }));
-        const restoreStartedAt = liveWatchNow();
-        const records = restoredImages.map(buildPersistableImageRecord);
-        if (records.length > 0) {
-            await persistImageRecords(records, db);
-        }
-        for (const row of rows.filter(row => row.media_type === 'video')) {
-            await db.execute(
-                `INSERT INTO images (
-                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
-                    is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
-                    media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
-                    audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    row.id, row.path, row.width ?? null, row.height ?? null, row.file_size ?? null, row.timestamp,
-                    row.metadata_json ?? '{}', row.thumbnail_path ?? null, row.micro_thumbnail ?? null, row.thumbnail_source ?? null,
-                    row.is_favorite ?? 0, row.is_pinned ?? 0, row.is_missing ?? 0, row.user_masked ?? null,
-                    row.group_id ?? null, row.board_id ?? null, row.notes ?? null, row.original_metadata_json ?? null,
-                    row.original_parsed_json ?? null, row.original_state_json ?? null, row.is_corrupt ?? 0,
-                    'video', row.media_container ?? null, row.media_mime_type ?? null, row.duration_ms ?? null,
-                    row.video_codec ?? null, row.video_profile ?? null, row.audio_present ?? null, row.audio_codec ?? null,
-                    row.frame_rate_num ?? null, row.frame_rate_den ?? null, row.rotation_degrees ?? 0,
-                    row.probe_status ?? 'ready', row.playback_status ?? 'unknown'
-                ]
-            );
-        }
-        infoLiveWatchPerf('restoreRemovedImages persisted restored records', {
-            imageCount: restoredImages.length,
-            totalMs: elapsedMs(restoreStartedAt)
-        });
-
-        const restoredCollectionIds: string[] = [];
-        for (const row of rows) {
-            if (!row.collection_ids_json) continue;
-
-            try {
-                const collectionIds = JSON.parse(row.collection_ids_json) as string[];
-                for (const collectionId of collectionIds) {
-                    await db.execute(
-                        `INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-                         SELECT ?, ?
-                         WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?)`,
-                        [collectionId, row.id, collectionId]
-                    );
-                    restoredCollectionIds.push(collectionId);
-                }
-            } catch (error) {
-                console.warn('[DB] Failed to restore collection membership for removed image', row.id, error);
-            }
-        }
-
-        await clearCollectionThumbnailCacheForCollections(restoredCollectionIds);
-        await removeTombstones(db, normalizedIds);
-    });
-};
-
-/**
- * Deletes the image from the database AND moves the physical file to the OS trash.
- * Also moves the generated thumbnail to trash.
- */
-export const deleteImageFromDisk = async (id: string, path: string, thumbnailPath: string | null) => {
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath).filter(Boolean)));
+    if (normalizedIds.length === 0) return emptyRemovedLifecycleResult();
     if (isBrowserMockMode()) {
-        updateBrowserMockImage(id, { isDeleted: true });
-        return;
+        const removedIds = new Set(getBrowserMockImages().filter(image => image.isDeleted).map(image => image.id));
+        const affectedIds = normalizedIds.filter(id => removedIds.has(id));
+        affectedIds.forEach(id => updateBrowserMockImage(id, { isDeleted: false }));
+        return {
+            ...emptyRemovedLifecycleResult(),
+            affectedIds,
+            notFoundIds: normalizedIds.filter(id => !removedIds.has(id)),
+        };
     }
-
-    // 1. Move to Trash (OS)
-    if (path) {
-        try {
-            await unwrap(commands.moveToTrash(path));
-        } catch (e) {
-            console.error('[Repo] Failed to move file to trash:', path, e);
-            // We proceed even if trash fails?
-            // "make it a move to OS trash, this is an additonal safety net"
-            // If safety net fails, we should probably warn or throw?
-            // But blocking deletion because trash is full/error might be annoying.
-            // For now, we log and proceed.
-        }
-    }
-
-    // 2. Trash Thumbnail
-    if (thumbnailPath && shouldTrashThumbnail(path, thumbnailPath)) {
-        try {
-            await unwrap(commands.deleteThumbnail(thumbnailPath));
-        } catch (e) {
-            console.warn('[Repo] Failed to trash thumbnail:', thumbnailPath, e);
-        }
-    }
-
-    // 3. Delete from DB
-    await deleteImage(id);
+    return unwrap(commands.restoreRemovedImages(normalizedIds));
 };
 
 export const deleteRemovedImageFromDisk = async (id: string): Promise<DeleteRemovedImagesResult> => {
@@ -1136,65 +944,35 @@ export const deleteRemovedImageFromDisk = async (id: string): Promise<DeleteRemo
 };
 
 export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<DeleteRemovedImagesResult> => {
-    if (ids.length === 0) {
-        return { deletedIds: [], failedIds: [], thumbnailWarningIds: [] };
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (normalizedIds.length === 0) {
+        return {
+            clearedIds: [],
+            trashedIds: [],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        };
     }
 
-    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (isBrowserMockMode()) {
+        const removedIds = new Set(getBrowserMockImages().filter(image => image.isDeleted).map(image => image.id));
+        const clearedIds = normalizedIds.filter(id => removedIds.has(id));
+        deleteBrowserMockImages(clearedIds);
+        return {
+            clearedIds,
+            trashedIds: clearedIds,
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: normalizedIds.filter(id => !removedIds.has(id)),
+        };
+    }
 
-    return dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const rows: RemovedImageRow[] = [];
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, thumbnail_path FROM removed_images WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length === 0) {
-            return { deletedIds: [], failedIds: [...normalizedIds], thumbnailWarningIds: [] };
-        }
-
-        const deletedIds: string[] = [];
-        const failedIds: string[] = [];
-        const thumbnailWarningIds: string[] = [];
-
-        for (const row of rows) {
-            if (row.path) {
-                try {
-                    await unwrap(commands.moveToTrash(row.path));
-                } catch (e) {
-                    console.error('[Repo] Failed to move removed file to trash:', row.path, e);
-                    failedIds.push(row.id);
-                    continue;
-                }
-            }
-
-            const thumbnailPath = row.thumbnail_path;
-            if (thumbnailPath && shouldTrashThumbnail(row.path, thumbnailPath)) {
-                try {
-                    await unwrap(commands.deleteThumbnail(thumbnailPath));
-                } catch (e) {
-                    console.warn('[Repo] Failed to trash removed thumbnail:', thumbnailPath, e);
-                    thumbnailWarningIds.push(row.id);
-                }
-            }
-
-            deletedIds.push(row.id);
-        }
-
-        if (deletedIds.length > 0) {
-            await removeTombstones(db, deletedIds);
-        }
-
-        const missingIds = normalizedIds.filter(id => !rows.some(row => row.id === id));
-        failedIds.push(...missingIds);
-
-        return { deletedIds, failedIds, thumbnailWarningIds };
-    });
+    return unwrap(commands.deleteRemovedImagesFromDisk(normalizedIds));
 };
 
 export const markAsDeleted = async (ids: string[], deleted: boolean) => {
@@ -1312,25 +1090,32 @@ export const updateImagesBoard = async (ids: string[], boardId: string | null) =
     await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
-export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
+export const checkHiddenContentAvailability = async (): Promise<{
+    hasIntermediates: boolean;
+    hasGrids: boolean;
+    hasInvokeImageAssets: boolean;
+}> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
             hasIntermediates: images.some(image => image.isIntermediate || image.metadata.isIntermediate),
-            hasGrids: images.some(image => image.metadata.isGrid === true)
+            hasGrids: images.some(image => image.metadata.isGrid === true),
+            hasInvokeImageAssets: images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory)),
         };
     }
 
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
-    const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
+    const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
         hasIntermediates: intermediateCheck.length > 0,
-        hasGrids: gridCheck.length > 0
+        hasGrids: gridCheck.length > 0,
+        hasInvokeImageAssets: invokeAssetCheck.length > 0,
     };
 };
 
@@ -1347,7 +1132,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {

@@ -54,6 +54,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
                 SELECT DISTINCT i.model_hash as hash
                 FROM images i
                 WHERE i.model_hash IS NOT NULL
+                AND i.invoke_scope_hidden = 0
                 AND NOT EXISTS (
                     SELECT 1 FROM models m
                     WHERE m.hash = i.model_hash
@@ -64,6 +65,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
                 SELECT DISTINCT json_extract(i.metadata_json, '$.modelHash') as hash
                 FROM images i
                 WHERE json_extract(i.metadata_json, '$.modelHash') IS NOT NULL
+                AND i.invoke_scope_hidden = 0
                 AND NOT EXISTS (
                     SELECT 1 FROM models m
                     WHERE m.hash = json_extract(i.metadata_json, '$.modelHash')
@@ -73,6 +75,30 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
 
                 SELECT hash FROM models
                 WHERE civitai_version_id IS NULL
+                AND (
+                    (filename IS NOT NULL AND filename != '')
+                    OR lookup_source = 'disk_scan'
+                    OR lookup_source LIKE 'local_cache%'
+                    OR EXISTS (
+                        SELECT 1 FROM images visible_image
+                        WHERE visible_image.invoke_scope_hidden = 0
+                          AND (
+                              visible_image.model_hash = models.hash
+                              OR json_extract(visible_image.metadata_json, '$.modelHash') = models.hash
+                        )
+                    )
+                )
+                AND (
+                    COALESCE(lookup_source, '') NOT LIKE 'harvest_%'
+                    OR EXISTS (
+                        SELECT 1 FROM images visible_image
+                        WHERE visible_image.invoke_scope_hidden = 0
+                          AND (
+                              visible_image.model_hash = models.hash
+                              OR json_extract(visible_image.metadata_json, '$.modelHash') = models.hash
+                          )
+                    )
+                )
                 AND (
                     lookup_source IS NULL
                     OR lookup_source != 'civitai_failed'
@@ -112,6 +138,7 @@ fn count_unresolved_hashes(conn: &Connection) -> Result<(usize, usize), String> 
              LEFT JOIN models m ON m.hash = i.model_hash
              WHERE i.model_hash IS NOT NULL
              AND i.model_hash != ''
+             AND i.invoke_scope_hidden = 0
              AND (m.hash IS NULL OR m.lookup_source = 'civitai_failed')",
         )
         .map_err(|e| e.to_string())?;
@@ -454,6 +481,7 @@ pub async fn resolve_hashes_online(
                             ELSE j.value 
                         END as clean_name
                      FROM images, json_each(metadata_json, '$.loras') j
+                     WHERE images.invoke_scope_hidden = 0
                  ) 
                  WHERE clean_name IS NOT NULL AND clean_name != ''",
                 params![now],
@@ -469,7 +497,8 @@ pub async fn resolve_hashes_online(
                     ?1,
                     'embeddings'
                  FROM images, json_each(metadata_json, '$.embeddings') j
-                 WHERE j.value IS NOT NULL AND j.value != ''",
+                 WHERE images.invoke_scope_hidden = 0
+                   AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
             )
             .map_err(|e| e.to_string())?;
@@ -483,7 +512,8 @@ pub async fn resolve_hashes_online(
                     ?1,
                     'hypernetworks'
                  FROM images, json_each(metadata_json, '$.hypernetworks') j
-                 WHERE j.value IS NOT NULL AND j.value != ''",
+                 WHERE images.invoke_scope_hidden = 0
+                   AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
             )
             .map_err(|e| e.to_string())?;
@@ -497,7 +527,8 @@ pub async fn resolve_hashes_online(
                     ?1,
                     'checkpoint'
                  FROM images
-                 WHERE (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
+                 WHERE invoke_scope_hidden = 0
+                 AND (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
                  AND json_extract(metadata_json, '$.model') IS NOT NULL",
                 params![now],
             )
@@ -512,7 +543,8 @@ pub async fn resolve_hashes_online(
                     ?1,
                     'control_nets'
                  FROM images, json_each(metadata_json, '$.controlNets') j
-                 WHERE j.value IS NOT NULL AND j.value != ''",
+                 WHERE images.invoke_scope_hidden = 0
+                   AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
             )
             .map_err(|e| e.to_string())?;
@@ -526,7 +558,8 @@ pub async fn resolve_hashes_online(
                     ?1,
                     'ip_adapters'
                  FROM images, json_each(metadata_json, '$.ipAdapters') j
-                 WHERE j.value IS NOT NULL AND j.value != ''",
+                 WHERE images.invoke_scope_hidden = 0
+                   AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
             )
             .map_err(|e| e.to_string())?;
@@ -669,6 +702,7 @@ pub async fn resolve_hashes_online(
                             SELECT model_name
                             FROM images
                             WHERE model_hash = ?1
+                            AND invoke_scope_hidden = 0
                             AND model_name IS NOT NULL
                             AND model_name != ''
                             ORDER BY timestamp DESC
@@ -723,6 +757,7 @@ fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlit
         "UPDATE images
          SET resolved_model_name = model_name
          WHERE model_name IS NOT NULL
+         AND invoke_scope_hidden = 0
          AND model_name != ''
          AND (
             resolved_model_name IS NULL
@@ -745,7 +780,8 @@ fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlit
             AND m.name != 'Unknown Model'
             LIMIT 1
          )
-         WHERE model_hash IS NOT NULL 
+         WHERE model_hash IS NOT NULL
+         AND invoke_scope_hidden = 0
          AND EXISTS (
             SELECT 1
             FROM models m
@@ -1012,6 +1048,29 @@ mod tests {
     }
 
     #[test]
+    fn online_candidates_exclude_images_outside_the_active_owner_scope() {
+        let conn = setup_conn();
+        insert_image(&conn, "visible", "visiblehash", None, None);
+        insert_image(&conn, "hidden", "hiddenhash", None, None);
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'hidden'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES ('hiddenhash', 'Hidden Model', 'harvest_checkpoint', 1, 'checkpoint')",
+            [],
+        )
+        .unwrap();
+
+        let hashes = collect_hashes_to_resolve(&conn).expect("collect hashes");
+
+        assert_eq!(hashes, vec!["visiblehash".to_string()]);
+        assert_eq!(count_unresolved_hashes(&conn).unwrap(), (0, 1));
+    }
+
+    #[test]
     fn failed_lookup_retry_uses_unix_second_cutoff() {
         let conn = setup_conn();
         let now = SystemTime::now()
@@ -1020,12 +1079,12 @@ mod tests {
             .as_secs() as i64;
 
         conn.execute(
-            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
              VALUES
-                ('oldfailed', 'Old Failed', 'civitai_failed', ?1, 'checkpoint'),
-                ('recentfailed', 'Recent Failed', 'civitai_failed', ?2, 'checkpoint'),
-                ('nullfailed', 'Missing Timestamp Failed', 'civitai_failed', NULL, 'checkpoint'),
-                ('name:oldfailed', 'Pseudo Failed', 'civitai_failed', ?1, 'checkpoint')",
+                ('oldfailed', 'Old Failed', 'old.safetensors', 'civitai_failed', ?1, 'checkpoint'),
+                ('recentfailed', 'Recent Failed', 'recent.safetensors', 'civitai_failed', ?2, 'checkpoint'),
+                ('nullfailed', 'Missing Timestamp Failed', 'null.safetensors', 'civitai_failed', NULL, 'checkpoint'),
+                ('name:oldfailed', 'Pseudo Failed', 'pseudo.safetensors', 'civitai_failed', ?1, 'checkpoint')",
             params![now - (2 * 24 * 60 * 60), now],
         )
         .expect("insert failed models");

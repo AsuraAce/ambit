@@ -614,19 +614,29 @@ describe('sqlHelpers', () => {
             expect(result.params).toEqual([]);
         });
 
-        it('allows intermediates and grids and uses Match Any for ControlNet and IP-Adapter filters', () => {
+        it('allows hidden image types and uses Match Any for ControlNet and IP-Adapter filters', () => {
             const result = buildSqlWhereClause({
                 ...defaultFilters,
                 showIntermediates: true,
                 showGrids: true,
+                showInvokeImageAssets: true,
                 controlNets: ['Canny', 'Depth'],
                 ipAdapters: ['Face', 'Style'],
                 matchModes: { controlNets: 'any', ipAdapters: 'any' }
             }, false, 'blur', []);
             expect(result.where).not.toContain('is_intermediate_gen');
             expect(result.where).not.toContain('is_grid_gen');
+            expect(result.where).not.toContain('is_invoke_asset_gen');
             expect(result.where).toContain('image_controlnets');
             expect(result.where).toContain(') OR EXISTS (');
+        });
+
+        it('hides only classified InvokeAI image assets at the outer query scope', () => {
+            const hidden = buildSqlWhereClause(defaultFilters, false, 'blur', []);
+            const recursive = buildSqlWhereClause(defaultFilters, false, 'blur', [], undefined, true);
+
+            expect(hidden.where).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
+            expect(recursive.where).not.toContain('is_invoke_asset_gen');
         });
 
         describe('Match Modes', () => {

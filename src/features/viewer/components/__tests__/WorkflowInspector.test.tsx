@@ -7,6 +7,8 @@ import { WorkflowInspector } from '../WorkflowInspector';
 const mockInspectComfyuiMetadataChunks = vi.hoisted(() => vi.fn());
 const mockSettings = vi.hoisted(() => ({ devMode: true }));
 const mockClipboardWriteText = vi.hoisted(() => vi.fn());
+const mockSave = vi.hoisted(() => vi.fn());
+const mockWriteTextFile = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -27,6 +29,9 @@ vi.mock('../../../../services/db/imageRepo', () => ({
     updateImageWorkflow: vi.fn(),
     updateImageWorkflowHint: vi.fn()
 }));
+
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: mockSave }));
+vi.mock('@tauri-apps/plugin-fs', () => ({ writeTextFile: mockWriteTextFile }));
 
 const workflowJson = JSON.stringify({
     nodes: [
@@ -50,10 +55,17 @@ const promptJson = JSON.stringify({
 });
 
 const diagnosticsReport = {
+    appVersion: '0.10.0',
+    parserVersion: 46,
     chunkKeys: ['prompt', 'workflow'],
     hasPromptChunk: true,
     hasWorkflowChunk: true,
     graphNodeCount: 2,
+    selectedOutputCandidateCount: 1,
+    uniqueOutputRootSamplerCount: 1,
+    outputAmbiguous: false,
+    traversalIssues: [],
+    traversalIssuesTruncated: false,
     attemptedLayers: ['workflow_chunk', 'sampler_traversal'],
     fieldSources: {
         model: 'sampler_traversal',
@@ -111,6 +123,10 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
         mockSettings.devMode = true;
         mockClipboardWriteText.mockReset();
+        mockSave.mockReset();
+        mockWriteTextFile.mockReset();
+        mockSave.mockResolvedValue('C:/exports/ambit-comfyui-support.json');
+        mockWriteTextFile.mockResolvedValue(undefined);
         mockInspectComfyuiMetadataChunks.mockReset();
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
@@ -131,6 +147,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
         expect(await screen.findByText('Parser Diagnostics')).toBeTruthy();
         expect(screen.getByText('diagnostic_model')).toBeTruthy();
+        expect(screen.getByText('1 output / 1 root')).toBeTruthy();
         expect(screen.getAllByText(/Sampler Traversal/i).length).toBeGreaterThan(0);
         expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledWith({
             workflow: workflowJson,
@@ -148,30 +165,100 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         });
         const copied = mockClipboardWriteText.mock.calls[0][0] as string;
         const parsed = JSON.parse(copied) as {
-            imageId: string;
+            appVersion: string;
+            parserVersion: number;
+            image: { format: string; width: number; height: number };
             chunkKeys: string[];
             chunkLengths: Record<string, number>;
             graphNodeCount: number;
+            outputSelection: {
+                selectedOutputCandidateCount: number;
+                uniqueOutputRootSamplerCount: number;
+                ambiguous: boolean;
+            };
             fieldSources: Record<string, string>;
+            traversalIssues: unknown[];
+            traversalIssuesTruncated: boolean;
             metadata: { model: string };
             chunks?: unknown;
             prompt?: unknown;
             workflow?: unknown;
         };
 
-        expect(parsed.imageId).toBe('C:/library/comfy.png');
+        expect(parsed.appVersion).toBe('0.10.0');
+        expect(parsed.parserVersion).toBe(46);
+        expect(parsed.image).toEqual({ format: 'png', width: 512, height: 512 });
         expect(parsed.chunkKeys).toEqual(['prompt', 'workflow']);
         expect(parsed.chunkLengths).toEqual({
             prompt: promptJson.length,
             workflow: workflowJson.length
         });
         expect(parsed.graphNodeCount).toBe(2);
+        expect(parsed.outputSelection).toEqual({
+            selectedOutputCandidateCount: 1,
+            uniqueOutputRootSamplerCount: 1,
+            ambiguous: false
+        });
         expect(parsed.fieldSources.model).toBe('sampler_traversal');
+        expect(parsed.traversalIssues).toEqual([]);
+        expect(parsed.traversalIssuesTruncated).toBe(false);
         expect(parsed.metadata.model).toBe('diagnostic_model');
         expect(parsed).not.toHaveProperty('chunks');
         expect(parsed).not.toHaveProperty('prompt');
         expect(parsed).not.toHaveProperty('workflow');
+        expect(parsed).not.toHaveProperty('imageId');
+        expect(copied).not.toContain('C:/library/comfy.png');
         expect(await screen.findByText('Copied')).toBeTruthy();
+    });
+
+    it('confirms and saves a local support bundle with raw chunks', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        expect(screen.getByText('Export ComfyUI support bundle?')).toBeTruthy();
+        expect(screen.getByText(/Ambit will not upload it/i)).toBeTruthy();
+
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        await waitFor(() => expect(mockWriteTextFile).toHaveBeenCalledTimes(1));
+        expect(mockSave).toHaveBeenCalledWith({
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+            defaultPath: 'ambit-comfyui-support.json'
+        });
+        const [path, contents] = mockWriteTextFile.mock.calls[0] as [string, string];
+        expect(path).toBe('C:/exports/ambit-comfyui-support.json');
+        const bundle = JSON.parse(contents) as {
+            schemaVersion: number;
+            chunks: Record<string, string>;
+            image: Record<string, unknown>;
+        };
+        expect(bundle.schemaVersion).toBe(1);
+        expect(bundle.chunks).toEqual({ prompt: promptJson, workflow: workflowJson });
+        expect(bundle.image).toEqual({ format: 'png', width: 512, height: 512 });
+        expect(bundle).not.toHaveProperty('imageId');
+    });
+
+    it('treats support bundle save cancellation as a no-op', async () => {
+        mockSave.mockResolvedValueOnce(null);
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+        expect(mockWriteTextFile).not.toHaveBeenCalled();
+        expect(screen.queryByText(/Support bundle export failed/i)).toBeNull();
+    });
+
+    it('shows support bundle write failures without breaking diagnostics', async () => {
+        mockWriteTextFile.mockRejectedValueOnce(new Error('disk full'));
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Export parser support bundle'));
+        fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
+
+        expect(await screen.findByText(/Support bundle export failed: disk full/i)).toBeTruthy();
+        expect(screen.getByText('Parser Diagnostics')).toBeTruthy();
     });
 
     it('resets copied diagnostics feedback after its display interval', async () => {
@@ -307,6 +394,67 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(
             await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
         ).toBeTruthy();
+    });
+
+    it('renders compact traversal blockers and output ambiguity', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                selectedOutputCandidateCount: 2,
+                uniqueOutputRootSamplerCount: 2,
+                outputAmbiguous: true,
+                traversalIssues: [{
+                    field: 'positive_prompt',
+                    nodeId: '30:19',
+                    nodeType: 'TextGenerate',
+                    inputName: 'text',
+                    reason: 'generated_value_unavailable'
+                }]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('2 outputs / 2 roots')).toBeTruthy();
+        expect(screen.getByTitle('Multiple saved-output roots were found, so no branch received strong traversal authority.')).toBeTruthy();
+        expect(screen.getByText('Traversal Blockers')).toBeTruthy();
+        const blocker = screen.getByTitle('The value is generated at runtime and no literal result is embedded in the image.');
+        expect(blocker.textContent).toContain('Positive Prompt at 30:19 (TextGenerate) / text: Generated Value Unavailable');
+    });
+
+    it('copies the complete capped blocker list without raw metadata bodies', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                traversalIssues,
+                traversalIssuesTruncated: true
+            }
+        });
+        render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByTitle('Copy parser diagnostics summary'));
+        await waitFor(() => expect(mockClipboardWriteText).toHaveBeenCalledTimes(1));
+
+        const copied = JSON.parse(mockClipboardWriteText.mock.calls[0][0] as string) as {
+            traversalIssues: typeof traversalIssues;
+            traversalIssuesTruncated: boolean;
+            prompt?: unknown;
+            workflow?: unknown;
+        };
+        expect(copied.traversalIssues).toEqual(traversalIssues);
+        expect(copied.traversalIssuesTruncated).toBe(true);
+        expect(copied).not.toHaveProperty('prompt');
+        expect(copied).not.toHaveProperty('workflow');
+        expect(screen.getByText('+2 or more in copied diagnostics')).toBeTruthy();
     });
 
     it('hides parser diagnostics outside developer mode', () => {

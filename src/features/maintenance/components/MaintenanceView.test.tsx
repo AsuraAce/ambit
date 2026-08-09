@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaintenanceTab } from '../../../hooks/useMaintenanceData';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { type AIImage, type VideoAsset, GeneratorTool } from '../../../types';
+import type { DeleteRemovedImagesResult } from '../../../bindings';
 import { MaintenanceView } from './MaintenanceView';
 
 const maintenanceDataMock = vi.hoisted(() => ({
@@ -20,8 +21,12 @@ const maintenanceDataMock = vi.hoisted(() => ({
     hasLoadedActiveTab: true,
     refreshData: vi.fn().mockResolvedValue(undefined),
     retryActiveTab: vi.fn().mockResolvedValue(undefined),
+    setLocalDeletedImages: vi.fn(),
+    setLocalUntaggedImages: vi.fn(),
+    setLocalUnoptimizedImages: vi.fn(),
     setLocalMissingImages: vi.fn(),
     setLocalDuplicateCandidates: vi.fn(),
+    setLocalIntermediateImages: vi.fn(),
 }));
 
 const imageRepoMock = vi.hoisted(() => ({
@@ -91,8 +96,12 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         hasLoadedActiveTab: maintenanceDataMock.hasLoadedActiveTab,
         refreshData: maintenanceDataMock.refreshData,
         retryActiveTab: maintenanceDataMock.retryActiveTab,
+        setLocalDeletedImages: maintenanceDataMock.setLocalDeletedImages,
+        setLocalUntaggedImages: maintenanceDataMock.setLocalUntaggedImages,
+        setLocalUnoptimizedImages: maintenanceDataMock.setLocalUnoptimizedImages,
         setLocalMissingImages: maintenanceDataMock.setLocalMissingImages,
         setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
+        setLocalIntermediateImages: maintenanceDataMock.setLocalIntermediateImages,
     })
 }));
 
@@ -256,7 +265,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, isShortcutBlocked }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -267,6 +276,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
+        onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
         onRecoverMetadata?: () => void;
         isShortcutBlocked?: boolean;
     }) => (
@@ -282,6 +292,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
             {onRecoverMetadata && <button onClick={onRecoverMetadata}>Recover Viewer Prompt</button>}
+            {onOpenReferencedImage && <button onClick={() => void onOpenReferencedImage('hidden-reference')}>Open Viewer Reference</button>}
         </div>
     )
 }));
@@ -338,7 +349,15 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onResolveDuplicate: vi.fn().mockResolvedValue(undefined),
     onRestoreImages: vi.fn().mockResolvedValue(undefined),
     onRemoveFromLibrary: vi.fn().mockResolvedValue(undefined),
-    onDeleteFile: vi.fn().mockResolvedValue(undefined),
+    onDeleteFile: vi.fn().mockResolvedValue({
+        clearedIds: [],
+        trashedIds: [],
+        alreadyMissingIds: [],
+        failedIds: [],
+        cleanupPendingIds: [],
+        thumbnailWarningIds: [],
+        notFoundIds: [],
+    }),
     onEmptyTrash: vi.fn().mockResolvedValue(undefined),
     onViewImage: vi.fn(),
     onRegenerateThumbnails: vi.fn().mockResolvedValue(undefined),
@@ -346,6 +365,7 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onToggleFavorite: vi.fn(),
     onTogglePin: vi.fn(),
     onViewerOpenChange: vi.fn(),
+    onOpenReferencedImage: vi.fn().mockResolvedValue(true),
     isShortcutBlocked: false,
     onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });
@@ -507,7 +527,7 @@ describe('MaintenanceView', () => {
         expect(onRemoveFromLibrary).toHaveBeenNthCalledWith(2, ['missing-scan']);
     });
 
-    it('removes selected missing rows and can purge the complete missing result', async () => {
+    it('purges the complete missing result and clears it immediately', async () => {
         maintenanceDataMock.localMissingImages = [
             createImage({ id: 'missing-a', isMissing: true }),
             createImage({ id: 'missing-b', isMissing: true })
@@ -518,18 +538,22 @@ describe('MaintenanceView', () => {
         fireEvent.click(screen.getByText('Purge Missing'));
         await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenLastCalledWith(['missing-a', 'missing-b']));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('missing', false);
-
-        fireEvent.click(screen.getByText('Select All Missing'));
-        fireEvent.click(screen.getByText('Delete Missing'));
-
-        await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenLastCalledWith(['missing-a', 'missing-b']));
-        expect(maintenanceDataMock.setLocalMissingImages).toHaveBeenCalledWith(expect.any(Function));
+        expect(maintenanceDataMock.setLocalMissingImages).toHaveBeenCalledWith([]);
+        expect(screen.getByTestId('missing-count').textContent).toBe('0');
     });
 
-    it('restores and permanently deletes selected trash rows', async () => {
+    it('restores selected rows and always confirms before moving Removed files to OS trash', async () => {
         maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
         const onRestoreImages = vi.fn().mockResolvedValue(undefined);
-        const onDeleteFile = vi.fn().mockResolvedValue(undefined);
+        const onDeleteFile = vi.fn().mockResolvedValue({
+            clearedIds: ['trash-a'],
+            trashedIds: ['trash-a'],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        });
         renderView({ onRestoreImages, onDeleteFile });
 
         fireEvent.click(screen.getByText('Tab trash'));
@@ -543,8 +567,114 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Select All Trash'));
         fireEvent.click(screen.getByText('Delete Trash'));
+        expect(onDeleteFile).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog', { name: 'Move files to OS Trash?' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
         await waitFor(() => expect(onDeleteFile).toHaveBeenCalledWith(['trash-a']));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('trash', false, { scope: 'global' });
+    });
+
+    it('blocks duplicate final-deletion confirmation while the first request is pending', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
+        let resolveDelete: ((result: DeleteRemovedImagesResult) => void) | undefined;
+        const onDeleteFile = vi.fn(() => new Promise<DeleteRemovedImagesResult>(resolve => {
+            resolveDelete = resolve;
+        }));
+        renderView({ onDeleteFile });
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Select All Trash'));
+        fireEvent.click(screen.getByText('Delete Trash'));
+        const confirm = screen.getByRole('button', { name: 'Move to OS Trash' });
+        fireEvent.click(confirm);
+        fireEvent.click(confirm);
+
+        expect(onDeleteFile).toHaveBeenCalledOnce();
+        expect(screen.getByRole('button', { name: 'Processing...' })).toHaveProperty('disabled', true);
+
+        await act(async () => {
+            resolveDelete?.({
+                clearedIds: ['trash-a'],
+                trashedIds: ['trash-a'],
+                alreadyMissingIds: [],
+                failedIds: [],
+                cleanupPendingIds: [],
+                thumbnailWarningIds: [],
+                notFoundIds: [],
+            });
+        });
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Move files to OS Trash?' })).toBeNull());
+    });
+
+    it('closes a completed deletion when only the Maintenance refresh fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
+        const onDeleteFile = vi.fn().mockResolvedValue({
+            clearedIds: ['trash-a'],
+            trashedIds: ['trash-a'],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        });
+        renderView({ onDeleteFile });
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Select All Trash'));
+        fireEvent.click(screen.getByText('Delete Trash'));
+        maintenanceDataMock.refreshData.mockRejectedValueOnce(new Error('refresh failed'));
+        fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
+
+        await waitFor(() => expect(onDeleteFile).toHaveBeenCalledWith(['trash-a']));
+        await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Move files to OS Trash?' })).toBeNull());
+        expect(maintenanceDataMock.setLocalDeletedImages).toHaveBeenCalledWith(expect.any(Function));
+        expect(errorSpy).toHaveBeenCalledWith(
+            '[Maintenance] Deletion completed, but the view failed to refresh',
+            expect.any(Error)
+        );
+        expect(errorSpy).not.toHaveBeenCalledWith('[Maintenance] Removed deletion failed', expect.anything());
+        errorSpy.mockRestore();
+    });
+
+    it('keeps only unresolved Removed entries selected for a retry', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
+        maintenanceDataMock.localDeletedImages = [
+            createImage({ id: 'trash-a', isDeleted: true }),
+            createImage({ id: 'trash-b', isDeleted: true }),
+        ];
+        const onDeleteFile = vi.fn()
+            .mockResolvedValueOnce({
+                clearedIds: ['trash-a'],
+                trashedIds: ['trash-a'],
+                alreadyMissingIds: [],
+                failedIds: ['trash-b'],
+                cleanupPendingIds: [],
+                thumbnailWarningIds: [],
+                notFoundIds: [],
+            })
+            .mockResolvedValueOnce({
+                clearedIds: ['trash-b'],
+                trashedIds: ['trash-b'],
+                alreadyMissingIds: [],
+                failedIds: [],
+                cleanupPendingIds: [],
+                thumbnailWarningIds: [],
+                notFoundIds: [],
+            });
+        renderView({ onDeleteFile });
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Select All Trash'));
+        fireEvent.click(screen.getByText('Delete Trash'));
+        fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
+        await waitFor(() => expect(onDeleteFile).toHaveBeenCalledWith(['trash-a', 'trash-b']));
+
+        fireEvent.click(screen.getByText('Delete Trash'));
+        fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
+        await waitFor(() => expect(onDeleteFile).toHaveBeenLastCalledWith(['trash-b']));
     });
 
     it('routes untagged and intermediate actions through their filtered scopes', async () => {
@@ -552,7 +682,15 @@ describe('MaintenanceView', () => {
         maintenanceDataMock.localUntaggedImages = [createImage({ id: 'untagged-a' })];
         maintenanceDataMock.localIntermediateImages = [createImage({ id: 'intermediate-a', isIntermediate: true })];
         const onRemoveFromLibrary = vi.fn().mockResolvedValue(undefined);
-        const onDeleteFile = vi.fn().mockResolvedValue(undefined);
+        const onDeleteFile = vi.fn().mockResolvedValue({
+            clearedIds: ['intermediate-a'],
+            trashedIds: ['intermediate-a'],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        });
         renderView({ onRemoveFromLibrary, onDeleteFile });
 
         fireEvent.click(screen.getByText('Tab untagged'));
@@ -573,7 +711,55 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Select All Intermediates'));
         fireEvent.click(screen.getByText('Delete Intermediates'));
+        expect(onRemoveFromLibrary).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
+        await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenCalledWith(['intermediate-a']));
         await waitFor(() => expect(onDeleteFile).toHaveBeenCalledWith(['intermediate-a']));
+        expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('intermediates', false, { scope: 'filtered' });
+    });
+
+    it('does not permanently delete an intermediate when tombstoning fails', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'intermediates']);
+        maintenanceDataMock.localIntermediateImages = [createImage({ id: 'intermediate-a', isIntermediate: true })];
+        const failure = new Error('tombstone failed');
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const onRemoveFromLibrary = vi.fn().mockRejectedValue(failure);
+        const onDeleteFile = vi.fn();
+        renderView({ onRemoveFromLibrary, onDeleteFile });
+
+        try {
+            fireEvent.click(screen.getByText('Tab intermediates'));
+            fireEvent.click(await screen.findByText('Select All Intermediates'));
+            fireEvent.click(screen.getByText('Delete Intermediates'));
+            fireEvent.click(screen.getByRole('button', { name: 'Move to OS Trash' }));
+
+            await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenCalledWith(['intermediate-a']));
+            expect(onDeleteFile).not.toHaveBeenCalled();
+            expect(screen.getByText(/deletion could not be completed/i)).toBeTruthy();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('keeps restore selection available when persistence fails', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-a', isDeleted: true })];
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const onRestoreImages = vi.fn().mockRejectedValue(new Error('restore failed'));
+        renderView({ onRestoreImages });
+
+        try {
+            fireEvent.click(screen.getByText('Tab trash'));
+            fireEvent.click(await screen.findByText('Select All Trash'));
+            fireEvent.click(screen.getByText('Restore Trash'));
+            await waitFor(() => expect(onRestoreImages).toHaveBeenCalledWith(['trash-a']));
+
+            fireEvent.click(screen.getByText('Restore Trash'));
+            await waitFor(() => expect(onRestoreImages).toHaveBeenCalledTimes(2));
+            expect(maintenanceDataMock.refreshData).not.toHaveBeenCalledWith('trash', false);
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('regenerates selected and filtered thumbnail work while restoring store progress state', async () => {
@@ -715,6 +901,20 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Range Missing'));
         fireEvent.click(screen.getByText('Clear Missing Selection'));
+    });
+
+    it('hands reference navigation to the global viewer and closes the maintenance viewer on success', async () => {
+        maintenanceDataMock.localMissingImages = [createImage({ id: 'missing-a' })];
+        const onOpenReferencedImage = vi.fn().mockResolvedValue(true);
+        const onViewerOpenChange = vi.fn();
+        renderView({ onOpenReferencedImage, onViewerOpenChange });
+
+        fireEvent.click(screen.getByText('Select Missing Item'));
+        fireEvent.click(screen.getByText('Open Viewer Reference'));
+
+        await waitFor(() => expect(onOpenReferencedImage).toHaveBeenCalledWith('hidden-reference'));
+        await waitFor(() => expect(screen.queryByTestId('maintenance-viewer')).toBeNull());
+        expect(onViewerOpenChange).toHaveBeenLastCalledWith(false);
     });
 
     it('covers global thumbnail work, non-duplicate scans, and viewer cleanup variants', async () => {

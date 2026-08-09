@@ -15,21 +15,22 @@ import { ThumbnailsTab } from './ThumbnailsTab';
 import { IntermediatesTab } from './IntermediatesTab';
 import { MAINTENANCE_TABS, MaintenanceTabs } from './MaintenanceTabs';
 import { ScanPlaceholder } from './ScanPlaceholder';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
 import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
-import type { ExactDuplicateResolution } from '../../../bindings';
+import type { DeleteRemovedImagesResult, ExactDuplicateResolution } from '../../../bindings';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface MaintenanceViewProps {
     images: AIImage[];
     onResolveDuplicate: (resolutions: ExactDuplicateResolution[]) => Promise<void>;
-    onRestoreImages: (ids: string[]) => void;
-    onRemoveFromLibrary: (ids: string[]) => void;
-    onDeleteFile: (ids: string[]) => void;
+    onRestoreImages: (ids: string[]) => Promise<void>;
+    onRemoveFromLibrary: (ids: string[]) => Promise<void>;
+    onDeleteFile: (ids: string[]) => Promise<DeleteRemovedImagesResult>;
     onEmptyTrash: () => Promise<void>;
     onGroupImages?: (ids: string[]) => void;
     onViewImage: (id: string) => void;
@@ -45,6 +46,7 @@ interface MaintenanceViewProps {
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     availableTags?: string[];
     onViewerOpenChange: (isOpen: boolean) => void;
+    onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isShortcutBlocked: boolean;
 }
 
@@ -69,6 +71,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onSetCollectionMembership,
     availableTags,
     onViewerOpenChange,
+    onOpenReferencedImage,
     isShortcutBlocked
 }) => {
     // --- State ---
@@ -93,6 +96,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [recoveredImages, setRecoveredImages] = useState<Map<string, AIImage>>(() => new Map());
     const [removedAction, setRemovedAction] = useState<'restoring' | 'deleting' | null>(null);
     const privacyEnabled = useSettingsStore(state => state.privacyEnabled);
+    const [deleteConfirmationIds, setDeleteConfirmationIds] = useState<string[] | null>(null);
+    const [deleteConfirmationSource, setDeleteConfirmationSource] = useState<'removed' | 'intermediates'>('removed');
+    const [deleteConfirmationError, setDeleteConfirmationError] = useState(false);
+    const deleteInFlightRef = useRef(false);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
@@ -120,8 +127,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         hasLoadedActiveTab,
         refreshData,
         retryActiveTab,
+        setLocalDeletedImages,
+        setLocalUntaggedImages,
+        setLocalUnoptimizedImages,
         setLocalMissingImages,
         setLocalDuplicateCandidates,
+        setLocalIntermediateImages,
     } = useMaintenanceData(activeTab, thumbnailsScope);
 
     // --- Computed Data ---
@@ -221,6 +232,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         });
     }, [handleImageClick, openViewer]);
 
+    const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
+        const opened = await onOpenReferencedImage(imageId);
+        if (opened) setViewingImageId(null);
+        return opened;
+    }, [onOpenReferencedImage]);
+
     const handleSelectAll = useCallback(() => {
         const ids = currentList.map(i => i.id);
         setSelectedIds(new Set(ids));
@@ -250,10 +267,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setRemovedAction('restoring');
         try {
             await onRestoreImages(ids);
-            await refreshData('trash', false);
+            const restoredIds = new Set(ids);
+            setLocalDeletedImages(previous => previous.filter(image => !restoredIds.has(image.id)));
             clearSelection();
+        } catch (error) {
+            console.error('[Maintenance] Restore failed', error);
+            return;
         } finally {
             setRemovedAction(null);
+        }
+        try {
+            await refreshData('trash', false);
+        } catch (error) {
+            console.error('[Maintenance] Restore completed, but the view failed to refresh', error);
         }
     };
 
@@ -262,49 +288,115 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         if (ids.length === 0) return;
 
         if (activeTab === 'trash') {
-            setRemovedAction('deleting');
+            setDeleteConfirmationSource('removed');
+            setDeleteConfirmationError(false);
+            setDeleteConfirmationIds(ids);
+            return;
+        }
+
+        if (activeTab === 'intermediates') {
+            setDeleteConfirmationSource('intermediates');
+            setDeleteConfirmationError(false);
+            setDeleteConfirmationIds(ids);
+            return;
         }
 
         try {
-            if (activeTab === 'untagged' || activeTab === 'missing') {
-                await onRemoveFromLibrary(ids);
-            } else {
-                await onDeleteFile(ids);
-            }
+            await onRemoveFromLibrary(ids);
+        } catch (error) {
+            console.error('[Maintenance] Remove from library failed', error);
+            return;
+        }
 
-            const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
-                activeTab === 'intermediates' ? intermediatesScope : 'global';
+        const removedIds = new Set(ids);
+        if (activeTab === 'missing') {
+            setScanMissingIds(prev => {
+                const next = new Set(prev);
+                ids.forEach(id => next.delete(id));
+                return next;
+            });
+            setFetchedMissingImages(prev => prev.filter(img => !removedIds.has(img.id)));
+            setLocalMissingImages(prev => prev.filter(img => !removedIds.has(img.id)));
+        } else if (activeTab === 'untagged') {
+            setLocalUntaggedImages(prev => prev.filter(img => !removedIds.has(img.id)));
+        } else if (activeTab === 'thumbnails') {
+            setLocalUnoptimizedImages(prev => prev.filter(img => !removedIds.has(img.id)));
+        }
+        clearSelection();
 
+        const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope : 'global';
+        try {
             await refreshData(activeTab, false, { scope });
+        } catch (error) {
+            console.error('[Maintenance] Removal completed, but the view failed to refresh', error);
+        }
+    };
 
-            if (activeTab === 'missing') {
-                setScanMissingIds(prev => {
-                    const next = new Set(prev);
-                    ids.forEach(id => next.delete(id));
-                    return next;
-                });
-                setFetchedMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
-                setLocalMissingImages(prev => prev.filter(img => !ids.includes(img.id)));
+    const handleConfirmDeleteRemoved = async () => {
+        const ids = deleteConfirmationIds;
+        if (!ids || ids.length === 0 || deleteInFlightRef.current) return;
+
+        deleteInFlightRef.current = true;
+        setRemovedAction('deleting');
+        setDeleteConfirmationError(false);
+        try {
+            if (deleteConfirmationSource === 'intermediates') {
+                await onRemoveFromLibrary(ids);
+                const removedIds = new Set(ids);
+                setLocalIntermediateImages(previous => previous.filter(image => !removedIds.has(image.id)));
             }
-            clearSelection();
+            const result = await onDeleteFile(ids);
+            if (deleteConfirmationSource === 'removed' && result.clearedIds.length > 0) {
+                const clearedIds = new Set(result.clearedIds);
+                setLocalDeletedImages(previous => previous.filter(image => !clearedIds.has(image.id)));
+            }
+            const unresolvedIds = new Set([...result.failedIds, ...result.cleanupPendingIds]);
+            setSelectedIds(unresolvedIds);
+            setDeleteConfirmationIds(null);
+            try {
+                await refreshData(
+                    deleteConfirmationSource === 'removed' ? 'trash' : 'intermediates',
+                    false,
+                    { scope: deleteConfirmationSource === 'removed' ? 'global' : intermediatesScope }
+                );
+            } catch (error) {
+                console.error('[Maintenance] Deletion completed, but the view failed to refresh', error);
+            }
+        } catch (error) {
+            console.error('[Maintenance] Removed deletion failed', error);
+            setDeleteConfirmationError(true);
         } finally {
-            if (activeTab === 'trash') {
-                setRemovedAction(null);
-            }
+            deleteInFlightRef.current = false;
+            setRemovedAction(null);
         }
     };
 
     const handlePurgeMissing = async () => {
         const ids = missingImages.map(i => i.id);
-        await onRemoveFromLibrary(ids);
-        await refreshData('missing', false);
+        try {
+            await onRemoveFromLibrary(ids);
+        } catch (error) {
+            console.error('[Maintenance] Missing-image purge failed', error);
+            return;
+        }
         setScanMissingIds(new Set());
         setFetchedMissingImages([]);
+        setLocalMissingImages([]);
+        try {
+            await refreshData('missing', false);
+        } catch (error) {
+            console.error('[Maintenance] Missing-image purge completed, but the view failed to refresh', error);
+        }
     };
 
     const handleViewerCleanup = useCallback(async () => {
         const id = viewingImageId!;
-        await onRemoveFromLibrary([id]);
+        try {
+            await onRemoveFromLibrary([id]);
+        } catch (error) {
+            console.error('[Maintenance] Viewer cleanup failed', error);
+            return;
+        }
         setViewerRevealGrantId(null);
         setViewingImageId(null);
 
@@ -316,17 +408,27 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             });
             setFetchedMissingImages(prev => prev.filter(img => img.id !== id));
             setLocalMissingImages(prev => prev.filter(img => img.id !== id));
+        } else if (activeTab === 'untagged') {
+            setLocalUntaggedImages(prev => prev.filter(img => img.id !== id));
+        } else if (activeTab === 'thumbnails') {
+            setLocalUnoptimizedImages(prev => prev.filter(img => img.id !== id));
+        } else if (activeTab === 'intermediates') {
+            setLocalIntermediateImages(prev => prev.filter(img => img.id !== id));
         }
 
         const scope: 'global' | 'filtered' = activeTab === 'untagged' ? untaggedScope :
             activeTab === 'thumbnails' ? thumbnailsScope :
                 activeTab === 'intermediates' ? intermediatesScope : 'global';
 
-        await refreshData(activeTab, false, {
-            scope,
-            includeUpgradeable: activeTab === 'thumbnails' ? includeUpgradeable : undefined,
-            runHashBackfill: false
-        });
+        try {
+            await refreshData(activeTab, false, {
+                scope,
+                includeUpgradeable: activeTab === 'thumbnails' ? includeUpgradeable : undefined,
+                runHashBackfill: false
+            });
+        } catch (error) {
+            console.error('[Maintenance] Viewer cleanup completed, but the view failed to refresh', error);
+        }
     }, [
         activeTab,
         includeUpgradeable,
@@ -691,6 +793,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         availableTags={availableTags}
                         onOpenSettings={() => { }}
                         onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
+                        onOpenReferencedImage={handleOpenReferencedImage}
                     />
                 )
             )}
@@ -704,6 +807,26 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     onTogglePin={onTogglePin ? handleCompareTogglePin : undefined}
                 />
             )}
+
+            <ConfirmDialog
+                isOpen={deleteConfirmationIds !== null}
+                title={deleteConfirmationSource === 'removed'
+                    ? 'Move files to OS Trash?'
+                    : 'Delete intermediate files?'}
+                message={deleteConfirmationError
+                    ? 'The deletion could not be completed. Any recoverable Removed entries were kept; you can safely try again.'
+                    : deleteConfirmationSource === 'removed'
+                        ? `${deleteConfirmationIds?.length ?? 0} selected ${deleteConfirmationIds?.length === 1 ? 'file' : 'files'} will be moved to OS Trash and their generation data will be removed from Ambit. Already-missing files will have their remaining Ambit entries cleared.`
+                        : `${deleteConfirmationIds?.length ?? 0} intermediate ${deleteConfirmationIds?.length === 1 ? 'file' : 'files'} will be removed from Ambit and moved to OS Trash. Failed moves remain recoverable in Maintenance > Removed.`}
+                confirmLabel="Move to OS Trash"
+                isDangerous
+                isLoading={removedAction === 'deleting'}
+                onConfirm={handleConfirmDeleteRemoved}
+                onCancel={() => {
+                    setDeleteConfirmationError(false);
+                    setDeleteConfirmationIds(null);
+                }}
+            />
         </div>
     );
 };

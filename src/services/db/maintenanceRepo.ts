@@ -11,6 +11,7 @@ import {
     getBrowserMockImages,
     updateBrowserMockImage,
 } from '../browserMockData';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 interface ImagePathRow {
     id: string;
@@ -69,7 +70,7 @@ export const verifyLibraryIntegrity = async (
     }
 
     const db = await getDb();
-    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE is_missing = 0 AND is_deleted = 0');
+    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
 
     if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
@@ -126,6 +127,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
         SELECT ${getImageFieldsLight()}
         FROM images
         WHERE is_missing = 1
+          AND invoke_scope_hidden = 0
           AND is_deleted = 0
         ORDER BY timestamp DESC
     `);
@@ -157,7 +159,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
@@ -171,6 +173,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
         SELECT ${getImageFieldsLight()} FROM images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
         AND media_type = 'image'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
     `;
 
@@ -190,7 +193,12 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 
 export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !isVideoAsset(image) && !image.isDeleted && !image.metadata.positivePrompt);
+        return getBrowserMockImages().filter(image =>
+            !isVideoAsset(image)
+            && !image.isDeleted
+            && !image.metadata.positivePrompt
+            && !isKnownInvokeImageAsset(image.invokeImageCategory)
+        );
     }
 
     const db = await getDb();
@@ -198,8 +206,10 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
         SELECT ${getImageFieldsLight()} FROM images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
         AND media_type = 'image'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
+        AND IFNULL(is_invoke_asset_gen, 0) = 0
     `;
 
     if (whereClause) {
@@ -263,6 +273,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
         AND (is_corrupt = 0 OR is_corrupt IS NULL)
@@ -302,6 +313,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND is_missing = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -346,6 +358,7 @@ export const getUnoptimizedImageEntries = async (
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
+        AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND is_missing = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -410,6 +423,7 @@ export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
             SELECT id, file_hash
             FROM images
             WHERE is_deleted = 0
+              AND invoke_scope_hidden = 0
               AND is_missing = 0
               AND group_id IS NULL
               AND IFNULL(is_intermediate_gen, 0) = 0
@@ -441,7 +455,12 @@ export const getMaintenanceCounts = async () => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
-            untagged: images.filter(image => !isVideoAsset(image) && !image.metadata.positivePrompt && !image.isDeleted).length,
+            untagged: images.filter(image =>
+                !isVideoAsset(image)
+                && !image.metadata.positivePrompt
+                && !image.isDeleted
+                && !isKnownInvokeImageAsset(image.invokeImageCategory)
+            ).length,
             orphans: 0,
             intermediates: images.filter(image => !isVideoAsset(image) && (image.isIntermediate || image.metadata.isIntermediate)).length,
             missing: images.filter(image => image.isMissing).length,
@@ -455,10 +474,17 @@ export const getMaintenanceCounts = async () => {
     // Batch all counts into a single query to reduce IPC overhead
     const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
-            COUNT(*) FILTER (WHERE media_type = 'image' AND (positive_prompt IS NULL OR positive_prompt = '') AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0) as untagged,
-            COUNT(*) FILTER (WHERE is_missing = 1 AND is_deleted = 0) as missing,
-            COUNT(*) FILTER (WHERE media_type = 'image' AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-            (SELECT COUNT(*) FROM removed_images) as trash
+            COUNT(*) FILTER (
+                 WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                   AND media_type = 'image'
+                   AND invoke_scope_hidden = 0
+                   AND is_deleted = 0
+                   AND IFNULL(is_intermediate_gen, 0) = 0
+                   AND IFNULL(is_invoke_asset_gen, 0) = 0
+             ) as untagged,
+             COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
+             COUNT(*) FILTER (WHERE media_type = 'image' AND invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
+             (SELECT COUNT(*) FROM removed_images WHERE invoke_scope_hidden = 0) as trash
         FROM images
     `);
 

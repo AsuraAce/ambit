@@ -29,7 +29,12 @@ pub mod m59_canonical_resource_lookup_indexes;
 pub mod m60_resource_inventory_cleanup;
 pub mod m61_auxiliary_resource_inventory_cleanup;
 pub mod m62_smart_collection_count_cache;
-pub mod m63_video_library_assets;
+pub mod m63_invoke_image_source;
+pub mod m64_invoke_image_references;
+pub mod m65_invoke_owner_scope;
+pub mod m66_invoke_collection_owner;
+pub mod m67_removed_restore_state;
+pub mod m68_video_library_assets;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -68,7 +73,12 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m60_resource_inventory_cleanup::migration60());
     migrations.push(m61_auxiliary_resource_inventory_cleanup::migration61());
     migrations.push(m62_smart_collection_count_cache::migration62());
-    migrations.push(m63_video_library_assets::migration63());
+    migrations.push(m63_invoke_image_source::migration63());
+    migrations.push(m64_invoke_image_references::migration64());
+    migrations.push(m65_invoke_owner_scope::migration65());
+    migrations.push(m66_invoke_collection_owner::migration66());
+    migrations.push(m67_removed_restore_state::migration67());
+    migrations.push(m68_video_library_assets::migration68());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -80,7 +90,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_through_video_library_assets_63() {
+    fn migrations_include_mainline_through_video_library_assets_68() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -101,6 +111,11 @@ mod tests {
         assert!(versions.contains(&61));
         assert!(versions.contains(&62));
         assert!(versions.contains(&63));
+        assert!(versions.contains(&64));
+        assert!(versions.contains(&65));
+        assert!(versions.contains(&66));
+        assert!(versions.contains(&67));
+        assert!(versions.contains(&68));
     }
 
     #[test]
@@ -126,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_video_library_assets_63_pending() {
+    fn database_at_mainline_49_has_migrations_through_video_library_assets_68_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -138,7 +153,7 @@ mod tests {
         assert!(has_49);
         assert_eq!(
             pending_after_49,
-            vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]
+            vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68]
         );
     }
 }

@@ -46,6 +46,7 @@ interface MetadataSidebarProps {
     isPaletteLoading: boolean;
     isLoading?: boolean;
     searchHighlights?: PromptHighlightSpec;
+    onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
 
 export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
@@ -77,7 +78,8 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     palette,
     isPaletteLoading,
     isLoading,
-    searchHighlights
+    searchHighlights,
+    onOpenReferencedImage
 }) => {
     return (
         <div className="w-[420px] flex flex-col h-full bg-white dark:bg-zinc-900/95 backdrop-blur-xl border-l border-gray-200 dark:border-white/10 shadow-2xl">
@@ -151,6 +153,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         onOpenAIResult={onOpenAIResult}
                         isLoading={isLoading}
                         searchHighlights={searchHighlights}
+                        onOpenReferencedImage={onOpenReferencedImage}
                     />
                 )}
 

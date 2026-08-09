@@ -11,10 +11,10 @@ Most Maintenance actions change Ambit's local catalog, not your original image f
 | Action | What it changes | Source files |
 | --- | --- | --- |
 | File Link Audit, Re-Scan Files, Repair Broken Thumbnails | Checks or repairs Ambit's local records and thumbnail references | Not touched |
-| Prune All Records | Accepts audited missing paths as missing in Ambit's catalog | Not touched and not recovered |
+| Mark All as Missing | Marks audited missing paths as missing in Ambit's catalog | Not touched and not recovered |
 | Remove from Library, Remove all from Library, duplicate resolution | Removes records from the active library; removed records can appear in Removed when Ambit has enough record data | Kept on disk |
 | Restore to Library | Moves selected Removed records back into the active library | Not touched |
-| Delete File in Removed | Destructive path for selected Removed records; moves source files to OS trash when possible | Moved to OS trash when the action succeeds |
+| Delete File in Removed | Destructive path for selected Removed records; clears generation data only after OS-trash success or when the source is already missing | Moved to OS trash when the action succeeds |
 
 If you are unsure, prefer scans, repairs, rescans, and restore actions before actions that remove records or delete files.
 
@@ -49,7 +49,7 @@ The Missing tab helps when files were moved, renamed, deleted outside Ambit, or 
 
 Use File Link Audit to check whether active library records still point to files on disk. After an audit has run, Re-Scan Files runs the check again. If missing paths appear, review the sample paths first; a disconnected drive or renamed folder can make many healthy records look missing.
 
-Use Prune All Records only when you want Ambit to accept the audited paths as missing. This updates Ambit's catalog state. It does not restore files, search other folders for replacements, or delete source files.
+Use Mark All as Missing when you want Ambit to accept the audited paths as missing. This updates Ambit's catalog state without deleting database records or source files. It does not restore files or search other folders for replacements.
 
 After records appear in Missing, select records and use Remove from Library, or use Remove all from Library when every listed record should leave the active library. These actions clean Ambit's active catalog for files that are already unavailable; they do not recover files.
 
@@ -84,22 +84,24 @@ The keeper inherits favorite and pinned state plus manual collection memberships
 
 Untagged helps find images without descriptive metadata or positive prompts. Use Global to scan the whole library, or Filtered to inspect only the current filter result set.
 
+Known InvokeAI user, control, mask, and other image assets are excluded from Untagged because missing generation prompts are normal for those source images. They remain available to missing-file, duplicate, thumbnail, and Removed workflows, and can be inspected from the library after enabling `Show InvokeAI Image Assets` in the View menu.
+
 Use View Image to inspect a record before cleanup. Use Remove from Library only when the selected records should leave Ambit's active library while keeping their source files on disk.
 
 ## Intermediates
 
 The Intermediates tab appears only when Ambit has images flagged as intermediate outputs, such as images without the expected InvokeAI metadata. Use Global or Filtered scope to control which intermediate records you review.
 
-Use View Image to inspect a record before cleanup. Use Move to Gallery when an image is a keeper and should stop being treated as an intermediate. For intentional source-file deletion, first remove the record from the active library, then review it in Removed and use Delete File.
+Use View Image to inspect a record before cleanup. Use Move to Gallery when an image is a keeper and should stop being treated as an intermediate. Delete Selected asks for confirmation, then removes the records from the active library and moves their source files to OS trash. If a file move fails, its recoverable record remains in Removed so you can inspect or retry it.
 
 ## Removed
 
 Removed contains images that were removed from the active library while kept on disk. Select records to choose between:
 
 - Restore to Library: restore selected records to the active library.
-- Delete File: move selected source files to OS trash when possible, then remove those records from Ambit.
+- Delete File: move selected source files to OS trash, then remove those records from Ambit. If a source is already missing, the remaining Removed record can still be cleared safely.
 
-Treat Delete File carefully. If moving a file to OS trash fails, Ambit reports the failure instead of silently completing the deletion.
+Treat Delete File carefully. If moving a file to OS trash fails, Ambit reports the failure and keeps that Removed record selected for a retry instead of silently discarding its generation data.
 
 ## Thumbnail Problems
 

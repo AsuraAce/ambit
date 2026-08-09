@@ -463,7 +463,8 @@ fn get_thumbnail_optimization_failures_for_conn(
                     thumbnail_last_error,
                     thumbnail_last_attempt_at
              FROM images
-             WHERE is_deleted = 0
+             WHERE invoke_scope_hidden = 0
+               AND is_deleted = 0
                AND media_type = 'image'
                AND is_missing = 0
                AND COALESCE(thumbnail_failure_count, 0) > 0
@@ -496,7 +497,8 @@ fn retry_failed_thumbnail_optimizations_for_conn(conn: &Connection) -> Result<us
          SET thumbnail_failure_count = 0,
              thumbnail_last_error = NULL,
              thumbnail_last_attempt_at = NULL
-         WHERE is_deleted = 0
+         WHERE invoke_scope_hidden = 0
+           AND is_deleted = 0
            AND media_type = 'image'
            AND is_missing = 0
            AND COALESCE(thumbnail_failure_count, 0) > 0",
@@ -893,7 +895,8 @@ fn thumbnail_queue_condition(include_upgradeable: bool, now_ms: i64) -> String {
     };
 
     format!(
-        "is_deleted = 0
+        "invoke_scope_hidden = 0
+         AND is_deleted = 0
          AND media_type = 'image'
          AND is_missing = 0
          AND IFNULL(is_intermediate_gen, 0) = 0
@@ -951,6 +954,7 @@ mod tests {
                 thumbnail_last_error TEXT,
                 thumbnail_last_attempt_at INTEGER,
                 media_type TEXT NOT NULL DEFAULT 'image',
+                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0,
                 is_deleted INTEGER NOT NULL DEFAULT 0,
                 is_missing INTEGER NOT NULL DEFAULT 0,
                 is_intermediate_gen INTEGER NOT NULL DEFAULT 0,
@@ -1056,6 +1060,7 @@ mod tests {
         insert_image(&conn, "deleted", None, None, 0, 30);
         insert_image(&conn, "missing", None, None, 0, 40);
         insert_image(&conn, "ok", None, None, 0, 50);
+        insert_image(&conn, "owner-hidden", None, None, 0, 60);
 
         conn.execute_batch(
             "
@@ -1084,6 +1089,13 @@ mod tests {
                 thumbnail_last_attempt_at = 400,
                 is_missing = 1
             WHERE id = 'missing';
+
+            UPDATE images
+            SET thumbnail_failure_count = 1,
+                thumbnail_last_error = 'other owner decode failed',
+                thumbnail_last_attempt_at = 500,
+                invoke_scope_hidden = 1
+            WHERE id = 'owner-hidden';
             ",
         )
         .expect("mark failures");
@@ -1117,6 +1129,7 @@ mod tests {
             20,
         );
         insert_image(&conn, "ok", Some("C:/thumbs/ok.webp"), Some("ambit"), 1, 10);
+        insert_image(&conn, "owner-hidden", None, None, 0, 30);
 
         conn.execute(
             "UPDATE images
@@ -1127,6 +1140,16 @@ mod tests {
             [],
         )
         .expect("mark failed");
+        conn.execute(
+            "UPDATE images
+             SET thumbnail_failure_count = 2,
+                 thumbnail_last_error = 'other owner decode failed',
+                 thumbnail_last_attempt_at = 456,
+                 invoke_scope_hidden = 1
+             WHERE id = 'owner-hidden'",
+            [],
+        )
+        .expect("mark owner-hidden failure");
 
         let updated = retry_failed_thumbnail_optimizations_for_conn(&conn).expect("retry failures");
         assert_eq!(updated, 1);
@@ -1166,6 +1189,18 @@ mod tests {
             )
             .expect("ok failure count");
         assert_eq!(ok_failure_count, 0);
+
+        let hidden_failure_count: i64 = conn
+            .query_row(
+                "SELECT thumbnail_failure_count FROM images WHERE id = 'owner-hidden'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("owner-hidden failure count");
+        assert_eq!(
+            hidden_failure_count, 2,
+            "retry must not reveal or mutate another owner's maintenance state"
+        );
     }
 
     #[test]
@@ -1364,6 +1399,12 @@ mod tests {
             CURRENT_THUMBNAIL_VERSION,
             10,
         );
+        insert_image(&conn, "owner-hidden", None, None, 0, 50);
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'owner-hidden'",
+            [],
+        )
+        .expect("hide other-owner row");
         let empty_dir = temp_thumbnail_dir("resume-cache");
         let _ = fs::remove_dir_all(&empty_dir);
         fs::create_dir_all(&empty_dir).expect("create empty cache dir");
@@ -1429,7 +1470,11 @@ mod tests {
             fetch_thumbnail_candidates(&conn, false, None, 10, 10_000).expect("fetch candidates");
         let ids: Vec<String> = rows.into_iter().map(|row| row.id).collect();
 
-        assert_eq!(ids, vec!["missing", "outdated"]);
+        assert_eq!(
+            ids,
+            vec!["missing", "outdated"],
+            "thumbnail work must not disclose another owner's queued rows"
+        );
     }
 
     #[test]

@@ -216,8 +216,8 @@ describe('LibraryHealth missing audit ownership', () => {
             useLibraryStore.setState({ lastMissingScanResult: auditResult(['missing']) });
             render(<LibraryHealth />);
 
-            fireEvent.click(screen.getByText('Prune All Records'));
-            expect(screen.getByText('Pruning...')).toBeTruthy();
+            fireEvent.click(screen.getByText('Mark All as Missing'));
+            expect(screen.getByText('Marking...')).toBeTruthy();
             await act(async () => resolvePrune());
             expect(screen.getByText('Success')).toBeTruthy();
             expect(healthMocks.pruneMissingLinks).toHaveBeenCalledWith(['missing']);
@@ -233,9 +233,9 @@ describe('LibraryHealth missing audit ownership', () => {
         useLibraryStore.setState({ lastMissingScanResult: auditResult(['missing']) });
         render(<LibraryHealth />);
 
-        fireEvent.click(screen.getByText('Prune All Records'));
+        fireEvent.click(screen.getByText('Mark All as Missing'));
 
-        await waitFor(() => expect(screen.getByText('Prune All Records')).toBeTruthy());
+        await waitFor(() => expect(screen.getByText('Mark All as Missing')).toBeTruthy());
         expect(error).toHaveBeenCalledWith(expect.any(Error));
         error.mockRestore();
     });

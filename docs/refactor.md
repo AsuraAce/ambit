@@ -21,7 +21,29 @@ Status: Deferred
 - `src/types.ts`
 - `src/services/db/repoUtils.ts`
 - `src/services/db/imageRepo.ts`
-- `src-tauri/src/db/migrations/m63_video_library_assets.rs`
+- `src-tauri/src/db/migrations/m68_video_library_assets.rs`
+
+## Raw Metadata Chunk Type Contract
+Status: Deferred
+
+### Why Cleanup Is Needed
+- `AIImage.originalChunks` is typed as `Record<string, string>`, matching normal
+  embedded image chunks, but InvokeAI DB sync intentionally places its parsed
+  raw metadata object at `originalChunks.invokeai_metadata`.
+- The database adapter serializes the complete chunk map once, so converting
+  that inner InvokeAI object to a JSON string would change the established
+  persisted shape and break raw-metadata refresh behavior.
+
+### Suggested Future Direction
+- Define an explicit raw-chunk value union or a source-specific raw metadata
+  field, then update persistence, reparse, and viewer consumers together.
+- Until then, keep the localized compatibility cast in InvokeAI sync; do not
+  stringify the inner object merely to satisfy the current TypeScript type.
+
+### Related Code
+- `src/types.ts`
+- `src/services/invoke/syncService.ts`
+- `src/services/db/imageRepo.ts`
 
 ## Maintenance Query Ownership
 Status: Deferred

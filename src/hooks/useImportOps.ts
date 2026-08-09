@@ -9,8 +9,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { formatStableImportProgress } from '../utils/importProgress';
 import { getThumbnailDir } from '../services/thumbnailService';
-import { rebuildFacetCache, syncCollectionImages } from '../services/db/imageRepo';
-import { syncImages } from '../services/invoke/syncService';
+import { rebuildFacetCache } from '../services/db/imageRepo';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -376,67 +375,6 @@ export const useImportOps = ({
         }
     }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
 
-    const handleInvokeSync = useCallback(async () => {
-        if (!settings.invokeAiPath) {
-            addToast('InvokeAI not configured', 'error');
-            return;
-        }
-
-        const abortCtrl = new AbortController();
-        const importRunId = beginImportRun({
-            owner: 'invoke-sync',
-            abortController: abortCtrl
-        });
-        if (!importRunId) {
-            addToast('Import already in progress', 'info');
-            return;
-        }
-
-        try {
-            const result = await syncImages(
-                settings.invokeAiPath,
-                (current, total, message) => {
-                    setImportProgressForRun(importRunId, { current, total, message });
-                },
-                abortCtrl.signal,
-                {
-                    syncFavorites: settings.invokeSyncFavorites !== false,
-                    syncBoards: settings.invokeSyncBoards !== false,
-                    importIntermediates: settings.importIntermediates ?? false,
-                    starredAs: settings.starredAs || 'favorite',
-                    afterTimestamp: 0
-                }
-            );
-
-            if (abortCtrl.signal.aborted) {
-                addToast('Import cancelled', 'info');
-                return;
-            }
-
-            await syncCollectionImages();
-            await rebuildFacetCache();
-            await refreshCollections();
-
-            addToast(`InvokeAI sync complete: ${result.imported} imported, ${result.updated} updated`, 'success');
-        } catch (e) {
-            console.error('InvokeAI sync failed', e);
-            addToast(abortCtrl.signal.aborted ? 'Import cancelled' : 'InvokeAI sync failed', abortCtrl.signal.aborted ? 'info' : 'error');
-        } finally {
-            finishImportRun(importRunId);
-        }
-    }, [
-        settings.invokeAiPath,
-        settings.invokeSyncFavorites,
-        settings.invokeSyncBoards,
-        settings.importIntermediates,
-        settings.starredAs,
-        addToast,
-        beginImportRun,
-        setImportProgressForRun,
-        finishImportRun,
-        refreshCollections
-    ]);
-
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,
         updateLastScanned: (folderId: string, timestamp: number) => void
@@ -520,7 +458,6 @@ export const useImportOps = ({
         handleImportFolders,
         handleWebFiles,
         scanDirectory,
-        handleInvokeSync,
         resyncFolder
     };
 };

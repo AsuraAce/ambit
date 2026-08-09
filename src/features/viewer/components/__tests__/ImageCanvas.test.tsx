@@ -55,4 +55,17 @@ describe('ImageCanvas', () => {
         expect(zoomed.props.onClose).not.toHaveBeenCalled();
         expect(zoomed.container.querySelector('[style*="transition: none"]')).toBeTruthy();
     });
+
+    it('disables navigation controls for an image outside the current result list', () => {
+        const { props } = setup({ canNavigatePrevious: false, canNavigateNext: false });
+
+        const previous = screen.getByRole('button', { name: 'Previous Image (Left Arrow)' }) as HTMLButtonElement;
+        const next = screen.getByRole('button', { name: 'Next Image (Right Arrow)' }) as HTMLButtonElement;
+        expect(previous.disabled).toBe(true);
+        expect(next.disabled).toBe(true);
+        fireEvent.click(previous);
+        fireEvent.click(next);
+        expect(props.onPrev).not.toHaveBeenCalled();
+        expect(props.onNext).not.toHaveBeenCalled();
+    });
 });

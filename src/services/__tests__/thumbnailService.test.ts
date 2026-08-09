@@ -213,6 +213,7 @@ describe('thumbnailService', () => {
 
         await expect(syncExistingThumbnailsToDB()).resolves.toBe(2);
         expect(select).toHaveBeenCalledWith(expect.stringContaining("media_type = 'image'"));
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/library/a.png');
         expect(mocks.updateThumbnailPathsBatch).toHaveBeenCalledWith([
             { id: 'C:/library/a.png', thumbnailPath: 'a.webp', thumbnailSource: 'ambit' },
@@ -222,12 +223,13 @@ describe('thumbnailService', () => {
 
     it('prunes missing local thumbnails while leaving remote thumbnail URLs alone', async () => {
         const execute = vi.fn().mockResolvedValue(undefined);
+        const select = vi.fn().mockResolvedValue([
+            { id: 'remote', thumbnail_path: 'https://example.test/thumb.webp' },
+            { id: 'relative', thumbnail_path: 'legacy.webp' },
+            { id: 'absolute', thumbnail_path: 'C:/thumbs/absolute.webp' },
+        ]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([
-                { id: 'remote', thumbnail_path: 'https://example.test/thumb.webp' },
-                { id: 'relative', thumbnail_path: 'legacy.webp' },
-                { id: 'absolute', thumbnail_path: 'C:/thumbs/absolute.webp' },
-            ]),
+            select,
             execute,
         });
         mocks.exists.mockImplementation(async (path: string) => path !== 'C:/AppData/Ambit/.thumbnails/legacy.webp');
@@ -235,6 +237,7 @@ describe('thumbnailService', () => {
         const { pruneBrokenThumbnails } = await import('../thumbnailService');
 
         await expect(pruneBrokenThumbnails()).resolves.toBe(1);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.exists).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/legacy.webp');
         expect(mocks.exists).toHaveBeenCalledWith('C:/thumbs/absolute.webp');
         expect(execute).toHaveBeenCalledWith(

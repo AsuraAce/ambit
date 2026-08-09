@@ -4,6 +4,7 @@ use super::graph::{
     get_switch_branch_input_strict, ComfyGraph, InputConnection, InputSource,
     InputSourceConnection,
 };
+use super::heuristics::get_prompts_everywhere_source;
 use super::parse_helper::parse_a1111_parameters;
 use crate::metadata::{is_missing_prompt_value, is_placeholder_prompt_value};
 use regex::Regex;
@@ -36,6 +37,22 @@ pub fn find_reachable_prompts(
         "cond1" | "conditioning" => "positive",
         _ => input_name,
     };
+    find_reachable_prompts_with_role(
+        graph,
+        start_node_id,
+        input_name,
+        prompt_role,
+        strict_connections,
+    )
+}
+
+pub(crate) fn find_reachable_prompts_with_role(
+    graph: &ComfyGraph,
+    start_node_id: &str,
+    input_name: &str,
+    prompt_role: &str,
+    strict_connections: bool,
+) -> String {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut prompts = Vec::new();
@@ -67,6 +84,32 @@ pub fn find_reachable_prompts(
                 };
                 if let Some(source_id) = source_id {
                     queue.push_back((source_id, branch_strict_connections));
+                }
+                continue;
+            }
+
+            if t == "ComfySwitchNode" {
+                let branch = if branch_strict_connections {
+                    get_switch_branch_input_strict(graph, node)
+                } else {
+                    get_switch_branch_input(graph, &current_id, node)
+                };
+                let Some(branch) = branch else {
+                    if branch_strict_connections {
+                        return String::new();
+                    }
+                    continue;
+                };
+                if let Some(source_id) = get_conditioning_source_id(
+                    graph,
+                    &current_id,
+                    node,
+                    branch,
+                    branch_strict_connections,
+                ) {
+                    queue.push_back((source_id, branch_strict_connections));
+                } else if branch_strict_connections {
+                    return String::new();
                 }
                 continue;
             }
@@ -194,6 +237,17 @@ pub fn find_reachable_prompts(
                     InputConnection::DeclaredUnresolved | InputConnection::Unconnected => {
                         return String::new();
                     }
+                }
+                continue;
+            }
+
+            if t == "Prompts Everywhere" {
+                match get_prompts_everywhere_source(node, prompt_role) {
+                    InputSourceConnection::Connected(source) => {
+                        queue.push_back((source.node_id, branch_strict_connections));
+                    }
+                    InputSourceConnection::DeclaredUnresolved
+                    | InputSourceConnection::Unconnected => return String::new(),
                 }
                 continue;
             }
@@ -565,13 +619,29 @@ fn extract_text_from_node(
             {
                 return None;
             }
-            if let Some(text) = text {
+            if let Some(text) = text
+                .filter(|text| !is_missing_prompt_value(text))
+                .filter(|text| !parts.contains(text))
+            {
                 parts.push(text);
             }
         }
         if !parts.is_empty() {
             return Some(parts.join(" . "));
         }
+    }
+
+    if t == "CLIPTextEncodeFlux" {
+        let mut parts = Vec::new();
+        for input_name in ["clip_l", "t5xxl"] {
+            if let Some(text) = trace_text_input(graph, node_id, input_name, true)
+                .filter(|text| !is_missing_prompt_value(text))
+                .filter(|text| !parts.contains(text))
+            {
+                parts.push(text);
+            }
+        }
+        return (!parts.is_empty()).then(|| parts.join("\n\n"));
     }
 
     let mut visited = HashSet::new();

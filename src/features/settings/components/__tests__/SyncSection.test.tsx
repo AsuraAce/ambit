@@ -2,6 +2,7 @@ import * as React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { AppSettings } from '../../../../types';
+import type { InvokeOwnerScopeState } from '../../../../contexts/SyncContext';
 import { SyncSection } from '../SyncSection';
 
 const mocks = vi.hoisted(() => ({
@@ -9,7 +10,11 @@ const mocks = vi.hoisted(() => ({
     cancelSync: vi.fn(),
     addToast: vi.fn(),
     syncStatus: 'idle' as 'idle' | 'syncing' | 'complete' | 'error',
-    isLiveSyncing: false
+    isLiveSyncing: false,
+    invokeOwnerScopeState: {
+        status: 'ready',
+        discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 }
+    } as InvokeOwnerScopeState
 }));
 
 vi.mock('../../../../contexts/LibraryContext', () => ({
@@ -20,7 +25,9 @@ vi.mock('../../../../contexts/LibraryContext', () => ({
         },
         startInvokeSync: mocks.startInvokeSync,
         cancelSync: mocks.cancelSync,
-        isLiveSyncing: mocks.isLiveSyncing
+        isLiveSyncing: mocks.isLiveSyncing,
+        isInvokeSyncActive: mocks.syncStatus === 'syncing' || mocks.isLiveSyncing,
+        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
     })
 }));
 
@@ -60,6 +67,27 @@ describe('SyncSection', () => {
         vi.clearAllMocks();
         mocks.syncStatus = 'idle';
         mocks.isLiveSyncing = false;
+        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
+    });
+
+    it('enables selected-owner sync while disabling orphan recovery without erasing its preference', () => {
+        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
+        render(<SyncSection settings={createSettings({
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        })} setSettings={vi.fn()} />);
+
+        const syncButton = screen.getByRole('button', { name: /initiate sync/i }) as HTMLButtonElement;
+        expect(syncButton.disabled).toBe(false);
+        const orphanRecovery = screen.getByLabelText(/orphan recovery/i) as HTMLInputElement;
+        expect(orphanRecovery.disabled).toBe(true);
+        expect(orphanRecovery.checked).toBe(false);
+        expect(screen.getByText(/saved preference is preserved/i)).toBeTruthy();
+        fireEvent.click(syncButton);
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({ importOrphans: true }));
     });
 
     it('starts manual sync from the saved cursor so stale repair does not force a full resync', () => {

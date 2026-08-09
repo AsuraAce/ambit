@@ -9,6 +9,19 @@ use std::collections::HashMap;
 
 const FLAT_COMPLETE: &str = "flat positive <lora:flat-style:0.5> <lora:graph-style:1>\nNegative prompt: flat negative\nSteps: 20, Sampler: flat_sampler, CFG scale: 7.0, Seed: 42, Model hash: flat_hash, Model: flat_model, Version: ComfyUI";
 
+#[test]
+fn flat_zero_cfg_presence_survives_comfy_merge() {
+    let parameters = "flat prompt\nSteps: 20, CFG scale: 0, Seed: 42, Version: ComfyUI";
+    let mut chunks = HashMap::new();
+    chunks.insert("parameters".to_string(), parameters.to_string());
+    let mut metadata = ImageMetadata::default();
+
+    merge_comfyui_metadata(&mut metadata, &chunks);
+
+    assert_eq!(metadata.cfg, 0.0);
+    assert!(metadata.cfg_present);
+}
+
 const TRAVERSAL_PROMPT: &str = r#"{
     "1": {
         "class_type": "CheckpointLoaderSimple",
@@ -155,7 +168,8 @@ fn explicit_metadata_overrides_conflicting_flat_fields() {
 #[test]
 fn selected_sampler_custom_replaces_disconnected_explicit_core_fields() {
     // Explicit nodes remain authoritative for ordinary samplers, but a selected
-    // SamplerCustom path owns its core fields, including an unresolved seed.
+    // SamplerCustom path owns its core fields, including an unresolved seed. Its
+    // CFG must replace both the stale explicit value and its presence marker.
     let prompt = r#"{
         "0": { "class_type": "SDParameterGenerator", "inputs": {
             "ckpt_name": "explicit-model.safetensors", "seed": 314,

@@ -1,10 +1,10 @@
 use tauri_plugin_sql::Migration;
 
-/// Migration 63: add the compatibility-first media discriminator and the
+/// Migration 68: add the compatibility-first media discriminator and the
 /// technical fields needed by the manual video import/viewer slice.
-pub fn migration63() -> Migration {
+pub fn migration68() -> Migration {
     Migration {
-        version: 63,
+        version: 68,
         description: "add_video_library_assets",
         sql: r#"
             ALTER TABLE images ADD COLUMN media_type TEXT NOT NULL DEFAULT 'image'
@@ -50,7 +50,7 @@ pub fn migration63() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration63;
+    use super::migration68;
 
     #[test]
     fn migration_defaults_existing_active_and_removed_records_to_images() {
@@ -72,7 +72,7 @@ mod tests {
         )
         .expect("setup schema");
 
-        conn.execute_batch(migration63().sql)
+        conn.execute_batch(migration68().sql)
             .expect("apply video migration");
 
         let active: (String, String, String) = conn
@@ -118,7 +118,7 @@ mod tests {
             ",
         )
         .expect("setup schema");
-        conn.execute_batch(migration63().sql)
+        conn.execute_batch(migration68().sql)
             .expect("apply video migration");
 
         conn.execute(

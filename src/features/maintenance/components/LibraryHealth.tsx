@@ -223,7 +223,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         <span className="text-xs font-black uppercase tracking-widest">Missing Files</span>
                                     </div>
                                     <p className="text-[11px] text-gray-600 dark:text-gray-400 leading-relaxed">
-                                        Purging these records removes database entries whose source image files are no longer on disk.
+                                        Mark these catalog entries as missing. No database records or source files will be deleted.
                                     </p>
                                     <button
                                         onClick={handlePrune}
@@ -236,7 +236,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         {pruningStatus === 'running' ? (
                                             <>
                                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                                Pruning...
+                                                Marking...
                                             </>
                                         ) : pruningStatus === 'done' ? (
                                             <>
@@ -246,7 +246,7 @@ const LibraryHealthBase: React.FC<LibraryHealthProps> = ({ mode = 'detailed', on
                                         ) : (
                                             <>
                                                 <Trash2 className="w-4 h-4" />
-                                                Prune All Records
+                                                Mark All as Missing
                                             </>
                                         )}
                                     </button>

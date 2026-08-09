@@ -12,9 +12,8 @@ const mockUpdateImageMetadataFields = vi.fn();
 const mockIncrementFacetCacheVersion = vi.fn();
 const mockGetSettingsState = vi.fn();
 const imageRepoMocks = vi.hoisted(() => ({
-    deleteImageFromDisk: vi.fn(),
     getImagesByIds: vi.fn(),
-    rebuildFacetCache: vi.fn(),
+    refreshFacetCacheForResourcesStrict: vi.fn(),
     removeImagesFromLibrary: vi.fn(),
 }));
 
@@ -31,9 +30,8 @@ vi.mock('../../services/geminiService', () => ({
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
-    deleteImageFromDisk: imageRepoMocks.deleteImageFromDisk,
     getImagesByIds: imageRepoMocks.getImagesByIds,
-    rebuildFacetCache: imageRepoMocks.rebuildFacetCache,
+    refreshFacetCacheForResourcesStrict: imageRepoMocks.refreshFacetCacheForResourcesStrict,
     removeImagesFromLibrary: imageRepoMocks.removeImagesFromLibrary,
     updateImageMetadataFields: (...args: unknown[]) => mockUpdateImageMetadataFields(...args),
 }));
@@ -91,10 +89,14 @@ describe('useMaintenanceOps metadata recovery', () => {
         mockRecoverImageMetadata.mockResolvedValue({ positivePrompt: 'Recovered prompt' });
         mockUpdateImageMetadataFields.mockResolvedValue(undefined);
         mockGetSettingsState.mockReturnValue({ geminiApiKey: 'test-key' });
-        imageRepoMocks.deleteImageFromDisk.mockResolvedValue(undefined);
         imageRepoMocks.getImagesByIds.mockResolvedValue([]);
-        imageRepoMocks.rebuildFacetCache.mockResolvedValue(undefined);
-        imageRepoMocks.removeImagesFromLibrary.mockResolvedValue(undefined);
+        imageRepoMocks.refreshFacetCacheForResourcesStrict.mockResolvedValue(undefined);
+        imageRepoMocks.removeImagesFromLibrary.mockImplementation(async (ids: string[]) => ({
+            affectedIds: ids,
+            notFoundIds: [],
+            membershipWarningIds: [],
+            touchedResources: { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], controlNets: [], ipAdapters: [], tools: [] },
+        }));
     });
 
     it('reads the local path and persists the recovered prompt in store and query caches', async () => {
@@ -251,7 +253,7 @@ describe('useMaintenanceOps metadata recovery', () => {
 
     it('tombstones one image by default and reports downstream refresh failures', async () => {
         const refreshCollections = vi.fn().mockRejectedValue(new Error('refresh failed'));
-        imageRepoMocks.rebuildFacetCache.mockRejectedValueOnce(new Error('facet failed'));
+        imageRepoMocks.refreshFacetCacheForResourcesStrict.mockRejectedValueOnce(new Error('facet failed'));
         const { result } = renderHook(() => useMaintenanceOps({
             images: [image],
             setImages: vi.fn(),
@@ -268,23 +270,31 @@ describe('useMaintenanceOps metadata recovery', () => {
         expect(mockIncrementFacetCacheVersion).not.toHaveBeenCalled();
     });
 
-    it('permanently deletes multiple files and increments the facet version after rebuild', async () => {
-        const withoutThumbnail = { ...image, id: 'C:/library/no-thumb.jpg', thumbnailUrl: '' };
-        imageRepoMocks.getImagesByIds.mockResolvedValueOnce([image, withoutThumbnail]);
-        const refreshCollections = vi.fn();
+    it('evicts a committed removal from the gallery query cache before refresh', async () => {
+        const queryClient = new QueryClient();
+        const queryKey = ['images', { scope: 'library' }] as const;
+        const other = { ...image, id: 'other' };
+        queryClient.setQueryData(queryKey, {
+            pages: [{ images: [image, other], totalCount: 2, globalCount: 2 }],
+            pageParams: [undefined],
+        });
+        const setImages = vi.fn();
         const { result } = renderHook(() => useMaintenanceOps({
-            images: [image, withoutThumbnail],
-            setImages: vi.fn(),
-            refreshCollections,
+            images: [image, other],
+            setImages,
+            refreshCollections: vi.fn().mockResolvedValue(undefined),
             settings,
-        }), { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> });
+        }), { wrapper: ({ children }) => <QueryClientProvider client={queryClient}>{children}</QueryClientProvider> });
 
-        await act(async () => result.current.deleteImages([image.id, withoutThumbnail.id], true));
+        await act(async () => result.current.deleteImages([image.id]));
 
-        expect(imageRepoMocks.deleteImageFromDisk).toHaveBeenCalledTimes(2);
-        expect(mockAddToast).toHaveBeenCalledWith('Moved 2 files to OS trash', 'success');
-        expect(refreshCollections).not.toHaveBeenCalled();
-        expect(mockIncrementFacetCacheVersion).toHaveBeenCalledOnce();
+        const cached = queryClient.getQueryData<{
+            pages: Array<{ images: AIImage[]; totalCount: number; globalCount: number }>;
+        }>(queryKey);
+        expect(cached?.pages[0].images.map(item => item.id)).toEqual(['other']);
+        expect(cached?.pages[0]).toMatchObject({ totalCount: 1, globalCount: 1 });
+        const updater = setImages.mock.calls[0][0] as (previous: AIImage[]) => AIImage[];
+        expect(updater([image, other]).map(item => item.id)).toEqual(['other']);
     });
 
     it('reports a failed library mutation', async () => {
@@ -301,8 +311,7 @@ describe('useMaintenanceOps metadata recovery', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Failed to update library state', 'error');
     });
 
-    it('uses singular permanent and plural library-removal copy', async () => {
-        imageRepoMocks.getImagesByIds.mockResolvedValueOnce([image]);
+    it('uses plural library-removal copy', async () => {
         const other = { ...image, id: 'other' };
         const { result } = renderHook(() => useMaintenanceOps({
             images: [image, other],
@@ -311,10 +320,8 @@ describe('useMaintenanceOps metadata recovery', () => {
             settings,
         }), { wrapper: ({ children }) => <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider> });
 
-        await act(async () => result.current.deleteImages([image.id], true));
         await act(async () => result.current.deleteImages([image.id, other.id]));
 
-        expect(mockAddToast).toHaveBeenCalledWith('Moved 1 file to OS trash', 'success');
         expect(mockAddToast).toHaveBeenCalledWith('Removed 2 items from the library', 'success');
     });
 });

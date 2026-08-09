@@ -11,6 +11,8 @@ import { MetadataRawInspector } from './MetadataRawInspector';
 import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
 import { TooltipButton } from '../../../../components/ui/InfoTooltip';
+import { formatInvokeImageCategory, isKnownInvokeImageAsset } from '../../../../utils/invokeImageSource';
+import { InvokeReferenceLinks } from './InvokeReferenceLinks';
 
 interface MetadataInfoTabProps {
     image: AIImage;
@@ -31,6 +33,7 @@ interface MetadataInfoTabProps {
     onOpenAIResult?: () => void;
     isLoading?: boolean;
     searchHighlights?: PromptHighlightSpec;
+    onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
 
 export const MetadataInfoTab = ({
@@ -51,7 +54,8 @@ export const MetadataInfoTab = ({
     isAnalyzing,
     onOpenAIResult,
     isLoading,
-    searchHighlights
+    searchHighlights,
+    onOpenReferencedImage
 }: MetadataInfoTabProps) => {
     // Local UI State
     const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
@@ -128,6 +132,11 @@ export const MetadataInfoTab = ({
     const smartTags = (typeof image.metadata.positivePrompt === 'string')
         ? image.metadata.positivePrompt.split(',').map(t => t.trim()).filter(t => t.length > 2 && t.length < 30 && !t.startsWith('score_')).slice(0, 15)
         : [];
+    const invokeImageName = image.invokeImageName?.trim() || undefined;
+    const invokeImageCategory = formatInvokeImageCategory(image.invokeImageCategory);
+    const invokeImageOrigin = image.invokeImageOrigin?.trim() || undefined;
+    const hasInvokeSource = Boolean(invokeImageName || invokeImageCategory || invokeImageOrigin);
+    const isInvokeImageAsset = isKnownInvokeImageAsset(image.invokeImageCategory);
 
     const handleCopyPrompt = () => {
         navigator.clipboard.writeText(promptValue);
@@ -166,10 +175,53 @@ export const MetadataInfoTab = ({
         setTimeout(() => setCopiedData(false), 2000);
     };
 
+    const invokeProvenance = (
+        <>
+            {hasInvokeSource ? (
+                <section className="rounded-xl border border-gray-200 bg-white/50 p-4 dark:border-white/5 dark:bg-zinc-800/30" aria-labelledby="invoke-source-heading">
+                    <div className="mb-3 flex items-center gap-2">
+                        <Link className="h-3.5 w-3.5 text-sage-500" />
+                        <h3 id="invoke-source-heading" className="text-xs font-bold uppercase tracking-wider text-gray-500">Source</h3>
+                    </div>
+                    <dl className="space-y-2 text-xs">
+                        <div className="flex items-start justify-between gap-4">
+                            <dt className="text-gray-400">System</dt>
+                            <dd className="text-right font-medium text-gray-700 dark:text-gray-200">InvokeAI</dd>
+                        </div>
+                        {invokeImageName ? (
+                            <div className="flex items-start justify-between gap-4">
+                                <dt className="text-gray-400">Image name</dt>
+                                <dd className="min-w-0 break-all text-right font-mono text-gray-700 dark:text-gray-200">{invokeImageName}</dd>
+                            </div>
+                        ) : null}
+                        {invokeImageCategory ? (
+                            <div className="flex items-start justify-between gap-4">
+                                <dt className="text-gray-400">Category</dt>
+                                <dd className="min-w-0 break-words text-right font-medium text-gray-700 dark:text-gray-200">{invokeImageCategory}</dd>
+                            </div>
+                        ) : null}
+                        {invokeImageOrigin ? (
+                            <div className="flex items-start justify-between gap-4">
+                                <dt className="text-gray-400">Origin</dt>
+                                <dd className="min-w-0 break-words text-right font-medium text-gray-700 dark:text-gray-200">{invokeImageOrigin}</dd>
+                            </div>
+                        ) : null}
+                    </dl>
+                </section>
+            ) : null}
+
+            {onOpenReferencedImage ? (
+                <InvokeReferenceLinks imageId={image.id} onOpenImage={onOpenReferencedImage} />
+            ) : null}
+        </>
+    );
+
     return (
         <>
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="space-y-6 flex-1">
+
+                    {isInvokeImageAsset ? invokeProvenance : null}
 
                     {/* Positive Prompt */}
                     <div>
@@ -426,6 +478,8 @@ export const MetadataInfoTab = ({
                             <ResourceSection title="IP-Adapters" items={image.metadata.ipAdapters || []} icon={Link} onSearch={onSearch} onClose={onClose} />
                         </div>
                     )}
+
+                    {!isInvokeImageAsset ? invokeProvenance : null}
 
                     {/* Raw Inspector */}
                     <MetadataRawInspector image={image} />

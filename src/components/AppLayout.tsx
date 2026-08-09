@@ -72,6 +72,8 @@ type AppHandlers = ReturnType<typeof useAppHandlers> & {
 
 interface AppLayoutProps {
     // Sidebar Props
+    isInvokeCollectionCatchupPending?: boolean;
+    forcePrivacyProtectionGate?: boolean;
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
     isFilterPanelOpen: boolean;
@@ -89,7 +91,7 @@ interface AppLayoutProps {
     setLayoutMode: (mode: LayoutMode) => void;
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
-    totalImages: number;
+    displayedCount: number;
     scopeTotal: number;
     scopeName: string;
     isFiltering: boolean;
@@ -105,6 +107,7 @@ interface AppLayoutProps {
     handlers: AppHandlers;
     setViewingImageId: (id: string | null) => void;
     onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
+    onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isViewerShortcutBlocked: boolean;
     toggleFavorite: (id: string) => void | Promise<void>;
     actions: ReturnType<typeof useAppActions>;
@@ -131,12 +134,14 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
+    isInvokeCollectionCatchupPending = false,
+    forcePrivacyProtectionGate = false,
     filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
     colOps, setExportIds, modals, addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
-    sortOption, setSortOption, scopeTotal, scopeName,
+    sortOption, setSortOption, displayedCount, scopeTotal, scopeName,
     fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
-    handlers, setViewingImageId, onMaintenanceViewerOpenChange, isViewerShortcutBlocked,
+    handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, isViewerShortcutBlocked,
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
     activeCollection, activeSmartCollection, handleRangeSelection,
@@ -152,7 +157,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const settings = useSettingsStore(s => s.settings);
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
-    const privacyExposureBlocked = privacyEnabled && privacyMaskIndexStatus !== 'ready';
+    const privacyExposureBlocked = forcePrivacyProtectionGate
+        || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
     const allCollections = useCollectionStore(s => s.collections);
@@ -197,7 +203,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     // Store Access
     const {
         images,
-        totalImages,
         globalTotal,
         isFiltering,
         clearAllFilters,
@@ -254,7 +259,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         filters.favoritesOnly ? 'favorites' : 'all-images',
         filters.pinnedOnly ? 'pinned-only' : 'unpinned-scope',
         filters.showGrids ? 'show-grids' : 'hide-grids',
-        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates'
+        filters.showIntermediates ? 'show-intermediates' : 'hide-intermediates',
+        filters.showInvokeImageAssets ? 'show-invoke-assets' : 'hide-invoke-assets'
     ].join('|'), [
         layoutMode,
         settings.thumbnailSize,
@@ -264,7 +270,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         filters.favoritesOnly,
         filters.pinnedOnly,
         filters.showGrids,
-        filters.showIntermediates
+        filters.showIntermediates,
+        filters.showInvokeImageAssets
     ]);
 
     const renderGridItem = React.useCallback((img: AIImage, style: React.CSSProperties, index: number, layout?: GridLayoutPosition) => (
@@ -306,6 +313,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             />
 
             <FilterPanel
+                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
                 filters={filters}
                 setFilters={setFilters}
                 filteredImages={images}
@@ -323,7 +331,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     }
                 }}
                 onRenameCollection={colOps.renameCollection}
-                onDeleteCollection={colOps.deleteCollection}
+                onDeleteCollection={(id) => {
+                    modals.setCollectionToDelete(id);
+                    modals.openModal('deleteCollection');
+                }}
                 onToggleArchiveCollection={colOps.toggleArchiveCollection}
                 onTogglePinCollection={colOps.togglePinCollection}
                 onSetCollectionColor={colOps.setCollectionColor}
@@ -373,7 +384,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     setLayoutMode={setLayoutMode}
                     sortOption={sortOption}
                     setSortOption={setSortOption}
-                    displayedCount={totalImages}
+                    displayedCount={displayedCount}
                     totalCount={scopeTotal}
                     scopeName={scopeName}
                     isFiltering={isSearchPending}
@@ -428,6 +439,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onSetCollectionMembership={onSetCollectionMembership}
                                         availableTags={availableTags}
                                         onViewerOpenChange={onMaintenanceViewerOpenChange}
+                                        onOpenReferencedImage={onOpenReferencedImage}
                                         isShortcutBlocked={isViewerShortcutBlocked}
                                     />
                                 </React.Suspense>

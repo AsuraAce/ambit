@@ -110,6 +110,8 @@ describe('pathUtils', () => {
     describe('normalizeInvokeRoot', () => {
         it('normalizes database files, databases folders, roots, and empty values', () => {
             expect(normalizeInvokeRoot(null)).toBeNull();
+            expect(normalizeInvokeRoot('   ')).toBeNull();
+            expect(normalizeInvokeRoot('  D:/Invoke/databases/  ')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:\\Invoke\\databases\\invokeai.db')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:/Invoke/databases/')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:/Invoke/')).toBe('D:/Invoke');

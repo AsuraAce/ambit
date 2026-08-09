@@ -1,4 +1,5 @@
 mod app_data_migration;
+mod comfy_support_replay;
 mod db;
 mod fs_commands;
 mod media;
@@ -7,6 +8,13 @@ mod scanner;
 mod security;
 mod thumb;
 mod watcher;
+
+#[doc(hidden)]
+pub use comfy_support_replay::{
+    inspect_comfyui_fixture_candidate, prepare_comfyui_fixture_candidate,
+};
+#[doc(hidden)]
+pub use comfy_support_replay::{replay_comfyui_support_bundle, COMFY_SUPPORT_BUNDLE_MAX_BYTES};
 
 #[cfg(not(test))]
 use db::commands::maintenance::FileHashBackfillState;
@@ -33,17 +41,23 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             security::delete_api_key,
             // db commands
             db::commands::image_commands::save_images_batch,
+            db::commands::image_commands::reconcile_invoke_image_sources,
+            db::commands::image_commands::replace_invoke_image_references,
             db::commands::image_commands::move_image_path_identities,
             db::commands::image_commands::mark_image_path_identities_missing,
             db::commands::maintenance::get_main_database_url,
             db::commands::maintenance::get_db_diagnostics,
             db::commands::maintenance::show_app_log_folder,
             db::commands::maintenance::resolve_exact_duplicate_groups,
+            db::commands::maintenance::remove_images_from_library,
+            db::commands::maintenance::restore_removed_images,
+            db::commands::maintenance::mutate_collection_membership,
             db::commands::maintenance::backfill_image_file_hashes,
             db::commands::maintenance::cancel_image_file_hash_backfill,
             db::commands::image_commands::refresh_boards_native,
             db::commands::image_commands::get_image_count_for_path_prefix,
             db::commands::image_commands::refresh_privacy_mask_index,
+            db::commands::image_commands::refresh_invoke_owner_scope,
             db::commands::maintenance::optimize_database,
             db::commands::maintenance::schedule_purge_transaction,
             db::commands::filter_commands::get_parameter_ranges,
@@ -110,6 +124,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             media::export_asset_original,
             // fs commands
             fs_commands::move_to_trash,
+            fs_commands::delete_removed_images_from_disk,
             fs_commands::delete_thumbnail,
             fs_commands::register_library_path,
             fs_commands::get_invoke_db_snapshot,

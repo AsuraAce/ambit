@@ -1,5 +1,5 @@
 import { GeneratorTool, ImageMetadata } from '../../types';
-import { mapRawInvokeMetadata } from '../invoke/metadataMapper';
+import { mapRawInvokeMetadata, parseFiniteDecimalF32 } from '../invoke/metadataMapper';
 
 type MetadataRecord = Record<string, unknown>;
 
@@ -254,10 +254,14 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
                 const k = key.trim();
                 const v = valParts.join(': ').trim();
 
+                if (/^cfg(?: scale)?$/i.test(k)) {
+                    metadata.cfg = parseFiniteDecimalF32(v);
+                    continue;
+                }
+
                 switch (k) {
                     case 'Steps': metadata.steps = parseInt(v); break;
                     case 'Sampler': metadata.sampler = v; break;
-                    case 'CFG scale': metadata.cfg = parseFloat(v); break;
                     case 'Seed': metadata.seed = parseInt(v); break;
                     case 'Model':
                     case 'Checkpoint':
@@ -267,7 +271,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
                         break;
                     case 'VAE': metadata.vae = v; break;
                     case 'Clip skip': metadata.clipSkip = parseInt(v); break;
-                    case 'Denoising strength': metadata.denoisingStrength = parseFloat(v); break;
+                    case 'Denoising strength': metadata.denoisingStrength = parseFiniteDecimalF32(v); break;
                     case 'Hires upscale': metadata.hiresUpscale = parseFloat(v); break;
                     case 'Hires steps': metadata.hiresSteps = parseInt(v); break;
                     case 'Hires upscaler': metadata.hiresUpscaler = v; break;

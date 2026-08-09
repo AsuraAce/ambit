@@ -24,8 +24,8 @@ interface GlobalModalsProps {
     canCheckForUpdates: boolean;
     onSettingsSave: (settings: AppSettingsUpdate) => void;
     onExportConfirm: (name: string, folder: string) => void;
-    onDeleteConfirm: () => void;
-    onDeleteCollectionConfirm: () => void;
+    onDeleteConfirm: () => void | Promise<void>;
+    onDeleteCollectionConfirm: () => void | Promise<void>;
     onRecoverMetadata: (style: RecoveryStyle) => void;
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => void;
     onCloseExport: () => void;
@@ -113,9 +113,39 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     onOpenUpdatePrompt,
     onNavigateToMaintenance
 }) => {
+    const deletePendingRef = React.useRef(false);
+    const collectionDeletePendingRef = React.useRef(false);
+    const [isDeletePending, setIsDeletePending] = React.useState(false);
+    const [isCollectionDeletePending, setIsCollectionDeletePending] = React.useState(false);
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
     const imageOnlyResults = filteredImages.filter(image => !isVideoAsset(image));
     const deleteTargetCount = pendingViewerDeleteId ? 1 : selectedIds.size;
+    const collectionToDelete = [...collections, ...smartCollections]
+        .find(collection => collection.id === collectionToDeleteId);
+    const handleDeleteConfirm = async () => {
+        if (deletePendingRef.current) return;
+
+        deletePendingRef.current = true;
+        setIsDeletePending(true);
+        try {
+            await onDeleteConfirm();
+        } finally {
+            deletePendingRef.current = false;
+            setIsDeletePending(false);
+        }
+    };
+    const handleCollectionDeleteConfirm = async () => {
+        if (collectionDeletePendingRef.current) return;
+
+        collectionDeletePendingRef.current = true;
+        setIsCollectionDeletePending(true);
+        try {
+            await onDeleteCollectionConfirm();
+        } finally {
+            collectionDeletePendingRef.current = false;
+            setIsCollectionDeletePending(false);
+        }
+    };
 
     return (
         <>
@@ -157,19 +187,22 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
             <ConfirmDialog
                 isOpen={modals.deleteConfirm}
                 onCancel={() => closeModal('deleteConfirm')}
-                onConfirm={() => onDeleteConfirm()}
+                onConfirm={handleDeleteConfirm}
                 title="Remove from Library?"
                 message={`Remove ${deleteTargetCount} ${deleteTargetCount === 1 ? 'item' : 'items'} from Ambit while keeping the original ${deleteTargetCount === 1 ? 'file' : 'files'} on disk? You can restore them later from Maintenance > Removed.`}
                 isDangerous={true}
+                isLoading={isDeletePending}
             />
 
             <ConfirmDialog
                 isOpen={modals.deleteCollection}
                 onCancel={() => closeModal('deleteCollection')}
-                onConfirm={() => onDeleteCollectionConfirm()}
+                onConfirm={handleCollectionDeleteConfirm}
                 title="Delete Collection"
-                message="Are you sure you want to delete this collection? Images will not be deleted from your library."
+                message={`Delete collection "${collectionToDelete?.name ?? 'Unknown collection'}"? Images will remain in your library.`}
+                confirmLabel="Delete Collection"
                 isDangerous={true}
+                isLoading={isCollectionDeletePending}
             />
 
             <React.Suspense fallback={null}>

@@ -38,6 +38,7 @@ vi.mock('../../services/db/collectionRepo', () => ({
     deleteCollectionFromDb: vi.fn(),
     addImagesToCollection: vi.fn(),
     removeImagesFromCollection: vi.fn(),
+    moveImagesBetweenCollections: vi.fn(),
     setCollectionCustomThumbnail: vi.fn(),
 }));
 
@@ -123,6 +124,7 @@ describe('useCollectionOperations', () => {
         (collectionRepo.deleteCollectionFromDb as any).mockResolvedValue(undefined);
         (collectionRepo.addImagesToCollection as any).mockResolvedValue(undefined);
         (collectionRepo.removeImagesFromCollection as any).mockResolvedValue(undefined);
+        (collectionRepo.moveImagesBetweenCollections as any).mockResolvedValue(undefined);
         (collectionRepo.setCollectionCustomThumbnail as any).mockResolvedValue(undefined);
         mockRefreshCollections.mockResolvedValue(undefined);
         mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
@@ -181,7 +183,7 @@ describe('useCollectionOperations', () => {
             expect(mockAddToast).toHaveBeenCalledWith('Collection deleted', 'success');
         });
 
-        it('clears the active collection filter and rolls back when deletion fails', async () => {
+        it('keeps active collection state intact when persisted deletion fails', async () => {
             const { deleteCollectionFromDb } = await import('../../services/db/collectionRepo');
             vi.mocked(deleteCollectionFromDb).mockRejectedValueOnce(new Error('delete failed'));
             const activeProps = { ...props, activeCollectionId: 'col1' };
@@ -191,11 +193,34 @@ describe('useCollectionOperations', () => {
                 await result.current.deleteCollection('col1');
             });
 
-            expect(mockSetFilters).toHaveBeenCalledWith(expect.any(Function));
-            const filterUpdater = mockSetFilters.mock.calls[0][0] as (prev: FilterState) => FilterState;
-            expect(filterUpdater(createDefaultFilters({ collectionId: 'col1' })).collectionId).toBeNull();
-            expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
+            expect(mockSetFilters).not.toHaveBeenCalled();
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith('Failed to delete collection', 'error');
+        });
+
+        it('keeps a committed collection deletion successful when refresh fails', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            mockRefreshCollections.mockRejectedValueOnce(new Error('refresh failed'));
+            const { result } = renderHook(() => useCollectionOperations(props));
+            let deleted = false;
+
+            await act(async () => {
+                deleted = await result.current.deleteCollection('col1');
+            });
+
+            expect(deleted).toBe(true);
+            expect(mockSetAllCollections).toHaveBeenCalledOnce();
+            expect(mockAddToast).toHaveBeenCalledWith('Collection deleted', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(
+                'Collection deleted, but the collection list may need a refresh.',
+                'warning'
+            );
+            expect(mockAddToast).not.toHaveBeenCalledWith('Failed to delete collection', 'error');
+            expect(errorSpy).toHaveBeenCalledWith(
+                '[Collections] Failed to refresh after deleting collection',
+                expect.any(Error)
+            );
+            errorSpy.mockRestore();
         });
     });
 
@@ -281,7 +306,7 @@ describe('useCollectionOperations', () => {
     });
 
     describe('addImagesToCollection', () => {
-        it('should increment count optimistically', async () => {
+        it('persists before reconciling collection state', async () => {
             const { addImagesToCollection: addImgs } = await import('../../services/db/collectionRepo');
             const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const { result } = renderHook(() => useCollectionOperations(props));
@@ -292,9 +317,7 @@ describe('useCollectionOperations', () => {
             });
 
             expect(didPersist).toBe(true);
-            const updater = mockSetAllCollections.mock.calls[0][0];
-            const nextState = updater(mockCollections);
-            expect(nextState[0].count).toBe(6); // 5 + 1
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
             expect(addImgs).toHaveBeenCalledWith('col1', ['img2']);
             expect(mockAddToast).toHaveBeenCalledWith('Added to collection', 'success');
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
@@ -349,7 +372,7 @@ describe('useCollectionOperations', () => {
     });
 
     describe('removeImagesFromCollection', () => {
-        it('removes active collection images from the current grid and records hybrid exclusions', async () => {
+        it('removes active collection images only after native hybrid persistence succeeds', async () => {
             const { upsertCollection, removeImagesFromCollection } = await import('../../services/db/collectionRepo');
             const smartCollection: SmartCollection = {
                 id: 'smart1',
@@ -376,9 +399,7 @@ describe('useCollectionOperations', () => {
             expect(didPersist).toBe(true);
             const imageUpdater = mockSetImages.mock.calls[0][0] as (images: AIImage[]) => AIImage[];
             expect(imageUpdater([makeImage({ id: 'img1' }), makeImage({ id: 'img2' })]).map(image => image.id)).toEqual(['img2']);
-            expect(vi.mocked(upsertCollection).mock.calls[0][0]).toEqual(expect.objectContaining({
-                manualExclusions: ['img0', 'img1']
-            }));
+            expect(upsertCollection).not.toHaveBeenCalled();
             expect(removeImagesFromCollection).toHaveBeenCalledWith('smart1', ['img1']);
         });
 
@@ -397,7 +418,7 @@ describe('useCollectionOperations', () => {
             });
 
             expect(didPersist).toBe(false);
-            expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
             expect(mockSetImages).not.toHaveBeenCalled();
             expect(dispatchedImages.map(image => image.id)).toEqual(['img1', 'img2']);
             expect(mockAddToast).toHaveBeenCalledWith('Failed to remove from collection', 'error');
@@ -479,7 +500,7 @@ describe('useCollectionOperations', () => {
 
     it('serializes same-collection add and remove mutations so a late failure cannot stale-rollback a success', async () => {
         const { addImagesToCollection, removeImagesFromCollection } = await import('../../services/db/collectionRepo');
-        const pendingAdd = deferred<void>();
+        const pendingAdd = deferred<Awaited<ReturnType<typeof addImagesToCollection>>>();
         vi.mocked(addImagesToCollection).mockReturnValueOnce(pendingAdd.promise);
         const { result } = renderHook(() => useCollectionOperations(props));
         let addResult: Promise<boolean>;
@@ -495,7 +516,7 @@ describe('useCollectionOperations', () => {
         });
 
         expect(removeImagesFromCollection).not.toHaveBeenCalled();
-        expect(dispatchedCollections[0].count).toBe(6);
+        expect(dispatchedCollections[0].count).toBe(5);
 
         await act(async () => {
             pendingAdd.reject(new Error('add failed'));
@@ -504,11 +525,12 @@ describe('useCollectionOperations', () => {
         });
 
         expect(removeImagesFromCollection).toHaveBeenCalledWith('col1', ['img1']);
-        expect(dispatchedCollections[0].count).toBe(4);
+        expect(dispatchedCollections[0].count).toBe(5);
     });
 
     describe('moveImagesBetweenCollections', () => {
-        it('should transfer counts between source and target', async () => {
+        it('delegates the transfer atomically before query reconciliation', async () => {
+            const { moveImagesBetweenCollections } = await import('../../services/db/collectionRepo');
             const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const multiProps = {
                 ...props,
@@ -523,14 +545,8 @@ describe('useCollectionOperations', () => {
                 await result.current.moveImagesBetweenCollections(['img1'], 'col1', 'col2');
             });
 
-            const updater = mockSetAllCollections.mock.calls[0][0];
-            const nextState = updater(multiProps.collections);
-
-            const source = nextState.find((c: any) => c.id === 'col1');
-            const target = nextState.find((c: any) => c.id === 'col2');
-
-            expect(source.count).toBe(4);
-            expect(target.count).toBe(1);
+            expect(moveImagesBetweenCollections).toHaveBeenCalledWith('col1', 'col2', ['img1']);
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
@@ -624,9 +640,9 @@ describe('useCollectionOperations', () => {
             });
         });
 
-        it('handles hybrid smart source exclusions and rolls back mixed optimistic state on move failure', async () => {
-            const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
-            vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('move failed'));
+        it('keeps hybrid source and active grid intact when atomic move persistence fails', async () => {
+            const { moveImagesBetweenCollections } = await import('../../services/db/collectionRepo');
+            vi.mocked(moveImagesBetweenCollections).mockRejectedValueOnce(new Error('move failed'));
             const invalidateSpy = vi.spyOn(QueryClient.prototype, 'invalidateQueries');
             const sourceSmart: SmartCollection = {
                 id: 'smart-source',
@@ -650,10 +666,9 @@ describe('useCollectionOperations', () => {
                 await result.current.moveImagesBetweenCollections(['img1'], 'smart-source', 'col2');
             });
 
-            const imageUpdater = mockSetImages.mock.calls[0][0] as (images: AIImage[]) => AIImage[];
-            expect(imageUpdater([makeImage({ id: 'img1' }), makeImage({ id: 'img2' })]).map(image => image.id)).toEqual(['img2']);
-            expect(mockSetAllCollections).toHaveBeenCalledTimes(2);
-            expect(mockAddToast).toHaveBeenCalledWith('Failed to move to collection', 'error');
+            expect(mockSetImages).not.toHaveBeenCalled();
+            expect(mockSetAllCollections).not.toHaveBeenCalled();
+            expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
             expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
         });
@@ -843,7 +858,7 @@ describe('useCollectionOperations', () => {
         await act(async () => result.current.addImagesToCollection(['a'], 'col1'));
         await act(async () => result.current.removeImagesFromCollection(['a', 'b'], 'col1'));
         await act(async () => result.current.moveImagesBetweenCollections(['a'], 'col1', 'target'));
-        expect(mockAddToast).toHaveBeenCalledWith('Moved to Target', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Moved images to Target', 'success');
     });
 
     it('uses the smart-save alias and supports image URL thumbnail fallback', async () => {
@@ -915,6 +930,33 @@ describe('useCollectionOperations', () => {
         errorSpy.mockRestore();
     });
 
+    it('keeps a committed collection move successful when refresh fails', async () => {
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const target = { id: 'target', name: 'Target', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
+        mockRefreshCollections.mockRejectedValueOnce(new Error('move refresh failed'));
+        const { result } = renderHook(() => useCollectionOperations({
+            ...props,
+            collections: [mockCollections[0], target],
+            activeCollectionId: 'col1'
+        }));
+        let moved = false;
+
+        await act(async () => {
+            moved = await result.current.moveImagesBetweenCollections(['img'], 'col1', 'target');
+        });
+
+        expect(moved).toBe(true);
+        expect(mockSetImages).toHaveBeenCalledOnce();
+        expect(mockAddToast).toHaveBeenCalledWith('Moved images to Target', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Images moved, but collection views may need a refresh.', 'warning');
+        expect(mockAddToast).not.toHaveBeenCalledWith('Failed to move images', 'error');
+        expect(errorSpy).toHaveBeenCalledWith(
+            '[Collections] Failed to refresh after moving images',
+            expect.any(Error)
+        );
+        errorSpy.mockRestore();
+    });
+
     it('updates non-self filters and rolls them back alongside unrelated collections', async () => {
         const { upsertCollection } = await import('../../services/db/collectionRepo');
         const extra = { id: 'extra', name: 'Extra', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
@@ -929,21 +971,22 @@ describe('useCollectionOperations', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Failed to update filters', 'error');
     });
 
-    it('uses empty exclusion and count fallbacks when removing from an inactive smart collection', async () => {
+    it('delegates smart exclusions to the native removal transaction', async () => {
         const smart: SmartCollection = {
             id: 'smart', name: 'Smart', createdAt: 1, source: 'ambit', count: 0, imageIds: [], filters: smartFilters
         };
         dispatchedCollections = [smart];
         const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [], smartCollections: [smart], activeCollectionId: null }));
         await act(async () => result.current.removeImagesFromCollection(['img'], 'smart'));
-        const { upsertCollection } = await import('../../services/db/collectionRepo');
-        expect(upsertCollection).toHaveBeenCalledWith(expect.objectContaining({ manualExclusions: ['img'] }));
+        const { upsertCollection, removeImagesFromCollection } = await import('../../services/db/collectionRepo');
+        expect(removeImagesFromCollection).toHaveBeenCalledWith('smart', ['img']);
+        expect(upsertCollection).not.toHaveBeenCalled();
         expect(mockSetImages).not.toHaveBeenCalled();
     });
 
     it('rolls back both ends of a failed move with zero-count fallbacks', async () => {
-        const { removeImagesFromCollection } = await import('../../services/db/collectionRepo');
-        vi.mocked(removeImagesFromCollection).mockRejectedValueOnce(new Error('move failed'));
+        const { moveImagesBetweenCollections } = await import('../../services/db/collectionRepo');
+        vi.mocked(moveImagesBetweenCollections).mockRejectedValueOnce(new Error('move failed'));
         const source = { ...mockCollections[0], count: 0 };
         const target = { id: 'target', name: 'Target', createdAt: 2, source: 'ambit' as const, count: 0, imageIds: [] };
         const extra = { id: 'extra', name: 'Extra', createdAt: 3, source: 'ambit' as const, count: 1, imageIds: [] };
@@ -951,7 +994,7 @@ describe('useCollectionOperations', () => {
         const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [source, target, extra], activeCollectionId: null }));
         await act(async () => result.current.moveImagesBetweenCollections(['img'], 'col1', 'target'));
         expect(dispatchedCollections).toEqual([source, target, extra]);
-        expect(mockAddToast).toHaveBeenCalledWith('Failed to move to collection', 'error');
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to move images', 'error');
     });
 
     it('preserves unrelated collections in thumbnail set and reset updaters', async () => {

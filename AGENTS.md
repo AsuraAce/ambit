@@ -88,6 +88,7 @@ Use this file as the entry point. Do not bulk-read `docs/` unless one of the rou
 - For current system shape and subsystem boundaries, read `docs/architecture.md`.
 - For active work, constraints, and maintainer-review notes, read `docs/progress.md`.
 - For release automation details, read `docs/WORKFLOW_SETUP.md`.
+- For private ComfyUI support bundles and fixture intake, read `docs/comfyui-support-workflow.md`.
 - For deferred structural cleanup, read `docs/refactor.md` if present.
 - For user-facing manual coverage, start at `docs/manual/index.md`.
 

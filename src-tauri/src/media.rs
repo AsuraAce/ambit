@@ -974,8 +974,8 @@ fn copy_without_overwrite(source: &Path, destination: &Path) -> Result<(PathBuf,
 #[cfg(test)]
 mod tests {
     use super::{
-        collision_safe_output_path, copy_without_overwrite, load_video_playback_path, normalize_rotation,
-        parse_mediainfo_json, upsert_video_asset, VideoAssetRecord,
+        collision_safe_output_path, copy_without_overwrite, load_video_playback_path,
+        normalize_rotation, parse_mediainfo_json, upsert_video_asset, VideoAssetRecord,
     };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1033,7 +1033,9 @@ mod tests {
         .expect("setup playback lookup schema");
 
         assert_eq!(
-            load_video_playback_path(&conn, "removed-video").unwrap().as_deref(),
+            load_video_playback_path(&conn, "removed-video")
+                .unwrap()
+                .as_deref(),
             Some("C:/videos/removed.webm")
         );
     }

@@ -52,7 +52,8 @@ const INITIAL_FILTERS: FilterState = {
     pinnedOnly: false,
     collectionId: null,
     showIntermediates: false,
-    showGrids: false
+    showGrids: false,
+    showInvokeImageAssets: false
 };
 
 
@@ -96,6 +97,7 @@ export const useSearchStore = create<SearchState>()(
                         ...INITIAL_FILTERS,
                         showIntermediates: state.filters.showIntermediates,
                         showGrids: state.filters.showGrids,
+                        showInvokeImageAssets: state.filters.showInvokeImageAssets,
                     }
                 }));
             },

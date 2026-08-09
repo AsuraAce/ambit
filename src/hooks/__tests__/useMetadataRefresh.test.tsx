@@ -93,7 +93,7 @@ describe('useMetadataRefresh', () => {
 
         expect(startAttempts).toBe(1);
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Parser updated - re-analyzing 12 images in the background',
+            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
             'info'
         );
         expect(mockAddToast).not.toHaveBeenCalledWith(
@@ -174,7 +174,7 @@ describe('useMetadataRefresh', () => {
         });
 
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Parser updated - re-analyzing 12 images in the background',
+            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
             'info'
         );
 
@@ -195,7 +195,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Parser updated - re-analyzing 12 images in the background',
+            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
             'info'
         );
 
@@ -216,7 +216,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Parser updated - re-analyzing 12 images in the background',
+            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
             'info'
         );
 
@@ -240,7 +240,7 @@ describe('useMetadataRefresh', () => {
             phase: 'processing'
         }));
         expect(mockAddToast).toHaveBeenCalledWith(
-            'Parser updated - re-analyzing 12 images in the background',
+            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
             'info'
         );
 

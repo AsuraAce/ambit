@@ -6,6 +6,7 @@ import type { ImagesQueryKey } from '../../hooks/useImagesQuery';
 import { SearchProvider, useSearch } from '../SearchContext';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { privacyMaskRefreshCoordinator } from '../../utils/privacyMaskRefreshCoordinator';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
 type SearchValue = ReturnType<typeof useSearch>;
 
@@ -17,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     imagesQueryArgs: { current: null as { settingsLoaded?: boolean } | null },
     statsQuery: { current: {} as unknown },
     queryClient: {
-        invalidateQueries: vi.fn().mockResolvedValue(undefined)
+        invalidateQueries: vi.fn().mockResolvedValue(undefined),
+        cancelQueries: vi.fn().mockResolvedValue(undefined)
     },
     repository: {
         load: vi.fn(),
@@ -104,7 +106,8 @@ const baseFilters: FilterState = {
     favoritesOnly: false,
     collectionId: null,
     showGrids: false,
-    showIntermediates: false
+    showIntermediates: false,
+    showInvokeImageAssets: false
 };
 
 const image = (overrides: Partial<AIImage> = {}): AIImage => ({
@@ -124,6 +127,7 @@ const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     maskedKeywords: [],
     libraryShowGrids: false,
     libraryShowIntermediates: false,
+    libraryShowInvokeImageAssets: false,
     ...overrides
 } as AppSettings);
 
@@ -193,7 +197,7 @@ describe('SearchProvider', () => {
             settings: settings(),
             recentSearches: ['portrait']
         }));
-        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false });
+        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false });
         mocks.buildSqlWhereClause.mockReturnValue({ where: 'deleted_at IS NULL', params: ['value'] });
         mocks.refreshPrivacyMaskIndex.mockResolvedValue({ changed: false, updated: 0 });
         mocks.updateFavorite.mockResolvedValue(undefined);
@@ -208,12 +212,85 @@ describe('SearchProvider', () => {
             privacyMaskIndexError: null,
             privacyMaskIndexRetryToken: 0,
         });
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
 
     afterEach(() => vi.useRealTimers());
 
     it('requires consumers to be rendered within the provider', () => {
         expect(() => render(<Consumer />)).toThrow('useSearch must be used within SearchProvider');
+    });
+
+    it('blocks and cancels library-derived queries until the configured InvokeAI root is admitted', async () => {
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke' }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true,
+        };
+
+        renderProvider();
+
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
+        expect(mocks.checkHiddenContentAvailability).not.toHaveBeenCalled();
+        await waitFor(() => expect(mocks.queryClient.cancelQueries).toHaveBeenCalledTimes(4));
+        expect(mocks.queryClient.cancelQueries.mock.calls.map(([filter]) => filter.queryKey)).toEqual([
+            ['images'],
+            ['libraryStats'],
+            ['libraryKeywordStats'],
+            ['parameterRanges'],
+        ]);
+    });
+
+    it('enables library-derived queries for the matching admitted InvokeAI root', async () => {
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke' }),
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            isLoaded: true,
+        };
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+        });
+
+        renderProvider();
+
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true);
+        await waitFor(() => expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledOnce());
+        expect(mocks.queryClient.cancelQueries).not.toHaveBeenCalled();
+    });
+
+    it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
+        let resolveDb: (() => void) | undefined;
+        mocks.settings.current = {
+            settings: settings({ invokeAiPath: 'D:/Invoke', maskedKeywords: ['face'] }),
+            setSettings: vi.fn(),
+            privacyEnabled: true,
+            isLoaded: true,
+        };
+        useSettingsStore.setState({ privacyEnabled: true });
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+        });
+        mocks.getDb.mockReturnValueOnce(new Promise<void>(resolve => {
+            resolveDb = resolve;
+        }));
+
+        renderProvider();
+        await waitFor(() => expect(mocks.getDb).toHaveBeenCalledOnce());
+
+        act(() => {
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                status: 'applying',
+                rootPath: 'D:/Invoke',
+            });
+        });
+        await act(async () => resolveDb?.());
+
+        expect(mocks.refreshPrivacyMaskIndex).not.toHaveBeenCalled();
+        expect(useSettingsStore.getState().privacyMaskIndexStatus).toBe('pending');
     });
 
     it('exposes query data, stats, facets, SQL state, and synchronizes query images', async () => {
@@ -399,6 +476,15 @@ describe('SearchProvider', () => {
         expect((mocks.collections.current as { refreshCollections: ReturnType<typeof vi.fn> }).refreshCollections).toHaveBeenCalledOnce();
     });
 
+    it('keeps the filter reset callback stable across provider rerenders', () => {
+        const view = renderProvider();
+        const initialClearAllFilters = latest.clearAllFilters;
+
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        expect(latest.clearAllFilters).toBe(initialClearAllFilters);
+    });
+
     it('loads another page only when a next page is available and idle', async () => {
         const fetchNextPage = vi.fn().mockResolvedValue(undefined);
         mocks.imagesQuery.current = {
@@ -522,18 +608,22 @@ describe('SearchProvider', () => {
             settings: {}
         });
         mocks.settings.current = {
-            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            settings: settings({
+                libraryShowGrids: true,
+                libraryShowIntermediates: true,
+                libraryShowInvokeImageAssets: true,
+            }),
             setSettings: vi.fn(),
             privacyEnabled: false,
             isLoaded: true
         };
-        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true });
+        mocks.checkHiddenContentAvailability.mockResolvedValue({ hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true });
         renderProvider();
 
         await act(() => Promise.resolve());
         await act(() => Promise.resolve());
         expect(latest.recentSearches).toEqual(['portrait']);
-        expect(latest.availableHiddenContent).toEqual({ hasIntermediates: true, hasGrids: true });
+        expect(latest.availableHiddenContent).toEqual({ hasIntermediates: true, hasGrids: true, hasInvokeImageAssets: true });
         expect((mocks.searchState.current as SearchValue).setFilters).toHaveBeenCalled();
 
         act(() => latest.setRecentSearches(['landscape']));
@@ -545,12 +635,16 @@ describe('SearchProvider', () => {
     });
 
     it('hydrates view filters from initialized settings before enabling write-back', async () => {
-        const currentSettings = settings({ libraryShowGrids: false, libraryShowIntermediates: false });
+        const currentSettings = settings({
+            libraryShowGrids: false,
+            libraryShowIntermediates: false,
+            libraryShowInvokeImageAssets: false,
+        });
         const setSettings = vi.fn();
         const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
         mocks.searchState.current = {
             ...(mocks.searchState.current as object),
-            filters: { ...baseFilters, showGrids: true, showIntermediates: true }
+            filters: { ...baseFilters, showGrids: true, showIntermediates: true, showInvokeImageAssets: true }
         };
         mocks.settings.current = {
             settings: currentSettings,
@@ -564,7 +658,8 @@ describe('SearchProvider', () => {
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => Partial<FilterState>;
         expect(updater((mocks.searchState.current as SearchValue).filters)).toEqual(expect.objectContaining({
             showGrids: false,
-            showIntermediates: false
+            showIntermediates: false,
+            showInvokeImageAssets: false,
         }));
         expect(setSettings).not.toHaveBeenCalled();
     });
@@ -599,7 +694,11 @@ describe('SearchProvider', () => {
         expect(setSettings).not.toHaveBeenCalled();
 
         mocks.settings.current = {
-            settings: settings({ libraryShowGrids: true, libraryShowIntermediates: true }),
+            settings: settings({
+                libraryShowGrids: true,
+                libraryShowIntermediates: true,
+                libraryShowInvokeImageAssets: true,
+            }),
             setSettings,
             privacyEnabled: false,
             isLoaded: true

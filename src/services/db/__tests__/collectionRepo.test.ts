@@ -19,6 +19,16 @@ const browserMocks = vi.hoisted(() => ({
     upsertBrowserMockCollection: vi.fn(),
 }));
 
+const bindingMocks = vi.hoisted(() => ({
+    mutateCollectionMembership: vi.fn(),
+}));
+
+vi.mock('../../../bindings', () => ({
+    commands: {
+        mutateCollectionMembership: bindingMocks.mutateCollectionMembership,
+    },
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
 }));
@@ -99,6 +109,18 @@ const resetRepoMocks = () => {
     browserMocks.isBrowserMockMode.mockReturnValue(false);
     browserMocks.getBrowserMockCollections.mockReturnValue([]);
     browserMocks.getBrowserMockImages.mockReturnValue([]);
+    bindingMocks.mutateCollectionMembership.mockImplementation(async (input: {
+        imageIds: string[];
+        sourceCollectionId: string | null;
+        targetCollectionId: string | null;
+    }) => ({
+        status: 'ok',
+        data: {
+            affectedIds: input.imageIds,
+            sourceCollectionId: input.sourceCollectionId,
+            targetCollectionId: input.targetCollectionId,
+        },
+    }));
     dbMocks.execute.mockResolvedValue(undefined);
     dbMocks.getDb.mockResolvedValue({ select: dbMocks.select, execute: dbMocks.execute });
 };
@@ -760,6 +782,7 @@ describe('collectionRepo membership helpers', () => {
             clearAllCollectionThumbnailCaches,
             ensureCollectionSchema,
             upsertCollection,
+            upsertInvokeBoardCollection,
             setCollectionCustomThumbnail,
             deleteCollectionFromDb,
             addImagesToCollection,
@@ -781,12 +804,18 @@ describe('collectionRepo membership helpers', () => {
         await expect(clearAllCollectionThumbnailCaches()).resolves.toBeUndefined();
         await expect(ensureCollectionSchema()).resolves.toBeUndefined();
         await expect(upsertCollection({ id: 'new', name: 'New' })).resolves.toBeUndefined();
+        await expect(upsertInvokeBoardCollection({
+            id: 'invoke-board',
+            name: 'Invoke Board',
+            createdAt: 1,
+            invokeOwnerId: 'owner-a',
+        })).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', 'img-1')).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('c1', null)).resolves.toBeUndefined();
         await expect(setCollectionCustomThumbnail('missing', 'img-1')).rejects.toThrow('Collection not found: missing');
         await expect(deleteCollectionFromDb('c1')).resolves.toBeUndefined();
-        await expect(addImagesToCollection('c1', ['img-2'])).resolves.toBeUndefined();
-        await expect(removeImagesFromCollection('c1', ['img-1'])).resolves.toBeUndefined();
+        await expect(addImagesToCollection('c1', ['img-2'])).resolves.toMatchObject({ affectedIds: ['img-2'] });
+        await expect(removeImagesFromCollection('c1', ['img-1'])).resolves.toMatchObject({ affectedIds: ['img-1'] });
         await expect(getAllCollectionsWithStats()).resolves.toEqual(collections);
         await expect(getCollectionThumbnailSummaries([
             makeCollection({ id: 'c1' }),
@@ -826,6 +855,14 @@ describe('collectionRepo membership helpers', () => {
         await expect(purgeInvokeCollections()).resolves.toBeUndefined();
 
         expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({ id: 'new', name: 'New' });
+        expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({
+            id: 'invoke-board',
+            name: 'Invoke Board',
+            createdAt: 1,
+            invokeOwnerId: 'owner-a',
+            imageIds: [],
+            source: 'invoke',
+        });
         expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith({
             ...collections[0],
             customThumbnail: 'img-1',
@@ -1039,38 +1076,32 @@ describe('collectionRepo membership helpers', () => {
         errorSpy.mockRestore();
     });
 
-    it('adds images to a collection, updates recency, and clears stale dynamic thumbnails', async () => {
+    it('delegates collection additions to the atomic native mutation', async () => {
         const { addImagesToCollection } = await import('../collectionRepo');
 
         await addImagesToCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-            ['c1', '//?/C:/images/a.png']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'UPDATE collections SET updated_at = ? WHERE id = ?',
-            [expect.any(Number), 'c1']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path = NULL'),
-            ['c1']
-        );
+        expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
+            operation: 'add',
+            imageIds: ['//?/C:/images/a.png', 'C:/images/b.png'],
+            sourceCollectionId: null,
+            targetCollectionId: 'c1',
+        });
+        expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
-    it('removes images from a collection with normalized image ids', async () => {
+    it('delegates collection removals to the atomic native mutation', async () => {
         const { removeImagesFromCollection } = await import('../collectionRepo');
 
         await removeImagesFromCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            'DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (?,?)',
-            ['c1', '//?/C:/images/a.png', 'C:/images/b.png']
-        );
-        expect(dbMocks.execute).toHaveBeenCalledWith(
-            expect.stringContaining('dynamic_thumbnail_path = NULL'),
-            ['c1']
-        );
+        expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
+            operation: 'remove',
+            imageIds: ['//?/C:/images/a.png', 'C:/images/b.png'],
+            sourceCollectionId: 'c1',
+            targetCollectionId: null,
+        });
+        expect(dbMocks.execute).not.toHaveBeenCalled();
     });
 
     it('selects the best collection thumbnail across query batches with pinned images first', async () => {
@@ -1177,5 +1208,54 @@ describe('collectionRepo membership helpers', () => {
 
         expect(dbMocks.dispatch).toHaveBeenCalledTimes(1);
         expect(dbMocks.execute).toHaveBeenCalledWith("DELETE FROM collections WHERE source = 'invoke'");
+    });
+
+    it('loads collections through fail-closed owner visibility and preserves the mapped board owner', async () => {
+        dbMocks.select
+            .mockResolvedValueOnce([makeCollectionRow({
+                id: 'owned-board',
+                source: 'invoke',
+                invoke_owner_id: 'owner-a',
+            })])
+            .mockResolvedValueOnce([]);
+
+        const { getAllCollectionsWithStats, upsertCollection } = await import('../collectionRepo');
+        await expect(getAllCollectionsWithStats({ includeThumbnails: false })).resolves.toEqual([
+            expect.objectContaining({ id: 'owned-board', source: 'invoke', invokeOwnerId: 'owner-a' }),
+        ]);
+
+        const visibilitySql = dbMocks.select.mock.calls[0][0] as string;
+        expect(visibilitySql).toContain("s.scope_mode IN ('legacy', 'all')");
+        expect(visibilitySql).toContain("s.scope_mode = 'owner' AND c.invoke_owner_id = s.owner_id");
+
+        await upsertCollection({
+            id: 'owned-board',
+            name: 'Owned board',
+            source: 'invoke',
+            invokeOwnerId: 'owner-a',
+        });
+        const params = dbMocks.execute.mock.calls.at(-1)?.[1] as unknown[];
+        expect(params[10]).toBe('owner-a');
+    });
+
+    it('refreshes Invoke board identity without overwriting Ambit collection customizations', async () => {
+        const { upsertInvokeBoardCollection } = await import('../collectionRepo');
+
+        await upsertInvokeBoardCollection({
+            id: 'owned-board',
+            name: 'Renamed upstream',
+            createdAt: 10,
+            invokeOwnerId: 'owner-a',
+        });
+
+        const sql = dbMocks.execute.mock.calls[0][0] as string;
+        const params = dbMocks.execute.mock.calls[0][1] as unknown[];
+        expect(sql).toContain("source = 'invoke'");
+        expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
+        expect(sql).not.toContain('color = excluded.color');
+        expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
+        expect(sql).not.toContain('is_archived = excluded.is_archived');
+        expect(sql).not.toContain('is_pinned = excluded.is_pinned');
+        expect(params.slice(0, 4)).toEqual(['owned-board', 'Renamed upstream', 10, 'owner-a']);
     });
 });

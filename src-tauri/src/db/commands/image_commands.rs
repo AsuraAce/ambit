@@ -40,6 +40,109 @@ pub struct ImagePathIdentityMoveResult {
     pub skipped_source_missing: usize,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageSourceUpdate {
+    pub id: String,
+    pub invoke_image_name: String,
+    pub invoke_image_category: Option<String>,
+    pub invoke_image_origin: Option<String>,
+    pub invoke_owner_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageSourceReconcileResult {
+    pub active_updated: usize,
+    pub removed_updated: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeOwnerScopeMode {
+    Legacy,
+    Unselected,
+    Owner,
+    All,
+}
+
+impl InvokeOwnerScopeMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Legacy => "legacy",
+            Self::Unselected => "unselected",
+            Self::Owner => "owner",
+            Self::All => "all",
+        }
+    }
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeOwnerScopeInput {
+    pub db_path: String,
+    pub images_root: String,
+    pub mode: InvokeOwnerScopeMode,
+    pub owner_id: Option<String>,
+    pub force_refresh: bool,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeOwnerScopeRefreshResult {
+    pub changed: bool,
+    pub active_updated: usize,
+    pub removed_updated: usize,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeImageReferenceRole {
+    InitImage,
+    ControlnetImage,
+    ControlnetProcessedImage,
+    IpAdapterImage,
+    #[serde(rename = "t2i_adapter_image")]
+    T2iAdapterImage,
+    #[serde(rename = "t2i_adapter_processed_image")]
+    T2iAdapterProcessedImage,
+}
+
+impl InvokeImageReferenceRole {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::InitImage => "init_image",
+            Self::ControlnetImage => "controlnet_image",
+            Self::ControlnetProcessedImage => "controlnet_processed_image",
+            Self::IpAdapterImage => "ip_adapter_image",
+            Self::T2iAdapterImage => "t2i_adapter_image",
+            Self::T2iAdapterProcessedImage => "t2i_adapter_processed_image",
+        }
+    }
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceInput {
+    pub role: InvokeImageReferenceRole,
+    pub target_invoke_image_name: String,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceSet {
+    pub source_image_id: String,
+    pub references: Vec<InvokeImageReferenceInput>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageReferenceReplaceResult {
+    pub sources_replaced: usize,
+    pub references_written: usize,
+    pub skipped_missing_sources: usize,
+}
+
 fn normalize_privacy_keywords(masked_keywords: &[String]) -> Vec<String> {
     masked_keywords
         .iter()
@@ -135,10 +238,18 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
-                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+                    ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM invoke_owner_scope_state scope
+                        WHERE LOWER(substr(REPLACE(?2, '\\', '/'), 1, length(scope.images_root || '/outputs/images/'))) = LOWER(scope.images_root || '/outputs/images/')
+                          AND (
+                            scope.scope_mode = 'unselected'
+                            OR (scope.scope_mode = 'owner' AND (?26 IS NULL OR ?26 IS NOT scope.owner_id))
+                          )
+                    ) THEN 1 ELSE 0 END,
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
                     json_extract(?8, '$.tool'),
@@ -148,7 +259,7 @@ fn save_images_batch_inner(
                     CAST(json_extract(?8, '$.cfg') AS REAL),
                     REPLACE(REPLACE(LOWER(json_extract(?8, '$.sampler')), '_', ' '), '-', ' '),
                     json_extract(?8, '$.generationType'),
-                    ?23,
+                    ?27,
                     ?8,
                     COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
                     COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
@@ -197,6 +308,23 @@ fn save_images_batch_inner(
                     original_metadata_json=excluded.original_metadata_json,
                     original_state_json=COALESCE(images.original_state_json, excluded.original_state_json),
                     is_corrupt=excluded.is_corrupt,
+                    invoke_image_name=COALESCE(excluded.invoke_image_name, images.invoke_image_name),
+                    invoke_image_category=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_image_category
+                        ELSE images.invoke_image_category
+                    END,
+                    invoke_image_origin=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_image_origin
+                        ELSE images.invoke_image_origin
+                    END,
+                    invoke_owner_id=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_owner_id
+                        ELSE images.invoke_owner_id
+                    END,
+                    invoke_scope_hidden=CASE
+                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_scope_hidden
+                        ELSE images.invoke_scope_hidden
+                    END,
                     model_hash=excluded.model_hash,
                     model_name=excluded.model_name,
                     tool=excluded.tool,
@@ -218,6 +346,11 @@ fn save_images_batch_inner(
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.board_id IS NOT excluded.board_id
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_owner_id IS NOT excluded.invoke_owner_id)
+                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_scope_hidden IS NOT excluded.invoke_scope_hidden)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
@@ -353,6 +486,10 @@ fn save_images_batch_inner(
                     img.original_metadata_json,
                     img.original_state_json,
                     img.is_corrupt,
+                    img.invoke_image_name,
+                    img.invoke_image_category,
+                    img.invoke_image_origin,
+                    img.invoke_owner_id,
                     CURRENT_PARSER_VERSION
                 ])
                 .map_err(|e| e.to_string())?;
@@ -407,6 +544,226 @@ fn save_images_batch_inner(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(images.len())
+}
+
+fn reconcile_invoke_image_sources_inner(
+    conn: &rusqlite::Connection,
+    updates: &[InvokeImageSourceUpdate],
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut result = InvokeImageSourceReconcileResult::default();
+
+    {
+        let update_sql = "SET invoke_image_name = ?1,
+                              invoke_image_category = ?2,
+                              invoke_image_origin = ?3,
+                              invoke_owner_id = ?4
+                          WHERE id = ?5
+                            AND (invoke_image_name IS NOT ?1
+                                 OR invoke_image_category IS NOT ?2
+                                 OR invoke_image_origin IS NOT ?3
+                                 OR invoke_owner_id IS NOT ?4)";
+        let mut update_active = tx
+            .prepare_cached(&format!("UPDATE images {update_sql}"))
+            .map_err(|e| e.to_string())?;
+        let mut update_removed = tx
+            .prepare_cached(&format!("UPDATE removed_images {update_sql}"))
+            .map_err(|e| e.to_string())?;
+
+        for update in updates {
+            result.active_updated += update_active
+                .execute(params![
+                    update.invoke_image_name,
+                    update.invoke_image_category,
+                    update.invoke_image_origin,
+                    update.invoke_owner_id,
+                    update.id
+                ])
+                .map_err(|e| e.to_string())?;
+            result.removed_updated += update_removed
+                .execute(params![
+                    update.invoke_image_name,
+                    update.invoke_image_category,
+                    update.invoke_image_origin,
+                    update.invoke_owner_id,
+                    update.id
+                ])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
+}
+
+fn normalize_invoke_root(path: &str) -> String {
+    path.replace('\\', "/").trim_end_matches('/').to_string()
+}
+
+fn refresh_invoke_owner_scope_inner(
+    conn: &rusqlite::Connection,
+    input: &InvokeOwnerScopeInput,
+) -> Result<InvokeOwnerScopeRefreshResult, String> {
+    let db_path = normalize_invoke_root(&input.db_path);
+    let images_root = normalize_invoke_root(&input.images_root);
+    if db_path.is_empty() || images_root.is_empty() {
+        return Err("InvokeAI database path and images root are required".to_string());
+    }
+
+    let owner_id = input
+        .owner_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if input.mode == InvokeOwnerScopeMode::Owner && owner_id.is_none() {
+        return Err("Owner scope requires a non-empty owner ID".to_string());
+    }
+
+    let source_prefix = format!("{images_root}/outputs/images/");
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let previous: Option<(String, String, String, Option<String>)> = tx
+        .query_row(
+            "SELECT db_path, images_root, scope_mode, owner_id
+             FROM invoke_owner_scope_state
+             WHERE state_key = 'current'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+    let next = (
+        db_path.clone(),
+        images_root.clone(),
+        input.mode.as_str().to_string(),
+        owner_id.map(str::to_string),
+    );
+    if !input.force_refresh && previous.as_ref() == Some(&next) {
+        tx.commit().map_err(|e| e.to_string())?;
+        return Ok(InvokeOwnerScopeRefreshResult::default());
+    }
+
+    let visibility_sql = match input.mode {
+        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "0",
+        InvokeOwnerScopeMode::Unselected => "1",
+        InvokeOwnerScopeMode::Owner => "CASE WHEN invoke_owner_id = ?2 THEN 0 ELSE 1 END",
+    };
+    let update_sql = |table: &str| {
+        format!(
+            "UPDATE {table}
+             SET invoke_scope_hidden = {visibility_sql}
+             WHERE LOWER(substr(REPLACE(path, '\\', '/'), 1, length(?1))) = LOWER(?1)
+               AND invoke_scope_hidden IS NOT ({visibility_sql})"
+        )
+    };
+    let update_table = |table: &str| -> Result<usize, String> {
+        let sql = update_sql(table);
+        if input.mode == InvokeOwnerScopeMode::Owner {
+            tx.execute(&sql, params![source_prefix, owner_id])
+                .map_err(|e| e.to_string())
+        } else {
+            tx.execute(&sql, params![source_prefix])
+                .map_err(|e| e.to_string())
+        }
+    };
+
+    let active_updated = update_table("images")?;
+    let removed_updated = update_table("removed_images")?;
+    tx.execute(
+        "INSERT INTO invoke_owner_scope_state (
+             state_key, db_path, images_root, scope_mode, owner_id, updated_at
+         ) VALUES ('current', ?1, ?2, ?3, ?4, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+         ON CONFLICT(state_key) DO UPDATE SET
+             db_path = excluded.db_path,
+             images_root = excluded.images_root,
+             scope_mode = excluded.scope_mode,
+             owner_id = excluded.owner_id,
+             updated_at = excluded.updated_at",
+        params![db_path, images_root, input.mode.as_str(), owner_id],
+    )
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().map_err(|e| e.to_string())?;
+
+    Ok(InvokeOwnerScopeRefreshResult {
+        changed: previous.as_ref() != Some(&next) || active_updated > 0 || removed_updated > 0,
+        active_updated,
+        removed_updated,
+    })
+}
+
+fn replace_invoke_image_references_inner(
+    conn: &rusqlite::Connection,
+    reference_sets: &[InvokeImageReferenceSet],
+) -> Result<InvokeImageReferenceReplaceResult, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut result = InvokeImageReferenceReplaceResult::default();
+
+    {
+        let mut source_exists = tx
+            .prepare_cached(
+                "SELECT 1 FROM images WHERE id = ?1
+                 UNION ALL
+                 SELECT 1 FROM removed_images WHERE id = ?1
+                 LIMIT 1",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut delete_existing = tx
+            .prepare_cached("DELETE FROM invoke_image_references WHERE source_image_id = ?1")
+            .map_err(|e| e.to_string())?;
+        let mut insert_reference = tx
+            .prepare_cached(
+                "INSERT OR IGNORE INTO invoke_image_references (
+                    source_image_id,
+                    role,
+                    target_invoke_image_name,
+                    target_image_id
+                 ) VALUES (
+                    ?1,
+                    ?2,
+                    ?3,
+                    (
+                        SELECT CASE WHEN COUNT(*) = 1 THEN MIN(id) ELSE NULL END
+                        FROM images
+                        WHERE invoke_image_name = ?3
+                    )
+                 )",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for reference_set in reference_sets {
+            let source_image_id = normalize_image_identity_path(&reference_set.source_image_id);
+            if !source_exists
+                .exists(params![&source_image_id])
+                .map_err(|e| e.to_string())?
+            {
+                result.skipped_missing_sources += 1;
+                continue;
+            }
+
+            delete_existing
+                .execute(params![&source_image_id])
+                .map_err(|e| e.to_string())?;
+
+            for reference in &reference_set.references {
+                if reference.target_invoke_image_name.trim().is_empty() {
+                    return Err("InvokeAI reference image names cannot be blank".to_string());
+                }
+
+                result.references_written += insert_reference
+                    .execute(params![
+                        &source_image_id,
+                        reference.role.as_str(),
+                        &reference.target_invoke_image_name,
+                    ])
+                    .map_err(|e| e.to_string())?;
+            }
+
+            result.sources_replaced += 1;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(result)
 }
 
 fn normalize_image_identity_path(path: &str) -> String {
@@ -735,6 +1092,18 @@ pub async fn refresh_privacy_mask_index(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn refresh_invoke_owner_scope(
+    app: AppHandle,
+    input: InvokeOwnerScopeInput,
+) -> Result<InvokeOwnerScopeRefreshResult, String> {
+    run_blocking(app, move |conn| {
+        refresh_invoke_owner_scope_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Result<usize, String> {
     run_blocking(app, move |conn| {
         // Retry loop for database lock issues
@@ -755,6 +1124,64 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
             }
         }
         Err("Failed to save images after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reconcile_invoke_image_sources(
+    app: AppHandle,
+    updates: Vec<InvokeImageSourceUpdate>,
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = reconcile_invoke_image_sources_inner(conn, &updates);
+
+            match result {
+                Ok(result) => return Ok(result),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to reconcile InvokeAI image sources after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn replace_invoke_image_references(
+    app: AppHandle,
+    reference_sets: Vec<InvokeImageReferenceSet>,
+) -> Result<InvokeImageReferenceReplaceResult, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = replace_invoke_image_references_inner(conn, &reference_sets);
+
+            match result {
+                Ok(result) => return Ok(result),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to replace InvokeAI image references after max retries".to_string())
     })
     .await
 }
@@ -824,7 +1251,8 @@ pub async fn get_image_count_for_path_prefix(app: AppHandle, path: String) -> Re
         let normalized = path.trim_end_matches(['/', '\\']);
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE path LIKE ? OR path LIKE ?",
+                "SELECT COUNT(*) FROM images
+                 WHERE invoke_scope_hidden = 0 AND (path LIKE ? OR path LIKE ?)",
                 params![format!("{}/%", normalized), format!("{}\\%", normalized)],
                 |r| r.get(0),
             )
@@ -910,22 +1338,29 @@ pub struct IntegrityResult {
     pub broken_thumbs: usize,
 }
 
+fn load_visible_integrity_images(
+    conn: &Connection,
+) -> Result<Vec<(String, String, Option<String>)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path, thumbnail_path
+             FROM images
+             WHERE invoke_scope_hidden = 0",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
 pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult, String> {
     run_blocking(app, move |conn| {
-        let images: Vec<(String, String, Option<String>)> = {
-            let mut stmt = conn
-                .prepare("SELECT id, path, thumbnail_path FROM images")
-                .map_err(|e| e.to_string())?;
-            let items = stmt
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| e.to_string())?;
-            drop(stmt);
-            items
-        };
+        let images = load_visible_integrity_images(conn)?;
 
         if images.is_empty() {
             return Ok(IntegrityResult {
@@ -1026,6 +1461,10 @@ mod tests {
             notes: None,
             original_metadata_json: Some(metadata_json.to_string()),
             original_state_json: None,
+            invoke_image_name: None,
+            invoke_image_category: None,
+            invoke_image_origin: None,
+            invoke_owner_id: None,
         }
     }
 
@@ -1034,6 +1473,27 @@ mod tests {
             conn.execute_batch(&migration.sql)
                 .expect("apply migrations");
         }
+    }
+
+    #[test]
+    fn integrity_scan_excludes_images_outside_the_active_owner_scope() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, invoke_scope_hidden)
+             VALUES
+                ('visible', 'visible.png', 1, 0),
+                ('owner-hidden', 'hidden.png', 2, 1)",
+            [],
+        )
+        .expect("insert images");
+
+        let rows = super::load_visible_integrity_images(&conn).expect("load integrity rows");
+
+        assert_eq!(
+            rows,
+            vec![("visible".to_string(), "visible.png".to_string(), None)]
+        );
     }
 
     fn fetch_thumbnail_state(
@@ -1069,6 +1529,464 @@ mod tests {
             },
         )
         .expect("thumbnail state")
+    }
+
+    #[test]
+    fn reconcile_invoke_sources_updates_only_source_facts_for_active_and_removed_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut active = create_image_record(
+            "invoke-active",
+            100,
+            200,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        active.is_favorite = true;
+        active.is_pinned = true;
+        active.board_id = Some("keep-active-board".to_string());
+        active.notes = Some("keep active note".to_string());
+        active.invoke_image_name = Some("old-active.png".to_string());
+        active.invoke_image_category = Some("control".to_string());
+        active.invoke_image_origin = Some("internal".to_string());
+        super::save_images_batch_inner(&conn, &[active]).expect("insert active row");
+
+        conn.execute(
+            "INSERT INTO removed_images (
+                id, path, timestamp, metadata_json, is_favorite, is_pinned, board_id,
+                notes, removed_at,
+                invoke_image_name, invoke_image_category, invoke_image_origin
+             ) VALUES (
+                'invoke-removed', 'C:/library/invoke-removed.png', 101,
+                '{\"positivePrompt\":\"removed edit\"}', 1, 1, 'keep-removed-board',
+                'keep removed note', 999,
+                'old-removed.png', 'general', 'internal'
+             )",
+            [],
+        )
+        .expect("insert removed row");
+
+        let updates = vec![
+            super::InvokeImageSourceUpdate {
+                id: "invoke-active".to_string(),
+                invoke_image_name: "active.png".to_string(),
+                invoke_image_category: None,
+                invoke_image_origin: None,
+                invoke_owner_id: Some("owner-active".to_string()),
+            },
+            super::InvokeImageSourceUpdate {
+                id: "invoke-removed".to_string(),
+                invoke_image_name: "removed.png".to_string(),
+                invoke_image_category: Some("mask".to_string()),
+                invoke_image_origin: Some("external".to_string()),
+                invoke_owner_id: Some("owner-removed".to_string()),
+            },
+            super::InvokeImageSourceUpdate {
+                id: "missing".to_string(),
+                invoke_image_name: "missing.png".to_string(),
+                invoke_image_category: Some("user".to_string()),
+                invoke_image_origin: None,
+                invoke_owner_id: None,
+            },
+        ];
+
+        let result = super::reconcile_invoke_image_sources_inner(&conn, &updates)
+            .expect("reconcile source facts");
+        assert_eq!(result.active_updated, 1);
+        assert_eq!(result.removed_updated, 1);
+
+        let active_state: (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            String,
+            i64,
+            i64,
+            String,
+            String,
+        ) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json, is_favorite, is_pinned,
+                        board_id, notes
+                 FROM images WHERE id = 'invoke-active'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                    ))
+                },
+            )
+            .expect("active source state");
+        assert_eq!(
+            active_state,
+            (
+                "active.png".to_string(),
+                None,
+                None,
+                None,
+                r#"{"positivePrompt":"user edited"}"#.to_string(),
+                1,
+                1,
+                "keep-active-board".to_string(),
+                "keep active note".to_string(),
+            )
+        );
+
+        let removed_state: (
+            String,
+            String,
+            String,
+            Option<i64>,
+            String,
+            i64,
+            i64,
+            String,
+            String,
+            i64,
+        ) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json, is_favorite, is_pinned,
+                        board_id, notes, removed_at
+                 FROM removed_images WHERE id = 'invoke-removed'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                    ))
+                },
+            )
+            .expect("removed source state");
+        assert_eq!(
+            removed_state,
+            (
+                "removed.png".to_string(),
+                "mask".to_string(),
+                "external".to_string(),
+                Some(1),
+                r#"{"positivePrompt":"removed edit"}"#.to_string(),
+                1,
+                1,
+                "keep-removed-board".to_string(),
+                "keep removed note".to_string(),
+                999,
+            )
+        );
+
+        let repeated = super::reconcile_invoke_image_sources_inner(&conn, &updates)
+            .expect("repeat reconciliation");
+        assert_eq!(repeated.active_updated, 0);
+        assert_eq!(repeated.removed_updated, 0);
+    }
+
+    #[test]
+    fn owner_scope_reconciles_active_and_removed_rows_without_deleting_or_touching_other_roots() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(&conn, &[image]).expect("insert Invoke row");
+        }
+        let mut outside = create_image_record("outside", 100, 10, "{}");
+        outside.path = "C:/Other/outputs/images/outside.png".to_string();
+        outside.invoke_image_name = Some("outside.png".to_string());
+        outside.invoke_owner_id = Some("b".to_string());
+        super::save_images_batch_inner(&conn, &[outside]).expect("insert outside row");
+        conn.execute(
+            "INSERT INTO removed_images (
+                id, path, timestamp, metadata_json, removed_at,
+                invoke_image_name, invoke_owner_id
+             ) VALUES (
+                'removed-a', 'C:/Invoke/outputs/images/removed-a.png', 100, '{}', 200,
+                'removed-a.png', 'a'
+             )",
+            [],
+        )
+        .expect("insert removed row");
+
+        let owner_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: false,
+            },
+        )
+        .expect("apply owner scope");
+        assert!(owner_result.changed);
+        assert_eq!(owner_result.active_updated, 1);
+
+        let active: Vec<(String, i64)> = conn
+            .prepare("SELECT id, invoke_scope_hidden FROM images ORDER BY id")
+            .expect("prepare active visibility")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query active visibility")
+            .collect::<Result<_, _>>()
+            .expect("collect active visibility");
+        assert_eq!(
+            active,
+            vec![
+                ("outside".to_string(), 0),
+                ("owner-a".to_string(), 0),
+                ("owner-b".to_string(), 1),
+            ]
+        );
+        let removed_hidden: i64 = conn
+            .query_row(
+                "SELECT invoke_scope_hidden FROM removed_images WHERE id = 'removed-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("removed visibility");
+        assert_eq!(removed_hidden, 0);
+
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 0 WHERE id = 'owner-b'",
+            [],
+        )
+        .expect("introduce visibility drift");
+        let no_op_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: false,
+            },
+        )
+        .expect("validate unchanged owner scope");
+        assert_eq!(
+            no_op_result,
+            super::InvokeOwnerScopeRefreshResult::default()
+        );
+        let drifted_visibility: i64 = conn
+            .query_row(
+                "SELECT invoke_scope_hidden FROM images WHERE id = 'owner-b'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("drifted visibility");
+        assert_eq!(
+            drifted_visibility, 0,
+            "unchanged scope must avoid a table repair pass"
+        );
+
+        let forced_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "c:/invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: true,
+            },
+        )
+        .expect("force owner visibility repair");
+        assert_eq!(forced_result.active_updated, 1);
+
+        let mut generic_late = create_image_record("generic-late", 101, 10, "{}");
+        generic_late.path = "C:/Invoke/outputs/images/generic-late.png".to_string();
+        let mut owner_late = create_image_record("owner-late", 102, 10, "{}");
+        owner_late.path = "C:/Invoke/outputs/images/owner-late.png".to_string();
+        owner_late.invoke_image_name = Some("owner-late.png".to_string());
+        owner_late.invoke_owner_id = Some("a".to_string());
+        super::save_images_batch_inner(&conn, &[generic_late, owner_late])
+            .expect("insert rows while owner scope is active");
+        let late_visibility: Vec<(String, i64)> = conn
+            .prepare(
+                "SELECT id, invoke_scope_hidden FROM images
+                 WHERE id IN ('generic-late', 'owner-late') ORDER BY id",
+            )
+            .expect("prepare late visibility")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query late visibility")
+            .collect::<Result<_, _>>()
+            .expect("collect late visibility");
+        assert_eq!(
+            late_visibility,
+            vec![
+                ("generic-late".to_string(), 1),
+                ("owner-late".to_string(), 0),
+            ],
+            "generic rescans must fail closed while authoritative owner imports may match"
+        );
+
+        let stale_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("stale".to_string()),
+                force_refresh: false,
+            },
+        )
+        .expect("apply stale owner scope");
+        assert_eq!(stale_result.active_updated, 2);
+        let visible_in_root: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images
+                 WHERE path LIKE 'C:/Invoke/outputs/images/%' AND invoke_scope_hidden = 0",
+                [],
+                |row| row.get(0),
+            )
+            .expect("visible owner rows");
+        assert_eq!(visible_in_root, 0);
+
+        let all_result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::All,
+                owner_id: None,
+                force_refresh: false,
+            },
+        )
+        .expect("apply all-owner scope");
+        assert_eq!(all_result.active_updated, 4);
+        assert_eq!(all_result.removed_updated, 1);
+        let total_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
+            .expect("active row count");
+        assert_eq!(total_rows, 5, "scope changes must never delete stored rows");
+    }
+
+    #[test]
+    fn replace_invoke_references_is_atomic_exact_and_resolution_safe() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut source = create_image_record("source", 100, 200, r#"{"tool":"InvokeAI"}"#);
+        source.invoke_image_name = Some("source.png".to_string());
+        let mut target = create_image_record("target-a", 101, 200, r#"{"tool":"InvokeAI"}"#);
+        target.invoke_image_name = Some("Target.PNG".to_string());
+        super::save_images_batch_inner(&conn, &[source, target]).expect("insert source and target");
+
+        let reference = super::InvokeImageReferenceInput {
+            role: super::InvokeImageReferenceRole::ControlnetImage,
+            target_invoke_image_name: "Target.PNG".to_string(),
+        };
+        let result = super::replace_invoke_image_references_inner(
+            &conn,
+            &[super::InvokeImageReferenceSet {
+                source_image_id: "source".to_string(),
+                references: vec![reference.clone(), reference],
+            }],
+        )
+        .expect("replace references");
+        assert_eq!(result.sources_replaced, 1);
+        assert_eq!(result.references_written, 1);
+        assert_eq!(result.skipped_missing_sources, 0);
+
+        let stored: (String, String, String, Option<String>) = conn
+            .query_row(
+                "SELECT source_image_id, role, target_invoke_image_name, target_image_id
+                 FROM invoke_image_references",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("stored reference");
+        assert_eq!(
+            stored,
+            (
+                "source".to_string(),
+                "controlnet_image".to_string(),
+                "Target.PNG".to_string(),
+                Some("target-a".to_string()),
+            )
+        );
+
+        let blank = super::replace_invoke_image_references_inner(
+            &conn,
+            &[super::InvokeImageReferenceSet {
+                source_image_id: "source".to_string(),
+                references: vec![super::InvokeImageReferenceInput {
+                    role: super::InvokeImageReferenceRole::InitImage,
+                    target_invoke_image_name: "   ".to_string(),
+                }],
+            }],
+        );
+        assert!(blank.is_err());
+        let preserved_after_rollback: i64 = conn
+            .query_row("SELECT COUNT(*) FROM invoke_image_references", [], |row| {
+                row.get(0)
+            })
+            .expect("reference preserved after rollback");
+        assert_eq!(preserved_after_rollback, 1);
+
+        let mut duplicate = create_image_record("target-b", 102, 200, r#"{"tool":"InvokeAI"}"#);
+        duplicate.invoke_image_name = Some("Target.PNG".to_string());
+        super::save_images_batch_inner(&conn, &[duplicate]).expect("insert ambiguous target");
+        let ambiguous: Option<String> = conn
+            .query_row(
+                "SELECT target_image_id FROM invoke_image_references",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ambiguous target");
+        assert_eq!(ambiguous, None);
+
+        conn.execute("DELETE FROM images WHERE id = 'target-b'", [])
+            .expect("delete duplicate target");
+        let resolved_again: Option<String> = conn
+            .query_row(
+                "SELECT target_image_id FROM invoke_image_references",
+                [],
+                |row| row.get(0),
+            )
+            .expect("resolved target");
+        assert_eq!(resolved_again.as_deref(), Some("target-a"));
+
+        let cleared = super::replace_invoke_image_references_inner(
+            &conn,
+            &[
+                super::InvokeImageReferenceSet {
+                    source_image_id: "missing".to_string(),
+                    references: vec![],
+                },
+                super::InvokeImageReferenceSet {
+                    source_image_id: "source".to_string(),
+                    references: vec![],
+                },
+            ],
+        )
+        .expect("clear references");
+        assert_eq!(cleared.sources_replaced, 1);
+        assert_eq!(cleared.references_written, 0);
+        assert_eq!(cleared.skipped_missing_sources, 1);
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM invoke_image_references", [], |row| {
+                row.get(0)
+            })
+            .expect("cleared references");
+        assert_eq!(remaining, 0);
     }
 
     #[test]
@@ -1240,6 +2158,89 @@ mod tests {
     }
 
     #[test]
+    fn save_images_batch_updates_invoke_source_without_generation_metadata_ownership() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut invoke_asset = create_image_record("invoke-source", 100, 200, "{}");
+        invoke_asset.invoke_image_name = Some("source.png".to_string());
+        invoke_asset.invoke_image_category = Some("control".to_string());
+        invoke_asset.invoke_image_origin = Some("internal".to_string());
+        super::save_images_batch_inner(&conn, &[invoke_asset]).expect("initial source save");
+
+        let generic_rescan = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        super::save_images_batch_inner(&conn, &[generic_rescan]).expect("generic metadata rescan");
+
+        let preserved: (String, String, String, Option<i64>, String) = conn
+            .query_row(
+                "SELECT invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen, metadata_json
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("preserved source fields");
+        assert_eq!(preserved.0, "source.png");
+        assert_eq!(preserved.1, "control");
+        assert_eq!(preserved.2, "internal");
+        assert_eq!(preserved.3, Some(1));
+        assert_eq!(preserved.4, r#"{"positivePrompt":"user edited"}"#);
+
+        let mut unclassified = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        unclassified.invoke_image_name = Some("source.png".to_string());
+        super::save_images_batch_inner(&conn, &[unclassified])
+            .expect("authoritative source clearing");
+
+        let unclassified: (Option<String>, Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT invoke_image_category, invoke_image_origin, is_invoke_asset_gen
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("unclassified source fields");
+        assert_eq!(unclassified, (None, None, None));
+
+        let mut reclassified = create_image_record(
+            "invoke-source",
+            101,
+            201,
+            r#"{"positivePrompt":"user edited"}"#,
+        );
+        reclassified.invoke_image_name = Some("source.png".to_string());
+        reclassified.invoke_image_category = Some("general".to_string());
+        super::save_images_batch_inner(&conn, &[reclassified]).expect("source reclassification");
+
+        let reclassified: (String, Option<i64>) = conn
+            .query_row(
+                "SELECT invoke_image_category, is_invoke_asset_gen
+                 FROM images WHERE id = 'invoke-source'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("reclassified source fields");
+        assert_eq!(reclassified, ("general".into(), Some(0)));
+    }
+
+    #[test]
     fn save_images_batch_preserves_thumbnail_source_when_path_is_unchanged() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -1308,6 +2309,9 @@ mod tests {
         image.path = old_path.to_string();
         image.thumbnail_path = old_thumbnail_path.to_string();
         image.thumbnail_source = Some("invokeai".to_string());
+        image.invoke_image_name = Some("old.png".to_string());
+        image.invoke_image_category = Some("control".to_string());
+        image.invoke_image_origin = Some("internal".to_string());
         super::save_images_batch_inner(&conn, &[image]).expect("initial save");
 
         conn.execute(
@@ -1412,7 +2416,10 @@ mod tests {
 
         let row = conn
             .query_row(
-                "SELECT id, path, thumbnail_path, thumbnail_source, is_missing FROM images WHERE id = ?1",
+                "SELECT id, path, thumbnail_path, thumbnail_source, is_missing,
+                        invoke_image_name, invoke_image_category, invoke_image_origin,
+                        is_invoke_asset_gen
+                 FROM images WHERE id = ?1",
                 params![new_id],
                 |row| {
                     Ok((
@@ -1421,6 +2428,10 @@ mod tests {
                         row.get::<_, String>(2)?,
                         row.get::<_, Option<String>>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
                     ))
                 },
             )
@@ -1430,6 +2441,10 @@ mod tests {
         assert_eq!(row.2, new_id);
         assert_eq!(row.3, None);
         assert_eq!(row.4, 0);
+        assert_eq!(row.5, "old.png");
+        assert_eq!(row.6, "control");
+        assert_eq!(row.7, "internal");
+        assert_eq!(row.8, Some(1));
 
         let relation_tables = [
             ("collection_images", "image_id"),
@@ -1822,6 +2837,61 @@ mod tests {
             )
             .expect("model thumbnail");
         assert_eq!(model_thumbnail_path.as_deref(), Some(old_id));
+    }
+
+    #[test]
+    fn save_images_batch_routes_reparsed_invoke_t2i_adapters_to_controlnet_junction() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let original = r#"{
+            "t2iAdapters": [
+                { "model": { "name": "t2iadapter_depth_sd15v2.pth" } },
+                "T2I-Adapter-Canny-SDXL-1.0.safetensors"
+            ]
+        }"#;
+        let reparsed = crate::metadata::reparse::reparse_from_json(original, "InvokeAI")
+            .expect("reparse InvokeAI metadata");
+
+        super::save_images_batch_inner(
+            &conn,
+            &[create_image_record(
+                "invoke-t2i",
+                100,
+                200,
+                &reparsed.metadata_json,
+            )],
+        )
+        .expect("save reparsed image");
+
+        let controlnet_rows: Vec<String> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT controlnet_name FROM image_controlnets
+                     WHERE image_id = 'invoke-t2i' ORDER BY controlnet_name",
+                )
+                .expect("prepare controlnet query");
+            stmt.query_map([], |row| row.get(0))
+                .expect("query controlnets")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect controlnets")
+        };
+        let ipadapter_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM image_ipadapters WHERE image_id = 'invoke-t2i'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("ip-adapter count");
+
+        assert_eq!(
+            controlnet_rows,
+            vec![
+                "t2i_adapter_canny_sdxl_1.0".to_string(),
+                "t2iadapter_depth_sd15v2".to_string(),
+            ]
+        );
+        assert_eq!(ipadapter_count, 0);
     }
 
     #[test]

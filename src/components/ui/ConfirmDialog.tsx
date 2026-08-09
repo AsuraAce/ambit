@@ -26,6 +26,9 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   isLoading = false
 }) => {
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const dialogRef = React.useRef<HTMLDivElement>(null);
+  const titleId = React.useId();
+  const messageId = React.useId();
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -33,12 +36,53 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    closeButtonRef.current?.focus();
 
     return () => {
       if (previousFocus?.isConnected) previousFocus.focus();
     };
   }, [isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (isLoading) dialogRef.current?.focus();
+    else closeButtonRef.current?.focus();
+  }, [isLoading, isOpen]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isLoading) {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isLoading, isOpen, onCancel]);
+
+  const handleDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>('button:not([disabled])') ?? []
+    );
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialogRef.current?.focus();
+      return;
+    }
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -54,12 +98,20 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <div className="absolute inset-0" onClick={!isLoading ? onCancel : undefined} />
 
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={messageId}
+            aria-busy={isLoading}
+            tabIndex={-1}
             initial={{ opacity: 0, scale: 0.9, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className="relative w-full max-w-sm bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-gray-200/50 dark:border-white/10 rounded-3xl shadow-[0_32px_64px_-12px_rgba(0,0,0,0.5)] overflow-hidden"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={handleDialogKeyDown}
           >
             {/* Header / Accent Bar */}
             <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-sage-500 to-emerald-600'}`} />
@@ -73,10 +125,10 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                   {isDangerous ? <Trash2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
                 </div>
 
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
+                <h3 id={titleId} className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">
                   {title}
                 </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-[240px]">
+                <p id={messageId} className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed max-w-[240px]">
                   {message}
                 </p>
               </div>
@@ -85,12 +137,18 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                 <button
                   onClick={() => { void onConfirm(); }}
                   disabled={isLoading}
+                  aria-label={isLoading ? 'Processing...' : undefined}
                   className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
                     ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'
                     : 'bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-sage-500/40'
                     } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                  {isLoading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : confirmLabel}
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Processing...
+                    </span>
+                  ) : confirmLabel}
                 </button>
                 <button
                   onClick={onCancel}

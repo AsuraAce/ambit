@@ -174,7 +174,7 @@ const useLiveWatchPresentation = (
 export const ActivityDock: React.FC = () => {
     const {
         isImporting, importProgress, importAbortController,
-        syncStatus, syncProgress,
+        syncStatus, syncProgress, invokeSyncActivityKind,
         liveWatchSession,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
@@ -227,8 +227,11 @@ export const ActivityDock: React.FC = () => {
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = syncProgress;
-        label = "Syncing";
+        label = invokeSyncActivityKind === 'startup' ? "InvokeAI Catch-up" : "InvokeAI Sync";
         supportsCancel = true;
+        footerMessage = invokeSyncActivityKind === 'startup'
+            ? "You can keep using the library while Ambit catches up."
+            : "You can keep using the library while Ambit synchronizes InvokeAI.";
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
         label = "Optimizing";
@@ -262,7 +265,7 @@ export const ActivityDock: React.FC = () => {
         footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
-        label = "Metadata Refresh";
+        label = "Updating Metadata";
         isLowPriority = false;
         supportsCancel = true;
     } else if (isLiveWatchVisible) {

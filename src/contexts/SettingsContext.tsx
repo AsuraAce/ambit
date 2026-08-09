@@ -88,7 +88,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
     // Maintain ref for backward compat
     const settingsRef = useRef<AppSettings>(settings);
-    useEffect(() => { settingsRef.current = settings; }, [settings]);
+    settingsRef.current = settings;
 
     // Note: Auto-save logic is now inside the Store.
 

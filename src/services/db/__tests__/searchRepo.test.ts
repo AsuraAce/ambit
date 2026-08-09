@@ -35,6 +35,7 @@ const createFacetDb = (
             return diskRows;
         }
         if (normalizedSql.includes('FROM scoped_images')) {
+            if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
             if (normalizedSql.includes('JOIN image_hypernetworks')) return scopedRows.hypernetworks ?? deriveScopedRows(cacheRows, 'hypernetworks');
@@ -63,7 +64,7 @@ describe('searchRepo basic queries', () => {
 
         await expect(countGlobalImages()).resolves.toBe(7);
         await expect(countGlobalImages()).resolves.toBe(0);
-        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE is_deleted = 0');
+        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
     });
 
     it('searches image IDs with explicit and default visibility predicates', async () => {
@@ -101,6 +102,7 @@ describe('searchRepo basic queries', () => {
         });
 
         expect(db.select.mock.calls[0]?.[0]).toContain('ORDER BY images.timestamp DESC, images.id DESC');
+        expect(db.select.mock.calls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
         expect(db.select.mock.calls[1]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.path ASC, images.id ASC');
         expect(db.select.mock.calls[1]?.[1]).toEqual([0, 0, 0, 'image.png', 0, 'image.png', 'image-1']);
         expect(db.select.mock.calls[2]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.timestamp DESC, images.id DESC');
@@ -110,6 +112,7 @@ describe('searchRepo basic queries', () => {
     it.each([
         ['timestamp', '', 'idx_images_fast_sort_v3'],
         ['timestamp', ' AND privacy_hidden = 0', 'idx_images_privacy_fast_sort_v1'],
+        ['timestamp', ' AND IFNULL(is_invoke_asset_gen, 0) = 0', 'idx_images_invoke_asset_fast_sort_v1'],
         ['path', '', 'idx_images_name_sort_v1'],
         ['file_size', '', 'idx_images_size_sort_v1'],
         ['width', '', null],
@@ -275,6 +278,40 @@ describe('searchRepo getFacets', () => {
 
         expect(facets.tools).toEqual(['ComfyUI', 'Unknown']);
         expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides asset-only cached tools by default and restores them when revealed regardless of resource scope', async () => {
+        const db = createFacetDb(
+            [
+                { facet_type: 'tools', resource_name: 'ComfyUI', count: 4 },
+                { facet_type: 'tools', resource_name: 'AssetOnlyTool', count: 0 },
+            ],
+            [],
+            { tools: [
+                { name: 'ComfyUI', count: 4 },
+                { name: 'AssetOnlyTool', count: 1 },
+            ] }
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const hidden = await getFacets('', [], ['tools']);
+        const revealed = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools']
+        );
+        const revealedWithLocalResources = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools'],
+            { assetScope: 'local' }
+        );
+
+        expect(hidden.tools).toEqual(['ComfyUI']);
+        expect(revealed.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(revealedWithLocalResources.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes("COALESCE(tool, 'Unknown') AS name"))).toBe(true);
     });
 
     it('ignores unsupported runtime facet types during scoped counting', async () => {
@@ -1656,26 +1693,30 @@ describe('searchRepo scoped stats queries', () => {
             .resolves.toMatchObject({ avgSteps: expectedAverage });
     });
 
-    it('forces visibility indexes only for the exact default and privacy scopes', async () => {
+    it('forces visibility indexes only for exact revealed and asset-hidden scopes', async () => {
         const db = { select: vi.fn(async (_sql: string, _params: unknown[] = []) => []) };
         getDbMock.mockResolvedValue(db);
 
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        const defaultWhere = 'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const baseWhere = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const defaultWhere = `${baseWhere} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
         const privacyWhere = `${defaultWhere} AND privacy_hidden = 0`;
         await getLibraryStatsSummary(defaultWhere, []);
         await getLibraryStatsSummary(privacyWhere, []);
+        await getLibraryStatsSummary(baseWhere, []);
+        await getLibraryStatsSummary(`${baseWhere} AND privacy_hidden = 0`, []);
         await getLibraryStatsSummary(`${privacyWhere} AND sampler = ?`, ['Euler']);
 
         const averageCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('AVG(steps) AS avg_steps'));
-        expect(averageCalls).toHaveLength(3);
-        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
-        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
-        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
-        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
-        expect(averageCalls[2]?.[1]).toEqual(['Euler']);
+        expect(averageCalls).toHaveLength(5);
+        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
+        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
+        expect(averageCalls[2]?.[0]).toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
+        expect(averageCalls[3]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
+        expect(averageCalls[4]?.[0]).not.toContain('FROM images INDEXED BY idx_images_invoke_scope_fast_sort_v1');
+        expect(averageCalls[4]?.[1]).toEqual(['Euler']);
     });
 
     it('uses the optimized model-stats indexes for unscoped summaries', async () => {
@@ -1692,8 +1733,8 @@ describe('searchRepo scoped stats queries', () => {
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
 
         const modelCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('GROUP BY name'));
 
@@ -1771,6 +1812,29 @@ describe('searchRepo scoped stats queries', () => {
             expect(sql).not.toContain('WHERE si.rowid > ?');
             expect(sql).not.toContain('OFFSET');
         });
+    });
+
+    it('stops keyword batching when the query signal is cancelled', async () => {
+        const controller = new AbortController();
+        const promptRows = Array.from({ length: 500 }, (_, index) => ({
+            rowid: index + 1,
+            positive_prompt: 'alpha',
+        }));
+        const db = {
+            select: vi.fn(async () => {
+                controller.abort();
+                return promptRows;
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { getKeywordStats } = await import('../searchRepo');
+
+        await expect(getKeywordStats('', [], undefined, undefined, controller.signal))
+            .rejects.toMatchObject({ name: 'AbortError' });
+        expect(db.select).toHaveBeenCalledOnce();
+        expect(errorSpy).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
     });
 
     it('excludes short, numeric, and configured stop-word tokens from keyword stats', async () => {

@@ -2,15 +2,25 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
 import { AIImage, GeneratorTool, ImageMetadata, OriginalState, VideoAsset } from '../../types';
 
+const INVOKE_IMAGE_SOURCE_COLUMNS = [
+    'invoke_image_name',
+    'invoke_image_category',
+    'invoke_image_origin',
+    'invoke_owner_id',
+] as const;
+export const INVOKE_IMAGE_SOURCE_FIELDS = INVOKE_IMAGE_SOURCE_COLUMNS.join(', ');
+
 // Lightweight column set for grid/listing views. Keep this scalar-only: large
 // JSON blobs are loaded by detail/viewer flows on demand.
 export const getImageFieldsLight = (alias = 'images'): string => {
     const prefix = alias ? `${alias}.` : '';
+    const invokeSourceFields = INVOKE_IMAGE_SOURCE_COLUMNS.map(field => `${prefix}${field}`).join(', ');
     return `
         ${prefix}id, ${prefix}path, ${prefix}width, ${prefix}height, ${prefix}file_size, ${prefix}timestamp,
         ${prefix}thumbnail_path, ${prefix}micro_thumbnail, ${prefix}thumbnail_source,
         ${prefix}is_favorite, ${prefix}is_pinned, ${prefix}is_deleted, ${prefix}is_missing, ${prefix}is_corrupt,
         ${prefix}user_masked, ${prefix}group_id, ${prefix}board_id, ${prefix}notes,
+        ${invokeSourceFields},
         ${prefix}is_intermediate_gen, ${prefix}is_grid_gen,
         ${prefix}model_name, ${prefix}model_hash, ${prefix}tool, ${prefix}resolved_model_name, ${prefix}file_hash,
         ${prefix}steps, ${prefix}seed, ${prefix}cfg, ${prefix}sampler, ${prefix}generation_type,
@@ -33,6 +43,7 @@ export const getImageFieldsFull = (alias = 'images'): string => {
 export const REMOVED_IMAGE_FIELDS = `
     id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source,
     is_favorite, is_pinned, 0 as is_deleted, is_missing, user_masked, group_id, board_id, notes,
+    ${INVOKE_IMAGE_SOURCE_FIELDS},
     0 as is_intermediate_gen, 0 as is_grid_gen,
     original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
     NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
@@ -121,6 +132,10 @@ export function mapRowToImage(row: ImageRow): AIImage {
         userMasked: row.user_masked === 1 ? true : (row.user_masked === 0 ? false : undefined),
         groupId: asString(row.group_id),
         boardId: asString(row.board_id),
+        invokeImageName: asString(row.invoke_image_name),
+        invokeImageCategory: asString(row.invoke_image_category),
+        invokeImageOrigin: asString(row.invoke_image_origin),
+        invokeOwnerId: asString(row.invoke_owner_id),
         notes: asString(row.notes),
         isIntermediate: asBoolean(row.is_intermediate_gen),
         metadata,

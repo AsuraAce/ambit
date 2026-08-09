@@ -1,4 +1,6 @@
-use super::conditioning::{find_connected_controlnets, find_reachable_prompts};
+use super::conditioning::{
+    find_connected_controlnets, find_reachable_prompts, find_reachable_prompts_with_role,
+};
 use super::eval_utils::{
     evaluate_float, evaluate_float_link_first, evaluate_number, evaluate_number_link_first,
     evaluate_string, evaluate_string_link_first, get_source_id,
@@ -8,6 +10,7 @@ use super::graph::{
     get_reroute_source_id, get_strict_source_id, get_switch_branch_input_strict,
     get_switch_branch_source, ComfyGraph, InputConnection, InputSource, InputSourceConnection,
 };
+use super::heuristics::is_primary_model_loader_type;
 use crate::metadata::utils::{
     extract_explicit_embeddings_from_prompt, extract_hypernets_from_prompt,
     extract_loras_from_prompt,
@@ -77,11 +80,7 @@ pub fn extract_from_sampler(
     }
 
     if meta.steps == 0 || sampler.is_empty() || scheduler.is_empty() {
-        let sigmas_node = if is_sampler_custom {
-            resolve_sampler_custom_scheduler(graph, node)
-        } else {
-            get_source_id(graph, node, "sigmas").and_then(|sigmas_id| graph.get_node(&sigmas_id))
-        };
+        let sigmas_node = resolve_sampler_scheduler(graph, node, is_sampler_custom);
         if let Some(sigmas_node) = sigmas_node {
             let sigmas_type = get_node_type(sigmas_node);
             let strict_scheduler_inputs = is_sampler_custom || sigmas_type == "Ideogram4Scheduler";
@@ -131,7 +130,10 @@ pub fn extract_from_sampler(
                     } else {
                         evaluate_string(graph, samp_node, "sampler_name")
                     };
-                    if let Some(s) = sampler_value {
+                    if let Some(s) = sampler_value.or_else(|| {
+                        (is_sampler_custom && get_node_type(samp_node) == "SamplerLCM")
+                            .then_some("lcm".into())
+                    }) {
                         sampler = s;
                     }
                 }
@@ -206,7 +208,12 @@ pub fn extract_from_sampler(
                 .map(|_| find_reachable_prompts(graph, &guider_id, input_name, strict_connections))
                 .unwrap_or_default()
         };
-        (prompt(positive_input), prompt(negative_input))
+        let negative = if dual_cfg_uses_instruct_pix_to_pix_negative(graph, guider_node) {
+            find_reachable_prompts_with_role(graph, &guider_id, "cond2", "negative", true)
+        } else {
+            prompt(negative_input)
+        };
+        (prompt(positive_input), negative)
     } else {
         (
             find_reachable_prompts(graph, node_id, "positive", is_sampler_custom),
@@ -303,9 +310,10 @@ fn resolve_transparent_reroute_id(graph: &ComfyGraph, source_id: &str) -> Option
     None
 }
 
-fn resolve_sampler_custom_scheduler<'a>(
+fn resolve_sampler_scheduler<'a>(
     graph: &'a ComfyGraph,
     sampler_node: &Value,
+    trace_split_sigmas: bool,
 ) -> Option<&'a Value> {
     let mut source = match get_input_source(sampler_node, "sigmas") {
         InputSourceConnection::Connected(source) => source,
@@ -325,7 +333,13 @@ fn resolve_sampler_custom_scheduler<'a>(
             "Reroute" => {
                 source = get_first_connected_source(node, &["", "value", "input", "any"])?;
             }
-            "SplitSigmas" => {
+            "SetFirstSigma" => {
+                if !matches!(source.output_slot, None | Some(0)) {
+                    return None;
+                }
+                source = get_first_connected_source(node, &["sigmas"])?;
+            }
+            "SplitSigmas" if trace_split_sigmas => {
                 if !matches!(source.output_slot, None | Some(0 | 1)) {
                     return None;
                 }
@@ -345,6 +359,44 @@ fn get_first_connected_source(node: &Value, keys: &[&str]) -> Option<InputSource
             InputSourceConnection::Unconnected => {}
         }
     }
+    None
+}
+
+fn dual_cfg_uses_instruct_pix_to_pix_negative(graph: &ComfyGraph, guider_node: &Value) -> bool {
+    if get_node_type(guider_node) != "DualCFGGuider" {
+        return false;
+    }
+
+    let Some(source) = resolve_input_source_through_reroutes(graph, guider_node, "cond2") else {
+        return false;
+    };
+    source.output_slot == Some(1)
+        && graph
+            .get_node(&source.node_id)
+            .is_some_and(|node| get_node_type(node) == "InstructPixToPixConditioning")
+}
+
+fn resolve_input_source_through_reroutes(
+    graph: &ComfyGraph,
+    node: &Value,
+    input_name: &str,
+) -> Option<InputSource> {
+    let InputSourceConnection::Connected(mut source) = get_input_source(node, input_name) else {
+        return None;
+    };
+    let mut visited = HashSet::new();
+
+    for _ in 0..=16 {
+        if !visited.insert(source.node_id.clone()) {
+            return None;
+        }
+        let source_node = graph.get_node(&source.node_id)?;
+        if get_node_type(source_node) != "Reroute" {
+            return Some(source);
+        }
+        source = get_first_connected_source(source_node, &["", "value", "input", "any"])?;
+    }
+
     None
 }
 
@@ -553,10 +605,31 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
-        } else if t == "ZImageFunControlnet" || t == "QwenImageDiffsynthControlnet" {
-            if let Some(patch_id) =
+        } else if t == "ZImageFunControlnet"
+            || t == "QwenImageDiffsynthControlnet"
+            || t == "AnimaLLLiteApply"
+        {
+            if t == "AnimaLLLiteApply" {
+                match node.get("mode").and_then(Value::as_i64) {
+                    Some(2) => return None,
+                    Some(4) => {
+                        if let Some(next) =
+                            get_model_chain_source_id(graph, node, "model", strict_connections)
+                        {
+                            current_id = next;
+                            continue;
+                        }
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let patch_id = if t == "AnimaLLLiteApply" {
+                get_strict_source_id(node, "model_patch")
+            } else {
                 get_model_chain_source_id(graph, node, "model_patch", strict_connections)
-            {
+            };
+            if let Some(patch_id) = patch_id {
                 if let Some(patch_node) = graph.get_node(&patch_id) {
                     if get_node_type(patch_node) == "ModelPatchLoader" {
                         if let Some(name) = extract_model_patch_name(graph, patch_node) {
@@ -573,11 +646,7 @@ fn trace_model_chain_with_mode(
                 continue;
             }
             break;
-        } else if get_node_type(node).contains("CheckpointLoader")
-            || get_node_type(node).contains("UNETLoader")
-            || get_node_type(node).contains("Ckpt Loader")
-            || get_node_type(node).contains("EasyLoader")
-        {
+        } else if is_primary_model_loader_type(get_node_type(node)) {
             match evaluate_loader_model_name(graph, node, strict_connections) {
                 LoaderModelName::Resolved(name) => {
                     return Some(crate::metadata::guidance::GuidanceClassifier::clean_name(
@@ -712,7 +781,10 @@ fn evaluate_loader_model_name(
             .unwrap_or(LoaderModelName::Wrapper);
     }
 
-    let input_names: &[&str] = if get_node_type(node).contains("UNETLoader") {
+    let input_names: &[&str] = if get_node_type(node)
+        .to_ascii_lowercase()
+        .contains("unetloader")
+    {
         &["unet_name"]
     } else {
         &["ckpt_name", "checkpoint"]

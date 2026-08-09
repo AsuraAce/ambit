@@ -1,6 +1,6 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-07-30
+Last reviewed: 2026-08-09
 
 ## System Overview
 Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Library assets and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring. Images remain the default asset type; manually imported videos use an explicit discriminator and bounded native probe.
@@ -26,7 +26,7 @@ Purpose: scan image files, extract metadata and workflows, resolve models, and w
 Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/media.rs`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
 Risks: parser heuristics and watcher behavior can create wrong metadata or miss library changes; external path handling must stay scoped and local
-Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`
+Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`, `docs/comfyui-support-workflow.md`
 
 ### Thumbnail Generation and Optimization
 Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in the background, expose maintenance controls, and throttle or cancel native work around foreground activity.
@@ -67,6 +67,8 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - Gallery and timeline results for videos render static posters or a generic placeholder; they must not instantiate background video players.
 - The bundled MediaInfo sidecar is invoked only by Rust-owned fixed arguments against canonical picker-scoped regular files, with bounded output, timeout, cancellation, and single-process concurrency.
 - Gallery and Maintenance should reuse the shared `ImageViewer` presentation instead of developing separate viewer implementations. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.
+- Removal is a recoverable database lifecycle: active images are transactionally tombstoned in `removed_images`, including their file hash and parser version, and restore reconstructs the active row plus supported memberships/resources in one transaction. Remove, restore, duplicate tombstoning, and final deletion share a process-wide coordinator so restore cannot race a source-file trash operation. Final deletion clears the tombstone only after OS-trash success (or when the source is already missing). Collection membership moves are likewise native transactions rather than frontend SQL sequences.
+- Full facet rebuilds populate a temporary staging table and swap into the live cache in a short transaction. Full and incremental refreshes share one coordinator so a queued targeted refresh cannot be overwritten by an older full-build snapshot.
 
 ## High-Risk Areas
 - `src/App.tsx`: app shell integration point for selection, viewer, import, shortcuts, modals, and layout state.

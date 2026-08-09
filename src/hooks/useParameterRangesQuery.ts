@@ -9,7 +9,12 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockImages } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { useSettingsStore } from '../stores/settingsStore';
+import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
+import {
+    isInvokeOwnerScopeAdmitted,
+    useInvokeOwnerScopeStore,
+} from '../stores/invokeOwnerScopeStore';
 
 const EMPTY_PARAMETER_RANGES: ParameterRanges = {
     steps: null,
@@ -34,6 +39,9 @@ export function useParameterRangesQuery(filters: FilterState) {
     const { settings, privacyEnabled } = useSettings();
     const { collections: allCollections } = useCollections();
     const browserMockMode = isBrowserMockMode();
+    const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
+        state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
+    );
     const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
     const privacyBlocked = privacyEnabled && !browserMockMode && privacyMaskIndexStatus !== 'ready';
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
@@ -53,6 +61,7 @@ export function useParameterRangesQuery(filters: FilterState) {
             sideQueryFilters.models,
             sideQueryFilters.tools,
             sideQueryFilters.loras,
+            sideQueryFilters.showInvokeImageAssets,
             facetCacheVersion,
             // Intentionally EXCLUDE samplers and generationTypes from query key
             // so selecting them doesn't cause a refetch (Disjunctive)
@@ -62,7 +71,10 @@ export function useParameterRangesQuery(filters: FilterState) {
         ],
         queryFn: async () => {
             if (browserMockMode) {
-                const images = getBrowserMockImages();
+                const images = getBrowserMockImages().filter(image =>
+                    sideQueryFilters.showInvokeImageAssets
+                    || !isKnownInvokeImageAsset(image.invokeImageCategory)
+                );
                 const steps = images.map(image => image.metadata.steps);
                 const cfg = images.map(image => image.metadata.cfg);
                 return {
@@ -102,11 +114,13 @@ export function useParameterRangesQuery(filters: FilterState) {
             }
             return result.data;
         },
-        enabled: !privacyBlocked,
+        enabled: invokeQueriesAdmitted && !privacyBlocked,
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 30 * 60 * 1000,   // 30 minutes cache
         placeholderData: (previousData) => previousData, // Smooth transitions
     });
 
-    return privacyBlocked ? { ...query, data: EMPTY_PARAMETER_RANGES } : query;
+    return privacyBlocked || !invokeQueriesAdmitted
+        ? { ...query, data: EMPTY_PARAMETER_RANGES }
+        : query;
 }
