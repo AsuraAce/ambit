@@ -1,6 +1,19 @@
 use crate::metadata::{is_missing_prompt_value, ImageMetadata};
 use std::collections::BTreeMap;
 
+pub(crate) type ComfyFieldSourceNodeIds = BTreeMap<ComfyMetadataField, Vec<String>>;
+pub(crate) type ComfyResourceSourceNodeIds =
+    BTreeMap<ComfyMetadataField, BTreeMap<String, Vec<String>>>;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ComfyResourceProvenance {
+    pub(crate) layer: ComfyParseLayer,
+    pub(crate) node_ids: Vec<String>,
+}
+
+pub(crate) type ComfyResourceSources =
+    BTreeMap<ComfyMetadataField, BTreeMap<String, ComfyResourceProvenance>>;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(crate) enum ComfyParseLayer {
     FlatParameters,
@@ -72,6 +85,8 @@ pub(crate) struct ComfyParseDiagnostics {
     pub(crate) traversal_issues_truncated: bool,
     pub(crate) attempted_layers: Vec<ComfyParseLayer>,
     pub(crate) field_sources: BTreeMap<ComfyMetadataField, ComfyParseLayer>,
+    pub(crate) field_source_node_ids: ComfyFieldSourceNodeIds,
+    pub(crate) resource_sources: ComfyResourceSources,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,90 +141,189 @@ impl ComfyParseDiagnostics {
         after: &ImageMetadata,
         layer: ComfyParseLayer,
     ) {
+        self.record_diff_with_sources(before, after, layer, &ComfyFieldSourceNodeIds::new());
+    }
+
+    pub(crate) fn record_diff_with_sources(
+        &mut self,
+        before: &ComfyMetadataSnapshot,
+        after: &ImageMetadata,
+        layer: ComfyParseLayer,
+        source_node_ids: &ComfyFieldSourceNodeIds,
+    ) {
+        self.record_diff_with_all_sources(
+            before,
+            after,
+            layer,
+            source_node_ids,
+            &ComfyResourceSourceNodeIds::new(),
+        );
+    }
+
+    pub(crate) fn record_diff_with_all_sources(
+        &mut self,
+        before: &ComfyMetadataSnapshot,
+        after: &ImageMetadata,
+        layer: ComfyParseLayer,
+        source_node_ids: &ComfyFieldSourceNodeIds,
+        resource_source_node_ids: &ComfyResourceSourceNodeIds,
+    ) {
         self.record_field(
             ComfyMetadataField::Model,
             before.model != after.model,
             is_known_string(&after.model),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Seed,
             before.seed != after.seed,
             after.seed.is_some(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Steps,
             before.steps != after.steps,
             after.steps > 0,
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Cfg,
             before.cfg != after.cfg,
             after.cfg > 0.0,
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Sampler,
             before.sampler != after.sampler,
             is_known_string(&after.sampler),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::PositivePrompt,
             before.positive_prompt != after.positive_prompt,
             !is_missing_prompt_value(&after.positive_prompt),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::NegativePrompt,
             before.negative_prompt != after.negative_prompt,
             !is_missing_prompt_value(&after.negative_prompt),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Loras,
             before.loras != after.loras,
             !after.loras.is_empty(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::ControlNets,
             before.control_nets != after.control_nets,
             !after.control_nets.is_empty(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::IpAdapters,
             before.ip_adapters != after.ip_adapters,
             !after.ip_adapters.is_empty(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Embeddings,
             before.embeddings != after.embeddings,
             !after.embeddings.is_empty(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::Hypernetworks,
             before.hypernetworks != after.hypernetworks,
             !after.hypernetworks.is_empty(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::WorkflowJson,
             before.has_workflow_json != after.workflow_json.is_some(),
             after.workflow_json.is_some(),
             layer,
+            source_node_ids,
         );
         self.record_field(
             ComfyMetadataField::WorkflowHint,
             before.has_workflow_hint != after.has_workflow_hint,
             after.has_workflow_hint,
             layer,
+            source_node_ids,
         );
+
+        for field in resource_fields() {
+            self.record_resource_diff(
+                field,
+                before.resource_values(field),
+                metadata_resource_values(after, field),
+                layer,
+                resource_source_node_ids,
+            );
+        }
+    }
+
+    pub(crate) fn record_resource_source(
+        &mut self,
+        field: ComfyMetadataField,
+        value: &str,
+        layer: ComfyParseLayer,
+        node_ids: &[String],
+    ) {
+        let item_sources = self.resource_sources.entry(field).or_default();
+        match item_sources.get_mut(value) {
+            Some(current) if layer.precedence() > current.layer.precedence() => {
+                current.layer = layer;
+                current.node_ids = sorted_node_ids(node_ids);
+            }
+            Some(current) if layer == current.layer => {
+                current.node_ids.extend(node_ids.iter().cloned());
+                current.node_ids = sorted_node_ids(&current.node_ids);
+            }
+            Some(_) => {}
+            None => {
+                item_sources.insert(
+                    value.to_string(),
+                    ComfyResourceProvenance {
+                        layer,
+                        node_ids: sorted_node_ids(node_ids),
+                    },
+                );
+            }
+        }
+    }
+
+    fn record_resource_diff(
+        &mut self,
+        field: ComfyMetadataField,
+        before: &[String],
+        after: &[String],
+        layer: ComfyParseLayer,
+        source_node_ids: &ComfyResourceSourceNodeIds,
+    ) {
+        for value in after.iter().filter(|value| !before.contains(value)) {
+            let node_ids = source_node_ids
+                .get(&field)
+                .and_then(|items| items.get(value))
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            self.record_resource_source(field, value, layer, node_ids);
+        }
     }
 
     fn record_field(
@@ -218,6 +332,7 @@ impl ComfyParseDiagnostics {
         changed: bool,
         has_value: bool,
         layer: ComfyParseLayer,
+        source_node_ids: &ComfyFieldSourceNodeIds,
     ) {
         let is_stronger_source = self
             .field_sources
@@ -225,8 +340,73 @@ impl ComfyParseDiagnostics {
             .is_none_or(|current| layer.precedence() > current.precedence());
         if changed && has_value && is_stronger_source {
             self.field_sources.insert(field, layer);
+            if let Some(node_ids) = source_node_ids.get(&field).filter(|ids| !ids.is_empty()) {
+                self.field_source_node_ids.insert(field, node_ids.clone());
+            } else {
+                self.field_source_node_ids.remove(&field);
+            }
         }
     }
+}
+
+impl ComfyMetadataSnapshot {
+    fn resource_values(&self, field: ComfyMetadataField) -> &[String] {
+        match field {
+            ComfyMetadataField::Loras => &self.loras,
+            ComfyMetadataField::ControlNets => &self.control_nets,
+            ComfyMetadataField::IpAdapters => &self.ip_adapters,
+            ComfyMetadataField::Embeddings => &self.embeddings,
+            ComfyMetadataField::Hypernetworks => &self.hypernetworks,
+            _ => &[],
+        }
+    }
+}
+
+pub(crate) fn push_resource_source_node_id(
+    sources: &mut ComfyResourceSourceNodeIds,
+    field: ComfyMetadataField,
+    value: &str,
+    node_id: &str,
+) {
+    let node_ids = sources
+        .entry(field)
+        .or_default()
+        .entry(value.to_string())
+        .or_default();
+    if !node_ids.iter().any(|current| current == node_id) {
+        node_ids.push(node_id.to_string());
+    }
+}
+
+pub(crate) fn resource_fields() -> [ComfyMetadataField; 5] {
+    [
+        ComfyMetadataField::Loras,
+        ComfyMetadataField::ControlNets,
+        ComfyMetadataField::IpAdapters,
+        ComfyMetadataField::Embeddings,
+        ComfyMetadataField::Hypernetworks,
+    ]
+}
+
+pub(crate) fn metadata_resource_values(
+    metadata: &ImageMetadata,
+    field: ComfyMetadataField,
+) -> &[String] {
+    match field {
+        ComfyMetadataField::Loras => &metadata.loras,
+        ComfyMetadataField::ControlNets => &metadata.control_nets,
+        ComfyMetadataField::IpAdapters => &metadata.ip_adapters,
+        ComfyMetadataField::Embeddings => &metadata.embeddings,
+        ComfyMetadataField::Hypernetworks => &metadata.hypernetworks,
+        _ => &[],
+    }
+}
+
+fn sorted_node_ids(node_ids: &[String]) -> Vec<String> {
+    let mut node_ids = node_ids.to_vec();
+    node_ids.sort_by(|left, right| super::graph::compare_node_ids(left, right));
+    node_ids.dedup();
+    node_ids
 }
 
 fn is_known_string(value: &str) -> bool {

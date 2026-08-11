@@ -11,6 +11,7 @@ mod watcher;
 #[doc(hidden)]
 pub use comfy_support_replay::{
     inspect_comfyui_fixture_candidate, prepare_comfyui_fixture_candidate,
+    summarize_comfyui_support_bundle_replay, SUPPORT_REPLAY_SUMMARY_VERSION,
 };
 #[doc(hidden)]
 pub use comfy_support_replay::{replay_comfyui_support_bundle, COMFY_SUPPORT_BUNDLE_MAX_BYTES};
@@ -102,6 +103,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         metadata::civitai::import_a1111_cache,
         metadata::civitai::resolve_hashes_online,
         metadata::comfyui::inspect_comfyui_metadata_chunks,
+        metadata::comfyui::workflow_inspector::inspect_comfyui_workflow_graph,
         metadata::models::clear_model_cache,
         metadata::models::cancel_model_resolution,
         metadata::models::cancel_model_discovery,

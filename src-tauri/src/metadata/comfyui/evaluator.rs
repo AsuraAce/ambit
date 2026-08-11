@@ -1,7 +1,11 @@
-use super::diagnostics::ComfyTraversalIssue;
+use super::diagnostics::{
+    metadata_resource_values, resource_fields, ComfyFieldSourceNodeIds, ComfyMetadataField,
+    ComfyResourceSourceNodeIds, ComfyTraversalIssue,
+};
 use super::graph::{
-    compare_node_ids, get_input_connection, get_node_input_link, get_node_input_links,
-    get_node_type, get_source_id, ComfyGraph, InputConnection,
+    compare_node_ids, get_input_connection, get_input_source_by_slot, get_node_input_link,
+    get_node_input_links, get_node_type, get_source_id, get_switch_branch_input_strict, ComfyGraph,
+    InputConnection, InputSourceConnection,
 };
 use crate::metadata::ImageMetadata;
 use serde_json::Value;
@@ -29,6 +33,15 @@ pub(crate) struct OutputTraversalDiagnostics {
     pub(crate) authoritative_negative_prompt: bool,
     pub(crate) traversal_issues: Vec<ComfyTraversalIssue>,
     pub(crate) traversal_issues_truncated: bool,
+    pub(crate) field_source_node_ids: ComfyFieldSourceNodeIds,
+    pub(crate) resource_source_node_ids: ComfyResourceSourceNodeIds,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct OutputSelection {
+    pub(crate) selected_output_node_ids: Vec<String>,
+    pub(crate) root_sampler_node_ids: Vec<String>,
+    pub(crate) ambiguous: bool,
 }
 
 pub struct ComfyEvaluator<'a> {
@@ -56,36 +69,19 @@ impl<'a> ComfyEvaluator<'a> {
         &self,
         collect_traversal_issues: bool,
     ) -> (ImageMetadata, OutputTraversalDiagnostics) {
-        let output_nodes = self.find_output_nodes();
+        let output_selection = self.output_selection();
         let mut diagnostics = OutputTraversalDiagnostics {
-            selected_output_candidate_count: output_nodes.len(),
+            selected_output_candidate_count: output_selection.selected_output_node_ids.len(),
+            unique_root_sampler_count: output_selection.root_sampler_node_ids.len(),
+            ambiguous: output_selection.ambiguous,
             ..OutputTraversalDiagnostics::default()
         };
-        let mut root_sampler_ids = Vec::new();
-
-        for output_id in output_nodes {
-            let mut visited = HashSet::new();
-            let mut sampler_ids = Vec::new();
-            self.find_upstream_samplers(&output_id, &mut visited, 0, &mut sampler_ids);
-
-            for sampler_id in sampler_ids {
-                for root_sampler_id in self.find_root_sampler_ids(&sampler_id) {
-                    if !root_sampler_ids.contains(&root_sampler_id) {
-                        root_sampler_ids.push(root_sampler_id);
-                    }
-                }
-            }
-        }
-
-        root_sampler_ids.sort_by(|left, right| compare_node_ids(left, right));
-        diagnostics.unique_root_sampler_count = root_sampler_ids.len();
-        diagnostics.ambiguous = root_sampler_ids.len() > 1;
 
         if diagnostics.ambiguous {
             return (ImageMetadata::default(), diagnostics);
         }
 
-        let Some(root_sampler_id) = root_sampler_ids.first() else {
+        let Some(root_sampler_id) = output_selection.root_sampler_node_ids.first() else {
             return (ImageMetadata::default(), diagnostics);
         };
         let Some(root_node) = self.graph.get_node(root_sampler_id) else {
@@ -122,14 +118,17 @@ impl<'a> ComfyEvaluator<'a> {
         let mut loras = Vec::new();
         let mut ip_adapters = Vec::new();
         let mut hypernetworks = Vec::new();
-        let metadata = super::eval_core::extract_from_sampler(
-            self.graph,
-            root_sampler_id,
-            root_node,
-            &mut loras,
-            &mut ip_adapters,
-            &mut hypernetworks,
-        );
+        let (metadata, field_source_node_ids, resource_source_node_ids) =
+            super::eval_core::extract_from_sampler(
+                self.graph,
+                root_sampler_id,
+                root_node,
+                &mut loras,
+                &mut ip_adapters,
+                &mut hypernetworks,
+            );
+        diagnostics.field_source_node_ids = field_source_node_ids;
+        diagnostics.resource_source_node_ids = resource_source_node_ids;
 
         if collect_traversal_issues {
             let issue_collection = super::traversal_diagnostics::collect_traversal_issues(
@@ -145,8 +144,104 @@ impl<'a> ComfyEvaluator<'a> {
         (metadata, diagnostics)
     }
 
-    pub fn extract_from_all_samplers(&self) -> ImageMetadata {
+    pub(crate) fn output_selection(&self) -> OutputSelection {
+        let selected_output_node_ids = self.find_output_nodes();
+        let mut root_sampler_node_ids = Vec::new();
+
+        for output_id in &selected_output_node_ids {
+            let mut visited = HashSet::new();
+            let mut sampler_ids = Vec::new();
+            self.find_upstream_samplers(output_id, &mut visited, 0, &mut sampler_ids);
+
+            for sampler_id in sampler_ids {
+                for root_sampler_id in self.find_root_sampler_ids(&sampler_id) {
+                    if !root_sampler_node_ids.contains(&root_sampler_id) {
+                        root_sampler_node_ids.push(root_sampler_id);
+                    }
+                }
+            }
+        }
+
+        root_sampler_node_ids.sort_by(|left, right| compare_node_ids(left, right));
+        OutputSelection {
+            selected_output_node_ids,
+            ambiguous: root_sampler_node_ids.len() > 1,
+            root_sampler_node_ids,
+        }
+    }
+
+    pub(crate) fn selected_branch_node_ids(
+        &self,
+        output_selection: &OutputSelection,
+    ) -> Vec<String> {
+        if output_selection.ambiguous
+            || output_selection.selected_output_node_ids.is_empty()
+            || output_selection.root_sampler_node_ids.len() != 1
+        {
+            return Vec::new();
+        }
+
+        let root_sampler_id = &output_selection.root_sampler_node_ids[0];
+        let mut branch = HashSet::new();
+        let mut pending = Vec::new();
+
+        for output_id in &output_selection.selected_output_node_ids {
+            let Some(output_node) = self.graph.get_node(output_id) else {
+                return Vec::new();
+            };
+            branch.insert(output_id.clone());
+            pending.extend(self.direct_image_like_source_ids(output_id, output_node));
+        }
+
+        while let Some(node_id) = pending.pop() {
+            if !branch.insert(node_id.clone()) {
+                continue;
+            }
+
+            let Some(node) = self.graph.get_node(&node_id) else {
+                return Vec::new();
+            };
+
+            if get_node_type(node) == "ComfySwitchNode" {
+                let Some(branch_input) = get_switch_branch_input_strict(self.graph, node) else {
+                    return Vec::new();
+                };
+
+                match get_input_connection(node, branch_input) {
+                    InputConnection::Connected(source_id) => pending.push(source_id),
+                    InputConnection::DeclaredUnresolved => return Vec::new(),
+                    InputConnection::Unconnected => {}
+                }
+                match get_input_connection(node, "switch") {
+                    InputConnection::Connected(source_id) => pending.push(source_id),
+                    InputConnection::DeclaredUnresolved => return Vec::new(),
+                    InputConnection::Unconnected => {}
+                }
+                continue;
+            }
+
+            pending.extend(self.direct_connected_source_ids(&node_id, node));
+        }
+
+        if !branch.contains(root_sampler_id) {
+            return Vec::new();
+        }
+
+        let mut branch_node_ids = branch.into_iter().collect::<Vec<_>>();
+        branch_node_ids.sort_by(|left, right| compare_node_ids(left, right));
+        branch_node_ids
+    }
+
+    pub fn extract_from_all_samplers(
+        &self,
+    ) -> (
+        ImageMetadata,
+        ComfyFieldSourceNodeIds,
+        ComfyResourceSourceNodeIds,
+    ) {
         let mut meta = ImageMetadata::default();
+        let mut field_source_node_ids = ComfyFieldSourceNodeIds::new();
+        let mut resource_source_node_ids = ComfyResourceSourceNodeIds::new();
 
         let mut sampler_nodes: Vec<(&String, &Value)> = self
             .graph
@@ -165,24 +260,38 @@ impl<'a> ComfyEvaluator<'a> {
                     let mut loras = Vec::new();
                     let mut ip_adapters = Vec::new();
                     let mut hypernetworks = Vec::new();
-                    let partial = super::eval_core::extract_from_sampler(
-                        self.graph,
-                        id,
-                        node,
-                        &mut loras,
-                        &mut ip_adapters,
-                        &mut hypernetworks,
-                    );
+                    let (partial, partial_sources, partial_resource_sources) =
+                        super::eval_core::extract_from_sampler(
+                            self.graph,
+                            id,
+                            node,
+                            &mut loras,
+                            &mut ip_adapters,
+                            &mut hypernetworks,
+                        );
                     if partial.steps > 0 || !partial.model.is_empty() {
+                        let before = meta.clone();
                         meta.merge(partial);
+                        copy_changed_core_sources(
+                            &before,
+                            &meta,
+                            &partial_sources,
+                            &mut field_source_node_ids,
+                        );
+                        copy_changed_resource_sources(
+                            &before,
+                            &meta,
+                            &partial_resource_sources,
+                            &mut resource_source_node_ids,
+                        );
                         if meta.steps > 0 && !meta.model.is_empty() {
-                            return meta;
+                            return (meta, field_source_node_ids, resource_source_node_ids);
                         }
                     }
                 }
             }
         }
-        meta
+        (meta, field_source_node_ids, resource_source_node_ids)
     }
 
     fn find_output_nodes(&self) -> Vec<String> {
@@ -391,6 +500,41 @@ impl<'a> ComfyEvaluator<'a> {
         }
     }
 
+    fn direct_connected_source_ids(&self, node_id: &str, node: &Value) -> Vec<String> {
+        let mut sources = Vec::new();
+
+        match node.get("inputs") {
+            Some(Value::Object(inputs)) => {
+                for input_name in inputs.keys() {
+                    if let InputConnection::Connected(source_id) =
+                        get_input_connection(node, input_name)
+                    {
+                        self.push_existing_source(&mut sources, source_id);
+                    }
+                }
+            }
+            Some(Value::Array(inputs)) => {
+                for input_slot in 0..inputs.len() {
+                    if let InputSourceConnection::Connected(source) =
+                        get_input_source_by_slot(node, input_slot)
+                    {
+                        self.push_existing_source(&mut sources, source.node_id);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if get_node_type(node) == "GetNode" {
+            if let Some(source_id) = get_source_id(self.graph, node_id, "source") {
+                self.push_existing_source(&mut sources, source_id);
+            }
+        }
+
+        sources.sort_by(|left, right| compare_node_ids(left, right));
+        sources
+    }
+
     fn find_root_sampler_ids(&self, start_sampler_id: &str) -> Vec<String> {
         let mut roots = Vec::new();
         let mut visited = HashSet::new();
@@ -519,6 +663,62 @@ impl<'a> ComfyEvaluator<'a> {
             }
         }
         None
+    }
+}
+
+fn copy_changed_core_sources(
+    before: &ImageMetadata,
+    after: &ImageMetadata,
+    additions: &ComfyFieldSourceNodeIds,
+    selected: &mut ComfyFieldSourceNodeIds,
+) {
+    for (field, changed) in [
+        (ComfyMetadataField::Model, before.model != after.model),
+        (ComfyMetadataField::Seed, before.seed != after.seed),
+        (ComfyMetadataField::Steps, before.steps != after.steps),
+        (ComfyMetadataField::Cfg, before.cfg != after.cfg),
+        (ComfyMetadataField::Sampler, before.sampler != after.sampler),
+        (
+            ComfyMetadataField::PositivePrompt,
+            before.positive_prompt != after.positive_prompt,
+        ),
+        (
+            ComfyMetadataField::NegativePrompt,
+            before.negative_prompt != after.negative_prompt,
+        ),
+    ] {
+        if changed {
+            if let Some(node_ids) = additions.get(&field) {
+                selected.insert(field, node_ids.clone());
+            } else {
+                selected.remove(&field);
+            }
+        }
+    }
+}
+
+fn copy_changed_resource_sources(
+    before: &ImageMetadata,
+    after: &ImageMetadata,
+    additions: &ComfyResourceSourceNodeIds,
+    selected: &mut ComfyResourceSourceNodeIds,
+) {
+    for field in resource_fields() {
+        let before_values = metadata_resource_values(before, field);
+        for value in metadata_resource_values(after, field)
+            .iter()
+            .filter(|value| !before_values.contains(value))
+        {
+            if let Some(node_ids) = additions
+                .get(&field)
+                .and_then(|resources| resources.get(value))
+            {
+                selected
+                    .entry(field)
+                    .or_default()
+                    .insert(value.clone(), node_ids.clone());
+            }
+        }
     }
 }
 

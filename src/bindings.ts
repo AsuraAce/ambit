@@ -520,6 +520,14 @@ async inspectComfyuiMetadataChunks(chunks: Partial<{ [key in string]: string }>)
     else return { status: "error", error: e  as any };
 }
 },
+async inspectComfyuiWorkflowGraph(chunks: Partial<{ [key in string]: string }>) : Promise<Result<ComfyWorkflowGraphReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inspect_comfyui_workflow_graph", { chunks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearModelCache() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
@@ -641,8 +649,12 @@ export type CollectionMembershipMutationInput = { operation: CollectionMembershi
 export type CollectionMembershipMutationResult = { affectedIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
 export type CollectionMembershipOperation = "add" | "remove" | "move"
 export type ComfyMetadataPreview = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; generationType: string; hasWorkflowHint: boolean; hasWorkflowJson: boolean }
-export type ComfyParserDiagnosticsReport = { appVersion: string; parserVersion: number; chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; selectedOutputCandidateCount: number; uniqueOutputRootSamplerCount: number; outputAmbiguous: boolean; traversalIssues: ComfyTraversalIssueReport[]; traversalIssuesTruncated: boolean; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; metadata: ComfyMetadataPreview }
+export type ComfyParserDiagnosticsReport = { appVersion: string; parserVersion: number; chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; selectedOutputCandidateCount: number; uniqueOutputRootSamplerCount: number; outputAmbiguous: boolean; traversalIssues: ComfyTraversalIssueReport[]; traversalIssuesTruncated: boolean; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; fieldSourceNodeIds?: Partial<{ [key in string]: string[] }>; resourceSources?: ComfyResourceSourceReport[]; metadata: ComfyMetadataPreview }
+export type ComfyResourceSourceReport = { field: string; value: string; layer: string | null; nodeIds: string[] }
 export type ComfyTraversalIssueReport = { field: string; nodeId: string; nodeType: string; inputName: string | null; reason: string }
+export type ComfyWorkflowDisplayEdge = { sourceNodeId: string; sourceOutputSlot: number | null; targetNodeId: string; targetInputName: string; targetInputSlot: number | null }
+export type ComfyWorkflowDisplayNode = { id: string; nodeType: string; title: string; inputs: Partial<{ [key in string]: string }>; subgraphPath: string[] }
+export type ComfyWorkflowGraphReport = { source: string; nodeCount: number; nodes: ComfyWorkflowDisplayNode[]; edges: ComfyWorkflowDisplayEdge[]; selectedOutputNodeIds: string[]; rootSamplerNodeIds: string[]; selectedBranchNodeIds: string[]; outputAmbiguous: boolean }
 export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath: string; roamingDbPath: string; appLogDir: string; appLogPath: string; isUsingRoamingFallback: boolean; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
 export type DeleteRemovedImagesResult = { clearedIds: string[]; trashedIds: string[]; alreadyMissingIds: string[]; failedIds: string[]; cleanupPendingIds: string[]; thumbnailWarningIds: string[]; notFoundIds: string[] }
 export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPinned: boolean; userMasked: boolean | null }

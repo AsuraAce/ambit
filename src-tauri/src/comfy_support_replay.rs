@@ -8,7 +8,66 @@ use std::fmt;
 
 pub const COMFY_SUPPORT_BUNDLE_MAX_BYTES: usize = 64 * 1024 * 1024;
 const SUPPORT_BUNDLE_SCHEMA_VERSION: u32 = 1;
+pub const SUPPORT_REPLAY_SUMMARY_VERSION: u32 = 2;
 const FIXTURE_CANDIDATE_REPORT_VERSION: u32 = 1;
+const RECORDED_DIAGNOSTIC_FIELD_POLICIES: [RecordedDiagnosticFieldPolicy; 16] = [
+    RecordedDiagnosticFieldPolicy::ignored("appVersion"),
+    RecordedDiagnosticFieldPolicy::ignored("parserVersion"),
+    RecordedDiagnosticFieldPolicy::compared("chunkKeys"),
+    RecordedDiagnosticFieldPolicy::compared("hasPromptChunk"),
+    RecordedDiagnosticFieldPolicy::compared("hasWorkflowChunk"),
+    RecordedDiagnosticFieldPolicy::compared("graphNodeCount"),
+    RecordedDiagnosticFieldPolicy::compared("selectedOutputCandidateCount"),
+    RecordedDiagnosticFieldPolicy::compared("uniqueOutputRootSamplerCount"),
+    RecordedDiagnosticFieldPolicy::compared("outputAmbiguous"),
+    RecordedDiagnosticFieldPolicy::compared("traversalIssues"),
+    RecordedDiagnosticFieldPolicy::compared("traversalIssuesTruncated"),
+    RecordedDiagnosticFieldPolicy::compared("attemptedLayers"),
+    RecordedDiagnosticFieldPolicy::compared("fieldSources"),
+    RecordedDiagnosticFieldPolicy::ignored_if_absent("fieldSourceNodeIds"),
+    RecordedDiagnosticFieldPolicy::ignored_if_absent("resourceSources"),
+    RecordedDiagnosticFieldPolicy::compared("metadata"),
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DiagnosticFieldComparison {
+    Compare,
+    Ignore,
+    IgnoreIfAbsent,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct RecordedDiagnosticFieldPolicy {
+    field: &'static str,
+    comparison: DiagnosticFieldComparison,
+}
+
+impl RecordedDiagnosticFieldPolicy {
+    const fn compared(field: &'static str) -> Self {
+        Self {
+            field,
+            comparison: DiagnosticFieldComparison::Compare,
+        }
+    }
+
+    const fn ignored(field: &'static str) -> Self {
+        Self {
+            field,
+            comparison: DiagnosticFieldComparison::Ignore,
+        }
+    }
+
+    const fn ignored_if_absent(field: &'static str) -> Self {
+        Self {
+            field,
+            comparison: DiagnosticFieldComparison::IgnoreIfAbsent,
+        }
+    }
+
+    fn path(self) -> String {
+        format!("/{}", escape_json_pointer_token(self.field))
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,9 +85,36 @@ struct SupportBundle {
     app_version: String,
     parser_version: u32,
     image: SupportImage,
-    diagnostics: ComfyParserDiagnosticsReport,
+    diagnostics: RecordedDiagnostics,
     chunk_lengths: BTreeMap<String, usize>,
     chunks: BTreeMap<String, String>,
+}
+
+#[derive(Debug)]
+struct RecordedDiagnostics {
+    report: ComfyParserDiagnosticsReport,
+    present_fields: BTreeSet<String>,
+}
+
+impl<'de> Deserialize<'de> for RecordedDiagnostics {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let present_fields = value
+            .as_object()
+            .ok_or_else(|| serde::de::Error::custom("diagnostics must be a JSON object"))?
+            .keys()
+            .cloned()
+            .collect();
+        let report = serde_json::from_value(value).map_err(serde::de::Error::custom)?;
+
+        Ok(Self {
+            report,
+            present_fields,
+        })
+    }
 }
 
 struct FixtureChunks(BTreeMap<String, String>);
@@ -76,8 +162,66 @@ struct ReplayReport {
     recorded_diagnostics: ComfyParserDiagnosticsReport,
     current_diagnostics: ComfyParserDiagnosticsReport,
     difference_count: usize,
+    metadata_difference_count: usize,
+    diagnostics_difference_count: usize,
     differences: Vec<ReplayDifference>,
+    comparison_ignored_paths: Vec<String>,
+    metadata_output_matches: bool,
+    diagnostics_match: bool,
     parser_output_matches: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplaySummaryReport {
+    support_replay_summary_version: u32,
+    bundle_sha256: String,
+    support_bundle_schema_version: u32,
+    recorded_app_version: String,
+    recorded_parser_version: u32,
+    current_app_version: String,
+    current_parser_version: u32,
+    image: SupportImage,
+    chunk_count: usize,
+    has_prompt_chunk: bool,
+    has_workflow_chunk: bool,
+    recorded_graph_node_count: usize,
+    current_graph_node_count: usize,
+    recorded_output_selection: ReplayOutputSelectionSummary,
+    current_output_selection: ReplayOutputSelectionSummary,
+    difference_count: usize,
+    metadata_difference_count: usize,
+    diagnostics_difference_count: usize,
+    differences: Vec<ReplayDifferenceSummary>,
+    comparison_ignored_paths: Vec<String>,
+    metadata_output_matches: bool,
+    diagnostics_match: bool,
+    parser_output_matches: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayOutputSelectionSummary {
+    selected_output_candidate_count: usize,
+    unique_output_root_sampler_count: usize,
+    ambiguous: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayDifferenceSummary {
+    path: String,
+    kind: ReplayDifferenceKind,
+}
+
+struct DiagnosticsComparison {
+    differences: Vec<ReplayDifference>,
+    ignored_paths: Vec<String>,
+}
+
+struct DifferenceSummary {
+    metadata_difference_count: usize,
+    diagnostics_difference_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +279,10 @@ pub fn replay_comfyui_support_bundle(input: &[u8]) -> Result<(String, bool), Str
     replay_comfyui_support_bundle_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
 }
 
+pub fn summarize_comfyui_support_bundle_replay(input: &[u8]) -> Result<(String, bool), String> {
+    summarize_comfyui_support_bundle_replay_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
+}
+
 pub fn prepare_comfyui_fixture_candidate(input: &[u8]) -> Result<Vec<u8>, String> {
     prepare_comfyui_fixture_candidate_with_limit(input, COMFY_SUPPORT_BUNDLE_MAX_BYTES)
 }
@@ -154,6 +302,28 @@ fn replay_comfyui_support_bundle_with_limit(
     input: &[u8],
     max_bytes: usize,
 ) -> Result<(String, bool), String> {
+    let report = build_replay_report(input, max_bytes)?;
+    let parser_output_matches = report.parser_output_matches;
+    let output = serde_json::to_string_pretty(&report)
+        .map_err(|_| "Failed to serialize support bundle replay report".to_string())?;
+
+    Ok((output, parser_output_matches))
+}
+
+fn summarize_comfyui_support_bundle_replay_with_limit(
+    input: &[u8],
+    max_bytes: usize,
+) -> Result<(String, bool), String> {
+    let report = build_replay_report(input, max_bytes)?;
+    let parser_output_matches = report.parser_output_matches;
+    let summary = ReplaySummaryReport::new(&report, input);
+    let output = serde_json::to_string(&summary)
+        .map_err(|_| "Failed to serialize support bundle replay summary".to_string())?;
+
+    Ok((output, parser_output_matches))
+}
+
+fn build_replay_report(input: &[u8], max_bytes: usize) -> Result<ReplayReport, String> {
     let bundle = parse_bundle_with_limit(input, max_bytes)?;
 
     let chunks: HashMap<String, String> = bundle
@@ -162,24 +332,117 @@ fn replay_comfyui_support_bundle_with_limit(
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect();
     let current_diagnostics = build_comfyui_diagnostics_report(&chunks);
-    let differences = diagnostics_differences(&bundle.diagnostics, &current_diagnostics)?;
+    let comparison = recorded_diagnostics_differences(&bundle.diagnostics, &current_diagnostics)?;
+    let differences = comparison.differences;
     let difference_count = differences.len();
+    let summary = summarize_differences(&differences);
+    let metadata_output_matches = summary.metadata_difference_count == 0;
+    let diagnostics_match = summary.diagnostics_difference_count == 0;
     let parser_output_matches = differences.is_empty();
-    let report = ReplayReport {
+    Ok(ReplayReport {
         support_bundle_schema_version: bundle.schema_version,
         image: bundle.image,
         chunk_keys: bundle.chunks.keys().cloned().collect(),
         chunk_lengths: bundle.chunk_lengths,
-        recorded_diagnostics: bundle.diagnostics,
+        recorded_diagnostics: bundle.diagnostics.report,
         current_diagnostics,
         difference_count,
+        metadata_difference_count: summary.metadata_difference_count,
+        diagnostics_difference_count: summary.diagnostics_difference_count,
         differences,
+        comparison_ignored_paths: comparison.ignored_paths,
+        metadata_output_matches,
+        diagnostics_match,
         parser_output_matches,
-    };
-    let output = serde_json::to_string_pretty(&report)
-        .map_err(|_| "Failed to serialize support bundle replay report".to_string())?;
+    })
+}
 
-    Ok((output, parser_output_matches))
+impl ReplaySummaryReport {
+    fn new(report: &ReplayReport, input: &[u8]) -> Self {
+        let recorded = &report.recorded_diagnostics;
+        let current = &report.current_diagnostics;
+        Self {
+            support_replay_summary_version: SUPPORT_REPLAY_SUMMARY_VERSION,
+            bundle_sha256: hex::encode(Sha256::digest(input)),
+            support_bundle_schema_version: report.support_bundle_schema_version,
+            recorded_app_version: replay_summary_app_version(&recorded.app_version),
+            recorded_parser_version: recorded.parser_version,
+            current_app_version: replay_summary_app_version(&current.app_version),
+            current_parser_version: current.parser_version,
+            image: SupportImage {
+                format: replay_summary_image_format(&report.image.format),
+                width: report.image.width,
+                height: report.image.height,
+            },
+            chunk_count: report.chunk_keys.len(),
+            has_prompt_chunk: current.has_prompt_chunk,
+            has_workflow_chunk: current.has_workflow_chunk,
+            recorded_graph_node_count: recorded.graph_node_count,
+            current_graph_node_count: current.graph_node_count,
+            recorded_output_selection: ReplayOutputSelectionSummary::from(recorded),
+            current_output_selection: ReplayOutputSelectionSummary::from(current),
+            difference_count: report.difference_count,
+            metadata_difference_count: report.metadata_difference_count,
+            diagnostics_difference_count: report.diagnostics_difference_count,
+            differences: report
+                .differences
+                .iter()
+                .map(ReplayDifferenceSummary::from)
+                .collect(),
+            comparison_ignored_paths: report.comparison_ignored_paths.clone(),
+            metadata_output_matches: report.metadata_output_matches,
+            diagnostics_match: report.diagnostics_match,
+            parser_output_matches: report.parser_output_matches,
+        }
+    }
+}
+
+fn replay_summary_app_version(version: &str) -> String {
+    let mut parts = version.split('.');
+    let valid = [parts.next(), parts.next(), parts.next()]
+        .into_iter()
+        .all(|part| {
+            part.is_some_and(|part| {
+                !part.is_empty()
+                    && part.len() <= 10
+                    && part.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+        && parts.next().is_none();
+
+    if valid {
+        version.to_string()
+    } else {
+        "unavailable".to_string()
+    }
+}
+
+fn replay_summary_image_format(format: &str) -> String {
+    let normalized = format.to_ascii_lowercase();
+    if matches!(normalized.as_str(), "png" | "jpg" | "jpeg" | "webp") {
+        normalized
+    } else {
+        "unknown".to_string()
+    }
+}
+
+impl From<&ComfyParserDiagnosticsReport> for ReplayOutputSelectionSummary {
+    fn from(report: &ComfyParserDiagnosticsReport) -> Self {
+        Self {
+            selected_output_candidate_count: report.selected_output_candidate_count,
+            unique_output_root_sampler_count: report.unique_output_root_sampler_count,
+            ambiguous: report.output_ambiguous,
+        }
+    }
+}
+
+impl From<&ReplayDifference> for ReplayDifferenceSummary {
+    fn from(difference: &ReplayDifference) -> Self {
+        Self {
+            path: difference.path.clone(),
+            kind: difference.kind,
+        }
+    }
 }
 
 fn prepare_comfyui_fixture_candidate_with_limit(
@@ -323,15 +586,28 @@ fn validate_bundle(bundle: &SupportBundle) -> Result<(), String> {
     {
         return Err("Support bundle contains an empty required field".to_string());
     }
-    if bundle.app_version != bundle.diagnostics.app_version
-        || bundle.parser_version != bundle.diagnostics.parser_version
+    if bundle.app_version != bundle.diagnostics.report.app_version
+        || bundle.parser_version != bundle.diagnostics.report.parser_version
     {
         return Err("Support bundle version fields are inconsistent".to_string());
     }
 
+    let known_diagnostic_fields: BTreeSet<&str> = RECORDED_DIAGNOSTIC_FIELD_POLICIES
+        .iter()
+        .map(|policy| policy.field)
+        .collect();
+    if bundle
+        .diagnostics
+        .present_fields
+        .iter()
+        .any(|field| !known_diagnostic_fields.contains(field.as_str()))
+    {
+        return Err("Support bundle contains unsupported diagnostics fields".to_string());
+    }
+
     let chunk_keys: Vec<String> = bundle.chunks.keys().cloned().collect();
     let length_keys: Vec<String> = bundle.chunk_lengths.keys().cloned().collect();
-    if chunk_keys != length_keys || chunk_keys != bundle.diagnostics.chunk_keys {
+    if chunk_keys != length_keys || chunk_keys != bundle.diagnostics.report.chunk_keys {
         return Err("Support bundle chunk keys are inconsistent".to_string());
     }
 
@@ -349,20 +625,82 @@ fn diagnostics_differences(
     recorded: &ComfyParserDiagnosticsReport,
     current: &ComfyParserDiagnosticsReport,
 ) -> Result<Vec<ReplayDifference>, String> {
-    let mut recorded = recorded.clone();
-    let mut current = current.clone();
-    recorded.app_version.clear();
-    recorded.parser_version = 0;
-    current.app_version.clear();
-    current.parser_version = 0;
+    let (mut recorded, mut current) = diagnostics_values(recorded, current)?;
+    for policy in RECORDED_DIAGNOSTIC_FIELD_POLICIES {
+        if policy.comparison == DiagnosticFieldComparison::Ignore {
+            remove_diagnostic_field(&mut recorded, policy.field, "Recorded")?;
+            remove_diagnostic_field(&mut current, policy.field, "Current")?;
+        }
+    }
+    let mut differences = Vec::new();
+    collect_differences("", &recorded, &current, &mut differences);
+    Ok(differences)
+}
 
+fn recorded_diagnostics_differences(
+    recorded: &RecordedDiagnostics,
+    current: &ComfyParserDiagnosticsReport,
+) -> Result<DiagnosticsComparison, String> {
+    let (mut recorded_value, mut current_value) = diagnostics_values(&recorded.report, current)?;
+    let mut ignored_paths = Vec::new();
+
+    for policy in RECORDED_DIAGNOSTIC_FIELD_POLICIES {
+        let should_ignore = match policy.comparison {
+            DiagnosticFieldComparison::Compare => false,
+            DiagnosticFieldComparison::Ignore => true,
+            DiagnosticFieldComparison::IgnoreIfAbsent => {
+                if recorded.present_fields.contains(policy.field) {
+                    false
+                } else {
+                    ignored_paths.push(policy.path());
+                    true
+                }
+            }
+        };
+        if should_ignore {
+            remove_diagnostic_field(&mut recorded_value, policy.field, "Recorded")?;
+            remove_diagnostic_field(&mut current_value, policy.field, "Current")?;
+        }
+    }
+
+    let mut differences = Vec::new();
+    collect_differences("", &recorded_value, &current_value, &mut differences);
+    Ok(DiagnosticsComparison {
+        differences,
+        ignored_paths,
+    })
+}
+
+fn diagnostics_values(
+    recorded: &ComfyParserDiagnosticsReport,
+    current: &ComfyParserDiagnosticsReport,
+) -> Result<(Value, Value), String> {
     let recorded = serde_json::to_value(recorded)
         .map_err(|_| "Failed to compare recorded diagnostics".to_string())?;
     let current = serde_json::to_value(current)
         .map_err(|_| "Failed to compare current diagnostics".to_string())?;
-    let mut differences = Vec::new();
-    collect_differences("", &recorded, &current, &mut differences);
-    Ok(differences)
+    Ok((recorded, current))
+}
+
+fn remove_diagnostic_field(value: &mut Value, field: &str, label: &str) -> Result<(), String> {
+    value
+        .as_object_mut()
+        .ok_or_else(|| format!("{label} diagnostics did not serialize as an object"))?
+        .remove(field);
+    Ok(())
+}
+
+fn summarize_differences(differences: &[ReplayDifference]) -> DifferenceSummary {
+    let metadata_difference_count = differences
+        .iter()
+        .filter(|difference| {
+            difference.path == "/metadata" || difference.path.starts_with("/metadata/")
+        })
+        .count();
+    DifferenceSummary {
+        metadata_difference_count,
+        diagnostics_difference_count: differences.len() - metadata_difference_count,
+    }
 }
 
 fn collect_differences(
@@ -455,6 +793,74 @@ mod tests {
         ])
     }
 
+    fn resource_chunks() -> BTreeMap<String, String> {
+        BTreeMap::from([(
+            "prompt".to_string(),
+            r#"{
+                "1": {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": { "ckpt_name": "resource-model.safetensors" }
+                },
+                "2": {
+                    "class_type": "LoraLoaderModelOnly",
+                    "inputs": {
+                        "model": ["1", 0],
+                        "lora_name": "loader-style.safetensors"
+                    }
+                },
+                "3": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": { "text": "resource prompt" }
+                },
+                "4": {
+                    "class_type": "KSampler",
+                    "inputs": {
+                        "cfg": 7.0,
+                        "model": ["2", 0],
+                        "positive": ["3", 0],
+                        "negative": ["3", 0],
+                        "seed": 12345,
+                        "steps": 25,
+                        "sampler_name": "euler",
+                        "scheduler": "normal"
+                    }
+                },
+                "5": {
+                    "class_type": "SaveImage",
+                    "inputs": { "images": ["4", 0] }
+                }
+            }"#
+            .to_string(),
+        )])
+    }
+
+    #[test]
+    fn diagnostics_field_policy_covers_the_complete_serialized_contract() {
+        let report = build_comfyui_diagnostics_report(
+            &resource_chunks()
+                .into_iter()
+                .collect::<HashMap<String, String>>(),
+        );
+        let serialized = serde_json::to_value(report).unwrap();
+        let serialized_fields = serialized
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let policy_fields = RECORDED_DIAGNOSTIC_FIELD_POLICIES
+            .iter()
+            .map(|policy| policy.field)
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(
+            policy_fields.len(),
+            RECORDED_DIAGNOSTIC_FIELD_POLICIES.len(),
+            "diagnostics policy fields must be unique"
+        );
+        assert_eq!(serialized_fields, policy_fields);
+    }
+
     #[test]
     fn matching_bundle_replays_deterministically_without_raw_chunks() {
         let mut chunks = minimal_chunks();
@@ -473,11 +879,230 @@ mod tests {
         assert!(!first.contains("DO_NOT_PRINT_PRIVATE_CHUNK_BODY"));
         let report: Value = serde_json::from_str(&first).unwrap();
         assert_eq!(report["parserOutputMatches"], true);
+        assert_eq!(report["metadataOutputMatches"], true);
+        assert_eq!(report["diagnosticsMatch"], true);
         assert_eq!(report["differenceCount"], 0);
+        assert_eq!(report["metadataDifferenceCount"], 0);
+        assert_eq!(report["diagnosticsDifferenceCount"], 0);
         assert_eq!(report["differences"], json!([]));
+        assert_eq!(report["comparisonIgnoredPaths"], json!([]));
         assert_eq!(
             report["chunkKeys"],
             json!(["privateRaw", "prompt", "workflow"])
+        );
+    }
+
+    #[test]
+    fn replay_summary_is_deterministic_and_omits_sensitive_values() {
+        let mut chunks = resource_chunks();
+        chunks.insert(
+            "PRIVATE_CHUNK_KEY".to_string(),
+            "DO_NOT_PRINT_PRIVATE_CHUNK_BODY".to_string(),
+        );
+        let mut bundle = bundle_value(chunks);
+        bundle["appVersion"] = json!("PRIVATEVERSION");
+        bundle["diagnostics"]["appVersion"] = json!("PRIVATEVERSION");
+        bundle["image"]["format"] = json!("DO_NOT_PRINT_PRIVATE_FORMAT");
+        let input = serde_json::to_vec(&bundle).unwrap();
+
+        let (_, full_matches) = replay_comfyui_support_bundle(&input).unwrap();
+        let (first, first_matches) = summarize_comfyui_support_bundle_replay(&input).unwrap();
+        let (second, second_matches) = summarize_comfyui_support_bundle_replay(&input).unwrap();
+
+        assert!(full_matches);
+        assert!(first_matches);
+        assert!(second_matches);
+        assert_eq!(first, second);
+        assert!(!first.contains('\n'));
+        for sensitive in [
+            "PRIVATE_CHUNK_KEY",
+            "DO_NOT_PRINT_PRIVATE_CHUNK_BODY",
+            "resource-model",
+            "resource prompt",
+            "loader-style",
+            "PRIVATEVERSION",
+            "DO_NOT_PRINT_PRIVATE_FORMAT",
+        ] {
+            assert!(!first.contains(sensitive));
+        }
+
+        let report: Value = serde_json::from_str(&first).unwrap();
+        assert_eq!(report["supportReplaySummaryVersion"], 2);
+        assert_eq!(report["bundleSha256"].as_str().unwrap().len(), 64);
+        assert_eq!(report["bundleSha256"], hex::encode(Sha256::digest(&input)));
+        assert_eq!(report["supportBundleSchemaVersion"], 1);
+        assert_eq!(report["recordedAppVersion"], "unavailable");
+        assert_eq!(report["currentAppVersion"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(report["image"]["format"], "unknown");
+        assert_eq!(report["chunkCount"], 2);
+        assert_eq!(report["hasPromptChunk"], true);
+        assert_eq!(report["hasWorkflowChunk"], false);
+        assert_eq!(report["recordedGraphNodeCount"], 5);
+        assert_eq!(report["currentGraphNodeCount"], 5);
+        assert_eq!(
+            report["recordedOutputSelection"]["selectedOutputCandidateCount"],
+            1
+        );
+        assert_eq!(
+            report["currentOutputSelection"]["uniqueOutputRootSamplerCount"],
+            1
+        );
+        assert_eq!(report["parserOutputMatches"], true);
+        assert!(report.get("recordedDiagnostics").is_none());
+        assert!(report.get("currentDiagnostics").is_none());
+        assert!(report.get("chunkKeys").is_none());
+        assert!(report.get("chunkLengths").is_none());
+    }
+
+    #[test]
+    fn replay_summary_classifies_drift_without_compared_values() {
+        let mut metadata_bundle = bundle_value(resource_chunks());
+        metadata_bundle["diagnostics"]["metadata"]["model"] = json!("DO_NOT_PRINT_RECORDED_MODEL");
+        let (metadata_output, metadata_matches) =
+            summarize_comfyui_support_bundle_replay(&serde_json::to_vec(&metadata_bundle).unwrap())
+                .unwrap();
+        assert!(!metadata_matches);
+        assert!(!metadata_output.contains("DO_NOT_PRINT_RECORDED_MODEL"));
+        let metadata_report: Value = serde_json::from_str(&metadata_output).unwrap();
+        assert_eq!(metadata_report["metadataOutputMatches"], false);
+        assert_eq!(metadata_report["diagnosticsMatch"], true);
+        assert_eq!(metadata_report["metadataDifferenceCount"], 1);
+        assert_eq!(metadata_report["diagnosticsDifferenceCount"], 0);
+        assert_eq!(
+            metadata_report["differences"],
+            json!([{"path": "/metadata/model", "kind": "changed"}])
+        );
+
+        let mut diagnostics_bundle = bundle_value(resource_chunks());
+        diagnostics_bundle["diagnostics"]["fieldSources"]["model"] =
+            json!("DO_NOT_PRINT_RECORDED_SOURCE");
+        let (diagnostics_output, diagnostics_matches) = summarize_comfyui_support_bundle_replay(
+            &serde_json::to_vec(&diagnostics_bundle).unwrap(),
+        )
+        .unwrap();
+        assert!(!diagnostics_matches);
+        assert!(!diagnostics_output.contains("DO_NOT_PRINT_RECORDED_SOURCE"));
+        let diagnostics_report: Value = serde_json::from_str(&diagnostics_output).unwrap();
+        assert_eq!(diagnostics_report["metadataOutputMatches"], true);
+        assert_eq!(diagnostics_report["diagnosticsMatch"], false);
+        assert_eq!(diagnostics_report["metadataDifferenceCount"], 0);
+        assert_eq!(diagnostics_report["diagnosticsDifferenceCount"], 1);
+        assert_eq!(
+            diagnostics_report["differences"],
+            json!([{"path": "/fieldSources/model", "kind": "changed"}])
+        );
+
+        diagnostics_bundle["diagnostics"]["metadata"]["model"] = json!("DO_NOT_PRINT_MIXED_MODEL");
+        let (mixed_output, mixed_matches) = summarize_comfyui_support_bundle_replay(
+            &serde_json::to_vec(&diagnostics_bundle).unwrap(),
+        )
+        .unwrap();
+        assert!(!mixed_matches);
+        assert!(!mixed_output.contains("DO_NOT_PRINT_MIXED_MODEL"));
+        let mixed_report: Value = serde_json::from_str(&mixed_output).unwrap();
+        assert_eq!(mixed_report["metadataDifferenceCount"], 1);
+        assert_eq!(mixed_report["diagnosticsDifferenceCount"], 1);
+        assert_eq!(mixed_report["differenceCount"], 2);
+    }
+
+    #[test]
+    fn legacy_bundle_ignores_only_unrecorded_optional_diagnostics() {
+        let mut bundle = bundle_value(resource_chunks());
+        let diagnostics = bundle["diagnostics"].as_object_mut().unwrap();
+        assert!(!diagnostics["fieldSourceNodeIds"]
+            .as_object()
+            .unwrap()
+            .is_empty());
+        assert!(!diagnostics["resourceSources"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+        diagnostics.remove("fieldSourceNodeIds");
+        diagnostics.remove("resourceSources");
+
+        let input = serde_json::to_vec(&bundle).unwrap();
+        let (output, matches) = replay_comfyui_support_bundle(&input).unwrap();
+        let (summary, summary_matches) = summarize_comfyui_support_bundle_replay(&input).unwrap();
+
+        assert!(matches);
+        assert!(summary_matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["metadataOutputMatches"], true);
+        assert_eq!(report["diagnosticsMatch"], true);
+        assert_eq!(report["differenceCount"], 0);
+        assert_eq!(report["differences"], json!([]));
+        assert_eq!(
+            report["comparisonIgnoredPaths"],
+            json!(["/fieldSourceNodeIds", "/resourceSources"])
+        );
+        let summary: Value = serde_json::from_str(&summary).unwrap();
+        assert_eq!(
+            summary["comparisonIgnoredPaths"],
+            json!(["/fieldSourceNodeIds", "/resourceSources"])
+        );
+        assert_eq!(summary["parserOutputMatches"], true);
+    }
+
+    #[test]
+    fn legacy_bundle_can_ignore_one_optional_diagnostic_independently() {
+        let mut bundle = bundle_value(resource_chunks());
+        bundle["diagnostics"]
+            .as_object_mut()
+            .unwrap()
+            .remove("resourceSources");
+
+        let (output, matches) =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+
+        assert!(matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(
+            report["comparisonIgnoredPaths"],
+            json!(["/resourceSources"])
+        );
+    }
+
+    #[test]
+    fn explicitly_recorded_empty_optional_diagnostics_are_compared() {
+        let mut bundle = bundle_value(resource_chunks());
+        bundle["diagnostics"]["resourceSources"] = json!([]);
+
+        let (output, matches) =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+
+        assert!(!matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["metadataOutputMatches"], true);
+        assert_eq!(report["diagnosticsMatch"], false);
+        assert_eq!(report["metadataDifferenceCount"], 0);
+        assert_eq!(report["diagnosticsDifferenceCount"], 1);
+        assert_eq!(report["comparisonIgnoredPaths"], json!([]));
+        assert_eq!(report["differenceCount"], 1);
+        assert_eq!(report["differences"][0]["path"], "/resourceSources");
+    }
+
+    #[test]
+    fn ignored_optional_diagnostics_do_not_hide_metadata_drift() {
+        let mut bundle = bundle_value(resource_chunks());
+        let diagnostics = bundle["diagnostics"].as_object_mut().unwrap();
+        diagnostics.remove("fieldSourceNodeIds");
+        diagnostics.remove("resourceSources");
+        diagnostics["metadata"]["model"] = json!("recorded-model");
+
+        let (output, matches) =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+
+        assert!(!matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["metadataOutputMatches"], false);
+        assert_eq!(report["diagnosticsMatch"], true);
+        assert_eq!(report["metadataDifferenceCount"], 1);
+        assert_eq!(report["diagnosticsDifferenceCount"], 0);
+        assert_eq!(report["differenceCount"], 1);
+        assert_eq!(report["differences"][0]["path"], "/metadata/model");
+        assert_eq!(
+            report["comparisonIgnoredPaths"],
+            json!(["/fieldSourceNodeIds", "/resourceSources"])
         );
     }
 
@@ -493,7 +1118,11 @@ mod tests {
         assert!(!matches);
         let report: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(report["parserOutputMatches"], false);
+        assert_eq!(report["metadataOutputMatches"], false);
+        assert_eq!(report["diagnosticsMatch"], true);
         assert_eq!(report["differenceCount"], 1);
+        assert_eq!(report["metadataDifferenceCount"], 1);
+        assert_eq!(report["diagnosticsDifferenceCount"], 0);
         assert_eq!(
             report["differences"],
             json!([{
@@ -510,6 +1139,42 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_only_drift_is_classified_separately() {
+        let mut bundle = bundle_value(resource_chunks());
+        bundle["diagnostics"]["fieldSources"]["model"] = json!("global_scan");
+
+        let (output, matches) =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+
+        assert!(!matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["parserOutputMatches"], false);
+        assert_eq!(report["metadataOutputMatches"], true);
+        assert_eq!(report["diagnosticsMatch"], false);
+        assert_eq!(report["metadataDifferenceCount"], 0);
+        assert_eq!(report["diagnosticsDifferenceCount"], 1);
+        assert_eq!(report["differences"][0]["path"], "/fieldSources/model");
+    }
+
+    #[test]
+    fn mixed_metadata_and_diagnostics_drift_reports_both_verdicts() {
+        let mut bundle = bundle_value(resource_chunks());
+        bundle["diagnostics"]["metadata"]["model"] = json!("recorded-model");
+        bundle["diagnostics"]["fieldSources"]["model"] = json!("global_scan");
+
+        let (output, matches) =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&bundle).unwrap()).unwrap();
+
+        assert!(!matches);
+        let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["metadataOutputMatches"], false);
+        assert_eq!(report["diagnosticsMatch"], false);
+        assert_eq!(report["metadataDifferenceCount"], 1);
+        assert_eq!(report["diagnosticsDifferenceCount"], 1);
+        assert_eq!(report["differenceCount"], 2);
+    }
+
+    #[test]
     fn app_and_parser_version_only_differences_still_match() {
         let mut bundle = bundle_value(minimal_chunks());
         bundle["appVersion"] = json!("0.9.0");
@@ -522,6 +1187,8 @@ mod tests {
 
         assert!(matches);
         let report: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(report["metadataOutputMatches"], true);
+        assert_eq!(report["diagnosticsMatch"], true);
         assert_eq!(report["differenceCount"], 0);
         assert_eq!(report["differences"], json!([]));
     }
@@ -636,6 +1303,17 @@ mod tests {
                 .unwrap_err(),
             "Support bundle version fields are inconsistent"
         );
+
+        let mut unknown_diagnostics = bundle_value(minimal_chunks());
+        unknown_diagnostics["diagnostics"]["futurePrivateField"] = json!("DO_NOT_ECHO");
+        let error =
+            replay_comfyui_support_bundle(&serde_json::to_vec(&unknown_diagnostics).unwrap())
+                .unwrap_err();
+        assert_eq!(
+            error,
+            "Support bundle contains unsupported diagnostics fields"
+        );
+        assert!(!error.contains("DO_NOT_ECHO"));
     }
 
     #[test]
