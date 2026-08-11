@@ -95,6 +95,15 @@ only aggregate counts because their bytes cannot be safely identified. Cases
 are sorted by content hash, so output is deterministic and does not expose file
 or directory names.
 
+Drifting valid cases also receive a `driftSignatureSha256` and appear in a
+`driftGroups` cohort. The signature covers only the drift class, sorted
+difference paths and kinds, and compatibility-excluded paths. It deliberately
+excludes bundle identity, compared values, versions, image shape, and graph
+counts. Bundles with the same redacted parser-difference shape can therefore be
+triaged together even when their private contents differ. Matching and invalid
+cases are not grouped, duplicate bundle hashes remain visible, and grouping does
+not decide whether a parser change is a regression or an improvement.
+
 Without `--verify`, valid parser drift is reported with exit code `0`. With
 `--verify`, valid drift uses exit code `2`. Any unreadable, oversized, or invalid
 input uses exit code `1` and takes precedence over drift, while the completed

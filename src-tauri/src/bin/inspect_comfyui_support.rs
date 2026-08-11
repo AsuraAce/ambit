@@ -1,6 +1,7 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
@@ -11,7 +12,7 @@ use std::process::ExitCode;
 const EXIT_OK: u8 = 0;
 const EXIT_ERROR: u8 = 1;
 const EXIT_MISMATCH: u8 = 2;
-const SUPPORT_REPLAY_BATCH_SUMMARY_VERSION: u32 = 1;
+const SUPPORT_REPLAY_BATCH_SUMMARY_VERSION: u32 = 2;
 const MAX_BATCH_JSON_FILES: usize = 256;
 
 #[derive(Debug)]
@@ -211,7 +212,7 @@ enum RunMode {
     },
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum BatchCaseStatus {
     Matching,
@@ -227,7 +228,65 @@ struct BatchReplayCase {
     bundle_sha256: String,
     status: BatchCaseStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
+    drift_signature_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     summary: Option<Value>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum BatchDifferenceKind {
+    Added,
+    Removed,
+    Changed,
+}
+
+impl BatchDifferenceKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Added => "added",
+            Self::Removed => "removed",
+            Self::Changed => "changed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchDifferenceSummary {
+    path: String,
+    kind: BatchDifferenceKind,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchSourceSummary {
+    support_replay_summary_version: u32,
+    bundle_sha256: String,
+    metadata_output_matches: bool,
+    diagnostics_match: bool,
+    parser_output_matches: bool,
+    differences: Vec<BatchDifferenceSummary>,
+    comparison_ignored_paths: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchDriftSignatureInput<'a> {
+    status: BatchCaseStatus,
+    differences: &'a [BatchDifferenceSummary],
+    comparison_ignored_paths: &'a [String],
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchDriftGroup {
+    drift_signature_sha256: String,
+    status: BatchCaseStatus,
+    case_count: usize,
+    bundle_sha256s: Vec<String>,
+    differences: Vec<BatchDifferenceSummary>,
+    comparison_ignored_paths: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -248,6 +307,8 @@ struct BatchReplaySummary {
     mixed_drift_case_count: usize,
     all_inputs_valid: bool,
     parser_output_matches: bool,
+    drift_group_count: usize,
+    drift_groups: Vec<BatchDriftGroup>,
     cases: Vec<BatchReplayCase>,
 }
 
@@ -473,6 +534,7 @@ where
     };
 
     let mut cases = Vec::with_capacity(entries.paths.len());
+    let mut drift_groups = BTreeMap::new();
     let mut readable_case_count = 0;
     let mut unreadable_file_count = 0;
     let mut oversized_file_count = 0;
@@ -505,6 +567,7 @@ where
                 cases.push(BatchReplayCase {
                     bundle_sha256,
                     status: BatchCaseStatus::Invalid,
+                    drift_signature_sha256: None,
                     summary: None,
                 });
                 continue;
@@ -517,40 +580,25 @@ where
                 return EXIT_ERROR;
             }
         };
-        if summary.get("bundleSha256").and_then(Value::as_str) != Some(&bundle_sha256) {
+        let source_summary: BatchSourceSummary = match serde_json::from_value(summary.clone()) {
+            Ok(summary) => summary,
+            Err(_) => {
+                let _ = writeln!(stderr, "error: internal replay summary is incomplete");
+                return EXIT_ERROR;
+            }
+        };
+        if source_summary.support_replay_summary_version != app_lib::SUPPORT_REPLAY_SUMMARY_VERSION
+        {
+            let _ = writeln!(stderr, "error: replay summary version mismatch");
+            return EXIT_ERROR;
+        }
+        if source_summary.bundle_sha256 != bundle_sha256 {
             let _ = writeln!(stderr, "error: replay summary identity mismatch");
             return EXIT_ERROR;
         }
-        let metadata_matches = match summary_bool(&summary, "metadataOutputMatches") {
-            Some(value) => value,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "error: replay summary is missing its metadata verdict"
-                );
-                return EXIT_ERROR;
-            }
-        };
-        let diagnostics_match = match summary_bool(&summary, "diagnosticsMatch") {
-            Some(value) => value,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "error: replay summary is missing its diagnostics verdict"
-                );
-                return EXIT_ERROR;
-            }
-        };
-        let combined_matches = match summary_bool(&summary, "parserOutputMatches") {
-            Some(value) => value,
-            None => {
-                let _ = writeln!(
-                    stderr,
-                    "error: replay summary is missing its combined verdict"
-                );
-                return EXIT_ERROR;
-            }
-        };
+        let metadata_matches = source_summary.metadata_output_matches;
+        let diagnostics_match = source_summary.diagnostics_match;
+        let combined_matches = source_summary.parser_output_matches;
         if combined_matches != matches
             || combined_matches != (metadata_matches && diagnostics_match)
         {
@@ -577,14 +625,46 @@ where
                 BatchCaseStatus::MixedDrift
             }
         };
+        let drift_signature_sha256 = if combined_matches {
+            None
+        } else {
+            let mut differences = source_summary.differences;
+            differences.sort_by(|left, right| {
+                left.path
+                    .cmp(&right.path)
+                    .then_with(|| left.kind.as_str().cmp(right.kind.as_str()))
+            });
+            let mut comparison_ignored_paths = source_summary.comparison_ignored_paths;
+            comparison_ignored_paths.sort();
+            comparison_ignored_paths.dedup();
+            let signature = drift_signature(status, &differences, &comparison_ignored_paths);
+            let group = drift_groups
+                .entry(signature.clone())
+                .or_insert_with(|| BatchDriftGroup {
+                    drift_signature_sha256: signature.clone(),
+                    status,
+                    case_count: 0,
+                    bundle_sha256s: Vec::new(),
+                    differences,
+                    comparison_ignored_paths,
+                });
+            group.case_count += 1;
+            group.bundle_sha256s.push(bundle_sha256.clone());
+            Some(signature)
+        };
         cases.push(BatchReplayCase {
             bundle_sha256,
             status,
+            drift_signature_sha256,
             summary: Some(summary),
         });
     }
 
     cases.sort_by(|left, right| left.bundle_sha256.cmp(&right.bundle_sha256));
+    let mut drift_groups: Vec<_> = drift_groups.into_values().collect();
+    for group in &mut drift_groups {
+        group.bundle_sha256s.sort();
+    }
     let all_inputs_valid =
         unreadable_file_count == 0 && oversized_file_count == 0 && invalid_case_count == 0;
     let parser_output_matches = all_inputs_valid
@@ -607,6 +687,8 @@ where
         mixed_drift_case_count,
         all_inputs_valid,
         parser_output_matches,
+        drift_group_count: drift_groups.len(),
+        drift_groups,
         cases,
     };
     let serialized = match serde_json::to_string(&report) {
@@ -695,8 +777,18 @@ fn read_batch_bundle(path: &Path, max_bytes: usize) -> Result<Vec<u8>, BatchRead
     Ok(input)
 }
 
-fn summary_bool(summary: &Value, field: &str) -> Option<bool> {
-    summary.get(field).and_then(Value::as_bool)
+fn drift_signature(
+    status: BatchCaseStatus,
+    differences: &[BatchDifferenceSummary],
+    comparison_ignored_paths: &[String],
+) -> String {
+    let input = BatchDriftSignatureInput {
+        status,
+        differences,
+        comparison_ignored_paths,
+    };
+    let canonical = serde_json::to_vec(&input).expect("drift signature input should serialize");
+    hex::encode(Sha256::digest(canonical))
 }
 
 fn read_bounded(path: &Path, max_bytes: usize, input_kind: &str) -> Result<Vec<u8>, String> {
@@ -811,14 +903,47 @@ mod tests {
     }
 
     fn fake_batch_replay(input: &[u8], _: bool) -> Result<(String, bool), String> {
-        let (metadata_matches, diagnostics_match) = match input {
-            b"MATCH_PRIVATE_VALUE" => (true, true),
-            b"METADATA_PRIVATE_VALUE" => (false, true),
-            b"DIAGNOSTICS_PRIVATE_VALUE" => (true, false),
-            b"MIXED_PRIVATE_VALUE" => (false, false),
-            b"INVALID_PRIVATE_VALUE" => return Err("invalid bundle".to_string()),
-            _ => return Err("unexpected test bundle".to_string()),
+        let difference = |path: &str| BatchDifferenceSummary {
+            path: path.to_string(),
+            kind: BatchDifferenceKind::Changed,
         };
+        let (metadata_matches, diagnostics_match, differences, comparison_ignored_paths) =
+            match input {
+                b"MATCH_PRIVATE_VALUE" => (true, true, Vec::new(), Vec::new()),
+                b"METADATA_PRIVATE_VALUE" | b"METADATA_SECOND_PRIVATE_VALUE" => {
+                    (false, true, vec![difference("/metadata/model")], Vec::new())
+                }
+                b"METADATA_STEPS_PRIVATE_VALUE" => {
+                    (false, true, vec![difference("/metadata/steps")], Vec::new())
+                }
+                b"METADATA_LEGACY_PRIVATE_VALUE" => (
+                    false,
+                    true,
+                    vec![difference("/metadata/model")],
+                    vec![
+                        "/resourceSources".to_string(),
+                        "/fieldSourceNodeIds".to_string(),
+                        "/resourceSources".to_string(),
+                    ],
+                ),
+                b"DIAGNOSTICS_PRIVATE_VALUE" => (
+                    true,
+                    false,
+                    vec![difference("/fieldSources/model")],
+                    Vec::new(),
+                ),
+                b"MIXED_PRIVATE_VALUE" => (
+                    false,
+                    false,
+                    vec![
+                        difference("/fieldSources/model"),
+                        difference("/metadata/model"),
+                    ],
+                    Vec::new(),
+                ),
+                b"INVALID_PRIVATE_VALUE" => return Err("invalid bundle".to_string()),
+                _ => return Err("unexpected test bundle".to_string()),
+            };
         let parser_output_matches = metadata_matches && diagnostics_match;
         let bundle_sha256 = hex::encode(Sha256::digest(input));
         Ok((
@@ -828,6 +953,8 @@ mod tests {
                 "metadataOutputMatches": metadata_matches,
                 "diagnosticsMatch": diagnostics_match,
                 "parserOutputMatches": parser_output_matches,
+                "differences": differences,
+                "comparisonIgnoredPaths": comparison_ignored_paths,
             })
             .to_string(),
             parser_output_matches,
@@ -954,7 +1081,7 @@ mod tests {
         assert_eq!(code, EXIT_ERROR);
         let output = String::from_utf8(stdout).unwrap();
         let report: Value = serde_json::from_str(output.trim()).unwrap();
-        assert_eq!(report["supportReplayBatchSummaryVersion"], 1);
+        assert_eq!(report["supportReplayBatchSummaryVersion"], 2);
         assert_eq!(report["supportReplaySummaryVersion"], 2);
         assert_eq!(report["discoveredJsonFileCount"], 5);
         assert_eq!(report["ignoredEntryCount"], 2);
@@ -967,6 +1094,8 @@ mod tests {
         assert_eq!(report["mixedDriftCaseCount"], 1);
         assert_eq!(report["allInputsValid"], false);
         assert_eq!(report["parserOutputMatches"], false);
+        assert_eq!(report["driftGroupCount"], 3);
+        assert_eq!(report["driftGroups"].as_array().unwrap().len(), 3);
 
         let cases = report["cases"].as_array().unwrap();
         let hashes: Vec<_> = cases
@@ -986,6 +1115,13 @@ mod tests {
                 1
             );
         }
+        for case in cases {
+            if matches!(case["status"].as_str(), Some("matching" | "invalid")) {
+                assert!(case.get("driftSignatureSha256").is_none());
+            } else {
+                assert_eq!(case["driftSignatureSha256"].as_str().unwrap().len(), 64);
+            }
+        }
         for (name, contents) in private_names_and_values {
             assert!(!output.contains(name));
             assert!(!output.contains(std::str::from_utf8(contents).unwrap()));
@@ -997,6 +1133,137 @@ mod tests {
             .unwrap()
             .contains("unreadable, oversized, or invalid"));
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn batch_groups_identical_redacted_drift_and_separates_scope_changes() {
+        let directory = temp_directory("grouping");
+        let private_names_and_values = [
+            ("first-name.json", b"METADATA_PRIVATE_VALUE".as_slice()),
+            ("duplicate-name.json", b"METADATA_PRIVATE_VALUE".as_slice()),
+            (
+                "different-bytes.json",
+                b"METADATA_SECOND_PRIVATE_VALUE".as_slice(),
+            ),
+            (
+                "different-path.json",
+                b"METADATA_STEPS_PRIVATE_VALUE".as_slice(),
+            ),
+            (
+                "legacy-scope.json",
+                b"METADATA_LEGACY_PRIVATE_VALUE".as_slice(),
+            ),
+        ];
+        for (name, contents) in private_names_and_values {
+            fs::write(directory.join(name), contents).unwrap();
+        }
+
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        assert_eq!(
+            run(
+                vec!["--batch".into(), directory.clone().into_os_string()],
+                &mut stdout,
+                &mut stderr,
+                1024,
+                fake_batch_replay,
+                fake_prepare(b"{}\n"),
+                fake_fixture_inspect(true),
+            ),
+            EXIT_OK
+        );
+        assert!(stderr.is_empty());
+
+        let output = String::from_utf8(stdout).unwrap();
+        let report: Value = serde_json::from_str(output.trim()).unwrap();
+        assert_eq!(report["driftGroupCount"], 3);
+        let groups = report["driftGroups"].as_array().unwrap();
+        assert!(groups.windows(2).all(|pair| {
+            pair[0]["driftSignatureSha256"].as_str().unwrap()
+                <= pair[1]["driftSignatureSha256"].as_str().unwrap()
+        }));
+        let model_group = groups
+            .iter()
+            .find(|group| {
+                group["differences"]
+                    == serde_json::json!([{"path": "/metadata/model", "kind": "changed"}])
+                    && group["comparisonIgnoredPaths"] == serde_json::json!([])
+            })
+            .unwrap();
+        assert_eq!(model_group["status"], "metadata_drift");
+        assert_eq!(model_group["caseCount"], 3);
+        let bundle_hashes = model_group["bundleSha256s"].as_array().unwrap();
+        assert!(bundle_hashes
+            .windows(2)
+            .all(|pair| pair[0].as_str().unwrap() <= pair[1].as_str().unwrap()));
+        let duplicate_hash = hex::encode(Sha256::digest(b"METADATA_PRIVATE_VALUE"));
+        assert_eq!(
+            bundle_hashes
+                .iter()
+                .filter(|hash| hash.as_str() == Some(&duplicate_hash))
+                .count(),
+            2
+        );
+
+        let canonical = br#"{"status":"metadata_drift","differences":[{"path":"/metadata/model","kind":"changed"}],"comparisonIgnoredPaths":[]}"#;
+        assert_eq!(
+            model_group["driftSignatureSha256"],
+            hex::encode(Sha256::digest(canonical))
+        );
+        assert_eq!(
+            report["cases"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|case| {
+                    case["driftSignatureSha256"] == model_group["driftSignatureSha256"]
+                })
+                .count(),
+            3
+        );
+        assert!(groups.iter().any(|group| {
+            group["differences"]
+                == serde_json::json!([{"path": "/metadata/steps", "kind": "changed"}])
+        }));
+        assert!(groups.iter().any(|group| {
+            group["comparisonIgnoredPaths"]
+                == serde_json::json!(["/fieldSourceNodeIds", "/resourceSources"])
+        }));
+        for (name, contents) in private_names_and_values {
+            assert!(!output.contains(name));
+            assert!(!output.contains(std::str::from_utf8(contents).unwrap()));
+        }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn drift_signature_distinguishes_status_kind_and_compatibility_scope() {
+        let changed = vec![BatchDifferenceSummary {
+            path: "/metadata/model".to_string(),
+            kind: BatchDifferenceKind::Changed,
+        }];
+        let added = vec![BatchDifferenceSummary {
+            path: "/metadata/model".to_string(),
+            kind: BatchDifferenceKind::Added,
+        }];
+        let baseline = drift_signature(BatchCaseStatus::MetadataDrift, &changed, &[]);
+
+        assert_ne!(
+            baseline,
+            drift_signature(BatchCaseStatus::DiagnosticsDrift, &changed, &[])
+        );
+        assert_ne!(
+            baseline,
+            drift_signature(BatchCaseStatus::MetadataDrift, &added, &[])
+        );
+        assert_ne!(
+            baseline,
+            drift_signature(
+                BatchCaseStatus::MetadataDrift,
+                &changed,
+                &["/resourceSources".to_string()]
+            )
+        );
     }
 
     #[test]
@@ -1053,12 +1320,12 @@ mod tests {
         let second = temp_directory("rename-second");
         fs::write(
             first.join("private-first-name.json"),
-            b"MATCH_PRIVATE_VALUE",
+            b"METADATA_PRIVATE_VALUE",
         )
         .unwrap();
         fs::write(
             second.join("unrelated-second-name.json"),
-            b"MATCH_PRIVATE_VALUE",
+            b"METADATA_PRIVATE_VALUE",
         )
         .unwrap();
 
@@ -1083,9 +1350,11 @@ mod tests {
         let second_output = inspect(&second);
         assert_eq!(first_output, second_output);
         let report: Value = serde_json::from_slice(&first_output).unwrap();
+        assert_eq!(report["driftGroupCount"], 1);
+        assert_eq!(report["driftGroups"][0]["caseCount"], 1);
         assert_eq!(
             report["cases"][0]["bundleSha256"],
-            hex::encode(Sha256::digest(b"MATCH_PRIVATE_VALUE"))
+            hex::encode(Sha256::digest(b"METADATA_PRIVATE_VALUE"))
         );
         fs::remove_dir_all(first).unwrap();
         fs::remove_dir_all(second).unwrap();
