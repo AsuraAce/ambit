@@ -1,10 +1,12 @@
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 
 use serde_json::Value;
 
+use super::evaluator::ComfyEvaluator;
 use super::graph::{
-    compare_node_ids, get_node_title, get_node_type, parse_prompt_chunk, ComfyGraph,
-    ComfyGraphSource,
+    compare_node_ids, get_input_source, get_input_source_by_slot, get_node_title, get_node_type,
+    get_source_id, parse_prompt_chunk, ComfyGraph, ComfyGraphSource, InputSourceConnection,
 };
 
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
@@ -17,12 +19,27 @@ pub struct ComfyWorkflowDisplayNode {
     pub subgraph_path: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ComfyWorkflowDisplayEdge {
+    pub source_node_id: String,
+    pub source_output_slot: Option<usize>,
+    pub target_node_id: String,
+    pub target_input_name: String,
+    pub target_input_slot: Option<usize>,
+}
+
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyWorkflowGraphReport {
     pub source: String,
     pub node_count: usize,
     pub nodes: Vec<ComfyWorkflowDisplayNode>,
+    pub edges: Vec<ComfyWorkflowDisplayEdge>,
+    pub selected_output_node_ids: Vec<String>,
+    pub root_sampler_node_ids: Vec<String>,
+    pub selected_branch_node_ids: Vec<String>,
+    pub output_ambiguous: bool,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -45,6 +62,10 @@ pub(crate) fn build_comfyui_workflow_graph_report(
     } else {
         ComfyGraph::from_chunks(chunks)
     };
+    let edges = display_edges(&graph);
+    let evaluator = ComfyEvaluator::new(&graph);
+    let output_selection = evaluator.output_selection();
+    let selected_branch_node_ids = evaluator.selected_branch_node_ids(&output_selection);
     let mut nodes: Vec<(&String, &Value)> = graph.nodes().iter().collect();
     nodes.sort_by(|(left_id, _), (right_id, _)| compare_node_ids(left_id, right_id));
 
@@ -84,7 +105,107 @@ pub(crate) fn build_comfyui_workflow_graph_report(
         .to_string(),
         node_count: nodes.len(),
         nodes,
+        edges,
+        selected_output_node_ids: output_selection.selected_output_node_ids,
+        root_sampler_node_ids: output_selection.root_sampler_node_ids,
+        selected_branch_node_ids,
+        output_ambiguous: output_selection.ambiguous,
     }
+}
+
+fn display_edges(graph: &ComfyGraph) -> Vec<ComfyWorkflowDisplayEdge> {
+    let mut edges = Vec::new();
+
+    for (target_id, node) in graph.nodes() {
+        match node.get("inputs") {
+            Some(Value::Object(inputs)) => {
+                for input_name in inputs.keys() {
+                    push_display_edge(
+                        graph,
+                        &mut edges,
+                        target_id,
+                        input_name,
+                        None,
+                        get_input_source(node, input_name),
+                    );
+                }
+            }
+            Some(Value::Array(inputs)) => {
+                for (input_slot, input) in inputs.iter().enumerate() {
+                    let input_name = input
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .unwrap_or_else(|| format!("input_{input_slot}"));
+                    push_display_edge(
+                        graph,
+                        &mut edges,
+                        target_id,
+                        &input_name,
+                        Some(input_slot),
+                        get_input_source_by_slot(node, input_slot),
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        if get_node_type(node) == "GetNode" {
+            push_display_edge(
+                graph,
+                &mut edges,
+                target_id,
+                "source",
+                None,
+                get_input_source(node, "source"),
+            );
+        }
+    }
+
+    edges.sort_by(compare_display_edges);
+    edges.dedup();
+    edges
+}
+
+fn push_display_edge(
+    graph: &ComfyGraph,
+    edges: &mut Vec<ComfyWorkflowDisplayEdge>,
+    target_id: &str,
+    target_input_name: &str,
+    target_input_slot: Option<usize>,
+    connection: InputSourceConnection,
+) {
+    let (source_node_id, source_output_slot) = match connection {
+        InputSourceConnection::Connected(source) => (source.node_id, source.output_slot),
+        InputSourceConnection::DeclaredUnresolved | InputSourceConnection::Unconnected => {
+            let Some(source_node_id) = get_source_id(graph, target_id, target_input_name) else {
+                return;
+            };
+            (source_node_id, None)
+        }
+    };
+    if !graph.nodes().contains_key(&source_node_id) {
+        return;
+    }
+
+    edges.push(ComfyWorkflowDisplayEdge {
+        source_node_id,
+        source_output_slot,
+        target_node_id: target_id.to_string(),
+        target_input_name: target_input_name.to_string(),
+        target_input_slot,
+    });
+}
+
+fn compare_display_edges(
+    left: &ComfyWorkflowDisplayEdge,
+    right: &ComfyWorkflowDisplayEdge,
+) -> Ordering {
+    compare_node_ids(&left.target_node_id, &right.target_node_id)
+        .then_with(|| left.target_input_slot.cmp(&right.target_input_slot))
+        .then_with(|| left.target_input_name.cmp(&right.target_input_name))
+        .then_with(|| compare_node_ids(&left.source_node_id, &right.source_node_id))
+        .then_with(|| left.source_output_slot.cmp(&right.source_output_slot))
 }
 
 fn has_valid_api_prompt(chunks: &HashMap<String, String>) -> bool {
@@ -189,6 +310,17 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.id == "29" && node.subgraph_path.is_empty()));
+        assert!(report
+            .edges
+            .iter()
+            .any(|edge| { edge.source_node_id.starts_with("30:") && edge.target_node_id == "29" }));
+        assert_eq!(report.selected_output_node_ids, ["29"]);
+        assert_eq!(report.root_sampler_node_ids, ["30:3"]);
+        assert!(report.selected_branch_node_ids.contains(&"29".to_string()));
+        assert!(report
+            .selected_branch_node_ids
+            .contains(&"30:3".to_string()));
+        assert!(!report.output_ambiguous);
     }
 
     #[test]
@@ -221,6 +353,147 @@ mod tests {
         assert_eq!(report.source, "expanded_workflow");
         assert_eq!(report.nodes.len(), 1);
         assert_eq!(report.nodes[0].id, "2");
+        assert!(report.selected_output_node_ids.is_empty());
+        assert!(report.root_sampler_node_ids.is_empty());
+        assert!(!report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_exposes_all_selected_outputs_that_share_one_root_sampler() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "2": { "class_type": "KSampler", "inputs": { "model": [1, 0], "positive": [3, 0], "negative": [4, 0], "latent_image": [5, 0] } },
+                "6": { "class_type": "VAEDecode", "inputs": { "samples": [2, 0], "vae": [1, 2] } },
+                "10": { "class_type": "SaveImage", "inputs": { "images": [6, 0] } },
+                "11": { "class_type": "Save Image w/Metadata", "inputs": { "images": [6, 0], "model_name": [99, 0] } },
+                "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "model.safetensors" } },
+                "3": { "class_type": "CLIPTextEncode", "inputs": { "text": "positive", "clip": [1, 1] } },
+                "4": { "class_type": "CLIPTextEncode", "inputs": { "text": "negative", "clip": [1, 1] } },
+                "5": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "99": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "stale.safetensors" } }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.selected_output_node_ids, ["10", "11"]);
+        assert_eq!(report.root_sampler_node_ids, ["2"]);
+        assert_eq!(
+            report.selected_branch_node_ids,
+            ["1", "2", "3", "4", "5", "6", "10", "11"]
+        );
+        assert!(!report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_preserves_ambiguous_root_candidates_without_selecting_one() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "2": { "class_type": "KSampler", "inputs": { "latent_image": [1, 0] } },
+                "3": { "class_type": "VAEDecode", "inputs": { "samples": [2, 0] } },
+                "4": { "class_type": "SaveImage", "inputs": { "images": [3, 0] } },
+                "10": { "class_type": "KSampler", "inputs": { "latent_image": [9, 0] } },
+                "11": { "class_type": "VAEDecode", "inputs": { "samples": [10, 0] } },
+                "12": { "class_type": "SaveImage", "inputs": { "images": [11, 0] } },
+                "1": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "9": { "class_type": "EmptyLatentImage", "inputs": {} }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.selected_output_node_ids, ["4", "12"]);
+        assert_eq!(report.root_sampler_node_ids, ["2", "10"]);
+        assert!(report.selected_branch_node_ids.is_empty());
+        assert!(report.output_ambiguous);
+    }
+
+    #[test]
+    fn report_uses_preview_only_outputs_and_keeps_samplerless_saves_visible() {
+        let preview_chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "KSampler", "inputs": { "latent_image": [2, 0] } },
+                "2": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "3": { "class_type": "VAEDecode", "inputs": { "samples": [1, 0] } },
+                "4": { "class_type": "PreviewImage", "inputs": { "images": [3, 0] } }
+            })
+            .to_string(),
+        )]);
+        let preview_report = build_comfyui_workflow_graph_report(&preview_chunks);
+        assert_eq!(preview_report.selected_output_node_ids, ["4"]);
+        assert_eq!(preview_report.root_sampler_node_ids, ["1"]);
+        assert_eq!(
+            preview_report.selected_branch_node_ids,
+            ["1", "2", "3", "4"]
+        );
+        assert!(!preview_report.output_ambiguous);
+
+        let samplerless_chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "LoadImage", "inputs": {} },
+                "2": { "class_type": "SaveImage", "inputs": { "images": [1, 0] } }
+            })
+            .to_string(),
+        )]);
+        let samplerless_report = build_comfyui_workflow_graph_report(&samplerless_chunks);
+        assert_eq!(samplerless_report.selected_output_node_ids, ["2"]);
+        assert!(samplerless_report.root_sampler_node_ids.is_empty());
+        assert!(samplerless_report.selected_branch_node_ids.is_empty());
+        assert!(!samplerless_report.output_ambiguous);
+    }
+
+    #[test]
+    fn selected_branch_follows_the_active_comfy_switch_dependency() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "active.safetensors" } },
+                "2": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "inactive.safetensors" } },
+                "3": { "class_type": "PrimitiveBoolean", "inputs": { "value": true } },
+                "4": { "class_type": "ComfySwitchNode", "inputs": { "switch": [3, 0], "on_true": [1, 0], "on_false": [2, 0] } },
+                "5": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "6": { "class_type": "KSampler", "inputs": { "model": [4, 0], "latent_image": [5, 0] } },
+                "7": { "class_type": "VAEDecode", "inputs": { "samples": [6, 0], "vae": [1, 2] } },
+                "8": { "class_type": "SaveImage", "inputs": { "images": [7, 0] } }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.root_sampler_node_ids, ["6"]);
+        assert_eq!(
+            report.selected_branch_node_ids,
+            ["1", "3", "4", "5", "6", "7", "8"]
+        );
+        assert!(!report.selected_branch_node_ids.contains(&"2".to_string()));
+    }
+
+    #[test]
+    fn unresolved_selected_switch_keeps_the_branch_unavailable() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "1": { "class_type": "EmptyLatentImage", "inputs": {} },
+                "2": { "class_type": "PrimitiveBoolean", "inputs": { "value": true } },
+                "3": { "class_type": "ComfySwitchNode", "inputs": { "switch": [2, 0], "on_true": [99, 0], "on_false": [1, 0] } },
+                "4": { "class_type": "KSampler", "inputs": { "model": [3, 0], "latent_image": [1, 0] } },
+                "5": { "class_type": "VAEDecode", "inputs": { "samples": [4, 0] } },
+                "6": { "class_type": "SaveImage", "inputs": { "images": [5, 0] } }
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(report.root_sampler_node_ids, ["4"]);
+        assert!(report.selected_branch_node_ids.is_empty());
     }
 
     #[test]
@@ -264,6 +537,107 @@ mod tests {
         assert!(!first.nodes[0].inputs.contains_key("complex"));
         assert_eq!(first.nodes[2].subgraph_path, ["30"]);
         assert_eq!(first.nodes[3].subgraph_path, ["30", "7"]);
+        assert_eq!(
+            first.edges,
+            [ComfyWorkflowDisplayEdge {
+                source_node_id: "10".to_string(),
+                source_output_slot: Some(0),
+                target_node_id: "2".to_string(),
+                target_input_name: "connection".to_string(),
+                target_input_slot: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn report_edges_are_deduplicated_ordered_and_require_existing_endpoints() {
+        let chunks = HashMap::from([(
+            "prompt".to_string(),
+            json!({
+                "20": { "class_type": "Target", "inputs": { "second": [10, 1], "missing": [99, 0] } },
+                "3": { "class_type": "Target", "inputs": { "first": [10, 0] } },
+                "10": { "class_type": "Source", "inputs": {} }
+            })
+            .to_string(),
+        )]);
+
+        let first = build_comfyui_workflow_graph_report(&chunks);
+        let second = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(first.edges, second.edges);
+        assert_eq!(
+            first.edges,
+            [
+                ComfyWorkflowDisplayEdge {
+                    source_node_id: "10".to_string(),
+                    source_output_slot: Some(0),
+                    target_node_id: "3".to_string(),
+                    target_input_name: "first".to_string(),
+                    target_input_slot: None,
+                },
+                ComfyWorkflowDisplayEdge {
+                    source_node_id: "10".to_string(),
+                    source_output_slot: Some(1),
+                    target_node_id: "20".to_string(),
+                    target_input_name: "second".to_string(),
+                    target_input_slot: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn resolved_get_node_connections_are_visible_without_inventing_input_slots() {
+        let chunks = HashMap::from([(
+            "workflow".to_string(),
+            json!({
+                "nodes": [
+                    { "id": 1, "type": "CheckpointLoaderSimple", "mode": 0, "inputs": [], "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [100], "slot_index": 0 }] },
+                    { "id": 2, "type": "SetNode", "mode": 0, "inputs": [{ "name": "MODEL", "type": "MODEL", "link": 100 }], "outputs": [], "widgets_values": ["model"] },
+                    { "id": 3, "type": "GetNode", "mode": 0, "inputs": [], "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [] }], "widgets_values": ["model"] }
+                ],
+                "links": [[100, 1, 0, 2, 0, "MODEL"]]
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert!(report.edges.contains(&ComfyWorkflowDisplayEdge {
+            source_node_id: "1".to_string(),
+            source_output_slot: Some(0),
+            target_node_id: "3".to_string(),
+            target_input_name: "source".to_string(),
+            target_input_slot: None,
+        }));
+    }
+
+    #[test]
+    fn uniquely_resolved_wireless_inputs_are_visible_without_guessing_a_slot() {
+        let chunks = HashMap::from([(
+            "workflow".to_string(),
+            json!({
+                "nodes": [
+                    { "id": 1, "type": "CheckpointLoaderSimple", "mode": 0, "inputs": [], "outputs": [] },
+                    { "id": 4, "type": "KSampler", "mode": 0, "inputs": [{ "name": "model", "type": "MODEL", "link": null }], "outputs": [] }
+                ],
+                "links": []
+            })
+            .to_string(),
+        )]);
+
+        let report = build_comfyui_workflow_graph_report(&chunks);
+
+        assert_eq!(
+            report.edges,
+            [ComfyWorkflowDisplayEdge {
+                source_node_id: "1".to_string(),
+                source_output_slot: None,
+                target_node_id: "4".to_string(),
+                target_input_name: "model".to_string(),
+                target_input_slot: Some(0),
+            }]
+        );
     }
 
     #[test]

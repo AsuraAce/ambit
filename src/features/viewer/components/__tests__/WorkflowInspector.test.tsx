@@ -10,6 +10,7 @@ const mockSettings = vi.hoisted(() => ({ devMode: true }));
 const mockClipboardWriteText = vi.hoisted(() => vi.fn());
 const mockSave = vi.hoisted(() => vi.fn());
 const mockWriteTextFile = vi.hoisted(() => vi.fn());
+const mockScrollIntoView = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -74,6 +75,11 @@ const diagnosticsReport = {
         positive_prompt: 'sampler_traversal',
         workflow_json: 'workflow_chunk'
     },
+    fieldSourceNodeIds: {
+        model: ['3'],
+        positive_prompt: ['404']
+    },
+    resourceSources: [],
     metadata: {
         tool: 'ComfyUI',
         model: 'diagnostic_model',
@@ -97,6 +103,17 @@ const diagnosticsReport = {
 const workflowGraphReport = {
     source: 'api_prompt',
     nodeCount: 2,
+    selectedOutputNodeIds: ['9'],
+    rootSamplerNodeIds: ['3'],
+    selectedBranchNodeIds: ['3', '9'],
+    outputAmbiguous: false,
+    edges: [{
+        sourceNodeId: '3',
+        sourceOutputSlot: 0,
+        targetNodeId: '9',
+        targetInputName: 'images',
+        targetInputSlot: null
+    }],
     nodes: [
         {
             id: '3',
@@ -160,6 +177,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: workflowGraphReport
         });
+        mockScrollIntoView.mockReset();
+        Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+            value: mockScrollIntoView,
+            configurable: true
+        });
         Object.defineProperty(navigator, 'clipboard', {
             value: { writeText: mockClipboardWriteText },
             configurable: true
@@ -216,6 +238,249 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.queryByTitle('Nested Sampler')).toBeNull();
     });
 
+    it('follows normalized connections across the filtered node list', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('API Prompt')).toBeTruthy();
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+
+        const samplerHeader = screen.getByTitle('KSampler').closest('button');
+        expect(samplerHeader).not.toBeNull();
+        fireEvent.click(samplerHeader!);
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node SaveImage (9)'));
+
+        await waitFor(() => expect(search.value).toBe(''));
+        const target = document.querySelector<HTMLElement>('[data-workflow-node-id="9"]');
+        expect(target).not.toBeNull();
+        await waitFor(() => expect(document.activeElement).toBe(target));
+        expect(target?.className).toContain('ring-2');
+        expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
+        expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' });
+
+        fireEvent.click(target!.querySelector('button')!);
+        expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node SaveImage (9)'));
+        await waitFor(() => expect(target?.querySelector('button')?.getAttribute('aria-expanded')).toBe('true'));
+        expect(mockScrollIntoView).toHaveBeenCalledTimes(2);
+    });
+
+    it('defaults to all nodes and filters to the parser-selected branch', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        title: 'Disconnected Loader',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        const allNodes = await screen.findByRole('button', { name: 'All Nodes' });
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        const selectedBranch = screen.getByRole('button', { name: 'Selected Branch' });
+        expect(allNodes.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTitle('Disconnected Loader')).toBeTruthy();
+
+        fireEvent.click(selectedBranch);
+
+        await waitFor(() => expect(
+            screen.getByRole('button', { name: 'Selected Branch' }).getAttribute('aria-pressed')
+        ).toBe('true'));
+        expect(screen.queryByTitle('Disconnected Loader')).toBeNull();
+        expect(screen.getByText('2/3')).toBeTruthy();
+
+        fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
+            target: { value: 'Disconnected' }
+        });
+        expect(screen.getByText('No matching nodes found.')).toBeTruthy();
+
+        fireEvent.change(screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')..."), {
+            target: { value: 'KSampler' }
+        });
+        expect(screen.getByTitle('KSampler')).toBeTruthy();
+        expect(screen.queryByTitle('SaveImage')).toBeNull();
+    });
+
+    it('returns to all nodes when branch navigation targets an external node', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                edges: [
+                    ...workflowGraphReport.edges,
+                    {
+                        sourceNodeId: '3',
+                        sourceOutputSlot: 0,
+                        targetNodeId: '12',
+                        targetInputName: 'model',
+                        targetInputSlot: null
+                    }
+                ],
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'ExternalNode',
+                        title: 'External Dependency',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        fireEvent.click(screen.getByTitle('KSampler').closest('button')!);
+        fireEvent.click(screen.getByLabelText('Open outgoing connected node External Dependency (12)'));
+
+        const allNodes = screen.getByRole('button', { name: 'All Nodes' });
+        await waitFor(() => expect(allNodes.getAttribute('aria-pressed')).toBe('true'));
+        const externalNode = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(externalNode));
+        expect(externalNode?.className).toContain('ring-2');
+    });
+
+    it('renders parser-selected output and root anchors and focuses either node', async () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        const outputAnchor = await screen.findByLabelText('Open selected output node SaveImage (9)');
+        expect(screen.getByLabelText('Open root sampler node KSampler (3)')).toBeTruthy();
+        expect(screen.getAllByText('Selected Output')).toHaveLength(2);
+        expect(screen.getAllByText('Root Sampler')).toHaveLength(2);
+
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(outputAnchor);
+
+        await waitFor(() => expect(search.value).toBe(''));
+        const outputNode = document.querySelector<HTMLElement>('[data-workflow-node-id="9"]');
+        await waitFor(() => expect(document.activeElement).toBe(outputNode));
+        expect(outputNode?.className).toContain('ring-2');
+
+        fireEvent.click(screen.getByLabelText('Open root sampler node KSampler (3)'));
+        const rootNode = document.querySelector<HTMLElement>('[data-workflow-node-id="3"]');
+        await waitFor(() => expect(document.activeElement).toBe(rootNode));
+        expect(rootNode?.className).toContain('ring-2');
+    });
+
+    it('navigates every available metadata source node and leaves selected-branch mode when needed', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                fieldSourceNodeIds: {
+                    model: ['3', '12'],
+                    positive_prompt: ['404']
+                }
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        title: 'Disconnected Loader',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        expect(await screen.findByTitle('Jump to source node 3: KSampler')).toBeTruthy();
+        expect(screen.getByTitle('Jump to source node 12: Disconnected Loader')).toBeTruthy();
+        expect(screen.getByTitle('Source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(screen.getByTitle('Jump to source node 12: Disconnected Loader'));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const loader = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(loader));
+        expect(loader?.className).toContain('ring-2');
+    });
+
+    it('labels conflicting roots as candidates without claiming authority', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                rootSamplerNodeIds: ['3', '7'],
+                outputAmbiguous: true,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '7',
+                        nodeType: 'KSampler',
+                        title: 'Alternate Sampler',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText(/Multiple root samplers were found/)).toBeTruthy();
+        expect(screen.getAllByText('Root Candidate')).toHaveLength(4);
+        expect(screen.queryByText('Root Sampler')).toBeNull();
+        expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByTitle('Unavailable because selected outputs resolve to different root samplers.')).toBeTruthy();
+    });
+
+    it('keeps samplerless selected outputs visible without fabricating a root', async () => {
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                rootSamplerNodeIds: [],
+                selectedBranchNodeIds: [],
+                edges: [],
+                nodes: [workflowGraphReport.nodes[1]]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('No sampler root was found for the selected output.')).toBeTruthy();
+        expect(screen.getByLabelText('Open selected output node SaveImage (9)')).toBeTruthy();
+        expect(screen.queryByText('Root Sampler')).toBeNull();
+        expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
     it('falls back to the local graph when backend inspection fails', async () => {
         mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
             status: 'error',
@@ -228,6 +493,8 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByTitle('KSampler')).toBeTruthy();
         expect(screen.getByTitle('SaveImage')).toBeTruthy();
         expect(screen.getByText('API Prompt')).toBeTruthy();
+        expect(screen.queryByLabelText('Parser-selected workflow anchors')).toBeNull();
+        expect((screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled).toBe(true);
     });
 
     it('keeps copy pointed at the preserved workflow after displaying the API prompt', async () => {
@@ -262,6 +529,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 ambiguous: boolean;
             };
             fieldSources: Record<string, string>;
+            resourceSources: Array<{ field: string; value: string; layer: string | null; nodeIds: string[] }>;
             traversalIssues: unknown[];
             traversalIssuesTruncated: boolean;
             metadata: { model: string };
@@ -285,6 +553,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             ambiguous: false
         });
         expect(parsed.fieldSources.model).toBe('sampler_traversal');
+        expect(parsed.resourceSources).toEqual([]);
         expect(parsed.traversalIssues).toEqual([]);
         expect(parsed.traversalIssuesTruncated).toBe(false);
         expect(parsed.metadata.model).toBe('diagnostic_model');
@@ -481,6 +750,88 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         ).toBeTruthy();
     });
 
+    it('navigates to an available resource source and leaves selected-branch mode', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                resourceSources: [{
+                    field: 'loras',
+                    value: 'disconnected_style',
+                    layer: 'sampler_traversal',
+                    nodeIds: ['12']
+                }]
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'LoraLoaderModelOnly',
+                        title: 'Disconnected LoRA',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Jump to LoRAs resource source node Disconnected LoRA (12)'
+        }));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const sourceNode = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(sourceNode));
+        expect(sourceNode?.className).toContain('ring-2');
+    });
+
+    it('keeps flat and unavailable resource sources visible without fake navigation', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                resourceSources: [
+                    {
+                        field: 'embeddings',
+                        value: 'flat_detail',
+                        layer: 'flat_parameters',
+                        nodeIds: []
+                    },
+                    {
+                        field: 'ip_adapters',
+                        value: 'missing_adapter',
+                        layer: 'sampler_traversal',
+                        nodeIds: ['404']
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('Resource Sources')).toBeTruthy();
+        expect(screen.getByText('flat_detail')).toBeTruthy();
+        expect(screen.getByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')).toBeTruthy();
+        expect(screen.getByText('missing_adapter')).toBeTruthy();
+        expect(screen.getByTitle('Resource source node 404 is not available in the normalized workflow graph.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /resource source node.*404/i })).toBeNull();
+    });
+
     it('renders compact traversal blockers and output ambiguity', async () => {
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',
@@ -505,7 +856,106 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByTitle('Multiple saved-output roots were found, so no branch received strong traversal authority.')).toBeTruthy();
         expect(screen.getByText('Traversal Blockers')).toBeTruthy();
         const blocker = screen.getByTitle('The value is generated at runtime and no literal result is embedded in the image.');
-        expect(blocker.textContent).toContain('Positive Prompt at 30:19 (TextGenerate) / text: Generated Value Unavailable');
+        expect(blocker.textContent).toContain('Positive Prompt at #30:19 (TextGenerate) / text: Generated Value Unavailable');
+        expect(screen.getByTitle('Traversal blocker node 30:19 is not available in the normalized workflow graph.')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /traversal blocker node.*30:19/i })).toBeNull();
+    });
+
+    it('navigates to an available traversal blocker and leaves selected-branch mode', async () => {
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                traversalIssues: [{
+                    field: 'model',
+                    nodeId: '12',
+                    nodeType: 'CheckpointLoaderSimple',
+                    inputName: 'model',
+                    reason: 'unsupported_node'
+                }]
+            }
+        });
+        mockInspectComfyuiWorkflowGraph.mockResolvedValueOnce({
+            status: 'ok',
+            data: {
+                ...workflowGraphReport,
+                nodeCount: 3,
+                nodes: [
+                    ...workflowGraphReport.nodes,
+                    {
+                        id: '12',
+                        nodeType: 'CheckpointLoaderSimple',
+                        title: 'Disconnected Loader',
+                        inputs: {},
+                        subgraphPath: []
+                    }
+                ]
+            }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        await waitFor(() => expect(
+            (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
+        ).toBe(false));
+        fireEvent.click(screen.getByRole('button', { name: 'Selected Branch' }));
+        const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
+        fireEvent.change(search, { target: { value: 'KSampler' } });
+        fireEvent.click(await screen.findByRole('button', {
+            name: 'Jump to traversal blocker node Disconnected Loader (12)'
+        }));
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'All Nodes' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(search.value).toBe('');
+        const blockerNode = document.querySelector<HTMLElement>('[data-workflow-node-id="12"]');
+        await waitFor(() => expect(document.activeElement).toBe(blockerNode));
+        expect(blockerNode?.className).toContain('ring-2');
+    });
+
+    it('expands and collapses every returned traversal blocker', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(100 + index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: { ...diagnosticsReport, traversalIssues }
+        });
+
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(await screen.findByText('#103')).toBeTruthy();
+        expect(screen.queryByText('#104')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Show all (6)' }));
+        expect(screen.getByText('#105')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Show less' }));
+        expect(screen.queryByText('#104')).toBeNull();
+    });
+
+    it('resets expanded blockers when diagnostics change to another image', async () => {
+        const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
+            field: 'positive_prompt',
+            nodeId: String(200 + index),
+            nodeType: 'UnknownTextNode',
+            inputName: 'text',
+            reason: 'unsupported_node'
+        }));
+        mockInspectComfyuiMetadataChunks.mockResolvedValue({
+            status: 'ok',
+            data: { ...diagnosticsReport, traversalIssues }
+        });
+        const view = render(<WorkflowInspector image={makeImage()} />);
+
+        fireEvent.click(await screen.findByRole('button', { name: 'Show all (6)' }));
+        expect(screen.getByText('#205')).toBeTruthy();
+
+        view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
+
+        await waitFor(() => expect(screen.queryByText('#205')).toBeNull());
+        expect(screen.getByRole('button', { name: 'Show all (6)' }).getAttribute('aria-expanded')).toBe('false');
     });
 
     it('copies the complete capped blocker list without raw metadata bodies', async () => {
@@ -539,7 +989,8 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(copied.traversalIssuesTruncated).toBe(true);
         expect(copied).not.toHaveProperty('prompt');
         expect(copied).not.toHaveProperty('workflow');
-        expect(screen.getByText('+2 or more in copied diagnostics')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Show all (6)' })).toBeTruthy();
+        expect(screen.getByText('Additional traversal blockers were omitted after the diagnostics limit.')).toBeTruthy();
     });
 
     it('hides parser diagnostics outside developer mode', () => {
