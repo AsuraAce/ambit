@@ -57,6 +57,9 @@ const getErrorMessage = (err: unknown): string => (
     err instanceof Error ? err.message : String(err)
 );
 
+const refreshVideoMetadata = (filterRoot: string | null, forceReparse: boolean) =>
+    invoke<RefreshResult>('refresh_video_metadata', { filterRoot, forceReparse });
+
 const isTransientDatabaseLock = (err: unknown): boolean => {
     const message = getErrorMessage(err).toLowerCase();
     return message.includes('database is locked')
@@ -129,7 +132,7 @@ export function useMetadataRefresh() {
                 if (startupCount !== null && !startupAnnouncementShownRef.current) {
                     startupAnnouncementShownRef.current = true;
                     addToast(
-                        `Ambit is updating metadata for ${startupCount.toLocaleString()} images after a parser update. Your library remains available.`,
+                        `Ambit is updating metadata for ${startupCount.toLocaleString()} items after a parser update. Your library remains available.`,
                         'info'
                     );
                 }
@@ -197,6 +200,16 @@ export function useMetadataRefresh() {
                 filterRoot: null,
                 filterTool: filterTool || null
             });
+            const videoResult = await refreshVideoMetadata(null, false) ?? {
+                processed: 0,
+                updated: 0,
+                errors: 0,
+                wasCancelled: false
+            };
+            result.processed += videoResult.processed;
+            result.updated += videoResult.updated;
+            result.errors += videoResult.errors;
+            result.wasCancelled ||= videoResult.wasCancelled;
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately
             void refreshFacetsAfterMetadataUpdate(result);
@@ -253,6 +266,16 @@ export function useMetadataRefresh() {
                 filterRoot: rootPath || null,
                 filterTool: filterTool || null
             });
+            const videoResult = await refreshVideoMetadata(rootPath || null, force) ?? {
+                processed: 0,
+                updated: 0,
+                errors: 0,
+                wasCancelled: false
+            };
+            result.processed += videoResult.processed;
+            result.updated += videoResult.updated;
+            result.errors += videoResult.errors;
+            result.wasCancelled ||= videoResult.wasCancelled;
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately
             void refreshFacetsAfterMetadataUpdate(result);

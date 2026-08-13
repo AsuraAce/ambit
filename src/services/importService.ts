@@ -513,6 +513,26 @@ const candidateMediaType = (entry: FileEntry): 'image' | 'video' | null => {
     return null;
 };
 
+const resolveVideoSidecarPaths = async (paths: string[]): Promise<string[]> => {
+    const normalizedPaths = paths.map(normalizePath);
+    const directPaths = normalizedPaths.filter(path => !/\.workflow\.json$/i.test(path));
+    const sidecarPaths = normalizedPaths.filter(path => /\.workflow\.json$/i.test(path));
+    if (sidecarPaths.length === 0) return directPaths;
+
+    const db = await getDb();
+    for (const sidecarPath of sidecarPaths) {
+        const basePath = sidecarPath.replace(/\.workflow\.json$/i, '');
+        const candidates = ['mp4', 'webm', 'mov', 'm4v', 'mkv'].map(ext => `${basePath}.${ext}`);
+        const placeholders = candidates.map(() => '?').join(',');
+        const rows = await db.select<Array<{ id: string }>>(
+            `SELECT id FROM images WHERE media_type = 'video' AND id IN (${placeholders}) LIMIT 1`,
+            candidates
+        );
+        if (rows[0]?.id) directPaths.push(rows[0].id);
+    }
+    return Array.from(new Set(directPaths));
+};
+
 const emptyVideoSummary = (): VideoImportSummary => ({
     imported: 0,
     duplicate: 0,
@@ -994,17 +1014,19 @@ export const processTargetedFiles = async (
     };
 
     if (paths.length === 0) return result;
+    const resolvedPaths = await resolveVideoSidecarPaths(paths);
+    if (resolvedPaths.length === 0) return result;
     const targetedImportStartedAt = liveWatchNow();
 
     const targetedImportTimestamp = Date.now();
-    const entries: FileEntry[] = paths.map(p => ({ 
+    const entries: FileEntry[] = resolvedPaths.map(p => ({
         path: p, 
         modified: targetedImportTimestamp,
         size: 0, // Will be read by rust metadata extractor anyway
         mediaType: candidateMediaType({ path: p, modified: 0, size: 0 }) ?? undefined
     }));
 
-    console.log(`[Import] Processing ${paths.length} targeted paths...`);
+    console.log(`[Import] Processing ${resolvedPaths.length} targeted paths...`);
     const imported = await processMediaFileEntries(entries, result.stats, options, defaultTool);
     result.images = imported.images;
     result.handledPaths = imported.handledPaths;
@@ -1014,9 +1036,9 @@ export const processTargetedFiles = async (
     result.wasCancelled = imported.wasCancelled;
     result.videoSummary = imported.videoSummary;
     if (imported.wasCancelled) {
-        pushUniquePaths(result.cancelledSourcePaths, paths);
+        pushUniquePaths(result.cancelledSourcePaths, resolvedPaths);
     } else if (imported.failedPaths.length === 0) {
-        pushUniquePaths(result.completedSourcePaths, paths);
+        pushUniquePaths(result.completedSourcePaths, resolvedPaths);
     }
 
     // Live Watch keeps the grid responsive here and lets SyncContext queue the

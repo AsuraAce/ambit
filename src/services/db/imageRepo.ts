@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { commands, type DeleteRemovedImagesResult, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
@@ -482,7 +482,16 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
         if (image) {
-            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates } });
+            const fieldSources = image.mediaType === 'video'
+                ? Object.keys(updates).reduce((sources, key) => {
+                    if (['positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                        sources[key as VideoMetadataField] = 'user_override';
+                        if (key === 'overrideModel') sources.model = 'user_override';
+                    }
+                    return sources;
+                }, { ...image.metadata.fieldSources })
+                : image.metadata.fieldSources;
+            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates, fieldSources } });
         }
         return;
     }
@@ -498,12 +507,20 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         Object.entries(updates).forEach(([key, value]) => {
             // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
             // Otherwise SQLite might store it as a literal string "[object Object]" or similar corruption.
+            const previousExpr = jsonSetExpr;
             if (value !== null && typeof value === 'object') {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', json(?))`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', json(?))`;
                 params.push(JSON.stringify(value));
             } else {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', ?)`;
                 params.push(value);
+            }
+            if (['positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                let videoExpr = `json_set(${jsonSetExpr}, '$.fieldSources.${key}', 'user_override')`;
+                if (key === 'overrideModel') {
+                    videoExpr = `json_set(${videoExpr}, '$.fieldSources.model', 'user_override')`;
+                }
+                jsonSetExpr = `CASE WHEN media_type = 'video' THEN ${videoExpr} ELSE ${jsonSetExpr} END`;
             }
         });
 
@@ -528,6 +545,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         if ('seed' in updates) {
             query += ', seed = ?';
             params.push(updates.seed ?? null);
+        }
+
+        if ('generationMode' in updates || 'generationType' in updates) {
+            query += ', generation_type = ?';
+            params.push(updates.generationMode ?? updates.generationType ?? null);
         }
 
         // SPECIAL CASE: Model name is also denormalized for filtering
@@ -574,6 +596,7 @@ export const revertImageMetadata = async (id: string) => {
                     model_name = NULL,
                     resolved_model_name = NULL,
                     seed = NULL,
+                    generation_type = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
                 WHERE id = ?
@@ -602,7 +625,8 @@ export const revertImageMetadata = async (id: string) => {
                     resolved_model_name = ?,
                     seed = ?,
                     positive_prompt = ?,
-                    negative_prompt = ?
+                    negative_prompt = ?,
+                    generation_type = ?
                 WHERE id = ?
             `, [
                 img.original_parsed_json, // Use the exact same JSON string!
@@ -613,12 +637,13 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.seed ?? null,
                 originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
                 originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
+                originalMetadata.generationMode ?? originalMetadata.generationType ?? null,
                 normalizedId
             ]);
         } catch (e) {
             console.error('[DB] Failed to revert metadata:', e);
             // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
+            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
         }
     });
 };

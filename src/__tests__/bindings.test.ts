@@ -157,6 +157,7 @@ const commandCases: CommandCase[] = [
     { name: 'clearAllThumbnails', invokeName: 'clear_all_thumbnails', args: ['hash', null, null], payload: { modelHash: 'hash', modelName: null, resourceType: null }, returnsResult: true },
     { name: 'setResourceThumbnailSensitivity', invokeName: 'set_resource_thumbnail_sensitivity', args: ['hash', 'model', false, 'lora'], payload: { modelHash: 'hash', modelName: 'model', sensitivity: false, resourceType: 'lora' }, returnsResult: true },
     { name: 'importVideoAsset', invokeName: 'import_video_asset', args: ['C:/video.mp4', 'operation-1'], payload: { path: 'C:/video.mp4', operationId: 'operation-1' }, returnsResult: true },
+    { name: 'refreshVideoMetadata', invokeName: 'refresh_video_metadata', args: ['C:/library', true], payload: { filterRoot: 'C:/library', forceReparse: true }, returnsResult: true },
     { name: 'cancelVideoImport', invokeName: 'cancel_video_import', args: ['operation-1'], payload: { operationId: 'operation-1' }, returnsResult: true },
     { name: 'storeVideoPoster', invokeName: 'store_video_poster', args: ['C:/video.mp4', 'webp-data'], payload: { assetId: 'C:/video.mp4', webpBase64: 'webp-data' }, returnsResult: true },
     { name: 'prepareVideoPlayback', invokeName: 'prepare_video_playback', args: ['C:/video.mp4'], payload: { assetId: 'C:/video.mp4' }, returnsResult: true },

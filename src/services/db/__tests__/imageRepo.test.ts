@@ -467,6 +467,25 @@ describe('imageRepo batch removal', () => {
         );
     });
 
+    it('keeps the lightweight video generation mode synchronized with overrides', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { updateImageMetadataFields } = await import('../imageRepo');
+        await updateImageMetadataFields('C:/videos/clip.webm', {
+            generationMode: 'guided_video',
+            generationType: 'guided_video',
+        });
+
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining(', generation_type = ?'),
+            ['guided_video', 'guided_video', 'guided_video', 'C:/videos/clip.webm']
+        );
+    });
+
     it('restores a genuine zero seed into both JSON and the scalar column', async () => {
         const originalMetadata = {
             ...liveImportMetadata,
@@ -486,6 +505,27 @@ describe('imageRepo batch removal', () => {
         const [, params] = db.execute.mock.calls[0] as [string, unknown[]];
         expect(db.execute.mock.calls[0][0]).toContain('seed = ?');
         expect(params).toContain(0);
+    });
+
+    it('restores the scalar video generation mode from the parsed baseline', async () => {
+        const db = {
+            select: vi.fn(async () => [{
+                original_parsed_json: JSON.stringify({
+                    ...liveImportMetadata,
+                    generationType: 'text_to_video',
+                    generationMode: 'text_to_video',
+                }),
+            }]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { revertImageMetadata } = await import('../imageRepo');
+        await revertImageMetadata('C:/videos/clip.webm');
+
+        const [sql, params] = db.execute.mock.calls[0] as [string, unknown[]];
+        expect(sql).toContain('generation_type = ?');
+        expect(params.at(-2)).toBe('text_to_video');
     });
 
     it('limits user_masked cleanup to imported record ids when default-visible overrides are present', async () => {
@@ -1600,7 +1640,7 @@ describe('imageRepo batch removal', () => {
 
         expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('resolved_model_name = ?'), ['override', 'override', 'C:/images/a.png']);
         expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?',
+            'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?',
             ['C:/images/a.png']
         );
         expect(db.select.mock.calls[1][0]).toContain('IFNULL(is_intermediate_gen, 0) = 0');

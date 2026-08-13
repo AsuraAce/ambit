@@ -118,6 +118,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             metadata::models::set_resource_thumbnail_sensitivity,
             // video media commands
             media::import_video_asset,
+            media::refresh_video_metadata,
             media::cancel_video_import,
             media::store_video_poster,
             media::prepare_video_playback,

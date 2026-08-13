@@ -1,6 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type VideoAssetRecord, type VideoImportOutcome } from '../bindings';
-import { GeneratorTool, type VideoAsset } from '../types';
+import { GeneratorTool, type ImageMetadata, type VideoAsset } from '../types';
 import { getFilename, normalizePath } from '../utils/pathUtils';
 import { unwrap } from '../utils/spectaUtils';
 
@@ -128,16 +128,10 @@ const mapVideoRecordToAsset = (
         isDeleted: false,
         isMissing: false,
         isCorrupt: false,
-        metadata: {
-            tool: GeneratorTool.UNKNOWN,
-            model: 'Unknown',
-            steps: 0,
-            cfg: 0,
-            sampler: 'Unknown',
-            positivePrompt: '',
-            negativePrompt: '',
-            generationType: 'unknown'
-        },
+        metadata: record.metadata as ImageMetadata,
+        originalChunks: record.originalMetadataJson
+            ? { videoEvidence: record.originalMetadataJson }
+            : undefined,
         mediaContainer: record.mediaContainer ?? undefined,
         mediaMimeType: record.mediaMimeType ?? undefined,
         durationMs: record.durationMs,

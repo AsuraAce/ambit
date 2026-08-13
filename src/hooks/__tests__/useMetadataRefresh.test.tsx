@@ -93,7 +93,7 @@ describe('useMetadataRefresh', () => {
 
         expect(startAttempts).toBe(1);
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
         expect(mockAddToast).not.toHaveBeenCalledWith(
@@ -174,7 +174,7 @@ describe('useMetadataRefresh', () => {
         });
 
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -195,7 +195,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -216,7 +216,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -240,7 +240,7 @@ describe('useMetadataRefresh', () => {
             phase: 'processing'
         }));
         expect(mockAddToast).toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -425,6 +425,10 @@ describe('useMetadataRefresh', () => {
 
         expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledTimes(1);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(invoke).toHaveBeenCalledWith('refresh_video_metadata', {
+            filterRoot: null,
+            forceReparse: false
+        });
     });
 
     it('refreshes facets from force refresh fallback when completion events are missed', async () => {
@@ -626,7 +630,7 @@ describe('useMetadataRefresh', () => {
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
         await act(async () => vi.advanceTimersByTimeAsync(15000));
-        expect(invoke).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(2);
     });
 
     it('reports non-transient startup count failures', async () => {

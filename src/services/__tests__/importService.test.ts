@@ -167,6 +167,29 @@ describe('processTargetedFiles', () => {
         ]);
     });
 
+    it('maps an exact workflow sidecar event back to its existing video for forced re-import', async () => {
+        mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 1,
+            duplicate: 0,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: ['C:/library/clip.mp4'],
+            failedPaths: []
+        });
+
+        await processTargetedFiles(['C:/library/clip.workflow.json'], { forceRescan: true });
+
+        expect(mocks.importVideoPaths).toHaveBeenCalledWith(
+            ['C:/library/clip.mp4'],
+            expect.any(Function),
+            expect.any(Function),
+            expect.any(Function)
+        );
+    });
+
     it('skips database duplicates before scanning so rescans do not rewrite unchanged paths', async () => {
         mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/existing.png' }]);
         mocks.getExistingMetadata.mockResolvedValueOnce(new Map());

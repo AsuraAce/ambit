@@ -42,6 +42,9 @@ fn path_extension_label(path: &str) -> String {
     if lower.ends_with(".db-wal") {
         return "db-wal".to_string();
     }
+    if lower.ends_with(".workflow.json") {
+        return "workflow.json".to_string();
+    }
 
     Path::new(path)
         .extension()
@@ -67,6 +70,10 @@ fn summarize_path_types(paths: &[String]) -> String {
 }
 
 fn is_target_path(path: &Path) -> bool {
+    let is_video_workflow_sidecar = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.to_ascii_lowercase().ends_with(".workflow.json"));
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -82,7 +89,7 @@ fn is_target_path(path: &Path) -> bool {
         .and_then(|name| name.to_str())
         .is_some_and(|name| name.to_lowercase().ends_with("thumbnail.png"));
 
-    is_target && !is_thumbnail
+    (is_target || is_video_workflow_sidecar) && !is_thumbnail
 }
 
 fn change(
@@ -389,6 +396,24 @@ mod tests {
         assert_eq!(create[0].paths, vec!["C:/library/clip.mp4"]);
         assert_eq!(modify[0].kind, FolderChangeKind::Modify);
         assert_eq!(modify[0].paths, vec!["C:/library/clip.webm"]);
+    }
+
+    #[test]
+    fn emits_exact_video_workflow_sidecar_changes() {
+        let sidecar = normalize_notify_event(
+            notify::Event::new(EventKind::Modify(ModifyKind::Data(
+                notify::event::DataChange::Content,
+            )))
+            .add_path(PathBuf::from("C:/library/clip.workflow.json")),
+        );
+        let unrelated_json = normalize_notify_event(
+            notify::Event::new(EventKind::Create(CreateKind::File))
+                .add_path(PathBuf::from("C:/library/metadata.json")),
+        );
+
+        assert_eq!(sidecar[0].kind, FolderChangeKind::Modify);
+        assert_eq!(sidecar[0].paths, vec!["C:/library/clip.workflow.json"]);
+        assert!(unrelated_json.is_empty());
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage, GeneratorTool, ImageMetadata, OriginalState, VideoAsset } from '../../types';
+import { AIImage, GeneratorTool, ImageMetadata, OriginalState, VideoAsset, type VideoGenerationMode } from '../../types';
 
 const INVOKE_IMAGE_SOURCE_COLUMNS = [
     'invoke_image_name',
@@ -66,25 +66,46 @@ const asNumber = (value: unknown): number | undefined =>
 const asBoolean = (value: unknown): boolean =>
     value === true || value === 1 || value === '1';
 
+const VIDEO_GENERATION_MODES = new Set<VideoGenerationMode>([
+    'text_to_video',
+    'image_to_video',
+    'first_last_frame_to_video',
+    'video_editing',
+    'audio_lip_sync',
+    'guided_video',
+    'unknown',
+]);
+
+const asVideoGenerationMode = (value: unknown): VideoGenerationMode | undefined => {
+    const mode = asString(value) as VideoGenerationMode | undefined;
+    return mode && VIDEO_GENERATION_MODES.has(mode) ? mode : undefined;
+};
+
 const parseJson = <T>(value: unknown): T | undefined => {
     if (typeof value !== 'string' || value.length === 0) return undefined;
     return JSON.parse(value) as T;
 };
 
-const buildLightMetadata = (row: ImageRow): ImageMetadata => ({
-    tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
-    model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
-    seed: asNumber(row.seed),
-    steps: asNumber(row.steps) ?? 0,
-    cfg: asNumber(row.cfg) ?? 0,
-    sampler: asString(row.sampler) || 'Unknown',
-    positivePrompt: asString(row.positive_prompt) || '',
-    negativePrompt: asString(row.negative_prompt) || '',
-    modelHash: asString(row.model_hash),
-    generationType: (asString(row.generation_type) || 'unknown') as ImageMetadata['generationType'],
-    isGrid: asBoolean(row.is_grid_gen),
-    isIntermediate: asBoolean(row.is_intermediate_gen)
-});
+const buildLightMetadata = (row: ImageRow): ImageMetadata => {
+    const generationType = (asString(row.generation_type) || 'unknown') as ImageMetadata['generationType'];
+    return {
+        tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
+        model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
+        seed: asNumber(row.seed),
+        steps: asNumber(row.steps) ?? 0,
+        cfg: asNumber(row.cfg) ?? 0,
+        sampler: asString(row.sampler) || 'Unknown',
+        positivePrompt: asString(row.positive_prompt) || '',
+        negativePrompt: asString(row.negative_prompt) || '',
+        modelHash: asString(row.model_hash),
+        generationType,
+        generationMode: asString(row.media_type) === 'video'
+            ? asVideoGenerationMode(generationType)
+            : undefined,
+        isGrid: asBoolean(row.is_grid_gen),
+        isIntermediate: asBoolean(row.is_intermediate_gen)
+    };
+};
 
 // Helper to keep mapping consistent
 export function mapRowToImage(row: ImageRow): AIImage {

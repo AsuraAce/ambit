@@ -1,5 +1,5 @@
 use super::run_blocking;
-use crate::metadata::CURRENT_PARSER_VERSION;
+use crate::metadata::{CURRENT_PARSER_VERSION, VIDEO_PARSER_VERSION};
 use tauri::{AppHandle, Emitter};
 
 #[derive(serde::Serialize, serde::Deserialize, specta::Type)]
@@ -19,7 +19,7 @@ pub async fn get_images_needing_reparse(
     run_blocking(app, move |conn| {
         let limit = limit.unwrap_or(1000);
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json FROM images WHERE invoke_scope_hidden = 0 AND (parser_version IS NULL OR parser_version < {}) AND is_deleted = 0 AND original_metadata_json IS NOT NULL AND original_metadata_json != '' LIMIT {}",
+            "SELECT id, COALESCE(tool, 'Unknown'), original_metadata_json FROM images WHERE invoke_scope_hidden = 0 AND COALESCE(media_type, 'image') != 'video' AND (parser_version IS NULL OR parser_version < {}) AND is_deleted = 0 AND original_metadata_json IS NOT NULL AND original_metadata_json != '' LIMIT {}",
             CURRENT_PARSER_VERSION, limit
         )).map_err(|e| e.to_string())?;
 
@@ -41,12 +41,30 @@ pub async fn get_images_needing_reparse(
 #[specta::specta]
 pub async fn get_reparse_count(app: AppHandle) -> Result<i64, String> {
     run_blocking(app, move |conn| {
-        let count: i64 = conn.query_row(&format!(
-            "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND (parser_version IS NULL OR parser_version < {}) AND is_deleted = 0 AND original_metadata_json IS NOT NULL AND original_metadata_json != ''",
-            CURRENT_PARSER_VERSION
-        ), [], |r| r.get(0)).unwrap_or(0);
-        Ok(count)
-    }).await
+        metadata_reparse_count(conn).map_err(|error| error.to_string())
+    })
+    .await
+}
+
+fn metadata_reparse_count(conn: &rusqlite::Connection) -> rusqlite::Result<i64> {
+    conn.query_row(
+        &format!(
+            "SELECT COUNT(*) FROM images
+             WHERE is_deleted = 0 AND (
+                (COALESCE(media_type, 'image') != 'video'
+                    AND invoke_scope_hidden = 0
+                    AND (parser_version IS NULL OR parser_version < {CURRENT_PARSER_VERSION})
+                    AND original_metadata_json IS NOT NULL
+                    AND original_metadata_json != '')
+                OR
+                (media_type = 'video'
+                    AND is_missing = 0
+                    AND (parser_version IS NULL OR parser_version < {VIDEO_PARSER_VERSION}))
+             )"
+        ),
+        [],
+        |row| row.get(0),
+    )
 }
 
 #[derive(serde::Serialize, specta::Type)]
@@ -97,14 +115,14 @@ pub async fn reparse_metadata_batch(
 pub async fn reset_parser_versions(app: AppHandle) -> Result<usize, String> {
     let app_for_emit = app.clone();
     run_blocking(app, move |conn| {
-        let total_to_reset: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL)", [], |r| r.get(0)).unwrap_or(0);
+        let total_to_reset: i64 = conn.query_row("SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND COALESCE(media_type, 'image') != 'video' AND is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL)", [], |r| r.get(0)).unwrap_or(0);
         let _ = app_for_emit.emit("reset-progress", format!("Found {} images to reset...", total_to_reset));
 
         let mut total_updated = 0;
         let batch_size = 1000;
         loop {
             let _ = app_for_emit.emit("reset-progress", format!("Resetting... {} / {}", total_updated, total_to_reset));
-            let updated = conn.execute("UPDATE images SET parser_version = 0 WHERE id IN (SELECT id FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL) LIMIT ?)", [batch_size]).map_err(|e| e.to_string())?;
+            let updated = conn.execute("UPDATE images SET parser_version = 0 WHERE id IN (SELECT id FROM images WHERE invoke_scope_hidden = 0 AND COALESCE(media_type, 'image') != 'video' AND is_deleted = 0 AND (parser_version != 0 OR parser_version IS NULL) LIMIT ?)", [batch_size]).map_err(|e| e.to_string())?;
             total_updated += updated;
             if updated == 0 { break; }
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -112,4 +130,94 @@ pub async fn reset_parser_versions(app: AppHandle) -> Result<usize, String> {
         let _ = app_for_emit.emit("reset-progress", "Reset complete. Starting re-parse...".to_string());
         Ok(total_updated)
     }).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::metadata_reparse_count;
+    use crate::metadata::{CURRENT_PARSER_VERSION, VIDEO_PARSER_VERSION};
+
+    #[test]
+    fn combined_count_uses_independent_image_and_video_parser_versions() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+        conn.execute_batch(
+            "CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                media_type TEXT,
+                parser_version INTEGER,
+                invoke_scope_hidden INTEGER NOT NULL DEFAULT 0,
+                is_deleted INTEGER NOT NULL DEFAULT 0,
+                is_missing INTEGER NOT NULL DEFAULT 0,
+                original_metadata_json TEXT
+            );",
+        )
+        .expect("schema");
+        let rows = [
+            (
+                "stale-image",
+                "image",
+                CURRENT_PARSER_VERSION - 1,
+                0,
+                0,
+                0,
+                Some("{}"),
+            ),
+            (
+                "current-image",
+                "image",
+                CURRENT_PARSER_VERSION,
+                0,
+                0,
+                0,
+                Some("{}"),
+            ),
+            (
+                "hidden-image",
+                "image",
+                CURRENT_PARSER_VERSION - 1,
+                1,
+                0,
+                0,
+                Some("{}"),
+            ),
+            (
+                "stale-video",
+                "video",
+                VIDEO_PARSER_VERSION - 1,
+                0,
+                0,
+                0,
+                None,
+            ),
+            (
+                "current-video",
+                "video",
+                VIDEO_PARSER_VERSION,
+                0,
+                0,
+                0,
+                None,
+            ),
+            (
+                "missing-video",
+                "video",
+                VIDEO_PARSER_VERSION - 1,
+                0,
+                0,
+                1,
+                None,
+            ),
+        ];
+        for row in rows {
+            conn.execute(
+                "INSERT INTO images
+                 (id, media_type, parser_version, invoke_scope_hidden, is_deleted, is_missing, original_metadata_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![row.0, row.1, row.2, row.3, row.4, row.5, row.6],
+            )
+            .expect("candidate row");
+        }
+
+        assert_eq!(metadata_reparse_count(&conn).expect("combined count"), 2);
+    }
 }

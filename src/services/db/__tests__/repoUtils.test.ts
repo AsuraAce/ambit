@@ -98,6 +98,7 @@ describe('repoUtils lightweight image rows', () => {
             path: 'C:/videos/clip.mp4',
             thumbnail_path: null,
             media_type: 'video',
+            generation_type: 'text_to_video',
             media_container: 'MPEG-4',
             media_mime_type: 'video/mp4',
             duration_ms: 2_500,
@@ -128,6 +129,10 @@ describe('repoUtils lightweight image rows', () => {
             rotationDegrees: 90,
             probeStatus: 'ready',
             playbackStatus: 'playable',
+            metadata: expect.objectContaining({
+                generationType: 'text_to_video',
+                generationMode: 'text_to_video',
+            }),
         });
     });
 
