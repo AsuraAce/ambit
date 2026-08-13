@@ -31,7 +31,7 @@ import {
     moveImagePathIdentity,
     syncCollectionImages
 } from '../db/imageRepo';
-import { upsertInvokeBoardCollection } from '../db/collectionRepo';
+import { upsertInvokeBoardCollection, upsertInvokeBoardCollections } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
@@ -509,22 +509,10 @@ export const syncImages = async (
         repairedExistingCount = await repairStaleInvokeImagePaths();
     }
 
-    const shouldReconcileBoardCollections = options.reconcileSourceFacts === true && options.syncBoards === true;
-    if (totalToImport === 0 && !shouldReconcileBoardCollections) {
-        logSyncInfo('Invoke sync service complete', {
-            totalToImport,
-            importedCount: 0,
-            updatedCount: repairedExistingCount + reconciledExistingCount,
-            batchCount: 0,
-            totalMs: elapsedMs(syncStartedAt)
-        });
-        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
-    }
-
     let hasBoardsTable = false;
     try {
         const boardsTable = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
-        hasBoardsTable = boardsTable.length > 0;
+        hasBoardsTable = boardsTable.some(table => table.name === 'boards');
     } catch (e) { }
 
     let imageToBoardId = new Map<string, string>();
@@ -545,17 +533,30 @@ export const syncImages = async (
     }
 
     const createdBoardIds = new Set<string>();
-    if (shouldReconcileBoardCollections && shouldApplyBoardMappings) {
-        for (const [boardId, boardInfo] of boards) {
-            await upsertInvokeBoardCollection({
+    if (shouldApplyBoardMappings) {
+        const boardCollections = Array.from(boards, ([boardId, boardInfo]) => ({
                 id: boardId,
                 name: boardInfo.name,
                 createdAt: boardInfo.createdAt || Date.now(),
                 invokeOwnerId: boardInfo.ownerId,
                 invokeSourceId: scope.dbPath,
-            });
-            createdBoardIds.add(boardId);
+        }));
+        await upsertInvokeBoardCollections(boardCollections);
+        boardCollections.forEach(board => createdBoardIds.add(board.id));
+    }
+
+    if (totalToImport === 0) {
+        if (shouldApplyBoardMappings) {
+            await syncCollectionImages();
         }
+        logSyncInfo('Invoke sync service complete', {
+            totalToImport,
+            importedCount: 0,
+            updatedCount: repairedExistingCount + reconciledExistingCount,
+            batchCount: 0,
+            totalMs: elapsedMs(syncStartedAt)
+        });
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let processed = 0;

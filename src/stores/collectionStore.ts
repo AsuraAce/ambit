@@ -109,6 +109,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 let debounceResolve: (() => void) | null = null;
 let thumbnailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let thumbnailDebounceResolve: (() => void) | null = null;
+let authoritativeCollectionRefreshTail: Promise<void> = Promise.resolve();
 
 export const useCollectionStore = create<CollectionState>()(
     devtools(
@@ -119,7 +120,6 @@ export const useCollectionStore = create<CollectionState>()(
             smartSummaryPendingIds: {},
 
             refreshCollections: async (debounced = false, options = {}) => {
-                const runId = invalidateCollectionRefreshes();
                 const run = async (initialRunId: number) => {
                     let currentRunId = initialRunId;
                     try {
@@ -151,6 +151,17 @@ export const useCollectionStore = create<CollectionState>()(
                         if (options.throwOnError) throw e;
                     }
                 };
+
+                if (options.retryOnSuperseded) {
+                    const authoritativeRun = authoritativeCollectionRefreshTail.then(() => (
+                        run(invalidateCollectionRefreshes())
+                    ));
+                    authoritativeCollectionRefreshTail = authoritativeRun.catch(() => undefined);
+                    await authoritativeRun;
+                    return;
+                }
+
+                const runId = invalidateCollectionRefreshes();
 
                 if (debounced) {
                     if (debounceTimer) {

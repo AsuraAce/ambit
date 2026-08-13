@@ -170,6 +170,35 @@ describe('collectionStore smart count refresh', () => {
         ]);
     });
 
+    it('serializes overlapping required collection refreshes without superseding each other', async () => {
+        const firstRefresh = createDeferred<Collection[]>();
+        const secondRefresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => firstRefresh.promise)
+            .mockImplementationOnce(() => secondRefresh.promise);
+
+        const firstRun = useCollectionStore.getState().refreshCollections(false, {
+            throwOnError: true,
+            retryOnSuperseded: true,
+        });
+        const secondRun = useCollectionStore.getState().refreshCollections(false, {
+            throwOnError: true,
+            retryOnSuperseded: true,
+        });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        firstRefresh.resolve([makeStaticCollection({ id: 'first', name: 'First' })]);
+        await firstRun;
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+        secondRefresh.resolve([makeStaticCollection({ id: 'second', name: 'Second' })]);
+        await secondRun;
+
+        expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2);
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({ id: 'second', name: 'Second' })
+        ]);
+    });
+
     it('does not let an in-flight refresh overwrite a newer debounced refresh request', async () => {
         const staleRefresh = createDeferred<Collection[]>();
         const debouncedRefresh = createDeferred<Collection[]>();

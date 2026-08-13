@@ -1508,18 +1508,24 @@ export const SyncProvider: React.FC<{
                             orphanScanEnabled: shouldImportOrphans,
                             onRefreshApplied: incrementFacetCacheVersion
                         });
-                        if (shouldRefreshBoardCollections) {
-                            await refreshCollections(false, {
-                                retryOnSuperseded: true,
-                                throwOnError: true,
-                            });
-                        }
                     }
                     debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
                         mode: options.mode,
                         totalProcessed,
                         syncMs: elapsedMs(syncStartedAt)
                     });
+                }
+                if (shouldRefreshBoardCollections) {
+                    await refreshCollections(false, {
+                        retryOnSuperseded: true,
+                        throwOnError: true,
+                    });
+                    if (hasBoardMapping) {
+                        await Promise.all([
+                            refreshCollectionThumbnails(true),
+                            refreshSmartCounts({ includeArchived: false, markPending: false }),
+                        ]);
+                    }
                 }
             }
 

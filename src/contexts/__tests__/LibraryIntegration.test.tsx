@@ -4120,6 +4120,37 @@ describe('Library Integration (Provider Stack)', () => {
         consoleWarn.mockRestore();
     });
 
+    it('publishes board-only live changes when no images were imported', async () => {
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
+        const refreshSmartCounts = vi.fn().mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollections, refreshCollectionThumbnails, refreshSmartCounts });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            syncBoardsToCollections: true,
+        }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        refreshCollections.mockClear();
+        refreshCollectionThumbnails.mockClear();
+        refreshSmartCounts.mockClear();
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            boardMapping: new Map([['renamed-board', { name: 'Renamed board', createdAt: 1 }]]),
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'live' }));
+
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
+        expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
+        expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
+    });
+
     it('contains snapshot persistence failures after a no-op startup refresh', async () => {
         const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         let hook: ReturnType<typeof useLibraryContext> | undefined;

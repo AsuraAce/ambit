@@ -655,15 +655,7 @@ fn reconcile_invoke_image_sources_inner(
 }
 
 fn normalize_invoke_root(path: &str) -> String {
-    let normalized = path.replace('\\', "/").trim_end_matches('/').to_string();
-    #[cfg(windows)]
-    {
-        normalized.to_lowercase()
-    }
-    #[cfg(not(windows))]
-    {
-        normalized
-    }
+    path.replace('\\', "/").trim_end_matches('/').to_string()
 }
 
 fn invoke_scope_cache_key(
@@ -689,7 +681,7 @@ fn canonicalize_windows_invoke_identity(
             .prepare(
                 "SELECT scope_key, scope_mode, owner_id
                  FROM invoke_scope_cache_state
-                 WHERE LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = ?1",
+                 WHERE LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = LOWER(?1)",
             )
             .map_err(|error| error.to_string())?;
         let rows = statement
@@ -722,6 +714,74 @@ fn canonicalize_windows_invoke_identity(
             continue;
         }
 
+        let canonical_exists = tx
+            .query_row(
+                "SELECT 1 FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&canonical_key],
+                |_| Ok(()),
+            )
+            .optional()
+            .map_err(|error| error.to_string())?
+            .is_some();
+
+        if canonical_exists {
+            // Two differently-cased identities may both have been prepared before
+            // Windows path canonicalization was introduced. Their derived rows
+            // cannot be merged safely entry-by-entry, so retain the requested
+            // identity and require one selective full rebuild.
+            tx.execute(
+                "UPDATE invoke_scope_cache_state
+                 SET db_path = ?1, images_root = ?2, status = 'dirty',
+                     generation = MAX(
+                         generation,
+                         COALESCE((SELECT generation FROM invoke_scope_cache_state WHERE scope_key = ?3), 0)
+                     ) + 1,
+                     built_generation = NULL,
+                     updated_at = MAX(
+                         updated_at,
+                         COALESCE((SELECT updated_at FROM invoke_scope_cache_state WHERE scope_key = ?3), 0)
+                     )
+                 WHERE scope_key = ?4",
+                params![db_path, images_root, alias_key, canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_scope_facet_cache WHERE scope_key = ?1",
+                [&canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_scope_collection_cache WHERE scope_key = ?1",
+                [&canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
+                [&canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "INSERT INTO invoke_scope_cache_dirty_items (
+                     scope_key, domain, facet_type, resource_name
+                 ) VALUES (?1, 'full', '', '')",
+                [&canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "UPDATE invoke_scope_cache_control
+                 SET active_scope_key = ?1
+                 WHERE state_key = 'current' AND active_scope_key = ?2",
+                params![canonical_key, alias_key],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&alias_key],
+            )
+            .map_err(|error| error.to_string())?;
+            continue;
+        }
+
         tx.execute(
             "INSERT INTO invoke_scope_cache_state (
                  scope_key, db_path, images_root, scope_mode, owner_id,
@@ -731,34 +791,7 @@ fn canonicalize_windows_invoke_identity(
                     status, generation, built_generation, updated_at
              FROM invoke_scope_cache_state
              WHERE scope_key = ?4
-             ON CONFLICT(scope_key) DO UPDATE SET
-                 db_path = excluded.db_path,
-                 images_root = excluded.images_root,
-                 status = CASE
-                     WHEN excluded.status = 'ready'
-                      AND excluded.built_generation = excluded.generation
-                      AND NOT (
-                          invoke_scope_cache_state.status = 'ready'
-                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
-                      )
-                     THEN excluded.status ELSE invoke_scope_cache_state.status END,
-                 generation = CASE
-                     WHEN excluded.status = 'ready'
-                      AND excluded.built_generation = excluded.generation
-                      AND NOT (
-                          invoke_scope_cache_state.status = 'ready'
-                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
-                      )
-                     THEN excluded.generation ELSE invoke_scope_cache_state.generation END,
-                 built_generation = CASE
-                     WHEN excluded.status = 'ready'
-                      AND excluded.built_generation = excluded.generation
-                      AND NOT (
-                          invoke_scope_cache_state.status = 'ready'
-                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
-                      )
-                     THEN excluded.built_generation ELSE invoke_scope_cache_state.built_generation END,
-                 updated_at = MAX(invoke_scope_cache_state.updated_at, excluded.updated_at)",
+             ",
             params![canonical_key, db_path, images_root, alias_key],
         )
         .map_err(|error| error.to_string())?;
@@ -821,7 +854,7 @@ fn canonicalize_windows_invoke_identity(
                 "UPDATE {table}
                  SET invoke_source_id = ?1
                  WHERE invoke_source_id IS NOT NULL
-                   AND LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = ?1"
+                   AND LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
             ),
             [db_path],
         )
@@ -831,7 +864,7 @@ fn canonicalize_windows_invoke_identity(
         "UPDATE invoke_owner_scope_state
          SET db_path = ?1, images_root = ?2
          WHERE state_key = 'current'
-           AND LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = ?1",
+           AND LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = LOWER(?1)",
         params![db_path, images_root],
     )
     .map_err(|error| error.to_string())?;
@@ -2712,7 +2745,7 @@ mod tests {
     fn owner_scope_reuses_cache_when_windows_path_casing_changes() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
-        let old_db_path = "C:/Invoke/databases/invokeai.db";
+        let old_db_path = "c:/invoke/databases/invokeai.db";
         let old_scope_key = format!("{old_db_path}\u{1f}owner\u{1f}owner-a");
 
         let mut image = create_image_record("owner-a-image", 100, 10, "{}");
@@ -2763,8 +2796,8 @@ mod tests {
         let result = super::refresh_invoke_owner_scope_inner(
             &conn,
             &super::InvokeOwnerScopeInput {
-                db_path: "c:/invoke/DATABASES/invokeai.db".to_string(),
-                images_root: "c:/INVOKE".to_string(),
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
                 mode: super::InvokeOwnerScopeMode::Owner,
                 owner_id: Some("owner-a".to_string()),
                 force_refresh: false,
@@ -2780,7 +2813,7 @@ mod tests {
             result.cache_status.state,
             super::FacetScopeCacheState::Ready
         );
-        let canonical_db_path = "c:/invoke/databases/invokeai.db";
+        let canonical_db_path = "C:/Invoke/databases/invokeai.db";
         let canonical_scope_key = format!("{canonical_db_path}\u{1f}owner\u{1f}owner-a");
         let state: (String, String, String) = conn
             .query_row(
@@ -2795,7 +2828,7 @@ mod tests {
             (
                 canonical_scope_key.clone(),
                 canonical_db_path.to_string(),
-                "c:/invoke".to_string()
+                "C:/Invoke".to_string()
             )
         );
         let old_state_count: i64 = conn
@@ -2814,6 +2847,89 @@ mod tests {
             )
             .expect("canonical image source");
         assert_eq!(source_id, canonical_db_path);
+
+        let mut newly_synced = create_image_record("new-owner-a-image", 101, 10, "{}");
+        newly_synced.path = "C:/Invoke/outputs/images/new-owner-a-image.png".to_string();
+        newly_synced.invoke_image_name = Some("new-owner-a-image.png".to_string());
+        newly_synced.invoke_owner_id = Some("owner-a".to_string());
+        super::save_images_batch_inner(&conn, &[newly_synced])
+            .expect("insert using configured path casing");
+        conn.execute(
+            "UPDATE images SET invoke_source_id = ?1 WHERE id = 'new-owner-a-image'",
+            [canonical_db_path],
+        )
+        .expect("assign configured source identity");
+        let visible_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scoped_images
+                 WHERE id = 'new-owner-a-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("visible newly synced image");
+        assert_eq!(visible_count, 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn owner_scope_marks_conflicting_windows_path_aliases_dirty() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let canonical_db_path = "C:/Invoke/databases/invokeai.db";
+        let alias_db_path = "c:/invoke/databases/invokeai.db";
+        let canonical_key = format!("{canonical_db_path}\u{1f}owner\u{1f}owner-a");
+        let alias_key = format!("{alias_db_path}\u{1f}owner\u{1f}owner-a");
+        for (key, path, updated_at) in [
+            (&canonical_key, canonical_db_path, 1),
+            (&alias_key, alias_db_path, 2),
+        ] {
+            conn.execute(
+                "INSERT INTO invoke_scope_cache_state (
+                     scope_key, db_path, images_root, scope_mode, owner_id,
+                     status, generation, built_generation, updated_at
+                 ) VALUES (?1, ?2, 'C:/Invoke', 'owner', 'owner-a', 'ready', 3, 3, ?3)",
+                params![key, path, updated_at],
+            )
+            .expect("seed conflicting cache identity");
+            conn.execute(
+                "INSERT INTO invoke_scope_facet_cache (
+                     scope_key, facet_type, resource_name, count
+                 ) VALUES (?1, 'tools', ?2, 1)",
+                params![key, path],
+            )
+            .expect("seed conflicting facet");
+        }
+        conn.execute(
+            "UPDATE invoke_scope_cache_control SET active_scope_key = ?1 WHERE state_key = 'current'",
+            [&alias_key],
+        )
+        .expect("activate alias cache");
+
+        let tx = conn.unchecked_transaction().expect("identity transaction");
+        super::canonicalize_windows_invoke_identity(&tx, canonical_db_path, "C:/Invoke")
+            .expect("canonicalize conflicting aliases");
+        tx.commit().expect("commit canonical identity");
+
+        let status =
+            super::read_scope_cache_status(&conn, &canonical_key).expect("canonical cache status");
+        assert_eq!(status.state, super::FacetScopeCacheState::Dirty);
+        let cached_facets: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_facet_cache WHERE scope_key = ?1",
+                [&canonical_key],
+                |row| row.get(0),
+            )
+            .expect("canonical facet count");
+        assert_eq!(cached_facets, 0);
+        let full_dirty: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = ?1 AND domain = 'full'",
+                [&canonical_key],
+                |row| row.get(0),
+            )
+            .expect("full dirty marker");
+        assert_eq!(full_dirty, 1);
     }
 
     #[test]

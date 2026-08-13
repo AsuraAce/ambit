@@ -3,7 +3,7 @@ import Database from '@tauri-apps/plugin-sql';
 import { commands } from '../../../bindings';
 import { fetchBoardMappings } from '../connection';
 import { insertImagesBatch } from '../../db';
-import { upsertInvokeBoardCollection } from '../../db/collectionRepo';
+import { upsertInvokeBoardCollection, upsertInvokeBoardCollections } from '../../db/collectionRepo';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
@@ -109,7 +109,8 @@ vi.mock('../../db/imageRepo', () => ({
 }));
 
 vi.mock('../../db/collectionRepo', () => ({
-    upsertInvokeBoardCollection: vi.fn()
+    upsertInvokeBoardCollection: vi.fn(),
+    upsertInvokeBoardCollections: vi.fn()
 }));
 
 const createInvokeDb = (selectMock: ReturnType<typeof vi.fn>) => ({
@@ -250,6 +251,7 @@ describe('syncImages live mode', () => {
         });
         vi.mocked(moveImagePathIdentity).mockResolvedValue(false);
         vi.mocked(syncCollectionImages).mockResolvedValue(undefined as never);
+        vi.mocked(upsertInvokeBoardCollections).mockResolvedValue(0);
         vi.mocked(upsertInvokeBoardCollection).mockResolvedValue(undefined as never);
         vi.mocked(reconcileInvokeSourceFacts).mockResolvedValue(0);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
@@ -390,7 +392,7 @@ describe('syncImages live mode', () => {
         });
     });
 
-    it('reconciles every owner board, including empty boards, when there are no new image rows', async () => {
+    it('reconciles board-only changes, including empty boards, without requiring source repair', async () => {
         const selectMock = vi.fn(async (sql: string) => {
             if (sql.includes('PRAGMA table_info(images)')) {
                 return [{ name: 'metadata_json' }, { name: 'user_id' }];
@@ -417,7 +419,7 @@ describe('syncImages live mode', () => {
             isAuthoritative: true,
         });
 
-        await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
+        const result = await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
             scope: {
                 mode: 'owner',
                 ownerId: 'owner-a',
@@ -427,24 +429,30 @@ describe('syncImages live mode', () => {
             mode: 'startup',
             syncBoards: true,
             syncFavorites: false,
-            reconcileSourceFacts: true,
         });
 
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith({
-            id: 'board-a',
-            name: 'Owned board',
-            createdAt: 10,
-            invokeOwnerId: 'owner-a',
-            invokeSourceId: 'D:/Invoke/databases/invokeai.db',
-        });
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith({
-            id: 'empty-board',
-            name: 'Empty board',
-            createdAt: 20,
-            invokeOwnerId: 'owner-a',
-            invokeSourceId: 'D:/Invoke/databases/invokeai.db',
-        });
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(2);
+        expect(upsertInvokeBoardCollections).toHaveBeenCalledWith([
+            {
+                id: 'board-a',
+                name: 'Owned board',
+                createdAt: 10,
+                invokeOwnerId: 'owner-a',
+                invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+            },
+            {
+                id: 'empty-board',
+                name: 'Empty board',
+                createdAt: 20,
+                invokeOwnerId: 'owner-a',
+                invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+            },
+        ]);
+        expect(syncCollectionImages).toHaveBeenCalledOnce();
+        expect(syncCollectionImages).toHaveBeenCalledWith();
+        expect(result.boardMapping).toEqual(new Map([
+            ['board-a', { name: 'Owned board', createdAt: 10, ownerId: 'owner-a' }],
+            ['empty-board', { name: 'Empty board', createdAt: 20, ownerId: 'owner-a' }],
+        ]));
     });
 
     it('returns an empty result without opening a database when the root path is empty', async () => {
@@ -716,7 +724,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(1);
+        expect(upsertInvokeBoardCollections).toHaveBeenCalledTimes(1);
         expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
             sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
             references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
@@ -757,7 +765,9 @@ describe('syncImages live mode', () => {
 
         expect(result.imported).toBe(1);
         expect(syncCollectionImages).toHaveBeenCalledTimes(2);
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'board-1', name: 'Board One' }));
+        expect(upsertInvokeBoardCollections).toHaveBeenCalledWith([
+            expect.objectContaining({ id: 'board-1', name: 'Board One' }),
+        ]);
     });
 
     it('does not rewrite an unchanged image that already preserves raw Invoke metadata', async () => {
@@ -1384,7 +1394,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
         ]);
-        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(1);
+        expect(upsertInvokeBoardCollections).toHaveBeenCalledTimes(1);
     });
 
     it('resolves flat, date, type, hash, custom, and relative InvokeAI subfolder paths during DB sync', async () => {
