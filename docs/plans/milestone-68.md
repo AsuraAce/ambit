@@ -1,6 +1,6 @@
 # Milestone 68: GenAI Video Library Support
 
-Status: In progress - WP1 and WP2 accepted; WP3 is next
+Status: In progress - WP1 and WP2 accepted; WP3 implemented and awaiting owner acceptance
 Delivery posture: Assure
 Baseline: `origin/main` at `a6ee3ec7b9f33bba070d98dc481722f4dac10957`
 (`chore(main): release 0.9.1 (#261)`, fetched 2026-07-29)
@@ -581,6 +581,243 @@ Completion criteria:
 - Each admitted mode has at least one exact pinned representative.
 - No golden is weakened to make a heuristic pass and no value is fabricated when
   evidence is absent.
+
+Implementation checkpoint (2026-08-09): the WP3 code slice is complete. Video
+parser version 1 has six exact official ComfyUI v0.11.18 representatives pinned
+at workflow-template commit `8f6709b8f6ef808b0eccc47eff28ada4a58adbbe`:
+text-to-video, image-to-video, first/last-frame, editing, audio-to-video, and
+guided/canny. An exact sibling `<video-stem>.workflow.json` is trusted only when
+it is a bounded UTF-8 non-symlink file, names the exact media filename, contains
+no explicit custom-node evidence, and resolves one active connected core
+`SaveVideo` output. Invalid, ambiguous, disconnected, inactive, mismatched, and
+unrecognized evidence remains diagnostic or `unknown` rather than fabricated.
+
+The import path preserves raw sidecar and embedded evidence, denormalizes common
+fields and resource junctions transactionally, records lower-priority conflicts,
+and preserves explicit user overrides. Legacy videos receive one fresh bounded
+MediaInfo probe; later parser upgrades re-evaluate preserved evidence without
+reopening the video bytes. Exact sidecar create, modify, and remove events force
+the sibling video through the existing Live Watch path. The video viewer now
+exposes Details, Metadata, and Workflow tabs with generation mode, prompt,
+model, seed, steps, CFG, sampler, resources, provenance, conflicts, diagnostics,
+overrides, and revert. The workflow inspector never routes a video through the
+image metadata scanner.
+
+Owner acceptance uses an existing corpus video; no generated video is required.
+For the current local corpus, prepare a trusted sidecar with:
+
+```powershell
+pnpm run prepare:video-metadata-smoke -- "C:\Users\Artemis\Videos\Ambit Smoke Test\Watched Folder\01-folder-video.mp4"
+pnpm run app:video-smoke
+```
+
+With Live Watch enabled, verify that the video updates without duplication,
+Metadata reports `text to video` with trusted-sidecar evidence, Workflow opens,
+prompt/model/mode overrides survive Refresh All Metadata and restart, Revert
+returns to parsed values, and deleting the sidecar removes its parsed evidence
+without affecting playback or generic library state. Pass `--force` to the
+prepare command only when intentionally replacing an existing smoke sidecar.
+
+Automated verification passed the complete release gate on 2026-08-09: 3,153
+frontend tests passed with one intentional skip, all 778 Rust tests passed, and
+version consistency, MediaInfo provenance, generated-binding drift, lint,
+strict TypeScript, guarded production output, and the release-profile Tauri
+no-bundle build were green. Only the focused owner acceptance above remains for
+WP3 closure.
+
+Owner-smoke remediation checkpoint (2026-08-11): the isolated smoke profile
+contained the unchanged video schema under its obsolete pre-main migration
+number 63. Its database was backed up and the verified-identical ledger entry
+was remapped to current migration 68 so mainline migrations 63 through 67 could
+apply without weakening checksum validation. Metadata testing then found and
+fixed three viewer/persistence inconsistencies: metadata prop updates no longer
+clear a local privacy reveal or prepared playback URL, lightweight video rows
+rehydrate and persist the generation mode consistently across override, restart,
+and revert, and image-only ComfyUI chunk diagnostics no longer receive video
+sidecar evidence. Full metadata/provenance is loaded on demand only after privacy
+allows video access. Targeted tests passed 105/105; the complete frontend suite
+passes 3,160 tests with one intentional skip, and lint plus strict TypeScript are
+green. The follow-up metadata hierarchy now places prompts immediately after mode
+and model, presents collection membership as accessible selectable cards, and
+renders populated generation resources as chips. Full evidence resources are no
+longer overwritten by empty lightweight-row arrays, and development builds expose
+a reversible populated-resource styling preview without changing stored metadata.
+Image and video viewers now share the same searchable collection-membership
+picker, including privacy-aware collection thumbnails, optimistic rollback, and
+plus/check states. Their generation-resource chips also share the established
+image-viewer presentation with normalized names and integrated weight segments.
+Empty video resource groups are omitted, populated LoRA, ControlNet, and
+IP-Adapter chips apply the same advanced gallery filters as image resources, and
+compact accessible source badges replace repeated provenance text. Revert is now
+offered only while at least one video metadata field is a user override. The
+image and video editors now share the established prompt and notes field
+presentation without merging their distinct editing behavior, and scalar video
+provenance is consistently aligned at the far right. No-op blur events no longer
+create video metadata overrides or redundant note saves, and the shared workflow
+header now uses a compact Node Graph label with accessible icon actions. Image
+and video viewer chrome now shares text-only, keyboard-accessible tabs, toolbar
+framing, shortcut ownership, and the image viewer's subdued tooltip action
+buttons while retaining media-specific canvas and playback actions. Both viewers
+now use the same Details, Metadata, and Workflow structure. The image Metadata
+tab adopts the video's compact hierarchy for generator, model, prompts,
+generation parameters, source badges, and resources; technical facts, notes,
+palette, and collection membership live under Details. The same editing and
+resource-filtering capabilities are available when either media type is opened
+from Maintenance. Original-prompt inspection is read-only, and prompt saves use
+the actual edited draft without creating an override on an unchanged blur. The
+viewer now opens both media types on Metadata while retaining the selected tab
+during in-viewer navigation. Positive and negative prompts lead both metadata
+views, image generation-parameter copy is integrated into the parameter card,
+and the video workflow empty state is source-neutral. The shared sidebar restores
+an independently scrolling content region while keeping the image Creative
+Assistant footer visible. Focused correction checks pass 62/62; lint and strict
+TypeScript are green. The full local suite reaches 3,163 passing tests with one
+intentional skip but retains 13 unrelated locale- or timing-sensitive failures
+across nine existing test files; none exercise viewer code. The prior complete
+release gate remains the last green release-level result. Owner retest remains
+for WP3 closure.
+
+#### WP3 Owner-Acceptance Follow-Up — Metadata Context, Overrides, and Disclosures
+
+Status: Planned; direction accepted, implementation not started.
+
+Primary invariant: image and video metadata keep high-value generation context
+visible, allow corrections without destroying extracted evidence, and let users
+reduce variable-length secondary data without hiding the fields they inspect most.
+
+##### Product Decisions
+
+- Keep **Generator software**, **Model**, and video **Generation mode** outside
+  **Generation parameters**. They identify the generation context; seed, steps,
+  CFG, sampler, and related values describe the run configuration.
+- Keep generator and model corrections as explicit user overrides. Preserve the
+  extracted value, model hash, and field source; show the existing override badge;
+  and retain the existing full revert path.
+- Replace the image editor's static `ModelType` choices and the video's free-text-
+  only behavior with one searchable model combobox. Populate it from Ambit's
+  global checkpoint facet inventory (`assetScope: all`, independent of the active
+  gallery filter), include the current value, deduplicate aliases, omit `Unknown`,
+  and finish with **Custom model…**.
+- Use one controlled generator selector for images and videos: the supported
+  `GeneratorTool` values, **Other**, and **Unknown**. `Other` is a category in this
+  package, not an arbitrary software registry; widening parser and filter semantics
+  for free-form generator names is out of scope.
+- Make **Generation parameters**, each populated resource section, and **Smart
+  Tags** collapsible. All default to expanded so current discoverability is
+  preserved. Remember disclosure choices while the viewer remains open and the
+  user navigates between assets; do not persist them as application settings.
+- Smart Tags are collapsible because their length is unbounded and the supplied
+  dense example materially pushes later metadata down the sidebar. Keep the tag
+  count visible in the collapsed header and preserve chip-to-gallery filtering.
+  Do not auto-collapse based on tag count because a changing default while moving
+  between assets would feel unpredictable.
+- Do not add a parent **Generation Data** disclosure. Prompts, generator, model,
+  generation mode, technical details, notes, provenance/conflicts, and collections
+  remain directly visible in their current tabs; nested disclosures would add
+  friction without saving meaningful space.
+
+##### Package A — Shared Override Editors and Library-Backed Model Options
+
+Primary outcome: image and video viewers use the same correction controls and
+write only intentional overrides.
+
+Scope:
+
+- Add a narrow React Query hook/service for global model options using the existing
+  checkpoint facet cache. Reuse cache invalidation after a model override; do not
+  add a database table or migration.
+- Add shared generator and model field components around `MetadataField`, including
+  searchable keyboard navigation, a custom-model path, cancel/save behavior, and
+  current extracted or unresolved-hash presentation.
+- Route image and video viewers through those components. Wire the existing
+  `handleUpdateTool` path into video and align video `fieldSources` with model,
+  mode, prompt, and resource overrides.
+- Reject blank custom model values, trim submitted values, and treat unchanged
+  edits as no-ops before optimistic state, persistence, toast, or facet rebuild.
+- Preserve unresolved model hashes when a name is overridden and reveal the hash
+  again when overrides are reverted.
+
+Non-goals:
+
+- No model download, CivitAI resolution redesign, arbitrary model CRUD, generator
+  registry, parser changes, or per-field revert control.
+
+Targeted verification:
+
+- Model options are global rather than narrowed by the active gallery search and
+  contain known used/local checkpoints plus the current value.
+- Known-model selection and custom entry work by keyboard and mouse in image and
+  video viewers.
+- Unchanged, cancelled, blank, and changed edits produce the correct persistence,
+  source-badge, facet-invalidation, and revert behavior.
+- Extracted model/hash and generator evidence remain intact after override/revert
+  and restart.
+
+##### Package B — Accessible Metadata Disclosures
+
+Primary outcome: dense metadata can be shortened without changing its hierarchy
+or losing keyboard and assistive-technology clarity.
+
+Scope:
+
+- Add one shared disclosure-section component that composes the existing metadata
+  header style with a real heading/button pattern, visible chevron, `aria-expanded`,
+  `aria-controls`, stable content IDs, trailing actions or source badges, and an
+  optional item count.
+- Adopt it in `MetadataParameterList`, `ResourceSection`, and the Smart Tags section
+  of `MetadataInfoTab`; use the same behavior for populated video resources.
+- Keep Copy Parameters and source badges in the disclosure header and reachable
+  while content is collapsed.
+- Hold disclosure state at the open-viewer level with stable category keys so
+  next/previous navigation retains user choices. Reset naturally when the viewer
+  closes. Avoid a new global store or persisted setting.
+- Use no bespoke height animation. If existing motion utilities are used for a
+  small opacity transition, honor reduced-motion behavior and keep focus stable.
+
+Targeted verification:
+
+- Every disclosure toggles with pointer, Enter, and Space; announces its state and
+  controls the correct region; collapsed content leaves the tab order.
+- Generation parameters, Smart Tags, and populated resources start expanded and
+  retain explicit choices during image/video next/previous navigation.
+- Smart Tag and resource chips still apply their existing advanced searches after
+  re-expansion; Copy Parameters works in either state.
+- Empty resource sections remain omitted and no additional nested indentation is
+  introduced.
+
+##### Package C — Integration and Owner Acceptance
+
+Scope and gate:
+
+- Run focused component tests for metadata fields, disclosure accessibility,
+  image/video viewers, Maintenance viewer entry, and model/facet invalidation,
+  followed by lint, strict TypeScript, and the broader viewer suite.
+- In the desktop smoke profile, inspect one image and one video with extracted
+  values, an unresolved hash, populated resources, and a dense Smart Tags set.
+  Verify edit/restart/revert, sidebar scrolling, Creative Assistant footer
+  behavior, disclosure retention during navigation, and gallery filtering from
+  re-expanded chips.
+- Review the common narrow sidebar width and a wider desktop window. No section
+  header may wrap incorrectly, obscure its actions/count, or create a nested-card
+  hierarchy inconsistent with adjacent metadata.
+
+Completion criteria:
+
+- Generator/model editing is aligned between images and videos and never destroys
+  extracted evidence or creates a no-op override.
+- Generation parameters, populated resources, and Smart Tags are accessible,
+  expanded-by-default disclosures whose state survives in-viewer navigation.
+- Owner smoke passes with no blocking scroll, focus, hierarchy, persistence, or
+  filtering regression. WP3 can then close and WP4 release acceptance can begin.
+
+Implementation status (2026-08-12): Packages A and B are complete. Image and
+video viewers now share generator/model override controls, global checkpoint
+choices, custom model entry, and no-op protection. Generation Parameters, Smart
+Tags, and populated resources use the shared expanded-by-default disclosure and
+retain their state during in-viewer navigation. Focused browser QA and automated
+integration checks pass. Package C remains open only for the owner desktop smoke
+covering a real image and video, restart/revert persistence, and dense real
+metadata at normal and wide window sizes.
 
 ### WP4 — Integration, Documentation, and Release Acceptance
 
