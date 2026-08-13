@@ -533,6 +533,33 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(collections[0].thumbnailSourceKind).toBe('customImage');
     });
 
+    it('does not expose a custom thumbnail image hidden by the active InvokeAI owner scope', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM scoped_collections')) {
+                return [makeCollectionRow({ custom_thumbnail: 'img-other-owner' })];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 0 }];
+            if (query.includes('ranked_thumbnails')) return [];
+            if (query.includes('FROM images AS images') && query.includes('WHERE id IN')) {
+                return [{
+                    id: 'img-other-owner',
+                    path: 'C:/images/other-owner.png',
+                    thumb: 'C:/thumbs/other-owner.webp',
+                    privacy_hidden: 0,
+                    invoke_scope_hidden: 1,
+                }];
+            }
+            return [];
+        });
+
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        const collections = await getAllCollectionsWithStats();
+
+        expect(collections[0].thumbnail).toBeUndefined();
+        expect(collections[0].safeThumbnail).toBeUndefined();
+        expect(collections[0].thumbnailSourceKind).toBe('customImage');
+    });
+
     it('keeps legacy raw custom thumbnail urls when no image row matches', async () => {
         dbMocks.select.mockImplementation(async (query: string) => {
             if (query.includes('SELECT * FROM scoped_collections')) {

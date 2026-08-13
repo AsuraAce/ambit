@@ -156,8 +156,14 @@ const loadImageThumbnailLookup = async (
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
-            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden, invoke_scope_hidden
-             FROM scoped_images AS images
+            `SELECT images.id, images.path,
+                    COALESCE(NULLIF(images.thumbnail_path, ''), images.path) as thumb,
+                    images.privacy_hidden,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM scoped_images AS visible_images
+                        WHERE visible_images.id = images.id
+                    ) THEN 0 ELSE 1 END AS invoke_scope_hidden
+             FROM images AS images
              WHERE ${column} IN (${placeholders})`,
             batch
         );

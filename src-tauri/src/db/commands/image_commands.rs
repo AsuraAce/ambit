@@ -655,7 +655,15 @@ fn reconcile_invoke_image_sources_inner(
 }
 
 fn normalize_invoke_root(path: &str) -> String {
-    path.replace('\\', "/").trim_end_matches('/').to_string()
+    let normalized = path.replace('\\', "/").trim_end_matches('/').to_string();
+    #[cfg(windows)]
+    {
+        normalized.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        normalized
+    }
 }
 
 fn invoke_scope_cache_key(
@@ -668,6 +676,176 @@ fn invoke_scope_cache_key(
         mode.as_str(),
         owner_id.unwrap_or("")
     )
+}
+
+#[cfg(windows)]
+fn canonicalize_windows_invoke_identity(
+    tx: &rusqlite::Transaction<'_>,
+    db_path: &str,
+    images_root: &str,
+) -> Result<(), String> {
+    let aliases = {
+        let mut statement = tx
+            .prepare(
+                "SELECT scope_key, scope_mode, owner_id
+                 FROM invoke_scope_cache_state
+                 WHERE LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = ?1",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([db_path], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+
+    for (alias_key, scope_mode, owner_id) in aliases {
+        let canonical_key = format!(
+            "{db_path}\u{1f}{scope_mode}\u{1f}{}",
+            owner_id.as_deref().unwrap_or("")
+        );
+        if alias_key == canonical_key {
+            tx.execute(
+                "UPDATE invoke_scope_cache_state
+                 SET db_path = ?1, images_root = ?2
+                 WHERE scope_key = ?3",
+                params![db_path, images_root, canonical_key],
+            )
+            .map_err(|error| error.to_string())?;
+            continue;
+        }
+
+        tx.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             )
+             SELECT ?1, ?2, ?3, scope_mode, owner_id,
+                    status, generation, built_generation, updated_at
+             FROM invoke_scope_cache_state
+             WHERE scope_key = ?4
+             ON CONFLICT(scope_key) DO UPDATE SET
+                 db_path = excluded.db_path,
+                 images_root = excluded.images_root,
+                 status = CASE
+                     WHEN excluded.status = 'ready'
+                      AND excluded.built_generation = excluded.generation
+                      AND NOT (
+                          invoke_scope_cache_state.status = 'ready'
+                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
+                      )
+                     THEN excluded.status ELSE invoke_scope_cache_state.status END,
+                 generation = CASE
+                     WHEN excluded.status = 'ready'
+                      AND excluded.built_generation = excluded.generation
+                      AND NOT (
+                          invoke_scope_cache_state.status = 'ready'
+                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
+                      )
+                     THEN excluded.generation ELSE invoke_scope_cache_state.generation END,
+                 built_generation = CASE
+                     WHEN excluded.status = 'ready'
+                      AND excluded.built_generation = excluded.generation
+                      AND NOT (
+                          invoke_scope_cache_state.status = 'ready'
+                          AND invoke_scope_cache_state.built_generation = invoke_scope_cache_state.generation
+                      )
+                     THEN excluded.built_generation ELSE invoke_scope_cache_state.built_generation END,
+                 updated_at = MAX(invoke_scope_cache_state.updated_at, excluded.updated_at)",
+            params![canonical_key, db_path, images_root, alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "INSERT OR IGNORE INTO invoke_scope_facet_cache (
+                 scope_key, facet_type, resource_name, resource_hash, count,
+                 thumbnail_path, preview_url, last_used_at, created_at, is_manual,
+                 has_sidecar, is_user_override, guidance_subtype,
+                 safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+                 thumbnail_sensitivity_override
+             )
+             SELECT ?1, facet_type, resource_name, resource_hash, count,
+                    thumbnail_path, preview_url, last_used_at, created_at, is_manual,
+                    has_sidecar, is_user_override, guidance_subtype,
+                    safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+                    thumbnail_sensitivity_override
+             FROM invoke_scope_facet_cache WHERE scope_key = ?2",
+            params![canonical_key, alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "INSERT OR IGNORE INTO invoke_scope_collection_cache (
+                 scope_key, collection_id, dynamic_thumbnail_path,
+                 dynamic_safe_thumbnail_path, dynamic_thumbnail_is_sensitive,
+                 dynamic_thumbnail_cached_at, dynamic_count
+             )
+             SELECT ?1, collection_id, dynamic_thumbnail_path,
+                    dynamic_safe_thumbnail_path, dynamic_thumbnail_is_sensitive,
+                    dynamic_thumbnail_cached_at, dynamic_count
+             FROM invoke_scope_collection_cache WHERE scope_key = ?2",
+            params![canonical_key, alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "INSERT OR IGNORE INTO invoke_scope_cache_dirty_items (
+                 scope_key, domain, facet_type, resource_name
+             )
+             SELECT ?1, domain, facet_type, resource_name
+             FROM invoke_scope_cache_dirty_items WHERE scope_key = ?2",
+            params![canonical_key, alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "UPDATE invoke_scope_cache_control
+             SET active_scope_key = ?1
+             WHERE state_key = 'current' AND active_scope_key = ?2",
+            params![canonical_key, alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "DELETE FROM invoke_scope_cache_state WHERE scope_key = ?1",
+            [&alias_key],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    for table in ["images", "removed_images", "collections"] {
+        tx.execute(
+            &format!(
+                "UPDATE {table}
+                 SET invoke_source_id = ?1
+                 WHERE invoke_source_id IS NOT NULL
+                   AND LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = ?1"
+            ),
+            [db_path],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    tx.execute(
+        "UPDATE invoke_owner_scope_state
+         SET db_path = ?1, images_root = ?2
+         WHERE state_key = 'current'
+           AND LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/')) = ?1",
+        params![db_path, images_root],
+    )
+    .map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn canonicalize_windows_invoke_identity(
+    _tx: &rusqlite::Transaction<'_>,
+    _db_path: &str,
+    _images_root: &str,
+) -> Result<(), String> {
+    Ok(())
 }
 
 fn read_scope_cache_status(
@@ -972,6 +1150,7 @@ fn refresh_invoke_owner_scope_inner(
         [],
     )
     .map_err(|error| error.to_string())?;
+    canonicalize_windows_invoke_identity(&tx, &db_path, &images_root)?;
     let previous: Option<(String, String, String, Option<String>)> = tx
         .query_row(
             "SELECT db_path, images_root, scope_mode, owner_id
@@ -2528,6 +2707,115 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn owner_scope_reuses_cache_when_windows_path_casing_changes() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let old_db_path = "C:/Invoke/databases/invokeai.db";
+        let old_scope_key = format!("{old_db_path}\u{1f}owner\u{1f}owner-a");
+
+        let mut image = create_image_record("owner-a-image", 100, 10, "{}");
+        image.path = "C:/Invoke/outputs/images/owner-a-image.png".to_string();
+        image.invoke_image_name = Some("owner-a-image.png".to_string());
+        image.invoke_owner_id = Some("owner-a".to_string());
+        super::save_images_batch_inner(&conn, &[image]).expect("insert owner image");
+        conn.execute(
+            "UPDATE images SET invoke_source_id = ?1 WHERE id = 'owner-a-image'",
+            [old_db_path],
+        )
+        .expect("seed source identity");
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', ?1, 'C:/Invoke', 'owner', 'owner-a', 1)",
+            [old_db_path],
+        )
+        .expect("seed previous owner scope");
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES (?1, ?2, 'C:/Invoke', 'owner', 'owner-a', 'ready', 3, 3, 1)",
+            params![old_scope_key, old_db_path],
+        )
+        .expect("seed prepared mixed-case cache");
+        conn.execute(
+            "INSERT INTO invoke_scope_facet_cache (
+                 scope_key, facet_type, resource_name, count
+             ) VALUES (?1, 'tools', 'Cached Tool', 1)",
+            [&old_scope_key],
+        )
+        .expect("seed prepared facet");
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Cached Tool', 1)",
+            [],
+        )
+        .expect("seed active facet projection");
+        conn.execute(
+            "UPDATE invoke_scope_cache_control
+             SET active_scope_key = ?1 WHERE state_key = 'current'",
+            [&old_scope_key],
+        )
+        .expect("activate mixed-case cache");
+
+        let result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "c:/invoke/DATABASES/invokeai.db".to_string(),
+                images_root: "c:/INVOKE".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("owner-a".to_string()),
+                force_refresh: false,
+            },
+        )
+        .expect("reuse mixed-case Windows cache");
+
+        assert_eq!(
+            result.cache_repair.action,
+            super::InvokeScopeCacheAction::Restored
+        );
+        assert_eq!(
+            result.cache_status.state,
+            super::FacetScopeCacheState::Ready
+        );
+        let canonical_db_path = "c:/invoke/databases/invokeai.db";
+        let canonical_scope_key = format!("{canonical_db_path}\u{1f}owner\u{1f}owner-a");
+        let state: (String, String, String) = conn
+            .query_row(
+                "SELECT scope_key, db_path, images_root
+                 FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&canonical_scope_key],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("canonical cache state");
+        assert_eq!(
+            state,
+            (
+                canonical_scope_key.clone(),
+                canonical_db_path.to_string(),
+                "c:/invoke".to_string()
+            )
+        );
+        let old_state_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                [&old_scope_key],
+                |row| row.get(0),
+            )
+            .expect("old cache count");
+        assert_eq!(old_state_count, 0);
+        let source_id: String = conn
+            .query_row(
+                "SELECT invoke_source_id FROM images WHERE id = 'owner-a-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("canonical image source");
+        assert_eq!(source_id, canonical_db_path);
+    }
+
     #[test]
     fn scope_cache_commit_rejects_content_changes_during_build() {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -2554,7 +2842,7 @@ mod tests {
         let status = super::read_scope_cache_status(
             &conn,
             &super::invoke_scope_cache_key(
-                "C:/Invoke/databases/invokeai.db",
+                &super::normalize_invoke_root(&input.db_path),
                 super::InvokeOwnerScopeMode::Owner,
                 Some("a"),
             ),
@@ -2590,7 +2878,7 @@ mod tests {
         let status = super::read_scope_cache_status(
             &conn,
             &super::invoke_scope_cache_key(
-                "C:/Invoke/databases/invokeai.db",
+                &super::normalize_invoke_root(&input.db_path),
                 super::InvokeOwnerScopeMode::Owner,
                 Some("a"),
             ),
