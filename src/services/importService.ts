@@ -525,10 +525,10 @@ const resolveVideoSidecarPaths = async (paths: string[]): Promise<string[]> => {
         const candidates = ['mp4', 'webm', 'mov', 'm4v', 'mkv'].map(ext => `${basePath}.${ext}`);
         const placeholders = candidates.map(() => '?').join(',');
         const rows = await db.select<Array<{ id: string }>>(
-            `SELECT id FROM images WHERE media_type = 'video' AND id IN (${placeholders}) LIMIT 1`,
+            `SELECT id FROM images WHERE media_type = 'video' AND id COLLATE NOCASE IN (${placeholders})`,
             candidates
         );
-        if (rows[0]?.id) directPaths.push(rows[0].id);
+        directPaths.push(...rows.map(row => row.id));
     }
     return Array.from(new Set(directPaths));
 };

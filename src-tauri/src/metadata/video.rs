@@ -476,7 +476,8 @@ fn save_video_has_active_source(workflow: &Value, nodes: &[&Value], save: &Value
 }
 
 fn classify_generation_mode(workflow: &Value) -> VideoGenerationMode {
-    let mut evidence = workflow_nodes(workflow)
+    let active_nodes = active_output_nodes(workflow);
+    let mut evidence = active_nodes
         .iter()
         .flat_map(|node| {
             [
@@ -495,6 +496,12 @@ fn classify_generation_mode(workflow: &Value) -> VideoGenerationMode {
         evidence.extend(
             subgraphs
                 .iter()
+                .filter(|subgraph| {
+                    let Some(id) = subgraph.get("id").and_then(Value::as_str) else {
+                        return false;
+                    };
+                    active_nodes.iter().any(|node| node_type(node) == Some(id))
+                })
                 .filter_map(|subgraph| subgraph.get("name").and_then(Value::as_str))
                 .map(str::to_owned),
         );
@@ -540,6 +547,113 @@ fn classify_generation_mode(workflow: &Value) -> VideoGenerationMode {
         VideoGenerationMode::TextToVideo
     } else {
         VideoGenerationMode::Unknown
+    }
+}
+
+fn active_output_nodes(workflow: &Value) -> Vec<&Value> {
+    if let Some(nodes) = workflow.get("nodes").and_then(Value::as_array) {
+        let Some(save_id) = nodes
+            .iter()
+            .find(|node| node_type(node) == Some("SaveVideo") && node_is_active(node))
+            .and_then(|node| node.get("id"))
+            .cloned()
+        else {
+            return Vec::new();
+        };
+        let mut reachable = vec![save_id];
+        let links = workflow
+            .get("links")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        loop {
+            let mut changed = false;
+            for link in links.iter().filter_map(Value::as_array) {
+                let (Some(source_id), Some(target_id)) = (link.get(1), link.get(3)) else {
+                    continue;
+                };
+                if reachable.contains(target_id)
+                    && !reachable.contains(source_id)
+                    && nodes
+                        .iter()
+                        .any(|node| node.get("id") == Some(source_id) && node_is_active(node))
+                {
+                    reachable.push(source_id.clone());
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        return nodes
+            .iter()
+            .filter(|node| {
+                node_is_active(node) && node.get("id").is_some_and(|id| reachable.contains(id))
+            })
+            .collect();
+    }
+
+    let Some(nodes) = workflow.as_object() else {
+        return Vec::new();
+    };
+    let Some(save_id) = nodes.iter().find_map(|(id, node)| {
+        (node_type(node) == Some("SaveVideo") && node_is_active(node)).then(|| id.clone())
+    }) else {
+        return Vec::new();
+    };
+    let mut reachable = vec![save_id];
+    loop {
+        let mut changed = false;
+        for target_id in reachable.clone() {
+            let Some(inputs) = nodes.get(&target_id).and_then(|node| node.get("inputs")) else {
+                continue;
+            };
+            let mut source_ids = Vec::new();
+            collect_prompt_source_ids(inputs, nodes, &mut source_ids);
+            for source_id in source_ids {
+                if !reachable.contains(&source_id)
+                    && nodes.get(&source_id).is_some_and(node_is_active)
+                {
+                    reachable.push(source_id);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    reachable
+        .iter()
+        .filter_map(|id| nodes.get(id))
+        .filter(|node| node_is_active(node))
+        .collect()
+}
+
+fn collect_prompt_source_ids(
+    value: &Value,
+    nodes: &serde_json::Map<String, Value>,
+    source_ids: &mut Vec<String>,
+) {
+    match value {
+        Value::Array(values) => {
+            if let Some(source_id) = values.first().and_then(Value::as_str) {
+                if nodes.contains_key(source_id) {
+                    source_ids.push(source_id.to_string());
+                    return;
+                }
+            }
+            for value in values {
+                collect_prompt_source_ids(value, nodes, source_ids);
+            }
+        }
+        Value::Object(values) => {
+            for value in values.values() {
+                collect_prompt_source_ids(value, nodes, source_ids);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -830,6 +944,30 @@ mod tests {
         assert_eq!(
             classify_generation_mode(&workflow("VideoModel")),
             VideoGenerationMode::Unknown
+        );
+    }
+
+    #[test]
+    fn generation_mode_ignores_inactive_and_disconnected_nodes() {
+        let mut graph = workflow("TextToVideo");
+        graph["nodes"].as_array_mut().unwrap().extend([
+            serde_json::json!({"id": 3, "type": "Canny", "mode": 4}),
+            serde_json::json!({"id": 4, "type": "LoadAudio", "mode": 0}),
+        ]);
+
+        assert_eq!(
+            classify_generation_mode(&graph),
+            VideoGenerationMode::TextToVideo
+        );
+
+        let prompt = serde_json::json!({
+            "1": {"class_type": "TextToVideo", "inputs": {}},
+            "2": {"class_type": "SaveVideo", "inputs": {"video": ["1", 0]}},
+            "3": {"class_type": "Canny", "inputs": {}}
+        });
+        assert_eq!(
+            classify_generation_mode(&prompt),
+            VideoGenerationMode::TextToVideo
         );
     }
 

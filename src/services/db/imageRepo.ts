@@ -484,7 +484,7 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         if (image) {
             const fieldSources = image.mediaType === 'video'
                 ? Object.keys(updates).reduce((sources, key) => {
-                    if (['positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                    if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
                         sources[key as VideoMetadataField] = 'user_override';
                         if (key === 'overrideModel') sources.model = 'user_override';
                     }
@@ -515,7 +515,7 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
                 jsonSetExpr = `json_set(${previousExpr}, '$.${key}', ?)`;
                 params.push(value);
             }
-            if (['positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+            if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
                 let videoExpr = `json_set(${jsonSetExpr}, '$.fieldSources.${key}', 'user_override')`;
                 if (key === 'overrideModel') {
                     videoExpr = `json_set(${videoExpr}, '$.fieldSources.model', 'user_override')`;

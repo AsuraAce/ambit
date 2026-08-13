@@ -867,6 +867,7 @@ fn preserve_video_user_overrides(current_json: &str, next: &mut VideoGenerationM
         return;
     };
     for (field, target) in [
+        ("tool", &mut next.tool),
         ("positivePrompt", &mut next.positive_prompt),
         ("negativePrompt", &mut next.negative_prompt),
         ("model", &mut next.model),
@@ -1389,6 +1390,7 @@ mod tests {
     #[test]
     fn video_reparse_preserves_only_explicit_user_overrides() {
         let current = serde_json::json!({
+            "tool": "Other",
             "model": "parsed-old.safetensors",
             "overrideModel": "chosen.safetensors",
             "positivePrompt": "chosen prompt",
@@ -1396,6 +1398,7 @@ mod tests {
             "generationType": "text_to_video",
             "generationMode": "text_to_video",
             "fieldSources": {
+                "tool": "user_override",
                 "overrideModel": "user_override",
                 "positivePrompt": "user_override",
                 "negativePrompt": "embedded",
@@ -1413,6 +1416,7 @@ mod tests {
 
         preserve_video_user_overrides(&current.to_string(), &mut next);
 
+        assert_eq!(next.tool, "Other");
         assert_eq!(next.model, "chosen.safetensors");
         assert_eq!(next.positive_prompt, "chosen prompt");
         assert_eq!(next.negative_prompt, "new parsed negative");

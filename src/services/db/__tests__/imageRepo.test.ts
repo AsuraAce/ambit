@@ -940,6 +940,7 @@ describe('imageRepo batch removal', () => {
 
         const [sql, params] = db.execute.mock.calls[0] as [string, unknown[]];
         expect(sql).toContain("json_set(metadata_json, '$.loras', json(?))");
+        expect(sql).toContain("'$.fieldSources.tool', 'user_override'");
         expect(sql).toContain(', tool = ?');
         expect(sql).toContain(', positive_prompt = ?');
         expect(sql).toContain(', negative_prompt = ?');

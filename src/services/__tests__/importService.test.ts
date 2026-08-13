@@ -168,7 +168,10 @@ describe('processTargetedFiles', () => {
     });
 
     it('maps an exact workflow sidecar event back to its existing video for forced re-import', async () => {
-        mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
+        mocks.dbSelect.mockResolvedValueOnce([
+            { id: 'C:/library/clip.MP4' },
+            { id: 'C:/library/clip.webm' },
+        ]);
         mocks.importVideoPaths.mockResolvedValueOnce({
             imported: 1,
             duplicate: 0,
@@ -176,17 +179,21 @@ describe('processTargetedFiles', () => {
             cancelled: 0,
             posterFailures: 0,
             assets: [],
-            handledPaths: ['C:/library/clip.mp4'],
+            handledPaths: ['C:/library/clip.MP4', 'C:/library/clip.webm'],
             failedPaths: []
         });
 
         await processTargetedFiles(['C:/library/clip.workflow.json'], { forceRescan: true });
 
         expect(mocks.importVideoPaths).toHaveBeenCalledWith(
-            ['C:/library/clip.mp4'],
+            ['C:/library/clip.MP4', 'C:/library/clip.webm'],
             expect.any(Function),
             expect.any(Function),
             expect.any(Function)
+        );
+        expect(mocks.dbSelect).toHaveBeenCalledWith(
+            expect.stringContaining('id COLLATE NOCASE IN'),
+            expect.arrayContaining(['C:/library/clip.mp4', 'C:/library/clip.webm'])
         );
     });
 

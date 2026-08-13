@@ -76,6 +76,7 @@ export function useMetadataRefresh() {
     const startupAnnouncementShownRef = useRef(false);
     const deferStartupVisibilityUntilProcessingRef = useRef(false);
     const metadataFacetRefreshHandledRef = useRef(false);
+    const combinedRefreshInFlightRef = useRef(false);
 
     const {
         setMetadataRefreshPending,
@@ -97,6 +98,77 @@ export function useMetadataRefresh() {
         }
     }, [addToast]);
 
+    const completeRefresh = useCallback((result: RefreshResult) => {
+        const { processed, updated, errors, wasCancelled } = result;
+        setIsRefreshingMetadata(false);
+        setMetadataRefreshPending(false);
+        setRefreshProgress(null);
+        startupAnnouncementCountRef.current = null;
+        startupAnnouncementShownRef.current = false;
+        deferStartupVisibilityUntilProcessingRef.current = false;
+
+        if (wasCancelled) {
+            addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
+        } else if (processed > 0) {
+            addToast(
+                `Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`,
+                errors > 0 ? 'warning' : 'success'
+            );
+        }
+
+        console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
+        void refreshFacetsAfterMetadataUpdate(result);
+    }, [addToast, refreshFacetsAfterMetadataUpdate, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]);
+
+    const runCombinedRefresh = useCallback(async (
+        forceReparse: boolean,
+        filterRoot: string | null,
+        filterTool: string | null
+    ): Promise<RefreshResult> => {
+        combinedRefreshInFlightRef.current = true;
+        try {
+            const result = await invoke<RefreshResult>('start_reparse_job', {
+                forceReparse,
+                filterRoot,
+                filterTool
+            });
+            if (!result.wasCancelled) {
+                deferStartupVisibilityUntilProcessingRef.current = false;
+                setMetadataRefreshPending(false);
+                setIsRefreshingMetadata(true);
+                setRefreshProgress({
+                    current: result.processed,
+                    total: Math.max(result.processed, startupAnnouncementCountRef.current ?? 0),
+                    updated: result.updated,
+                    errors: result.errors,
+                    phase: 'processing',
+                    message: 'Refreshing video metadata...'
+                });
+                const startupCount = startupAnnouncementCountRef.current;
+                if (startupCount !== null && !startupAnnouncementShownRef.current) {
+                    startupAnnouncementShownRef.current = true;
+                    addToast(
+                        `Ambit is updating metadata for ${startupCount.toLocaleString()} items after a parser update. Your library remains available.`,
+                        'info'
+                    );
+                }
+                const videoResult = await refreshVideoMetadata(filterRoot, forceReparse) ?? {
+                    processed: 0,
+                    updated: 0,
+                    errors: 0,
+                    wasCancelled: false
+                };
+                result.processed += videoResult.processed;
+                result.updated += videoResult.updated;
+                result.errors += videoResult.errors;
+                result.wasCancelled ||= videoResult.wasCancelled;
+            }
+            return result;
+        } finally {
+            combinedRefreshInFlightRef.current = false;
+        }
+    }, [addToast, setIsRefreshingMetadata, setMetadataRefreshPending, setRefreshProgress]);
+
     // Listen to progress events from backend
     useEffect(() => {
         if (browserMockMode) return;
@@ -104,6 +176,7 @@ export function useMetadataRefresh() {
         const progressListener = listenWithCleanup<RefreshProgress>(
             'refresh-progress',
             (event) => {
+                if (combinedRefreshInFlightRef.current && event.payload.phase === 'complete') return;
                 if (
                     deferStartupVisibilityUntilProcessingRef.current
                     && event.payload.phase !== 'processing'
@@ -143,25 +216,8 @@ export function useMetadataRefresh() {
         const completeListener = listenWithCleanup<RefreshResult>(
             'refresh-complete',
             (event) => {
-                const { processed, updated, errors, wasCancelled } = event.payload;
-
-                setIsRefreshingMetadata(false);
-                setMetadataRefreshPending(false);
-                setRefreshProgress(null);
-                startupAnnouncementCountRef.current = null;
-                startupAnnouncementShownRef.current = false;
-
-                if (wasCancelled) {
-                    addToast(`Refresh cancelled: ${processed.toLocaleString()} processed before stop`, 'info');
-                } else if (processed > 0) {
-                    addToast(
-                        `Refresh complete: ${updated.toLocaleString()} updated, ${errors} errors`,
-                        errors > 0 ? 'warning' : 'success'
-                    );
-                }
-
-                console.log(`[Refresh] Complete: ${processed} processed, ${updated} updated, ${errors} errors`);
-                void refreshFacetsAfterMetadataUpdate(event.payload);
+                if (combinedRefreshInFlightRef.current) return;
+                completeRefresh(event.payload);
             },
             'Metadata refresh complete'
         );
@@ -170,7 +226,7 @@ export function useMetadataRefresh() {
             progressListener.cleanup();
             completeListener.cleanup();
         };
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, refreshFacetsAfterMetadataUpdate]);
+    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh]);
 
     // Start refresh job
     const startRefresh = useCallback(async (
@@ -195,29 +251,9 @@ export function useMetadataRefresh() {
         }
 
         try {
-            const result = await invoke<RefreshResult>('start_reparse_job', {
-                forceReparse: false,
-                filterRoot: null,
-                filterTool: filterTool || null
-            });
-            const videoResult = await refreshVideoMetadata(null, false) ?? {
-                processed: 0,
-                updated: 0,
-                errors: 0,
-                wasCancelled: false
-            };
-            result.processed += videoResult.processed;
-            result.updated += videoResult.updated;
-            result.errors += videoResult.errors;
-            result.wasCancelled ||= videoResult.wasCancelled;
+            const result = await runCombinedRefresh(false, null, filterTool || null);
             console.log('[Refresh] Job returned:', result);
-            // Safety reset in case events are missed or job returns immediately
-            void refreshFacetsAfterMetadataUpdate(result);
-            setMetadataRefreshPending(false);
-            setIsRefreshingMetadata(false);
-            startupAnnouncementCountRef.current = null;
-            startupAnnouncementShownRef.current = false;
-            deferStartupVisibilityUntilProcessingRef.current = false;
+            completeRefresh(result);
             return { ok: true };
         } catch (err) {
             console.error('[Refresh] Exception:', err);
@@ -226,12 +262,13 @@ export function useMetadataRefresh() {
             }
             setMetadataRefreshPending(false);
             setIsRefreshingMetadata(false);
+            setRefreshProgress(null);
             startupAnnouncementCountRef.current = null;
             startupAnnouncementShownRef.current = false;
             deferStartupVisibilityUntilProcessingRef.current = false;
             return { ok: false, error: err };
         }
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, addToast, browserMockMode]);
+    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh, runCombinedRefresh]);
 
     // Cancel refresh job
     const cancelRefresh = useCallback(async () => {
@@ -261,37 +298,18 @@ export function useMetadataRefresh() {
         setIsRefreshingMetadata(true);
 
         try {
-            const result = await invoke<RefreshResult>('start_reparse_job', {
-                forceReparse: force,
-                filterRoot: rootPath || null,
-                filterTool: filterTool || null
-            });
-            const videoResult = await refreshVideoMetadata(rootPath || null, force) ?? {
-                processed: 0,
-                updated: 0,
-                errors: 0,
-                wasCancelled: false
-            };
-            result.processed += videoResult.processed;
-            result.updated += videoResult.updated;
-            result.errors += videoResult.errors;
-            result.wasCancelled ||= videoResult.wasCancelled;
+            const result = await runCombinedRefresh(force, rootPath || null, filterTool || null);
             console.log('[Refresh] Job returned:', result);
-            // Safety reset in case events are missed or job returns immediately
-            void refreshFacetsAfterMetadataUpdate(result);
-            setMetadataRefreshPending(false);
-            setIsRefreshingMetadata(false);
-            startupAnnouncementCountRef.current = null;
-            startupAnnouncementShownRef.current = false;
-            deferStartupVisibilityUntilProcessingRef.current = false;
+            completeRefresh(result);
         } catch (err) {
             console.error('[Refresh] Exception:', err);
             addToast(`Failed to force refresh: ${getErrorMessage(err)}`, 'error');
             setMetadataRefreshPending(false);
             setIsRefreshingMetadata(false);
+            setRefreshProgress(null);
             deferStartupVisibilityUntilProcessingRef.current = false;
         }
-    }, [setMetadataRefreshPending, setIsRefreshingMetadata, addToast, browserMockMode]);
+    }, [setMetadataRefreshPending, setIsRefreshingMetadata, setRefreshProgress, addToast, browserMockMode, completeRefresh, runCombinedRefresh]);
 
     // Auto-detect stale metadata on startup
     useEffect(() => {
