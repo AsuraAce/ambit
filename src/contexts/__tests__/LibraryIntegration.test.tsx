@@ -1790,9 +1790,71 @@ describe('Library Integration (Provider Stack)', () => {
         expect(mocks.clearLibraryStatsCache).not.toHaveBeenCalled();
     });
 
+    it('publishes boards reconciled while restoring a saved All users scope', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollections });
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
+            changed: false,
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: 0,
+            removedVisibilityUpdated: 0,
+            boardCollectionsUpdated: 1,
+            mode: 'all',
+            cacheRepair: {
+                action: 'restored',
+                resources: {
+                    checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                    controlNets: [], ipAdapters: [], tools: [],
+                },
+                facetTypes: [],
+                collectionsDirty: false,
+            },
+            cacheStatus: {
+                state: 'ready',
+                generation: 0,
+                builtGeneration: 0,
+                facetCount: 10,
+                collectionCount: 3,
+            },
+        });
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({
+            invokeAiPath: 'D:/Invoke',
+            syncBoardsToCollections: true,
+            invokeSyncBoards: true,
+            invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'all' },
+        }));
+
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            includeThumbnails: false,
+            scheduleSmartRefresh: false,
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
+        expect(syncHook?.invokeOwnerScopeState.scope).toMatchObject({ mode: 'all' });
+    });
+
     it('runs the board-owner repair when persistent board collections are enabled later', async () => {
         let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
         let syncHook: SyncHook | undefined;
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollections });
         const discovery: InvokeOwnerDiscovery = {
             schemaMode: 'multi_user',
             dbPath: 'D:/Invoke/databases/invokeai.db',
@@ -1814,14 +1876,15 @@ describe('Library Integration (Provider Stack)', () => {
             files: [],
         };
         mocks.discoverInvokeOwners.mockResolvedValue(discovery);
-        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: {
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection, reconcileBoardOwners }: {
             selection?: { mode: 'owner' | 'all' };
+            reconcileBoardOwners?: boolean;
         }) => ({
-            changed: false,
+            changed: reconcileBoardOwners === true,
             sourceFactsUpdated: 0,
             activeVisibilityUpdated: 0,
             removedVisibilityUpdated: 0,
-            boardCollectionsUpdated: 0,
+            boardCollectionsUpdated: reconcileBoardOwners ? 1 : 0,
             mode: selection?.mode ?? 'unselected',
         }));
 
@@ -1846,6 +1909,12 @@ describe('Library Integration (Provider Stack)', () => {
             expect.objectContaining({ reconcileBoardOwners: true })
         ));
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            includeThumbnails: false,
+            scheduleSmartRefresh: false,
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
     });
 
     it('restores cached owner cursors and skips SQLite catch-up when switching between current scopes', async () => {
@@ -4043,6 +4112,10 @@ describe('Library Integration (Provider Stack)', () => {
         );
         expect(useLibraryStore.getState().syncProgress.total).toBe(1);
         expect(refreshCollections).toHaveBeenCalledOnce();
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         consoleWarn.mockRestore();
     });
@@ -4186,7 +4259,11 @@ describe('Library Integration (Provider Stack)', () => {
             '[Sync] Failed to preserve the active Invoke scope cache after live sync',
             expect.any(Error),
         ));
-        expect(refreshCollections).toHaveBeenCalledWith(false, { scheduleSmartRefresh: false });
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            scheduleSmartRefresh: false,
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
         expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();

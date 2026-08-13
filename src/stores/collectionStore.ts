@@ -82,7 +82,7 @@ interface RefreshSmartCountsOptions {
     throwOnError?: boolean;
 }
 
-interface CollectionRefreshOptions {
+export interface CollectionRefreshOptions {
     includeThumbnails?: boolean;
     scheduleSmartRefresh?: boolean;
     retryOnSuperseded?: boolean;

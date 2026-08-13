@@ -167,6 +167,33 @@ describe('useCollectionOperations', () => {
             expect(mockSetAllCollections).toHaveBeenCalledTimes(2); // Initial + Rollback
             expect(mockAddToast).toHaveBeenCalledWith(expect.any(String), 'error');
         });
+
+        it('keeps a committed collection when the authoritative refresh fails', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            mockRefreshCollections.mockRejectedValueOnce(new Error('refresh failed'));
+            const { result } = renderHook(() => useCollectionOperations(props));
+
+            await act(async () => {
+                await result.current.createCollection('Committed Folder');
+            });
+
+            expect(mockSetAllCollections).toHaveBeenCalledOnce();
+            expect(mockRefreshCollections).toHaveBeenCalledWith(false, {
+                retryOnSuperseded: true,
+                throwOnError: true,
+            });
+            expect(mockAddToast).toHaveBeenCalledWith('Collection "Committed Folder" created', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(
+                'Collection created, but the collection list may need a refresh.',
+                'warning'
+            );
+            expect(mockAddToast).not.toHaveBeenCalledWith('Failed to create collection', 'error');
+            expect(errorSpy).toHaveBeenCalledWith(
+                '[Collections] Failed to refresh after creating collection',
+                expect.any(Error)
+            );
+            errorSpy.mockRestore();
+        });
     });
 
     describe('deleteCollection', () => {

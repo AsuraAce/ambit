@@ -345,7 +345,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (scope === 'full') {
             refreshTasks.push(
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-                refreshCollections()
+                refreshCollections(false, {
+                    retryOnSuperseded: true,
+                    throwOnError: true,
+                })
             );
         }
 

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createContext, useContext, useEffect, ReactNode } from 'react';
 import { Collection, SmartCollection } from '../types';
 import { useCollectionStore } from '../stores/collectionStore';
+import type { CollectionRefreshOptions } from '../stores/collectionStore';
 
 interface CollectionContextType {
     collections: Collection[];
@@ -9,7 +10,7 @@ interface CollectionContextType {
     smartCollections: SmartCollection[];
     setSmartCollections: React.Dispatch<React.SetStateAction<SmartCollection[]>>;
     setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-    refreshCollections: (debounced?: boolean) => Promise<void>;
+    refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
     refreshCollectionThumbnails: (debounced?: boolean) => Promise<void>;
     isLoaded: boolean;
 }

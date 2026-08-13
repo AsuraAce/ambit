@@ -493,7 +493,11 @@ export const SyncProvider: React.FC<{
             : undefined;
         const needsCachePreparation = scope !== null && cacheRepair.action !== 'restored';
         try {
-            if (result.changed || forceRefresh || reconcileSourceFacts || needsCachePreparation) {
+            if (result.changed
+                || result.boardCollectionsUpdated > 0
+                || forceRefresh
+                || reconcileSourceFacts
+                || needsCachePreparation) {
                 const repairMessage = cacheRepair.action === 'restored'
                     ? 'Restoring cached InvokeAI view...'
                     : cacheRepair.action === 'selective'
@@ -1312,7 +1316,10 @@ export const SyncProvider: React.FC<{
                     return changed ? next : prev;
                 });
             }
-            const shouldRefreshBoardCollectionThumbnails = !!boardMapping && boardMapping.size > 0;
+            const hasBoardMapping = !!boardMapping && boardMapping.size > 0;
+            const shouldRefreshBoardCollections = settingsRef.current.syncBoardsToCollections
+                && options.syncBoards !== false
+                && (isStartupMode || hasBoardMapping);
 
             // Orphan scanning
             let orphansImported = 0;
@@ -1380,11 +1387,17 @@ export const SyncProvider: React.FC<{
                         changedImageCount: totalProcessed
                     }, touchedFacetResources);
 
-                    const collectionRefreshPromise = shouldRefreshBoardCollectionThumbnails
-                        ? refreshCollections(false, { scheduleSmartRefresh: false }).then(() => Promise.all([
-                            refreshCollectionThumbnails(true),
-                            refreshSmartCounts({ includeArchived: false, markPending: false }),
-                        ]))
+                    const collectionRefreshPromise = shouldRefreshBoardCollections
+                        ? refreshCollections(false, {
+                            scheduleSmartRefresh: false,
+                            retryOnSuperseded: true,
+                            throwOnError: true,
+                        }).then(() => hasBoardMapping
+                            ? Promise.all([
+                                refreshCollectionThumbnails(true),
+                                refreshSmartCounts({ includeArchived: false, markPending: false }),
+                            ])
+                            : undefined)
                         : Promise.resolve();
                     try {
                         await Promise.all([facetRefreshPromise, collectionRefreshPromise]);
@@ -1456,13 +1469,16 @@ export const SyncProvider: React.FC<{
                     if (options.mode !== 'startup') {
                         await onSyncComplete?.('full');
                     } else {
-                        if (shouldRefreshBoardCollectionThumbnails) {
-                            await refreshCollections();
+                        if (shouldRefreshBoardCollections) {
+                            await refreshCollections(false, {
+                                retryOnSuperseded: true,
+                                throwOnError: true,
+                            });
                         }
                         setSyncStatus('complete');
                     }
 
-                    if (shouldRefreshBoardCollectionThumbnails) {
+                    if (hasBoardMapping) {
                         await refreshCollectionThumbnails(true);
                     }
 
@@ -1492,6 +1508,12 @@ export const SyncProvider: React.FC<{
                             orphanScanEnabled: shouldImportOrphans,
                             onRefreshApplied: incrementFacetCacheVersion
                         });
+                        if (shouldRefreshBoardCollections) {
+                            await refreshCollections(false, {
+                                retryOnSuperseded: true,
+                                throwOnError: true,
+                            });
+                        }
                     }
                     debugLiveWatchPerf('Invoke sync no-op skipped metadata refresh', {
                         mode: options.mode,

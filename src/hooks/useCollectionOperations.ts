@@ -6,6 +6,7 @@ import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useCollectionStore } from '../stores/collectionStore';
+import type { CollectionRefreshOptions } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
   upsertCollection,
@@ -23,7 +24,7 @@ interface UseCollectionOperationsProps {
   collections: Collection[];
   smartCollections: SmartCollection[];
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-  refreshCollections: (debounced?: boolean) => Promise<void>;
+  refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
   activeCollectionId: string | null;
@@ -105,13 +106,22 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection(newCol);
-      addToast(`Collection "${name}" created`, 'success');
-      // Background refresh to ensure everything is in sync (smart stats etc)
-      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.filter(c => c.id !== id));
       addToast("Failed to create collection", "error");
+      return;
+    }
+
+    addToast(`Collection "${name}" created`, 'success');
+    try {
+      await refreshCollections(false, {
+        retryOnSuperseded: true,
+        throwOnError: true,
+      });
+    } catch (error) {
+      console.error('[Collections] Failed to refresh after creating collection', error);
+      addToast('Collection created, but the collection list may need a refresh.', 'warning');
     }
   }, [setAllCollections, refreshCollections, addToast, invokeOwnerScope]);
 
