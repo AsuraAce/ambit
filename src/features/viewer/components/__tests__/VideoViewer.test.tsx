@@ -99,6 +99,7 @@ const setup = (isMasked = false, videoOverrides: Partial<VideoAsset> = {}, initi
         onUpdatePrompt: vi.fn(),
         onUpdateNegativePrompt: vi.fn(),
         onUpdateModel: vi.fn(),
+        onUpdateTool: vi.fn(),
         onUpdateGenerationMode: vi.fn(),
         onRevertMetadata: vi.fn(),
         onSearch: vi.fn(),
@@ -120,6 +121,7 @@ describe('VideoViewer', () => {
 
         expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
         expect(screen.getByLabelText('Positive prompt')).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Video' })).toBeNull();
 
         fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
         await waitFor(() => expect((screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement).disabled).toBe(false));
@@ -131,7 +133,7 @@ describe('VideoViewer', () => {
     it('does not create or scope a player before a masked video is revealed', async () => {
         setup(true);
 
-        expect(screen.getByRole('dialog', { name: 'Hidden video' })).toBeTruthy();
+        const dialog = screen.getByRole('dialog', { name: 'Hidden video' });
         expect(screen.queryByText(video.filename)).toBeNull();
         expect(screen.queryByLabelText(new RegExp(video.filename))).toBeNull();
         expect(screen.queryByRole('application')).toBeNull();
@@ -143,6 +145,7 @@ describe('VideoViewer', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reveal video' }));
         expect(document.querySelector('video')).toBeNull();
         await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('clip.mp4'));
+        expect(screen.getByRole('dialog', { name: `Video viewer: ${video.filename}` })).toBe(dialog);
         expect(screen.getByText(video.filename)).toBeTruthy();
         expect(mocks.prepareVideoPlayback).toHaveBeenCalledWith(video.id);
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/videos/clip.mp4');
@@ -196,6 +199,7 @@ describe('VideoViewer', () => {
         expect(screen.queryByText('LoRAs')).toBeNull();
         expect(screen.queryByText('ControlNets')).toBeNull();
         expect(screen.queryByText('IP adapters')).toBeNull();
+        expect(screen.queryByText('Resources')).toBeNull();
         expect(screen.queryByText('None detected')).toBeNull();
     });
 
@@ -211,6 +215,56 @@ describe('VideoViewer', () => {
         />);
 
         expect(screen.getByRole('button', { name: 'Generation parameters' }).getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it('does not reuse workflow inspector state while navigating between videos', () => {
+        const firstWorkflow = JSON.stringify({ nodes: [{ id: 'first', type: 'FirstVideoNode', inputs: {} }] });
+        const secondWorkflow = JSON.stringify({ nodes: [{ id: 'second', type: 'SecondVideoNode', inputs: {} }] });
+        const view = setup(false, { metadata: { ...video.metadata, workflowJson: firstWorkflow } });
+        fireEvent.click(screen.getByRole('tab', { name: 'Workflow' }));
+        expect(screen.getAllByText('FirstVideoNode')).toHaveLength(2);
+
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{
+                ...view.props.video,
+                id: 'C:/videos/next.mp4',
+                metadata: { ...view.props.video.metadata, workflowJson: secondWorkflow },
+            }}
+        />);
+
+        expect(screen.queryAllByText('FirstVideoNode')).toHaveLength(0);
+        expect(screen.getAllByText('SecondVideoNode')).toHaveLength(2);
+    });
+
+    it('does not reuse playback or editable drafts while navigating to another video', async () => {
+        const view = setup(false, {
+            notes: 'first notes',
+            metadata: { ...video.metadata, positivePrompt: 'first prompt' },
+        });
+        await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('clip.mp4'));
+
+        let resolveNextPlayback: ((value: { status: 'ok'; data: string }) => void) | undefined;
+        mocks.prepareVideoPlayback.mockImplementationOnce(() => new Promise(resolve => {
+            resolveNextPlayback = resolve;
+        }));
+        const nextVideo: VideoAsset = {
+            ...view.props.video,
+            id: 'C:/videos/next.mp4',
+            filename: 'next.mp4',
+            notes: 'next notes',
+            metadata: { ...view.props.video.metadata, positivePrompt: 'next prompt' },
+        };
+        view.rerender(<VideoViewer {...view.props} video={nextVideo} />);
+
+        expect(document.querySelector('video')).toBeNull();
+        expect(screen.getByRole('status').textContent).toContain('Preparing secure playback');
+        expect((screen.getByLabelText('Positive prompt') as HTMLTextAreaElement).value).toBe('next prompt');
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe('next notes');
+
+        resolveNextPlayback?.({ status: 'ok', data: 'C:/videos/next.mp4' });
+        await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('next.mp4'));
     });
 
     it.each([
@@ -380,6 +434,34 @@ describe('VideoViewer', () => {
         expect(screen.getByText('Model Hash').parentElement?.textContent).toContain('f8bb2922e1');
     });
 
+    it('discards metadata editor drafts when navigating between videos with equal values', async () => {
+        const view = setup(false, {
+            metadata: { ...video.metadata, tool: GeneratorTool.COMFYUI, model: 'Shared Model' },
+        });
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy());
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Generation Tool' }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Generator software' }), { target: { value: GeneratorTool.INVOKEAI } });
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{ ...view.props.video, id: 'C:/videos/next.mp4' }}
+        />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy());
+        expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
+        fireEvent.click(screen.getByRole('option', { name: /Custom model/i }));
+        fireEvent.change(screen.getByLabelText('Custom model name'), { target: { value: 'Unsaved Model' } });
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{ ...view.props.video, id: 'C:/videos/third.mp4' }}
+        />);
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Model' })).toBeTruthy());
+        expect(screen.queryByLabelText('Custom model name')).toBeNull();
+        expect(view.props.onUpdateTool).not.toHaveBeenCalled();
+        expect(view.props.onUpdateModel).not.toHaveBeenCalled();
+    });
+
     it('shows video evidence and exposes explicit metadata overrides', async () => {
         const { props } = setup(false, {
             metadata: {
@@ -522,6 +604,45 @@ describe('VideoViewer', () => {
         fireEvent.keyDown(window, { key: 'ArrowRight' });
         expect(props.onPrev).toHaveBeenCalledOnce();
         expect(props.onNext).toHaveBeenCalledOnce();
+    });
+
+    it('uses Space for playback and keeps close on Escape', async () => {
+        const { props } = setup();
+        const player = await waitFor(() => {
+            const element = document.querySelector('video') as HTMLVideoElement | null;
+            expect(element).not.toBeNull();
+            return element as HTMLVideoElement;
+        });
+        const play = vi.spyOn(player, 'play').mockResolvedValue(undefined);
+        const pause = vi.spyOn(player, 'pause').mockImplementation(() => undefined);
+
+        Object.defineProperty(player, 'paused', { configurable: true, value: true });
+        const playEvent = new KeyboardEvent('keydown', { key: ' ', cancelable: true });
+        window.dispatchEvent(playEvent);
+        expect(playEvent.defaultPrevented).toBe(true);
+        expect(play).toHaveBeenCalledOnce();
+
+        Object.defineProperty(player, 'paused', { configurable: true, value: false });
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }));
+        expect(pause).toHaveBeenCalledOnce();
+
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(props.onClose).toHaveBeenCalledOnce();
+    });
+
+    it('closes from bare playback background but not from the player', async () => {
+        const { props } = setup();
+        const player = await waitFor(() => {
+            const element = document.querySelector('video') as HTMLVideoElement | null;
+            expect(element).not.toBeNull();
+            return element as HTMLVideoElement;
+        });
+
+        fireEvent.click(player);
+        expect(props.onClose).not.toHaveBeenCalled();
+
+        fireEvent.click(player.parentElement as HTMLElement);
+        expect(props.onClose).toHaveBeenCalledOnce();
     });
 
     it('does not seek from editable controls or without finite media duration', async () => {

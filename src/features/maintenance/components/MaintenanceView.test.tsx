@@ -265,30 +265,31 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, isShortcutBlocked }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, onUpdatePrompt, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
         onPrev: () => void;
         onClose: () => void;
-        onToggleFavorite: (id: string) => void;
+        onToggleFavorite?: (id: string) => void;
         onTogglePin?: (id: string, pinned: boolean) => void;
-        onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+        onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
         onSearch: () => void;
         onOpenSettings: () => void;
         onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
         onRecoverMetadata?: () => void;
+        onUpdatePrompt?: (id: string, prompt: string) => void;
         isShortcutBlocked?: boolean;
     }) => (
-        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-shortcuts-blocked={String(isShortcutBlocked)}>
+        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-editable={String(Boolean(onUpdatePrompt))} data-shortcuts-blocked={String(isShortcutBlocked)}>
             {onDelete && <button onClick={onDelete}>Viewer Cleanup</button>}
             <button onClick={onNext}>Viewer Next</button>
             <button onClick={onPrev}>Viewer Previous</button>
             <button onClick={onClose}>Close Viewer</button>
-            <button onClick={() => onToggleFavorite(image.id)}>Favorite Viewer</button>
+            {onToggleFavorite && <button onClick={() => onToggleFavorite(image.id)}>Favorite Viewer</button>}
             {onTogglePin && <button onClick={() => onTogglePin(image.id, true)}>Pin Viewer</button>}
-            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>
-            <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>
+            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(image.id, 'collection', true)}>Add Viewer Collection</button>}
+            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(image.id, 'collection', false)}>Remove Viewer Collection</button>}
             <button onClick={onSearch}>Viewer Search</button>
             <button onClick={onOpenSettings}>Viewer Settings</button>
             {onRecoverMetadata && <button onClick={onRecoverMetadata}>Recover Viewer Prompt</button>}
@@ -302,18 +303,18 @@ vi.mock('../../../features/viewer/components/VideoViewer', () => ({
         video: VideoAsset;
         onDelete?: (id: string) => void;
         onClose: () => void;
-        onToggleFavorite: (id: string) => void;
+        onToggleFavorite?: (id: string) => void;
         onTogglePin?: (id: string, pinned: boolean) => void;
         onUpdateNotes?: (id: string, notes: string) => void;
-        onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+        onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     }) => (
-        <div data-testid="maintenance-video-viewer" data-video-id={video.id}>
+        <div data-testid="maintenance-video-viewer" data-video-id={video.id} data-editable={String(Boolean(onUpdateNotes))}>
             {onDelete && <button onClick={() => onDelete(video.id)}>Video Cleanup</button>}
             <button onClick={onClose}>Close Video Viewer</button>
-            <button onClick={() => onToggleFavorite(video.id)}>Favorite Video Viewer</button>
+            {onToggleFavorite && <button onClick={() => onToggleFavorite(video.id)}>Favorite Video Viewer</button>}
             {onTogglePin && <button onClick={() => onTogglePin(video.id, true)}>Pin Video Viewer</button>}
             {onUpdateNotes && <button onClick={() => onUpdateNotes(video.id, 'video notes')}>Update Video Notes</button>}
-            <button onClick={() => void onSetCollectionMembership(video.id, 'collection', true)}>Add Video Collection</button>
+            {onSetCollectionMembership && <button onClick={() => void onSetCollectionMembership(video.id, 'collection', true)}>Add Video Collection</button>}
         </div>
     )
 }));
@@ -464,6 +465,28 @@ describe('MaintenanceView', () => {
         expect(onUpdateNotes).toHaveBeenCalledWith('missing-video', 'video notes');
         expect(onSetCollectionMembership).toHaveBeenCalledWith('missing-video', 'collection', true);
         await waitFor(() => expect(onRemoveFromLibrary).toHaveBeenCalledWith(['missing-video']));
+    });
+
+    it('opens removed image and video records as read-only metadata', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['trash']);
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'trash-image', isDeleted: true })];
+        const view = renderView();
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-editable')).toBe('false');
+        expect(screen.queryByText('Recover Viewer Prompt')).toBeNull();
+        expect(screen.queryByText('Favorite Viewer')).toBeNull();
+        expect(screen.queryByText('Pin Viewer')).toBeNull();
+        expect(screen.queryByText('Add Viewer Collection')).toBeNull();
+
+        maintenanceDataMock.localDeletedImages = [createVideo({ id: 'trash-video', isDeleted: true })];
+        view.rerender(<MaintenanceView {...view.props} />);
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        expect(screen.getByTestId('maintenance-video-viewer').getAttribute('data-editable')).toBe('false');
+        expect(screen.queryByText('Favorite Video Viewer')).toBeNull();
+        expect(screen.queryByText('Pin Video Viewer')).toBeNull();
+        expect(screen.queryByText('Add Video Collection')).toBeNull();
     });
 
     it('fetches missing audit results from both the store and LibraryHealth', async () => {

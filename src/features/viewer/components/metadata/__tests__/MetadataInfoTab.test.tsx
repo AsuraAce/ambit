@@ -80,7 +80,7 @@ describe('MetadataInfoTab', () => {
         expect(parameters.textContent).toContain('Seed0');
         expect(parameters.textContent).toContain('StepsUnknown');
         expect(parameters.textContent).toContain('CFGUnknown');
-        expect(screen.getByRole('button', { name: 'Copy Parameters' }).closest('section')?.contains(parameters)).toBe(true);
+        expect(screen.getByRole('button', { name: 'Copy generation data' }).closest('section')?.contains(parameters)).toBe(true);
         const heading = screen.getByRole('heading', { name: 'Generation parameters' });
         expect(heading.closest('section')).toBe(parameters.closest('section'));
         expect(heading.parentElement?.parentElement).not.toBe(parameters.parentElement);
@@ -134,6 +134,23 @@ describe('MetadataInfoTab', () => {
         expect(props.onUpdateNegativePrompt).toHaveBeenCalledWith('C:/library/image.png', 'Changed negative');
     });
 
+    it('saves an autocomplete selection exactly once with the selected value', () => {
+        const { props } = renderTab(image(metadata(), metadata()), {
+            promptValue: 'portrait, ca',
+            availableTags: ['castle'],
+        });
+        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+
+        fireEvent.change(prompt, { target: { value: 'portrait, cas' } });
+        const suggestion = screen.getByRole('button', { name: /castle/i });
+        fireEvent.blur(prompt, { relatedTarget: suggestion });
+        fireEvent.click(suggestion);
+
+        expect(props.setPromptValue).toHaveBeenLastCalledWith('portrait, castle, ');
+        expect(props.onUpdatePrompt).toHaveBeenCalledOnce();
+        expect(props.onUpdatePrompt).toHaveBeenCalledWith('C:/library/image.png', 'portrait, castle, ');
+    });
+
     it('shows a read-only original prompt without mutating the editable draft', () => {
         const { props } = renderTab(image(
             metadata({ positivePrompt: 'Current prompt' }),
@@ -147,7 +164,7 @@ describe('MetadataInfoTab', () => {
         expect(props.setPromptValue).not.toHaveBeenCalled();
     });
 
-    it('only shows revert when editable prompt metadata differs', () => {
+    it('only shows revert when editable metadata differs', () => {
         const unchanged = renderTab(image(metadata({ steps: 0 }), metadata({ steps: 20 })));
         expect(screen.queryByRole('button', { name: 'Revert All Metadata to Original' })).toBeNull();
         unchanged.unmount();
@@ -160,20 +177,35 @@ describe('MetadataInfoTab', () => {
         expect(props.onRevertMetadata).toHaveBeenCalledWith('C:/library/image.png');
     });
 
+    it.each([
+        ['generator software', metadata({ tool: GeneratorTool.COMFYUI }), metadata({ tool: GeneratorTool.AUTOMATIC1111 })],
+        ['model override', metadata({ model: 'Original model', overrideModel: 'Chosen model' }), metadata({ model: 'Original model' })],
+    ])('offers revert for a %s-only override', (_label, current, original) => {
+        const { props } = renderTab(image(current, original));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Revert All Metadata to Original' }));
+
+        expect(props.onRevertMetadata).toHaveBeenCalledWith('C:/library/image.png');
+    });
+
     it('copies raw A1111 data and formats normalized parameters otherwise', () => {
         const raw = renderTab(image(metadata({
             tool: GeneratorTool.AUTOMATIC1111,
             rawParameters: 'raw generation parameters',
         }), metadata()));
-        fireEvent.click(screen.getByRole('button', { name: 'Copy Parameters' }));
+        const copyGenerationData = screen.getByRole('button', { name: 'Copy generation data' });
+        fireEvent.mouseEnter(copyGenerationData);
+        expect(screen.getByRole('tooltip').textContent).toBe('Copy prompts and generation settings in the best available source-compatible format.');
+        fireEvent.click(copyGenerationData);
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith('raw generation parameters');
+        expect(screen.getByRole('button', { name: 'Generation parameters' }).getAttribute('aria-expanded')).toBe('true');
         raw.unmount();
 
         renderTab(image(metadata({
             positivePrompt: 'A castle', negativePrompt: 'fog', steps: 0, sampler: '', cfg: 8,
             seed: 0, modelHash: 'abc', model: 'Model X', tool: GeneratorTool.COMFYUI,
         }), metadata()), { negativePromptValue: 'fog' });
-        fireEvent.click(screen.getByRole('button', { name: 'Copy Parameters' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Copy generation data' }));
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
             'A castle\nNegative prompt: fog\nSteps: 0, Sampler: Euler a, CFG scale: 8, Seed: 0, Size: 100x100, Model hash: abc, Model: Model X',
         );
@@ -203,6 +235,44 @@ describe('MetadataInfoTab', () => {
         expect(props.onUpdateModel).toHaveBeenCalledWith('C:/library/image.png', 'My Model');
     });
 
+    it('cancels generator and model drafts on outside click or Escape', () => {
+        const { props } = renderTab(image(metadata({ tool: GeneratorTool.COMFYUI, model: 'SDXL 1.0' }), metadata()));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Generation Tool' }));
+        fireEvent.change(screen.getByRole('combobox', { name: 'Generator software' }), { target: { value: GeneratorTool.INVOKEAI } });
+        fireEvent.pointerDown(document.body);
+        expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy();
+        expect(props.onUpdateTool).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
+        fireEvent.click(screen.getByRole('option', { name: /Custom model/i }));
+        const customModel = screen.getByLabelText('Custom model name');
+        fireEvent.change(customModel, { target: { value: 'Unsaved Model' } });
+        fireEvent.keyDown(customModel, { key: 'Escape' });
+        expect(screen.getByRole('button', { name: 'Edit Model' })).toBeTruthy();
+        expect(props.onUpdateModel).not.toHaveBeenCalled();
+    });
+
+    it('discards model and generator drafts when navigating between assets with equal values', () => {
+        const first = image(metadata({ tool: GeneratorTool.COMFYUI, model: 'Shared Model' }), metadata());
+        const { props, rerender } = renderTab(first);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Generation Tool' }));
+        fireEvent.change(screen.getByRole('combobox'), { target: { value: GeneratorTool.INVOKEAI } });
+        rerender(<MetadataInfoTab {...props} image={{ ...first, id: 'C:/library/next.png' }} />);
+        expect(screen.queryByRole('button', { name: /save/i })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
+        fireEvent.click(screen.getByRole('option', { name: /Custom model/i }));
+        fireEvent.change(screen.getByLabelText('Custom model name'), { target: { value: 'Unsaved Model' } });
+        rerender(<MetadataInfoTab {...props} image={{ ...first, id: 'C:/library/third.png' }} />);
+        expect(screen.queryByLabelText('Custom model name')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Edit Model' })).toBeTruthy();
+        expect(props.onUpdateTool).not.toHaveBeenCalled();
+        expect(props.onUpdateModel).not.toHaveBeenCalled();
+    });
+
     it('renders only populated optional parameter and resource rows', () => {
         const { props } = renderTab(image(metadata({
             hiresSteps: 10,
@@ -217,16 +287,19 @@ describe('MetadataInfoTab', () => {
         expect(props.onClose).toHaveBeenCalled();
     });
 
-    it('keeps tags and populated resources at the same visual hierarchy', () => {
+    it('groups populated generation resources separately from smart tags', () => {
         renderTab(image(metadata({
             positivePrompt: 'portrait, dramatic lighting',
             loras: ['detail-lora'],
         }), metadata()));
 
         const tagsSection = screen.getByRole('heading', { name: 'Smart Tags' }).closest('section');
+        const resourcesSection = screen.getByRole('heading', { name: 'Resources' }).closest('section');
         const loraSection = screen.getByRole('heading', { name: 'LoRAs' }).closest('section');
-        expect(tagsSection?.parentElement).toBe(loraSection?.parentElement);
-        expect(loraSection?.parentElement?.className).toContain('space-y-6');
+        expect(tagsSection?.parentElement).toBe(resourcesSection?.parentElement);
+        expect(loraSection?.parentElement?.closest('section')).toBe(resourcesSection);
+        expect(screen.getByRole('button', { name: 'portrait' }).className).toContain('rounded-lg');
+        expect(screen.getByRole('button', { name: 'detail-lora' }).className).toContain('rounded-lg');
     });
 
     it('collapses smart tags independently and keeps the tag count visible', () => {
@@ -262,6 +335,10 @@ describe('MetadataInfoTab', () => {
         expect(screen.getByText('f8bb2922e1')).toBeTruthy();
         expect(screen.getByText('Unresolved hash')).toBeTruthy();
         expect(screen.queryByText('Model Hash')).toBeNull();
+
+        fireEvent.focus(screen.getByRole('button', { name: 'About unresolved model hash' }));
+        expect(screen.getByRole('tooltip').textContent).toContain('Settings → Connections → Resources → Resolve Online');
+        expect(screen.getByRole('tooltip').textContent).toContain('Only the hash is sent');
 
         fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
         expect((screen.getByRole('combobox', { name: 'Search models' }) as HTMLInputElement).value).toBe('');
@@ -340,5 +417,16 @@ describe('MetadataInfoTab', () => {
         expect(props.onUpdatePrompt).toHaveBeenCalledWith('C:/library/image.png', 'A lighthouse');
         expect(props.setNegativePromptValue).toHaveBeenCalledWith('fog');
         expect(props.onUpdateNegativePrompt).toHaveBeenCalledWith('C:/library/image.png', 'fog');
+    });
+
+    it('does not offer clipboard prompt mutation when prompt fields are read-only', () => {
+        renderTab(image(metadata({ tool: GeneratorTool.AUTOMATIC1111 }), metadata()), {
+            onUpdatePrompt: undefined,
+            onUpdateNegativePrompt: undefined,
+        });
+
+        expect(screen.queryByRole('button', { name: 'Parse Prompt from Clipboard' })).toBeNull();
+        expect((screen.getByRole('textbox', { name: 'Positive prompt' }) as HTMLTextAreaElement).readOnly).toBe(true);
+        expect((screen.getByRole('textbox', { name: 'Negative prompt' }) as HTMLTextAreaElement).readOnly).toBe(true);
     });
 });

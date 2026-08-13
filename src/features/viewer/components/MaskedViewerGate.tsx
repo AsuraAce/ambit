@@ -12,12 +12,7 @@ export const MaskedViewerGate: React.FC<MaskedViewerGateProps> = ({
     onReveal,
     onClose,
 }) => (
-    <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Hidden ${mediaLabel}`}
-        className="fixed inset-0 z-[100] flex items-center justify-center bg-black text-white"
-    >
+    <div className="relative flex h-full w-full items-center justify-center bg-black text-white">
         <button
             type="button"
             aria-label={`Close ${mediaLabel} viewer`}

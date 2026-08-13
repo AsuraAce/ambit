@@ -19,7 +19,7 @@ import { ViewerSidebarShell } from './ViewerSidebarShell';
 import { AssetTechnicalDetails } from './metadata/AssetTechnicalDetails';
 import { MetadataField } from './metadata/MetadataField';
 import { MetadataParameterList } from './metadata/MetadataParameterList';
-import { ResourceSection } from './metadata/ResourceSection';
+import { ResourcesSection } from './metadata/ResourcesSection';
 import { getModelPresentation } from './metadata/modelPresentation';
 import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
 import { MetadataGeneratorField } from './metadata/MetadataGeneratorField';
@@ -41,7 +41,7 @@ interface VideoViewerProps {
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
-    onToggleFavorite: (id: string) => void;
+    onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
     onDelete?: (id: string) => void;
     onUpdateNotes?: (id: string, notes: string) => void;
@@ -52,7 +52,7 @@ interface VideoViewerProps {
     onUpdateGenerationMode?: (id: string, mode: VideoGenerationMode) => void;
     onRevertMetadata?: (id: string) => void;
     onSearch?: (term: string) => void;
-    onSetCollectionMembership: (assetId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onSetCollectionMembership?: (assetId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     modelOptions?: readonly string[];
     isShortcutBlocked?: boolean;
     canNavigateNext?: boolean;
@@ -92,28 +92,39 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     );
     const revealed = !isMasked || initiallyRevealed || revealedVideoId === video.id;
     const [playerKey, setPlayerKey] = React.useState(0);
-    const [playbackStatus, setPlaybackStatus] = React.useState(video.playbackStatus);
-    const [notes, setNotes] = React.useState(video.notes ?? '');
+    const [playbackState, setPlaybackState] = React.useState({
+        videoId: video.id,
+        status: video.playbackStatus,
+        url: null as string | null,
+    });
+    const [notesState, setNotesState] = React.useState({ videoId: video.id, value: video.notes ?? '' });
     const [activeTab, setActiveTab] = React.useState<VideoViewerTab>('metadata');
-    const [positivePrompt, setPositivePrompt] = React.useState(video.metadata.positivePrompt);
-    const [negativePrompt, setNegativePrompt] = React.useState(video.metadata.negativePrompt);
+    const [positivePromptState, setPositivePromptState] = React.useState({ videoId: video.id, value: video.metadata.positivePrompt });
+    const [negativePromptState, setNegativePromptState] = React.useState({ videoId: video.id, value: video.metadata.negativePrompt });
     const [fullVideo, setFullVideo] = React.useState<VideoAsset | null>(null);
-    const [playbackUrl, setPlaybackUrl] = React.useState<string | null>(null);
+    const playbackStatus = playbackState.videoId === video.id ? playbackState.status : video.playbackStatus;
+    const playbackUrl = playbackState.videoId === video.id ? playbackState.url : null;
+    const notes = notesState.videoId === video.id ? notesState.value : (video.notes ?? '');
+    const positivePrompt = positivePromptState.videoId === video.id ? positivePromptState.value : video.metadata.positivePrompt;
+    const negativePrompt = negativePromptState.videoId === video.id ? negativePromptState.value : video.metadata.negativePrompt;
 
     React.useEffect(() => {
         setRevealedVideoId(initiallyRevealed ? video.id : null);
     }, [video.id, initiallyRevealed]);
 
     React.useEffect(() => {
-        setPlaybackStatus(video.playbackStatus);
-        setNotes(video.notes ?? '');
-        setPositivePrompt(video.metadata.positivePrompt);
-        setNegativePrompt(video.metadata.negativePrompt);
-    }, [video.id, video.notes, video.playbackStatus, video.metadata]);
+        setPlaybackState(current => ({
+            videoId: video.id,
+            status: video.playbackStatus,
+            url: current.videoId === video.id ? current.url : null,
+        }));
+    }, [video.id, video.playbackStatus]);
 
     React.useEffect(() => {
-        setPlaybackUrl(null);
-    }, [video.id]);
+        setNotesState({ videoId: video.id, value: video.notes ?? '' });
+        setPositivePromptState({ videoId: video.id, value: video.metadata.positivePrompt });
+        setNegativePromptState({ videoId: video.id, value: video.metadata.negativePrompt });
+    }, [video.id, video.notes, video.metadata]);
 
     React.useEffect(() => {
         if (!revealed || video.isMissing) {
@@ -168,11 +179,15 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
         let cancelled = false;
         void unwrap(commands.prepareVideoPlayback(video.id))
             .then(path => {
-                if (!cancelled) setPlaybackUrl(convertFileSrc(path));
+                if (!cancelled) setPlaybackState(current => ({
+                    videoId: video.id,
+                    status: current.videoId === video.id ? current.status : video.playbackStatus,
+                    url: convertFileSrc(path),
+                }));
             })
             .catch(error => {
                 console.error('[VideoViewer] Failed to prepare scoped video playback', error);
-                if (!cancelled) setPlaybackStatus('external_required');
+                if (!cancelled) setPlaybackState({ videoId: video.id, status: 'external_required', url: null });
             });
         return () => { cancelled = true; };
     }, [revealed, video.id, video.isMissing, playerKey]);
@@ -186,7 +201,14 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     }, []);
 
     const handleViewerKeyDown = React.useCallback((event: KeyboardEvent) => {
-            if (event.key === 'Escape') onClose();
+            if (event.target instanceof Element && event.target.closest('button')) return;
+            if (event.key === ' ') {
+                const player = playerRef.current;
+                if (!player) return;
+                event.preventDefault();
+                if (player.paused) void player.play().catch(() => undefined);
+                else player.pause();
+            } else if (event.key === 'Escape') onClose();
             else if (event.key === 'ArrowRight' && canNavigateNext) onNext();
             else if (event.key === 'ArrowLeft' && canNavigatePrevious) onPrev();
             else if (event.key.toLowerCase() === 'j') {
@@ -204,7 +226,11 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     });
 
     const recordPlaybackStatus = (status: 'playable' | 'external_required') => {
-        setPlaybackStatus(status);
+        setPlaybackState(current => ({
+            videoId: video.id,
+            status,
+            url: current.videoId === video.id ? current.url : null,
+        }));
         void updateVideoPlaybackStatus(video.id, status).catch(error => {
             console.error('[VideoViewer] Failed to persist playback status', error);
         });
@@ -232,17 +258,22 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
 
     if (!revealed && !video.isMissing) {
         return (
-            <MaskedViewerGate
-                mediaLabel="video"
-                onReveal={() => setRevealedVideoId(video.id)}
-                onClose={onClose}
-            />
+            <div role="dialog" aria-modal="true" aria-label="Hidden video" className="fixed inset-0 z-[100] flex bg-black text-white">
+                <MaskedViewerGate
+                    mediaLabel="video"
+                    onReveal={() => setRevealedVideoId(video.id)}
+                    onClose={onClose}
+                />
+            </div>
         );
     }
 
     return (
         <div role="dialog" aria-modal="true" aria-label={`Video viewer: ${video.filename}`} className="fixed inset-0 z-[100] flex bg-black text-white">
-            <main className="relative flex min-w-0 flex-1 items-center justify-center bg-black">
+            <main
+                className="relative flex min-w-0 flex-1 items-center justify-center bg-black"
+                onClick={event => { if (event.target === event.currentTarget) onClose(); }}
+            >
                 <ViewerToolbarFrame filename={video.filename} actions={<>
                     {!video.isMissing && (
                         <ViewerToolbarButton label="Open in Default App" onClick={() => void handleOpenExternal()}>
@@ -254,13 +285,13 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                             <Save />
                         </ViewerToolbarButton>
                     )}
-                    <ViewerToolbarButton
+                    {onToggleFavorite && <ViewerToolbarButton
                         label={video.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
                         aria-pressed={video.isFavorite}
                         onClick={() => onToggleFavorite(video.id)}
                     >
                         <Heart className={video.isFavorite ? 'fill-red-500 text-red-500' : ''} />
-                    </ViewerToolbarButton>
+                    </ViewerToolbarButton>}
                     {onTogglePin && (
                         <ViewerToolbarButton
                             label={video.isPinned ? 'Unpin' : 'Pin to Top'}
@@ -295,12 +326,15 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                         <h2 className="text-xl font-bold">Playback unavailable here</h2>
                         <p className="mt-2 text-sm text-zinc-400">The file is still in your library and can be opened with your default video app.</p>
                         <div className="mt-6 flex gap-3">
-                            <button onClick={() => { setPlaybackStatus('unknown'); setPlaybackUrl(null); setPlayerKey(key => key + 1); }} className="flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2"><RotateCcw className="h-4 w-4" /> Retry</button>
+                            <button onClick={() => { setPlaybackState({ videoId: video.id, status: 'unknown', url: null }); setPlayerKey(key => key + 1); }} className="flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2"><RotateCcw className="h-4 w-4" /> Retry</button>
                             <button onClick={() => void handleOpenExternal()} className="rounded-lg bg-sage-500 px-4 py-2 font-bold">Open externally</button>
                         </div>
                     </div>
                 ) : playbackUrl ? (
-                    <div className="flex w-full max-w-[calc(100vw-24rem)] flex-col items-center gap-4 px-6">
+                    <div
+                        className="flex w-full max-w-[calc(100vw-24rem)] flex-col items-center gap-4 px-6"
+                        onClick={event => { if (event.target === event.currentTarget) onClose(); }}
+                    >
                         <video
                             key={`${video.id}:${playerKey}`}
                             ref={playerRef}
@@ -334,7 +368,6 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
             </main>
 
             <ViewerSidebarShell
-                mediaLabel="Video"
                 tabs={VIDEO_VIEWER_TABS}
                 activeTab={activeTab}
                 onTabChange={setActiveTab}
@@ -352,27 +385,28 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                 <MetadataTextAreaField
                     kind="notes"
                     value={notes}
-                    onChange={event => setNotes(event.target.value)}
+                    onChange={event => setNotesState({ videoId: video.id, value: event.target.value })}
                     onBlur={() => {
                         if (notes !== (video.notes ?? '')) onUpdateNotes?.(video.id, notes);
                     }}
+                    readOnly={!onUpdateNotes}
                     className="mt-6"
                 />
 
-                <div className="mt-6">
+                {onSetCollectionMembership ? <div className="mt-6">
                     <CollectionMembershipPicker
                         assetId={video.id}
                         collections={collections}
                         onSetCollectionMembership={onSetCollectionMembership}
                     />
-                </div>
+                </div> : null}
                 </div>}
 
                 {activeTab === 'metadata' && <div className="custom-scrollbar h-full space-y-5 overflow-y-auto p-5 text-sm">
                     <MetadataTextAreaField
                         kind="positivePrompt"
                         value={positivePrompt}
-                        onChange={event => setPositivePrompt(event.target.value)}
+                        onChange={event => setPositivePromptState({ videoId: video.id, value: event.target.value })}
                         onBlur={() => {
                             if (positivePrompt !== (metadataVideo.metadata.positivePrompt ?? '')) {
                                 onUpdatePrompt?.(video.id, positivePrompt);
@@ -384,7 +418,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                     <MetadataTextAreaField
                         kind="negativePrompt"
                         value={negativePrompt}
-                        onChange={event => setNegativePrompt(event.target.value)}
+                        onChange={event => setNegativePromptState({ videoId: video.id, value: event.target.value })}
                         onBlur={() => {
                             if (negativePrompt !== (metadataVideo.metadata.negativePrompt ?? '')) {
                                 onUpdateNegativePrompt?.(video.id, negativePrompt);
@@ -405,11 +439,13 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                         </select>
                     </MetadataField>
                     <MetadataGeneratorField
+                        key={`generator:${metadataVideo.id}`}
                         value={metadataVideo.metadata.tool}
                         source={metadataVideo.metadata.fieldSources?.tool}
                         onSave={onUpdateTool ? value => onUpdateTool(video.id, value) : undefined}
                     />
                     <MetadataModelField
+                        key={`model:${metadataVideo.id}`}
                         presentation={modelPresentation}
                         options={modelOptions}
                         source={metadataVideo.metadata.fieldSources?.model}
@@ -422,16 +458,24 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                         { label: 'Sampler', value: metadataVideo.metadata.sampler || 'Unknown', source: metadataVideo.metadata.fieldSources?.sampler },
                         { label: 'Model Hash', value: modelPresentation.isHashFallback ? 'Unknown' : (metadataVideo.metadata.modelHash || 'Unknown'), optional: true },
                     ]} expanded={metadataDisclosure.isExpanded('generationParameters')} onExpandedChange={expanded => metadataDisclosure.setExpanded('generationParameters', expanded)} />
-                    <ResourceSection title="LoRAs" icon={Puzzle} filterKind="lora" items={metadataVideo.metadata.loras ?? []} source={metadataVideo.metadata.fieldSources?.loras} onSearch={onSearch} onClose={onClose} expanded={metadataDisclosure.isExpanded('resource:loras')} onExpandedChange={expanded => metadataDisclosure.setExpanded('resource:loras', expanded)} />
-                    <ResourceSection title="ControlNets" icon={Target} filterKind="controlnet" items={metadataVideo.metadata.controlNets ?? []} source={metadataVideo.metadata.fieldSources?.controlNets} onSearch={onSearch} onClose={onClose} expanded={metadataDisclosure.isExpanded('resource:controlnets')} onExpandedChange={expanded => metadataDisclosure.setExpanded('resource:controlnets', expanded)} />
-                    <ResourceSection title="IP adapters" icon={Link} filterKind="ipadapter" items={metadataVideo.metadata.ipAdapters ?? []} source={metadataVideo.metadata.fieldSources?.ipAdapters} onSearch={onSearch} onClose={onClose} expanded={metadataDisclosure.isExpanded('resource:ip-adapters')} onExpandedChange={expanded => metadataDisclosure.setExpanded('resource:ip-adapters', expanded)} />
+                    <ResourcesSection
+                        groups={[
+                            { title: 'LoRAs', icon: Puzzle, filterKind: 'lora', items: metadataVideo.metadata.loras, source: metadataVideo.metadata.fieldSources?.loras },
+                            { title: 'ControlNets', icon: Target, filterKind: 'controlnet', items: metadataVideo.metadata.controlNets, source: metadataVideo.metadata.fieldSources?.controlNets },
+                            { title: 'IP adapters', icon: Link, filterKind: 'ipadapter', items: metadataVideo.metadata.ipAdapters, source: metadataVideo.metadata.fieldSources?.ipAdapters },
+                        ]}
+                        onSearch={onSearch}
+                        onClose={onClose}
+                        expanded={metadataDisclosure.isExpanded('resources')}
+                        onExpandedChange={expanded => metadataDisclosure.setExpanded('resources', expanded)}
+                    />
                     {metadataVideo.metadata.conflicts && metadataVideo.metadata.conflicts.length > 0 && <section className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs"><h3 className="font-bold text-amber-200">Conflicting evidence</h3>{metadataVideo.metadata.conflicts.map((conflict, index) => <p key={`${conflict.field}:${index}`} className="mt-2 text-zinc-300">{conflict.field}: ignored {conflict.ignoredValue} from {formatSource(conflict.ignoredSource)}</p>)}</section>}
                     {metadataVideo.metadata.diagnostics && metadataVideo.metadata.diagnostics.length > 0 && <section className="rounded-lg border border-white/10 bg-black p-3 text-xs"><h3 className="font-bold">Diagnostics</h3>{metadataVideo.metadata.diagnostics.map(diagnostic => <p key={diagnostic.code} className="mt-2 text-zinc-400">{diagnostic.message}</p>)}</section>}
                     {onRevertMetadata && hasUserOverrides ? <button type="button" onClick={() => onRevertMetadata(video.id)} className="w-full rounded-lg border border-white/10 px-3 py-2 font-bold hover:bg-white/10">Revert user overrides</button> : null}
                 </div>}
 
                 {activeTab === 'workflow' && (metadataVideo.metadata.workflowJson
-                    ? <WorkflowInspector image={metadataVideo} />
+                    ? <WorkflowInspector key={metadataVideo.id} image={metadataVideo} />
                     : <p className="p-5 text-sm text-zinc-400">No trusted workflow evidence was found for this video.</p>)}
             </ViewerSidebarShell>
         </div>

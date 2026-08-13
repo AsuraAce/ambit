@@ -4,7 +4,7 @@ import {
     Sparkles, Eye, Shuffle, Tag, Puzzle, Code, Target, Link, Plus
 } from 'lucide-react';
 import { AIImage, GeneratorTool } from '../../../../types';
-import { ResourceSection } from './ResourceSection';
+import { ResourcesSection } from './ResourcesSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
 import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
@@ -12,6 +12,7 @@ import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 import { formatInvokeImageCategory, isKnownInvokeImageAsset } from '../../../../utils/invokeImageSource';
 import { InvokeReferenceLinks } from './InvokeReferenceLinks';
 import { MetadataTextAreaField } from './MetadataTextAreaField';
+import { MetadataChip } from './MetadataChip';
 import { MetadataParameterList } from './MetadataParameterList';
 import { MetadataSectionHeader } from './MetadataSectionHeader';
 import { getModelPresentation } from './modelPresentation';
@@ -79,11 +80,14 @@ export const MetadataInfoTab = ({
     const [showOriginalPrompt, setShowOriginalPrompt] = useState(false);
     const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
     const promptDraftRef = useRef(promptValue);
+    const promptDirtyRef = useRef(false);
+    const promptSuggestionsRef = useRef<HTMLDivElement>(null);
     const negativePromptDraftRef = useRef(negativePromptValue);
 
     // --- Helpers ---
     useEffect(() => {
         setIsPromptDirty(false);
+        promptDirtyRef.current = false;
         setIsNegativePromptDirty(false);
         setShowOriginalPrompt(false);
         setPromptSuggestions([]);
@@ -133,7 +137,10 @@ export const MetadataInfoTab = ({
     const hasModifications = () => {
         return (
             isModified('positivePrompt') ||
-            isModified('negativePrompt')
+            isModified('negativePrompt') ||
+            isModified('tool') ||
+            isModified('model') ||
+            isModified('overrideModel')
         );
     };
 
@@ -158,6 +165,7 @@ export const MetadataInfoTab = ({
         promptDraftRef.current = nextValue;
         setPromptValue(nextValue);
         setIsPromptDirty(true);
+        promptDirtyRef.current = true;
         const lastToken = nextValue.split(',').pop()?.trim().toLowerCase();
         setPromptSuggestions(lastToken && lastToken.length > 1
             ? availableTags.filter(tag => tag.toLowerCase().includes(lastToken)
@@ -165,12 +173,30 @@ export const MetadataInfoTab = ({
             : []);
     };
 
-    const savePrompt = () => {
-        if (!showOriginalPrompt && isPromptDirty) {
+    const commitPrompt = () => {
+        if (!showOriginalPrompt && promptDirtyRef.current) {
             onUpdatePrompt?.(image.id, promptDraftRef.current);
+            promptDirtyRef.current = false;
             setIsPromptDirty(false);
         }
+    };
+
+    const savePrompt = (event: React.FocusEvent<HTMLTextAreaElement>) => {
+        if (event.relatedTarget instanceof Node && promptSuggestionsRef.current?.contains(event.relatedTarget)) return;
+        commitPrompt();
         setTimeout(() => setPromptSuggestions([]), 200);
+    };
+
+    const selectPromptSuggestion = (suggestion: string) => {
+        const parts = promptDraftRef.current.split(',');
+        parts.pop();
+        const nextValue = [...parts, suggestion].join(', ') + ', ';
+        promptDraftRef.current = nextValue;
+        setPromptValue(nextValue);
+        promptDirtyRef.current = false;
+        setIsPromptDirty(false);
+        setPromptSuggestions([]);
+        onUpdatePrompt?.(image.id, nextValue);
     };
 
     const saveNegativePrompt = () => {
@@ -300,20 +326,19 @@ export const MetadataInfoTab = ({
                                 </div>
                             ) : null}
                             {onRecoverMetadata ? <TooltipButton label="Recover Prompt with AI" content="Recover Prompt with AI" onClick={onRecoverMetadata} className="rounded p-1.5 text-amethyst-400 hover:bg-white/5"><Wand2 className="h-3.5 w-3.5" /></TooltipButton> : null}
-                            {(image.metadata.tool === GeneratorTool.AUTOMATIC1111
+                            {onUpdatePrompt && onUpdateNegativePrompt && (image.metadata.tool === GeneratorTool.AUTOMATIC1111
                                 || image.metadata.tool === GeneratorTool.FORGE
                                 || image.metadata.tool === GeneratorTool.UNKNOWN) ? <TooltipButton label="Parse Prompt from Clipboard" content="Parse Prompt from Clipboard" onClick={() => void handleParseClipboard()} className="rounded p-1.5 text-sage-400 hover:bg-white/5"><ClipboardList className="h-3.5 w-3.5" /></TooltipButton> : null}
                             {image.originalMetadata && !isLoading && hasModifications() && onRevertMetadata ? <TooltipButton label="Revert All Metadata to Original" content="Revert All Metadata to Original" onClick={() => onRevertMetadata(image.id)} className="rounded p-1.5 text-orange-400 hover:bg-white/5"><Undo2 className="h-3.5 w-3.5" /></TooltipButton> : null}
                             <TooltipButton label="Copy Prompt" content="Copy Prompt" onClick={handleCopyPrompt} className="rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300">{copiedPrompt ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}</TooltipButton>
                         </div>}
-                        overlay={promptSuggestions.length > 0 ? <div className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-xl">
-                            {promptSuggestions.map(suggestion => <button key={suggestion} type="button" className="group flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-white/5" onClick={() => {
-                                const parts = promptValue.split(',');
-                                parts.pop();
-                                setPromptValue([...parts, suggestion].join(', ') + ', ');
-                                setIsPromptDirty(true);
-                                setPromptSuggestions([]);
-                            }}><span className="font-mono text-zinc-300">{suggestion}</span><Plus className="h-3 w-3 text-zinc-500 group-hover:text-sage-400" /></button>)}
+                        overlay={promptSuggestions.length > 0 ? <div ref={promptSuggestionsRef} className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-xl">
+                            {promptSuggestions.map(suggestion => <button key={suggestion} type="button" className="group flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-white/5" onMouseDown={event => event.preventDefault()} onBlur={event => {
+                                if (!(event.relatedTarget instanceof Node) || !promptSuggestionsRef.current?.contains(event.relatedTarget)) {
+                                    commitPrompt();
+                                    setPromptSuggestions([]);
+                                }
+                            }} onClick={() => selectPromptSuggestion(suggestion)}><span className="font-mono text-zinc-300">{suggestion}</span><Plus className="h-3 w-3 text-zinc-500 group-hover:text-sage-400" /></button>)}
                         </div> : null}
                     />
 
@@ -334,12 +359,14 @@ export const MetadataInfoTab = ({
                     {isInvokeImageAsset ? invokeProvenance : null}
 
                     <MetadataGeneratorField
+                        key={`generator:${image.id}`}
                         value={image.metadata.tool}
                         modified={isModified('tool')}
                         onSave={onUpdateTool ? value => onUpdateTool(image.id, value) : undefined}
                     />
 
                     <MetadataModelField
+                        key={`model:${image.id}`}
                         presentation={modelPresentation}
                         options={modelOptions}
                         modified={isModified('model') || isModified('overrideModel')}
@@ -359,7 +386,7 @@ export const MetadataInfoTab = ({
                         { label: 'Hires Upscaler', value: image.metadata.hiresUpscaler || 'Unknown', modified: isModified('hiresUpscaler'), optional: true },
                         { label: 'Model Hash', value: modelPresentation.isHashFallback ? 'Unknown' : (image.metadata.modelHash || 'Unknown'), optional: true },
                     ]} expanded={disclosure?.isExpanded('generationParameters')} onExpandedChange={expanded => disclosure?.setExpanded('generationParameters', expanded)} headerAction={
-                        <TooltipButton label="Copy Parameters" content="Copy Parameters" onClick={handleCopyGenData} className="rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300">
+                        <TooltipButton label="Copy generation data" content="Copy prompts and generation settings in the best available source-compatible format." onClick={handleCopyGenData} className="rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300">
                             {copiedData ? <Check className="h-3.5 w-3.5 text-green-500" /> : <ClipboardList className="h-3.5 w-3.5" />}
                         </TooltipButton>
                     } />
@@ -368,31 +395,26 @@ export const MetadataInfoTab = ({
                     {smartTags.length > 0 && (
                         <MetadataDisclosureSection title="Smart Tags" icon={Tag} count={smartTags.length} expanded={disclosure?.isExpanded('smartTags')} onExpandedChange={expanded => disclosure?.setExpanded('smartTags', expanded)}>
                             <div className="flex flex-wrap gap-2">
-                                {smartTags.map((tag, i) => (
-                                    <button key={i} onClick={() => { onSearch(tag); onClose(); }} className="px-2.5 py-1 text-xs bg-gray-100 dark:bg-zinc-800 hover:bg-sage-100 dark:hover:bg-sage-900/40 border border-gray-200 dark:border-white/5 rounded-lg transition-all truncate max-w-[150px] text-gray-600 dark:text-gray-400">
-                                        {tag}
-                                    </button>
-                                ))}
+                                {smartTags.map((tag, i) => <MetadataChip key={i} onClick={() => { onSearch(tag); onClose(); }} className="max-w-[150px]">
+                                    <span className="truncate px-2 py-1.5 text-xs text-gray-600 group-hover:text-sage-600 dark:text-gray-400 dark:group-hover:text-sage-300">{tag}</span>
+                                </MetadataChip>)}
                             </div>
                         </MetadataDisclosureSection>
                     )}
 
-                    {/* Resources & Addons */}
-                    {[
-                        image.metadata.loras,
-                        image.metadata.controlNets,
-                        image.metadata.ipAdapters,
-                        image.metadata.embeddings,
-                        image.metadata.hypernetworks,
-                    ].some(items => (items?.length ?? 0) > 0) && (
-                        <>
-                            <ResourceSection title="LoRAs" items={image.metadata.loras || []} icon={Puzzle} filterKind="lora" onSearch={onSearch} onClose={onClose} expanded={disclosure?.isExpanded('resource:loras')} onExpandedChange={expanded => disclosure?.setExpanded('resource:loras', expanded)} />
-                            <ResourceSection title="Embeddings" items={image.metadata.embeddings || []} icon={Code} filterKind="embedding" onSearch={onSearch} onClose={onClose} expanded={disclosure?.isExpanded('resource:embeddings')} onExpandedChange={expanded => disclosure?.setExpanded('resource:embeddings', expanded)} />
-                            <ResourceSection title="Hypernetworks" items={image.metadata.hypernetworks || []} icon={Sparkles} filterKind="hypernet" onSearch={onSearch} onClose={onClose} expanded={disclosure?.isExpanded('resource:hypernetworks')} onExpandedChange={expanded => disclosure?.setExpanded('resource:hypernetworks', expanded)} />
-                            <ResourceSection title="ControlNets" items={image.metadata.controlNets || []} icon={Target} filterKind="controlnet" onSearch={onSearch} onClose={onClose} expanded={disclosure?.isExpanded('resource:controlnets')} onExpandedChange={expanded => disclosure?.setExpanded('resource:controlnets', expanded)} />
-                            <ResourceSection title="IP adapters" items={image.metadata.ipAdapters || []} icon={Link} filterKind="ipadapter" onSearch={onSearch} onClose={onClose} expanded={disclosure?.isExpanded('resource:ip-adapters')} onExpandedChange={expanded => disclosure?.setExpanded('resource:ip-adapters', expanded)} />
-                        </>
-                    )}
+                    <ResourcesSection
+                        groups={[
+                            { title: 'LoRAs', items: image.metadata.loras, icon: Puzzle, filterKind: 'lora' },
+                            { title: 'Embeddings', items: image.metadata.embeddings, icon: Code, filterKind: 'embedding' },
+                            { title: 'Hypernetworks', items: image.metadata.hypernetworks, icon: Sparkles, filterKind: 'hypernet' },
+                            { title: 'ControlNets', items: image.metadata.controlNets, icon: Target, filterKind: 'controlnet' },
+                            { title: 'IP adapters', items: image.metadata.ipAdapters, icon: Link, filterKind: 'ipadapter' },
+                        ]}
+                        onSearch={onSearch}
+                        onClose={onClose}
+                        expanded={disclosure?.isExpanded('resources')}
+                        onExpandedChange={expanded => disclosure?.setExpanded('resources', expanded)}
+                    />
 
                     {!isInvokeImageAsset ? invokeProvenance : null}
 

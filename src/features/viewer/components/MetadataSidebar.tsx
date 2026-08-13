@@ -36,7 +36,7 @@ interface MetadataSidebarProps {
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
-    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onSearch: (term: string) => void;
     onClose: () => void;
     onRecoverMetadata?: () => void;
@@ -85,17 +85,23 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     isLoading,
     searchHighlights,
     onOpenReferencedImage,
-}) => (
-    <ViewerSidebarShell
-        mediaLabel="Image"
-        tabs={image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false
-            ? IMAGE_VIEWER_TABS
-            : IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW}
-        activeTab={activeTab}
+}) => {
+    const tabs = image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false
+        ? IMAGE_VIEWER_TABS
+        : IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW;
+    const effectiveActiveTab = tabs.some(tab => tab.id === activeTab) ? activeTab : 'metadata';
+
+    React.useEffect(() => {
+        if (effectiveActiveTab !== activeTab) setActiveTab(effectiveActiveTab);
+    }, [activeTab, effectiveActiveTab, setActiveTab]);
+
+    return <ViewerSidebarShell
+        tabs={tabs}
+        activeTab={effectiveActiveTab}
         onTabChange={setActiveTab}
         ariaLabel="Image viewer sections"
     >
-        {activeTab === 'details' ? (
+        {effectiveActiveTab === 'details' ? (
             <ImageDetailsTab
                 image={image}
                 collections={collections}
@@ -108,7 +114,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             />
         ) : null}
 
-        {activeTab === 'metadata' ? (
+        {effectiveActiveTab === 'metadata' ? (
             <MetadataInfoTab
                 image={image}
                 promptValue={promptValue}
@@ -136,6 +142,6 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             />
         ) : null}
 
-        {activeTab === 'workflow' ? <WorkflowInspector image={image} /> : null}
-    </ViewerSidebarShell>
-);
+        {effectiveActiveTab === 'workflow' ? <WorkflowInspector key={image.id} image={image} /> : null}
+    </ViewerSidebarShell>;
+};

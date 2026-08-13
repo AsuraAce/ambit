@@ -18,11 +18,24 @@ export const MetadataGeneratorField: React.FC<MetadataGeneratorFieldProps> = ({
 }) => {
     const [isEditing, setIsEditing] = React.useState(false);
     const [draft, setDraft] = React.useState(value);
+    const editorRef = React.useRef<HTMLDivElement>(null);
 
     React.useEffect(() => {
         setDraft(value);
         setIsEditing(false);
     }, [value]);
+
+    React.useEffect(() => {
+        if (!isEditing) return;
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!editorRef.current?.contains(event.target as Node)) {
+                setDraft(value);
+                setIsEditing(false);
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, [isEditing, value]);
 
     const save = () => {
         if (draft !== value) onSave?.(draft);
@@ -31,7 +44,7 @@ export const MetadataGeneratorField: React.FC<MetadataGeneratorFieldProps> = ({
 
     return (
         <MetadataField label="Generator software" icon={AppWindow} source={source} modified={modified}>
-            <div className="group relative">
+            <div ref={editorRef} className="group relative">
                 {onSave && !isEditing ? (
                     <button type="button" aria-label="Edit Generation Tool" onClick={() => setIsEditing(true)} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-zinc-500 opacity-0 transition-opacity hover:text-white focus-visible:opacity-100 group-hover:opacity-100">
                         <Pencil className="h-3.5 w-3.5" />
@@ -39,7 +52,13 @@ export const MetadataGeneratorField: React.FC<MetadataGeneratorFieldProps> = ({
                 ) : null}
                 {isEditing ? (
                     <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
-                        <select aria-label="Generator software" value={draft} onChange={event => setDraft(event.target.value as GeneratorTool)} autoFocus className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500">
+                        <select aria-label="Generator software" value={draft} onChange={event => setDraft(event.target.value as GeneratorTool)} onKeyDown={event => {
+                            if (event.key === 'Escape') {
+                                event.preventDefault();
+                                setDraft(value);
+                                setIsEditing(false);
+                            }
+                        }} autoFocus className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500">
                             {Object.values(GeneratorTool).map(tool => <option key={tool} value={tool}>{tool}</option>)}
                         </select>
                         <div className="flex justify-end gap-2">

@@ -123,14 +123,14 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         {
             title: 'Viewer',
             items: [
-                { key: 'Left / Right', desc: 'Previous / Next image' },
+                { key: 'Left / Right', desc: 'Previous / Next item' },
                 { key: 'J / L', desc: 'Seek video backward / forward 10 seconds' },
-                { key: 'Space', desc: 'Close Quick View' },
+                { key: 'Space', desc: 'Close image / Play or pause video' },
                 { key: 'F', desc: 'Toggle Favorite' },
                 { key: 'P', desc: 'Toggle Pin' },
                 { key: 'I', desc: 'Toggle metadata sidebar' },
                 { key: 'Z', desc: 'Toggle Theater Mode' },
-                { key: 'Del', desc: 'Remove viewed image from Library' },
+                { key: 'Del', desc: 'Remove viewed item from Library' },
                 { key: 'Esc', desc: 'Exit Theater Mode / Close Viewer' },
             ]
         },

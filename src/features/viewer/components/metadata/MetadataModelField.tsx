@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Box, Check, Pencil } from 'lucide-react';
+import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 import { formatModelName } from '../../../../utils/formatUtils';
 import { MetadataField } from './MetadataField';
 import type { ModelPresentation } from './modelPresentation';
@@ -43,6 +44,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
     const [isOpen, setIsOpen] = React.useState(false);
     const [activeIndex, setActiveIndex] = React.useState(0);
     const inputRef = React.useRef<HTMLInputElement>(null);
+    const editorRef = React.useRef<HTMLDivElement>(null);
     const listboxId = React.useId();
 
     const filteredOptions = React.useMemo(() => {
@@ -72,6 +74,19 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
         setIsCustom(false);
         setIsOpen(false);
     };
+
+    React.useEffect(() => {
+        if (!isEditing) return;
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!editorRef.current?.contains(event.target as Node)) {
+                setIsEditing(false);
+                setIsCustom(false);
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        return () => document.removeEventListener('pointerdown', handlePointerDown);
+    }, [isEditing]);
 
     const chooseOption = (value: string) => {
         setDraft(value);
@@ -112,14 +127,13 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
             else chooseCustom();
         } else if (event.key === 'Escape') {
             event.preventDefault();
-            if (isOpen) setIsOpen(false);
-            else cancel();
+            cancel();
         }
     };
 
     return (
         <MetadataField label="Model" icon={Box} source={source} modified={modified}>
-            <div className="group relative">
+            <div ref={editorRef} className="group relative">
                 {onSave && !isEditing ? (
                     <button type="button" aria-label="Edit Model" onClick={startEditing} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-zinc-500 opacity-0 transition-opacity hover:text-white focus-visible:opacity-100 group-hover:opacity-100">
                         <Pencil className="h-3.5 w-3.5" />
@@ -128,7 +142,20 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                 {isEditing ? (
                     <div className="relative flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
                         {isCustom ? (
-                            <input ref={inputRef} aria-label="Custom model name" value={draft} onChange={event => setDraft(event.target.value)} placeholder="Enter model name…" className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500" />
+                            <input
+                                ref={inputRef}
+                                aria-label="Custom model name"
+                                value={draft}
+                                onChange={event => setDraft(event.target.value)}
+                                onKeyDown={event => {
+                                    if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        cancel();
+                                    }
+                                }}
+                                placeholder="Enter model name…"
+                                className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500"
+                            />
                         ) : (
                             <div className="relative">
                                 <input
@@ -184,7 +211,14 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                         <div className={`truncate text-sm font-medium text-sage-200 ${presentation.isHashFallback ? 'font-mono' : 'font-sans'}`} title={presentation.value}>
                             {presentation.isHashFallback ? presentation.value : formatModelName(presentation.value)}
                         </div>
-                        {presentation.isHashFallback ? <span title="The model name has not been resolved yet" className="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400">Unresolved hash</span> : null}
+                        {presentation.isHashFallback ? <TooltipButton
+                            label="About unresolved model hash"
+                            content="Model name unresolved. Use Settings → Connections → Resources → Resolve Online to look it up through CivitAI. Only the hash is sent."
+                            persistOnClick
+                            className="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/70"
+                        >
+                            Unresolved hash
+                        </TooltipButton> : null}
                     </div>
                 )}
             </div>

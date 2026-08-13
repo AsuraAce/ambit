@@ -12,7 +12,7 @@ interface ImageDetailsTabProps {
     notes: string;
     setNotes: (notes: string) => void;
     onUpdateNotes?: (id: string, notes: string) => void;
-    onSetCollectionMembership: (assetId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onSetCollectionMembership?: (assetId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     palette: string[];
     isPaletteLoading: boolean;
 }
@@ -81,16 +81,17 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 onBlur={() => {
                     if (notes !== (image.notes ?? '')) onUpdateNotes?.(image.id, notes);
                 }}
+                readOnly={!onUpdateNotes}
                 className="mt-6"
             />
 
-            <div className="mt-6">
+            {onSetCollectionMembership ? <div className="mt-6">
                 <CollectionMembershipPicker
                     assetId={image.id}
                     collections={collections}
                     onSetCollectionMembership={onSetCollectionMembership}
                 />
-            </div>
+            </div> : null}
         </div>
     );
 };

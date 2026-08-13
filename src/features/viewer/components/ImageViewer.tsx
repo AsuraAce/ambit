@@ -31,7 +31,7 @@ interface ImageViewerProps {
     initiallyRevealed?: boolean;
     availableTags?: string[];
     modelOptions?: readonly string[];
-    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
@@ -43,7 +43,7 @@ interface ImageViewerProps {
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (imageId: string, tool: GeneratorTool) => void;
-    onToggleFavorite: (id: string) => void;
+    onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
     onRecoverMetadata?: () => void;
     onRevertMetadata?: (imageId: string) => void;
@@ -293,6 +293,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     }, [displayImage.id, revealStatusHud]);
 
     const handleToggleFavorite = useCallback(() => {
+        if (!onToggleFavorite) return;
         onToggleFavorite(displayImage.id);
         revealStatusHud(2000);
     }, [displayImage.id, onToggleFavorite, revealStatusHud]);
@@ -341,8 +342,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (e.key === 'ArrowLeft' && canNavigatePrevious) onPrev();
 
             // Actions
-            if (key === 'f') handleToggleFavorite();
-            if (key === 'p') handleTogglePin();
+            if (key === 'f' && onToggleFavorite) handleToggleFavorite();
+            if (key === 'p' && onTogglePin) handleTogglePin();
             if (key === 'i') onToggleSidebar?.();
 
             if (e.key === 'Escape') {
@@ -350,7 +351,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode(p => !p);
-    }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
+    }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete, onClose]);
 
     useViewerKeyboard({
         enabled: isOpen,
@@ -366,11 +367,20 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     if (itemExposureBlocked) {
         return (
-            <MaskedViewerGate
-                mediaLabel="image"
-                onReveal={() => setRevealedImageId(image.id)}
-                onClose={onClose}
-            />
+            <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Hidden image"
+                initial={false}
+                animate={{ opacity: 1 }}
+                className="fixed inset-0 z-[100] flex bg-gray-950/95 backdrop-blur-md"
+            >
+                <MaskedViewerGate
+                    mediaLabel="image"
+                    onReveal={() => setRevealedImageId(image.id)}
+                    onClose={onClose}
+                />
+            </motion.div>
         );
     }
 
@@ -406,7 +416,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             role="dialog"
             aria-modal="true"
             aria-label={`Image viewer: ${displayImage.filename}`}
-            initial={{ opacity: 0 }}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.2 } }}
             className={`fixed inset-0 z-[100] flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
@@ -432,7 +442,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onOpenExternal={handleOpenExternal}
                     onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
                     onShare={handleShare}
-                    onToggleFavorite={handleToggleFavorite}
+                    onToggleFavorite={onToggleFavorite ? handleToggleFavorite : undefined}
                     onTogglePin={onTogglePin ? handleTogglePin : undefined}
                     onDelete={onDelete ? () => onDelete(displayImage.id) : undefined}
                     onToggleSidebar={onToggleSidebar}
@@ -493,11 +503,11 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     setPromptValue={setPromptValue}
                     negativePromptValue={negativePromptValue}
                     setNegativePromptValue={setNegativePromptValue}
-                    onUpdateNotes={(id, n) => onUpdateNotes?.(id, n)}
-                    onUpdatePrompt={(id, p) => onUpdatePrompt?.(id, p)}
-                    onUpdateNegativePrompt={(id, np) => onUpdateNegativePrompt?.(id, np)}
-                    onUpdateModel={(id, m) => onUpdateModel?.(id, m)}
-                    onUpdateTool={(id, t) => onUpdateTool?.(id, t)}
+                    onUpdateNotes={onUpdateNotes}
+                    onUpdatePrompt={onUpdatePrompt}
+                    onUpdateNegativePrompt={onUpdateNegativePrompt}
+                    onUpdateModel={onUpdateModel}
+                    onUpdateTool={onUpdateTool}
                     onSetCollectionMembership={onSetCollectionMembership}
                     onSearch={onSearch}
                     onClose={onClose}

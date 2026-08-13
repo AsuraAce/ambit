@@ -39,13 +39,13 @@ export const MetadataDisclosureSection: React.FC<MetadataDisclosureSectionProps>
     return (
         <section className={className}>
             <div className="flex items-center justify-between gap-2">
-                <h3 id={headingId} className="min-w-0">
+                <h3 id={headingId} className="min-w-0 flex-1">
                     <button
                         type="button"
                         aria-expanded={isExpanded}
                         aria-controls={contentId}
                         onClick={() => setExpanded(!isExpanded)}
-                        className="flex min-w-0 items-center gap-2 rounded text-xs font-bold uppercase tracking-wider text-zinc-400 outline-none hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-sage-500/70"
+                        className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1.5 text-left text-xs font-bold uppercase tracking-wider text-zinc-500 outline-none transition-colors hover:bg-gray-100 hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-sage-500/70 dark:text-zinc-400 dark:hover:bg-white/[0.04] dark:hover:text-zinc-200"
                     >
                         <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} />
                         <span className="truncate">{title}</span>

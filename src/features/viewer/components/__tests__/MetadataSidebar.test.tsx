@@ -29,7 +29,7 @@ const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image())
 describe('MetadataSidebar', () => {
     it('uses the shared image title and Details, Metadata, and Workflow tabs', () => {
         const { props } = setup('details', image({ workflowJson: '{}' }));
-        expect(screen.getByRole('heading', { name: 'Image' })).toBeTruthy();
+        expect(screen.queryByRole('heading', { name: 'Image' })).toBeNull();
         expect(screen.getByText('details-content')).toBeTruthy();
         expect(captures.details).toHaveBeenCalledWith(expect.objectContaining({ image: props.image, notes: '' }));
         fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
@@ -49,5 +49,20 @@ describe('MetadataSidebar', () => {
         const workflow = setup('workflow', image({ hasWorkflowHint: true }));
         expect(screen.getByText('workflow-content')).toBeTruthy();
         expect(captures.workflow).toHaveBeenCalledWith(expect.objectContaining({ image: workflow.props.image }));
+    });
+
+    it('falls back to Metadata when navigation removes the active Workflow tab', () => {
+        const workflowImage = image({ workflowJson: '{}' });
+        const { props, rerender } = setup('workflow', workflowImage);
+        expect(screen.getByText('workflow-content')).toBeTruthy();
+
+        const nextImage = { ...image({ hasWorkflowHint: false }), id: 'b' };
+        rerender(<MetadataSidebar {...props} image={nextImage} activeTab="workflow" />);
+
+        expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull();
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.getByText('metadata-content')).toBeTruthy();
+        expect(screen.queryByText('workflow-content')).toBeNull();
+        expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
     });
 });

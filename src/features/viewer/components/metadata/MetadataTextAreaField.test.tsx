@@ -65,4 +65,17 @@ describe('MetadataTextAreaField', () => {
         const labelElement = screen.getByText(label);
         expect(labelElement.parentElement?.querySelector('svg')?.getAttribute('class')).toContain(iconClassName);
     });
+
+    it.each([
+        ['positivePrompt', 'Positive prompt'],
+        ['negativePrompt', 'Negative prompt'],
+    ] as const)('keeps the %s heading on the shared category style while subduing only its content', (kind, label) => {
+        render(<MetadataTextAreaField kind={kind} value="Prompt content" onChange={vi.fn()} />);
+
+        const heading = screen.getByText(label);
+        const textarea = screen.getByLabelText(label);
+        expect(heading.className).toContain('text-zinc-400');
+        expect(textarea.className).toContain('text-gray-800');
+        expect(textarea.className).toContain('dark:text-zinc-200');
+    });
 });

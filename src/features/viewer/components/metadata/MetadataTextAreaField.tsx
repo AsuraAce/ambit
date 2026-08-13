@@ -87,7 +87,7 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
                     onBlur={onBlur}
                     readOnly={readOnly}
                     placeholder={field.placeholder}
-                    className={`w-full resize-none rounded-xl border p-3 font-sans text-sm outline-none transition-colors placeholder:text-gray-400 ${field.heightClassName} ${field.textareaClassName} ${dirtyClassName} ${readOnly ? 'cursor-default opacity-80' : ''}`}
+                    className={`w-full resize-none rounded-xl border p-3 font-sans text-sm text-gray-800 outline-none transition-colors placeholder:text-gray-400 dark:text-zinc-200 ${field.heightClassName} ${field.textareaClassName} ${dirtyClassName} ${readOnly ? 'cursor-default opacity-80' : ''}`}
                 />
                 {status}
                 {overlay}

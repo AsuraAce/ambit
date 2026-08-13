@@ -194,7 +194,7 @@ describe('ImageViewer full metadata loading', () => {
     it('does not load a masked image until the viewer reveal is confirmed', async () => {
         renderViewer({ isMasked: true });
 
-        expect(screen.getByRole('dialog', { name: 'Hidden image' })).toBeTruthy();
+        const dialog = screen.getByRole('dialog', { name: 'Hidden image' });
         expect(screen.queryByText(lightImage.filename)).toBeNull();
         expect(screen.queryByLabelText(new RegExp(lightImage.filename))).toBeNull();
         expect(screen.getByRole('button', { name: 'Reveal image' })).toBeTruthy();
@@ -204,6 +204,7 @@ describe('ImageViewer full metadata loading', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Reveal image' }));
         await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect(screen.getByRole('dialog', { name: `Image viewer: ${lightImage.filename}` })).toBe(dialog);
         expect((captures.toolbar?.image as AIImage).filename).toBe(lightImage.filename);
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
         expect(assetAccessMock).toHaveBeenCalledWith(lightImage.url);
@@ -445,6 +446,29 @@ describe('ImageViewer full metadata loading', () => {
         expect(aiState.value.analyzePrompt).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.generateVariations).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.openModal).toHaveBeenCalled();
+    });
+
+    it('preserves absent mutation callbacks as a read-only viewer contract', async () => {
+        renderViewer({
+            onToggleFavorite: undefined,
+            onTogglePin: undefined,
+            onSetCollectionMembership: undefined,
+            onUpdateNotes: undefined,
+            onUpdatePrompt: undefined,
+            onUpdateNegativePrompt: undefined,
+            onUpdateModel: undefined,
+            onUpdateTool: undefined,
+        });
+
+        await waitFor(() => expect(captures.sidebar).toBeTruthy());
+        expect(captures.toolbar?.onToggleFavorite).toBeUndefined();
+        expect(captures.toolbar?.onTogglePin).toBeUndefined();
+        expect(captures.sidebar?.onSetCollectionMembership).toBeUndefined();
+        expect(captures.sidebar?.onUpdateNotes).toBeUndefined();
+        expect(captures.sidebar?.onUpdatePrompt).toBeUndefined();
+        expect(captures.sidebar?.onUpdateNegativePrompt).toBeUndefined();
+        expect(captures.sidebar?.onUpdateModel).toBeUndefined();
+        expect(captures.sidebar?.onUpdateTool).toBeUndefined();
     });
 
     it('sorts stacked versions and loads the selected version metadata', async () => {

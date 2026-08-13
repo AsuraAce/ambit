@@ -16,7 +16,7 @@ interface ViewerToolbarProps {
     onOpenExternal: () => void;
     onToggleTheater: () => void;
     onShare: () => void;
-    onToggleFavorite: () => void;
+    onToggleFavorite?: () => void;
     onTogglePin?: () => void;
     onDelete?: () => void;
     onToggleSidebar?: () => void;
@@ -77,13 +77,15 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
                 >
                     <Share2 className="w-5 h-5" />
                 </ViewerToolbarButton>
-                <ViewerToolbarButton
-                    label={image.isFavorite ? "Remove from Favorites (F)" : "Add to Favorites (F)"}
-                    aria-pressed={image.isFavorite}
-                    onClick={onToggleFavorite}
-                >
-                    <Heart className={`w-5 h-5 ${image.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
-                </ViewerToolbarButton>
+                {onToggleFavorite && (
+                    <ViewerToolbarButton
+                        label={image.isFavorite ? "Remove from Favorites (F)" : "Add to Favorites (F)"}
+                        aria-pressed={image.isFavorite}
+                        onClick={onToggleFavorite}
+                    >
+                        <Heart className={`w-5 h-5 ${image.isFavorite ? 'fill-red-500 text-red-500' : ''}`} />
+                    </ViewerToolbarButton>
+                )}
                 {onTogglePin && (
                     <ViewerToolbarButton
                         label={image.isPinned ? "Unpin (P)" : "Pin to Top (P)"}

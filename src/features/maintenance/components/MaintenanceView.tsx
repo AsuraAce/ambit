@@ -765,18 +765,18 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 setViewingImageId(currentList[idx - 1].id);
                             }
                         }}
-                        onToggleFavorite={(id) => onToggleFavorite?.(id)}
-                        onTogglePin={onTogglePin}
+                        onToggleFavorite={activeTab === 'trash' || !onToggleFavorite ? undefined : onToggleFavorite}
+                        onTogglePin={activeTab === 'trash' ? undefined : onTogglePin}
                         onDelete={activeTab === 'trash' ? undefined : () => { void handleViewerCleanup(); }}
-                        onUpdateNotes={onUpdateNotes}
-                        onUpdatePrompt={onUpdatePrompt}
-                        onUpdateNegativePrompt={onUpdateNegativePrompt}
-                        onUpdateModel={onUpdateModel}
-                        onUpdateTool={onUpdateTool}
-                        onUpdateGenerationMode={onUpdateGenerationMode}
-                        onRevertMetadata={onRevertMetadata}
+                        onUpdateNotes={activeTab === 'trash' ? undefined : onUpdateNotes}
+                        onUpdatePrompt={activeTab === 'trash' ? undefined : onUpdatePrompt}
+                        onUpdateNegativePrompt={activeTab === 'trash' ? undefined : onUpdateNegativePrompt}
+                        onUpdateModel={activeTab === 'trash' ? undefined : onUpdateModel}
+                        onUpdateTool={activeTab === 'trash' ? undefined : onUpdateTool}
+                        onUpdateGenerationMode={activeTab === 'trash' ? undefined : onUpdateGenerationMode}
+                        onRevertMetadata={activeTab === 'trash' ? undefined : onRevertMetadata}
                         onSearch={onSearch}
-                        onSetCollectionMembership={onSetCollectionMembership}
+                        onSetCollectionMembership={activeTab === 'trash' ? undefined : onSetCollectionMembership}
                         modelOptions={modelOptions}
                         isShortcutBlocked={isShortcutBlocked}
                         canNavigatePrevious={currentList.findIndex(item => item.id === viewingImageId) > 0}
@@ -804,17 +804,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                 setViewingImageId(currentList[idx - 1].id);
                             }
                         }}
-                        onSetCollectionMembership={onSetCollectionMembership}
+                        onSetCollectionMembership={activeTab === 'trash' ? undefined : onSetCollectionMembership}
                         onSearch={onSearch}
-                        onToggleFavorite={(id) => onToggleFavorite?.(id)}
-                        onTogglePin={onTogglePin}
-                        onUpdatePrompt={onUpdatePrompt}
-                        onUpdateNegativePrompt={onUpdateNegativePrompt}
-                        onUpdateModel={onUpdateModel}
-                        onUpdateTool={onUpdateTool}
-                        onUpdateNotes={onUpdateNotes}
-                        onRevertMetadata={onRevertMetadata}
-                        onRecoverMetadata={() => onRecoverMetadata?.(viewingImageId, handleRecoveredImage)}
+                        onToggleFavorite={activeTab === 'trash' || !onToggleFavorite ? undefined : onToggleFavorite}
+                        onTogglePin={activeTab === 'trash' ? undefined : onTogglePin}
+                        onUpdatePrompt={activeTab === 'trash' ? undefined : onUpdatePrompt}
+                        onUpdateNegativePrompt={activeTab === 'trash' ? undefined : onUpdateNegativePrompt}
+                        onUpdateModel={activeTab === 'trash' ? undefined : onUpdateModel}
+                        onUpdateTool={activeTab === 'trash' ? undefined : onUpdateTool}
+                        onUpdateNotes={activeTab === 'trash' ? undefined : onUpdateNotes}
+                        onRevertMetadata={activeTab === 'trash' ? undefined : onRevertMetadata}
+                        onRecoverMetadata={activeTab === 'trash' || !onRecoverMetadata
+                            ? undefined
+                            : () => onRecoverMetadata(viewingImageId, handleRecoveredImage)}
                         availableTags={availableTags}
                         modelOptions={modelOptions}
                         onOpenSettings={onOpenSettings}
