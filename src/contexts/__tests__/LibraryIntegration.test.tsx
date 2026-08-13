@@ -1764,12 +1764,13 @@ describe('Library Integration (Provider Stack)', () => {
 
         renderSyncStack(h => libraryHook = h, h => syncHook = h);
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        const persistedDbPath = discovery.dbPath.toLowerCase();
         await act(async () => libraryHook?.setSettings({
             invokeAiPath: 'D:/Invoke',
             lastSyncedAt: 100,
-            invokeOwnerSelection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            invokeOwnerSelection: { dbPath: persistedDbPath, mode: 'owner', ownerId: 'owner-a' },
             invokeDbSnapshot: {
-                dbPath: discovery.dbPath,
+                dbPath: persistedDbPath,
                 lastSyncedAt: 100,
                 importIntermediates: false,
                 importOrphans: false,
@@ -1784,6 +1785,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
         expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
+            selection: { dbPath: persistedDbPath, mode: 'owner', ownerId: 'owner-a' },
             reconcileSourceFacts: false,
             forceVisibilityRefresh: false,
         }));
@@ -4170,7 +4172,7 @@ describe('Library Integration (Provider Stack)', () => {
         refreshSmartCounts.mockClear();
         mocks.syncImages.mockResolvedValueOnce({
             ...createNoopInvokeSyncResult(),
-            updated: 1,
+            updated: 0,
             boardsChanged: true,
         });
 
@@ -4183,6 +4185,7 @@ describe('Library Integration (Provider Stack)', () => {
         });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
+        expect(useLibraryStore.getState().liveWatchSession.receivedCount).toBe(0);
     });
 
     it('contains snapshot persistence failures after a no-op startup refresh', async () => {

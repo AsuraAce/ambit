@@ -7,6 +7,7 @@ import {
 } from './dbSnapshot';
 import { resolveInvokePaths } from './connection';
 import type { InvokeSyncScope } from './syncScope';
+import { isSameInvokePath } from './pathIdentity';
 
 interface InvokeOwnerScopeStateRow {
     db_path: string;
@@ -24,7 +25,7 @@ const scopeFromSavedState = (
     if (!snapshot
         || !isInvokeImportSchemaCurrent(snapshot)
         || !isInvokePathRepairSnapshotCurrent(snapshot)
-        || snapshot.dbPath !== dbPath) return null;
+        || !isSameInvokePath(snapshot.dbPath, dbPath)) return null;
 
     const selection = settings.invokeOwnerSelection;
     let scope: InvokeSyncScope | null = null;
@@ -32,13 +33,13 @@ const scopeFromSavedState = (
         if (selection) return null;
         scope = { dbPath, imagesRoot, mode: 'legacy' };
     } else if (snapshot.scopeMode === 'all') {
-        if (!selection || selection.dbPath !== dbPath || selection.mode !== 'all') return null;
+        if (!selection || !isSameInvokePath(selection.dbPath, dbPath) || selection.mode !== 'all') return null;
         scope = { dbPath, imagesRoot, mode: 'all' };
     } else {
         const ownerId = snapshot.scopeOwnerId?.trim();
         if (!ownerId
             || !selection
-            || selection.dbPath !== dbPath
+            || !isSameInvokePath(selection.dbPath, dbPath)
             || selection.mode !== 'owner'
             || selection.ownerId.trim() !== ownerId) return null;
         scope = { dbPath, imagesRoot, mode: 'owner', ownerId };
@@ -49,8 +50,8 @@ const scopeFromSavedState = (
 
 const rowMatchesScope = (row: InvokeOwnerScopeStateRow, scope: InvokeSyncScope): boolean => {
     const expectedOwnerId = scope.mode === 'owner' ? scope.ownerId : null;
-    return row.db_path === scope.dbPath
-        && row.images_root === scope.imagesRoot
+    return isSameInvokePath(row.db_path, scope.dbPath)
+        && isSameInvokePath(row.images_root, scope.imagesRoot)
         && row.scope_mode === scope.mode
         && (row.owner_id ?? null) === expectedOwnerId;
 };
@@ -82,6 +83,7 @@ export const isSameInvokeSyncScope = (
     right: InvokeSyncScope | null
 ): boolean => {
     if (!left || !right || left.mode !== right.mode) return false;
-    if (left.dbPath !== right.dbPath || left.imagesRoot !== right.imagesRoot) return false;
+    if (!isSameInvokePath(left.dbPath, right.dbPath)
+        || !isSameInvokePath(left.imagesRoot, right.imagesRoot)) return false;
     return left.mode !== 'owner' || (right.mode === 'owner' && left.ownerId === right.ownerId);
 };

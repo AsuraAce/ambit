@@ -6,6 +6,7 @@ import { useLibrary } from '../../../contexts/LibraryContext';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { upsertInvokeDbSnapshot } from '../../../services/invoke/dbSnapshot';
+import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
 
 
 interface SyncSectionProps {
@@ -26,11 +27,13 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
     const syncFavorites = settings.invokeSyncFavorites !== false;
     const syncBoards = settings.invokeSyncBoards !== false;
     const selectedOwnerMode = invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
-        && settings.invokeOwnerSelection?.dbPath === invokeOwnerScopeState.discovery.dbPath
+        && settings.invokeOwnerSelection
+        && isSameInvokePath(settings.invokeOwnerSelection.dbPath, invokeOwnerScopeState.discovery.dbPath)
         && settings.invokeOwnerSelection.mode === 'owner';
     const ownerSyncBlocked = invokeOwnerScopeState.status !== 'ready'
         || (invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
-            && settings.invokeOwnerSelection?.dbPath !== invokeOwnerScopeState.discovery.dbPath);
+            && (!settings.invokeOwnerSelection
+                || !isSameInvokePath(settings.invokeOwnerSelection.dbPath, invokeOwnerScopeState.discovery.dbPath)));
     const orphanRecoveryEnabled = !selectedOwnerMode && settings.importOrphans === true;
     const anyInvokeSyncActive = isInvokeSyncActive || isLiveSyncing;
     const foregroundInvokeSyncActive = isInvokeSyncActive && !isLiveSyncing;

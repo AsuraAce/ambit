@@ -2,6 +2,7 @@ import { commands } from '../../bindings';
 import type { AppSettings, InvokeDbSnapshotFile, InvokeDbSnapshotState, InvokeSourceFingerprint } from '../../types';
 import { unwrap } from '../../utils/spectaUtils';
 import type { InvokeSyncScope } from './syncScope';
+import { isSameInvokePath } from './pathIdentity';
 
 interface InvokeDbSnapshotCommandResult {
     dbPath: string;
@@ -27,7 +28,7 @@ const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>
     [...files].sort((a, b) => a.path.localeCompare(b.path));
 
 const sameFileSnapshot = (left: InvokeDbSnapshotFile, right: InvokeDbSnapshotFile): boolean =>
-    left.path === right.path
+    isSameInvokePath(left.path, right.path)
     && left.exists === right.exists
     && left.size === right.size
     && (left.modifiedMs ?? null) === (right.modifiedMs ?? null);
@@ -60,7 +61,7 @@ export const isInvokeDbSnapshotCurrent = (
     current: InvokeDbSnapshotState
 ): boolean => {
     if (!saved) return false;
-    if (saved.dbPath !== current.dbPath) return false;
+    if (!isSameInvokePath(saved.dbPath, current.dbPath)) return false;
     if ((saved.lastSyncedAt ?? null) !== (current.lastSyncedAt ?? null)) return false;
     if ((saved.importIntermediates ?? false) !== current.importIntermediates) return false;
     if ((saved.importOrphans ?? false) !== current.importOrphans) return false;
@@ -102,7 +103,7 @@ export const isInvokeBoardOwnerSnapshotCurrent = (saved: InvokeDbSnapshotState |
 const isSameSnapshotScope = (
     snapshot: InvokeDbSnapshotState,
     scope: InvokeSyncScope
-): boolean => snapshot.dbPath === scope.dbPath
+): boolean => isSameInvokePath(snapshot.dbPath, scope.dbPath)
     && snapshot.scopeMode === scope.mode
     && (snapshot.scopeOwnerId ?? null) === (scope.mode === 'owner' ? scope.ownerId : null);
 
@@ -122,7 +123,7 @@ export const upsertInvokeDbSnapshot = (
     snapshot: InvokeDbSnapshotState
 ): InvokeDbSnapshotState[] => [
     ...(snapshots ?? []).filter(existing => !(
-        existing.dbPath === snapshot.dbPath
+        isSameInvokePath(existing.dbPath, snapshot.dbPath)
         && existing.scopeMode === snapshot.scopeMode
         && (existing.scopeOwnerId ?? null) === (snapshot.scopeOwnerId ?? null)
     )),
@@ -137,7 +138,7 @@ export const isInvokeDbSnapshotScopeCurrent = (
         || !scope
         || !isInvokeImportSchemaCurrent(saved)
         || !isInvokePathRepairSnapshotCurrent(saved)) return false;
-    if (saved.dbPath !== scope.dbPath || saved.scopeMode !== scope.mode) return false;
+    if (!isSameInvokePath(saved.dbPath, scope.dbPath) || saved.scopeMode !== scope.mode) return false;
 
     const ownerId = scope.mode === 'owner' ? scope.ownerId : null;
     return (saved.scopeOwnerId ?? null) === ownerId;

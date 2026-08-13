@@ -19,6 +19,7 @@ import {
     readInvokeDbSnapshotState,
     upsertInvokeDbSnapshot,
 } from '../services/invoke/dbSnapshot';
+import { isSameInvokePath } from '../services/invoke/pathIdentity';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -431,7 +432,7 @@ export const SyncProvider: React.FC<{
         forceRefresh: boolean = false,
         deferReady: boolean = false
     ): Promise<InvokeOwnerAdmission> => {
-        const selection = requestedSelection?.dbPath === discovery.dbPath
+        const selection = requestedSelection && isSameInvokePath(requestedSelection.dbPath, discovery.dbPath)
             ? requestedSelection
             : undefined;
         const discoveryWithStaleOwner = selection?.mode === 'owner'
@@ -465,7 +466,8 @@ export const SyncProvider: React.FC<{
         reportProgress(0, 0, reconcileSourceFacts
             ? 'Preparing InvokeAI library upgrade...'
             : 'Checking your saved InvokeAI view...');
-        const previousSelection = settingsRef.current.invokeOwnerSelection?.dbPath === discovery.dbPath
+        const previousSelection = settingsRef.current.invokeOwnerSelection
+            && isSameInvokePath(settingsRef.current.invokeOwnerSelection.dbPath, discovery.dbPath)
             ? settingsRef.current.invokeOwnerSelection
             : undefined;
         const result = await applyInvokeOwnerScope({
@@ -673,7 +675,7 @@ export const SyncProvider: React.FC<{
 
             try {
                 const saved = settingsRef.current.invokeOwnerSelection;
-                let selection = saved?.dbPath === discovery.dbPath ? saved : undefined;
+                let selection = saved && isSameInvokePath(saved.dbPath, discovery.dbPath) ? saved : undefined;
                 let shouldPersistSelection = !!saved && !selection;
 
                 if (discovery.schemaMode === 'legacy') {
@@ -776,7 +778,7 @@ export const SyncProvider: React.FC<{
         const discovery = invokeOwnerScopeState.discovery;
         const currentRoot = settingsRef.current.invokeAiPath?.trim();
         if (!discovery
-            || discovery.dbPath !== selection.dbPath
+            || !isSameInvokePath(discovery.dbPath, selection.dbPath)
             || !currentRoot
             || ownerScopeAdmissionRef.current?.rootPath !== currentRoot) {
             addToast('Refresh the InvokeAI owner list before changing scope.', 'warning');
@@ -786,7 +788,8 @@ export const SyncProvider: React.FC<{
         const currentSelection = settingsRef.current.invokeOwnerSelection;
         if (invokeOwnerScopeState.status === 'ready'
             && ownerScopeAdmissionRef.current?.rootPath === currentRoot
-            && currentSelection?.dbPath === selection.dbPath
+            && currentSelection
+            && isSameInvokePath(currentSelection.dbPath, selection.dbPath)
             && currentSelection.mode === selection.mode
             && (selection.mode === 'all'
                 || (currentSelection.mode === 'owner' && currentSelection.ownerId === selection.ownerId))) {
@@ -820,7 +823,9 @@ export const SyncProvider: React.FC<{
                 pendingInvokeViewReadyAnnouncementRootRef.current = null;
                 await applyDiscoveredOwnerScope(
                     discovery,
-                    currentSelection?.dbPath === discovery.dbPath ? currentSelection : undefined,
+                    currentSelection && isSameInvokePath(currentSelection.dbPath, discovery.dbPath)
+                        ? currentSelection
+                        : undefined,
                     true,
                     currentRoot,
                     true
@@ -1341,7 +1346,10 @@ export const SyncProvider: React.FC<{
             const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
             liveTotalProcessed = totalProcessed;
             // Conditional Facet Rebuild
-            const hasChanges = (imported || 0) > 0 || (updated || 0) > 0 || orphansImported > 0;
+            const hasChanges = (imported || 0) > 0
+                || (updated || 0) > 0
+                || orphansImported > 0
+                || boardsChanged;
             liveHadChanges = hasChanges;
 
             if (hasChanges) {
@@ -1354,7 +1362,9 @@ export const SyncProvider: React.FC<{
                     // SILENT, LENIENT ADDITION (Matches native OS logic)
                     // Advance the Live Watch Session Idle Timer and gently refresh grid
                     const reportStartedAt = liveWatchNow();
-                    reportLiveImagesReceived(totalProcessed, { source: 'invoke' });
+                    if (totalProcessed > 0) {
+                        reportLiveImagesReceived(totalProcessed, { source: 'invoke' });
+                    }
                     debugLiveWatchPerf('Live images reported to session', {
                         cycleId: livePerfContext?.cycleId,
                         totalProcessed,

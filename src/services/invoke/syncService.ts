@@ -516,7 +516,7 @@ export const syncImages = async (
     } catch (e) { }
 
     let imageToBoardId = new Map<string, string>();
-    let boardReconciliationChanges = 0;
+    let boardsChanged = false;
     if (options.syncBoards && hasBoardsTable) {
         onProgress(0, 0, 'Fetching board mappings...');
         const boardMappingStartedAt = liveWatchNow();
@@ -551,11 +551,11 @@ export const syncImages = async (
             })),
             reconcileMemberships: true,
         });
-        boardReconciliationChanges = boardResult.collectionsUpdated
+        boardsChanged = boardResult.collectionsUpdated
             + boardResult.collectionsDeleted
             + boardResult.imagesUpdated
             + boardResult.membershipsDeleted
-            + boardResult.membershipsInserted;
+            + boardResult.membershipsInserted > 0;
         boards.forEach((_, boardId) => createdBoardIds.add(boardId));
     }
 
@@ -563,16 +563,16 @@ export const syncImages = async (
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
-            updatedCount: repairedExistingCount + reconciledExistingCount + boardReconciliationChanges,
+            updatedCount: repairedExistingCount + reconciledExistingCount,
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount + boardReconciliationChanges, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), boardsChanged: boardReconciliationChanges > 0, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), boardsChanged, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let processed = 0;
     let newImportedCount = 0;
-    let totalUpdated = repairedExistingCount + reconciledExistingCount + boardReconciliationChanges;
+    let totalUpdated = repairedExistingCount + reconciledExistingCount;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -983,7 +983,7 @@ export const syncImages = async (
         maxTimestamp: maxTimestampNum,
         syncedIds,
         boardMapping: boards,
-        boardsChanged: boardReconciliationChanges > 0,
+        boardsChanged,
         touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
         touchedFacetResources
     };

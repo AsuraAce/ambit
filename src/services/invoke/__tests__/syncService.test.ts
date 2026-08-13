@@ -468,7 +468,7 @@ describe('syncImages live mode', () => {
             ['board-a', { name: 'Owned board', createdAt: 10, ownerId: 'owner-a' }],
             ['empty-board', { name: 'Empty board', createdAt: 20, ownerId: 'owner-a' }],
         ]));
-        expect(result.updated).toBe(6);
+        expect(result.updated).toBe(0);
         expect(result.boardsChanged).toBe(true);
     });
 

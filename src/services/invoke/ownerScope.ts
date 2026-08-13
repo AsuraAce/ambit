@@ -12,6 +12,7 @@ import { createInvokeImagePathResolver } from './pathResolver';
 import { fetchBoards } from './connection';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
 import { resolveInvokeSyncScope } from './syncScope';
+import { isSameInvokePath } from './pathIdentity';
 
 export interface ApplyInvokeOwnerScopeOptions {
     discovery: InvokeOwnerDiscovery;
@@ -70,7 +71,7 @@ export const applyInvokeOwnerScope = async ({
     onProgress = () => undefined,
     signal,
 }: ApplyInvokeOwnerScopeOptions): Promise<ApplyInvokeOwnerScopeResult> => {
-    if (selection && selection.dbPath !== discovery.dbPath) {
+    if (selection && !isSameInvokePath(selection.dbPath, discovery.dbPath)) {
         throw new Error('The saved InvokeAI owner belongs to a different database.');
     }
 

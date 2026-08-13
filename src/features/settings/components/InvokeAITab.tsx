@@ -7,6 +7,7 @@ import { SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
+import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
 
 interface TabProps {
     settings: AppSettings;
@@ -53,7 +54,8 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const [isDiagLoading, setIsDiagLoading] = useState(false);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const ownerDiscovery = invokeOwnerScopeState.discovery;
-    const ownerSelection = settings.invokeOwnerSelection?.dbPath === ownerDiscovery?.dbPath
+    const ownerSelection = settings.invokeOwnerSelection && ownerDiscovery
+        && isSameInvokePath(settings.invokeOwnerSelection.dbPath, ownerDiscovery.dbPath)
         ? settings.invokeOwnerSelection
         : undefined;
     const ownerScopeInProgress = invokeOwnerScopeState.status === 'discovering'

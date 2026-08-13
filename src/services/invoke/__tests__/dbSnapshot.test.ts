@@ -178,6 +178,41 @@ describe('Invoke DB startup snapshot matching', () => {
         })?.lastSyncedAt).toBe(200);
     });
 
+    it('reuses the same Windows snapshot identity when only path casing changes', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            lastSyncedAt: 100,
+        });
+        const recased = {
+            ...ownerA,
+            dbPath: ownerA.dbPath.toLowerCase(),
+            lastSyncedAt: 200,
+        };
+        const recasedCurrent = {
+            ...ownerA,
+            dbPath: ownerA.dbPath.toLowerCase(),
+            files: ownerA.files.map(file => ({ ...file, path: file.path.toLowerCase() })),
+        };
+
+        const snapshots = upsertInvokeDbSnapshot([ownerA], recased);
+
+        expect(snapshots).toHaveLength(1);
+        expect(isInvokeDbSnapshotCurrent(ownerA, recasedCurrent)).toBe(true);
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(200);
+        expect(isInvokeDbSnapshotScopeCurrent(recased, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(true);
+    });
+
     it('compares owner source fingerprints independently from the shared database files', () => {
         const ownerA = {
             schemaVersion: 1 as const,
