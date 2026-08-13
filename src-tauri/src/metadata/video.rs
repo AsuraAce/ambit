@@ -131,6 +131,26 @@ pub fn reparse_video_metadata(original_evidence_json: &str) -> Option<VideoGener
     Some(evidence_from_candidates(sidecar, embedded, diagnostics).metadata)
 }
 
+pub fn refresh_video_metadata_evidence(
+    video_path: &Path,
+    original_evidence_json: &str,
+) -> Option<VideoMetadataEvidence> {
+    let evidence: Value = serde_json::from_str(original_evidence_json).ok()?;
+    if !evidence.is_object()
+        || (!evidence.get("sidecar").is_some() && !evidence.get("embedded").is_some())
+    {
+        return None;
+    }
+
+    let mut diagnostics = Vec::new();
+    let embedded = evidence
+        .get("embedded")
+        .and_then(Value::as_str)
+        .and_then(|raw| stored_embedded_candidate(raw, &mut diagnostics));
+    let sidecar = sidecar_candidate(video_path, &mut diagnostics);
+    Some(evidence_from_candidates(sidecar, embedded, diagnostics))
+}
+
 fn evidence_from_candidates(
     sidecar: Option<Candidate>,
     embedded: Option<Candidate>,
@@ -320,7 +340,37 @@ fn candidate_from_chunks(
     source: MetadataEvidenceSource,
 ) -> Result<Candidate, (&'static str, String)> {
     validate_workflow(workflow)?;
-    let image_metadata = extract_comfyui_metadata(chunks);
+    let selected_workflow = selected_video_workflow(workflow)?;
+    let selected_key = if workflow.get("nodes").and_then(Value::as_array).is_some() {
+        "workflow"
+    } else {
+        "prompt"
+    };
+    let mut selected_chunks = HashMap::from([(
+        selected_key.to_string(),
+        serde_json::to_string(&selected_workflow).map_err(|error| {
+            (
+                "workflow_invalid",
+                format!("Selected workflow could not be serialized: {error}"),
+            )
+        })?,
+    )]);
+    if selected_key == "workflow" {
+        if let Some(selected_prompt) = chunks
+            .get("prompt")
+            .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+            .filter(|prompt| is_linked_video_graph(prompt))
+            .and_then(|prompt| selected_video_workflow(&prompt).ok())
+            .and_then(|prompt| serde_json::to_string(&prompt).ok())
+        {
+            selected_chunks.insert("prompt".into(), selected_prompt);
+        }
+    }
+    let mut image_metadata = extract_comfyui_metadata(&selected_chunks);
+    image_metadata.workflow_json = chunks
+        .get(selected_key)
+        .cloned()
+        .or_else(|| serde_json::to_string(workflow).ok());
     let mode = classify_generation_mode(workflow);
     let mut metadata = from_image_metadata(image_metadata, mode);
     for field in [
@@ -346,6 +396,119 @@ fn candidate_from_chunks(
         raw_json,
         source,
     })
+}
+
+fn selected_video_workflow(workflow: &Value) -> Result<Value, (&'static str, String)> {
+    if let Some(nodes) = workflow.get("nodes").and_then(Value::as_array) {
+        let reachable = reachable_ui_node_ids(workflow, nodes);
+        let mut selected = workflow.clone();
+        selected["nodes"] = Value::Array(
+            nodes
+                .iter()
+                .filter(|node| {
+                    node_is_active(node) && node.get("id").is_some_and(|id| reachable.contains(id))
+                })
+                .cloned()
+                .collect(),
+        );
+        selected["links"] = Value::Array(
+            workflow
+                .get("links")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|link| {
+                    link.as_array().is_some_and(|link| {
+                        link.get(1).is_some_and(|id| reachable.contains(id))
+                            && link.get(3).is_some_and(|id| reachable.contains(id))
+                    })
+                })
+                .cloned()
+                .collect(),
+        );
+        return Ok(selected);
+    }
+
+    let Some(nodes) = workflow.as_object() else {
+        return Err(("workflow_invalid", "Workflow has no node map".into()));
+    };
+    let reachable = reachable_prompt_node_ids(nodes);
+    Ok(Value::Object(
+        nodes
+            .iter()
+            .filter(|(id, node)| reachable.contains(*id) && node_is_active(node))
+            .map(|(id, node)| (id.clone(), node.clone()))
+            .collect(),
+    ))
+}
+
+fn reachable_ui_node_ids(workflow: &Value, nodes: &[Value]) -> Vec<Value> {
+    let Some(save_id) = nodes
+        .iter()
+        .find(|node| node_type(node) == Some("SaveVideo") && node_is_active(node))
+        .and_then(|node| node.get("id"))
+        .cloned()
+    else {
+        return Vec::new();
+    };
+    let mut reachable = vec![save_id];
+    let links = workflow
+        .get("links")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    loop {
+        let mut changed = false;
+        for link in links.iter().filter_map(Value::as_array) {
+            let (Some(source_id), Some(target_id)) = (link.get(1), link.get(3)) else {
+                continue;
+            };
+            if reachable.contains(target_id)
+                && !reachable.contains(source_id)
+                && nodes
+                    .iter()
+                    .any(|node| node.get("id") == Some(source_id) && node_is_active(node))
+            {
+                reachable.push(source_id.clone());
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    reachable
+}
+
+fn reachable_prompt_node_ids(nodes: &serde_json::Map<String, Value>) -> Vec<String> {
+    let Some(save_id) = nodes.iter().find_map(|(id, node)| {
+        (node_type(node) == Some("SaveVideo") && node_is_active(node)).then(|| id.clone())
+    }) else {
+        return Vec::new();
+    };
+    let mut reachable = vec![save_id];
+    loop {
+        let mut changed = false;
+        for target_id in reachable.clone() {
+            let Some(inputs) = nodes.get(&target_id).and_then(|node| node.get("inputs")) else {
+                continue;
+            };
+            let mut source_ids = Vec::new();
+            collect_prompt_source_ids(inputs, nodes, &mut source_ids);
+            for source_id in source_ids {
+                if !reachable.contains(&source_id)
+                    && nodes.get(&source_id).is_some_and(node_is_active)
+                {
+                    reachable.push(source_id);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    reachable
 }
 
 fn validate_workflow(workflow: &Value) -> Result<(), (&'static str, String)> {
@@ -392,6 +555,25 @@ fn validate_workflow(workflow: &Value) -> Result<(), (&'static str, String)> {
         ));
     }
     Ok(())
+}
+
+fn is_linked_video_graph(workflow: &Value) -> bool {
+    let nodes = workflow_nodes(workflow);
+    if nodes.is_empty()
+        || all_workflow_nodes(workflow).iter().any(|node| {
+            node.pointer("/properties/cnr_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| id != "comfy-core")
+        })
+    {
+        return false;
+    }
+    let save_video: Vec<&Value> = nodes
+        .iter()
+        .copied()
+        .filter(|node| node_type(node) == Some("SaveVideo") && node_is_active(node))
+        .collect();
+    save_video.len() == 1 && save_video_has_active_source(workflow, &nodes, save_video[0])
 }
 
 fn workflow_nodes(workflow: &Value) -> Vec<&Value> {
@@ -552,40 +734,7 @@ fn classify_generation_mode(workflow: &Value) -> VideoGenerationMode {
 
 fn active_output_nodes(workflow: &Value) -> Vec<&Value> {
     if let Some(nodes) = workflow.get("nodes").and_then(Value::as_array) {
-        let Some(save_id) = nodes
-            .iter()
-            .find(|node| node_type(node) == Some("SaveVideo") && node_is_active(node))
-            .and_then(|node| node.get("id"))
-            .cloned()
-        else {
-            return Vec::new();
-        };
-        let mut reachable = vec![save_id];
-        let links = workflow
-            .get("links")
-            .and_then(Value::as_array)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
-        loop {
-            let mut changed = false;
-            for link in links.iter().filter_map(Value::as_array) {
-                let (Some(source_id), Some(target_id)) = (link.get(1), link.get(3)) else {
-                    continue;
-                };
-                if reachable.contains(target_id)
-                    && !reachable.contains(source_id)
-                    && nodes
-                        .iter()
-                        .any(|node| node.get("id") == Some(source_id) && node_is_active(node))
-                {
-                    reachable.push(source_id.clone());
-                    changed = true;
-                }
-            }
-            if !changed {
-                break;
-            }
-        }
+        let reachable = reachable_ui_node_ids(workflow, nodes);
         return nodes
             .iter()
             .filter(|node| {
@@ -597,33 +746,7 @@ fn active_output_nodes(workflow: &Value) -> Vec<&Value> {
     let Some(nodes) = workflow.as_object() else {
         return Vec::new();
     };
-    let Some(save_id) = nodes.iter().find_map(|(id, node)| {
-        (node_type(node) == Some("SaveVideo") && node_is_active(node)).then(|| id.clone())
-    }) else {
-        return Vec::new();
-    };
-    let mut reachable = vec![save_id];
-    loop {
-        let mut changed = false;
-        for target_id in reachable.clone() {
-            let Some(inputs) = nodes.get(&target_id).and_then(|node| node.get("inputs")) else {
-                continue;
-            };
-            let mut source_ids = Vec::new();
-            collect_prompt_source_ids(inputs, nodes, &mut source_ids);
-            for source_id in source_ids {
-                if !reachable.contains(&source_id)
-                    && nodes.get(&source_id).is_some_and(node_is_active)
-                {
-                    reachable.push(source_id);
-                    changed = true;
-                }
-            }
-        }
-        if !changed {
-            break;
-        }
-    }
+    let reachable = reachable_prompt_node_ids(nodes);
     reachable
         .iter()
         .filter_map(|id| nodes.get(id))
@@ -972,6 +1095,81 @@ mod tests {
     }
 
     #[test]
+    fn generation_metadata_ignores_disconnected_parameter_nodes() {
+        let prompt = serde_json::json!({
+            "1": {
+                "class_type": "KSampler",
+                "inputs": {
+                    "seed": 42,
+                    "steps": 24,
+                    "cfg": 7.0,
+                    "sampler_name": "euler"
+                },
+                "properties": {"cnr_id": "comfy-core"}
+            },
+            "2": {
+                "class_type": "SaveVideo",
+                "inputs": {"video": ["1", 0]},
+                "properties": {"cnr_id": "comfy-core"}
+            },
+            "0": {
+                "class_type": "SDParameterGenerator",
+                "inputs": {
+                    "seed": 999,
+                    "steps": 999,
+                    "cfg": 99.0,
+                    "sampler": "disconnected_sampler",
+                    "ckpt_name": "disconnected_model.safetensors"
+                },
+                "properties": {"cnr_id": "comfy-core"}
+            }
+        });
+        let chunks = HashMap::from([("prompt".to_string(), prompt.to_string())]);
+
+        let candidate = candidate_from_chunks(
+            &chunks,
+            &prompt,
+            "raw evidence".into(),
+            MetadataEvidenceSource::Embedded,
+        )
+        .expect("connected SaveVideo ancestry should parse");
+
+        assert_eq!(candidate.metadata.seed, Some(42));
+        assert_eq!(candidate.metadata.steps, 24);
+        assert_eq!(candidate.metadata.cfg, 7.0);
+        assert_eq!(candidate.metadata.sampler, "euler");
+        assert_ne!(candidate.metadata.model, "disconnected_model");
+        assert!(
+            candidate
+                .metadata
+                .workflow_json
+                .as_deref()
+                .is_some_and(|raw| raw.contains("disconnected_model")),
+            "the full workflow remains available for inspection"
+        );
+
+        let mut api_prompt = prompt.clone();
+        api_prompt["2"]
+            .as_object_mut()
+            .unwrap()
+            .remove("properties");
+        let ui_workflow = workflow("TextToVideo");
+        let chunks = HashMap::from([
+            ("workflow".to_string(), ui_workflow.to_string()),
+            ("prompt".to_string(), api_prompt.to_string()),
+        ]);
+        let candidate = candidate_from_chunks(
+            &chunks,
+            &ui_workflow,
+            "raw evidence".into(),
+            MetadataEvidenceSource::Embedded,
+        )
+        .expect("validated UI workflow should safely use its linked API prompt");
+        assert_eq!(candidate.metadata.steps, 24);
+        assert_ne!(candidate.metadata.model, "disconnected_model");
+    }
+
+    #[test]
     fn rejects_ambiguous_and_custom_save_video_evidence() {
         let mut ambiguous = workflow("LTXVConditioning");
         ambiguous["nodes"]
@@ -1075,6 +1273,60 @@ mod tests {
             .expect("preserved evidence should remain reparsable");
         assert_eq!(reparsed.generation_mode, VideoGenerationMode::GuidedVideo);
         assert_eq!(reparsed.workflow_json, evidence.metadata.workflow_json);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn explicit_refresh_reconciles_offline_sidecar_changes() {
+        let root = std::env::temp_dir().join(format!(
+            "ambit_video_metadata_refresh_{}_{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let video = root.join("clip.mp4");
+        let sidecar = root.join("clip.workflow.json");
+        fs::write(&video, b"video").unwrap();
+        let empty_evidence = serde_json::json!({"sidecar": null, "embedded": null}).to_string();
+
+        fs::write(
+            &sidecar,
+            serde_json::json!({"media":"clip.mp4","workflow":workflow("TextToVideo")}).to_string(),
+        )
+        .unwrap();
+        let added = refresh_video_metadata_evidence(&video, &empty_evidence).unwrap();
+        assert_eq!(
+            added.metadata.generation_mode,
+            VideoGenerationMode::TextToVideo
+        );
+
+        fs::write(
+            &sidecar,
+            serde_json::json!({"media":"clip.mp4","workflow":workflow("CannyControlNet")})
+                .to_string(),
+        )
+        .unwrap();
+        let changed =
+            refresh_video_metadata_evidence(&video, &added.original_metadata_json).unwrap();
+        assert_eq!(
+            changed.metadata.generation_mode,
+            VideoGenerationMode::GuidedVideo
+        );
+
+        fs::remove_file(&sidecar).unwrap();
+        let removed =
+            refresh_video_metadata_evidence(&video, &changed.original_metadata_json).unwrap();
+        assert_eq!(
+            removed.metadata.generation_mode,
+            VideoGenerationMode::Unknown
+        );
+        let refreshed_evidence: Value =
+            serde_json::from_str(&removed.original_metadata_json).unwrap();
+        assert!(refreshed_evidence["sidecar"].is_null());
+
         let _ = fs::remove_dir_all(root);
     }
 }

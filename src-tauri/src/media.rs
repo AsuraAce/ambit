@@ -15,8 +15,8 @@ use tauri_plugin_fs::FsExt;
 
 use crate::db::reparse::{ReparseJobResult, ReparseState};
 use crate::metadata::video::{
-    extract_video_metadata, reparse_video_metadata, MetadataEvidenceSource,
-    VideoGenerationMetadata, VideoGenerationMode, VideoMetadataDiagnostic,
+    extract_video_metadata, refresh_video_metadata_evidence, reparse_video_metadata,
+    MetadataEvidenceSource, VideoGenerationMetadata, VideoGenerationMode, VideoMetadataDiagnostic,
 };
 use crate::metadata::VIDEO_PARSER_VERSION;
 
@@ -325,14 +325,49 @@ pub async fn refresh_video_metadata(
             break;
         }
         result.processed += 1;
-        if parser_version.is_some() {
-            if let Some(metadata) = original_evidence_json
+        if force_reparse {
+            let canonical = match validate_scoped_video_file(&app, &path) {
+                Ok(path) => path,
+                Err(_) => {
+                    result.errors += 1;
+                    continue;
+                }
+            };
+            if let Some(evidence) = original_evidence_json
                 .as_deref()
-                .and_then(reparse_video_metadata)
+                .and_then(|original| refresh_video_metadata_evidence(&canonical, original))
             {
                 let asset_id = path.clone();
                 let update = run_blocking(app.clone(), move |conn| {
-                    update_video_metadata_record(conn, &asset_id, &metadata)
+                    update_video_metadata_record(
+                        conn,
+                        &asset_id,
+                        &evidence.metadata,
+                        &evidence.original_metadata_json,
+                    )
+                })
+                .await;
+                if update.is_ok() {
+                    result.updated += 1;
+                } else {
+                    result.errors += 1;
+                }
+                continue;
+            }
+        } else if parser_version.is_some() {
+            if let Some((metadata, original_evidence_json)) = original_evidence_json
+                .as_deref()
+                .and_then(reparse_video_metadata)
+                .zip(original_evidence_json)
+            {
+                let asset_id = path.clone();
+                let update = run_blocking(app.clone(), move |conn| {
+                    update_video_metadata_record(
+                        conn,
+                        &asset_id,
+                        &metadata,
+                        &original_evidence_json,
+                    )
                 })
                 .await;
                 if update.is_ok() {
@@ -918,6 +953,7 @@ fn update_video_metadata_record(
     conn: &rusqlite::Connection,
     asset_id: &str,
     parsed_metadata: &VideoGenerationMetadata,
+    original_metadata_json: &str,
 ) -> Result<VideoGenerationMetadata, String> {
     let tx = conn
         .unchecked_transaction()
@@ -938,21 +974,23 @@ fn update_video_metadata_record(
         "UPDATE images SET
             metadata_json = ?1,
             original_parsed_json = ?2,
-            parser_version = ?3,
-            model_name = ?4,
-            tool = ?5,
-            resolved_model_name = ?4,
-            steps = ?6,
-            seed = ?7,
-            cfg = ?8,
-            sampler = ?9,
-            generation_type = ?10,
-            positive_prompt = ?11,
-            negative_prompt = ?12
-         WHERE id = ?13 AND media_type = 'video'",
+            original_metadata_json = ?3,
+            parser_version = ?4,
+            model_name = ?5,
+            tool = ?6,
+            resolved_model_name = ?5,
+            steps = ?7,
+            seed = ?8,
+            cfg = ?9,
+            sampler = ?10,
+            generation_type = ?11,
+            positive_prompt = ?12,
+            negative_prompt = ?13
+         WHERE id = ?14 AND media_type = 'video'",
         params![
             metadata_json,
             original_parsed_json,
+            original_metadata_json,
             VIDEO_PARSER_VERSION,
             metadata.model,
             metadata.tool,

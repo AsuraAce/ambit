@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     getExistingMetadata: vi.fn(),
     rebuildFacetCache: vi.fn(),
     dbSelect: vi.fn(),
+    fileExists: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
     importVideoPaths: vi.fn(),
     cancelVideoImport: vi.fn()
@@ -35,6 +36,10 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@tauri-apps/api/event', () => ({
     listen: mocks.listen
+}));
+
+vi.mock('@tauri-apps/plugin-fs', () => ({
+    exists: mocks.fileExists
 }));
 
 vi.mock('../../bindings', () => ({
@@ -84,6 +89,7 @@ describe('processTargetedFiles', () => {
         mocks.insertImagesBatch.mockResolvedValue(undefined);
         mocks.rebuildFacetCache.mockResolvedValue(0);
         mocks.dbSelect.mockResolvedValue([]);
+        mocks.fileExists.mockResolvedValue(false);
         mocks.getFileSizesBulk.mockResolvedValue([100]);
         mocks.scanModelThumbnails.mockResolvedValue({
             status: 'ok',
@@ -195,6 +201,150 @@ describe('processTargetedFiles', () => {
             expect.stringContaining('id COLLATE NOCASE IN'),
             expect.arrayContaining(['C:/library/clip.mp4', 'C:/library/clip.webm'])
         );
+    });
+
+    it('waits for an existing workflow sidecar to stabilize before resolving its video', async () => {
+        vi.useFakeTimers();
+        mocks.fileExists.mockResolvedValueOnce(true);
+        mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
+        mocks.getFileSizesBulk
+            .mockResolvedValueOnce({ status: 'ok', data: [100] })
+            .mockResolvedValueOnce({ status: 'ok', data: [100] })
+            .mockResolvedValueOnce({ status: 'ok', data: [100] })
+            .mockResolvedValueOnce({ status: 'ok', data: [200] })
+            .mockResolvedValueOnce({ status: 'ok', data: [200] })
+            .mockResolvedValueOnce({ status: 'ok', data: [200] });
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 0,
+            duplicate: 1,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: ['C:/library/clip.mp4'],
+            failedPaths: []
+        });
+
+        const resultPromise = processTargetedFiles(
+            ['C:/library/clip.workflow.json'],
+            { forceRescan: true, waitForStableFiles: true }
+        );
+        await vi.runAllTimersAsync();
+        await resultPromise;
+        vi.useRealTimers();
+
+        expect(mocks.getFileSizesBulk.mock.calls.slice(0, 3)).toEqual([
+            [['C:/library/clip.workflow.json']],
+            [['C:/library/clip.workflow.json']],
+            [['C:/library/clip.workflow.json']]
+        ]);
+        expect(mocks.getFileSizesBulk.mock.calls.slice(3)).toEqual([
+            [['C:/library/clip.mp4']],
+            [['C:/library/clip.mp4']],
+            [['C:/library/clip.mp4']]
+        ]);
+        expect(mocks.importVideoPaths).toHaveBeenCalledWith(
+            ['C:/library/clip.mp4'],
+            expect.any(Function),
+            expect.any(Function),
+            expect.any(Function)
+        );
+    });
+
+    it('resolves a removed workflow sidecar without waiting for the absent file', async () => {
+        vi.useFakeTimers();
+        mocks.fileExists.mockResolvedValueOnce(false);
+        mocks.dbSelect.mockResolvedValueOnce([{ id: 'C:/library/clip.mp4' }]);
+        mocks.getFileSizesBulk
+            .mockResolvedValueOnce({ status: 'ok', data: [200] })
+            .mockResolvedValueOnce({ status: 'ok', data: [200] })
+            .mockResolvedValueOnce({ status: 'ok', data: [200] });
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 0,
+            duplicate: 1,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: ['C:/library/clip.mp4'],
+            failedPaths: []
+        });
+
+        const resultPromise = processTargetedFiles(
+            ['C:/library/clip.workflow.json'],
+            { forceRescan: true, waitForStableFiles: true }
+        );
+        await vi.runAllTimersAsync();
+        await resultPromise;
+        vi.useRealTimers();
+
+        expect(mocks.getFileSizesBulk).toHaveBeenCalledTimes(3);
+        expect(mocks.getFileSizesBulk).toHaveBeenNthCalledWith(1, ['C:/library/clip.mp4']);
+    });
+
+    it('returns video metadata and removed resources as touched facets', async () => {
+        mocks.getExistingMetadata
+            .mockResolvedValueOnce(new Map([[
+                'C:/library/clip.mp4',
+                {
+                    timestamp: 1000,
+                    fileSize: 200,
+                    metadataJson: JSON.stringify({
+                        tool: 'ComfyUI',
+                        model: 'Old Video Model',
+                        loras: ['Removed Motion (0.5)'],
+                        controlNets: ['Old Guide']
+                    }),
+                    isFavorite: false,
+                    isPinned: false
+                }
+            ]]))
+            .mockResolvedValueOnce(new Map([[
+                'C:/library/clip.mp4',
+                {
+                    timestamp: 1000,
+                    fileSize: 200,
+                    metadataJson: JSON.stringify({
+                        tool: 'Other',
+                        model: 'New Video Model',
+                        ipAdapters: ['Face Adapter']
+                    }),
+                    isFavorite: false,
+                    isPinned: false
+                }
+            ]]));
+        mocks.importVideoPaths.mockResolvedValueOnce({
+            imported: 0,
+            duplicate: 1,
+            rejected: 0,
+            cancelled: 0,
+            posterFailures: 0,
+            assets: [],
+            handledPaths: ['C:/library/clip.mp4'],
+            failedPaths: []
+        });
+
+        const result = await processTargetedFiles(
+            ['C:/library/clip.mp4'],
+            { forceRescan: true }
+        );
+
+        expect(result.touchedFacetTypes).toEqual([
+            'checkpoints',
+            'loras',
+            'controlNets',
+            'ipAdapters',
+            'tools'
+        ]);
+        expect(result.touchedFacetResources).toEqual({
+            checkpoints: ['Old Video Model', 'New Video Model'],
+            loras: ['Removed Motion'],
+            embeddings: [],
+            hypernetworks: [],
+            controlNets: ['Old Guide'],
+            ipAdapters: ['Face Adapter'],
+            tools: ['ComfyUI', 'Other']
+        });
     });
 
     it('skips database duplicates before scanning so rescans do not rewrite unchanged paths', async () => {
