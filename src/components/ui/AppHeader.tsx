@@ -8,6 +8,8 @@ import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
 import { isBrowserMockMode } from '../../services/runtime';
 import { ToastContext } from '../../contexts/ToastContext';
 import { TooltipButton } from './InfoTooltip';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { getInvokeOwnerQueryScopeKey } from '../../utils/invokeOwnerQueryScope';
 
 const SearchBar = React.lazy(() => import('../../features/filters/components/SearchBar').then(module => ({ default: module.SearchBar })));
 
@@ -69,6 +71,9 @@ export const AppHeader = React.memo(({
     const toast = React.useContext(ToastContext);
     const addToast = toast?.addToast ?? ((message: string) => console.info(message));
     const browserMockMode = isBrowserMockMode();
+    const invokeOwnerPresentationKey = useInvokeOwnerScopeStore(state => (
+        getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
+    ));
 
     const {
         isLiveWatching, setIsLiveWatching,
@@ -191,6 +196,7 @@ export const AppHeader = React.memo(({
                         displayedCount={displayedCount}
                         totalCount={totalCount}
                         scopeName={scopeName}
+                        ownerPresentationKey={invokeOwnerPresentationKey}
                         isFiltering={isFiltering}
                     />
                 </div>

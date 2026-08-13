@@ -1,4 +1,5 @@
 use super::run_blocking;
+use crate::db::facets::FacetResourceTouches;
 use crate::db::ImageRecord;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::BTreeSet;
@@ -93,6 +94,61 @@ pub struct InvokeOwnerScopeRefreshResult {
     pub changed: bool,
     pub active_updated: usize,
     pub removed_updated: usize,
+    pub cache_status: FacetScopeCacheStatus,
+    pub cache_repair: InvokeScopeCacheRepairPlan,
+}
+
+#[derive(
+    serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeScopeCacheAction {
+    Restored,
+    Selective,
+    #[default]
+    Full,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeScopeCacheRepairPlan {
+    pub action: InvokeScopeCacheAction,
+    pub resources: FacetResourceTouches,
+    pub facet_types: Vec<String>,
+    pub collections_dirty: bool,
+}
+
+#[derive(
+    serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum FacetScopeCacheState {
+    #[default]
+    Missing,
+    Dirty,
+    Building,
+    Ready,
+}
+
+impl FacetScopeCacheState {
+    fn from_str(value: &str) -> Self {
+        match value {
+            "dirty" => Self::Dirty,
+            "building" => Self::Building,
+            "ready" => Self::Ready,
+            _ => Self::Missing,
+        }
+    }
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct FacetScopeCacheStatus {
+    pub state: FacetScopeCacheState,
+    pub generation: i64,
+    pub built_generation: Option<i64>,
+    pub facet_count: usize,
+    pub collection_count: usize,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
@@ -238,18 +294,15 @@ fn save_images_batch_inner(
         use crate::metadata::CURRENT_PARSER_VERSION;
 
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
                     ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
-                    CASE WHEN EXISTS (
-                        SELECT 1 FROM invoke_owner_scope_state scope
-                        WHERE LOWER(substr(REPLACE(?2, '\\', '/'), 1, length(scope.images_root || '/outputs/images/'))) = LOWER(scope.images_root || '/outputs/images/')
-                          AND (
-                            scope.scope_mode = 'unselected'
-                            OR (scope.scope_mode = 'owner' AND (?26 IS NULL OR ?26 IS NOT scope.owner_id))
-                          )
-                    ) THEN 1 ELSE 0 END,
+                    0,
+                    (SELECT scope.db_path FROM invoke_owner_scope_state scope
+                     WHERE LOWER(REPLACE(?2, '\\', '/')) LIKE
+                           LOWER(RTRIM(REPLACE(scope.images_root, '\\', '/'), '/') || '/outputs/images/%')
+                     LIMIT 1),
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
                     json_extract(?8, '$.tool'),
@@ -322,9 +375,11 @@ fn save_images_batch_inner(
                         ELSE images.invoke_owner_id
                     END,
                     invoke_scope_hidden=CASE
-                        WHEN excluded.invoke_image_name IS NOT NULL THEN excluded.invoke_scope_hidden
+                        WHEN excluded.invoke_source_id IS NOT NULL
+                          OR images.invoke_source_id IS NOT NULL THEN 0
                         ELSE images.invoke_scope_hidden
                     END,
+                    invoke_source_id=COALESCE(excluded.invoke_source_id, images.invoke_source_id),
                     model_hash=excluded.model_hash,
                     model_name=excluded.model_name,
                     tool=excluded.tool,
@@ -350,7 +405,10 @@ fn save_images_batch_inner(
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_owner_id IS NOT excluded.invoke_owner_id)
-                    OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_scope_hidden IS NOT excluded.invoke_scope_hidden)
+                    OR (images.invoke_scope_hidden != 0
+                        AND (excluded.invoke_source_id IS NOT NULL
+                             OR images.invoke_source_id IS NOT NULL))
+                    OR (excluded.invoke_source_id IS NOT NULL AND images.invoke_source_id IS NOT excluded.invoke_source_id)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
         ).map_err(|e| e.to_string())?;
@@ -600,6 +658,294 @@ fn normalize_invoke_root(path: &str) -> String {
     path.replace('\\', "/").trim_end_matches('/').to_string()
 }
 
+fn invoke_scope_cache_key(
+    db_path: &str,
+    mode: InvokeOwnerScopeMode,
+    owner_id: Option<&str>,
+) -> String {
+    format!(
+        "{db_path}\u{1f}{}\u{1f}{}",
+        mode.as_str(),
+        owner_id.unwrap_or("")
+    )
+}
+
+fn read_scope_cache_status(
+    conn: &Connection,
+    scope_key: &str,
+) -> Result<FacetScopeCacheStatus, String> {
+    let state = conn
+        .query_row(
+            "SELECT status, generation, built_generation,
+                    (SELECT COUNT(*) FROM invoke_scope_facet_cache f WHERE f.scope_key = s.scope_key),
+                    (SELECT COUNT(*) FROM invoke_scope_collection_cache c WHERE c.scope_key = s.scope_key)
+             FROM invoke_scope_cache_state s
+             WHERE scope_key = ?1",
+            [scope_key],
+            |row| {
+                let status: String = row.get(0)?;
+                Ok(FacetScopeCacheStatus {
+                    state: FacetScopeCacheState::from_str(&status),
+                    generation: row.get(1)?,
+                    built_generation: row.get(2)?,
+                    facet_count: row.get(3)?,
+                    collection_count: row.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    Ok(state.unwrap_or_default())
+}
+
+fn read_scope_cache_repair_plan(
+    conn: &Connection,
+    scope_key: &str,
+    status: &FacetScopeCacheStatus,
+) -> Result<InvokeScopeCacheRepairPlan, String> {
+    if status.state == FacetScopeCacheState::Ready
+        && status.built_generation == Some(status.generation)
+    {
+        return Ok(InvokeScopeCacheRepairPlan {
+            action: InvokeScopeCacheAction::Restored,
+            ..Default::default()
+        });
+    }
+    if status.state != FacetScopeCacheState::Dirty || status.built_generation.is_none() {
+        return Ok(InvokeScopeCacheRepairPlan::default());
+    }
+
+    let mut statement = conn
+        .prepare(
+            "SELECT domain, facet_type, resource_name
+             FROM invoke_scope_cache_dirty_items
+             WHERE scope_key = ?1
+             ORDER BY domain, facet_type, resource_name",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows: Vec<(String, String, String)> = statement
+        .query_map([scope_key], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
+        .map_err(|error| error.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|error| error.to_string())?;
+
+    if rows.is_empty() || rows.iter().any(|(domain, _, _)| domain == "full") {
+        return Ok(InvokeScopeCacheRepairPlan::default());
+    }
+
+    let mut resources = FacetResourceTouches::default();
+    let mut facet_types = BTreeSet::new();
+    let mut collections_dirty = false;
+    for (domain, facet_type, resource_name) in rows {
+        match domain.as_str() {
+            "collections" => collections_dirty = true,
+            "facet_type" if !facet_type.is_empty() => {
+                facet_types.insert(facet_type);
+            }
+            "facet_resource" if !resource_name.trim().is_empty() => match facet_type.as_str() {
+                "checkpoints" => resources.checkpoints.push(resource_name),
+                "loras" => resources.loras.push(resource_name),
+                "embeddings" => resources.embeddings.push(resource_name),
+                "hypernetworks" => resources.hypernetworks.push(resource_name),
+                "control_nets" => resources.control_nets.push(resource_name),
+                "ip_adapters" => resources.ip_adapters.push(resource_name),
+                "tools" => resources.tools.push(resource_name),
+                _ => return Ok(InvokeScopeCacheRepairPlan::default()),
+            },
+            _ => return Ok(InvokeScopeCacheRepairPlan::default()),
+        }
+    }
+
+    Ok(InvokeScopeCacheRepairPlan {
+        action: InvokeScopeCacheAction::Selective,
+        resources,
+        facet_types: facet_types.into_iter().collect(),
+        collections_dirty,
+    })
+}
+
+fn snapshot_active_scope_cache_if_ready(conn: &Connection) -> Result<(), String> {
+    let active: Option<(String, String, i64, Option<i64>)> = conn
+        .query_row(
+            "SELECT s.scope_key, s.status, s.generation, s.built_generation
+             FROM invoke_scope_cache_control control
+             JOIN invoke_scope_cache_state s ON s.scope_key = control.active_scope_key
+             WHERE control.state_key = 'current'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((scope_key, status, generation, built_generation)) = active else {
+        return Ok(());
+    };
+    if status != "ready" || built_generation != Some(generation) {
+        return Ok(());
+    }
+
+    conn.execute(
+        "DELETE FROM invoke_scope_facet_cache WHERE scope_key = ?1",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO invoke_scope_facet_cache (
+             scope_key, facet_type, resource_name, resource_hash, count,
+             thumbnail_path, preview_url, last_used_at, created_at, is_manual,
+             has_sidecar, is_user_override, guidance_subtype,
+             safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+             thumbnail_sensitivity_override
+         )
+         SELECT ?1, facet_type, resource_name, resource_hash, count,
+                thumbnail_path, preview_url, last_used_at, created_at, is_manual,
+                has_sidecar, is_user_override, guidance_subtype,
+                safe_thumbnail_path, thumbnail_image_id, thumbnail_is_sensitive,
+                thumbnail_sensitivity_override
+         FROM facet_cache",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "DELETE FROM invoke_scope_collection_cache WHERE scope_key = ?1",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO invoke_scope_collection_cache (
+             scope_key, collection_id, dynamic_thumbnail_path,
+             dynamic_safe_thumbnail_path, dynamic_thumbnail_is_sensitive,
+             dynamic_thumbnail_cached_at, dynamic_count
+         )
+         SELECT ?1, id, dynamic_thumbnail_path, dynamic_safe_thumbnail_path,
+                dynamic_thumbnail_is_sensitive, dynamic_thumbnail_cached_at, dynamic_count
+         FROM collections",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn restore_scope_cache(conn: &Connection, scope_key: &str) -> Result<(), String> {
+    conn.execute("DELETE FROM facet_cache", [])
+        .map_err(|error| error.to_string())?;
+    conn.execute(
+        "INSERT INTO facet_cache (
+             facet_type, resource_name, resource_hash, count, thumbnail_path,
+             preview_url, last_used_at, created_at, is_manual, has_sidecar,
+             is_user_override, guidance_subtype, safe_thumbnail_path,
+             thumbnail_image_id, thumbnail_is_sensitive,
+             thumbnail_sensitivity_override
+         )
+         SELECT facet_type, resource_name, resource_hash, count, thumbnail_path,
+                preview_url, last_used_at, created_at, is_manual, has_sidecar,
+                is_user_override, guidance_subtype, safe_thumbnail_path,
+                thumbnail_image_id, thumbnail_is_sensitive,
+                thumbnail_sensitivity_override
+         FROM invoke_scope_facet_cache
+         WHERE scope_key = ?1",
+        [scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "UPDATE collections
+         SET dynamic_thumbnail_path = (
+                 SELECT cache.dynamic_thumbnail_path
+                 FROM invoke_scope_collection_cache cache
+                 WHERE cache.scope_key = ?1 AND cache.collection_id = collections.id
+             ),
+             dynamic_safe_thumbnail_path = (
+                 SELECT cache.dynamic_safe_thumbnail_path
+                 FROM invoke_scope_collection_cache cache
+                 WHERE cache.scope_key = ?1 AND cache.collection_id = collections.id
+             ),
+             dynamic_thumbnail_is_sensitive = (
+                 SELECT cache.dynamic_thumbnail_is_sensitive
+                 FROM invoke_scope_collection_cache cache
+                 WHERE cache.scope_key = ?1 AND cache.collection_id = collections.id
+             ),
+             dynamic_thumbnail_cached_at = (
+                 SELECT cache.dynamic_thumbnail_cached_at
+                 FROM invoke_scope_collection_cache cache
+                 WHERE cache.scope_key = ?1 AND cache.collection_id = collections.id
+             ),
+             dynamic_count = (
+                 SELECT cache.dynamic_count
+                 FROM invoke_scope_collection_cache cache
+                 WHERE cache.scope_key = ?1 AND cache.collection_id = collections.id
+             )",
+        [scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn begin_active_scope_cache_build_inner(
+    conn: &Connection,
+) -> Result<FacetScopeCacheStatus, String> {
+    let scope_key: String = conn
+        .query_row(
+            "SELECT active_scope_key FROM invoke_scope_cache_control WHERE state_key = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    conn.execute(
+        "UPDATE invoke_scope_cache_state
+         SET status = 'building',
+             updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+         WHERE scope_key = ?1",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    read_scope_cache_status(conn, &scope_key)
+}
+
+fn commit_active_scope_cache_inner(conn: &Connection) -> Result<FacetScopeCacheStatus, String> {
+    let scope_key: String = conn
+        .query_row(
+            "SELECT active_scope_key FROM invoke_scope_cache_control WHERE state_key = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let build_status = read_scope_cache_status(conn, &scope_key)?;
+    if build_status.state != FacetScopeCacheState::Building {
+        return Err(format!(
+            "Invoke owner cache changed while it was being prepared (state: {:?}).",
+            build_status.state
+        ));
+    }
+    conn.execute(
+        "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1 WHERE state_key = 'current'",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
+    // Promote within the transaction so the shared snapshot helper can capture
+    // the now-coherent active projection. Any snapshot failure rolls this back.
+    conn.execute(
+        "UPDATE invoke_scope_cache_state
+         SET status = 'ready', built_generation = generation,
+             updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+         WHERE scope_key = ?1",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    snapshot_active_scope_cache_if_ready(conn)?;
+    conn.execute(
+        "DELETE FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+    conn.execute(
+        "UPDATE invoke_scope_cache_control SET suppress_invalidation = 0 WHERE state_key = 'current'",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
+    read_scope_cache_status(conn, &scope_key)
+}
+
 fn refresh_invoke_owner_scope_inner(
     conn: &rusqlite::Connection,
     input: &InvokeOwnerScopeInput,
@@ -619,8 +965,13 @@ fn refresh_invoke_owner_scope_inner(
         return Err("Owner scope requires a non-empty owner ID".to_string());
     }
 
-    let source_prefix = format!("{images_root}/outputs/images/");
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    snapshot_active_scope_cache_if_ready(&tx)?;
+    tx.execute(
+        "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1 WHERE state_key = 'current'",
+        [],
+    )
+    .map_err(|error| error.to_string())?;
     let previous: Option<(String, String, String, Option<String>)> = tx
         .query_row(
             "SELECT db_path, images_root, scope_mode, owner_id
@@ -637,37 +988,105 @@ fn refresh_invoke_owner_scope_inner(
         input.mode.as_str().to_string(),
         owner_id.map(str::to_string),
     );
+    let scope_key = invoke_scope_cache_key(&db_path, input.mode, owner_id);
+    tx.execute(
+        "INSERT INTO invoke_scope_cache_state (
+             scope_key, db_path, images_root, scope_mode, owner_id,
+             status, generation, built_generation, updated_at
+         ) VALUES (
+             ?1, ?2, ?3, ?4, ?5, 'missing', 0, NULL,
+             CAST(strftime('%s', 'now') AS INTEGER) * 1000
+         )
+         ON CONFLICT(scope_key) DO UPDATE SET
+             db_path = excluded.db_path,
+             images_root = excluded.images_root,
+             scope_mode = excluded.scope_mode,
+             owner_id = excluded.owner_id",
+        params![
+            scope_key,
+            db_path,
+            images_root,
+            input.mode.as_str(),
+            owner_id
+        ],
+    )
+    .map_err(|error| error.to_string())?;
     if !input.force_refresh && previous.as_ref() == Some(&next) {
+        let status = read_scope_cache_status(&tx, &scope_key)?;
+        let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &status)?;
+        if cache_repair.action != InvokeScopeCacheAction::Full {
+            restore_scope_cache(&tx, &scope_key)?;
+        }
+        tx.execute(
+            "UPDATE invoke_scope_cache_control
+             SET active_scope_key = ?1, suppress_invalidation = 0
+             WHERE state_key = 'current'",
+            [&scope_key],
+        )
+        .map_err(|error| error.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
-        return Ok(InvokeOwnerScopeRefreshResult::default());
+        return Ok(InvokeOwnerScopeRefreshResult {
+            cache_status: status,
+            cache_repair,
+            ..Default::default()
+        });
     }
 
-    let visibility_sql = match input.mode {
-        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "0",
-        InvokeOwnerScopeMode::Unselected => "1",
-        InvokeOwnerScopeMode::Owner => "CASE WHEN invoke_owner_id = ?2 THEN 0 ELSE 1 END",
-    };
-    let update_sql = |table: &str| {
-        format!(
-            "UPDATE {table}
-             SET invoke_scope_hidden = {visibility_sql}
-             WHERE LOWER(substr(REPLACE(path, '\\', '/'), 1, length(?1))) = LOWER(?1)
-               AND invoke_scope_hidden IS NOT ({visibility_sql})"
-        )
-    };
-    let update_table = |table: &str| -> Result<usize, String> {
-        let sql = update_sql(table);
-        if input.mode == InvokeOwnerScopeMode::Owner {
-            tx.execute(&sql, params![source_prefix, owner_id])
-                .map_err(|e| e.to_string())
-        } else {
-            tx.execute(&sql, params![source_prefix])
-                .map_err(|e| e.to_string())
+    let source_changed = previous
+        .as_ref()
+        .is_none_or(|(previous_db, previous_root, _, _)| {
+            previous_db != &db_path || previous_root != &images_root
+        });
+    let mut source_assignments = 0;
+    if source_changed {
+        for table in ["images", "removed_images"] {
+            source_assignments += tx
+                .execute(
+                    &format!(
+                        "UPDATE {table}
+                     SET invoke_source_id = ?1,
+                         invoke_scope_hidden = 0
+                     WHERE invoke_source_id IS NULL
+                       AND LOWER(REPLACE(path, '\\', '/')) LIKE
+                           LOWER(RTRIM(REPLACE(?2, '\\', '/'), '/') || '/outputs/images/%')"
+                    ),
+                    params![&db_path, &images_root],
+                )
+                .map_err(|error| error.to_string())?;
         }
-    };
+        source_assignments += tx
+            .execute(
+                "UPDATE collections
+             SET invoke_source_id = ?1
+             WHERE source = 'invoke' AND invoke_source_id IS NULL",
+                [&db_path],
+            )
+            .map_err(|error| error.to_string())?;
+        if source_assignments > 0 {
+            // Reclassifying rows changes which logical sources can see them. Any
+            // previously prepared projection may therefore be stale, including a
+            // target scope that was prepared before this source became active.
+            tx.execute(
+                "UPDATE invoke_scope_cache_state
+                 SET status = 'dirty', generation = generation + 1,
+                     updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                 WHERE status IN ('ready', 'building')",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "INSERT OR IGNORE INTO invoke_scope_cache_dirty_items (
+                     scope_key, domain, facet_type, resource_name
+                 )
+                 SELECT scope_key, 'full', '', '' FROM invoke_scope_cache_state",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
 
-    let active_updated = update_table("images")?;
-    let removed_updated = update_table("removed_images")?;
+    let active_updated = 0;
+    let removed_updated = 0;
     tx.execute(
         "INSERT INTO invoke_owner_scope_state (
              state_key, db_path, images_root, scope_mode, owner_id, updated_at
@@ -682,12 +1101,27 @@ fn refresh_invoke_owner_scope_inner(
     )
     .map_err(|e| e.to_string())?;
 
+    let cache_status = read_scope_cache_status(&tx, &scope_key)?;
+    let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status)?;
+    if cache_repair.action != InvokeScopeCacheAction::Full {
+        restore_scope_cache(&tx, &scope_key)?;
+    }
+    tx.execute(
+        "UPDATE invoke_scope_cache_control
+         SET active_scope_key = ?1, suppress_invalidation = 0
+         WHERE state_key = 'current'",
+        [&scope_key],
+    )
+    .map_err(|error| error.to_string())?;
+
     tx.commit().map_err(|e| e.to_string())?;
 
     Ok(InvokeOwnerScopeRefreshResult {
-        changed: previous.as_ref() != Some(&next) || active_updated > 0 || removed_updated > 0,
+        changed: previous.as_ref() != Some(&next),
         active_updated,
         removed_updated,
+        cache_status,
+        cache_repair,
     })
 }
 
@@ -1006,7 +1440,42 @@ pub async fn refresh_invoke_owner_scope(
     input: InvokeOwnerScopeInput,
 ) -> Result<InvokeOwnerScopeRefreshResult, String> {
     run_blocking(app, move |conn| {
+        let _coordinator = crate::db::facets::lock_facet_builds()?;
         refresh_invoke_owner_scope_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn begin_active_invoke_scope_cache_build(
+    app: AppHandle,
+) -> Result<FacetScopeCacheStatus, String> {
+    run_blocking(app, move |conn| {
+        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        let status = begin_active_scope_cache_build_inner(&tx)?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(status)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn commit_active_invoke_scope_cache(
+    app: AppHandle,
+) -> Result<FacetScopeCacheStatus, String> {
+    run_blocking(app, move |conn| {
+        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        let status = commit_active_scope_cache_inner(&tx)?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(status)
     })
     .await
 }
@@ -1131,7 +1600,7 @@ pub async fn get_image_count_for_path_prefix(app: AppHandle, path: String) -> Re
         let normalized = path.trim_end_matches(['/', '\\']);
         let count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images
+                "SELECT COUNT(*) FROM scoped_images
                  WHERE invoke_scope_hidden = 0 AND (path LIKE ? OR path LIKE ?)",
                 params![format!("{}/%", normalized), format!("{}\\%", normalized)],
                 |r| r.get(0),
@@ -1151,7 +1620,7 @@ pub async fn refresh_boards_native(
     run_blocking(app, move |conn| {
         let images_to_check: Vec<(String, String)> = {
             let mut stmt = conn
-                .prepare("SELECT id, path FROM images WHERE board_id IS NULL")
+                .prepare("SELECT id, path FROM scoped_images WHERE board_id IS NULL")
                 .map_err(|e| e.to_string())?;
             let items = stmt
                 .query_map([], |row| {
@@ -1224,7 +1693,7 @@ fn load_visible_integrity_images(
     let mut stmt = conn
         .prepare(
             "SELECT id, path, thumbnail_path
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0",
         )
         .map_err(|e| e.to_string())?;
@@ -1356,6 +1825,134 @@ mod tests {
     }
 
     #[test]
+    fn dirty_ledger_survives_upgrade_and_remains_idempotent_inside_upserts() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in init_db()
+            .into_iter()
+            .filter(|migration| migration.version <= 70)
+        {
+            conn.execute_batch(&migration.sql)
+                .expect("apply migrations through dirty ledger v70");
+        }
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES ('all', 'C:/Invoke/databases/invokeai.db', 'C:/Invoke',
+                       'all', NULL, 'ready', 0, 0, 1)",
+            [],
+        )
+        .expect("seed all-users cache state");
+        conn.execute(
+            "UPDATE invoke_scope_cache_control
+             SET active_scope_key = 'all' WHERE state_key = 'current'",
+            [],
+        )
+        .expect("activate all-users cache state");
+        conn.execute(
+            "INSERT INTO collections (
+                 id, name, created_at, source, invoke_owner_id, invoke_source_id
+             ) VALUES ('board', 'Before', 1, 'invoke', 'owner-a',
+                       'C:/Invoke/databases/invokeai.db')",
+            [],
+        )
+        .expect("seed board and its dirty-ledger entry");
+
+        let state_before: (String, i64, Option<i64>) = conn
+            .query_row(
+                "SELECT status, generation, built_generation
+                 FROM invoke_scope_cache_state WHERE scope_key = 'all'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("cache state before migration 71");
+        let dirty_before: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = 'all'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dirty entries before migration 71");
+
+        conn.execute_batch(
+            &crate::db::migrations::m71_invoke_scope_dirty_conflicts::migration71().sql,
+        )
+        .expect("apply dirty-ledger conflict repair");
+
+        let repaired_trigger_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger'
+                   AND name LIKE 'invoke_scope_cache_%_detail'
+                   AND sql LIKE '%ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING%'
+                   AND sql NOT LIKE '%INSERT OR IGNORE INTO invoke_scope_cache_dirty_items%'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("repaired trigger count");
+        assert_eq!(repaired_trigger_count, 26);
+
+        let state_after: (String, i64, Option<i64>) = conn
+            .query_row(
+                "SELECT status, generation, built_generation
+                 FROM invoke_scope_cache_state WHERE scope_key = 'all'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("cache state after migration 71");
+        let dirty_after: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = 'all'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dirty entries after migration 71");
+        assert_eq!(
+            state_after, state_before,
+            "trigger repair must not rebuild cache state"
+        );
+        assert_eq!(
+            dirty_after, dirty_before,
+            "trigger repair must preserve pending work"
+        );
+
+        conn.execute(
+            "INSERT INTO collections (
+                 id, name, created_at, source, invoke_owner_id, invoke_source_id
+             ) VALUES ('board', 'After', 1, 'invoke', 'owner-a',
+                       'C:/Invoke/databases/invokeai.db')
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name",
+            [],
+        )
+        .expect("board UPSERT must tolerate the existing collections dirty key");
+
+        let mut initial =
+            create_image_record("image", 100, 10, r#"{"model":"OldModel","tool":"OldTool"}"#);
+        initial.path = "C:/Invoke/outputs/images/image.png".to_string();
+        super::save_images_batch_inner(&conn, &[initial]).expect("insert image");
+
+        let mut updated =
+            create_image_record("image", 101, 10, r#"{"model":"NewModel","tool":"NewTool"}"#);
+        updated.path = "C:/Invoke/outputs/images/image.png".to_string();
+        super::save_images_batch_inner(&conn, &[updated])
+            .expect("image UPSERT must tolerate old dirty keys and record new ones");
+
+        let checkpoint_resources: Vec<String> = conn
+            .prepare(
+                "SELECT resource_name FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'all' AND domain = 'facet_resource'
+                   AND facet_type = 'checkpoints'
+                 ORDER BY resource_name",
+            )
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(checkpoint_resources, vec!["NewModel", "OldModel"]);
+    }
+
+    #[test]
     fn integrity_scan_excludes_images_outside_the_active_owner_scope() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -1445,7 +2042,6 @@ mod tests {
             [],
         )
         .expect("insert removed row");
-
         let updates = vec![
             super::InvokeImageSourceUpdate {
                 id: "invoke-active".to_string(),
@@ -1606,6 +2202,15 @@ mod tests {
             [],
         )
         .expect("insert removed row");
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                scope_key, db_path, images_root, scope_mode, owner_id,
+                status, generation, built_generation, updated_at
+             ) VALUES ('old-ready', 'C:/Old/invokeai.db', 'C:/Old', 'all', NULL,
+                       'ready', 0, 0, 1)",
+            [],
+        )
+        .expect("insert previously prepared source cache");
 
         let owner_result = super::refresh_invoke_owner_scope_inner(
             &conn,
@@ -1619,31 +2224,37 @@ mod tests {
         )
         .expect("apply owner scope");
         assert!(owner_result.changed);
-        assert_eq!(owner_result.active_updated, 1);
+        assert_eq!(owner_result.active_updated, 0);
+        let old_cache: (String, i64) = conn
+            .query_row(
+                "SELECT status, generation FROM invoke_scope_cache_state
+                 WHERE scope_key = 'old-ready'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("old cache state");
+        assert_eq!(
+            old_cache,
+            ("dirty".to_string(), 1),
+            "source classification must invalidate projections that previously treated rows as local"
+        );
 
-        let active: Vec<(String, i64)> = conn
-            .prepare("SELECT id, invoke_scope_hidden FROM images ORDER BY id")
+        let active: Vec<String> = conn
+            .prepare("SELECT id FROM scoped_images ORDER BY id")
             .expect("prepare active visibility")
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([], |row| row.get(0))
             .expect("query active visibility")
             .collect::<Result<_, _>>()
             .expect("collect active visibility");
-        assert_eq!(
-            active,
-            vec![
-                ("outside".to_string(), 0),
-                ("owner-a".to_string(), 0),
-                ("owner-b".to_string(), 1),
-            ]
-        );
-        let removed_hidden: i64 = conn
+        assert_eq!(active, vec!["outside".to_string(), "owner-a".to_string()]);
+        let removed_visible: i64 = conn
             .query_row(
-                "SELECT invoke_scope_hidden FROM removed_images WHERE id = 'removed-a'",
+                "SELECT EXISTS(SELECT 1 FROM scoped_removed_images WHERE id = 'removed-a')",
                 [],
                 |row| row.get(0),
             )
             .expect("removed visibility");
-        assert_eq!(removed_hidden, 0);
+        assert_eq!(removed_visible, 1);
 
         conn.execute(
             "UPDATE images SET invoke_scope_hidden = 0 WHERE id = 'owner-b'",
@@ -1667,14 +2278,14 @@ mod tests {
         );
         let drifted_visibility: i64 = conn
             .query_row(
-                "SELECT invoke_scope_hidden FROM images WHERE id = 'owner-b'",
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = 'owner-b')",
                 [],
                 |row| row.get(0),
             )
             .expect("drifted visibility");
         assert_eq!(
             drifted_visibility, 0,
-            "unchanged scope must avoid a table repair pass"
+            "logical scope must ignore drift in the retired compatibility column"
         );
 
         let forced_result = super::refresh_invoke_owner_scope_inner(
@@ -1688,7 +2299,7 @@ mod tests {
             },
         )
         .expect("force owner visibility repair");
-        assert_eq!(forced_result.active_updated, 1);
+        assert_eq!(forced_result.active_updated, 0);
 
         let mut generic_late = create_image_record("generic-late", 101, 10, "{}");
         generic_late.path = "C:/Invoke/outputs/images/generic-late.png".to_string();
@@ -1698,22 +2309,19 @@ mod tests {
         owner_late.invoke_owner_id = Some("a".to_string());
         super::save_images_batch_inner(&conn, &[generic_late, owner_late])
             .expect("insert rows while owner scope is active");
-        let late_visibility: Vec<(String, i64)> = conn
+        let late_visibility: Vec<String> = conn
             .prepare(
-                "SELECT id, invoke_scope_hidden FROM images
+                "SELECT id FROM scoped_images
                  WHERE id IN ('generic-late', 'owner-late') ORDER BY id",
             )
             .expect("prepare late visibility")
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([], |row| row.get(0))
             .expect("query late visibility")
             .collect::<Result<_, _>>()
             .expect("collect late visibility");
         assert_eq!(
             late_visibility,
-            vec![
-                ("generic-late".to_string(), 1),
-                ("owner-late".to_string(), 0),
-            ],
+            vec!["owner-late".to_string()],
             "generic rescans must fail closed while authoritative owner imports may match"
         );
 
@@ -1728,11 +2336,11 @@ mod tests {
             },
         )
         .expect("apply stale owner scope");
-        assert_eq!(stale_result.active_updated, 2);
+        assert_eq!(stale_result.active_updated, 0);
         let visible_in_root: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images
-                 WHERE path LIKE 'C:/Invoke/outputs/images/%' AND invoke_scope_hidden = 0",
+                "SELECT COUNT(*) FROM scoped_images
+                 WHERE path LIKE 'C:/Invoke/outputs/images/%'",
                 [],
                 |row| row.get(0),
             )
@@ -1750,12 +2358,245 @@ mod tests {
             },
         )
         .expect("apply all-owner scope");
-        assert_eq!(all_result.active_updated, 4);
-        assert_eq!(all_result.removed_updated, 1);
+        assert_eq!(all_result.active_updated, 0);
+        assert_eq!(all_result.removed_updated, 0);
         let total_rows: i64 = conn
             .query_row("SELECT COUNT(*) FROM images", [], |row| row.get(0))
             .expect("active row count");
         assert_eq!(total_rows, 5, "scope changes must never delete stored rows");
+        let visible_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scoped_images", [], |row| row.get(0))
+            .expect("visible active row count");
+        assert_eq!(visible_rows, 5);
+    }
+
+    #[test]
+    fn prepared_owner_scope_restores_isolated_facet_and_collection_caches() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        for (id, owner) in [("owner-a", "a"), ("owner-b", "b")] {
+            let mut image = create_image_record(id, 100, 10, "{}");
+            image.path = format!("C:/Invoke/outputs/images/{id}.png");
+            image.invoke_image_name = Some(format!("{id}.png"));
+            image.invoke_owner_id = Some(owner.to_string());
+            super::save_images_batch_inner(&conn, &[image]).expect("insert owner row");
+        }
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, source)
+             VALUES ('shared', 'Shared', 1, 'ambit')",
+            [],
+        )
+        .expect("insert collection");
+
+        let scope = |owner: &str| super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some(owner.to_string()),
+            force_refresh: false,
+        };
+
+        let first_a = super::refresh_invoke_owner_scope_inner(&conn, &scope("a"))
+            .expect("activate cold owner a");
+        assert_eq!(
+            first_a.cache_status.state,
+            super::FacetScopeCacheState::Missing
+        );
+        super::begin_active_scope_cache_build_inner(&conn).expect("begin owner a cache");
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Owner A', 11)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE collections SET dynamic_count = 11 WHERE id = 'shared'",
+            [],
+        )
+        .unwrap();
+        super::commit_active_scope_cache_inner(&conn).expect("commit owner a cache");
+
+        let first_b = super::refresh_invoke_owner_scope_inner(&conn, &scope("b"))
+            .expect("activate cold owner b");
+        assert_eq!(
+            first_b.cache_repair.action,
+            super::InvokeScopeCacheAction::Full
+        );
+        super::begin_active_scope_cache_build_inner(&conn).expect("begin owner b cache");
+        conn.execute("DELETE FROM facet_cache", []).unwrap();
+        conn.execute(
+            "INSERT INTO facet_cache (facet_type, resource_name, count)
+             VALUES ('tools', 'Owner B', 22)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE collections SET dynamic_count = 22 WHERE id = 'shared'",
+            [],
+        )
+        .unwrap();
+        super::commit_active_scope_cache_inner(&conn).expect("commit owner b cache");
+
+        let warm_a = super::refresh_invoke_owner_scope_inner(&conn, &scope("a"))
+            .expect("restore owner a cache");
+        assert_eq!(
+            warm_a.cache_repair.action,
+            super::InvokeScopeCacheAction::Restored
+        );
+        assert_eq!(
+            warm_a.cache_status.state,
+            super::FacetScopeCacheState::Ready
+        );
+        let restored_facet: (String, i64) = conn
+            .query_row(
+                "SELECT resource_name, count FROM facet_cache WHERE facet_type = 'tools'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(restored_facet, ("Owner A".into(), 11));
+        let restored_count: i64 = conn
+            .query_row(
+                "SELECT dynamic_count FROM collections WHERE id = 'shared'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(restored_count, 11);
+
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('owner-a', 'NewDetailer')",
+            [],
+        )
+        .expect("mutate one owner-a resource");
+        let selective_a = super::refresh_invoke_owner_scope_inner(&conn, &scope("a"))
+            .expect("restore owner a for selective repair");
+        assert_eq!(
+            selective_a.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        assert_eq!(
+            selective_a.cache_repair.resources.loras,
+            vec!["NewDetailer".to_string()]
+        );
+        assert!(selective_a.cache_repair.facet_types.is_empty());
+        assert!(!selective_a.cache_repair.collections_dirty);
+        let stale_but_isolated_facet: (String, i64) = conn
+            .query_row(
+                "SELECT resource_name, count FROM facet_cache WHERE facet_type = 'tools'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(stale_but_isolated_facet, ("Owner A".into(), 11));
+
+        super::begin_active_scope_cache_build_inner(&conn).expect("begin selective owner-a repair");
+        let touches = crate::db::facets::FacetResourceTouches {
+            loras: vec!["NewDetailer".to_string()],
+            ..Default::default()
+        };
+        crate::db::facets::refresh_live_facet_resources_in_transaction(&conn, &touches)
+            .expect("repair exact owner-a resource");
+        let committed_a =
+            super::commit_active_scope_cache_inner(&conn).expect("commit selective owner-a repair");
+        assert_eq!(committed_a.state, super::FacetScopeCacheState::Ready);
+        let owner_a_dirty_items: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = ?1",
+                [super::invoke_scope_cache_key(
+                    "C:/Invoke/databases/invokeai.db",
+                    super::InvokeOwnerScopeMode::Owner,
+                    Some("a"),
+                )],
+                |row| row.get(0),
+            )
+            .expect("owner-a dirty ledger count");
+        assert_eq!(owner_a_dirty_items, 0);
+
+        let shared_model_dirty_b = super::refresh_invoke_owner_scope_inner(&conn, &scope("b"))
+            .expect("activate owner b after shared model inventory changed");
+        assert_eq!(
+            shared_model_dirty_b.cache_repair.action,
+            super::InvokeScopeCacheAction::Selective
+        );
+        assert_eq!(
+            shared_model_dirty_b.cache_repair.resources.loras,
+            vec!["NewDetailer".to_string()]
+        );
+    }
+
+    #[test]
+    fn scope_cache_commit_rejects_content_changes_during_build() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let input = super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("a".to_string()),
+            force_refresh: false,
+        };
+        super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
+        super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
+
+        let mut image = create_image_record("late", 100, 10, "{}");
+        image.path = "C:/Invoke/outputs/images/late.png".to_string();
+        image.invoke_image_name = Some("late.png".to_string());
+        image.invoke_owner_id = Some("a".to_string());
+        super::save_images_batch_inner(&conn, &[image]).expect("mutate active scope");
+
+        let error = super::commit_active_scope_cache_inner(&conn)
+            .expect_err("dirty build must not be promoted");
+        assert!(error.contains("changed while it was being prepared"));
+        let status = super::read_scope_cache_status(
+            &conn,
+            &super::invoke_scope_cache_key(
+                "C:/Invoke/databases/invokeai.db",
+                super::InvokeOwnerScopeMode::Owner,
+                Some("a"),
+            ),
+        )
+        .expect("cache status");
+        assert_eq!(status.state, super::FacetScopeCacheState::Dirty);
+    }
+
+    #[test]
+    fn scope_cache_commit_rejects_external_model_changes_during_build() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let input = super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("a".to_string()),
+            force_refresh: false,
+        };
+        super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
+        super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
+
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES ('external-model', 'External Model', 'disk_scan', 1, 'checkpoint')",
+            [],
+        )
+        .expect("mutate shared model inventory");
+
+        let error = super::commit_active_scope_cache_inner(&conn)
+            .expect_err("a model mutation must invalidate the active build");
+        assert!(error.contains("changed while it was being prepared"));
+        let status = super::read_scope_cache_status(
+            &conn,
+            &super::invoke_scope_cache_key(
+                "C:/Invoke/databases/invokeai.db",
+                super::InvokeOwnerScopeMode::Owner,
+                Some("a"),
+            ),
+        )
+        .expect("cache status");
+        assert_eq!(status.state, super::FacetScopeCacheState::Dirty);
     }
 
     #[test]
@@ -2118,6 +2959,39 @@ mod tests {
             )
             .expect("reclassified source fields");
         assert_eq!(reclassified, ("general".into(), Some(0)));
+    }
+
+    #[test]
+    fn generic_rescan_does_not_reveal_an_unbound_legacy_owner_row() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let initial = create_image_record("legacy-owner", 100, 200, "{}");
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial save");
+        conn.execute(
+            "UPDATE images
+             SET invoke_scope_hidden = 1, invoke_source_id = NULL
+             WHERE id = 'legacy-owner'",
+            [],
+        )
+        .expect("mark legacy owner row");
+
+        let rescanned = create_image_record(
+            "legacy-owner",
+            101,
+            201,
+            r#"{"positivePrompt":"rescanned"}"#,
+        );
+        super::save_images_batch_inner(&conn, &[rescanned]).expect("generic rescan");
+
+        let hidden: i64 = conn
+            .query_row(
+                "SELECT invoke_scope_hidden FROM images WHERE id = 'legacy-owner'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("legacy visibility");
+        assert_eq!(hidden, 1);
     }
 
     #[test]

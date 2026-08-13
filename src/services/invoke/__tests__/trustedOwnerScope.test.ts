@@ -80,6 +80,14 @@ describe('readTrustedInvokeOwnerScope', () => {
         await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings())).resolves.toBeNull();
     });
 
+    it('requires a coherent ready cache before trusting an offline projection', async () => {
+        mocks.select.mockResolvedValue([]);
+
+        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings())).resolves.toBeNull();
+        expect(mocks.select.mock.calls[0][0]).toContain("cache.status = 'ready'");
+        expect(mocks.select.mock.calls[0][0]).toContain('cache.built_generation = cache.generation');
+    });
+
     it('requires an explicit matching selection for all-user scope', async () => {
         mocks.select.mockResolvedValue([{
             db_path: dbPath,

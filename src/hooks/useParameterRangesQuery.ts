@@ -15,6 +15,7 @@ import {
     isInvokeOwnerScopeAdmitted,
     useInvokeOwnerScopeStore,
 } from '../stores/invokeOwnerScopeStore';
+import { getInvokeOwnerQueryScopeKey, previousQueryMatchesInvokeScope } from '../utils/invokeOwnerQueryScope';
 
 const EMPTY_PARAMETER_RANGES: ParameterRanges = {
     steps: null,
@@ -42,6 +43,9 @@ export function useParameterRangesQuery(filters: FilterState) {
     const invokeQueriesAdmitted = useInvokeOwnerScopeStore(
         state => isInvokeOwnerScopeAdmitted(settings.invokeAiPath, state.ownerScopeState)
     );
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(
+        state => getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
+    );
     const privacyMaskIndexStatus = useSettingsStore(state => state.privacyMaskIndexStatus);
     const privacyBlocked = privacyEnabled && !browserMockMode && privacyMaskIndexStatus !== 'ready';
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
@@ -67,7 +71,8 @@ export function useParameterRangesQuery(filters: FilterState) {
             // so selecting them doesn't cause a refetch (Disjunctive)
             settings.maskingMode,
             effectiveMaskedKeywords,
-            privacyEnabled
+            privacyEnabled,
+            invokeOwnerScopeKey
         ],
         queryFn: async () => {
             if (browserMockMode) {
@@ -117,7 +122,11 @@ export function useParameterRangesQuery(filters: FilterState) {
         enabled: invokeQueriesAdmitted && !privacyBlocked,
         staleTime: 5 * 60 * 1000, // 5 minutes
         gcTime: 30 * 60 * 1000,   // 30 minutes cache
-        placeholderData: (previousData) => previousData, // Smooth transitions
+        placeholderData: (previousData, previousQuery) => (
+            previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey)
+                ? previousData
+                : undefined
+        ),
     });
 
     return privacyBlocked || !invokeQueriesAdmitted

@@ -5,6 +5,7 @@ import { AppSettings } from '../../../types';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { useToast } from '../../../hooks/useToast';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { upsertInvokeDbSnapshot } from '../../../services/invoke/dbSnapshot';
 
 
 interface SyncSectionProps {
@@ -17,7 +18,7 @@ const STARRED_AS_VALUES = ['favorite', 'pin', 'both', 'none'] as const satisfies
 const isStarredAs = (value: string): value is StarredAs => (STARRED_AS_VALUES as readonly string[]).includes(value);
 
 export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, setSettings }) => {
-    const { syncState, startInvokeSync, cancelSync, isInvokeSyncActive, invokeOwnerScopeState } = useLibrary();
+    const { syncState, startInvokeSync, cancelSync, isInvokeSyncActive, isLiveSyncing, invokeOwnerScopeState } = useLibrary();
     const { status } = syncState;
     const { addToast } = useToast();
     const [isFullResyncConfirmOpen, setIsFullResyncConfirmOpen] = React.useState(false);
@@ -31,6 +32,8 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
         || (invokeOwnerScopeState.discovery?.schemaMode === 'multi_user'
             && settings.invokeOwnerSelection?.dbPath !== invokeOwnerScopeState.discovery.dbPath);
     const orphanRecoveryEnabled = !selectedOwnerMode && settings.importOrphans === true;
+    const anyInvokeSyncActive = isInvokeSyncActive || isLiveSyncing;
+    const foregroundInvokeSyncActive = isInvokeSyncActive && !isLiveSyncing;
 
     const handleStarredAsChange = (value: string) => {
         if (!isStarredAs(value)) return;
@@ -65,6 +68,10 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
 
 
     const handleSync = () => {
+        if (anyInvokeSyncActive) {
+            addToast('Wait for the current InvokeAI sync to finish before starting another sync.', 'warning');
+            return;
+        }
         addToast('Synchronization started...', 'success');
         startInvokeSync({
             syncFavorites,
@@ -76,14 +83,34 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
         });
     };
 
+    const handleOpenForceFullResync = () => {
+        if (anyInvokeSyncActive) {
+            addToast('Wait for the current InvokeAI sync to finish before forcing a full resync.', 'warning');
+            return;
+        }
+        setIsFullResyncConfirmOpen(true);
+    };
+
     const handleForceFullResync = () => {
-        if (isInvokeSyncActive) {
+        if (anyInvokeSyncActive) {
             setIsFullResyncConfirmOpen(false);
             addToast('Wait for the current InvokeAI sync to finish before forcing a full resync.', 'warning');
             return;
         }
 
-        setSettings(prev => ({ ...prev, lastSyncedAt: null }));
+        setSettings(prev => {
+            const invokeDbSnapshot = prev.invokeDbSnapshot
+                ? { ...prev.invokeDbSnapshot, lastSyncedAt: null }
+                : undefined;
+            return {
+                ...prev,
+                lastSyncedAt: null,
+                invokeDbSnapshot,
+                invokeDbSnapshots: invokeDbSnapshot
+                    ? upsertInvokeDbSnapshot(prev.invokeDbSnapshots, invokeDbSnapshot)
+                    : prev.invokeDbSnapshots,
+            };
+        });
         setIsFullResyncConfirmOpen(false);
         addToast('InvokeAI full resync queued. Start sync to scan from the beginning.', 'success');
     };
@@ -205,9 +232,10 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                             </div>
                             <button
                                 type="button"
-                                onClick={() => setIsFullResyncConfirmOpen(true)}
-                                disabled={isInvokeSyncActive}
-                                title={isInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Clear the sync cursor for the next manual sync'}
+                                onClick={handleOpenForceFullResync}
+                                disabled={foregroundInvokeSyncActive}
+                                aria-disabled={anyInvokeSyncActive}
+                                title={anyInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Clear the sync cursor for the next manual sync'}
                                 className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-[10px] font-black transition-all flex items-center gap-2 border border-amber-500/20 whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500/10"
                             >
                                 <RefreshCw className="w-3.5 h-3.5" /> Force Full Resync
@@ -223,11 +251,12 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         <div className="flex items-center gap-3">
                             <button
                                 onClick={handleSync}
-                                disabled={ownerSyncBlocked || isInvokeSyncActive}
+                                disabled={ownerSyncBlocked || foregroundInvokeSyncActive}
+                                aria-disabled={ownerSyncBlocked || anyInvokeSyncActive}
                                 className="px-8 py-3 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-sm font-black transition-all shadow-xl shadow-sage-500/20 active:scale-95 flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-sage-600"
                                 title={ownerSyncBlocked
                                     ? 'Resolve owner scope before synchronization'
-                                    : (isInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Start synchronization with InvokeAI')}
+                                    : (anyInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Start synchronization with InvokeAI')}
                             >
                                 {status === 'error' ? <ZapOff className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
                                 {status === 'error' ? 'Retry Sync' : 'Initiate Sync'}

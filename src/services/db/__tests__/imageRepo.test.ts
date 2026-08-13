@@ -386,7 +386,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
                 if (normalizedSql.includes('select 1 from images where is_invoke_asset_gen')) return [{ 1: 1 }];
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
                 return [];
@@ -596,6 +596,7 @@ describe('imageRepo batch removal', () => {
         const selectCalls = db.select.mock.calls as unknown as [string, unknown[]?][];
         const sql = selectCalls[0]?.[0];
         expect(sql).toBeDefined();
+        expect(sql).toContain('FROM scoped_images AS images');
         expect(sql).toContain('images.metadata_json');
         expect(sql).toContain('images.original_metadata_json');
         expect(sql).toContain('images.original_parsed_json');
@@ -606,6 +607,10 @@ describe('imageRepo batch removal', () => {
         expect(images[0].originalMetadata?.positivePrompt).toBe('original prompt');
         expect(images[0].originalChunks?.invokeai_metadata).toBe(JSON.stringify({ positive_prompt: 'raw prompt' }));
         expect(images[0].originalState).toEqual(originalState);
+
+        await getImagesByIds([id], { includeOwnerHidden: true });
+        expect((db.select.mock.calls as unknown as [string, unknown[]?][])[1]?.[0])
+            .toContain('FROM images AS images');
     });
 
     it('finds only flat InvokeAI image rows for stale path repair', async () => {
@@ -674,7 +679,7 @@ describe('imageRepo batch removal', () => {
         const db = {
             select: vi.fn(async (sql: string, params: string[] = []) => {
                 enforceParamLimit(params);
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return params.map(id => imageRowsById.get(id)).filter(Boolean);
                 }
                 if (sql.includes('FROM collection_images')) {
@@ -721,7 +726,7 @@ describe('imageRepo batch removal', () => {
         const hiddenId = 'C:/images/hidden.png';
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{
                         id: visibleId,
                         path: visibleId,
@@ -1127,7 +1132,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
                 if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_grid_gen')) return [];
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
                 return [];
@@ -1437,7 +1442,7 @@ describe('imageRepo batch removal', () => {
         await expect(clearAllThumbnailPaths()).resolves.toBe(4);
 
         expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('WHERE invoke_scope_hidden = 0')
+            expect.stringContaining('id IN (SELECT id FROM scoped_images)')
         );
     });
 
@@ -1568,7 +1573,7 @@ describe('imageRepo batch removal', () => {
         const restoreRows = [[], [removedRow], [{ ...removedRow, collection_ids_json: '{bad' }]];
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (!sql.includes('FROM removed_images')) return [];
+                if (!sql.includes('FROM scoped_removed_images')) return [];
                 return restoreRows.shift() ?? [];
             }),
             execute: vi.fn()
@@ -1667,9 +1672,9 @@ describe('imageRepo batch removal', () => {
         };
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (sql.includes('FROM images')) return [tombstone];
+                if (sql.includes('FROM scoped_images')) return [tombstone];
                 if (sql.includes('FROM collection_images')) return [];
-                if (sql.includes('FROM removed_images')) return [{ id: tombstone.id, path: '', thumbnail_path: null }];
+                if (sql.includes('FROM scoped_removed_images')) return [{ id: tombstone.id, path: '', thumbnail_path: null }];
                 return [];
             }),
             execute: vi.fn()
@@ -1760,8 +1765,8 @@ describe('imageRepo batch removal', () => {
                     { image_id: row.id, collection_id: 'one' },
                     { image_id: row.id, collection_id: 'two' }
                 ];
-                if (sql.includes('FROM removed_images')) return [{ id: row.id, path: row.path, thumbnail_path: null }];
-                if (sql.includes('FROM images') && !removalDone) {
+                if (sql.includes('FROM scoped_removed_images')) return [{ id: row.id, path: row.path, thumbnail_path: null }];
+                if (sql.includes('FROM scoped_images') && !removalDone) {
                     removalDone = true;
                     return [row];
                 }

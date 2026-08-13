@@ -13,8 +13,11 @@ import {
   addImagesToCollection as addImgsToCol,
   removeImagesFromCollection as removeImgsFromCol,
   moveImagesBetweenCollections as moveImgsBetweenCols,
-  setCollectionCustomThumbnail
+  setCollectionCustomThumbnail,
+  updateAmbitCollectionScope,
+  type AmbitCollectionScopeTarget
 } from '../services/db/collectionRepo';
+import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 interface UseCollectionOperationsProps {
   collections: Collection[];
@@ -40,6 +43,7 @@ export const useCollectionOperations = ({
   const maskedKeywords = useSettingsStore(s => getEffectiveMaskedKeywords(s.settings));
   const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
   const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+  const invokeOwnerScope = useInvokeOwnerScopeStore(s => s.ownerScopeState.scope);
   const activeCollectionIdRef = React.useRef(activeCollectionId);
   const membershipMutationTailsRef = React.useRef(new Map<string, Promise<void>>());
   activeCollectionIdRef.current = activeCollectionId;
@@ -89,6 +93,8 @@ export const useCollectionOperations = ({
       name,
       createdAt: Date.now(),
       source: 'ambit',
+      invokeSourceId: invokeOwnerScope?.mode === 'legacy' ? undefined : invokeOwnerScope?.dbPath,
+      invokeOwnerId: invokeOwnerScope?.mode === 'owner' ? invokeOwnerScope.ownerId : undefined,
       imageIds: [],
       count: 0,
       filters // Hybrid Support: Initialize with filters if provided
@@ -107,7 +113,7 @@ export const useCollectionOperations = ({
       setAllCollections(prev => prev.filter(c => c.id !== id));
       addToast("Failed to create collection", "error");
     }
-  }, [setAllCollections, refreshCollections, addToast]);
+  }, [setAllCollections, refreshCollections, addToast, invokeOwnerScope]);
 
   const updateCollectionFilters = useCallback(async (id: string, filters: FilterState | undefined) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
@@ -146,6 +152,40 @@ export const useCollectionOperations = ({
       addToast("Failed to update filters", "error");
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+
+  const updateCollectionScope = useCallback(async (
+    id: string,
+    target: AmbitCollectionScopeTarget
+  ): Promise<boolean> => {
+    const collection = [...collections, ...smartCollections].find(item => item.id === id);
+    if (!collection || collection.source === 'invoke') return false;
+
+    try {
+      await updateAmbitCollectionScope(id, target);
+      if (activeCollectionIdRef.current === id) {
+        const activeScope = useInvokeOwnerScopeStore.getState().ownerScopeState.scope;
+        const remainsVisible = activeScope?.mode === 'all'
+          || (activeScope?.mode === 'owner'
+            && target.mode === 'owner'
+            && activeScope.ownerId === target.ownerId);
+        if (!remainsVisible) {
+          setFilters(previous => ({ ...previous, collectionId: null }));
+        }
+      }
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+        queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+      ]);
+      addToast('Collection visibility updated', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(message || 'Failed to update collection visibility', 'error');
+      return false;
+    }
+  }, [addToast, collections, queryClient, refreshCollections, setFilters, smartCollections]);
 
   const deleteCollection = useCallback(async (id: string) => {
     const original = [...collections, ...smartCollections].find(c => c.id === id);
@@ -420,6 +460,7 @@ export const useCollectionOperations = ({
   return {
     createCollection,
     updateCollectionFilters,
+    updateCollectionScope,
     deleteCollection,
     renameCollection,
     setCollectionColor,

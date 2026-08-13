@@ -390,7 +390,7 @@ describe('syncImages live mode', () => {
         });
     });
 
-    it('backfills owner identity for used board collections during schema reconciliation with no new rows', async () => {
+    it('reconciles every owner board, including empty boards, when there are no new image rows', async () => {
         const selectMock = vi.fn(async (sql: string) => {
             if (sql.includes('PRAGMA table_info(images)')) {
                 return [{ name: 'metadata_json' }, { name: 'user_id' }];
@@ -408,6 +408,10 @@ describe('syncImages live mode', () => {
             boards: new Map([['board-a', {
                 name: 'Owned board',
                 createdAt: 10,
+                ownerId: 'owner-a',
+            }], ['empty-board', {
+                name: 'Empty board',
+                createdAt: 20,
                 ownerId: 'owner-a',
             }]]),
             isAuthoritative: true,
@@ -431,7 +435,16 @@ describe('syncImages live mode', () => {
             name: 'Owned board',
             createdAt: 10,
             invokeOwnerId: 'owner-a',
+            invokeSourceId: 'D:/Invoke/databases/invokeai.db',
         });
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledWith({
+            id: 'empty-board',
+            name: 'Empty board',
+            createdAt: 20,
+            invokeOwnerId: 'owner-a',
+            invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+        });
+        expect(upsertInvokeBoardCollection).toHaveBeenCalledTimes(2);
     });
 
     it('returns an empty result without opening a database when the root path is empty', async () => {

@@ -472,6 +472,30 @@ describe('sqlHelpers', () => {
                 expect(params).toContain('%ocean%');
             });
 
+            it('keeps an owner-scoped Ambit smart collection owner-limited in All Users', () => {
+                const ownerCollection: Collection = {
+                    ...mockCollections[1],
+                    id: 'owner-smart',
+                    source: 'ambit',
+                    invokeSourceId: 'C:/Invoke/databases/invokeai.db',
+                    invokeOwnerId: 'jupiter',
+                };
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: ownerCollection.id },
+                    false,
+                    'blur',
+                    [],
+                    [ownerCollection]
+                );
+
+                expect(where).toContain('invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?)');
+                expect(params).toEqual([
+                    '%ocean%',
+                    'C:/Invoke/databases/invokeai.db',
+                    'jupiter',
+                ]);
+            });
+
             it('should pre-empt smart collection date if global date is set', () => {
                 const smartColWithDate: Collection = {
                     id: 'col_date',

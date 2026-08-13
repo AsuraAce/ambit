@@ -14,18 +14,45 @@ interface InvokeOwnerScopeGateProps {
 
 const BusyGate: React.FC<{ state: InvokeOwnerScopeState }> = ({ state }) => {
     const progress = state.progress;
+    const scopeIdentity = state.scope?.mode === 'owner'
+        ? state.scope.ownerId
+        : state.scope?.mode;
+    const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
+    React.useEffect(() => {
+        setElapsedSeconds(0);
+        const startedAt = Date.now();
+        const timer = window.setInterval(() => {
+            setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+        }, 1000);
+        return () => window.clearInterval(timer);
+    }, [state.rootPath, scopeIdentity]);
+
     const message = progress?.message
         ?? (state.status === 'discovering'
             ? 'Checking InvokeAI owner information...'
             : 'Preparing your InvokeAI library...');
+    const ownerId = state.scope?.mode === 'owner' ? state.scope.ownerId : undefined;
+    const ownerLabel = state.scope?.mode === 'all'
+        ? 'All users'
+        : state.scope?.mode === 'legacy'
+            ? 'InvokeAI'
+            : ownerId
+                ? state.discovery?.owners.find(owner => owner.ownerId === ownerId)?.displayName
+                    || ownerId
+                : undefined;
+    const statusMessage = elapsedSeconds >= 5
+        ? `${message} · ${elapsedSeconds}s elapsed`
+        : message;
 
     return (
         <StartupPreparationCard
             phaseLabel="InvokeAI library"
-            title="Preparing your InvokeAI view"
+            title={state.status === 'applying' && ownerLabel
+                ? `Switching to ${ownerLabel}`
+                : 'Preparing your InvokeAI view'}
             icon={<ShieldCheck className="h-7 w-7" />}
             description="Ambit is verifying which InvokeAI images, boards, filters, and statistics belong in this view."
-            statusMessage={message}
+            statusMessage={statusMessage}
             reassurance="No images or collections are being deleted."
             progress={progress}
         />

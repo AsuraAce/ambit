@@ -1,5 +1,5 @@
 import Database from '@tauri-apps/plugin-sql';
-import type { InvokeOwnerDiscovery, InvokeOwnerSummary } from '../../types';
+import type { InvokeOwnerDiscovery, InvokeOwnerSummary, InvokeSourceFingerprint } from '../../types';
 import type { InvokeSyncScope } from './syncScope';
 
 interface BoardRow {
@@ -22,10 +22,17 @@ interface TableRow {
     name: string;
 }
 
+interface FingerprintRow {
+    count: number;
+    updated_at?: string | null;
+    max_row_id?: string | null;
+}
+
 interface OwnerRow {
     owner_id: string | null;
     display_name?: string | null;
     count: number;
+    intermediate_count?: number;
 }
 
 interface CategoryRow {
@@ -90,23 +97,28 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
         canReadDisplayNames = userColumns.has('user_id') && userColumns.has('display_name');
     }
 
+    const intermediateCountSelect = imageColumns.has('is_intermediate')
+        ? ', SUM(CASE WHEN COALESCE(i.is_intermediate, 0) = 1 THEN 1 ELSE 0 END) AS intermediate_count'
+        : '';
+
     const ownerRows = canReadDisplayNames
         ? await db.select<OwnerRow[]>(`
             SELECT CAST(i.user_id AS TEXT) AS owner_id,
                    MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
-                   count(*) AS count
+                   count(*) AS count${intermediateCountSelect}
             FROM images i
             LEFT JOIN users u ON u.user_id = i.user_id
             GROUP BY i.user_id
             ORDER BY display_name COLLATE NOCASE, owner_id
         `)
         : await db.select<OwnerRow[]>(`
-            SELECT CAST(user_id AS TEXT) AS owner_id, count(*) AS count
-            FROM images
-            GROUP BY user_id
+            SELECT CAST(i.user_id AS TEXT) AS owner_id, count(*) AS count${intermediateCountSelect}
+            FROM images i
+            GROUP BY i.user_id
             ORDER BY owner_id
         `);
     let unassignedImageCount = 0;
+    let unassignedBoardCount = 0;
     const ownersById = new Map<string, InvokeOwnerSummary>();
     ownerRows.forEach(row => {
         const ownerId = row.owner_id?.trim() ?? '';
@@ -120,15 +132,131 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
             ownerId,
             displayName: row.display_name?.trim() || existing?.displayName,
             imageCount: (existing?.imageCount ?? 0) + row.count,
+            ...((row.intermediate_count ?? 0) > 0 ? {
+                intermediateImageCount: (existing?.intermediateImageCount ?? 0) + (row.intermediate_count ?? 0),
+            } : {}),
         });
     });
+
+    if (tables.has('boards')) {
+        const boardColumns = new Set(
+            (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
+        );
+        if (boardColumns.has('user_id')) {
+            const boardOwnerRows = canReadDisplayNames
+                ? await db.select<OwnerRow[]>(`
+                    SELECT CAST(b.user_id AS TEXT) AS owner_id,
+                           MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
+                           count(*) AS count
+                    FROM boards b
+                    LEFT JOIN users u ON u.user_id = b.user_id
+                    GROUP BY b.user_id
+                    ORDER BY display_name COLLATE NOCASE, owner_id
+                `)
+                : await db.select<OwnerRow[]>(`
+                    SELECT CAST(user_id AS TEXT) AS owner_id, count(*) AS count
+                    FROM boards
+                    GROUP BY user_id
+                    ORDER BY owner_id
+                `);
+            boardOwnerRows.forEach(row => {
+                const ownerId = row.owner_id?.trim() ?? '';
+                if (!ownerId) {
+                    unassignedBoardCount += row.count;
+                    return;
+                }
+                const existing = ownersById.get(ownerId);
+                ownersById.set(ownerId, {
+                    ...existing,
+                    ownerId,
+                    displayName: row.display_name?.trim() || existing?.displayName,
+                    imageCount: existing?.imageCount ?? 0,
+                    boardCount: (existing?.boardCount ?? 0) + row.count,
+                });
+            });
+        } else {
+            const [row] = await db.select<CountRow[]>('SELECT count(*) AS count FROM boards');
+            unassignedBoardCount = row?.count ?? 0;
+        }
+    }
 
     return {
         schemaMode: 'multi_user',
         dbPath,
         imagesRoot,
-        owners: Array.from(ownersById.values()),
+        owners: Array.from(ownersById.values()).sort((left, right) =>
+            (left.displayName || left.ownerId).localeCompare(right.displayName || right.ownerId)),
         unassignedImageCount,
+        unassignedBoardCount,
+    };
+};
+
+const readColumns = async (db: Database, table: string): Promise<Set<string>> => new Set(
+    (await db.select<TableRow[]>(`PRAGMA table_info(${table})`)).map(column => column.name)
+);
+
+const maxTimestampExpression = (columns: Set<string>): string => {
+    if (columns.has('updated_at')) return 'MAX(updated_at)';
+    if (columns.has('created_at')) return 'MAX(created_at)';
+    return 'NULL';
+};
+
+export const readInvokeSourceFingerprint = async (
+    rootPath: string,
+    scope: InvokeSyncScope
+): Promise<InvokeSourceFingerprint> => {
+    const { dbPath } = resolveInvokePaths(rootPath);
+    const db = await Database.load(`sqlite:${dbPath}`);
+    const tables = new Set(
+        (await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'"))
+            .map(table => table.name)
+    );
+    const imageColumns = await readColumns(db, 'images');
+    const imageOwnerClause = scope.mode === 'owner' && imageColumns.has('user_id')
+        ? ' WHERE user_id = ?'
+        : '';
+    const ownerParams = scope.mode === 'owner' && imageColumns.has('user_id')
+        ? [scope.ownerId]
+        : [];
+    const [image] = await db.select<FingerprintRow[]>(`
+        SELECT COUNT(*) AS count, ${maxTimestampExpression(imageColumns)} AS updated_at
+        FROM images${imageOwnerClause}
+    `, ownerParams);
+
+    let board: FingerprintRow = { count: 0, updated_at: null };
+    let membership: FingerprintRow = { count: 0, max_row_id: null };
+    if (tables.has('boards')) {
+        const boardColumns = await readColumns(db, 'boards');
+        const boardOwnerClause = scope.mode === 'owner' && boardColumns.has('user_id')
+            ? ' WHERE user_id = ?'
+            : '';
+        const boardParams = scope.mode === 'owner' && boardColumns.has('user_id')
+            ? [scope.ownerId]
+            : [];
+        [board] = await db.select<FingerprintRow[]>(`
+            SELECT COUNT(*) AS count, ${maxTimestampExpression(boardColumns)} AS updated_at
+            FROM boards${boardOwnerClause}
+        `, boardParams);
+
+        if (tables.has('board_images')) {
+            const membershipJoin = scope.mode === 'owner' && boardColumns.has('user_id')
+                ? ' INNER JOIN boards b ON b.board_id = bi.board_id AND b.user_id = ?'
+                : '';
+            [membership] = await db.select<FingerprintRow[]>(`
+                SELECT COUNT(*) AS count, CAST(MAX(bi.rowid) AS TEXT) AS max_row_id
+                FROM board_images bi${membershipJoin}
+            `, boardParams);
+        }
+    }
+
+    return {
+        schemaVersion: 1,
+        imageCount: image?.count ?? 0,
+        imageUpdatedAt: image?.updated_at ?? null,
+        boardCount: board?.count ?? 0,
+        boardUpdatedAt: board?.updated_at ?? null,
+        membershipCount: membership?.count ?? 0,
+        membershipMaxRowId: membership?.max_row_id ?? null,
     };
 };
 
@@ -142,6 +270,53 @@ export interface InvokeBoardMappings {
     imageToBoardId: Map<string, string>;
     boards: Map<string, InvokeBoardInfo>;
     isAuthoritative: boolean;
+}
+
+export interface InvokeBoards {
+    boards: Map<string, InvokeBoardInfo>;
+    isAuthoritative: boolean;
+}
+
+export async function fetchBoards(
+    db: Database,
+    scope: InvokeSyncScope
+): Promise<InvokeBoards> {
+    const boards = new Map<string, InvokeBoardInfo>();
+
+    try {
+        const boardColumns = scope.mode === 'legacy'
+            ? new Set<string>()
+            : new Set(
+                (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
+            );
+        if (scope.mode === 'owner' && !boardColumns.has('user_id')) {
+            return { boards, isAuthoritative: false };
+        }
+
+        const ownerSelect = scope.mode !== 'legacy' && boardColumns.has('user_id')
+            ? ', b.user_id'
+            : '';
+        const ownerClause = scope.mode === 'owner' ? 'WHERE b.user_id = ?' : '';
+        const ownerParams = scope.mode === 'owner' ? [scope.ownerId] : [];
+        const rows = await db.select<BoardRow[]>(`
+            SELECT b.board_id, b.board_name, b.created_at${ownerSelect}
+            FROM boards b
+            ${ownerClause}
+        `, ownerParams);
+
+        rows.forEach(board => {
+            const timeRaw = board.created_at.includes('Z') ? board.created_at : `${board.created_at} Z`;
+            boards.set(board.board_id, {
+                name: board.board_name,
+                createdAt: new Date(timeRaw).getTime(),
+                ownerId: board.user_id?.trim() || undefined,
+            });
+        });
+        return { boards, isAuthoritative: true };
+    } catch (error) {
+        console.warn('Failed to fetch InvokeAI boards:', error);
+        return { boards, isAuthoritative: false };
+    }
 }
 
 export async function fetchBoardMappings(

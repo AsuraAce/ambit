@@ -462,7 +462,7 @@ fn get_thumbnail_optimization_failures_for_conn(
                     COALESCE(thumbnail_failure_count, 0) AS failure_count,
                     thumbnail_last_error,
                     thumbnail_last_attempt_at
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0
                AND is_deleted = 0
                AND is_missing = 0
@@ -496,7 +496,7 @@ fn retry_failed_thumbnail_optimizations_for_conn(conn: &Connection) -> Result<us
          SET thumbnail_failure_count = 0,
              thumbnail_last_error = NULL,
              thumbnail_last_attempt_at = NULL
-         WHERE invoke_scope_hidden = 0
+         WHERE id IN (SELECT id FROM scoped_images)
            AND is_deleted = 0
            AND is_missing = 0
            AND COALESCE(thumbnail_failure_count, 0) > 0",
@@ -832,7 +832,7 @@ fn fetch_thumbnail_candidates(
 ) -> Result<Vec<ThumbnailCandidate>, String> {
     let mut query = format!(
         "SELECT id, path, COALESCE(timestamp, 0) AS timestamp
-         FROM images
+         FROM scoped_images
          WHERE {}",
         thumbnail_queue_condition(include_upgradeable, now_ms)
     );
@@ -957,6 +957,8 @@ mod tests {
                 is_corrupt INTEGER DEFAULT 0,
                 timestamp INTEGER NOT NULL
             );
+            CREATE VIEW scoped_images AS
+                SELECT * FROM images WHERE invoke_scope_hidden = 0;
             ",
         )
         .expect("schema");
@@ -1154,7 +1156,7 @@ mod tests {
             .query_row(
                 "SELECT thumbnail_path, thumbnail_source, thumbnail_version,
                         thumbnail_failure_count, thumbnail_last_error, thumbnail_last_attempt_at
-                 FROM images
+                 FROM scoped_images
                  WHERE id = 'failed'",
                 [],
                 |row| {
@@ -1179,7 +1181,7 @@ mod tests {
 
         let ok_failure_count: i64 = conn
             .query_row(
-                "SELECT thumbnail_failure_count FROM images WHERE id = 'ok'",
+                "SELECT thumbnail_failure_count FROM scoped_images WHERE id = 'ok'",
                 [],
                 |row| row.get(0),
             )
@@ -1219,7 +1221,7 @@ mod tests {
         let row: (String, String, i64) = conn
             .query_row(
                 "SELECT thumbnail_path, thumbnail_source, thumbnail_version
-                 FROM images WHERE id = 'pending'",
+                 FROM scoped_images WHERE id = 'pending'",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
@@ -1319,7 +1321,7 @@ mod tests {
 
         let version: i64 = conn
             .query_row(
-                "SELECT thumbnail_version FROM images WHERE id = 'current'",
+                "SELECT thumbnail_version FROM scoped_images WHERE id = 'current'",
                 [],
                 |row| row.get(0),
             )
@@ -1358,7 +1360,7 @@ mod tests {
 
         let version: i64 = conn
             .query_row(
-                "SELECT thumbnail_version FROM images WHERE id = 'current'",
+                "SELECT thumbnail_version FROM scoped_images WHERE id = 'current'",
                 [],
                 |row| row.get(0),
             )
@@ -1549,7 +1551,7 @@ mod tests {
             .query_row(
                 "SELECT thumbnail_path, thumbnail_source, thumbnail_version,
                         thumbnail_failure_count, thumbnail_last_error, thumbnail_last_attempt_at
-                 FROM images WHERE id = 'fixed'",
+                 FROM scoped_images WHERE id = 'fixed'",
                 [],
                 |row| {
                     Ok((

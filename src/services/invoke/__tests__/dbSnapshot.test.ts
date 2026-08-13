@@ -2,12 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import type { InvokeDbSnapshotState } from '../../../types';
 import {
     buildInvokeDbSnapshotState as buildInvokeDbSnapshotStateImpl,
+    getInvokeDbSnapshotForScope,
+    INVOKE_BOARD_OWNER_SCHEMA_VERSION,
     INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     isInvokeDbSnapshotCurrent,
     isInvokeDbSnapshotScopeCurrent,
+    isInvokeBoardOwnerSnapshotCurrent,
     isInvokeImportSchemaCurrent,
+    isInvokeSourceFingerprintCurrent,
     readInvokeDbSnapshotState as readInvokeDbSnapshotStateImpl,
+    upsertInvokeDbSnapshot,
 } from '../dbSnapshot';
 
 type SnapshotConfig = Parameters<typeof buildInvokeDbSnapshotStateImpl>[1];
@@ -141,6 +146,74 @@ describe('Invoke DB startup snapshot matching', () => {
             dbPath: 'D:/Other/invokeai.db',
             imagesRoot: 'D:/Other',
         })).toBe(false);
+    });
+
+    it('stores and restores independent snapshots for each owner scope', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            lastSyncedAt: 100,
+        });
+        const ownerB = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-b',
+            lastSyncedAt: 200,
+        });
+        const snapshots = upsertInvokeDbSnapshot(
+            upsertInvokeDbSnapshot(undefined, ownerA),
+            ownerB
+        );
+
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(100);
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-b',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(200);
+    });
+
+    it('compares owner source fingerprints independently from the shared database files', () => {
+        const ownerA = {
+            schemaVersion: 1 as const,
+            imageCount: 12,
+            imageUpdatedAt: '2026-08-08 10:00:00',
+            boardCount: 4,
+            boardUpdatedAt: '2026-08-08 09:00:00',
+            membershipCount: 31,
+            membershipMaxRowId: '44',
+        };
+
+        expect(isInvokeSourceFingerprintCurrent(ownerA, { ...ownerA })).toBe(true);
+        expect(isInvokeSourceFingerprintCurrent(ownerA, { ...ownerA, imageCount: 13 })).toBe(false);
+        expect(isInvokeSourceFingerprintCurrent(undefined, ownerA)).toBe(false);
+        expect(buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            sourceFingerprint: ownerA,
+        }).sourceFingerprint).toEqual(ownerA);
+    });
+
+    it('tracks board-owner repair independently from image import schema', () => {
+        const unrepaired = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+        });
+        const repaired = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+        });
+
+        expect(isInvokeImportSchemaCurrent(unrepaired)).toBe(true);
+        expect(isInvokeBoardOwnerSnapshotCurrent(unrepaired)).toBe(false);
+        expect(isInvokeBoardOwnerSnapshotCurrent(repaired)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(unrepaired, repaired)).toBe(false);
     });
 
     it('invalidates when a missing WAL appears', () => {

@@ -64,9 +64,15 @@ export const readTrustedInvokeOwnerScope = async (
 
     const database = await getDb();
     const rows = await database.select<InvokeOwnerScopeStateRow[]>(`
-        SELECT db_path, images_root, scope_mode, owner_id
-        FROM invoke_owner_scope_state
-        WHERE state_key = 'current'
+        SELECT scope.db_path, scope.images_root, scope.scope_mode, scope.owner_id
+        FROM invoke_owner_scope_state scope
+        INNER JOIN invoke_scope_cache_control control
+            ON control.state_key = 'current'
+        INNER JOIN invoke_scope_cache_state cache
+            ON cache.scope_key = control.active_scope_key
+        WHERE scope.state_key = 'current'
+          AND cache.status = 'ready'
+          AND cache.built_generation = cache.generation
     `);
     return rows.length === 1 && rowMatchesScope(rows[0], scope) ? scope : null;
 };

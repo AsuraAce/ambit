@@ -348,7 +348,7 @@ describe('maintenanceRepo', () => {
         }]);
 
         expect(db.select.mock.calls[0][0]).toContain('WHERE is_missing = 1');
-        expect(db.select.mock.calls[1][0]).toContain('FROM removed_images');
+        expect(db.select.mock.calls[1][0]).toContain('FROM scoped_removed_images');
     });
 
     it('marks missing links in batches so very large audits stay under SQLite parameter limits', async () => {

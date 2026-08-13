@@ -78,6 +78,15 @@ interface RefreshSmartCountsOptions {
     includeThumbnails?: boolean;
     includePromptSearch?: boolean;
     markPending?: boolean;
+    retryOnSuperseded?: boolean;
+    throwOnError?: boolean;
+}
+
+interface CollectionRefreshOptions {
+    includeThumbnails?: boolean;
+    scheduleSmartRefresh?: boolean;
+    retryOnSuperseded?: boolean;
+    throwOnError?: boolean;
 }
 
 type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
@@ -90,14 +99,16 @@ interface CollectionState {
 
     // Actions
     initialize: () => Promise<void>;
-    refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean) => Promise<void>;
+    refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
     refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let debounceResolve: (() => void) | null = null;
 let thumbnailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let thumbnailDebounceResolve: (() => void) | null = null;
 
 export const useCollectionStore = create<CollectionState>()(
     devtools(
@@ -107,39 +118,73 @@ export const useCollectionStore = create<CollectionState>()(
             thumbnailHydrationPendingIds: {},
             smartSummaryPendingIds: {},
 
-            refreshCollections: async (debounced = false) => {
+            refreshCollections: async (debounced = false, options = {}) => {
                 const runId = invalidateCollectionRefreshes();
-                const run = async (currentRunId: number) => {
+                const run = async (initialRunId: number) => {
+                    let currentRunId = initialRunId;
                     try {
-                        const cols = await getAllCollectionsWithStats();
-                        if (currentRunId !== collectionRefreshRunId) return;
+                        while (true) {
+                            const cols = await getAllCollectionsWithStats({
+                                includeThumbnails: options.includeThumbnails,
+                            });
+                            if (currentRunId !== collectionRefreshRunId) {
+                                if (options.retryOnSuperseded) {
+                                    currentRunId = invalidateCollectionRefreshes();
+                                    continue;
+                                }
+                                if (options.throwOnError) {
+                                    throw new Error('Collection refresh was superseded before it completed.');
+                                }
+                                return;
+                            }
 
-                        set({ collections: cols });
+                            set({ collections: cols });
 
-                        // Lazily fetch visible smart counts in the background.
-                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500, markPending: true });
+                            // Lazily fetch visible smart counts in the background.
+                            if (options.scheduleSmartRefresh !== false) {
+                                void get().refreshSmartCounts({ includeArchived: false, delayMs: 500, markPending: true });
+                            }
+                            return;
+                        }
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
+                        if (options.throwOnError) throw e;
                     }
                 };
 
                 if (debounced) {
-                    if (debounceTimer) clearTimeout(debounceTimer);
-                    return new Promise((resolve) => {
-                        debounceTimer = setTimeout(async () => {
-                            await run(runId);
-                            debounceTimer = null;
-                            resolve();
+                    if (debounceTimer) {
+                        clearTimeout(debounceTimer);
+                        debounceTimer = null;
+                        debounceResolve?.();
+                        debounceResolve = null;
+                    }
+                    return new Promise((resolve, reject) => {
+                        const timer = setTimeout(async () => {
+                            try {
+                                await run(runId);
+                                resolve();
+                            } catch (error) {
+                                reject(error);
+                            } finally {
+                                if (debounceTimer === timer) {
+                                    debounceTimer = null;
+                                    debounceResolve = null;
+                                }
+                            }
                         }, 300);
+                        debounceTimer = timer;
+                        debounceResolve = resolve;
                     });
                 } else {
                     await run(runId);
                 }
             },
 
-            refreshCollectionThumbnails: async (debounced = false, force = false) => {
+            refreshCollectionThumbnails: async (debounced = false, force = false, options = {}) => {
                 const run = async () => {
                     const runId = ++thumbnailRefreshRunId;
+                    let wasSuperseded = false;
                     try {
                         const currentCollections = sortForThumbnailHydration(
                             get().collections.filter(collection => shouldHydrateCollectionThumbnail(collection, force))
@@ -149,10 +194,16 @@ export const useCollectionStore = create<CollectionState>()(
                         if (currentCollections.length === 0) return;
 
                         for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
-                            if (runId !== thumbnailRefreshRunId) return;
+                            if (runId !== thumbnailRefreshRunId) {
+                                wasSuperseded = true;
+                                break;
+                            }
 
                             const summaries = await getCollectionThumbnailSummaries(collectionBatch);
-                            if (runId !== thumbnailRefreshRunId) return;
+                            if (runId !== thumbnailRefreshRunId) {
+                                wasSuperseded = true;
+                                break;
+                            }
 
                             set((state) => ({
                                 collections: state.collections.map((collection) => {
@@ -167,23 +218,48 @@ export const useCollectionStore = create<CollectionState>()(
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);
                         }
+                        if (wasSuperseded) {
+                            if (options.retryOnSuperseded) {
+                                await get().refreshCollectionThumbnails(false, force, options);
+                                return;
+                            }
+                            if (options.throwOnError) {
+                                throw new Error('Collection thumbnail refresh was superseded before it completed.');
+                            }
+                        }
                     } catch (e) {
                         if (runId === thumbnailRefreshRunId) {
                             set({ thumbnailHydrationPendingIds: {} });
                         }
                         console.error('[CollectionStore] Failed to refresh collection thumbnails', e);
+                        if (options.throwOnError) throw e;
                     }
                 };
 
                 if (debounced) {
-                    if (thumbnailDebounceTimer) clearTimeout(thumbnailDebounceTimer);
+                    if (thumbnailDebounceTimer) {
+                        clearTimeout(thumbnailDebounceTimer);
+                        thumbnailDebounceTimer = null;
+                        thumbnailDebounceResolve?.();
+                        thumbnailDebounceResolve = null;
+                    }
                     thumbnailRefreshRunId += 1;
-                    return new Promise((resolve) => {
-                        thumbnailDebounceTimer = setTimeout(async () => {
-                            await run();
-                            thumbnailDebounceTimer = null;
-                            resolve();
+                    return new Promise((resolve, reject) => {
+                        const timer = setTimeout(async () => {
+                            try {
+                                await run();
+                                resolve();
+                            } catch (error) {
+                                reject(error);
+                            } finally {
+                                if (thumbnailDebounceTimer === timer) {
+                                    thumbnailDebounceTimer = null;
+                                    thumbnailDebounceResolve = null;
+                                }
+                            }
                         }, 300);
+                        thumbnailDebounceTimer = timer;
+                        thumbnailDebounceResolve = resolve;
                     });
                 }
 
@@ -205,6 +281,9 @@ export const useCollectionStore = create<CollectionState>()(
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
                         smartCountRunsByCollection.clear();
                         set({ smartSummaryPendingIds: {} });
+                        if (options.throwOnError) {
+                            throw new Error('Smart collection summaries cannot refresh while an import is active.');
+                        }
                         return;
                     }
 
@@ -254,11 +333,18 @@ export const useCollectionStore = create<CollectionState>()(
                         await delay(options.delayMs);
                     }
 
+                    let wasSuperseded = false;
                     for (const smartCol of smartCols) {
-                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                            wasSuperseded = true;
+                            continue;
+                        }
 
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
-                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                            wasSuperseded = true;
+                            continue;
+                        }
                         const summary = summaries[smartCol.id];
 
                         if (summary) {
@@ -267,7 +353,10 @@ export const useCollectionStore = create<CollectionState>()(
                                 summary.count,
                                 smartCol.updatedAt ?? smartCol.createdAt
                             );
-                            if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                            if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                                wasSuperseded = true;
+                                continue;
+                            }
 
                             set((state) => ({
                                 collections: state.collections.map(c =>
@@ -309,6 +398,15 @@ export const useCollectionStore = create<CollectionState>()(
 
                         await delay(SMART_COUNT_YIELD_MS);
                     }
+                    if (wasSuperseded) {
+                        if (options.retryOnSuperseded) {
+                            await get().refreshSmartCounts({ ...options, delayMs: undefined });
+                            return;
+                        }
+                        if (options.throwOnError) {
+                            throw new Error('Smart collection summary refresh was superseded before it completed.');
+                        }
+                    }
                 } catch (e) {
                     if (runId > 0) {
                         const ownedIds = smartCols
@@ -324,6 +422,7 @@ export const useCollectionStore = create<CollectionState>()(
                         }
                     }
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
+                    if (options.throwOnError) throw e;
                 }
             },
 

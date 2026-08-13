@@ -546,15 +546,13 @@ export const syncImages = async (
 
     const createdBoardIds = new Set<string>();
     if (shouldReconcileBoardCollections && shouldApplyBoardMappings) {
-        const usedBoardIds = new Set(imageToBoardId.values());
-        for (const boardId of usedBoardIds) {
-            const boardInfo = boards.get(boardId);
-            if (!boardInfo) continue;
+        for (const [boardId, boardInfo] of boards) {
             await upsertInvokeBoardCollection({
                 id: boardId,
                 name: boardInfo.name,
                 createdAt: boardInfo.createdAt || Date.now(),
                 invokeOwnerId: boardInfo.ownerId,
+                invokeSourceId: scope.dbPath,
             });
             createdBoardIds.add(boardId);
         }
@@ -916,6 +914,7 @@ export const syncImages = async (
                             name: boardInfo.name,
                             createdAt: boardInfo.createdAt || Date.now(),
                             invokeOwnerId: boardInfo.ownerId,
+                            invokeSourceId: scope.dbPath,
                         });
                         createdBoardIds.add(bId!);
                     }

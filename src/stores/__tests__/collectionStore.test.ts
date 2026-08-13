@@ -140,6 +140,36 @@ describe('collectionStore smart count refresh', () => {
         ]);
     });
 
+    it('retries a required collection refresh when a competing refresh supersedes it', async () => {
+        const requiredAttempt = createDeferred<Collection[]>();
+        const competingRefresh = createDeferred<Collection[]>();
+        const requiredRetry = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+
+        const requiredRun = useCollectionStore.getState().refreshCollections(false, {
+            throwOnError: true,
+            retryOnSuperseded: true,
+        });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve([makeStaticCollection({ id: 'competing', name: 'Competing' })]);
+        await competingRun;
+
+        requiredAttempt.resolve([makeStaticCollection({ id: 'stale', name: 'Stale' })]);
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve([makeStaticCollection({ id: 'odin', name: 'Odin' })]);
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({ id: 'odin', name: 'Odin' })
+        ]);
+    });
+
     it('does not let an in-flight refresh overwrite a newer debounced refresh request', async () => {
         const staleRefresh = createDeferred<Collection[]>();
         const debouncedRefresh = createDeferred<Collection[]>();
@@ -1315,6 +1345,46 @@ describe('collectionStore smart count refresh', () => {
         }));
     });
 
+    it('retries required thumbnail hydration when another run supersedes it', async () => {
+        const requiredAttempt = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        const competingRefresh = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        const requiredRetry = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        mockGetCollectionThumbnailSummaries
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ count: 1 })],
+            isLoaded: true,
+        });
+
+        const requiredRun = useCollectionStore.getState().refreshCollectionThumbnails(false, true, {
+            throwOnError: true,
+            retryOnSuperseded: true,
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshCollectionThumbnails();
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve({
+            'static-1': { thumbnail: 'asset://competing.webp', thumbnailSourceKind: 'dynamic' },
+        });
+        await competingRun;
+
+        requiredAttempt.resolve({
+            'static-1': { thumbnail: 'asset://stale.webp', thumbnailSourceKind: 'dynamic' },
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve({
+            'static-1': { thumbnail: 'asset://odin.webp', thumbnailSourceKind: 'dynamic' },
+        });
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            thumbnail: 'asset://odin.webp'
+        }));
+    });
+
     it('does not clear newer pending thumbnail state from stale refreshes', async () => {
         let resolveFirst: ((value: Record<string, unknown>) => void) | undefined;
         let resolveSecond: ((value: Record<string, unknown>) => void) | undefined;
@@ -1382,15 +1452,27 @@ describe('collectionStore smart count refresh', () => {
         consoleError.mockRestore();
     });
 
+    it('still rejects a required collection refresh when the query itself fails', async () => {
+        const error = new Error('required refresh failed');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockGetAllCollectionsWithStats.mockRejectedValueOnce(error);
+
+        await expect(useCollectionStore.getState().refreshCollections(false, {
+            throwOnError: true,
+            retryOnSuperseded: true,
+        })).rejects.toBe(error);
+        expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce();
+        consoleError.mockRestore();
+    });
+
     it('replaces an earlier debounced collection refresh timer', async () => {
         vi.useFakeTimers();
         try {
             const first = useCollectionStore.getState().refreshCollections(true);
             const second = useCollectionStore.getState().refreshCollections(true);
             await vi.runAllTimersAsync();
-            await second;
+            await Promise.all([first, second]);
             expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce();
-            void first;
         } finally {
             vi.useRealTimers();
         }
@@ -1403,9 +1485,8 @@ describe('collectionStore smart count refresh', () => {
             const first = useCollectionStore.getState().refreshCollectionThumbnails(true);
             const second = useCollectionStore.getState().refreshCollectionThumbnails(true);
             await vi.runAllTimersAsync();
-            await second;
+            await Promise.all([first, second]);
             expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledOnce();
-            void first;
         } finally {
             vi.useRealTimers();
         }
@@ -1571,6 +1652,48 @@ describe('collectionStore smart count refresh', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('retries required smart summaries when another run supersedes them', async () => {
+        const requiredAttempt = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        const competingRefresh = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        const requiredRetry = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        mockGetSmartCollectionSummaries
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({
+                id: 'odin-smart',
+                filters: createDefaultFilters({ dateRange: 'today' }),
+            })],
+            isLoaded: true,
+        });
+
+        const requiredRun = useCollectionStore.getState().refreshSmartCounts({
+            includePromptSearch: true,
+            throwOnError: true,
+            retryOnSuperseded: true,
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshSmartCounts({ includePromptSearch: true });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve({
+            'odin-smart': { count: 2, thumbnailSourceKind: 'dynamic' },
+        });
+        await competingRun;
+
+        requiredAttempt.resolve({
+            'odin-smart': { count: 1, thumbnailSourceKind: 'dynamic' },
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve({
+            'odin-smart': { count: 3, thumbnailSourceKind: 'dynamic' },
+        });
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({ count: 3 }));
     });
 
     it('stops an older smart refresh before its next collection begins', async () => {

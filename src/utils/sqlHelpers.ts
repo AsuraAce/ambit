@@ -320,6 +320,7 @@ export const buildSqlWhereClause = (
     if (filters.collectionId) {
         const col = collections?.find(c => c.id === filters.collectionId);
         const subConditions: string[] = [];
+        let collectionScopeCondition: string | null = null;
 
         if (col && col.filters) {
             const effectiveSmartFilters = { ...col.filters };
@@ -343,10 +344,19 @@ export const buildSqlWhereClause = (
                 subConditions.push(`(${smartWhere})`);
                 params.push(...smartParams);
             }
+
+            if (col.source === 'ambit' && col.invokeSourceId && col.invokeOwnerId) {
+                collectionScopeCondition = '(invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?))';
+                params.push(col.invokeSourceId, col.invokeOwnerId);
+            }
         }
 
         if (subConditions.length > 0) {
             let combined = `(${subConditions.join(' OR ')})`;
+
+            if (collectionScopeCondition) {
+                combined = `(${combined} AND ${collectionScopeCondition})`;
+            }
 
             if (col && col.manualExclusions && col.manualExclusions.length > 0) {
                 const placeholders = col.manualExclusions.map(() => '?').join(',');

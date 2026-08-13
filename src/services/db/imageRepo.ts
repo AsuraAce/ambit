@@ -422,7 +422,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
         let query = `
             INSERT OR IGNORE INTO collection_images (collection_id, image_id)
             SELECT board_id, id 
-            FROM images 
+            FROM scoped_images AS images
             WHERE board_id IS NOT NULL
               AND invoke_scope_hidden = 0
         `;
@@ -532,7 +532,7 @@ export const revertImageMetadata = async (id: string) => {
         const normalizedId = normalizePath(id);
 
         // 1. Fetch the original parsed metadata (already parsed, no re-parsing needed!)
-        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
+        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM scoped_images WHERE id = ?', [normalizedId]);
         if (rows.length === 0) return;
         const img = rows[0];
 
@@ -657,8 +657,8 @@ export const getAllImages = async (
     }
 
     const query = limit
-        ? `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy}`;
+        ? `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<ImageRow[]>(query);
     return rows.map(mapRowToImage);
@@ -682,8 +682,9 @@ export const getImagesByIds = async (
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
+        const source = options.includeOwnerHidden ? 'images' : 'scoped_images';
         const ownerScope = options.includeOwnerHidden ? '' : ' AND invoke_scope_hidden = 0';
-        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})${ownerScope}`;
+        const query = `SELECT ${getImageFieldsFull()} FROM ${source} AS images WHERE images.id IN (${placeholders})${ownerScope}`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -704,7 +705,7 @@ export const getFlatInvokeImageIdsForRoot = async (invokeRoot: string): Promise<
     const db = await getDb();
     const rows = await db.select<Array<{ id: string }>>(
         `SELECT id
-         FROM images
+         FROM scoped_images AS images
          WHERE id LIKE ?
            AND instr(substr(id, ?), '/') = 0`,
         [`${imagesPrefix}%`, imagesPrefix.length + 1]
@@ -723,7 +724,7 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM scoped_removed_images AS removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -738,7 +739,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM scoped_images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -957,7 +958,7 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return;
 
     try {
@@ -984,7 +985,7 @@ export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean):
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
     if (rows.length === 0) return;
 
     try {
@@ -1062,9 +1063,9 @@ export const checkHiddenContentAvailability = async (): Promise<{
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
@@ -1087,7 +1088,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id IN (SELECT id FROM scoped_images) AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {

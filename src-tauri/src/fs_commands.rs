@@ -167,11 +167,11 @@ fn path_is_known_media_file(
     let is_known: i64 = conn
         .query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
+                SELECT 1 FROM scoped_images
                 WHERE invoke_scope_hidden = 0
                   AND (id IN (?1, ?2) OR path IN (?1, ?2))
                 UNION ALL
-                SELECT 1 FROM removed_images
+                SELECT 1 FROM scoped_removed_images
                 WHERE invoke_scope_hidden = 0
                   AND (id IN (?1, ?2) OR path IN (?1, ?2))
             )",
@@ -332,7 +332,7 @@ where
         let mut statement = conn
             .prepare(
                 "SELECT id, path, thumbnail_path
-                 FROM removed_images
+                 FROM scoped_removed_images
                  WHERE invoke_scope_hidden = 0 AND id = ?1",
             )
             .map_err(|error| error.to_string())?;
@@ -450,7 +450,11 @@ where
             .map_err(|error| error.to_string())?;
             let deleted = tx
                 .execute(
-                    "DELETE FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                    "DELETE FROM removed_images
+                     WHERE id IN (
+                         SELECT id FROM scoped_removed_images
+                         WHERE id = ?1 AND invoke_scope_hidden = 0
+                     )",
                     [&id],
                 )
                 .map_err(|error| error.to_string())?;
@@ -568,6 +572,13 @@ mod tests {
             [],
         )
             .unwrap();
+        conn.execute_batch(
+            "CREATE VIEW scoped_images AS
+                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
+             CREATE VIEW scoped_removed_images AS
+                 SELECT * FROM removed_images WHERE invoke_scope_hidden = 0;",
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO images (id, path) VALUES (?1, ?1)",
             ["C:/library/kept.png"],
@@ -871,6 +882,12 @@ mod tests {
                 dynamic_thumbnail_is_sensitive INTEGER,
                 dynamic_thumbnail_cached_at INTEGER
             )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE VIEW scoped_removed_images AS
+                 SELECT * FROM removed_images WHERE invoke_scope_hidden = 0",
             [],
         )
         .unwrap();

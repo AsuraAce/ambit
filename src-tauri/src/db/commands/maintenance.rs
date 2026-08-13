@@ -109,6 +109,31 @@ pub struct CollectionMembershipMutationResult {
     pub target_collection_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbitCollectionScopeMode {
+    Global,
+    All,
+    Owner,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAmbitCollectionScopeInput {
+    pub collection_id: String,
+    pub mode: AmbitCollectionScopeMode,
+    pub db_path: Option<String>,
+    pub owner_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAmbitCollectionScopeResult {
+    pub collection_id: String,
+    pub invoke_source_id: Option<String>,
+    pub invoke_owner_id: Option<String>,
+}
+
 static REMOVED_LIFECYCLE_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub(crate) fn lock_removed_lifecycle() -> MutexGuard<'static, ()> {
@@ -164,7 +189,7 @@ fn load_eligible_duplicate_record(
 ) -> Result<Option<DuplicateRecordState>, String> {
     tx.query_row(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
-         FROM images
+         FROM scoped_images
          WHERE id = ?1
            AND invoke_scope_hidden = 0
            AND is_deleted = 0
@@ -279,7 +304,8 @@ fn persist_removed_duplicate(
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
                 collection_ids_json, invoke_image_name, invoke_image_category,
-                invoke_image_origin, invoke_owner_id, invoke_scope_hidden, parser_version
+                invoke_image_origin, invoke_owner_id, invoke_scope_hidden, parser_version,
+                invoke_source_id
              )
              SELECT
                 id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
@@ -300,8 +326,8 @@ fn persist_removed_duplicate(
                     ELSE NULL
                 END,
                 invoke_image_name, invoke_image_category, invoke_image_origin,
-                invoke_owner_id, invoke_scope_hidden, parser_version
-             FROM images
+                invoke_owner_id, invoke_scope_hidden, parser_version, invoke_source_id
+             FROM scoped_images
              WHERE id = ?1",
             params![image_id, removed_at],
         )
@@ -463,7 +489,7 @@ fn remove_images_from_library_inner(
     for id in normalized_ids {
         let metadata_json = tx
             .query_row(
-                "SELECT metadata_json FROM images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                "SELECT metadata_json FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0",
                 [&id],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -523,7 +549,8 @@ fn restore_removed_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), St
                 original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
                 invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id,
                 invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed,
-                cfg, sampler, generation_type, parser_version, positive_prompt, negative_prompt
+                cfg, sampler, generation_type, parser_version, positive_prompt, negative_prompt,
+                invoke_source_id
              )
              SELECT
                 id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
@@ -549,8 +576,9 @@ fn restore_removed_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), St
                 COALESCE(NULLIF(json_extract(metadata_json, '$.positivePrompt'), ''),
                          NULLIF(json_extract(metadata_json, '$.positive_prompt'), '')),
                 COALESCE(NULLIF(json_extract(metadata_json, '$.negativePrompt'), ''),
-                         NULLIF(json_extract(metadata_json, '$.negative_prompt'), ''))
-             FROM removed_images
+                         NULLIF(json_extract(metadata_json, '$.negative_prompt'), '')),
+                invoke_source_id
+             FROM scoped_removed_images
              WHERE id = ?1 AND invoke_scope_hidden = 0",
             [image_id],
         )
@@ -577,7 +605,7 @@ fn restore_removed_images_inner(
         let removed = tx
             .query_row(
                 "SELECT metadata_json, collection_ids_json
-                 FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                 FROM scoped_removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
                 [&id],
                 |row| {
                     Ok((
@@ -603,7 +631,7 @@ fn restore_removed_images_inner(
                         let inserted = tx
                             .execute(
                                 "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-                                 SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?1)",
+                                 SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM scoped_collections WHERE id = ?1)",
                                 params![collection_id, id],
                             )
                             .map_err(|error| error.to_string())?;
@@ -625,7 +653,11 @@ fn restore_removed_images_inner(
 
         let deleted = tx
             .execute(
-                "DELETE FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                "DELETE FROM removed_images
+                 WHERE id IN (
+                     SELECT id FROM scoped_removed_images
+                     WHERE id = ?1 AND invoke_scope_hidden = 0
+                 )",
                 [&id],
             )
             .map_err(|error| error.to_string())?;
@@ -645,6 +677,9 @@ struct MembershipCollectionState {
     id: String,
     filter_state: Option<String>,
     manual_exclusions: Option<String>,
+    source: String,
+    invoke_source_id: Option<String>,
+    invoke_owner_id: Option<String>,
 }
 
 fn load_membership_collection(
@@ -652,19 +687,74 @@ fn load_membership_collection(
     collection_id: &str,
 ) -> Result<MembershipCollectionState, String> {
     tx.query_row(
-        "SELECT id, filter_state, manual_exclusions FROM collections WHERE id = ?1",
+        "SELECT id, filter_state, manual_exclusions, COALESCE(source, 'ambit'), invoke_source_id, invoke_owner_id
+         FROM scoped_collections WHERE id = ?1",
         [collection_id],
         |row| {
             Ok(MembershipCollectionState {
                 id: row.get(0)?,
                 filter_state: row.get(1)?,
                 manual_exclusions: row.get(2)?,
+                source: row.get(3)?,
+                invoke_source_id: row.get(4)?,
+                invoke_owner_id: row.get(5)?,
             })
         },
     )
     .optional()
     .map_err(|error| error.to_string())?
     .ok_or_else(|| format!("Collection '{}' is no longer available", collection_id))
+}
+
+fn validate_image_for_collection_scope(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_id: &str,
+) -> Result<(), String> {
+    if collection.source == "invoke" {
+        return Ok(());
+    }
+
+    let image_scope = tx
+        .query_row(
+            "SELECT invoke_source_id, invoke_owner_id FROM images WHERE id = ?1",
+            [image_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("Image '{}' is no longer available", image_id))?;
+
+    let Some(image_source_id) = image_scope.0 else {
+        return Ok(());
+    };
+    let Some(collection_source_id) = collection.invoke_source_id.as_deref() else {
+        return Err(format!(
+            "Collection '{}' uses legacy shared visibility. Assign it to All Users or an owner before adding InvokeAI images.",
+            collection.id
+        ));
+    };
+    if image_source_id != collection_source_id {
+        return Err(format!(
+            "Image '{}' belongs to a different InvokeAI database than collection '{}'.",
+            image_id, collection.id
+        ));
+    }
+    if let Some(collection_owner_id) = collection.invoke_owner_id.as_deref() {
+        if image_scope.1.as_deref() != Some(collection_owner_id) {
+            return Err(format!(
+                "Image '{}' belongs to a different InvokeAI owner than collection '{}'.",
+                image_id, collection.id
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn add_manual_exclusions(
@@ -820,7 +910,7 @@ fn mutate_collection_membership_inner(
     for image_id in &image_ids {
         let exists: bool = tx
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1 AND invoke_scope_hidden = 0)",
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0)",
                 [image_id],
                 |row| row.get(0),
             )
@@ -850,6 +940,9 @@ fn mutate_collection_membership_inner(
         CollectionMembershipOperation::Add | CollectionMembershipOperation::Move
     ) {
         let target = target.as_ref().expect("target validated above");
+        for image_id in &image_ids {
+            validate_image_for_collection_scope(&tx, target, image_id)?;
+        }
         remove_manual_exclusions(&tx, target, &image_ids)?;
         for image_id in &image_ids {
             tx.execute(
@@ -877,6 +970,194 @@ fn mutate_collection_membership_inner(
         source_collection_id: source.map(|collection| collection.id),
         target_collection_id: target.map(|collection| collection.id),
     })
+}
+
+fn update_ambit_collection_scope_inner(
+    conn: &rusqlite::Connection,
+    input: &UpdateAmbitCollectionScopeInput,
+) -> Result<UpdateAmbitCollectionScopeResult, String> {
+    let collection_id = input.collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("Collection ID is required".to_string());
+    }
+
+    let db_path = input
+        .db_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let owner_id = input
+        .owner_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let (target_source_id, target_owner_id) = match input.mode {
+        AmbitCollectionScopeMode::Global => (None, None),
+        AmbitCollectionScopeMode::All => {
+            (
+                Some(db_path.ok_or_else(|| {
+                    "All Users visibility requires an InvokeAI database".to_string()
+                })?),
+                None,
+            )
+        }
+        AmbitCollectionScopeMode::Owner => (
+            Some(
+                db_path
+                    .ok_or_else(|| "Owner visibility requires an InvokeAI database".to_string())?,
+            ),
+            Some(owner_id.ok_or_else(|| "Owner visibility requires an owner".to_string())?),
+        ),
+    };
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let source = tx
+        .query_row(
+            "SELECT COALESCE(source, 'ambit') FROM collections WHERE id = ?1",
+            [collection_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("Collection '{}' was not found", collection_id))?;
+    if source == "invoke" {
+        return Err("InvokeAI board ownership is managed by InvokeAI".to_string());
+    }
+
+    let candidate_ids = {
+        let mut statement = tx
+            .prepare(
+                "SELECT image_id FROM collection_images WHERE collection_id = ?1
+                 UNION
+                 SELECT custom_thumbnail FROM collections
+                 WHERE id = ?1 AND custom_thumbnail IS NOT NULL AND custom_thumbnail != ''",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([collection_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+
+    let validation_state = MembershipCollectionState {
+        id: collection_id.to_string(),
+        filter_state: None,
+        manual_exclusions: None,
+        source,
+        invoke_source_id: target_source_id.map(str::to_string),
+        invoke_owner_id: target_owner_id.map(str::to_string),
+    };
+    for image_id in &candidate_ids {
+        validate_image_for_collection_scope(&tx, &validation_state, image_id)?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let has_updated_at = tx
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM pragma_table_info('collections') WHERE name = 'updated_at')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let update_sql = if has_updated_at {
+        "UPDATE collections
+         SET invoke_source_id = ?1, invoke_owner_id = ?2, updated_at = ?3,
+             dynamic_count = NULL, dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE id = ?4"
+    } else {
+        "UPDATE collections
+         SET invoke_source_id = ?1, invoke_owner_id = ?2,
+             dynamic_count = NULL, dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE id = ?4"
+    };
+    tx.execute(
+        update_sql,
+        params![target_source_id, target_owner_id, now, collection_id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+
+    Ok(UpdateAmbitCollectionScopeResult {
+        collection_id: collection_id.to_string(),
+        invoke_source_id: target_source_id.map(str::to_string),
+        invoke_owner_id: target_owner_id.map(str::to_string),
+    })
+}
+
+fn set_collection_custom_thumbnail_inner(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    image_id: Option<&str>,
+) -> Result<(), String> {
+    let collection_id = collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("Collection ID is required".to_string());
+    }
+    let image_id = image_id.map(str::trim).filter(|value| !value.is_empty());
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let collection = load_membership_collection(&tx, collection_id)?;
+    if let Some(image_id) = image_id {
+        let visible: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0)",
+                [image_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !visible {
+            return Err(format!("Image '{}' is no longer available", image_id));
+        }
+        validate_image_for_collection_scope(&tx, &collection, image_id)?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let has_updated_at = tx
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM pragma_table_info('collections') WHERE name = 'updated_at')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if has_updated_at {
+        tx.execute(
+            "UPDATE collections SET custom_thumbnail = ?1, updated_at = ?2 WHERE id = ?3",
+            params![image_id, now, collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    } else {
+        tx.execute(
+            "UPDATE collections SET custom_thumbnail = ?1 WHERE id = ?2",
+            params![image_id, collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if image_id.is_none() {
+        tx.execute(
+            "UPDATE collections SET dynamic_thumbnail_path = NULL,
+                 dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+                 dynamic_thumbnail_cached_at = NULL WHERE id = ?1",
+            [collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn resolve_exact_duplicate_groups_inner(
@@ -1048,14 +1329,14 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0",
                 [],
                 |r| r.get(0),
             )
             .unwrap_or(0);
         let deleted_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
                 [],
                 |r| r.get(0),
             )
@@ -1068,7 +1349,7 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             .unwrap_or(0);
         let tool_null_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -1147,6 +1428,31 @@ pub async fn mutate_collection_membership(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn update_ambit_collection_scope(
+    app: AppHandle,
+    input: UpdateAmbitCollectionScopeInput,
+) -> Result<UpdateAmbitCollectionScopeResult, String> {
+    run_blocking(app, move |conn| {
+        update_ambit_collection_scope_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn set_collection_custom_thumbnail(
+    app: AppHandle,
+    collection_id: String,
+    image_id: Option<String>,
+) -> Result<(), String> {
+    run_blocking(app, move |conn| {
+        set_collection_custom_thumbnail_inner(conn, &collection_id, image_id.as_deref())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn backfill_image_file_hashes(
     app: AppHandle,
     state: tauri::State<'_, FileHashBackfillState>,
@@ -1162,7 +1468,7 @@ pub async fn backfill_image_file_hashes(
                 .prepare(
                     "
                     SELECT id, path
-                    FROM images
+                    FROM scoped_images
                     WHERE invoke_scope_hidden = 0
                       AND is_deleted = 0
                       AND is_missing = 0
@@ -1173,7 +1479,7 @@ pub async fn backfill_image_file_hashes(
                       AND path NOT LIKE 'data:%'
                       AND file_size IN (
                         SELECT file_size
-                        FROM images
+                        FROM scoped_images
                         WHERE invoke_scope_hidden = 0
                           AND is_deleted = 0
                           AND is_missing = 0
@@ -1262,7 +1568,7 @@ pub async fn backfill_image_file_hashes(
             .query_row(
                 "
                 SELECT COUNT(*)
-                FROM images
+                FROM scoped_images
                 WHERE invoke_scope_hidden = 0
                   AND is_deleted = 0
                   AND is_missing = 0
@@ -1273,7 +1579,7 @@ pub async fn backfill_image_file_hashes(
                   AND path NOT LIKE 'data:%'
                   AND file_size IN (
                     SELECT file_size
-                    FROM images
+                    FROM scoped_images
                     WHERE invoke_scope_hidden = 0
                       AND is_deleted = 0
                       AND is_missing = 0
@@ -1362,7 +1668,9 @@ mod tests {
         ensure_log_directory, hash_file_sha256, mutate_collection_membership_inner,
         remove_images_from_library_inner, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
+        update_ambit_collection_scope_inner, AmbitCollectionScopeMode,
         CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
+        UpdateAmbitCollectionScopeInput,
     };
     use crate::db::migrations::init_db;
     use rusqlite::{params, Connection};
@@ -1405,6 +1713,18 @@ mod tests {
             ],
         )
         .expect("seed image");
+    }
+
+    fn activate_test_owner_scope(conn: &Connection, mode: &str, owner_id: Option<&str>) {
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state
+                (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
+             VALUES ('current', 'invoke.db', 'C:/Invoke', ?1, ?2, 1)
+             ON CONFLICT(state_key) DO UPDATE SET scope_mode = excluded.scope_mode,
+                 owner_id = excluded.owner_id",
+            params![mode, owner_id],
+        )
+        .expect("activate test scope");
     }
 
     #[test]
@@ -2144,5 +2464,130 @@ mod tests {
             .unwrap();
         assert_eq!(active_count, 4);
         assert_eq!(removed_count, 0);
+    }
+
+    #[test]
+    fn all_users_cannot_add_another_owners_image_to_an_owner_scoped_ambit_collection() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owner-a-image",
+            "a",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "owner-b-image",
+            "b",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
+             WHERE id = 'owner-a-image';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id = 'owner-b-image';
+             INSERT INTO collections (id, name, created_at, source, invoke_source_id, invoke_owner_id)
+             VALUES ('owner-a-collection', 'Owner A', 1, 'ambit', 'invoke.db', 'owner-a');",
+        )
+        .expect("seed scoped rows");
+
+        let error = mutate_collection_membership_inner(
+            &conn,
+            &CollectionMembershipMutationInput {
+                operation: CollectionMembershipOperation::Add,
+                image_ids: vec!["owner-b-image".to_string()],
+                source_collection_id: None,
+                target_collection_id: Some("owner-a-collection".to_string()),
+            },
+        )
+        .expect_err("cross-owner membership must fail");
+
+        assert!(error.contains("different InvokeAI owner"));
+        assert_eq!(table_count(&conn, "collection_images"), 0);
+    }
+
+    #[test]
+    fn collection_scope_reassignment_is_atomic_and_accepts_mixed_owners_only_for_all_users() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owner-a-image",
+            "a",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "owner-b-image",
+            "b",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
+             WHERE id = 'owner-a-image';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id = 'owner-b-image';
+             INSERT INTO collections (id, name, created_at, source)
+             VALUES ('mixed', 'Mixed', 1, 'ambit');
+             INSERT INTO collection_images VALUES ('mixed', 'owner-a-image');
+             INSERT INTO collection_images VALUES ('mixed', 'owner-b-image');",
+        )
+        .expect("seed mixed collection");
+
+        let owner_error = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "mixed".to_string(),
+                mode: AmbitCollectionScopeMode::Owner,
+                db_path: Some("invoke.db".to_string()),
+                owner_id: Some("owner-a".to_string()),
+            },
+        )
+        .expect_err("mixed collection cannot become owner scoped");
+        assert!(owner_error.contains("different InvokeAI owner"));
+        let unchanged: (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT invoke_source_id, invoke_owner_id FROM collections WHERE id = 'mixed'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("unchanged scope");
+        assert_eq!(unchanged, (None, None));
+
+        let result = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "mixed".to_string(),
+                mode: AmbitCollectionScopeMode::All,
+                db_path: Some("invoke.db".to_string()),
+                owner_id: None,
+            },
+        )
+        .expect("All Users accepts mixed owners");
+        assert_eq!(result.invoke_source_id.as_deref(), Some("invoke.db"));
+        assert_eq!(result.invoke_owner_id, None);
     }
 }

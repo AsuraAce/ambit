@@ -189,14 +189,17 @@ describe('thumbnailService', () => {
 
     it('cleans only thumbnail files that are not referenced by the database', async () => {
         mocks.readDir.mockResolvedValue([{ name: 'Keep.WebP' }, { name: 'orphan.webp' }]);
+        const select = vi.fn().mockResolvedValue([{ thumbnail_path: 'C:/thumbs/keep.webp' }]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ thumbnail_path: 'C:/thumbs/keep.webp' }]),
+            select,
             execute: vi.fn(),
         });
 
         const { cleanupOrphanThumbnails } = await import('../thumbnailService');
 
         await expect(cleanupOrphanThumbnails()).resolves.toBe(1);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('FROM images'));
+        expect(select).not.toHaveBeenCalledWith(expect.stringContaining('FROM scoped_images'));
         expect(mocks.remove).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/orphan.webp');
         expect(mocks.remove).toHaveBeenCalledTimes(1);
     });

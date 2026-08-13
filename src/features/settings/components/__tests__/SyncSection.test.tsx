@@ -169,18 +169,41 @@ describe('SyncSection', () => {
         }));
     });
 
-    it.each([
-        { label: 'manual', syncStatus: 'syncing' as const, isLiveSyncing: false },
-        { label: 'live', syncStatus: 'idle' as const, isLiveSyncing: true }
-    ])('disables full resync during an active $label sync', ({ syncStatus, isLiveSyncing }) => {
-        mocks.syncStatus = syncStatus;
-        mocks.isLiveSyncing = isLiveSyncing;
+    it('disables full resync during an active foreground sync', () => {
+        mocks.syncStatus = 'syncing';
 
         render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
 
         const button = screen.getByRole('button', { name: /force full resync/i });
         expect((button as HTMLButtonElement).disabled).toBe(true);
         expect(button.getAttribute('title')).toBe('Wait for the current InvokeAI sync to finish');
+    });
+
+    it('keeps background Live Watch controls visually stable while rejecting conflicting actions', () => {
+        mocks.isLiveSyncing = true;
+
+        render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
+
+        const fullResyncButton = screen.getByRole('button', { name: /force full resync/i });
+        const syncButton = screen.getByRole('button', { name: /initiate sync/i });
+        expect((fullResyncButton as HTMLButtonElement).disabled).toBe(false);
+        expect((syncButton as HTMLButtonElement).disabled).toBe(false);
+        expect(fullResyncButton.getAttribute('aria-disabled')).toBe('true');
+        expect(syncButton.getAttribute('aria-disabled')).toBe('true');
+
+        fireEvent.click(fullResyncButton);
+        fireEvent.click(syncButton);
+
+        expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull();
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith(
+            'Wait for the current InvokeAI sync to finish before forcing a full resync.',
+            'warning'
+        );
+        expect(mocks.addToast).toHaveBeenCalledWith(
+            'Wait for the current InvokeAI sync to finish before starting another sync.',
+            'warning'
+        );
     });
 
     it('preserves the cursor when a sync starts after the confirmation opens', async () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from '@tauri-apps/plugin-sql';
-import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, resolveInvokePaths, testConnection } from '../connection';
+import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
 
 const fetchBoardMappings = (db: Database) => fetchBoardMappingsImpl(db, {
     mode: 'legacy',
@@ -67,13 +67,15 @@ describe('InvokeAI connection helpers', () => {
 
     it('discovers only owners represented by image rows and labels them with display name plus stable ID', async () => {
         const db = createDb(async (sql) => {
-            if (sql === 'PRAGMA table_info(images)') return [{ name: 'image_name' }, { name: 'user_id' }];
+            if (sql === 'PRAGMA table_info(images)') {
+                return [{ name: 'image_name' }, { name: 'user_id' }, { name: 'is_intermediate' }];
+            }
             if (sql === "SELECT name FROM sqlite_master WHERE type='table'") return [{ name: 'images' }, { name: 'users' }];
             if (sql === 'PRAGMA table_info(users)') return [{ name: 'user_id' }, { name: 'display_name' }, { name: 'email' }];
             if (sql.includes('LEFT JOIN users')) {
                 return [
                     { owner_id: null, display_name: null, count: 2 },
-                    { owner_id: 'owner-a', display_name: ' Artemis ', count: 12 },
+                    { owner_id: 'owner-a', display_name: ' Artemis ', count: 12, intermediate_count: 4 },
                     { owner_id: 'owner-b', display_name: null, count: 4 },
                 ];
             }
@@ -86,10 +88,11 @@ describe('InvokeAI connection helpers', () => {
             dbPath: 'D:/Invoke/databases/invokeai.db',
             imagesRoot: 'D:/Invoke',
             owners: [
-                { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 },
+                { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12, intermediateImageCount: 4 },
                 { ownerId: 'owner-b', displayName: undefined, imageCount: 4 },
             ],
             unassignedImageCount: 2,
+            unassignedBoardCount: 0,
         });
         const queriedSql = db.select.mock.calls.map(([sql]) => sql).join('\n').toLowerCase();
         expect(queriedSql).not.toContain('select email');
@@ -100,7 +103,7 @@ describe('InvokeAI connection helpers', () => {
         const db = createDb(async (sql) => {
             if (sql === 'PRAGMA table_info(images)') return [{ name: 'user_id' }];
             if (sql === "SELECT name FROM sqlite_master WHERE type='table'") return [{ name: 'images' }];
-            if (sql.includes('GROUP BY user_id')) return [{ owner_id: 'owner-only', count: 3 }];
+            if (sql.includes('GROUP BY i.user_id')) return [{ owner_id: 'owner-only', count: 3 }];
             throw new Error(`Unexpected SQL: ${sql}`);
         });
         sqlMock.load.mockResolvedValue(db);
@@ -108,6 +111,26 @@ describe('InvokeAI connection helpers', () => {
         await expect(discoverInvokeOwners('D:/Invoke')).resolves.toMatchObject({
             owners: [{ ownerId: 'owner-only', displayName: undefined, imageCount: 3 }],
             unassignedImageCount: 0,
+        });
+    });
+
+    it('reports legacy unassigned boards even when all images have one owner', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'PRAGMA table_info(images)') return [{ name: 'user_id' }];
+            if (sql === "SELECT name FROM sqlite_master WHERE type='table'") {
+                return [{ name: 'images' }, { name: 'boards' }];
+            }
+            if (sql.includes('FROM images')) return [{ owner_id: 'system', count: 154_719 }];
+            if (sql === 'PRAGMA table_info(boards)') return [{ name: 'board_id' }, { name: 'board_name' }];
+            if (sql === 'SELECT count(*) AS count FROM boards') return [{ count: 237 }];
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+        sqlMock.load.mockResolvedValue(db);
+
+        await expect(discoverInvokeOwners('D:/Invoke')).resolves.toMatchObject({
+            owners: [{ ownerId: 'system', imageCount: 154_719 }],
+            unassignedImageCount: 0,
+            unassignedBoardCount: 237,
         });
     });
 
@@ -194,6 +217,78 @@ describe('InvokeAI connection helpers', () => {
         expect(calls.find(([sql]) => sql.includes('FROM boards b'))?.[1]).toEqual(['owner-a']);
         expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[0]).toContain('b.user_id = ?');
         expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[1]).toEqual(['owner-a']);
+    });
+
+    it('loads every authoritative board, including boards without images', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === 'PRAGMA table_info(boards)') return [{ name: 'user_id' }];
+            if (sql.includes('FROM boards b')) {
+                return [{
+                    board_id: 'board-a',
+                    board_name: 'Owned',
+                    created_at: '2026-01-02T03:04:05Z',
+                    user_id: 'owner-a',
+                }];
+            }
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+
+        const result = await fetchBoards(db as unknown as Database, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/InvokeAI/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeAI',
+        });
+
+        expect(result.isAuthoritative).toBe(true);
+        expect(result.boards.get('board-a')).toEqual(expect.objectContaining({
+            name: 'Owned',
+            ownerId: 'owner-a',
+        }));
+        const boardCall = (db.select.mock.calls as Array<[string, unknown[]?]>).find(
+            ([sql]) => sql.includes('FROM boards b')
+        );
+        expect(boardCall?.[0]).not.toContain('EXISTS');
+        expect(boardCall?.[1]).toEqual(['owner-a']);
+    });
+
+    it('fingerprints only the selected owner images, boards, and memberships', async () => {
+        const db = createDb(async (sql) => {
+            if (sql === "SELECT name FROM sqlite_master WHERE type='table'") {
+                return [{ name: 'images' }, { name: 'boards' }, { name: 'board_images' }];
+            }
+            if (sql === 'PRAGMA table_info(images)') {
+                return [{ name: 'user_id' }, { name: 'updated_at' }];
+            }
+            if (sql === 'PRAGMA table_info(boards)') {
+                return [{ name: 'user_id' }, { name: 'updated_at' }];
+            }
+            if (sql.includes('FROM images')) return [{ count: 12, updated_at: '2026-08-08 10:00:00' }];
+            if (sql.includes('FROM boards')) return [{ count: 4, updated_at: '2026-08-08 09:00:00' }];
+            if (sql.includes('FROM board_images')) return [{ count: 31, max_row_id: '44' }];
+            throw new Error(`Unexpected SQL: ${sql}`);
+        });
+        sqlMock.load.mockResolvedValue(db);
+
+        await expect(readInvokeSourceFingerprint('D:/InvokeAI', {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/InvokeAI/databases/invokeai.db',
+            imagesRoot: 'D:/InvokeAI',
+        })).resolves.toEqual({
+            schemaVersion: 1,
+            imageCount: 12,
+            imageUpdatedAt: '2026-08-08 10:00:00',
+            boardCount: 4,
+            boardUpdatedAt: '2026-08-08 09:00:00',
+            membershipCount: 31,
+            membershipMaxRowId: '44',
+        });
+        const scopedCalls = (db.select.mock.calls as Array<[string, unknown[]?]>)
+            .filter(([sql]) => sql.includes('FROM images') || sql.includes('FROM boards') || sql.includes('FROM board_images'));
+        expect(scopedCalls).toHaveLength(3);
+        expect(scopedCalls.every(([, params]) => params?.[0] === 'owner-a')).toBe(true);
+        expect(scopedCalls.find(([sql]) => sql.includes('FROM board_images'))?.[0]).toContain('b.user_id = ?');
     });
 
     it('skips board mapping without failing image sync when board ownership is unavailable', async () => {

@@ -62,6 +62,8 @@ const commandCases: CommandCase[] = [
         },
         returnsResult: true,
     },
+    { name: 'beginActiveInvokeScopeCacheBuild', invokeName: 'begin_active_invoke_scope_cache_build', args: [], returnsResult: true },
+    { name: 'commitActiveInvokeScopeCache', invokeName: 'commit_active_invoke_scope_cache', args: [], returnsResult: true },
     {
         name: 'replaceInvokeImageReferences',
         invokeName: 'replace_invoke_image_references',
@@ -97,6 +99,14 @@ const commandCases: CommandCase[] = [
         payload: { input: { operation: 'move', imageIds: ['image'], sourceCollectionId: 'source', targetCollectionId: 'target' } },
         returnsResult: true,
     },
+    {
+        name: 'updateAmbitCollectionScope',
+        invokeName: 'update_ambit_collection_scope',
+        args: [{ collectionId: 'collection', mode: 'owner', invokeSourceId: 'C:/invoke/databases/invokeai.db', invokeOwnerId: 'owner-a' }],
+        payload: { input: { collectionId: 'collection', mode: 'owner', invokeSourceId: 'C:/invoke/databases/invokeai.db', invokeOwnerId: 'owner-a' } },
+        returnsResult: true,
+    },
+    { name: 'setCollectionCustomThumbnail', invokeName: 'set_collection_custom_thumbnail', args: ['collection', 'image'], payload: { collectionId: 'collection', imageId: 'image' }, returnsResult: true },
     { name: 'backfillImageFileHashes', invokeName: 'backfill_image_file_hashes', args: [10], payload: { limit: 10 }, returnsResult: true },
     { name: 'cancelImageFileHashBackfill', invokeName: 'cancel_image_file_hash_backfill', args: [], returnsResult: false },
     { name: 'refreshBoardsNative', invokeName: 'refresh_boards_native', args: [{ board: 'collection' }], payload: { boardMapping: { board: 'collection' } }, returnsResult: true },

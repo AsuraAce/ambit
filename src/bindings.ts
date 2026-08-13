@@ -117,6 +117,22 @@ async mutateCollectionMembership(input: CollectionMembershipMutationInput) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async updateAmbitCollectionScope(input: UpdateAmbitCollectionScopeInput) : Promise<Result<UpdateAmbitCollectionScopeResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_ambit_collection_scope", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCollectionCustomThumbnail(collectionId: string, imageId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_collection_custom_thumbnail", { collectionId, imageId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async backfillImageFileHashes(limit: number | null) : Promise<Result<FileHashBackfillResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("backfill_image_file_hashes", { limit }) };
@@ -155,6 +171,22 @@ async refreshPrivacyMaskIndex(maskedKeywords: string[]) : Promise<Result<Privacy
 async refreshInvokeOwnerScope(input: InvokeOwnerScopeInput) : Promise<Result<InvokeOwnerScopeRefreshResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("refresh_invoke_owner_scope", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async beginActiveInvokeScopeCacheBuild() : Promise<Result<FacetScopeCacheStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("begin_active_invoke_scope_cache_build") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async commitActiveInvokeScopeCache() : Promise<Result<FacetScopeCacheStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("commit_active_invoke_scope_cache") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -644,6 +676,7 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 
 export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
+export type AmbitCollectionScopeMode = "global" | "all" | "owner"
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type CollectionMembershipMutationInput = { operation: CollectionMembershipOperation; imageIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
 export type CollectionMembershipMutationResult = { affectedIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
@@ -661,6 +694,8 @@ export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPin
 export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
+export type FacetScopeCacheState = "missing" | "dirty" | "building" | "ready"
+export type FacetScopeCacheStatus = { state: FacetScopeCacheState; generation: number; builtGeneration: number | null; facetCount: number; collectionCount: number }
 export type FileEntry = { path: string; modified: number; size: number }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
 export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
@@ -689,7 +724,9 @@ export type InvokeImageSourceReconcileResult = { activeUpdated: number; removedU
 export type InvokeImageSourceUpdate = { id: string; invokeImageName: string; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
 export type InvokeOwnerScopeInput = { dbPath: string; imagesRoot: string; mode: InvokeOwnerScopeMode; ownerId: string | null; forceRefresh: boolean }
 export type InvokeOwnerScopeMode = "legacy" | "unselected" | "owner" | "all"
-export type InvokeOwnerScopeRefreshResult = { changed: boolean; activeUpdated: number; removedUpdated: number }
+export type InvokeOwnerScopeRefreshResult = { changed: boolean; activeUpdated: number; removedUpdated: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
+export type InvokeScopeCacheAction = "restored" | "selective" | "full"
+export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
@@ -721,6 +758,8 @@ export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimization
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
 export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
 export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
+export type UpdateAmbitCollectionScopeInput = { collectionId: string; mode: AmbitCollectionScopeMode; dbPath: string | null; ownerId: string | null }
+export type UpdateAmbitCollectionScopeResult = { collectionId: string; invokeSourceId: string | null; invokeOwnerId: string | null }
 /**
  * Valid facet names result - used for drill-down filtering
  */

@@ -122,9 +122,10 @@ fn resolve_thumbnail_candidate(
 ) -> Result<ThumbnailCandidate, String> {
     let image_match = conn
         .query_row(
-            "SELECT id, COALESCE(NULLIF(thumbnail_path, ''), path), privacy_hidden, invoke_scope_hidden
-             FROM images
-             WHERE id = ?1 OR path = ?1 OR thumbnail_path = ?1
+            "SELECT i.id, COALESCE(NULLIF(i.thumbnail_path, ''), i.path), i.privacy_hidden,
+                    NOT EXISTS (SELECT 1 FROM scoped_images visible WHERE visible.id = i.id)
+             FROM images i
+             WHERE i.id = ?1 OR i.path = ?1 OR i.thumbnail_path = ?1
              LIMIT 1",
             params![requested_path],
             |row| {
@@ -174,7 +175,7 @@ fn best_resource_thumbnail(
     let query = match resource_type {
         "checkpoint" => format!(
             "SELECT i.thumbnail_path, i.id, i.privacy_hidden
-             FROM images i
+             FROM scoped_images i
              WHERE (
                 i.model_hash = ?2
                 OR i.model_name = ?1
@@ -234,7 +235,7 @@ fn format_resource_thumbnail_query(table: &str, name_col: &str, safe_clause: &st
     format!(
         "SELECT i.thumbnail_path, i.id, i.privacy_hidden
          FROM {table} jt
-         JOIN images i ON i.id = jt.image_id
+         JOIN scoped_images i ON i.id = jt.image_id
          WHERE jt.{name_col} = ?1
          AND i.invoke_scope_hidden = 0
          AND i.is_deleted = 0
@@ -742,7 +743,7 @@ fn set_resource_thumbnail_sensitivity_for_conn(
                     SELECT 1 FROM privacy_mask_keywords k
                     WHERE LOWER(facet_cache.resource_name) LIKE '%' || k.keyword || '%'
                 ) THEN 1
-                WHEN thumbnail_image_id IS NOT NULL THEN COALESCE((SELECT privacy_hidden FROM images WHERE id = thumbnail_image_id), 0)
+                WHEN thumbnail_image_id IS NOT NULL THEN COALESCE((SELECT privacy_hidden FROM scoped_images WHERE id = thumbnail_image_id), 0)
                 WHEN is_user_override = 1 THEN 1
                 WHEN has_sidecar = 1 THEN 1
                 WHEN preview_url IS NOT NULL AND preview_url != '' AND thumbnail_path = preview_url THEN 1
