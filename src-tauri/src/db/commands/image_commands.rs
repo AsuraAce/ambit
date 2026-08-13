@@ -2019,12 +2019,16 @@ fn reconcile_invoke_board_snapshot_inner(
     } else {
         "invoke_source_id = ?1"
     };
-    let owner_match = match input.mode {
-        InvokeOwnerScopeMode::Owner => "invoke_owner_id = ?2",
-        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "1 = 1",
+    // Keep one parameter shape for every mode. All-user and legacy snapshots
+    // bind NULL so the predicate includes every owner; owner snapshots bind
+    // the selected ID. This avoids dynamically producing one-parameter SQL
+    // while still passing the two-parameter owner binding.
+    let owner_match = "(?2 IS NULL OR invoke_owner_id = ?2)";
+    let owner_param = match input.mode {
+        InvokeOwnerScopeMode::Owner => owner_id,
+        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => None,
         InvokeOwnerScopeMode::Unselected => unreachable!(),
     };
-    let owner_param = owner_id.unwrap_or("");
 
     let collections_deleted = tx
         .execute(
@@ -4449,5 +4453,108 @@ mod tests {
         let unchanged = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
             .expect("repeat authoritative snapshot");
         assert_eq!(unchanged.changed_count(), 0);
+    }
+
+    #[test]
+    fn authoritative_unscoped_board_snapshots_reconcile_every_owner() {
+        for mode in [
+            super::InvokeOwnerScopeMode::All,
+            super::InvokeOwnerScopeMode::Legacy,
+        ] {
+            let conn = Connection::open_in_memory().expect("in-memory db");
+            apply_all_migrations(&conn);
+            super::save_images_batch_inner(
+                &conn,
+                &[
+                    create_image_record("owner-a-image", 100, 10, "{}"),
+                    create_image_record("owner-b-image", 101, 11, "{}"),
+                ],
+            )
+            .expect("seed images");
+            conn.execute_batch(
+                "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                     invoke_image_name = 'owner-a.png', board_id = 'stale-a'
+                 WHERE id = 'owner-a-image';
+                 UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b',
+                     invoke_image_name = 'owner-b.png', board_id = 'stale-b'
+                 WHERE id = 'owner-b-image';
+                 INSERT INTO collections (
+                     id, name, created_at, source, invoke_source_id, invoke_owner_id
+                 ) VALUES
+                     ('stale-a', 'Stale A', 1, 'invoke', 'invoke.db', 'owner-a'),
+                     ('stale-b', 'Stale B', 1, 'invoke', 'invoke.db', 'owner-b');
+                 INSERT INTO collection_images VALUES
+                     ('stale-a', 'owner-a-image'),
+                     ('stale-b', 'owner-b-image');",
+            )
+            .expect("seed stale boards");
+
+            let snapshot = super::InvokeBoardSnapshotInput {
+                db_path: "invoke.db".to_string(),
+                mode,
+                owner_id: Some("must-not-restrict-unscoped-mode".to_string()),
+                boards: vec![
+                    super::InvokeBoardSnapshotBoard {
+                        id: "current-a".to_string(),
+                        name: "Current A".to_string(),
+                        created_at: 2,
+                        owner_id: Some("owner-a".to_string()),
+                    },
+                    super::InvokeBoardSnapshotBoard {
+                        id: "current-b".to_string(),
+                        name: "Current B".to_string(),
+                        created_at: 3,
+                        owner_id: Some("owner-b".to_string()),
+                    },
+                ],
+                memberships: vec![
+                    super::InvokeBoardSnapshotMembership {
+                        image_name: "owner-a.png".to_string(),
+                        board_id: "current-a".to_string(),
+                    },
+                    super::InvokeBoardSnapshotMembership {
+                        image_name: "owner-b.png".to_string(),
+                        board_id: "current-b".to_string(),
+                    },
+                ],
+                reconcile_memberships: true,
+            };
+
+            let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+                .expect("replace unscoped board snapshot");
+            assert!(result.changed_count() > 0);
+
+            let boards: Vec<(String, Option<String>)> = conn
+                .prepare(
+                    "SELECT id, invoke_owner_id FROM collections
+                     WHERE source = 'invoke' ORDER BY id",
+                )
+                .expect("board query")
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("boards")
+                .collect::<Result<_, _>>()
+                .expect("collect boards");
+            assert_eq!(
+                boards,
+                vec![
+                    ("current-a".to_string(), Some("owner-a".to_string())),
+                    ("current-b".to_string(), Some("owner-b".to_string())),
+                ]
+            );
+            let image_boards: Vec<(String, Option<String>)> = conn
+                .prepare("SELECT id, board_id FROM images ORDER BY id")
+                .expect("image board query")
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("image boards")
+                .collect::<Result<_, _>>()
+                .expect("collect image boards");
+            assert_eq!(
+                image_boards,
+                vec![
+                    ("owner-a-image".to_string(), Some("current-a".to_string())),
+                    ("owner-b-image".to_string(), Some("current-b".to_string())),
+                ]
+            );
+        }
     }
 }
