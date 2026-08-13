@@ -143,6 +143,25 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Updated', 'success');
     });
 
+    it('ignores unchanged prompt, model, and note values', async () => {
+        const { result } = renderHandlers();
+
+        await act(async () => {
+            await result.current.handleUpdatePrompt('img1', 'A cat');
+            await result.current.handleUpdateNegativePrompt('img1', 'low res');
+            await result.current.handleUpdateModel('img1', 'Model A');
+            await result.current.handleUpdateModel('img1', '   ');
+            await result.current.handleUpdateTool('img1', GeneratorTool.AUTOMATIC1111);
+            await result.current.handleUpdateNotes('img1', '');
+        });
+
+        expect(mockSetImages).not.toHaveBeenCalled();
+        expect(mockUpdateImageMetadataFields).not.toHaveBeenCalled();
+        expect(mockUpdateImageNotesCol).not.toHaveBeenCalled();
+        expect(mockRebuildFacetCacheIncremental).not.toHaveBeenCalled();
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
     it('should handle grouping images into a stack', () => {
         const { result } = renderHandlers();
 

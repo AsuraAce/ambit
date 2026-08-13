@@ -2,14 +2,12 @@ import * as React from 'react';
 import { EyeOff, X } from 'lucide-react';
 
 interface MaskedViewerGateProps {
-    filename: string;
     mediaLabel: 'image' | 'video';
     onReveal: () => void;
     onClose: () => void;
 }
 
 export const MaskedViewerGate: React.FC<MaskedViewerGateProps> = ({
-    filename,
     mediaLabel,
     onReveal,
     onClose,
@@ -17,12 +15,9 @@ export const MaskedViewerGate: React.FC<MaskedViewerGateProps> = ({
     <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Hidden ${mediaLabel}: ${filename}`}
+        aria-label={`Hidden ${mediaLabel}`}
         className="fixed inset-0 z-[100] flex items-center justify-center bg-black text-white"
     >
-        <div className="absolute left-4 top-4 rounded-lg bg-black/70 px-3 py-2 text-sm font-mono">
-            {filename}
-        </div>
         <button
             type="button"
             aria-label={`Close ${mediaLabel} viewer`}

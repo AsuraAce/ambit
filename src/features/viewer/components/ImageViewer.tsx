@@ -22,12 +22,15 @@ import {
     getEffectiveSystemPrompts
 } from '../../../utils/settingsUtils';
 import { MaskedViewerGate } from './MaskedViewerGate';
+import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
+import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
 
 interface ImageViewerProps {
     image: AIImage;
     isMasked?: boolean;
     initiallyRevealed?: boolean;
     availableTags?: string[];
+    modelOptions?: readonly string[];
     onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onClose: () => void;
     onNext: () => void;
@@ -115,6 +118,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     isMasked = false,
     initiallyRevealed = false,
     availableTags = [],
+    modelOptions = [],
     onSetCollectionMembership,
     onClose,
     onNext,
@@ -140,6 +144,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     searchHighlights,
     onOpenReferencedImage
 }) => {
+    const metadataDisclosure = useMetadataDisclosureState();
     const settings = useSettingsStore(s => s.settings);
     const privacyExposureBlocked = useSettingsStore(state => (
         state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
@@ -235,7 +240,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     });
 
     // --- UI State ---
-    const [activeTab, setActiveTab] = useState<'info' | 'edit' | 'workflow'>('info');
+    const [activeTab, setActiveTab] = useState<'details' | 'metadata' | 'workflow'>('metadata');
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showStatusHud, setShowStatusHud] = useState(true);
@@ -256,6 +261,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         ai.closeModal();
     }, [
         displayImage.id,
+        displayImage.notes,
         displayImage.metadata.positivePrompt,
         displayImage.metadata.negativePrompt,
         displayImage.originalMetadata,
@@ -307,13 +313,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
     }, [isSidebarOpen, isTheaterMode, scale]);
 
-    // Global Key Handlers for Viewer
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (!isOpen) return;
-            // Don't trigger shortcuts if user is typing in a field
-            if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-
+    const handleViewerKeyDown = useCallback((e: KeyboardEvent) => {
             if (ai.modalOpen) {
                 if (e.key === 'Escape') {
                     e.preventDefault();
@@ -321,8 +321,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 }
                 return;
             }
-
-            if (isShortcutBlocked) return;
 
             const key = e.key.toLowerCase();
 
@@ -352,10 +350,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode(p => !p);
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, ai.closeModal, isShortcutBlocked, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
+    }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
+
+    useViewerKeyboard({
+        enabled: isOpen,
+        blocked: isShortcutBlocked && !ai.modalOpen,
+        onKeyDown: handleViewerKeyDown,
+    });
 
     useEffect(() => {
         if (isOpen && privacyExposureBlocked) onClose();
@@ -366,7 +367,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     if (itemExposureBlocked) {
         return (
             <MaskedViewerGate
-                filename={image.filename}
                 mediaLabel="image"
                 onReveal={() => setRevealedImageId(image.id)}
                 onClose={onClose}
@@ -403,10 +403,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     return (
         <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Image viewer: ${displayImage.filename}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            className={`fixed inset-0 z-50 flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
+            className={`fixed inset-0 z-[100] flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
         >
 
             {/* Left Area: Canvas */}
@@ -482,6 +485,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     setActiveTab={setActiveTab}
                     collections={collections}
                     availableTags={availableTags}
+                    modelOptions={modelOptions}
+                    disclosure={metadataDisclosure}
                     notes={notes}
                     setNotes={setNotes}
                     promptValue={promptValue}

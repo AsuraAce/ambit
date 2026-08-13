@@ -1,7 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeneratorTool, type AIImage } from '../../../../types';
+import { GeneratorTool, type AIImage, type VideoAsset } from '../../../../types';
 import { WorkflowInspector } from '../WorkflowInspector';
 
 const mockInspectComfyuiMetadataChunks = vi.hoisted(() => vi.fn());
@@ -468,6 +468,25 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('hides parser diagnostics for non-ComfyUI images', () => {
         render(<WorkflowInspector image={makeImage(GeneratorTool.AUTOMATIC1111)} />);
+
+        expect(screen.queryByText('Parser Diagnostics')).toBeNull();
+        expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();
+    });
+
+    it('does not send video sidecar evidence through image chunk diagnostics', () => {
+        const video = {
+            ...makeImage(),
+            mediaType: 'video',
+            mediaContainer: 'WebM',
+            durationMs: 2_000,
+            videoCodec: 'VP9',
+            audioPresent: true,
+            rotationDegrees: 0,
+            probeStatus: 'ready',
+            playbackStatus: 'playable',
+        } as VideoAsset;
+
+        render(<WorkflowInspector image={video} />);
 
         expect(screen.queryByText('Parser Diagnostics')).toBeNull();
         expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();

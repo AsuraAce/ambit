@@ -46,6 +46,7 @@ import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
 import { isInvokeOwnerScopeAdmitted } from './stores/invokeOwnerScopeStore';
+import { useLibraryModelOptions } from './features/viewer/hooks/useLibraryModelOptions';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
@@ -77,6 +78,7 @@ export default function App() {
     const queryClient = useQueryClient();
     const modals = useModalManager();
     const appVersion = useAppVersion();
+    const modelOptions = useLibraryModelOptions();
 
     // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -589,6 +591,12 @@ export default function App() {
                 collectionId,
                 () => reconcileGlobalViewerAfterRemoval(imageId, collectionId)
             ), [colOps, reconcileGlobalViewerAfterRemoval]);
+    const handleViewerSearch = useCallback((term: string) => {
+        void import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
+            parseAndApplyFilter(term, setFilters);
+        });
+        setRecentSearches(prev => [term, ...prev.filter(search => search !== term)].slice(0, 8));
+    }, [setFilters, setRecentSearches]);
     const submitNavbarSearch = useCallback((query: string) => {
         if (!query.trim()) {
             void submitSearch(query);
@@ -957,10 +965,12 @@ export default function App() {
                 workspaceRef={workspaceRef}
                 scrollContainerRef={scrollContainerRef}
                 images={images}
+                modelOptions={modelOptions}
                 handlers={{ ...handlers, setImages, setContextMenu }}
                 setViewingImageId={setViewingImageId}
                 onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
                 onOpenReferencedImage={handleOpenReferencedImage}
+                onViewerSearch={handleViewerSearch}
                 isViewerShortcutBlocked={isViewerShortcutBlocked}
 
                 toggleFavorite={toggleFavorite}
@@ -1106,7 +1116,7 @@ export default function App() {
                 <AnimatePresence>
                     {displayedViewerImage && isVideoAsset(displayedViewerImage) ? (
                         <VideoViewer
-                            key={`video-viewer:${displayedViewerImage.id}`}
+                            key="video-viewer"
                             video={displayedViewerImage}
                             isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, getEffectiveMaskedKeywords(settings))}
                             initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
@@ -1133,7 +1143,18 @@ export default function App() {
                             onTogglePin={(id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })}
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
                             onUpdateNotes={(id, notes) => handlers.handleUpdateNotes(id, notes)}
+                            onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
+                            onUpdateNegativePrompt={(id, prompt) => handlers.handleUpdateNegativePrompt(id, prompt)}
+                            onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
+                            onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
+                            onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
+                            onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
+                            onSearch={handleViewerSearch}
                             onSetCollectionMembership={handleSetViewerCollectionMembership}
+                            modelOptions={modelOptions}
+                            isShortcutBlocked={isViewerShortcutBlocked}
+                            canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
+                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1}
                         />
                     ) : displayedViewerImage ? (
                         <ImageViewer
@@ -1173,16 +1194,12 @@ export default function App() {
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
                             onOpenSettings={() => { modals.setInitialSettingsTab('intelligence'); modals.openModal('settings'); }}
                             onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
-                            onSearch={(term) => {
-                                import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
-                                    parseAndApplyFilter(term, setFilters);
-                                });
-                                setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
-                            }}
+                            onSearch={handleViewerSearch}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
                             onRecoverMetadata={() => actions.openMetadataRecovery()}
                             onSetCollectionMembership={handleSetViewerCollectionMembership}
                             availableTags={availableTags}
+                            modelOptions={modelOptions}
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
                             searchHighlights={searchHighlights}

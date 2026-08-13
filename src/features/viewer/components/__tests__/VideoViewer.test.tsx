@@ -12,10 +12,12 @@ const mocks = vi.hoisted(() => ({
     open: vi.fn(),
     convertFileSrc: vi.fn((path: string) => `asset://localhost/${path}`),
     getCollectionsForImage: vi.fn().mockResolvedValue([]),
+    getImageWithFullMetadata: vi.fn(),
     addToast: vi.fn()
 }));
 
 vi.mock('../../../../services/db/imageRepo', () => ({
+    getImageWithFullMetadata: mocks.getImageWithFullMetadata,
     updateVideoPlaybackStatus: mocks.updateVideoPlaybackStatus
 }));
 vi.mock('../../../../services/db/collectionRepo', () => ({
@@ -71,7 +73,14 @@ const video: VideoAsset = {
         cfg: 0,
         sampler: 'Unknown',
         positivePrompt: '',
-        negativePrompt: ''
+        negativePrompt: '',
+        generationMode: 'text_to_video',
+        fieldSources: {
+            generationMode: 'trusted_sidecar',
+            model: 'trusted_sidecar',
+            positivePrompt: 'trusted_sidecar',
+            negativePrompt: 'trusted_sidecar'
+        }
     }
 };
 
@@ -87,6 +96,12 @@ const setup = (isMasked = false, videoOverrides: Partial<VideoAsset> = {}, initi
         onTogglePin: vi.fn(),
         onDelete: vi.fn(),
         onUpdateNotes: vi.fn(),
+        onUpdatePrompt: vi.fn(),
+        onUpdateNegativePrompt: vi.fn(),
+        onUpdateModel: vi.fn(),
+        onUpdateGenerationMode: vi.fn(),
+        onRevertMetadata: vi.fn(),
+        onSearch: vi.fn(),
         onSetCollectionMembership: vi.fn().mockResolvedValue(true)
     };
     return { ...render(<VideoViewer {...props} />), props };
@@ -96,22 +111,142 @@ describe('VideoViewer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.getCollectionsForImage.mockResolvedValue([]);
+        mocks.getImageWithFullMetadata.mockResolvedValue(video);
         mocks.prepareVideoPlayback.mockResolvedValue({ status: 'ok', data: 'C:/videos/clip.mp4' });
+    });
+
+    it('opens new video viewers on Metadata', async () => {
+        const view = setup();
+
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.getByLabelText('Positive prompt')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement).disabled).toBe(false));
+        view.rerender(<VideoViewer {...view.props} video={{ ...view.props.video, id: 'C:/videos/next.mp4' }} />);
+        await waitFor(() => expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith('C:/videos/next.mp4'));
+        expect(screen.getByRole('tab', { name: 'Details' }).getAttribute('aria-selected')).toBe('true');
     });
 
     it('does not create or scope a player before a masked video is revealed', async () => {
         setup(true);
 
+        expect(screen.getByRole('dialog', { name: 'Hidden video' })).toBeTruthy();
+        expect(screen.queryByText(video.filename)).toBeNull();
+        expect(screen.queryByLabelText(new RegExp(video.filename))).toBeNull();
         expect(screen.queryByRole('application')).toBeNull();
         expect(document.querySelector('video')).toBeNull();
         expect(mocks.prepareVideoPlayback).not.toHaveBeenCalled();
         expect(mocks.convertFileSrc).not.toHaveBeenCalled();
+        expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: 'Reveal video' }));
         expect(document.querySelector('video')).toBeNull();
         await waitFor(() => expect(document.querySelector('video')?.getAttribute('src')).toContain('clip.mp4'));
+        expect(screen.getByText(video.filename)).toBeTruthy();
         expect(mocks.prepareVideoPlayback).toHaveBeenCalledWith(video.id);
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/videos/clip.mp4');
+        expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(video.id);
+    });
+
+    it('keeps a locally revealed masked video visible across metadata updates', async () => {
+        const view = setup(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Reveal video' }));
+        await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
+
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{
+                ...view.props.video,
+                metadata: { ...view.props.video.metadata, generationMode: 'guided_video' },
+            }}
+        />);
+
+        expect(screen.queryByRole('button', { name: 'Reveal video' })).toBeNull();
+        expect(document.querySelector('video')).not.toBeNull();
+    });
+
+    it('loads full video evidence on demand for lightweight gallery rows', async () => {
+        const lightVideo: VideoAsset = {
+            ...video,
+            metadata: {
+                ...video.metadata,
+                generationMode: undefined,
+                fieldSources: undefined,
+                loras: [],
+            },
+        };
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce({
+            ...video,
+            metadata: { ...video.metadata, loras: ['full-evidence-lora'] },
+        });
+        setup(false, lightVideo);
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+
+        await waitFor(() => expect((screen.getByLabelText('Generation mode') as HTMLSelectElement).value).toBe('text_to_video'));
+        expect(screen.getAllByRole('button', { name: 'Source: trusted sidecar' }).length).toBeGreaterThan(0);
+        expect(screen.getByText('full-evidence-lora')).toBeTruthy();
+    });
+
+    it('hides empty resource sections instead of rendering empty-state cards', () => {
+        setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+
+        expect(screen.queryByText('LoRAs')).toBeNull();
+        expect(screen.queryByText('ControlNets')).toBeNull();
+        expect(screen.queryByText('IP adapters')).toBeNull();
+        expect(screen.queryByText('None detected')).toBeNull();
+    });
+
+    it('keeps disclosure choices while navigating within one viewer session', () => {
+        const view = setup();
+        const disclosure = screen.getByRole('button', { name: 'Generation parameters' });
+        fireEvent.click(disclosure);
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{ ...view.props.video, id: 'C:/videos/next.mp4', filename: 'next.mp4' }}
+        />);
+
+        expect(screen.getByRole('button', { name: 'Generation parameters' }).getAttribute('aria-expanded')).toBe('false');
+    });
+
+    it.each([
+        ['loras', 'motion-detail.safetensors (0.75)', 'motion-detail', 'lora:motion-detail'],
+        ['controlNets', 'canny-video.safetensors', 'canny-video', 'cn:canny-video'],
+        ['ipAdapters', 'reference-face.pt', 'reference-face', 'ip:reference-face'],
+    ] as const)('filters the gallery from populated %s chips', (field, value, chipName, expectedSearch) => {
+        const { props } = setup(false, {
+            metadata: {
+                ...video.metadata,
+                [field]: [value],
+            },
+        });
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+        fireEvent.click(screen.getByRole('button', { name: new RegExp(chipName) }));
+
+        expect(props.onSearch).toHaveBeenCalledWith(expectedSearch);
+        expect(props.onClose).toHaveBeenCalledOnce();
+    });
+
+    it('renders resource chips as inert when gallery search is unavailable', () => {
+        setup(false, {
+            metadata: { ...video.metadata, loras: ['motion-detail'] },
+        }).rerender(<VideoViewer
+            video={{ ...video, metadata: { ...video.metadata, loras: ['motion-detail'] } }}
+            isMasked={false}
+            onClose={vi.fn()}
+            onNext={vi.fn()}
+            onPrev={vi.fn()}
+            onToggleFavorite={vi.fn()}
+            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+        />);
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+
+        expect(screen.getByText('motion-detail')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'motion-detail' })).toBeNull();
     });
 
     it('uses a card reveal grant without showing a second viewer gate', async () => {
@@ -138,14 +273,33 @@ describe('VideoViewer', () => {
         expect(mocks.updateVideoPlaybackStatus).toHaveBeenCalledWith(video.id, 'external_required');
     });
 
+    it('uses the shared subdued toolbar controls and text-only viewer tabs', () => {
+        setup(false, { isFavorite: true, isPinned: true });
+
+        const favorite = screen.getByRole('button', { name: 'Remove from Favorites' });
+        expect(favorite.getAttribute('aria-pressed')).toBe('true');
+        expect(favorite.className).toContain('text-white/50');
+
+        const pin = screen.getByRole('button', { name: 'Unpin' });
+        expect(pin.getAttribute('aria-pressed')).toBe('true');
+        expect(pin.className).toContain('text-sage-400');
+
+        const open = screen.getByRole('button', { name: 'Open in Default App' });
+        fireEvent.focus(open);
+        expect(screen.getByRole('tooltip').textContent).toBe('Open in Default App');
+
+        expect(screen.getByRole('tablist', { name: 'Video viewer sections' })).toBeTruthy();
+        expect(screen.getByRole('tab', { name: 'Workflow' }).querySelector('svg')).toBeNull();
+    });
+
     it('explains a missing source without preparing playback or offering file actions', () => {
         setup(false, { isMissing: true, playbackStatus: 'playable' });
 
         expect(screen.getByText('Source file missing')).toBeTruthy();
         expect(screen.getByText(/Restore the file at its original location/)).toBeTruthy();
         expect(mocks.prepareVideoPlayback).not.toHaveBeenCalled();
-        expect(screen.queryByRole('button', { name: 'Open in default app' })).toBeNull();
-        expect(screen.queryByRole('button', { name: 'Export original' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open in Default App' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Export Original' })).toBeNull();
         expect(screen.queryByText('Open externally')).toBeNull();
     });
 
@@ -161,7 +315,7 @@ describe('VideoViewer', () => {
         });
         setup();
 
-        fireEvent.click(screen.getByRole('button', { name: 'Export original' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Export Original' }));
 
         await waitFor(() => expect(mocks.exportAssetOriginal).toHaveBeenCalledWith(video.id, 'C:/exports'));
         expect(mocks.addToast).toHaveBeenCalledWith('Exported C:/exports/clip.mp4', 'success');
@@ -169,12 +323,13 @@ describe('VideoViewer', () => {
 
     it('persists notes and collection membership through generic asset actions', async () => {
         const { props } = setup();
-        const notes = screen.getByRole('textbox');
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        const notes = screen.getByLabelText('Notes');
         fireEvent.change(notes, { target: { value: 'Useful motion reference' } });
         fireEvent.blur(notes);
         expect(props.onUpdateNotes).toHaveBeenCalledWith(video.id, 'Useful motion reference');
 
-        const membership = screen.getByRole('checkbox', { name: 'Favorites set' }) as HTMLInputElement;
+        const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
         await waitFor(() => expect(membership.disabled).toBe(false));
         fireEvent.click(membership);
         await waitFor(() => expect(props.onSetCollectionMembership).toHaveBeenCalledWith(
@@ -184,12 +339,133 @@ describe('VideoViewer', () => {
         ));
     });
 
+    it('does not persist unchanged blur values as user edits', () => {
+        const { props } = setup();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        fireEvent.blur(screen.getByLabelText('Notes'));
+        expect(props.onUpdateNotes).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+        fireEvent.blur(screen.getByLabelText('Positive prompt'));
+        fireEvent.blur(screen.getByLabelText('Negative prompt'));
+
+        expect(props.onUpdateModel).not.toHaveBeenCalled();
+        expect(props.onUpdatePrompt).not.toHaveBeenCalled();
+        expect(props.onUpdateNegativePrompt).not.toHaveBeenCalled();
+    });
+
+    it('presents an unresolved model hash without saving it as an override', async () => {
+        const view = setup(false, {
+            metadata: { ...video.metadata, model: 'Unknown', modelHash: 'f8bb2922e1' },
+        });
+
+        await waitFor(() => expect(screen.getByText('f8bb2922e1')).toBeTruthy());
+        expect(screen.getByText('Unresolved hash')).toBeTruthy();
+        expect(screen.queryByText('Model Hash')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
+        expect((screen.getByRole('combobox', { name: 'Search models' }) as HTMLInputElement).value).toBe('');
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(view.props.onUpdateModel).not.toHaveBeenCalled();
+
+        view.rerender(<VideoViewer
+            {...view.props}
+            video={{
+                ...view.props.video,
+                metadata: { ...view.props.video.metadata, model: 'Resolved model', modelHash: 'f8bb2922e1' },
+            }}
+        />);
+        await waitFor(() => expect(screen.getByText('Resolved model')).toBeTruthy());
+        expect(screen.queryByText('Unresolved hash')).toBeNull();
+        expect(screen.getByText('Model Hash').parentElement?.textContent).toContain('f8bb2922e1');
+    });
+
+    it('shows video evidence and exposes explicit metadata overrides', async () => {
+        const { props } = setup(false, {
+            metadata: {
+                ...video.metadata,
+                model: 'ltx-video.safetensors',
+                seed: 42,
+                steps: 24,
+                cfg: 5,
+                sampler: 'euler',
+                loras: ['motion-detail'],
+                controlNets: ['canny-video'],
+                ipAdapters: ['reference-face'],
+                positivePrompt: 'A moving test pattern',
+                negativePrompt: 'static',
+                fieldSources: {
+                    ...video.metadata.fieldSources,
+                    model: 'user_override',
+                    overrideModel: 'user_override',
+                    seed: 'trusted_sidecar',
+                    steps: 'trusted_sidecar',
+                    cfg: 'trusted_sidecar',
+                    sampler: 'trusted_sidecar',
+                },
+                diagnostics: [{ code: 'sidecar_media_mismatch', message: 'Ignored mismatched sidecar' }]
+            }
+        });
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+
+        expect(screen.getAllByRole('button', { name: 'Source: trusted sidecar' }).length).toBeGreaterThan(0);
+        expect(screen.getByText('Ignored mismatched sidecar')).toBeTruthy();
+        expect(screen.getByText('motion-detail')).toBeTruthy();
+        expect(screen.getByText('canny-video')).toBeTruthy();
+        expect(screen.getByText('reference-face')).toBeTruthy();
+        const mode = screen.getByLabelText('Generation mode');
+        const model = screen.getByRole('heading', { name: 'Model' });
+        const prompt = screen.getByLabelText('Positive prompt');
+        const parameters = screen.getByText('Seed').closest('dl');
+        const seedRow = screen.getByText('Seed').parentElement;
+        const negativePrompt = screen.getByLabelText('Negative prompt');
+        expect(prompt.compareDocumentPosition(negativePrompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(negativePrompt.compareDocumentPosition(mode) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(mode.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(model.compareDocumentPosition(parameters as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(seedRow?.children[1]?.textContent).toBe('42');
+        expect(seedRow?.lastElementChild?.querySelector('button')?.getAttribute('aria-label')).toBe('Source: trusted sidecar');
+        fireEvent.change(screen.getByLabelText('Generation mode'), { target: { value: 'guided_video' } });
+        expect(props.onUpdateGenerationMode).toHaveBeenCalledWith(video.id, 'guided_video');
+
+        fireEvent.change(prompt, { target: { value: 'Updated motion prompt' } });
+        fireEvent.blur(prompt);
+        expect(props.onUpdatePrompt).toHaveBeenCalledWith(video.id, 'Updated motion prompt');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Model' }));
+        fireEvent.click(screen.getByRole('option', { name: /Custom model/i }));
+        fireEvent.change(screen.getByLabelText('Custom model name'), { target: { value: 'override.safetensors' } });
+        fireEvent.click(screen.getByRole('button', { name: /save/i }));
+        expect(props.onUpdateModel).toHaveBeenCalledWith(video.id, 'override.safetensors');
+        fireEvent.click(screen.getByRole('button', { name: 'Revert user overrides' }));
+        expect(props.onRevertMetadata).toHaveBeenCalledWith(video.id);
+    });
+
+    it('shows the revert action only while user overrides exist', () => {
+        const { rerender, props } = setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+        expect(screen.queryByRole('button', { name: 'Revert user overrides' })).toBeNull();
+
+        rerender(<VideoViewer
+            {...props}
+            video={{
+                ...video,
+                metadata: {
+                    ...video.metadata,
+                    fieldSources: { ...video.metadata.fieldSources, positivePrompt: 'user_override' },
+                },
+            }}
+        />);
+        expect(screen.getByRole('button', { name: 'Revert user overrides' })).toBeTruthy();
+    });
+
     it('loads persisted collection membership when the viewer opens', async () => {
         mocks.getCollectionsForImage.mockResolvedValueOnce(['collection-1']);
         setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
 
-        const membership = screen.getByRole('checkbox', { name: 'Favorites set' }) as HTMLInputElement;
-        await waitFor(() => expect(membership.checked).toBe(true));
+        const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
+        await waitFor(() => expect(membership.getAttribute('aria-pressed')).toBe('true'));
         expect(mocks.getCollectionsForImage).toHaveBeenCalledWith(video.id);
     });
 
@@ -199,11 +475,12 @@ describe('VideoViewer', () => {
             .mockRejectedValueOnce(new Error('sqlite busy'))
             .mockResolvedValueOnce(['collection-1']);
         setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
 
         expect((await screen.findByRole('alert')).textContent).toContain('Could not load collection membership.');
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        const membership = screen.getByRole('checkbox', { name: 'Favorites set' }) as HTMLInputElement;
-        await waitFor(() => expect(membership.checked).toBe(true));
+        const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
+        await waitFor(() => expect(membership.getAttribute('aria-pressed')).toBe('true'));
         expect(mocks.getCollectionsForImage).toHaveBeenCalledTimes(2);
         expect(error).toHaveBeenCalled();
     });
@@ -260,12 +537,21 @@ describe('VideoViewer', () => {
         expect(player.currentTime).toBe(4);
 
         Object.defineProperty(player, 'duration', { configurable: true, value: 60 });
-        const notes = screen.getByRole('textbox');
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        const notes = screen.getByLabelText('Notes');
         fireEvent.keyDown(notes, { key: 'l' });
         expect(player.currentTime).toBe(4);
 
         const speed = screen.getByRole('combobox');
         fireEvent.keyDown(speed, { key: 'j' });
         expect(player.currentTime).toBe(4);
+    });
+
+    it('uses source-neutral wording when no trusted workflow is available', () => {
+        setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Workflow' }));
+
+        expect(screen.getByText('No trusted workflow evidence was found for this video.')).toBeTruthy();
+        expect(screen.queryByText(/ComfyUI workflow evidence/)).toBeNull();
     });
 });

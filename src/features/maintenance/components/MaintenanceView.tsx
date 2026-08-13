@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AIImage, GeneratorTool, isVideoAsset } from '../../../types';
+import { AIImage, GeneratorTool, isVideoAsset, type VideoGenerationMode } from '../../../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { ImageViewer } from '../../../features/viewer/components/ImageViewer';
@@ -37,9 +37,14 @@ interface MaintenanceViewProps {
     onRegenerateThumbnails?: (ids?: string[]) => void;
     maskedKeywords: string[];
     onUpdatePrompt?: (id: string, prompt: string) => void;
+    onUpdateNegativePrompt?: (id: string, prompt: string) => void;
     onUpdateModel?: (id: string, model: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
+    onUpdateGenerationMode?: (id: string, mode: VideoGenerationMode) => void;
     onUpdateNotes?: (id: string, notes: string) => void;
+    onRevertMetadata?: (id: string) => void;
+    onSearch: (term: string) => void;
+    onOpenSettings: () => void;
     onRecoverMetadata?: (targetId: string, onRecovered: (image: AIImage) => void) => void;
     onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
@@ -48,6 +53,7 @@ interface MaintenanceViewProps {
     onViewerOpenChange: (isOpen: boolean) => void;
     onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isShortcutBlocked: boolean;
+    modelOptions?: readonly string[];
 }
 
 // Lazy load LibraryHealth
@@ -62,9 +68,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onRegenerateThumbnails,
     maskedKeywords,
     onUpdatePrompt,
+    onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
+    onUpdateGenerationMode,
     onUpdateNotes,
+    onRevertMetadata,
+    onSearch,
+    onOpenSettings,
     onRecoverMetadata,
     onToggleFavorite,
     onTogglePin,
@@ -72,7 +83,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     availableTags,
     onViewerOpenChange,
     onOpenReferencedImage,
-    isShortcutBlocked
+    isShortcutBlocked,
+    modelOptions = []
 }) => {
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
@@ -757,7 +769,18 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onTogglePin={onTogglePin}
                         onDelete={activeTab === 'trash' ? undefined : () => { void handleViewerCleanup(); }}
                         onUpdateNotes={onUpdateNotes}
+                        onUpdatePrompt={onUpdatePrompt}
+                        onUpdateNegativePrompt={onUpdateNegativePrompt}
+                        onUpdateModel={onUpdateModel}
+                        onUpdateTool={onUpdateTool}
+                        onUpdateGenerationMode={onUpdateGenerationMode}
+                        onRevertMetadata={onRevertMetadata}
+                        onSearch={onSearch}
                         onSetCollectionMembership={onSetCollectionMembership}
+                        modelOptions={modelOptions}
+                        isShortcutBlocked={isShortcutBlocked}
+                        canNavigatePrevious={currentList.findIndex(item => item.id === viewingImageId) > 0}
+                        canNavigateNext={currentList.findIndex(item => item.id === viewingImageId) < currentList.length - 1}
                     />
                 ) : (
                     <ImageViewer
@@ -782,16 +805,19 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                             }
                         }}
                         onSetCollectionMembership={onSetCollectionMembership}
-                        onSearch={() => { }}
+                        onSearch={onSearch}
                         onToggleFavorite={(id) => onToggleFavorite?.(id)}
                         onTogglePin={onTogglePin}
                         onUpdatePrompt={onUpdatePrompt}
+                        onUpdateNegativePrompt={onUpdateNegativePrompt}
                         onUpdateModel={onUpdateModel}
                         onUpdateTool={onUpdateTool}
                         onUpdateNotes={onUpdateNotes}
+                        onRevertMetadata={onRevertMetadata}
                         onRecoverMetadata={() => onRecoverMetadata?.(viewingImageId, handleRecoveredImage)}
                         availableTags={availableTags}
-                        onOpenSettings={() => { }}
+                        modelOptions={modelOptions}
+                        onOpenSettings={onOpenSettings}
                         onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
                         onOpenReferencedImage={handleOpenReferencedImage}
                     />

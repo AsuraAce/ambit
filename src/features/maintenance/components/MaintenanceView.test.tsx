@@ -366,6 +366,8 @@ const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     onTogglePin: vi.fn(),
     onViewerOpenChange: vi.fn(),
     onOpenReferencedImage: vi.fn().mockResolvedValue(true),
+    onSearch: vi.fn(),
+    onOpenSettings: vi.fn(),
     isShortcutBlocked: false,
     onSetCollectionMembership: vi.fn().mockResolvedValue(true)
 });

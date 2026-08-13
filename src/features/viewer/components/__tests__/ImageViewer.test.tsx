@@ -194,6 +194,9 @@ describe('ImageViewer full metadata loading', () => {
     it('does not load a masked image until the viewer reveal is confirmed', async () => {
         renderViewer({ isMasked: true });
 
+        expect(screen.getByRole('dialog', { name: 'Hidden image' })).toBeTruthy();
+        expect(screen.queryByText(lightImage.filename)).toBeNull();
+        expect(screen.queryByLabelText(new RegExp(lightImage.filename))).toBeNull();
         expect(screen.getByRole('button', { name: 'Reveal image' })).toBeTruthy();
         expect(screen.queryByTestId('image-canvas')).toBeNull();
         expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
@@ -201,6 +204,7 @@ describe('ImageViewer full metadata loading', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Reveal image' }));
         await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect((captures.toolbar?.image as AIImage).filename).toBe(lightImage.filename);
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
         expect(assetAccessMock).toHaveBeenCalledWith(lightImage.url);
     });
@@ -211,6 +215,18 @@ describe('ImageViewer full metadata loading', () => {
         expect(screen.queryByRole('button', { name: 'Reveal image' })).toBeNull();
         await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
+    });
+
+    it('opens new image viewers on Metadata', async () => {
+        const view = renderViewer();
+
+        await waitFor(() => expect(captures.sidebar).toBeTruthy());
+        expect(captures.sidebar?.activeTab).toBe('metadata');
+
+        act(() => (captures.sidebar?.setActiveTab as (tab: 'details') => void)('details'));
+        view.rerender(<ImageViewer {...view.props} image={{ ...lightImage, id: 'C:/library/next.png' }} />);
+        await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith('C:/library/next.png'));
+        expect(captures.sidebar?.activeTab).toBe('details');
     });
 
     it('keeps persisted original metadata when a lightweight image omits it after restart', async () => {

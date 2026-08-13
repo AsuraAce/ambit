@@ -3,12 +3,13 @@ import { Tag } from 'lucide-react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { ResourceSection } from './ResourceSection';
+import type { ResourceFilterKind } from './ResourceChips';
 
-const renderSection = (title: string, items: unknown[]) => {
+const renderSection = (title: string, items: unknown[], filterKind?: ResourceFilterKind) => {
     const onSearch = vi.fn();
     const onClose = vi.fn();
     const view = render(
-        <ResourceSection title={title} items={items} icon={Tag} onSearch={onSearch} onClose={onClose} />
+        <ResourceSection title={title} items={items} icon={Tag} filterKind={filterKind} onSearch={onSearch} onClose={onClose} />
     );
     return { ...view, onSearch, onClose };
 };
@@ -32,20 +33,23 @@ describe('ResourceSection', () => {
         expect(screen.getByText('42')).toBeTruthy();
         expect(screen.getByText('null')).toBeTruthy();
         expect(screen.getByText('[object Object]')).toBeTruthy();
-        expect(screen.queryAllByRole('button')).toHaveLength(0);
+        expect(screen.getAllByRole('button')).toHaveLength(1);
+        expect(screen.getByRole('button', { name: 'Metadata' })).toBeTruthy();
     });
 
     it.each([
-        ['LoRAs', 'Portrait.safetensors (0.75)', 'Portrait', '0.75', 'lora:Portrait'],
-        ['Embeddings', 'detail.pt (-1)', 'detail', '-1', 'embedding:detail'],
-        ['Hypernetworks', 'lighting.ckpt (2.0)', 'lighting', '2.0', 'hypernet:lighting'],
-        ['Models', 'base.safetensors', 'base', null, 'base']
-    ])('searches %s resources with normalized names and prefixes', (title, item, name, weight, expected) => {
-        const { onSearch, onClose } = renderSection(title, [item]);
+        ['LoRAs', 'lora', 'Portrait.safetensors (0.75)', 'Portrait', '0.75', 'lora:Portrait'],
+        ['Embeddings', 'embedding', 'detail.pt (-1)', 'detail', '-1', 'embedding:detail'],
+        ['Hypernetworks', 'hypernet', 'lighting.ckpt (2.0)', 'lighting', '2.0', 'hypernet:lighting'],
+        ['ControlNet', 'controlnet', 'pose.safetensors', 'pose', null, 'cn:pose'],
+        ['IP-Adapters', 'ipadapter', 'face.pt', 'face', null, 'ip:face'],
+        ['Models', undefined, 'base.safetensors', 'base', null, 'base']
+    ] as const)('searches %s resources with normalized names and prefixes', (title, filterKind, item, name, weight, expected) => {
+        const { onSearch, onClose } = renderSection(title, [item], filterKind);
 
         expect(screen.getByText(name)).toBeTruthy();
         if (weight) expect(screen.getByText(weight)).toBeTruthy();
-        fireEvent.click(screen.getByRole('button'));
+        fireEvent.click(screen.getByText(name).closest('button') as HTMLButtonElement);
 
         expect(onSearch).toHaveBeenCalledWith(expected);
         expect(onClose).toHaveBeenCalledTimes(1);
@@ -59,5 +63,18 @@ describe('ResourceSection', () => {
 
         expect(onSearch).toHaveBeenNthCalledWith(1, 'adapter');
         expect(onSearch).toHaveBeenNthCalledWith(2, 'name.with.dots');
+    });
+
+    it('is expanded by default and exposes its item count while collapsed', () => {
+        renderSection('LoRAs', ['one', 'two'], 'lora');
+
+        const disclosure = screen.getByRole('button', { name: 'LoRAs' });
+        expect(disclosure.getAttribute('aria-expanded')).toBe('true');
+        expect(disclosure.closest('section')?.textContent).toContain('2');
+
+        fireEvent.click(disclosure);
+
+        expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByRole('button', { name: 'one' })).toBeNull();
     });
 });
