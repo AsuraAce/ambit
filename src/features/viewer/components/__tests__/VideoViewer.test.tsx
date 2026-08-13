@@ -626,7 +626,13 @@ describe('VideoViewer', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }));
         expect(pause).toHaveBeenCalledOnce();
 
-        fireEvent.keyDown(window, { key: 'Escape' });
+        const closeButton = screen.getByRole('button', { name: 'Close Viewer (Esc)' });
+        closeButton.focus();
+        fireEvent.keyDown(closeButton, { key: ' ' });
+        expect(play).toHaveBeenCalledOnce();
+        expect(pause).toHaveBeenCalledOnce();
+
+        fireEvent.keyDown(closeButton, { key: 'Escape' });
         expect(props.onClose).toHaveBeenCalledOnce();
     });
 

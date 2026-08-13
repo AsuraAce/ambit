@@ -201,6 +201,10 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
     }, []);
 
     const handleViewerKeyDown = React.useCallback((event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+                return;
+            }
             if (event.target instanceof Element && event.target.closest('button')) return;
             if (event.key === ' ') {
                 const player = playerRef.current;
@@ -208,8 +212,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                 event.preventDefault();
                 if (player.paused) void player.play().catch(() => undefined);
                 else player.pause();
-            } else if (event.key === 'Escape') onClose();
-            else if (event.key === 'ArrowRight' && canNavigateNext) onNext();
+            } else if (event.key === 'ArrowRight' && canNavigateNext) onNext();
             else if (event.key === 'ArrowLeft' && canNavigatePrevious) onPrev();
             else if (event.key.toLowerCase() === 'j') {
                 event.preventDefault();

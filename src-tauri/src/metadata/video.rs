@@ -761,10 +761,12 @@ fn collect_prompt_source_ids(
 ) {
     match value {
         Value::Array(values) => {
-            if let Some(source_id) = values.first().and_then(Value::as_str) {
-                if nodes.contains_key(source_id) {
-                    source_ids.push(source_id.to_string());
-                    return;
+            if values.len() == 2 && values.get(1).is_some_and(Value::is_number) {
+                if let Some(source_id) = values.first().and_then(Value::as_str) {
+                    if nodes.contains_key(source_id) {
+                        source_ids.push(source_id.to_string());
+                        return;
+                    }
                 }
             }
             for value in values {
@@ -1103,7 +1105,8 @@ mod tests {
                     "seed": 42,
                     "steps": 24,
                     "cfg": 7.0,
-                    "sampler_name": "euler"
+                    "sampler_name": "euler",
+                    "literal_values": ["0", "not-an-output-index"]
                 },
                 "properties": {"cnr_id": "comfy-core"}
             },
