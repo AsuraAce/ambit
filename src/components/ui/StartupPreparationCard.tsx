@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { LoaderCircle } from 'lucide-react';
 
 interface StartupPreparationProgress {
     current: number;
@@ -67,23 +68,26 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                         </span>
                     ) : null}
                 </div>
-                <div
-                    className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10"
-                    role="progressbar"
-                    aria-label={statusMessage}
-                    aria-valuemin={isDeterminate ? 0 : undefined}
-                    aria-valuemax={isDeterminate ? progress!.total : undefined}
-                    aria-valuenow={isDeterminate ? current : undefined}
-                >
-                    {isDeterminate ? (
+                {isDeterminate ? (
+                    <div
+                        className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-white/10"
+                        role="progressbar"
+                        aria-label={statusMessage}
+                        aria-valuemin={0}
+                        aria-valuemax={progress!.total}
+                        aria-valuenow={current}
+                    >
                         <div
                             className="h-full rounded-full bg-sage-500 transition-[width] duration-300 motion-reduce:transition-none"
                             style={{ width: `${percentage}%` }}
                         />
-                    ) : (
-                        <div className="h-full w-1/3 animate-pulse rounded-full bg-sage-500 motion-reduce:animate-none" />
-                    )}
-                </div>
+                    </div>
+                ) : (
+                    <LoaderCircle
+                        className="mt-3 h-4 w-4 animate-spin text-sage-600 motion-reduce:animate-none dark:text-sage-400"
+                        aria-hidden="true"
+                    />
+                )}
             </div>
         </section>
     );

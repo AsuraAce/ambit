@@ -36,7 +36,7 @@ import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
 import { useDelayedBusyPresentation } from './hooks/useDelayedBusyPresentation';
-import { useSync, type InvokeOwnerScopeState } from './contexts/SyncContext';
+import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
@@ -50,8 +50,6 @@ const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageV
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
 const STARTUP_PREPARATION_REVEAL_DELAY_MS = 700;
 const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
-const OWNER_SWITCH_REVEAL_DELAY_MS = 400;
-const OWNER_SWITCH_MIN_VISIBLE_MS = 300;
 
 const dismissStaticLoader = (immediate = false) => {
     const loader = document.getElementById('static-loading');
@@ -87,12 +85,9 @@ export default function App() {
     const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
     const referenceNavigationRequestRef = useRef(0);
     const wasInvokeOwnerScopeBlockingRef = useRef(false);
-    const lastInvokeOwnerBusyStateRef = useRef<InvokeOwnerScopeState | null>(null);
-    const lastAdmittedInvokeRootRef = useRef<string | null>(null);
     const [isInitialStartupPresentation, setIsInitialStartupPresentation] = useState(
         () => document.getElementById('static-loading') !== null
     );
-    const hasInitialInvokePreparationRevealedRef = useRef(false);
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -339,43 +334,11 @@ export default function App() {
     );
     const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
         && invokeOwnerScopeState.status === 'offline_ready';
-    React.useLayoutEffect(() => {
-        if (isInvokeOwnerScopeAdmittedForRoot) {
-            lastAdmittedInvokeRootRef.current = settings.invokeAiPath?.trim() || null;
-        }
-    }, [isInvokeOwnerScopeAdmittedForRoot, settings.invokeAiPath]);
     const isInvokeOwnerScopeBlocking = !isInvokeOwnerScopeAdmittedForRoot;
     const isInvokeOwnerScopeBusy = isInvokeOwnerScopeBlocking
         && (invokeOwnerScopeState.status === 'idle'
             || invokeOwnerScopeState.status === 'discovering'
             || invokeOwnerScopeState.status === 'applying');
-    const invokeOwnerSwitchKey = invokeOwnerScopeState.scope?.mode === 'owner'
-        ? `${settings.invokeAiPath?.trim() || 'unconfigured'}:owner:${invokeOwnerScopeState.scope.ownerId}`
-        : `${settings.invokeAiPath?.trim() || 'unconfigured'}:${invokeOwnerScopeState.scope?.mode || 'unknown'}`;
-    const isInvokeOwnerSwitchPreparationVisible = useDelayedBusyPresentation(
-        isLoaded && !isInitialStartupPresentation && isInvokeOwnerScopeBusy,
-        {
-            revealDelayMs: OWNER_SWITCH_REVEAL_DELAY_MS,
-            minimumVisibleMs: OWNER_SWITCH_MIN_VISIBLE_MS,
-            resetKey: invokeOwnerSwitchKey,
-        }
-    );
-    const isInitialInvokePreparationVisible = useDelayedBusyPresentation(
-        isLoaded && isInitialStartupPresentation && isInvokeOwnerScopeBusy,
-        {
-            revealDelayMs: STARTUP_PREPARATION_REVEAL_DELAY_MS,
-            minimumVisibleMs: STARTUP_PREPARATION_MIN_VISIBLE_MS,
-            resetKey: settings.invokeAiPath?.trim() || 'unconfigured',
-        }
-    );
-    React.useLayoutEffect(() => {
-        if (isInvokeOwnerScopeBusy) {
-            lastInvokeOwnerBusyStateRef.current = invokeOwnerScopeState;
-        }
-        if (isInitialInvokePreparationVisible) {
-            hasInitialInvokePreparationRevealedRef.current = true;
-        }
-    }, [invokeOwnerScopeState, isInitialInvokePreparationVisible, isInvokeOwnerScopeBusy]);
     const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking
         && privacyExposureBlocked
         && privacyMaskIndexStatus !== 'failed';
@@ -387,33 +350,11 @@ export default function App() {
             resetKey: `${settings.invokeAiPath?.trim() || 'unconfigured'}:privacy`,
         }
     );
-    const isHoldingInvokeDuringPrivacyGrace = isInitialStartupPresentation
-        && hasInitialInvokePreparationRevealedRef.current
-        && isInitialPrivacyProtectionBusy
-        && !isInitialPrivacyPreparationVisible;
-    const isHoldingCompletedInvokePreparation = isInitialStartupPresentation
-        && !isInvokeOwnerScopeBlocking
-        && (invokeOwnerScopeState.status === 'ready'
-            || invokeOwnerScopeState.status === 'offline_ready')
-        && (isHoldingInvokeDuringPrivacyGrace
-            || (isInitialInvokePreparationVisible && !isInitialPrivacyProtectionBusy));
     const shouldForceInitialPrivacyProtection = isInitialStartupPresentation
         && isInitialPrivacyPreparationVisible
         && !isInvokeOwnerScopeBlocking;
-    const canHoldPreviousInvokeView = lastAdmittedInvokeRootRef.current === settings.invokeAiPath?.trim();
-    const isHoldingPreviousInvokeView = canHoldPreviousInvokeView
-        && !isInitialStartupPresentation
-        && isInvokeOwnerScopeBusy
-        && !isInvokeOwnerSwitchPreparationVisible;
-    const shouldRenderInvokeOwnerScopeGate = isHoldingCompletedInvokePreparation
-        || (isInvokeOwnerScopeBlocking
-            && (!isInvokeOwnerScopeBusy
-                || (isInitialStartupPresentation
-                    ? hasInitialInvokePreparationRevealedRef.current || isInitialInvokePreparationVisible
-                    : !canHoldPreviousInvokeView || isInvokeOwnerSwitchPreparationVisible)));
-    const displayedInvokeOwnerScopeState = isHoldingCompletedInvokePreparation
-        ? lastInvokeOwnerBusyStateRef.current ?? invokeOwnerScopeState
-        : invokeOwnerScopeState;
+    const shouldRenderInvokeOwnerScopeGate = isInvokeOwnerScopeBlocking
+        && (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation);
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         await selectInvokeOwnerScope(selection);
     }, [selectInvokeOwnerScope]);
@@ -864,32 +805,25 @@ export default function App() {
 
 
 
-    // Keep brief owner and privacy verification behind the static splash. A
-    // preparation or error surface replaces it directly so two loading states
-    // are never visible through the splash fade at the same time.
+    // Saved-owner verification remains behind the neutral startup splash. Only
+    // an actionable owner state, explicit runtime switch, or sustained privacy
+    // preparation replaces it.
     useEffect(() => {
         if (!isLoaded || !isInitialStartupPresentation) return;
-        if (isInvokeOwnerScopeBusy && !isInitialInvokePreparationVisible) return;
-        if (isInitialPrivacyProtectionBusy
-            && !isInitialPrivacyPreparationVisible
-            && !hasInitialInvokePreparationRevealedRef.current) return;
+        if (isInvokeOwnerScopeBusy) return;
+        if (isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) return;
 
-        const replacesSplash = isInitialInvokePreparationVisible
-            || isInitialPrivacyPreparationVisible
-            || isHoldingInvokeDuringPrivacyGrace
+        const replacesSplash = isInitialPrivacyPreparationVisible
             || isInvokeOwnerScopeBlocking
             || (privacyExposureBlocked && privacyMaskIndexStatus === 'failed');
         dismissStaticLoader(replacesSplash);
 
         if (!isInvokeOwnerScopeBusy
             && !isInitialPrivacyProtectionBusy
-            && !isInitialInvokePreparationVisible
             && !isInitialPrivacyPreparationVisible) {
             setIsInitialStartupPresentation(false);
         }
     }, [
-        isHoldingInvokeDuringPrivacyGrace,
-        isInitialInvokePreparationVisible,
         isInitialPrivacyPreparationVisible,
         isInitialPrivacyProtectionBusy,
         isInitialStartupPresentation,
@@ -917,17 +851,13 @@ export default function App() {
 
             {shouldRenderInvokeOwnerScopeGate ? (
                 <InvokeOwnerScopeGate
-                    state={displayedInvokeOwnerScopeState}
+                    state={invokeOwnerScopeState}
                     onSelect={handleInvokeOwnerSelection}
                     onRetry={handleInvokeOwnerRetry}
                     onOpenSettings={openInvokeSettings}
                 />
-            ) : !isInvokeOwnerScopeBlocking || isHoldingPreviousInvokeView ? (
-                <div
-                    className={`flex min-h-0 flex-1 ${isHoldingPreviousInvokeView ? 'pointer-events-none select-none' : ''}`}
-                    inert={isHoldingPreviousInvokeView ? true : undefined}
-                    aria-hidden={isHoldingPreviousInvokeView || undefined}
-                >
+            ) : !isInvokeOwnerScopeBlocking ? (
+                <div className="flex min-h-0 flex-1">
                     <AppLayout
                 isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
                 forcePrivacyProtectionGate={shouldForceInitialPrivacyProtection}

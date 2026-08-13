@@ -51,9 +51,9 @@ const BusyGate: React.FC<{ state: InvokeOwnerScopeState }> = ({ state }) => {
                 ? `Switching to ${ownerLabel}`
                 : 'Preparing your InvokeAI view'}
             icon={<ShieldCheck className="h-7 w-7" />}
-            description="Ambit is verifying which InvokeAI images, boards, filters, and statistics belong in this view."
+            description="Ambit is loading the images, boards, and filters available in this view."
             statusMessage={statusMessage}
-            reassurance="No images or collections are being deleted."
+            reassurance="Your library remains unchanged while this view loads."
             progress={progress}
         />
     );

@@ -25,10 +25,10 @@ describe('InvokeOwnerScopeGate', () => {
         expect(screen.getByRole('status')).toBeTruthy();
         expect(screen.getByText('InvokeAI library')).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Preparing your InvokeAI view' })).toBeTruthy();
-        expect(screen.getByText(/verifying which InvokeAI images/i)).toBeTruthy();
-        expect(screen.getByText('No images or collections are being deleted.')).toBeTruthy();
+        expect(screen.getByText(/loading the images, boards, and filters/i)).toBeTruthy();
+        expect(screen.getByText('Your library remains unchanged while this view loads.')).toBeTruthy();
         expect(screen.getByText('Checking InvokeAI owner information...')).toBeTruthy();
-        expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBeNull();
+        expect(screen.queryByRole('progressbar')).toBeNull();
     });
 
     it('shows real reconciliation counts without inventing a global percentage', () => {
