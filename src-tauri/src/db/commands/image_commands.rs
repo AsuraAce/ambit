@@ -88,6 +88,54 @@ pub struct InvokeOwnerScopeInput {
     pub force_refresh: bool,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeBoardSnapshotBoard {
+    pub id: String,
+    pub name: String,
+    pub created_at: i64,
+    pub owner_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeBoardSnapshotMembership {
+    pub image_name: String,
+    pub board_id: String,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeBoardSnapshotInput {
+    pub db_path: String,
+    pub mode: InvokeOwnerScopeMode,
+    pub owner_id: Option<String>,
+    pub boards: Vec<InvokeBoardSnapshotBoard>,
+    pub memberships: Vec<InvokeBoardSnapshotMembership>,
+    pub reconcile_memberships: bool,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeBoardSnapshotResult {
+    pub collections_updated: usize,
+    pub collections_deleted: usize,
+    pub images_updated: usize,
+    pub memberships_deleted: usize,
+    pub memberships_inserted: usize,
+}
+
+#[cfg(test)]
+impl InvokeBoardSnapshotResult {
+    pub fn changed_count(&self) -> usize {
+        self.collections_updated
+            + self.collections_deleted
+            + self.images_updated
+            + self.memberships_deleted
+            + self.memberships_inserted
+    }
+}
+
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct InvokeOwnerScopeRefreshResult {
@@ -1819,6 +1867,274 @@ pub async fn get_image_count_for_path_prefix(app: AppHandle, path: String) -> Re
             )
             .unwrap_or(0);
         Ok(count)
+    })
+    .await
+}
+
+fn reconcile_invoke_board_snapshot_inner(
+    conn: &rusqlite::Connection,
+    input: &InvokeBoardSnapshotInput,
+) -> Result<InvokeBoardSnapshotResult, String> {
+    let db_path = normalize_invoke_root(input.db_path.trim());
+    if db_path.is_empty() {
+        return Err("InvokeAI database path is required".to_string());
+    }
+    let owner_id = input
+        .owner_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if input.mode == InvokeOwnerScopeMode::Owner && owner_id.is_none() {
+        return Err("Owner board reconciliation requires an owner ID".to_string());
+    }
+    if matches!(input.mode, InvokeOwnerScopeMode::Unselected) {
+        return Err("Boards cannot be reconciled before an owner scope is selected".to_string());
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    tx.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_board_snapshot (
+             board_id TEXT PRIMARY KEY,
+             board_name TEXT NOT NULL,
+             created_at INTEGER NOT NULL,
+             owner_id TEXT
+         ) WITHOUT ROWID;
+         CREATE TEMP TABLE IF NOT EXISTS temp_invoke_board_membership_snapshot (
+             image_name TEXT PRIMARY KEY,
+             board_id TEXT NOT NULL
+         ) WITHOUT ROWID;
+         DELETE FROM temp_invoke_board_snapshot;
+         DELETE FROM temp_invoke_board_membership_snapshot;",
+    )
+    .map_err(|error| error.to_string())?;
+
+    {
+        let mut insert_board = tx
+            .prepare_cached(
+                "INSERT INTO temp_invoke_board_snapshot (
+                     board_id, board_name, created_at, owner_id
+                 ) VALUES (?1, ?2, ?3, ?4)",
+            )
+            .map_err(|error| error.to_string())?;
+        for board in &input.boards {
+            let board_id = board.id.trim();
+            if board_id.is_empty() {
+                return Err("InvokeAI board IDs cannot be empty".to_string());
+            }
+            insert_board
+                .execute(params![
+                    board_id,
+                    board.name,
+                    board.created_at,
+                    board
+                        .owner_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                ])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    if input.reconcile_memberships {
+        let mut insert_membership = tx
+            .prepare_cached(
+                "INSERT INTO temp_invoke_board_membership_snapshot (image_name, board_id)
+                 VALUES (?1, ?2)",
+            )
+            .map_err(|error| error.to_string())?;
+        for membership in &input.memberships {
+            let image_name = membership.image_name.trim();
+            let board_id = membership.board_id.trim();
+            if image_name.is_empty() || board_id.is_empty() {
+                return Err("InvokeAI board memberships cannot contain empty IDs".to_string());
+            }
+            insert_membership
+                .execute(params![image_name, board_id])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let has_collection_updated_at = {
+        let mut statement = tx
+            .prepare("PRAGMA table_info(collections)")
+            .map_err(|error| error.to_string())?;
+        let columns = statement
+            .query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        columns.iter().any(|column| column == "updated_at")
+    };
+    let upsert_boards_sql = if has_collection_updated_at {
+        "INSERT INTO collections (
+             id, name, is_archived, is_pinned, created_at, source,
+             invoke_owner_id, invoke_source_id, updated_at
+         )
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, ?2
+         FROM temp_invoke_board_snapshot
+         WHERE 1 = 1
+         ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             source = 'invoke',
+             invoke_owner_id = excluded.invoke_owner_id,
+             invoke_source_id = excluded.invoke_source_id,
+             updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+         WHERE collections.name IS NOT excluded.name
+            OR collections.source IS NOT 'invoke'
+            OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
+            OR collections.invoke_source_id IS NOT excluded.invoke_source_id"
+    } else {
+        "INSERT INTO collections (
+             id, name, is_archived, is_pinned, created_at, source,
+             invoke_owner_id, invoke_source_id
+         )
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1
+         FROM temp_invoke_board_snapshot
+         WHERE 1 = 1
+         ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             source = 'invoke',
+             invoke_owner_id = excluded.invoke_owner_id,
+             invoke_source_id = excluded.invoke_source_id
+         WHERE collections.name IS NOT excluded.name
+            OR collections.source IS NOT 'invoke'
+            OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
+            OR collections.invoke_source_id IS NOT excluded.invoke_source_id"
+    };
+    let collections_updated = if has_collection_updated_at {
+        tx.execute(upsert_boards_sql, params![db_path, now])
+    } else {
+        tx.execute(upsert_boards_sql, params![db_path])
+    }
+    .map_err(|error| error.to_string())?;
+
+    let source_match = if cfg!(windows) {
+        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
+    } else {
+        "invoke_source_id = ?1"
+    };
+    let owner_match = match input.mode {
+        InvokeOwnerScopeMode::Owner => "invoke_owner_id = ?2",
+        InvokeOwnerScopeMode::Legacy | InvokeOwnerScopeMode::All => "1 = 1",
+        InvokeOwnerScopeMode::Unselected => unreachable!(),
+    };
+    let owner_param = owner_id.unwrap_or("");
+
+    let collections_deleted = tx
+        .execute(
+            &format!(
+                "DELETE FROM collections
+                 WHERE source = 'invoke'
+                   AND {source_match}
+                   AND {owner_match}
+                   AND NOT EXISTS (
+                       SELECT 1 FROM temp_invoke_board_snapshot snapshot
+                       WHERE snapshot.board_id = collections.id
+                   )"
+            ),
+            params![db_path, owner_param],
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut result = InvokeBoardSnapshotResult {
+        collections_updated,
+        collections_deleted,
+        ..Default::default()
+    };
+
+    if input.reconcile_memberships {
+        let image_source_match =
+            source_match.replace("invoke_source_id", "images.invoke_source_id");
+        let image_owner_match = owner_match.replace("invoke_owner_id", "images.invoke_owner_id");
+        result.images_updated = tx
+            .execute(
+                &format!(
+                    "UPDATE images
+                     SET board_id = (
+                         SELECT snapshot.board_id
+                         FROM temp_invoke_board_membership_snapshot snapshot
+                         WHERE snapshot.image_name = images.invoke_image_name
+                     )
+                     WHERE {image_source_match}
+                       AND {image_owner_match}
+                       AND board_id IS NOT (
+                           SELECT snapshot.board_id
+                           FROM temp_invoke_board_membership_snapshot snapshot
+                           WHERE snapshot.image_name = images.invoke_image_name
+                       )"
+                ),
+                params![db_path, owner_param],
+            )
+            .map_err(|error| error.to_string())?;
+
+        result.memberships_deleted = tx
+            .execute(
+                &format!(
+                    "DELETE FROM collection_images AS membership
+                     WHERE membership.collection_id IN (
+                         SELECT id FROM collections
+                         WHERE source = 'invoke' AND {source_match} AND {owner_match}
+                     )
+                       AND NOT EXISTS (
+                         SELECT 1
+                         FROM images
+                         INNER JOIN temp_invoke_board_membership_snapshot snapshot
+                            ON snapshot.image_name = images.invoke_image_name
+                         WHERE images.id = membership.image_id
+                           AND snapshot.board_id = membership.collection_id
+                     )"
+                ),
+                params![db_path, owner_param],
+            )
+            .map_err(|error| error.to_string())?;
+        result.memberships_inserted = tx
+            .execute(
+                &format!(
+                    "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                     SELECT images.board_id, images.id
+                     FROM images
+                     INNER JOIN collections ON collections.id = images.board_id
+                     WHERE images.board_id IS NOT NULL
+                       AND {image_source_match}
+                       AND {image_owner_match}
+                       AND collections.source = 'invoke'"
+                ),
+                params![db_path, owner_param],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.execute(
+            &format!(
+                "UPDATE collections
+                 SET dynamic_thumbnail_path = NULL,
+                     dynamic_safe_thumbnail_path = NULL,
+                     dynamic_thumbnail_is_sensitive = NULL,
+                     dynamic_thumbnail_cached_at = NULL,
+                     dynamic_count = NULL
+                 WHERE source = 'invoke' AND {source_match} AND {owner_match}"
+            ),
+            params![db_path, owner_param],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reconcile_invoke_board_snapshot(
+    app: AppHandle,
+    input: InvokeBoardSnapshotInput,
+) -> Result<InvokeBoardSnapshotResult, String> {
+    run_blocking(app, move |conn| {
+        reconcile_invoke_board_snapshot_inner(conn, &input)
     })
     .await
 }
@@ -4026,5 +4342,112 @@ mod tests {
             )
             .expect("unknown seed");
         assert_eq!(unknown_seed, None);
+    }
+
+    #[test]
+    fn authoritative_owner_board_snapshot_replaces_stale_boards_and_memberships() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        super::save_images_batch_inner(
+            &conn,
+            &[
+                create_image_record("owner-a-moved", 100, 10, "{}"),
+                create_image_record("owner-a-removed", 101, 11, "{}"),
+                create_image_record("owner-b-image", 102, 12, "{}"),
+            ],
+        )
+        .expect("seed images");
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'moved.png', board_id = 'old-board'
+             WHERE id = 'owner-a-moved';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'removed.png', board_id = 'kept-board'
+             WHERE id = 'owner-a-removed';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b',
+                 invoke_image_name = 'owner-b.png', board_id = 'owner-b-board'
+             WHERE id = 'owner-b-image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id
+             ) VALUES
+                 ('old-board', 'Transferred away', 1, 'invoke', 'invoke.db', 'owner-a'),
+                 ('kept-board', 'Old name', 1, 'invoke', 'invoke.db', 'owner-a'),
+                 ('owner-b-board', 'Owner B', 1, 'invoke', 'invoke.db', 'owner-b');
+             INSERT INTO collection_images VALUES
+                 ('old-board', 'owner-a-moved'),
+                 ('kept-board', 'owner-a-removed'),
+                 ('owner-b-board', 'owner-b-image');",
+        )
+        .expect("seed stale boards");
+
+        let snapshot = super::InvokeBoardSnapshotInput {
+            db_path: "invoke.db".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("owner-a".to_string()),
+            boards: vec![super::InvokeBoardSnapshotBoard {
+                id: "kept-board".to_string(),
+                name: "Current name".to_string(),
+                created_at: 2,
+                owner_id: Some("owner-a".to_string()),
+            }],
+            memberships: vec![super::InvokeBoardSnapshotMembership {
+                image_name: "moved.png".to_string(),
+                board_id: "kept-board".to_string(),
+            }],
+            reconcile_memberships: true,
+        };
+        let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+            .expect("replace owner A board snapshot");
+
+        assert!(result.changed_count() > 0);
+        let owner_a_boards: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT id, name FROM collections
+                 WHERE source = 'invoke' AND invoke_owner_id = 'owner-a' ORDER BY id",
+            )
+            .expect("owner A boards query")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("owner A boards")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect owner A boards");
+        assert_eq!(
+            owner_a_boards,
+            vec![("kept-board".to_string(), "Current name".to_string())]
+        );
+        let board_ids: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT id, board_id FROM images ORDER BY id")
+            .expect("image boards query")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("image boards")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect image boards");
+        assert_eq!(
+            board_ids,
+            vec![
+                ("owner-a-moved".to_string(), Some("kept-board".to_string())),
+                ("owner-a-removed".to_string(), None),
+                (
+                    "owner-b-image".to_string(),
+                    Some("owner-b-board".to_string())
+                ),
+            ]
+        );
+        let memberships: Vec<(String, String)> = conn
+            .prepare("SELECT collection_id, image_id FROM collection_images ORDER BY image_id")
+            .expect("memberships query")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("memberships")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect memberships");
+        assert_eq!(
+            memberships,
+            vec![
+                ("kept-board".to_string(), "owner-a-moved".to_string()),
+                ("owner-b-board".to_string(), "owner-b-image".to_string()),
+            ]
+        );
+        let unchanged = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+            .expect("repeat authoritative snapshot");
+        assert_eq!(unchanged.changed_count(), 0);
     }
 }

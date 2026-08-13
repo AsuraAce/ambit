@@ -31,7 +31,7 @@ import {
     moveImagePathIdentity,
     syncCollectionImages
 } from '../db/imageRepo';
-import { upsertInvokeBoardCollection, upsertInvokeBoardCollections } from '../db/collectionRepo';
+import { reconcileInvokeBoardSnapshot, upsertInvokeBoardCollection } from '../db/collectionRepo';
 import { createInvokeImagePathResolver, ResolvedInvokeImagePath } from './pathResolver';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
@@ -86,7 +86,7 @@ export const syncImages = async (
     onProgress: (current: number, total: number, message?: string) => void,
     signal: AbortSignal | undefined,
     options: InvokeSyncOptions
-): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, InvokeBoardInfo>, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
+): Promise<{ imported: number, updated: number, maxTimestamp: number | null, syncedIds: Set<string>, boardMapping: Map<string, InvokeBoardInfo>, boardsChanged: boolean, touchedFacetTypes: FacetType[], touchedFacetResources: TouchedFacetResources }> => {
     console.log('[InvokeAI Sync] syncImages started with path:', rootPath);
     const syncStartedAt = liveWatchNow();
     const cycleId = options.perfContext?.cycleId;
@@ -102,7 +102,7 @@ export const syncImages = async (
             ...data
         });
     };
-    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+    if (!rootPath) return { imported: 0, updated: 0, maxTimestamp: null, syncedIds: new Set(), boardMapping: new Map(), boardsChanged: false, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
 
     const resolvedPaths = resolveInvokePaths(rootPath);
     const scope = options.scope;
@@ -516,6 +516,7 @@ export const syncImages = async (
     } catch (e) { }
 
     let imageToBoardId = new Map<string, string>();
+    let boardReconciliationChanges = 0;
     if (options.syncBoards && hasBoardsTable) {
         onProgress(0, 0, 'Fetching board mappings...');
         const boardMappingStartedAt = liveWatchNow();
@@ -534,34 +535,44 @@ export const syncImages = async (
 
     const createdBoardIds = new Set<string>();
     if (shouldApplyBoardMappings) {
-        const boardCollections = Array.from(boards, ([boardId, boardInfo]) => ({
-                id: boardId,
-                name: boardInfo.name,
-                createdAt: boardInfo.createdAt || Date.now(),
-                invokeOwnerId: boardInfo.ownerId,
-                invokeSourceId: scope.dbPath,
-        }));
-        await upsertInvokeBoardCollections(boardCollections);
-        boardCollections.forEach(board => createdBoardIds.add(board.id));
+        const boardResult = await reconcileInvokeBoardSnapshot({
+            dbPath: scope.dbPath,
+            mode: scope.mode,
+            ownerId: scope.mode === 'owner' ? scope.ownerId : null,
+            boards: Array.from(boards, ([id, board]) => ({
+                id,
+                name: board.name,
+                createdAt: board.createdAt || Date.now(),
+                ownerId: board.ownerId ?? null,
+            })),
+            memberships: Array.from(imageToBoardId, ([imageName, boardId]) => ({
+                imageName,
+                boardId,
+            })),
+            reconcileMemberships: true,
+        });
+        boardReconciliationChanges = boardResult.collectionsUpdated
+            + boardResult.collectionsDeleted
+            + boardResult.imagesUpdated
+            + boardResult.membershipsDeleted
+            + boardResult.membershipsInserted;
+        boards.forEach((_, boardId) => createdBoardIds.add(boardId));
     }
 
     if (totalToImport === 0) {
-        if (shouldApplyBoardMappings) {
-            await syncCollectionImages();
-        }
         logSyncInfo('Invoke sync service complete', {
             totalToImport,
             importedCount: 0,
-            updatedCount: repairedExistingCount + reconciledExistingCount,
+            updatedCount: repairedExistingCount + reconciledExistingCount + boardReconciliationChanges,
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount + boardReconciliationChanges, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), boardsChanged: boardReconciliationChanges > 0, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let processed = 0;
     let newImportedCount = 0;
-    let totalUpdated = repairedExistingCount + reconciledExistingCount;
+    let totalUpdated = repairedExistingCount + reconciledExistingCount + boardReconciliationChanges;
     const BATCH_SIZE = 500;
     let offset = 0;
     let maxTimestampNum = options.afterTimestamp || 0;
@@ -958,17 +969,6 @@ export const syncImages = async (
         await new Promise(r => setTimeout(r, 0));
     }
 
-    // Final cleanup / sync (optional fallback)
-    if (shouldApplyBoardMappings && boards.size > 0 && options.mode !== 'live' && options.mode !== 'startup') {
-        // We've already done incremental sync, but this ensures everything is correct
-        // especially for images that might have been updated/synced without being in a new batch
-        const finalCollectionSyncStartedAt = liveWatchNow();
-        await syncCollectionImages();
-        logSyncDebug('Invoke final collection sync complete', {
-            collectionSyncMs: elapsedMs(finalCollectionSyncStartedAt)
-        });
-    }
-
     logSyncInfo('Invoke sync service complete', {
         totalToImport,
         importedCount: newImportedCount,
@@ -983,6 +983,7 @@ export const syncImages = async (
         maxTimestamp: maxTimestampNum,
         syncedIds,
         boardMapping: boards,
+        boardsChanged: boardReconciliationChanges > 0,
         touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
         touchedFacetResources
     };

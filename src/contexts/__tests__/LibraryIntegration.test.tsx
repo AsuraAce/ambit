@@ -234,6 +234,7 @@ const createNoopInvokeSyncResult = () => ({
     maxTimestamp: 100,
     syncedIds: new Set<string>(),
     boardMapping: new Map<string, { name: string; createdAt: number }>(),
+    boardsChanged: false,
     touchedFacetTypes: [],
     touchedFacetResources: {
         checkpoints: [],
@@ -4144,6 +4145,39 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => hook?.startInvokeSync({ mode: 'live' }));
 
         expect(refreshCollections).toHaveBeenCalledWith(false, {
+            retryOnSuperseded: true,
+            throwOnError: true,
+        });
+        expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
+        expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
+    });
+
+    it('publishes authoritative board removals when the live snapshot is empty', async () => {
+        const refreshCollections = vi.fn().mockResolvedValue(undefined);
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
+        const refreshSmartCounts = vi.fn().mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollections, refreshCollectionThumbnails, refreshSmartCounts });
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            syncBoardsToCollections: true,
+        }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        refreshCollections.mockClear();
+        refreshCollectionThumbnails.mockClear();
+        refreshSmartCounts.mockClear();
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            updated: 1,
+            boardsChanged: true,
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'live' }));
+
+        expect(refreshCollections).toHaveBeenCalledWith(false, {
+            scheduleSmartRefresh: false,
             retryOnSuperseded: true,
             throwOnError: true,
         });

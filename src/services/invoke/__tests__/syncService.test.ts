@@ -3,7 +3,7 @@ import Database from '@tauri-apps/plugin-sql';
 import { commands } from '../../../bindings';
 import { fetchBoardMappings } from '../connection';
 import { insertImagesBatch } from '../../db';
-import { upsertInvokeBoardCollection, upsertInvokeBoardCollections } from '../../db/collectionRepo';
+import { reconcileInvokeBoardSnapshot, upsertInvokeBoardCollection } from '../../db/collectionRepo';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
@@ -110,7 +110,7 @@ vi.mock('../../db/imageRepo', () => ({
 
 vi.mock('../../db/collectionRepo', () => ({
     upsertInvokeBoardCollection: vi.fn(),
-    upsertInvokeBoardCollections: vi.fn()
+    reconcileInvokeBoardSnapshot: vi.fn()
 }));
 
 const createInvokeDb = (selectMock: ReturnType<typeof vi.fn>) => ({
@@ -251,7 +251,13 @@ describe('syncImages live mode', () => {
         });
         vi.mocked(moveImagePathIdentity).mockResolvedValue(false);
         vi.mocked(syncCollectionImages).mockResolvedValue(undefined as never);
-        vi.mocked(upsertInvokeBoardCollections).mockResolvedValue(0);
+        vi.mocked(reconcileInvokeBoardSnapshot).mockResolvedValue({
+            collectionsUpdated: 0,
+            collectionsDeleted: 0,
+            imagesUpdated: 0,
+            membershipsDeleted: 0,
+            membershipsInserted: 0,
+        });
         vi.mocked(upsertInvokeBoardCollection).mockResolvedValue(undefined as never);
         vi.mocked(reconcileInvokeSourceFacts).mockResolvedValue(0);
         vi.mocked(fetchBoardMappings).mockResolvedValue({
@@ -418,6 +424,13 @@ describe('syncImages live mode', () => {
             }]]),
             isAuthoritative: true,
         });
+        vi.mocked(reconcileInvokeBoardSnapshot).mockResolvedValueOnce({
+            collectionsUpdated: 1,
+            collectionsDeleted: 1,
+            imagesUpdated: 2,
+            membershipsDeleted: 1,
+            membershipsInserted: 1,
+        });
 
         const result = await syncImagesImpl('D:/Invoke', vi.fn(), undefined, {
             scope: {
@@ -431,28 +444,32 @@ describe('syncImages live mode', () => {
             syncFavorites: false,
         });
 
-        expect(upsertInvokeBoardCollections).toHaveBeenCalledWith([
-            {
+        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledWith({
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            mode: 'owner',
+            ownerId: 'owner-a',
+            boards: [{
                 id: 'board-a',
                 name: 'Owned board',
                 createdAt: 10,
-                invokeOwnerId: 'owner-a',
-                invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+                ownerId: 'owner-a',
             },
             {
                 id: 'empty-board',
                 name: 'Empty board',
                 createdAt: 20,
-                invokeOwnerId: 'owner-a',
-                invokeSourceId: 'D:/Invoke/databases/invokeai.db',
-            },
-        ]);
-        expect(syncCollectionImages).toHaveBeenCalledOnce();
-        expect(syncCollectionImages).toHaveBeenCalledWith();
+                ownerId: 'owner-a',
+            }],
+            memberships: [{ imageName: 'owned.png', boardId: 'board-a' }],
+            reconcileMemberships: true,
+        });
+        expect(syncCollectionImages).not.toHaveBeenCalled();
         expect(result.boardMapping).toEqual(new Map([
             ['board-a', { name: 'Owned board', createdAt: 10, ownerId: 'owner-a' }],
             ['empty-board', { name: 'Empty board', createdAt: 20, ownerId: 'owner-a' }],
         ]));
+        expect(result.updated).toBe(6);
+        expect(result.boardsChanged).toBe(true);
     });
 
     it('returns an empty result without opening a database when the root path is empty', async () => {
@@ -724,7 +741,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png'
         ]);
-        expect(upsertInvokeBoardCollections).toHaveBeenCalledTimes(1);
+        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledTimes(1);
         expect(commands.replaceInvokeImageReferences).toHaveBeenCalledWith([{
             sourceImageId: 'D:/AmbitFixtures/InvokeAI/outputs/images/new-image.png',
             references: [{ role: 'init_image', targetInvokeImageName: 'source.png' }],
@@ -734,7 +751,7 @@ describe('syncImages live mode', () => {
         );
     });
 
-    it('runs a final collection reconciliation after a manual board sync', async () => {
+    it('uses the authoritative snapshot plus incremental membership for a manual board sync', async () => {
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
                 return [{ name: 'metadata_json' }, { name: 'starred' }, { name: 'thumbnail_name' }];
@@ -764,10 +781,12 @@ describe('syncImages live mode', () => {
         });
 
         expect(result.imported).toBe(1);
-        expect(syncCollectionImages).toHaveBeenCalledTimes(2);
-        expect(upsertInvokeBoardCollections).toHaveBeenCalledWith([
-            expect.objectContaining({ id: 'board-1', name: 'Board One' }),
-        ]);
+        expect(syncCollectionImages).toHaveBeenCalledOnce();
+        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+            boards: [expect.objectContaining({ id: 'board-1', name: 'Board One' })],
+            memberships: [{ imageName: 'manual-image.png', boardId: 'board-1' }],
+            reconcileMemberships: true,
+        }));
     });
 
     it('does not rewrite an unchanged image that already preserves raw Invoke metadata', async () => {
@@ -1394,7 +1413,7 @@ describe('syncImages live mode', () => {
         expect(syncCollectionImages).toHaveBeenCalledWith([
             'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
         ]);
-        expect(upsertInvokeBoardCollections).toHaveBeenCalledTimes(1);
+        expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledTimes(1);
     });
 
     it('resolves flat, date, type, hash, custom, and relative InvokeAI subfolder paths during DB sync', async () => {

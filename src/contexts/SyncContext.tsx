@@ -1269,7 +1269,7 @@ export const SyncProvider: React.FC<{
                     reconcileSourceFacts: shouldReconcileSourceFacts
                 }
             );
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncResultPromise;
+            const { imported, updated, maxTimestamp: newTs, boardMapping, boardsChanged, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncResultPromise;
             if (!isCapturedScopeCurrent()) {
                 throw new Error('InvokeAI path or owner scope changed while synchronization was running.');
             }
@@ -1319,7 +1319,7 @@ export const SyncProvider: React.FC<{
             const hasBoardMapping = !!boardMapping && boardMapping.size > 0;
             const shouldRefreshBoardCollections = settingsRef.current.syncBoardsToCollections
                 && options.syncBoards !== false
-                && (isStartupMode || hasBoardMapping);
+                && (isStartupMode || hasBoardMapping || boardsChanged);
 
             // Orphan scanning
             let orphansImported = 0;
@@ -1392,7 +1392,7 @@ export const SyncProvider: React.FC<{
                             scheduleSmartRefresh: false,
                             retryOnSuperseded: true,
                             throwOnError: true,
-                        }).then(() => hasBoardMapping
+                        }).then(() => (hasBoardMapping || boardsChanged)
                             ? Promise.all([
                                 refreshCollectionThumbnails(true),
                                 refreshSmartCounts({ includeArchived: false, markPending: false }),
@@ -1478,7 +1478,7 @@ export const SyncProvider: React.FC<{
                         setSyncStatus('complete');
                     }
 
-                    if (hasBoardMapping) {
+                    if (hasBoardMapping || boardsChanged) {
                         await refreshCollectionThumbnails(true);
                     }
 
@@ -1520,7 +1520,7 @@ export const SyncProvider: React.FC<{
                         retryOnSuperseded: true,
                         throwOnError: true,
                     });
-                    if (hasBoardMapping) {
+                    if (hasBoardMapping || boardsChanged) {
                         await Promise.all([
                             refreshCollectionThumbnails(true),
                             refreshSmartCounts({ includeArchived: false, markPending: false }),

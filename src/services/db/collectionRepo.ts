@@ -1,5 +1,10 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands, type CollectionMembershipMutationResult } from '../../bindings';
+import {
+    commands,
+    type CollectionMembershipMutationResult,
+    type InvokeBoardSnapshotInput,
+    type InvokeBoardSnapshotResult,
+} from '../../bindings';
 import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
@@ -728,6 +733,31 @@ export const upsertInvokeBoardCollections = async (
 
         return updated;
     });
+};
+
+export const reconcileInvokeBoardSnapshot = async (
+    input: InvokeBoardSnapshotInput
+): Promise<InvokeBoardSnapshotResult> => {
+    if (isBrowserMockMode()) {
+        input.boards.forEach(board => upsertBrowserMockCollection({
+            id: board.id,
+            name: board.name,
+            createdAt: board.createdAt,
+            invokeOwnerId: board.ownerId ?? undefined,
+            invokeSourceId: input.dbPath,
+            imageIds: [],
+            source: 'invoke',
+        }));
+        return {
+            collectionsUpdated: input.boards.length,
+            collectionsDeleted: 0,
+            imagesUpdated: 0,
+            membershipsDeleted: 0,
+            membershipsInserted: 0,
+        };
+    }
+
+    return unwrap(commands.reconcileInvokeBoardSnapshot(input));
 };
 
 export const setCollectionCustomThumbnail = async (collectionId: string, imageId: string | null) => {

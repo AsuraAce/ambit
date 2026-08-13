@@ -58,6 +58,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::commands::image_commands::refresh_invoke_owner_scope,
         db::commands::image_commands::begin_active_invoke_scope_cache_build,
         db::commands::image_commands::commit_active_invoke_scope_cache,
+        db::commands::image_commands::reconcile_invoke_board_snapshot,
         db::commands::maintenance::optimize_database,
         db::commands::maintenance::schedule_purge_transaction,
         db::commands::filter_commands::get_parameter_ranges,

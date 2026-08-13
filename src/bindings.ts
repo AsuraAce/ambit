@@ -192,6 +192,14 @@ async commitActiveInvokeScopeCache() : Promise<Result<FacetScopeCacheStatus, str
     else return { status: "error", error: e  as any };
 }
 },
+async reconcileInvokeBoardSnapshot(input: InvokeBoardSnapshotInput) : Promise<Result<InvokeBoardSnapshotResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_board_snapshot", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async optimizeDatabase() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("optimize_database") };
@@ -714,6 +722,10 @@ thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDelete
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
+export type InvokeBoardSnapshotBoard = { id: string; name: string; createdAt: number; ownerId: string | null }
+export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean }
+export type InvokeBoardSnapshotMembership = { imageName: string; boardId: string }
+export type InvokeBoardSnapshotResult = { collectionsUpdated: number; collectionsDeleted: number; imagesUpdated: number; membershipsDeleted: number; membershipsInserted: number }
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
 export type InvokeImageReferenceInput = { role: InvokeImageReferenceRole; targetInvokeImageName: string }

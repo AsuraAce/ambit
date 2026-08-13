@@ -65,6 +65,29 @@ const commandCases: CommandCase[] = [
     { name: 'beginActiveInvokeScopeCacheBuild', invokeName: 'begin_active_invoke_scope_cache_build', args: [], returnsResult: true },
     { name: 'commitActiveInvokeScopeCache', invokeName: 'commit_active_invoke_scope_cache', args: [], returnsResult: true },
     {
+        name: 'reconcileInvokeBoardSnapshot',
+        invokeName: 'reconcile_invoke_board_snapshot',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            mode: 'owner',
+            ownerId: 'owner-a',
+            boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
+            memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
+            reconcileMemberships: true,
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+                boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
+                memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
+                reconcileMemberships: true,
+            },
+        },
+        returnsResult: true,
+    },
+    {
         name: 'replaceInvokeImageReferences',
         invokeName: 'replace_invoke_image_references',
         args: [[{

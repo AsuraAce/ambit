@@ -5,7 +5,7 @@ import {
     type InvokeOwnerScopeMode,
     type InvokeScopeCacheRepairPlan,
 } from '../../bindings';
-import { upsertInvokeBoardCollections } from '../db/collectionRepo';
+import { reconcileInvokeBoardSnapshot } from '../db/collectionRepo';
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
@@ -105,15 +105,20 @@ export const applyInvokeOwnerScope = async ({
         db ??= await Database.load(`sqlite:${discovery.dbPath}`);
         const sourceBoards = await fetchBoards(db, scope);
         if (sourceBoards.isAuthoritative) {
-            boardCollectionsUpdated = await upsertInvokeBoardCollections(
-                Array.from(sourceBoards.boards, ([id, board]) => ({
+            const boardResult = await reconcileInvokeBoardSnapshot({
+                dbPath: discovery.dbPath,
+                mode: scope.mode,
+                ownerId: scope.mode === 'owner' ? scope.ownerId : null,
+                boards: Array.from(sourceBoards.boards, ([id, board]) => ({
                     id,
                     name: board.name,
                     createdAt: board.createdAt,
-                    invokeOwnerId: board.ownerId,
-                    invokeSourceId: discovery.dbPath,
-                }))
-            );
+                    ownerId: board.ownerId ?? null,
+                })),
+                memberships: [],
+                reconcileMemberships: false,
+            });
+            boardCollectionsUpdated = boardResult.collectionsUpdated + boardResult.collectionsDeleted;
         } else {
             boardScopeWarning = scope.mode === 'owner'
                 ? 'InvokeAI board ownership could not be verified. Owner-scoped boards remain hidden.'
