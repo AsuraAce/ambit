@@ -341,15 +341,16 @@ fn save_images_batch_inner(
     {
         use crate::metadata::CURRENT_PARSER_VERSION;
 
-        let mut stmt = tx.prepare_cached(
+        let invoke_source_path_matches_scope =
+            literal_invoke_images_prefix_sql("?2", "scope.images_root");
+        let save_sql =
             "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                     CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
                     ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
                     0,
                     (SELECT scope.db_path FROM invoke_owner_scope_state scope
-                     WHERE LOWER(REPLACE(?2, '\\', '/')) LIKE
-                           LOWER(RTRIM(REPLACE(scope.images_root, '\\', '/'), '/') || '/outputs/images/%')
+                     WHERE __INVOKE_SOURCE_PATH_MATCHES_SCOPE__
                      LIMIT 1),
                     json_extract(?8, '$.modelHash'),
                     json_extract(?8, '$.model'),
@@ -459,7 +460,8 @@ fn save_images_batch_inner(
                     OR (excluded.invoke_source_id IS NOT NULL AND images.invoke_source_id IS NOT excluded.invoke_source_id)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
-        ).map_err(|e| e.to_string())?;
+        .replace("__INVOKE_SOURCE_PATH_MATCHES_SCOPE__", &invoke_source_path_matches_scope);
+        let mut stmt = tx.prepare_cached(&save_sql).map_err(|e| e.to_string())?;
 
         let mut delete_loras = tx
             .prepare_cached("DELETE FROM image_loras WHERE image_id = ?1")
@@ -706,6 +708,21 @@ fn normalize_invoke_root(path: &str) -> String {
     path.replace('\\', "/").trim_end_matches('/').to_string()
 }
 
+fn literal_invoke_images_prefix_sql(path_expression: &str, root_expression: &str) -> String {
+    let normalized_path = format!("REPLACE({path_expression}, '\\', '/')");
+    let normalized_root = format!("RTRIM(REPLACE({root_expression}, '\\', '/'), '/')");
+    let prefix = format!("({normalized_root} || '/outputs/images/')");
+    let windows_root = format!(
+        "REPLACE({root_expression}, '\\', '/') GLOB '[A-Za-z]:/*' \
+         OR REPLACE({root_expression}, '\\', '/') GLOB '//*'"
+    );
+
+    format!(
+        "CASE WHEN ({windows_root}) \
+         THEN LOWER(SUBSTR({normalized_path}, 1, LENGTH({prefix}))) = LOWER({prefix}) \
+         ELSE SUBSTR({normalized_path}, 1, LENGTH({prefix})) = {prefix} END"
+    )
+}
 fn invoke_scope_cache_key(
     db_path: &str,
     mode: InvokeOwnerScopeMode,
@@ -1299,6 +1316,7 @@ fn refresh_invoke_owner_scope_inner(
         });
     let mut source_assignments = 0;
     if source_changed {
+        let invoke_source_path_matches_root = literal_invoke_images_prefix_sql("path", "?2");
         for table in ["images", "removed_images"] {
             source_assignments += tx
                 .execute(
@@ -1307,8 +1325,7 @@ fn refresh_invoke_owner_scope_inner(
                      SET invoke_source_id = ?1,
                          invoke_scope_hidden = 0
                      WHERE invoke_source_id IS NULL
-                       AND LOWER(REPLACE(path, '\\', '/')) LIKE
-                           LOWER(RTRIM(REPLACE(?2, '\\', '/'), '/') || '/outputs/images/%')"
+                       AND {invoke_source_path_matches_root}"
                     ),
                     params![&db_path, &images_root],
                 )
@@ -2356,6 +2373,108 @@ mod tests {
         }
     }
 
+    #[test]
+    fn invoke_root_classification_uses_literal_prefixes_for_save_and_refresh() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        for (root, matched, unmatched) in [
+            (
+                "/InvokeRoot",
+                "/InvokeRoot/outputs/images/exact.png",
+                "/invokeroot/outputs/images/case-only.png",
+            ),
+            (
+                "C:/Invoke%Root",
+                "c:/invoke%root/outputs/images/case.png",
+                "C:/InvokeXRoot/outputs/images/percent.png",
+            ),
+            (
+                "C:/Invoke_Root",
+                "c:/invoke_root/outputs/images/underscore.png",
+                "C:/InvokeXRoot/outputs/images/underscore-miss.png",
+            ),
+            (
+                "//Server/Share",
+                "//server/share/outputs/images/unc.png",
+                "//ServerXShare/outputs/images/unc-miss.png",
+            ),
+        ] {
+            let db_path = format!("{root}/invokeai.db");
+            super::refresh_invoke_owner_scope_inner(
+                &conn,
+                &super::InvokeOwnerScopeInput {
+                    db_path: db_path.clone(),
+                    images_root: root.into(),
+                    mode: super::InvokeOwnerScopeMode::All,
+                    owner_id: None,
+                    force_refresh: false,
+                },
+            )
+            .expect("activate root");
+            let mut save_match = create_image_record(&format!("save-match-{root}"), 1, 1, "{}");
+            save_match.path = matched.into();
+            let mut save_miss = create_image_record(&format!("save-miss-{root}"), 2, 1, "{}");
+            save_miss.path = unmatched.into();
+            super::save_images_batch_inner(&conn, &[save_match, save_miss]).expect("save rows");
+            let saved: Vec<(String, Option<String>)> = conn.prepare(
+                "SELECT path, invoke_source_id FROM images WHERE path IN (?1, ?2) ORDER BY path"
+            ).expect("saved query").query_map([matched, unmatched], |row| Ok((row.get(0)?, row.get(1)?)))
+                .expect("saved rows").collect::<Result<_, _>>().expect("collect saved");
+            assert!(saved.iter().any(
+                |(path, source)| path == matched && source.as_deref() == Some(db_path.as_str())
+            ));
+            assert!(saved
+                .iter()
+                .any(|(path, source)| path == unmatched && source.is_none()));
+
+            let refresh_match_id = format!("refresh-match-{root}");
+            conn.execute(
+                "DELETE FROM images WHERE path IN (?1, ?2)",
+                [matched, unmatched],
+            )
+            .expect("clear saved rows before refresh fixture");
+            let refresh_miss_id = format!("refresh-miss-{root}");
+            conn.execute(
+                "INSERT INTO images (id, path, timestamp) VALUES (?1, ?2, 3), (?3, ?4, 4)",
+                [
+                    refresh_match_id.as_str(),
+                    matched,
+                    refresh_miss_id.as_str(),
+                    unmatched,
+                ],
+            )
+            .expect("seed refresh rows");
+            super::refresh_invoke_owner_scope_inner(
+                &conn,
+                &super::InvokeOwnerScopeInput {
+                    db_path: db_path.clone(),
+                    images_root: root.into(),
+                    mode: super::InvokeOwnerScopeMode::Owner,
+                    owner_id: Some("owner".into()),
+                    force_refresh: false,
+                },
+            )
+            .expect("refresh root");
+            let refreshed: Vec<(String, Option<String>)> = conn
+                .prepare(
+                    "SELECT path, invoke_source_id FROM images WHERE id IN (?1, ?2) ORDER BY path",
+                )
+                .expect("refreshed query")
+                .query_map(
+                    [refresh_match_id.as_str(), refresh_miss_id.as_str()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .expect("refreshed rows")
+                .collect::<Result<_, _>>()
+                .expect("collect refreshed");
+            assert!(refreshed.iter().any(
+                |(path, source)| path == matched && source.as_deref() == Some(db_path.as_str())
+            ));
+            assert!(refreshed
+                .iter()
+                .any(|(path, source)| path == unmatched && source.is_none()));
+        }
+    }
     #[test]
     fn dirty_ledger_survives_upgrade_and_remains_idempotent_inside_upserts() {
         let conn = Connection::open_in_memory().expect("in-memory db");

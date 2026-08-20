@@ -39,6 +39,7 @@ pub mod m69_invoke_scoped_views;
 pub mod m70_invoke_scope_dirty_items;
 pub mod m71_invoke_scope_dirty_conflicts;
 pub mod m72_ambit_collection_scope;
+pub mod m73_invoke_scope_literal_prefix;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -87,6 +88,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m70_invoke_scope_dirty_items::migration70());
     migrations.push(m71_invoke_scope_dirty_conflicts::migration71());
     migrations.push(m72_ambit_collection_scope::migration72());
+    migrations.push(m73_invoke_scope_literal_prefix::migration73());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -128,6 +130,7 @@ mod tests {
         assert!(versions.contains(&70));
         assert!(versions.contains(&71));
         assert!(versions.contains(&72));
+        assert!(versions.contains(&73));
     }
 
     #[test]
@@ -167,7 +170,7 @@ mod tests {
             pending_after_49,
             vec![
                 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
-                71, 72
+                71, 72, 73
             ]
         );
     }

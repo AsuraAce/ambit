@@ -1,6 +1,6 @@
 import { normalizePath } from '../../utils/pathUtils';
 
-const normalizeInvokePathIdentity = (path: string): string => {
+export const getInvokePathIdentity = (path: string): string => {
     const isWindowsPath = /^[A-Za-z]:[\\/]/.test(path.trim())
         || /^[\\/]{2}/.test(path.trim());
     const normalized = normalizePath(path.trim()).replace(/\/+$/, '');
@@ -8,4 +8,4 @@ const normalizeInvokePathIdentity = (path: string): string => {
 };
 
 export const isSameInvokePath = (left: string, right: string): boolean =>
-    normalizeInvokePathIdentity(left) === normalizeInvokePathIdentity(right);
+    getInvokePathIdentity(left) === getInvokePathIdentity(right);

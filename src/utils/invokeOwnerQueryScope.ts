@@ -1,5 +1,5 @@
 import type { InvokeOwnerScopeState } from '../stores/invokeOwnerScopeStore';
-import { normalizePath } from './pathUtils';
+import { getInvokePathIdentity } from '../services/invoke/pathIdentity';
 
 export const getInvokeOwnerQueryScopeKey = (
     configuredPath: string | null | undefined,
@@ -11,7 +11,7 @@ export const getInvokeOwnerQueryScopeKey = (
     const scope = state.scope;
     if (!scope) return 'invoke:blocked';
 
-    const dbPath = normalizePath(scope.dbPath).toLowerCase();
+    const dbPath = getInvokePathIdentity(scope.dbPath);
     return scope.mode === 'owner'
         ? `invoke:${dbPath}:owner:${scope.ownerId}`
         : `invoke:${dbPath}:${scope.mode}`;
