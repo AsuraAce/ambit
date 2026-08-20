@@ -41,6 +41,13 @@ const flushAsyncWork = async () => {
     });
 };
 
+interface TestRefreshResult {
+    processed: number;
+    updated: number;
+    errors: number;
+    wasCancelled: boolean;
+}
+
 describe('useMetadataRefresh', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -93,7 +100,7 @@ describe('useMetadataRefresh', () => {
 
         expect(startAttempts).toBe(1);
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
         expect(mockAddToast).not.toHaveBeenCalledWith(
@@ -174,7 +181,7 @@ describe('useMetadataRefresh', () => {
         });
 
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -195,7 +202,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -216,7 +223,7 @@ describe('useMetadataRefresh', () => {
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();
         expect(mockAddToast).not.toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -240,7 +247,7 @@ describe('useMetadataRefresh', () => {
             phase: 'processing'
         }));
         expect(mockAddToast).toHaveBeenCalledWith(
-            'Ambit is updating metadata for 12 images after a parser update. Your library remains available.',
+            'Ambit is updating metadata for 12 items after a parser update. Your library remains available.',
             'info'
         );
 
@@ -425,6 +432,51 @@ describe('useMetadataRefresh', () => {
 
         expect(mockRebuildFacetCacheIncrementalBatchStrict).toHaveBeenCalledTimes(1);
         expect(useLibraryStore.getState().facetCacheVersion).toBe(1);
+        expect(invoke).toHaveBeenCalledWith('refresh_video_metadata', {
+            filterRoot: null,
+            forceReparse: false
+        });
+    });
+
+    it('keeps refresh active until video metadata finishes and reports one combined completion', async () => {
+        let resolveImages: ((value: TestRefreshResult) => void) | undefined;
+        let resolveVideos: ((value: TestRefreshResult) => void) | undefined;
+        vi.mocked(invoke).mockImplementation((command) => {
+            if (command === 'start_reparse_job') {
+                return new Promise(resolve => { resolveImages = resolve; });
+            }
+            if (command === 'refresh_video_metadata') {
+                return new Promise(resolve => { resolveVideos = resolve; });
+            }
+            return Promise.resolve(undefined);
+        });
+        const { result } = renderHook(() => useMetadataRefresh());
+
+        let refreshPromise: Promise<unknown> | undefined;
+        act(() => {
+            refreshPromise = result.current.startRefresh();
+        });
+        act(() => listenerCallbacks.get('refresh-complete')?.({
+            payload: { processed: 2, updated: 1, errors: 0, wasCancelled: false }
+        }));
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Refresh complete'), expect.anything());
+
+        await act(async () => {
+            resolveImages?.({ processed: 2, updated: 1, errors: 0, wasCancelled: false });
+            await Promise.resolve();
+        });
+        expect(useLibraryStore.getState().isRefreshingMetadata).toBe(true);
+        expect(useLibraryStore.getState().refreshProgress?.message).toBe('Refreshing video metadata...');
+        expect(mockAddToast).not.toHaveBeenCalledWith(expect.stringContaining('Refresh complete'), expect.anything());
+
+        await act(async () => {
+            resolveVideos?.({ processed: 3, updated: 2, errors: 1, wasCancelled: false });
+            await refreshPromise;
+        });
+
+        expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
+        expect(mockAddToast).toHaveBeenCalledWith('Refresh complete: 3 updated, 1 errors', 'warning');
+        expect(mockAddToast.mock.calls.filter(([message]) => String(message).startsWith('Refresh complete:'))).toHaveLength(1);
     });
 
     it('refreshes facets from force refresh fallback when completion events are missed', async () => {
@@ -588,6 +640,8 @@ describe('useMetadataRefresh', () => {
             filterRoot: 'D:/Images',
             filterTool: 'ComfyUI'
         });
+        expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
+        expect(useLibraryStore.getState().refreshProgress).toBeNull();
         await act(async () => result.current.forceRefresh());
         expect(mockAddToast).toHaveBeenCalledWith('Failed to force refresh: force failed', 'error');
     });
@@ -626,7 +680,7 @@ describe('useMetadataRefresh', () => {
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
         await act(async () => vi.advanceTimersByTimeAsync(15000));
-        expect(invoke).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(2);
     });
 
     it('reports non-transient startup count failures', async () => {

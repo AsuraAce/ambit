@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { AIImage, isVideoAsset } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 import {
@@ -12,6 +12,8 @@ import {
 } from '../../../bindings';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
+import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { MetadataSectionHeader } from './metadata/MetadataSectionHeader';
 import {
     buildComfySupportBundle,
     buildDiagnosticsClipboardPayload
@@ -754,7 +756,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     } | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const hasAttempted = React.useRef<string | null>(null);
-    const showParserDiagnostics = useSettingsStore((state) => state.settings.devMode === true)
+    const isDeveloperMode = useSettingsStore((state) => state.settings.devMode === true);
+    const showParserDiagnostics = !isVideoAsset(image)
+        && isDeveloperMode
         && image.metadata.tool === 'ComfyUI';
     const originalWorkflow = image.originalChunks?.workflow;
     const originalPrompt = image.originalChunks?.prompt;
@@ -886,7 +890,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         // 1. Data is missing
         // 2. We are not already loading
         // 3. We haven't already attempted this specific image in this session
-        if (!workflowJsonForActions && !isLoading && hasAttempted.current !== image.id) {
+        if (!isVideoAsset(image) && !workflowJsonForActions && !isLoading && hasAttempted.current !== image.id) {
             // If we have a hint that there is definitely NO workflow, skip and mark as attempted
             if (image.metadata.hasWorkflowHint === false) {
                 hasAttempted.current = image.id;
@@ -999,42 +1003,45 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
 
             {/* Header & Search */}
             <div className="p-6 pb-2 shrink-0 space-y-4">
-                <div className="flex items-center justify-between">
-                    <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider flex items-center gap-2">
-                            <Workflow className="w-4 h-4" /> Workflow Nodes
-                        </h3>
-                        <div className="text-[10px] text-gray-400 font-mono bg-gray-100 dark:bg-white/5 px-2 py-1 rounded-full">
+                <MetadataSectionHeader
+                    title="Node Graph"
+                    icon={Workflow}
+                    trailing={<>
+                        <div className="shrink-0 rounded-full bg-gray-100 px-2 py-1 font-mono text-[10px] text-gray-400 dark:bg-white/5">
                             {nodeMode === 'selected' ? `${modeNodes.length}/${workflowNodes.length}` : workflowNodes.length}
                         </div>
                         {graphSourceLabel && (
-                            <div className="rounded-full border border-sage-200 dark:border-sage-800 bg-sage-50 dark:bg-sage-900/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:text-sage-400">
+                            <div className="rounded-full border border-sage-200 bg-sage-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-400">
                                 {graphSourceLabel}
                             </div>
                         )}
-                    </div>
-
-                    {workflowJsonForActions && (
-                        <div className="flex gap-2">
-                            <button
+                        {workflowJsonForActions ? (
+                        <div className="flex shrink-0 items-center gap-1">
+                            <TooltipButton
                                 onClick={handleCopy}
+                                label={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
+                                content={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
                                 title="Copy to clipboard"
-                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-400 hover:bg-sage-100 dark:hover:bg-sage-900/40 text-[10px] font-bold uppercase tracking-wide transition-colors border border-sage-200 dark:border-sage-800"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sage-200 bg-sage-50 text-sage-600 transition-colors hover:bg-sage-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-400 dark:hover:bg-sage-900/40"
                             >
-                                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                                {copied ? "Copied" : "Copy"}
-                            </button>
-                            <button
+                                {copied ? <Check aria-hidden="true" className="h-4 w-4" /> : <Copy aria-hidden="true" className="h-4 w-4" />}
+                            </TooltipButton>
+                            <TooltipButton
                                 onClick={handleDownload}
+                                label="Download workflow JSON"
+                                content="Download workflow JSON"
                                 title="Download JSON file"
-                                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-zinc-50 dark:bg-zinc-900/20 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900/40 text-[10px] font-bold uppercase tracking-wide transition-colors border border-zinc-200 dark:border-zinc-800"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-600 transition-colors hover:bg-zinc-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-zinc-800 dark:bg-zinc-900/20 dark:text-zinc-400 dark:hover:bg-zinc-900/40"
                             >
-                                <Download className="w-3 h-3" />
-                                Download
-                            </button>
+                                <Download aria-hidden="true" className="h-4 w-4" />
+                            </TooltipButton>
+                            <span role="status" aria-live="polite" className="sr-only">
+                                {copied ? 'Copied workflow JSON' : ''}
+                            </span>
                         </div>
-                    )}
-                </div>
+                        ) : null}
+                    </>}
+                />
 
                 {image.metadata.tool === 'ComfyUI' && workflowNodes.length > 0 && (
                     <div

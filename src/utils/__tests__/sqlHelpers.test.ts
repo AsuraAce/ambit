@@ -44,6 +44,30 @@ describe('sqlHelpers', () => {
             expect(where).toContain('is_pinned = 1');
         });
 
+        it.each(['image', 'video'] as const)('filters the library to %s assets', (mediaType) => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).toContain('media_type = ?');
+            expect(params).toEqual([mediaType]);
+        });
+
+        it('does not constrain media type for the All filter', () => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType: 'all' },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).not.toContain('media_type = ?');
+            expect(params).toEqual([]);
+        });
+
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
             expect(where).toContain("resolved_model_name = ?");

@@ -604,6 +604,7 @@ describe('maintenanceRepo', () => {
         expect(query).toContain("file_hash != ''");
         expect(query).not.toContain('LOWER(TRIM(file_hash))');
         expect(query).toContain('is_missing = 0');
+        expect(query).not.toContain("media_type = 'image'");
         expect(query).not.toContain('file_size, width, height');
         expect(db.select.mock.calls[0]).toHaveLength(1);
     });

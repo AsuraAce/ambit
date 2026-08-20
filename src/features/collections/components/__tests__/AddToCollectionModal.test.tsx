@@ -126,7 +126,7 @@ describe('AddToCollectionModal thumbnail hydration states', () => {
             onConfirm,
         });
 
-        expect(screen.getByText('2 images selected')).not.toBeNull();
+        expect(screen.getByText('2 items selected')).not.toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /smart/i }));
         expect(onConfirm).toHaveBeenCalledWith(['one', 'two'], 'smart', 'add', undefined);
     });

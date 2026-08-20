@@ -22,6 +22,14 @@ describe('pathUtils', () => {
             expect(normalizePath('foo//bar')).toBe('foo/bar');
             expect(normalizePath('foo\\\\bar')).toBe('foo/bar');
         });
+
+        it('preserves Windows verbatim and UNC identity prefixes', () => {
+            expect(normalizePath('\\\\?\\C:\\videos\\clip.mp4')).toBe('//?/C:/videos/clip.mp4');
+            expect(normalizePath('//?/C:/videos//clip.mp4')).toBe('//?/C:/videos/clip.mp4');
+            expect(normalizePath('\\\\server\\share\\videos\\clip.mp4')).toBe('//server/share/videos/clip.mp4');
+            expect(normalizePath('//server//share///clip.mp4')).toBe('//server/share/clip.mp4');
+            expect(normalizePath('////server///share/clip.mp4')).toBe('//server/share/clip.mp4');
+        });
     });
 
     describe('toWindowsPath', () => {

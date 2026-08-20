@@ -49,12 +49,19 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleUpdatePrompt = async (id: string, prompt: string) => {
         const img = getImage(id);
         if (!img) return;
+        if ((img.metadata.positivePrompt ?? '') === prompt) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
         const updatedImg = {
             ...img,
             originalMetadata,
-            metadata: { ...img.metadata, positivePrompt: prompt }
+            metadata: {
+                ...img.metadata,
+                positivePrompt: prompt,
+                fieldSources: img.mediaType === 'video'
+                    ? { ...img.metadata.fieldSources, positivePrompt: 'user_override' as const }
+                    : img.metadata.fieldSources
+            }
         };
 
         updateImage(id, () => updatedImg);
@@ -65,12 +72,19 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleUpdateNegativePrompt = async (id: string, negativePrompt: string) => {
         const img = getImage(id);
         if (!img) return;
+        if ((img.metadata.negativePrompt ?? '') === negativePrompt) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
         const updatedImg = {
             ...img,
             originalMetadata,
-            metadata: { ...img.metadata, negativePrompt }
+            metadata: {
+                ...img.metadata,
+                negativePrompt,
+                fieldSources: img.mediaType === 'video'
+                    ? { ...img.metadata.fieldSources, negativePrompt: 'user_override' as const }
+                    : img.metadata.fieldSources
+            }
         };
 
         updateImage(id, () => updatedImg);
@@ -81,16 +95,24 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleUpdateModel = async (id: string, model: string) => {
         const img = getImage(id);
         if (!img) return;
+        const normalizedModel = model.trim();
+        if (!normalizedModel || (img.metadata.overrideModel || img.metadata.model) === normalizedModel) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
         const updatedImg = {
             ...img,
             originalMetadata,
-            metadata: { ...img.metadata, overrideModel: model }
+            metadata: {
+                ...img.metadata,
+                overrideModel: normalizedModel,
+                fieldSources: img.mediaType === 'video'
+                    ? { ...img.metadata.fieldSources, model: 'user_override' as const, overrideModel: 'user_override' as const }
+                    : img.metadata.fieldSources
+            }
         };
 
         updateImage(id, () => updatedImg);
-        await updateImageMetadataFields(id, { overrideModel: model });
+        await updateImageMetadataFields(id, { overrideModel: normalizedModel });
 
         // Ensure filter panel is updated
         rebuildFacetCacheIncremental('checkpoints').then(() => incrementFacetCacheVersion());
@@ -101,12 +123,19 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleUpdateTool = async (id: string, tool: GeneratorTool) => {
         const img = getImage(id);
         if (!img) return;
+        if (img.metadata.tool === tool) return;
 
         const originalMetadata = img.originalMetadata || { ...img.metadata };
         const updatedImg = {
             ...img,
             originalMetadata,
-            metadata: { ...img.metadata, tool }
+            metadata: {
+                ...img.metadata,
+                tool,
+                fieldSources: img.mediaType === 'video'
+                    ? { ...img.metadata.fieldSources, tool: 'user_override' as const }
+                    : img.metadata.fieldSources
+            }
         };
 
         updateImage(id, () => updatedImg);
@@ -115,6 +144,28 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         // Ensure filter panel is updated
         rebuildFacetCacheIncremental('tools').then(() => incrementFacetCacheVersion());
 
+        addToast('Updated', 'success');
+    };
+
+    const handleUpdateVideoGenerationMode = async (id: string, generationMode: string) => {
+        const img = getImage(id);
+        if (!img) return;
+        if ((img.metadata.generationMode ?? 'unknown') === generationMode) return;
+        const updatedImg = {
+            ...img,
+            metadata: {
+                ...img.metadata,
+                generationMode,
+                generationType: generationMode,
+                fieldSources: {
+                    ...img.metadata.fieldSources,
+                    generationMode: 'user_override' as const,
+                    generationType: 'user_override' as const
+                }
+            }
+        } as AIImage;
+        updateImage(id, () => updatedImg);
+        await updateImageMetadataFields(id, { generationMode, generationType: generationMode });
         addToast('Updated', 'success');
     };
 
@@ -169,10 +220,9 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleRestoreImages = async (ids: string[]) => {
         const result = await restoreRemovedImages(ids).catch(error => {
             console.error('[Restore] Failed to restore removed images', error);
-            addToast('Could not restore the selected images. Their Removed entries were kept.', 'error');
+            addToast('Could not restore the selected items. Their Removed entries were kept.', 'error');
             throw error;
         });
-
         let refreshFailed = false;
         try {
             await Promise.all([
@@ -184,12 +234,12 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             refreshFailed = true;
             console.error('[Restore] Restored images, but failed to refresh dependent views', error);
         }
-        addToast(`Restored ${result.affectedIds.length} image${result.affectedIds.length === 1 ? '' : 's'} to the library`, 'success');
+        addToast(`Restored ${result.affectedIds.length} item${result.affectedIds.length === 1 ? '' : 's'} to the library`, 'success');
         if (refreshFailed) {
-            addToast('Images were restored, but some views may need a refresh.', 'warning');
+            addToast('Items were restored, but some views may need a refresh.', 'warning');
         }
         if (result.membershipWarningIds.length > 0) {
-            addToast(`${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'image has' : 'images have'} legacy collection data that could not be recovered.`, 'warning');
+            addToast(`${result.membershipWarningIds.length} restored ${result.membershipWarningIds.length === 1 ? 'item has' : 'items have'} legacy collection data that could not be recovered.`, 'warning');
         }
         refreshMaintenanceCounts();
         void refreshFacetCacheForResourcesStrict(result.touchedResources)
@@ -200,14 +250,14 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleRemoveFromLibrary = async (ids: string[]) => {
         const result = await removeImagesFromLibrary(ids).catch(error => {
             console.error('[Removed] Failed to remove images from the library', error);
-            addToast('Could not remove the selected images. The library was left unchanged.', 'error');
+            addToast('Could not remove the selected items. The library was left unchanged.', 'error');
             throw error;
         });
 
         const affectedIds = new Set(result.affectedIds);
         setImages(p => p.filter(i => !affectedIds.has(i.id)));
         removeImagesFromQueryCaches(queryClient, affectedIds);
-        addToast(`Removed ${result.affectedIds.length} image${result.affectedIds.length === 1 ? '' : 's'} from the library`, 'success');
+        addToast(`Removed ${result.affectedIds.length} item${result.affectedIds.length === 1 ? '' : 's'} from the library`, 'success');
         refreshMaintenanceCounts();
         try {
             await Promise.all([
@@ -216,7 +266,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
             ]);
         } catch (error) {
             console.error('[Removed] Images were removed, but dependent views failed to refresh', error);
-            addToast('Images were removed, but some views may need a refresh.', 'warning');
+            addToast('Items were removed, but some views may need a refresh.', 'warning');
         }
         void refreshFacetCacheForResourcesStrict(result.touchedResources)
             .then(() => incrementFacetCacheVersion())
@@ -288,11 +338,18 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
     const handleUpdateNotes = async (id: string, notes: string) => {
         const img = getImage(id);
         if (!img) return;
+        if ((img.notes ?? '') === notes) return;
 
         const updatedImg = { ...img, notes };
         updateImage(id, () => updatedImg);
-        await updateImageNotesCol(id, notes);
-        addToast('Saved', 'success');
+        try {
+            await updateImageNotesCol(id, notes);
+            addToast('Saved', 'success');
+        } catch (error) {
+            console.error('[Notes] Failed to persist notes', error);
+            updateImage(id, () => img);
+            addToast('Failed to save notes', 'error');
+        }
     };
 
     const handleRevertMetadata = async (id: string) => {
@@ -329,6 +386,7 @@ export const useAppHandlers = ({ images, setImages, refreshMaintenanceCounts, re
         handleUpdateNegativePrompt,
         handleUpdateModel,
         handleUpdateTool,
+        handleUpdateVideoGenerationMode,
         handleUpdateNotes,
         handleRevertMetadata,
         handleGroupImages,

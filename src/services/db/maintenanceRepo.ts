@@ -3,7 +3,7 @@ import {
     type FileHashBackfillResult,
 } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import type { AIImage, MissingFileAuditResult } from '../../types';
+import { isVideoAsset, type AIImage, type MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
@@ -165,13 +165,14 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
 
 export const getIntermediateImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
-        return getBrowserMockImages().filter(image => !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
+        return getBrowserMockImages().filter(image => !isVideoAsset(image) && !image.isDeleted && (image.isIntermediate || image.metadata.isIntermediate));
     }
 
     const db = await getDb();
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
+        AND media_type = 'image'
         AND invoke_scope_hidden = 0
         AND is_deleted = 0
     `;
@@ -193,7 +194,8 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 export const getUntaggedImages = async (whereClause: string = '', params: unknown[] = []): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         return getBrowserMockImages().filter(image =>
-            !image.isDeleted
+            !isVideoAsset(image)
+            && !image.isDeleted
             && !image.metadata.positivePrompt
             && !isKnownInvokeImageAsset(image.invokeImageCategory)
         );
@@ -203,6 +205,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
+        AND media_type = 'image'
         AND invoke_scope_hidden = 0
         AND is_deleted = 0
         AND IFNULL(is_intermediate_gen, 0) = 0
@@ -267,6 +270,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
     let query = `
         SELECT ${getImageFieldsLight()} FROM images
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND invoke_scope_hidden = 0
@@ -306,6 +310,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
     let query = `
         SELECT COUNT(*) as count FROM images 
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND invoke_scope_hidden = 0
@@ -350,6 +355,7 @@ export const getUnoptimizedImageEntries = async (
     let query = `
         SELECT id, path FROM images 
         WHERE ${unoptimizedCondition}
+        AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
         AND path NOT LIKE 'data:%'
         AND invoke_scope_hidden = 0
@@ -450,12 +456,13 @@ export const getMaintenanceCounts = async () => {
         const images = getBrowserMockImages();
         return {
             untagged: images.filter(image =>
-                !image.metadata.positivePrompt
+                !isVideoAsset(image)
+                && !image.metadata.positivePrompt
                 && !image.isDeleted
                 && !isKnownInvokeImageAsset(image.invokeImageCategory)
             ).length,
             orphans: 0,
-            intermediates: images.filter(image => image.isIntermediate || image.metadata.isIntermediate).length,
+            intermediates: images.filter(image => !isVideoAsset(image) && (image.isIntermediate || image.metadata.isIntermediate)).length,
             missing: images.filter(image => image.isMissing).length,
             trash: images.filter(image => image.isDeleted).length,
             duplicates: 0
@@ -468,15 +475,16 @@ export const getMaintenanceCounts = async () => {
     const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
             COUNT(*) FILTER (
-                WHERE (positive_prompt IS NULL OR positive_prompt = '')
-                  AND invoke_scope_hidden = 0
-                  AND is_deleted = 0
-                  AND IFNULL(is_intermediate_gen, 0) = 0
-                  AND IFNULL(is_invoke_asset_gen, 0) = 0
-            ) as untagged,
-            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
-            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-            (SELECT COUNT(*) FROM removed_images WHERE invoke_scope_hidden = 0) as trash
+                 WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                   AND media_type = 'image'
+                   AND invoke_scope_hidden = 0
+                   AND is_deleted = 0
+                   AND IFNULL(is_intermediate_gen, 0) = 0
+                   AND IFNULL(is_invoke_asset_gen, 0) = 0
+             ) as untagged,
+             COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
+             COUNT(*) FILTER (WHERE media_type = 'image' AND invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
+             (SELECT COUNT(*) FROM removed_images WHERE invoke_scope_hidden = 0) as trash
         FROM images
     `);
 

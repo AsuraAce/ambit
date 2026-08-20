@@ -1230,7 +1230,7 @@ export const SyncProvider: React.FC<{
                 const targetedSyncStartedAt = liveWatchNow();
                 startLiveWatchSession('generic', {
                     phase: 'importing',
-                    message: 'Importing new images...',
+                    message: 'Importing new items...',
                     progress: { current: 0, total: nextBatch.length, message: undefined }
                 });
 
@@ -1251,7 +1251,7 @@ export const SyncProvider: React.FC<{
                             updateLiveWatchSession({
                                 source: 'generic',
                                 phase: 'importing',
-                                message: message || 'Importing new images...',
+                                message: message || 'Importing new items...',
                                 progress: { current, total, message: undefined }
                             });
                         },

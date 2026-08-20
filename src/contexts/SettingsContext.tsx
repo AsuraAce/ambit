@@ -4,6 +4,7 @@ import { AppSettings, AppSettingsUpdate } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isTauriRuntime } from '../services/runtime';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
+import { exit } from '@tauri-apps/plugin-process';
 
 interface SettingsContextType {
     settings: AppSettings;
@@ -36,15 +37,12 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
 
         let disposed = false;
         let unlisten: (() => void) | undefined;
-        let closeAllowed = false;
         let closePending = false;
 
         const registerCloseHandler = async () => {
             const { getCurrentWindow } = await import('@tauri-apps/api/window');
             const appWindow = getCurrentWindow();
             const disposeListener = await appWindow.onCloseRequested(async (event) => {
-                if (closeAllowed) return;
-
                 event.preventDefault();
                 if (closePending) return;
                 closePending = true;
@@ -60,23 +58,14 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
                     await flushSettings();
                 } catch (error) {
                     console.error('[SettingsStore] Failed to flush settings before close', error);
-                } finally {
-                    closeAllowed = true;
-                    unlisten?.();
-                    unlisten = undefined;
-                    try {
-                        await appWindow.close();
-                    } catch (error) {
-                        closeAllowed = false;
-                        closePending = false;
-                        closeAdmission.restore();
-                        console.error('[SettingsStore] Failed to close app window', error);
-                        try {
-                            await registerCloseHandler();
-                        } catch (registrationError) {
-                            console.error('[SettingsStore] Failed to re-register close handler', registrationError);
-                        }
-                    }
+                }
+
+                try {
+                    await exit(0);
+                } catch (error) {
+                    closePending = false;
+                    closeAdmission.restore();
+                    console.error('[SettingsStore] Failed to exit app process', error);
                 }
             });
 

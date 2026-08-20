@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, Collection, SmartCollection, FilterState } from '../types';
+import { AIImage, Collection, SmartCollection, FilterState, isVideoAsset } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
@@ -259,7 +259,7 @@ export const useCollectionOperations = ({
         return false;
       }
 
-      addToast(`Added images to collection`, 'success');
+      addToast('Added to collection', 'success');
       try {
         await Promise.all([
           refreshCollections(),
@@ -358,10 +358,13 @@ export const useCollectionOperations = ({
       return;
     }
 
+    const thumbnail = isVideoAsset(image)
+      ? image.thumbnailSource === 'ambit-video-v1' ? image.thumbnailUrl : undefined
+      : image.thumbnailUrl || image.url;
     const nextCollection: Collection = {
       ...col,
       customThumbnail: image.id,
-      thumbnail: image.thumbnailUrl || image.url,
+      thumbnail,
       safeThumbnail: undefined,
       thumbnailIsSensitive: isImageMasked(image, true, maskedKeywords),
       thumbnailSourceKind: 'customImage'

@@ -2,6 +2,7 @@
 import { parseImageFile, scanImageNative, scanImagesBulk } from './metadataParser';
 import { getExistingMetadata, insertImage, insertImagesBatch, rebuildFacetCache } from './db/imageRepo';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
@@ -24,6 +25,7 @@ import {
     TargetedLiveSyncPerfContext,
 } from '../utils/liveWatchPerf';
 import { listenWithCleanup } from '../utils/tauriListener';
+import { cancelVideoImport, importVideoPaths, type VideoImportSummary } from './videoService';
 
 /**
  * Queries the database for paths that already exist.
@@ -70,6 +72,7 @@ export interface ImportResult {
     wasCancelled: boolean;
     completedSourcePaths: string[];
     cancelledSourcePaths: string[];
+    videoSummary?: VideoImportSummary;
 }
 
 export interface ImportProgressMeta {
@@ -103,6 +106,7 @@ interface FileEntry {
     path: string;
     modified: number;
     size: number;
+    mediaType?: 'image' | 'video';
 }
 
 interface NativeImportProgressPayload {
@@ -194,7 +198,7 @@ const mapMetadata = (meta: Partial<ImageMetadata>): ImageMetadata => ({
 });
 
 // --- Core Helper: Process a list of FileEntries in batches ---
-async function processFileEntries(
+async function processImageFileEntries(
     entries: FileEntry[],
     stats: ImportStats,
     options: ImportOptions,
@@ -503,6 +507,208 @@ async function processFileEntries(
     };
 }
 
+const candidateMediaType = (entry: FileEntry): 'image' | 'video' | null => {
+    if (entry.mediaType) return entry.mediaType;
+    if (/\.(mp4|webm|mov|m4v|mkv)$/i.test(entry.path)) return 'video';
+    if (/\.(png|jpg|jpeg|webp)$/i.test(entry.path)) return 'image';
+    return null;
+};
+
+const isVideoSidecarPath = (path: string): boolean => /\.workflow\.json$/i.test(path);
+
+const resolveVideoSidecarPaths = async (paths: string[]): Promise<string[]> => {
+    const normalizedPaths = paths.map(normalizePath);
+    const directPaths = normalizedPaths.filter(path => !isVideoSidecarPath(path));
+    const sidecarPaths = normalizedPaths.filter(isVideoSidecarPath);
+    if (sidecarPaths.length === 0) return directPaths;
+
+    const db = await getDb();
+    for (const sidecarPath of sidecarPaths) {
+        const basePath = sidecarPath.replace(/\.workflow\.json$/i, '');
+        const candidates = ['mp4', 'webm', 'mov', 'm4v', 'mkv'].map(ext => `${basePath}.${ext}`);
+        const placeholders = candidates.map(() => '?').join(',');
+        const rows = await db.select<Array<{ id: string }>>(
+            `SELECT id FROM images WHERE media_type = 'video' AND id COLLATE NOCASE IN (${placeholders})`,
+            candidates
+        );
+        directPaths.push(...rows.map(row => row.id));
+    }
+    return Array.from(new Set(directPaths));
+};
+
+const emptyVideoSummary = (): VideoImportSummary => ({
+    imported: 0,
+    duplicate: 0,
+    rejected: 0,
+    cancelled: 0,
+    posterFailures: 0,
+    assets: [],
+    handledPaths: [],
+    failedPaths: []
+});
+
+const mergeVideoSummaries = (
+    current: VideoImportSummary | undefined,
+    next: VideoImportSummary
+): VideoImportSummary => {
+    const merged = current ?? emptyVideoSummary();
+    return {
+        imported: merged.imported + next.imported,
+        duplicate: merged.duplicate + next.duplicate,
+        rejected: merged.rejected + next.rejected,
+        cancelled: merged.cancelled + next.cancelled,
+        posterFailures: merged.posterFailures + next.posterFailures,
+        assets: [...merged.assets, ...next.assets],
+        handledPaths: [...merged.handledPaths, ...next.handledPaths],
+        failedPaths: [...merged.failedPaths, ...next.failedPaths]
+    };
+};
+
+async function processVideoFileEntries(
+    entries: FileEntry[],
+    stats: ImportStats,
+    options: ImportOptions
+): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean; videoSummary: VideoImportSummary }> {
+    const { abortSignal, forceRescan, onProgress, waitForStableFiles } = options;
+    const allPaths = entries.map(entry => normalizePath(entry.path));
+    let pathsToProcess = allPaths;
+
+    if (!forceRescan && !abortSignal?.aborted) {
+        onProgress?.(0, allPaths.length, 'Checking for duplicates...');
+        const existingPaths = await getExistingPaths(allPaths);
+        pathsToProcess = allPaths.filter(path => !existingPaths.has(path));
+        stats.skipped += allPaths.length - pathsToProcess.length;
+    }
+
+    if (abortSignal?.aborted || pathsToProcess.length === 0) {
+        return {
+            images: [],
+            handledPaths: [],
+            failedPaths: [],
+            touchedFacetTypes: [],
+            touchedFacetResources: createEmptyTouchedFacetResources(),
+            wasCancelled: !!abortSignal?.aborted,
+            videoSummary: emptyVideoSummary()
+        };
+    }
+
+    if (waitForStableFiles) {
+        const stable = await waitForStableFileSizes(pathsToProcess, onProgress, abortSignal);
+        if (!stable) {
+            return {
+                images: [],
+                handledPaths: [],
+                failedPaths: [],
+                touchedFacetTypes: [],
+                touchedFacetResources: createEmptyTouchedFacetResources(),
+                wasCancelled: true,
+                videoSummary: emptyVideoSummary()
+            };
+        }
+    }
+
+    let activeOperationId: string | null = null;
+    const cancelActive = () => {
+        if (activeOperationId) void cancelVideoImport(activeOperationId);
+    };
+    abortSignal?.addEventListener('abort', cancelActive);
+
+    try {
+        const previousMetadata = await getExistingMetadata(pathsToProcess);
+        const summary = await importVideoPaths(
+            pathsToProcess,
+            operationId => {
+                activeOperationId = operationId;
+                if (abortSignal?.aborted) void cancelVideoImport(operationId);
+            },
+            () => !!abortSignal?.aborted,
+            (current, total) => onProgress?.(current, total, 'Importing videos...')
+        );
+        stats.processed += summary.handledPaths.length + summary.failedPaths.length + summary.cancelled;
+        stats.imported += summary.imported;
+        stats.skipped += summary.duplicate;
+        stats.errors += summary.failedPaths.length;
+        const nextMetadata = await getExistingMetadata(summary.handledPaths);
+        const touchedFacetTypes = new Set<FacetType>();
+        let touchedFacetResources = createEmptyTouchedFacetResources();
+        summary.handledPaths.forEach(path => {
+            const previousJson = previousMetadata.get(path)?.metadataJson;
+            const nextJson = nextMetadata.get(path)?.metadataJson;
+            if (previousJson === nextJson || !nextJson) return;
+
+            let previous: Partial<ImageMetadata> | undefined;
+            let next: Partial<ImageMetadata> | undefined;
+            try {
+                previous = previousJson ? JSON.parse(previousJson) as Partial<ImageMetadata> : undefined;
+                next = JSON.parse(nextJson) as Partial<ImageMetadata>;
+            } catch (error) {
+                console.warn('[VideoImport] Failed to parse metadata during facet diff', error);
+                return;
+            }
+            collectTouchedFacetTypesFromMetadataDiff(previous, next).forEach(type => touchedFacetTypes.add(type));
+            touchedFacetResources = mergeTouchedFacetResources(
+                touchedFacetResources,
+                collectTouchedFacetResourcesFromMetadataDiff(previous, next)
+            );
+        });
+        return {
+            images: summary.assets,
+            handledPaths: summary.handledPaths,
+            failedPaths: summary.failedPaths,
+            touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
+            touchedFacetResources,
+            wasCancelled: summary.cancelled > 0 || !!abortSignal?.aborted,
+            videoSummary: summary
+        };
+    } finally {
+        abortSignal?.removeEventListener('abort', cancelActive);
+    }
+}
+
+async function processMediaFileEntries(
+    entries: FileEntry[],
+    stats: ImportStats,
+    options: ImportOptions,
+    defaultTool?: GeneratorTool
+): Promise<{ images: AIImage[]; handledPaths: string[]; failedPaths: string[]; touchedFacetTypes: FacetType[]; touchedFacetResources: TouchedFacetResources; wasCancelled: boolean; videoSummary?: VideoImportSummary }> {
+    const imageEntries = entries.filter(entry => candidateMediaType(entry) === 'image');
+    const videoEntries = entries.filter(entry => candidateMediaType(entry) === 'video');
+    const total = imageEntries.length + videoEntries.length;
+    const images = await processImageFileEntries(imageEntries, stats, {
+        ...options,
+        onProgress: (current, _imageTotal, message) => options.onProgress?.(current, total, message)
+    }, defaultTool);
+
+    if (images.wasCancelled || options.abortSignal?.aborted || videoEntries.length === 0) {
+        return images;
+    }
+
+    const videos = await processVideoFileEntries(videoEntries, stats, {
+        ...options,
+        onProgress: (current, _videoTotal, message) => options.onProgress?.(
+            imageEntries.length + current,
+            total,
+            message
+        )
+    });
+
+    return {
+        images: [...images.images, ...videos.images],
+        handledPaths: [...images.handledPaths, ...videos.handledPaths],
+        failedPaths: [...images.failedPaths, ...videos.failedPaths],
+        touchedFacetTypes: orderFacetTypes([
+            ...images.touchedFacetTypes,
+            ...videos.touchedFacetTypes
+        ]),
+        touchedFacetResources: mergeTouchedFacetResources(
+            images.touchedFacetResources,
+            videos.touchedFacetResources
+        ),
+        wasCancelled: videos.wasCancelled,
+        videoSummary: videos.videoSummary
+    };
+}
+
 // Unified Folder Import
 // Scans folders EFFICIENTLY (single IPC call per folder) then imports
 export async function processFoldersUnified(
@@ -575,8 +781,9 @@ export async function processFoldersUnified(
             } else {
                 console.log(`[ImportUnified] No files found in folder ${folder.path} (or path is file)`);
 
-                if (folder.path.match(/\.(png|jpg|jpeg|webp)$/i)) {
-                    filesForSource.push({ path: folder.path, modified: Date.now(), size: 0 });
+                const mediaType = candidateMediaType({ path: folder.path, modified: 0, size: 0 });
+                if (mediaType) {
+                    filesForSource.push({ path: folder.path, modified: Date.now(), size: 0, mediaType });
                 }
             }
         } catch (e) {
@@ -585,7 +792,10 @@ export async function processFoldersUnified(
                 break;
             }
             console.warn(`[ImportUnified] Failed to scan ${folder.path} as directory. Treating as file?`, e);
-            filesForSource.push({ path: folder.path, modified: Date.now(), size: 0 });
+            const mediaType = candidateMediaType({ path: folder.path, modified: 0, size: 0 });
+            if (mediaType) {
+                filesForSource.push({ path: folder.path, modified: Date.now(), size: 0, mediaType });
+            }
         }
 
         if (filesForSource.length > 0) {
@@ -615,7 +825,7 @@ export async function processFoldersUnified(
     // If grandTotal is 0, we should probably still return, but let's notify
     if (grandTotalFiles === 0) {
         if (onProgress) {
-            onProgress(0, 0, 'No valid images found.', {
+            onProgress(0, 0, 'No supported media found.', {
                 phase: 'scanning',
                 sourceCount: folders.length
             });
@@ -658,7 +868,7 @@ export async function processFoldersUnified(
                 const actualCurrent = globalProcessed + current;
                 // Ensure we don't exceed 100% due to math oddities
                 const safeCurrent = Math.min(actualCurrent, grandTotalFiles);
-                onProgress(safeCurrent, grandTotalFiles, message || `Importing images...`, {
+                onProgress(safeCurrent, grandTotalFiles, message || `Importing files...`, {
                     phase: 'importing',
                     sourceIndex: taskIndex + 1,
                     sourceCount: processingTasks.length,
@@ -668,7 +878,7 @@ export async function processFoldersUnified(
             }
         };
 
-        const imported = await processFileEntries(
+        const imported = await processMediaFileEntries(
             task.files,
             result.stats,
             {
@@ -694,6 +904,9 @@ export async function processFoldersUnified(
             result.touchedFacetResources,
             imported.touchedFacetResources
         );
+        if (imported.videoSummary) {
+            result.videoSummary = mergeVideoSummaries(result.videoSummary, imported.videoSummary);
+        }
 
         // precise increment
         globalProcessed += task.files.length;
@@ -840,27 +1053,51 @@ export const processTargetedFiles = async (
     };
 
     if (paths.length === 0) return result;
+    const normalizedPaths = paths.map(normalizePath);
+    if (options.waitForStableFiles) {
+        const existingSidecars: string[] = [];
+        for (const path of normalizedPaths.filter(isVideoSidecarPath)) {
+            try {
+                if (await exists(path)) existingSidecars.push(path);
+            } catch (error) {
+                console.warn('[Import] Could not determine sidecar availability; waiting conservatively.', error);
+                existingSidecars.push(path);
+            }
+        }
+        if (existingSidecars.length > 0) {
+            const stable = await waitForStableFileSizes(existingSidecars, options.onProgress, options.abortSignal);
+            if (!stable) {
+                result.wasCancelled = true;
+                pushUniquePaths(result.cancelledSourcePaths, normalizedPaths);
+                return result;
+            }
+        }
+    }
+    const resolvedPaths = await resolveVideoSidecarPaths(normalizedPaths);
+    if (resolvedPaths.length === 0) return result;
     const targetedImportStartedAt = liveWatchNow();
 
     const targetedImportTimestamp = Date.now();
-    const entries: FileEntry[] = paths.map(p => ({ 
+    const entries: FileEntry[] = resolvedPaths.map(p => ({
         path: p, 
         modified: targetedImportTimestamp,
-        size: 0 // Will be read by rust metadata extractor anyway
+        size: 0, // Will be read by rust metadata extractor anyway
+        mediaType: candidateMediaType({ path: p, modified: 0, size: 0 }) ?? undefined
     }));
 
-    console.log(`[Import] Processing ${paths.length} targeted paths...`);
-    const imported = await processFileEntries(entries, result.stats, options, defaultTool);
+    console.log(`[Import] Processing ${resolvedPaths.length} targeted paths...`);
+    const imported = await processMediaFileEntries(entries, result.stats, options, defaultTool);
     result.images = imported.images;
     result.handledPaths = imported.handledPaths;
     result.failedPaths = imported.failedPaths;
     result.touchedFacetTypes = imported.touchedFacetTypes;
     result.touchedFacetResources = imported.touchedFacetResources;
     result.wasCancelled = imported.wasCancelled;
+    result.videoSummary = imported.videoSummary;
     if (imported.wasCancelled) {
-        pushUniquePaths(result.cancelledSourcePaths, paths);
+        pushUniquePaths(result.cancelledSourcePaths, resolvedPaths);
     } else if (imported.failedPaths.length === 0) {
-        pushUniquePaths(result.completedSourcePaths, paths);
+        pushUniquePaths(result.completedSourcePaths, resolvedPaths);
     }
 
     // Live Watch keeps the grid responsive here and lets SyncContext queue the

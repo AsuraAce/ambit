@@ -212,6 +212,7 @@ describe('thumbnailService', () => {
         const { syncExistingThumbnailsToDB } = await import('../thumbnailService');
 
         await expect(syncExistingThumbnailsToDB()).resolves.toBe(2);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining("media_type = 'image'"));
         expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/library/a.png');
         expect(mocks.updateThumbnailPathsBatch).toHaveBeenCalledWith([

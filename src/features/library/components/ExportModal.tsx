@@ -75,7 +75,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                                 </div>
                                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">Export Selection</h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                                    Export <strong>{count}</strong> images and metadata into a single ZIP archive.
+                                    Export <strong>{count}</strong> items and metadata into a single ZIP archive.
                                 </p>
                             </div>
 

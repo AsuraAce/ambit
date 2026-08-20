@@ -143,6 +143,27 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
             )}
 
+            <div className="flex bg-gray-100 dark:bg-zinc-800/50 rounded-xl p-1 border border-gray-200 dark:border-white/5" role="group" aria-label="Media type filter">
+                {([
+                    ['all', 'All'],
+                    ['image', 'Images'],
+                    ['video', 'Videos'],
+                ] as const).map(([value, label]) => (
+                    <button
+                        key={value}
+                        type="button"
+                        aria-pressed={(filters.mediaType ?? 'all') === value}
+                        onClick={() => setFilters(previous => ({ ...previous, mediaType: value }))}
+                        className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${(filters.mediaType ?? 'all') === value
+                            ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm'
+                            : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                            }`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
             <div className="relative" ref={sortMenuRef}>
                 <button
                     type="button"

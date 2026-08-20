@@ -1,9 +1,20 @@
 /**
- * Normalizes a file path to use forward slashes.
- * Replaces backslashes with forward slashes and removes duplicate slashes.
+ * Normalizes a file path to use forward slashes while preserving Windows
+ * verbatim (`//?/`) and UNC (`//server/share`) prefixes.
  */
 export const normalizePath = (path: string): string => {
-    return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+    const forwardSlashPath = path.replace(/\\/g, '/');
+    const preservedPrefix = forwardSlashPath.startsWith('//?/')
+        ? '//?/'
+        : (forwardSlashPath.startsWith('//') ? '//' : '');
+    const remainder = preservedPrefix
+        ? forwardSlashPath.slice(preservedPrefix.length)
+        : forwardSlashPath;
+    const normalizedRemainder = preservedPrefix
+        ? remainder.replace(/^\/+/, '').replace(/\/+/g, '/')
+        : remainder.replace(/\/+/g, '/');
+
+    return preservedPrefix + normalizedRemainder;
 };
 
 const trimTrailingSlash = (path: string): string => {

@@ -311,6 +311,11 @@ export const buildSqlWhereClause = (
         }
     }
 
+    if (filters.mediaType && filters.mediaType !== 'all') {
+        conditions.push('media_type = ?');
+        params.push(filters.mediaType);
+    }
+
     // 1. Privacy Logic
     if (privacyEnabled && maskingMode === 'hide') {
         conditions.push('privacy_hidden = 0');

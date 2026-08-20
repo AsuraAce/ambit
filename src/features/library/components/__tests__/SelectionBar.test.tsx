@@ -73,7 +73,7 @@ describe('SelectionBar', () => {
             activeCollectionId: 'collection-1',
         });
 
-        for (const label of ['Compare Selected Images', 'Add Selected to Favorites', 'Pin Selected Images', 'Add Selected to Collection', 'Remove Selected from Collection', 'Export Selected Images', 'Remove Selected from Library', 'Clear Selection']) {
+        for (const label of ['Compare Selected Images', 'Add Selected to Favorites', 'Pin Selected Items', 'Add Selected to Collection', 'Remove Selected from Collection', 'Export Selected Items', 'Remove Selected from Library', 'Clear Selection']) {
             fireEvent.click(screen.getByRole('button', { name: label }));
         }
         fireEvent.click(screen.getByRole('button', { name: 'Force Mask All Content' }));
@@ -97,11 +97,11 @@ describe('SelectionBar', () => {
         for (const label of [
             'Compare Selected Images',
             'Add Selected to Favorites',
-            'Pin Selected Images',
+            'Pin Selected Items',
             'Force Mask All Content',
             'Add Selected to Collection',
             'Remove Selected from Collection',
-            'Export Selected Images',
+            'Export Selected Items',
         ]) {
             const button = screen.getByRole('button', { name: label });
             expect(button.className).toContain('text-gray-500');
@@ -114,7 +114,7 @@ describe('SelectionBar', () => {
             .toContain('text-red-500/70');
         expect(screen.getByRole('button', { name: 'Add Selected to Favorites' }).querySelector('svg')?.getAttribute('class'))
             .not.toContain('fill-current');
-        expect(screen.getByRole('button', { name: 'Pin Selected Images' }).querySelector('svg')?.getAttribute('class'))
+        expect(screen.getByRole('button', { name: 'Pin Selected Items' }).querySelector('svg')?.getAttribute('class'))
             .not.toContain('fill-current');
     });
 
@@ -126,7 +126,7 @@ describe('SelectionBar', () => {
         renderBar(images);
 
         const favoriteButton = screen.getByRole('button', { name: 'Remove Selected from Favorites' });
-        const pinButton = screen.getByRole('button', { name: 'Unpin Selected Images' });
+        const pinButton = screen.getByRole('button', { name: 'Unpin Selected Items' });
 
         expect(favoriteButton.className).toContain('text-red-500');
         expect(favoriteButton.querySelector('svg')?.getAttribute('class')).toContain('fill-current');
@@ -142,7 +142,7 @@ describe('SelectionBar', () => {
         renderBar(images);
 
         const favoriteButton = screen.getByRole('button', { name: 'Add Selected to Favorites' });
-        const pinButton = screen.getByRole('button', { name: 'Pin Selected Images' });
+        const pinButton = screen.getByRole('button', { name: 'Pin Selected Items' });
 
         expect(favoriteButton.getAttribute('aria-pressed')).toBe('mixed');
         expect(favoriteButton.className).toContain('text-gray-500');
@@ -173,6 +173,19 @@ describe('SelectionBar', () => {
         renderBar([image('one')], { isExporting: true, onRemoveFromCollection: undefined });
         expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Remove Selected from Collection' })).toBeNull();
-        expect((screen.getByRole('button', { name: 'Export Selected Images' }) as HTMLButtonElement).disabled).toBe(true);
+        expect((screen.getByRole('button', { name: 'Export Selected Items' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('keeps compare image-only while allowing mixed-media ZIP export', () => {
+        const callbacks = renderBar([
+            image('one'),
+            { ...image('video'), mediaType: 'video' }
+        ]);
+
+        expect(screen.queryByRole('button', { name: 'Compare Selected Images' })).toBeNull();
+        const exportButton = screen.getByRole('button', { name: 'Export Selected Items' }) as HTMLButtonElement;
+        expect(exportButton.disabled).toBe(false);
+        fireEvent.click(exportButton);
+        expect(callbacks.onExport).toHaveBeenCalledOnce();
     });
 });

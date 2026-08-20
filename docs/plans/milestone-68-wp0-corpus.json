@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "milestone": 27,
+  "generatedOn": "2026-07-29",
+  "corpusLocation": "C:/tmp/ambit-video-wp0/corpus",
+  "mediaFilesCommitted": false,
+  "generator": {
+    "name": "FFmpeg",
+    "version": "n8.1.2-31-g8c9502e9b0-20260728",
+    "distribution": "BtbN FFmpeg-Builds win64 LGPL static 8.1",
+    "archiveSha256": "c1503dd324cd423a41e1ab11698b47b1f8f3d7aa52c1f247735fcca0318aff84",
+    "use": "Development-only synthetic fixture generation; rejected as an Ambit MVP runtime dependency."
+  },
+  "probe": {
+    "name": "MediaInfo CLI",
+    "version": "26.05",
+    "distribution": "Official Windows x64 CLI archive",
+    "archiveSha256": "f7f80620ce6d14f4995f0de6f98e3ef18ad29496db01899571152ee3311229f9",
+    "executableSha256": "30f2828a45a1895b033c3cd7784581033327e7b393033c55f4a03bb15cab0d89",
+    "executableBytes": 9293720
+  },
+  "fixtures": [
+    {
+      "name": "h264-aac-metadata.mp4",
+      "bytes": 102193,
+      "sha256": "86aae5d94928f093fff82c19d721ffed504def345e0f54742e9f9a6e68a79342",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": "AAC",
+      "durationSeconds": 2.0,
+      "purpose": "Admitted baseline with title, prompt-like comment, audio, and fast-start metadata."
+    },
+    {
+      "name": "h264-aac-metadata.m4v",
+      "bytes": 102193,
+      "sha256": "86aae5d94928f093fff82c19d721ffed504def345e0f54742e9f9a6e68a79342",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": "AAC",
+      "durationSeconds": 2.0,
+      "purpose": "Extension-candidate equivalence for M4V; exact byte copy of the admitted MP4 baseline."
+    },
+    {
+      "name": "h264-aac-large-seek.mp4",
+      "bytes": 26383874,
+      "sha256": "469291625766e8994d656077f32b2bda1be8b5dde31ebd0563171db2c1c7e3c6",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": "AAC",
+      "durationSeconds": 20.0,
+      "purpose": "1280x720 larger-file probe and seek-to-18-seconds acceptance case."
+    },
+    {
+      "name": "h264-no-audio-rotation.mp4",
+      "bytes": 48223,
+      "sha256": "4c0e6f374edde7c8b48804e93c391bb9b668f3b623e34522887449e7608cc5dc",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": null,
+      "durationSeconds": 1.5,
+      "expectedRotationDegrees": 0.0,
+      "purpose": "Portrait geometry and no-audio case. The historical filename is misleading; it has no nonzero rotation metadata."
+    },
+    {
+      "name": "h264-rotation-display-matrix.mp4",
+      "bytes": 102193,
+      "sha256": "395f43555d205ad113de12fd2ec40486c1b84eaa70918f2c427b1a9ffe0d1d4b",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": "AAC",
+      "durationSeconds": 2.0,
+      "expectedRotationDegrees": 270.0,
+      "purpose": "Nonzero MP4 display-matrix rotation metadata."
+    },
+    {
+      "name": "h264-true-vfr.mp4",
+      "bytes": 256215,
+      "sha256": "f9a841989e1dcfcd09ea2b013bf409fa50a024b41f279af53ec339c10ec88a51",
+      "container": "MPEG-4",
+      "videoCodec": "AVC",
+      "audioCodec": null,
+      "durationSeconds": 2.934,
+      "frameRateMode": "VFR",
+      "minimumFrameRate": 10.0,
+      "maximumFrameRate": 30.0,
+      "purpose": "True variable-frame-rate detection and playback."
+    },
+    {
+      "name": "vp9-opus.webm",
+      "bytes": 77583,
+      "sha256": "8c855cc260cd8f9fbbd62164a6170a803fca9ca330249043cfd891d942fb7dd7",
+      "container": "WebM",
+      "videoCodec": "VP9",
+      "audioCodec": "Opus",
+      "durationSeconds": 2.0,
+      "purpose": "Second admitted WebView playback profile."
+    },
+    {
+      "name": "hevc-aac.mov",
+      "bytes": 28951,
+      "sha256": "39ede0a920d1faaf65b8e3e403e8fc512791633d7f094ed517fefadd14d4c1b2",
+      "container": "MPEG-4",
+      "videoCodec": "HEVC",
+      "audioCodec": "AAC",
+      "durationSeconds": 1.0,
+      "purpose": "Capability-dependent MOV/HEVC case and external-player fallback."
+    },
+    {
+      "name": "av1-opus.mkv",
+      "bytes": 14055,
+      "sha256": "64853a0503198de44830bf044574c41f0c8efcb472b6f7bcb9ecd091a6a2268e",
+      "container": "Matroska",
+      "videoCodec": "AV1",
+      "audioCodec": "Opus",
+      "durationSeconds": 1.0,
+      "purpose": "Capability-dependent Matroska/AV1 case."
+    },
+    {
+      "name": "corrupt-truncated.mp4",
+      "bytes": 512,
+      "sha256": "30efd9f72ed41f6dee5a88ed3d0df1537fe8733c5a31f9fe4eb264eb55974e21",
+      "container": "MPEG-4 fragment",
+      "videoCodec": null,
+      "audioCodec": null,
+      "purpose": "Truncated input that makes MediaInfo exit successfully but supplies no valid Video track."
+    },
+    {
+      "name": "h264-aac-metadata.workflow.json",
+      "bytes": 263,
+      "sha256": "ba7040c4bc165105f8bf45f2a477969fcc9d1b1bf1a704eea5fde11d9620e7ba",
+      "purpose": "Synthetic sidecar-matching placeholder only; generator parsing is intentionally deferred to WP3."
+    }
+  ]
+}

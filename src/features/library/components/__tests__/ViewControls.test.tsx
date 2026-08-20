@@ -63,6 +63,19 @@ describe('ViewControls', () => {
         expect(props.setThumbnailSize).toHaveBeenCalledWith(325);
     });
 
+    it('filters the gallery by all items, images, or videos', () => {
+        const { rerender, props } = setup();
+        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Videos' }));
+        expect(mocks.filters.mediaType).toBe('video');
+        rerender(<ViewControls {...props} />);
+        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Images' }));
+        expect(mocks.filters.mediaType).toBe('image');
+    });
+
     it('selects every sort option, closes after selection, and dismisses outside clicks', () => {
         setup();
         const options: Array<[SortOption, string]> = [

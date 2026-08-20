@@ -9,6 +9,7 @@ pub mod reparse;
 pub mod resources;
 pub mod thumbs_scan;
 pub mod utils;
+pub mod video;
 
 pub use a1111::extract_a1111_metadata;
 pub use comfyui::extract_comfyui_metadata;
@@ -19,6 +20,9 @@ pub use parsers::{extract_png_chunks, scan_jpeg_metadata, scan_webp_metadata};
 /// Images with parser_version < CURRENT_PARSER_VERSION will be queued
 /// for background re-parsing from their stored original_metadata_json.
 pub const CURRENT_PARSER_VERSION: u32 = 46;
+
+/// Video metadata evolves independently from the mature image parsers.
+pub const VIDEO_PARSER_VERSION: u32 = 1;
 
 pub(crate) fn is_missing_prompt_value(value: &str) -> bool {
     value.trim().is_empty() || is_placeholder_prompt_value(value)

@@ -7,6 +7,7 @@ import {
     INVOKE_REFERENCE_ROLE_LABELS,
     type InvokeReferenceGroup,
 } from '../../../../services/db/invokeReferenceRepo';
+import { MetadataSectionHeader } from './MetadataSectionHeader';
 
 interface InvokeReferenceLinksProps {
     imageId: string;
@@ -140,10 +141,7 @@ export const InvokeReferenceLinks = ({ imageId, onOpenImage }: InvokeReferenceLi
 
     return (
         <div className="space-y-4 rounded-xl border border-gray-200 bg-white/50 p-4 dark:border-white/5 dark:bg-zinc-800/30">
-            <div className="flex items-center gap-2">
-                <Link2 className="h-3.5 w-3.5 text-sage-500" />
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">References</span>
-            </div>
+            <MetadataSectionHeader title="References" icon={Link2} />
             <ReferenceList
                 currentImageId={imageId}
                 groups={graph.sourceImages}

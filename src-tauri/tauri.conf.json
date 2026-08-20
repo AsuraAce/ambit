@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com;",
+      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost; media-src 'self' asset: http://asset.localhost https://asset.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com;",
       "capabilities": [
         "default"
       ],

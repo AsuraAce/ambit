@@ -9,12 +9,12 @@ import { MaintenanceItem } from './MaintenanceItem';
 interface MissingTabProps {
     images: AIImage[];
     selectedIds: Set<string>;
-    onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
+    onItemClick: (id: string, index: number, e: React.MouseEvent, revealGranted?: boolean) => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
     onDeleteSelected: () => void;
     onPurgeMissing: () => void;
-    onViewImage: (id: string) => void;
+    onViewImage: (id: string, revealGranted?: boolean) => void;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -36,11 +36,11 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     onBackgroundClick
 }) => {
     const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        const overlayActions = (
+        const overlayActions = (revealGranted: boolean) => (
             <button
                 onClick={(e) => {
                     e.stopPropagation();
-                    onViewImage(img.id);
+                    onViewImage(img.id, revealGranted);
                 }}
                 className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
             >
@@ -54,7 +54,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 img={img}
                 style={style}
                 isSelected={selectedIds.has(img.id)}
-                onClick={(e) => onItemClick(img.id, index, e)}
+                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
                 maskedKeywords={maskedKeywords}
                 overlayActions={overlayActions}
                 isMissing={true}

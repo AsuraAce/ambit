@@ -70,6 +70,8 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 next.favoritesOnly = false;
             } else if (key === 'searchQuery') {
                 next.searchQuery = '';
+            } else if (key === 'mediaType') {
+                next.mediaType = 'all';
             } else if (key === 'minSteps') {
                 next.minSteps = undefined;
                 next.maxSteps = undefined;
@@ -86,6 +88,15 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         if (!draftFilters) return null;
 
         const chips: React.ReactNode[] = [];
+
+        if (draftFilters.mediaType && draftFilters.mediaType !== 'all') {
+            chips.push(
+                <div key="media-type" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
+                    <span>Media: {draftFilters.mediaType === 'video' ? 'Videos' : 'Images'}</span>
+                    <button type="button" aria-label="Remove Media Type Rule" onClick={() => removeFilter('mediaType', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
+                </div>
+            );
+        }
 
         // Search Query
         if (draftFilters.searchQuery) {

@@ -30,7 +30,7 @@ export const useExportOps = ({ images }: UseExportOpsProps) => {
             }
 
             if (targetImages.length === 0) {
-                addToast("No valid images found to export", "error");
+                addToast("No valid items found to export", "error");
                 return;
             }
 

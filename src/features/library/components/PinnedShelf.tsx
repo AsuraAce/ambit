@@ -12,7 +12,7 @@ interface PinnedShelfProps {
     selectedIds: Set<string>;
     maskedKeywords: string[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    onImageClick: (e: React.MouseEvent, id: string, index: number) => void;
+    onImageClick: (e: React.MouseEvent, id: string, index: number, revealGranted?: boolean) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
     onTogglePin: (e: React.MouseEvent, id: string) => void;
     onToggleFavorite: (e: React.MouseEvent, id: string) => void;
