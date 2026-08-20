@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/AsuraAce/ambit/compare/v0.10.0...v0.11.0) (2026-08-20)
+
+
+### Features
+
+* add ComfyUI parser support workflow ([#275](https://github.com/AsuraAce/ambit/issues/275)) ([986422f](https://github.com/AsuraAce/ambit/commit/986422f6078ce478a40eb4236d4ca0c18d5226a6))
+* add foundational video library support ([#282](https://github.com/AsuraAce/ambit/issues/282)) ([f253fb2](https://github.com/AsuraAce/ambit/commit/f253fb2d82037d8cccff0f243d74510087f30df7))
+* expand ComfyUI support diagnostics and replay tooling ([#281](https://github.com/AsuraAce/ambit/issues/281)) ([7839500](https://github.com/AsuraAce/ambit/commit/783950005a923b52169cb437bf1cfe8046b05f54))
+* inspect normalized ComfyUI workflow subgraphs ([#278](https://github.com/AsuraAce/ambit/issues/278)) ([f9a216a](https://github.com/AsuraAce/ambit/commit/f9a216ad196a5cf1c118daee4f9197ac96b502f6))
+
+
+### Bug Fixes
+
+* **deps:** unblock release dependency audits ([#285](https://github.com/AsuraAce/ambit/issues/285)) ([01b8ef8](https://github.com/AsuraAce/ambit/commit/01b8ef8b361b0cf41e4088279e1f8dc8efd45ca5))
+* harden image removal lifecycle ([#277](https://github.com/AsuraAce/ambit/issues/277)) ([d22fe4b](https://github.com/AsuraAce/ambit/commit/d22fe4b9c19463e304454aca695c71f6c4c52003))
+
 ## [0.10.0](https://github.com/AsuraAce/ambit/compare/v0.9.1...v0.10.0) (2026-08-03)
 
 
