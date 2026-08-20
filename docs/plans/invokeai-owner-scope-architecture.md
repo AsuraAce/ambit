@@ -5,7 +5,8 @@ Status: Implementation and database smoke complete; desktop restart acceptance p
 ## Outcome
 
 Make changing a prepared InvokeAI owner scope feel like changing a filter, while
-keeping first-time and stale scopes fail-closed until their derived data is safe.
+keeping first-time and source-unverified scopes fail-closed until their derived
+data is safe.
 
 ## Decisions
 
@@ -47,10 +48,21 @@ Acceptance:
 - Active and removed Invoke images and Invoke collections carry an authoritative
   source identity.
 - User-facing reads use indexed scoped views driven by the current owner state.
-- Switching a ready scope performs no operation proportional to the total image
-  count and is click-to-ready in under two seconds on the maintainer library.
+- Switching a ready, source-verified scope performs no operation proportional to
+  the total image count and is click-to-ready in under two seconds on the
+  maintainer library.
 - `invoke_scope_hidden` remains for one compatibility cycle but is no longer
   authoritative or rewritten during scope changes.
+
+InvokeAI does not expose a durable per-owner change revision, and Ambit keeps its
+database read-only. Aggregate owner fingerprints cannot prove freshness because
+same-count, in-place owner or board-membership changes can leave their maxima
+unchanged. When the shared InvokeAI database snapshot changes, Ambit therefore
+treats every selected scope as source-unverified and runs that scope's catch-up
+before admitting it. This may be proportional to the selected source scope;
+eliminating it requires a trustworthy upstream per-owner revision/change feed,
+writing source-side change tracking, or relaxing the read-only or fail-closed
+contract.
 
 ## Package 3 - Selective cache repair
 

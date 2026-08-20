@@ -2030,6 +2030,15 @@ describe('Library Integration (Provider Stack)', () => {
             pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
             importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
             boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+            sourceFingerprint: {
+                schemaVersion: 1,
+                imageCount: 0,
+                imageUpdatedAt: null,
+                boardCount: 0,
+                boardUpdatedAt: null,
+                membershipCount: 0,
+                membershipMaxRowId: null,
+            },
             files: [{
                 path: discovery.dbPath,
                 exists: true,
@@ -3293,6 +3302,11 @@ describe('Library Integration (Provider Stack)', () => {
         });
         expect(selected).toBe(false);
 
+        expect(syncHook?.invokeOwnerScopeState.status).toBe('ready');
+        expect(libraryHook?.settings.invokeOwnerSelection).toEqual({
+            dbPath: discovery.dbPath,
+            mode: 'all',
+        });
         await act(async () => syncHook?.startInvokeSync({ mode: 'manual' }));
 
         expect(mocks.syncImages).toHaveBeenCalledWith(
@@ -3312,6 +3326,91 @@ describe('Library Integration (Provider Stack)', () => {
             discovery,
             expect.objectContaining({ mode: 'all' })
         );
+    });
+
+    it('repersists the previous owner when target-ready publication throws after catch-up', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: {
+            selection?: { mode: 'owner' | 'all' };
+        }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            boardCollectionsUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+
+        const originalSetOwnerScopeState = useInvokeOwnerScopeStore.getState().setOwnerScopeState;
+        let throwOnTargetReady = true;
+        useInvokeOwnerScopeStore.setState({
+            setOwnerScopeState: update => {
+                originalSetOwnerScopeState(update);
+                const nextState = useInvokeOwnerScopeStore.getState().ownerScopeState;
+                if (throwOnTargetReady
+                    && nextState.status === 'ready'
+                    && nextState.scope?.mode === 'owner'
+                    && nextState.scope.ownerId === 'owner-b') {
+                    throwOnTargetReady = false;
+                    throw new Error('target ready publication failed');
+                }
+            },
+        });
+
+        try {
+            renderSyncStack(h => libraryHook = h, h => syncHook = h);
+            await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+            await act(async () => libraryHook?.setSettings({
+                invokeAiPath: 'D:/Invoke',
+                invokeOwnerSelection: {
+                    dbPath: discovery.dbPath,
+                    mode: 'owner',
+                    ownerId: 'owner-a',
+                },
+            }));
+            await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('ready'));
+            mocks.applyInvokeOwnerScope.mockClear();
+            mocks.syncImages.mockClear();
+
+            await act(async () => {
+                expect(await syncHook!.selectInvokeOwnerScope({
+                    dbPath: discovery.dbPath,
+                    mode: 'owner',
+                    ownerId: 'owner-b',
+                })).toBe(false);
+            });
+
+            const previousSelection = {
+                dbPath: discovery.dbPath,
+                mode: 'owner' as const,
+                ownerId: 'owner-a',
+            };
+            expect(throwOnTargetReady).toBe(false);
+            expect(libraryHook?.settings.invokeOwnerSelection).toEqual(previousSelection);
+            expect(useSettingsStore.getState().settings.invokeOwnerSelection).toEqual(previousSelection);
+            expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+                status: 'ready',
+                scope: expect.objectContaining({ mode: 'owner', ownerId: 'owner-a' }),
+            }));
+            expect(mocks.applyInvokeOwnerScope).toHaveBeenLastCalledWith(expect.objectContaining({
+                selection: previousSelection,
+            }));
+        } finally {
+            useInvokeOwnerScopeStore.setState({ setOwnerScopeState: originalSetOwnerScopeState });
+        }
     });
 
     it('blocks owner changes while an owner-scoped sync is active', async () => {

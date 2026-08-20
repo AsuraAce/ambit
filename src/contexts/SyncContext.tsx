@@ -15,7 +15,6 @@ import {
     isInvokeDbSnapshotCurrent,
     isInvokeDbSnapshotScopeCurrent,
     isInvokeImportSchemaCurrent,
-    isInvokeSourceFingerprintCurrent,
     readInvokeDbSnapshotState,
     upsertInvokeDbSnapshot,
 } from '../services/invoke/dbSnapshot';
@@ -851,7 +850,34 @@ export const SyncProvider: React.FC<{
             addToast('Your InvokeAI view is ready.', 'success');
             return true;
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            let failure = error;
+            if (currentSelection
+                && isSameInvokePath(currentSelection.dbPath, discovery.dbPath)
+                && settingsRef.current.invokeAiPath?.trim() === currentRoot) {
+                try {
+                    const rollbackAdmission = await applyDiscoveredOwnerScope(
+                        discovery,
+                        currentSelection,
+                        true,
+                        currentRoot,
+                        true
+                    );
+                    if (rollbackAdmission.allowed) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        addToast(
+                            `Could not change InvokeAI owner scope: ${message.replace(/[.!?]+$/, '')}. The previous view was restored.`,
+                            'error'
+                        );
+                        return false;
+                    }
+                } catch (rollbackError) {
+                    failure = new AggregateError(
+                        [error, rollbackError],
+                        'Owner scope preparation failed and the previous view could not be restored.'
+                    );
+                }
+            }
+            const message = failure instanceof Error ? failure.message : String(failure);
             setInvokeOwnerScopeState({
                 status: 'error',
                 rootPath: currentRoot,
@@ -1146,28 +1172,6 @@ export const SyncProvider: React.FC<{
                     return outcome;
                 }
 
-                if (savedScopeSnapshot?.sourceFingerprint) {
-                    const sourceFingerprint = await readInvokeSourceFingerprint(
-                        capturedRootPath,
-                        capturedScope
-                    );
-                    if (isInvokeSourceFingerprintCurrent(
-                        savedScopeSnapshot.sourceFingerprint,
-                        sourceFingerprint
-                    )) {
-                        await persistSnapshotState({ ...currentSnapshot, sourceFingerprint });
-                        announcePreparedInvokeView('current');
-                        console.info('[Startup Catch-up] Owner source fingerprint unchanged; skipped SQLite sync.', {
-                            dbPath: currentSnapshot.dbPath,
-                            checkMs: elapsedMs(snapshotStartedAt)
-                        });
-                        if (activeInvokeSyncScopeRef.current === capturedScope) activeInvokeSyncScopeRef.current = null;
-                        setIsInvokeSyncActive(false);
-                        const outcome: InvokeSyncOutcome = { status: 'completed' };
-                        finishActiveRun(outcome);
-                        return outcome;
-                    }
-                }
 
                 console.info('[Startup Catch-up] Invoke DB snapshot changed; running SQLite sync.', {
                     dbPath: currentSnapshot.dbPath,
