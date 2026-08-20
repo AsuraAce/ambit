@@ -917,6 +917,13 @@ fn workflow_linked_flux_guidance_input_wins_over_stale_widget_value() {
         ComfyMetadataField::Cfg,
         ComfyParseLayer::SamplerTraversal,
     );
+    assert_eq!(
+        diagnostics
+            .field_source_node_ids
+            .get(&ComfyMetadataField::Cfg),
+        Some(&vec!["3".to_string()]),
+        "CFG navigation should follow the live guidance link, not the stale FluxGuidance widget"
+    );
 }
 
 #[test]

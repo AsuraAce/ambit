@@ -39,6 +39,7 @@
     "audit:rust": "node ./scripts/audit-rust.mjs",
     "audit:comfyui-catalog": "node ./scripts/audit-comfyui-catalog.mjs",
     "inspect:comfyui-support": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support --",
+    "inspect:comfyui-support-batch": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support -- --batch",
     "prepare:comfyui-fixture": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support -- --prepare-fixture",
     "prepare:video-metadata-smoke": "node ./scripts/prepare-video-metadata-smoke.mjs",
     "inspect:comfyui-fixture": "cargo run --quiet --manifest-path src-tauri/Cargo.toml --bin inspect_comfyui_support -- --inspect-fixture",

@@ -9,6 +9,14 @@ pub struct ComfyGraph {
     pub(crate) nodes: HashMap<String, Value>,
     pub(crate) broadcasters: Vec<String>,
     blocked_wireless_targets: HashSet<(String, usize)>,
+    source: ComfyGraphSource,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ComfyGraphSource {
+    None,
+    ApiPrompt,
+    ExpandedWorkflow,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -35,17 +43,11 @@ impl ComfyGraph {
     pub fn from_chunks(chunks: &HashMap<String, String>) -> Self {
         let mut nodes_map = HashMap::new();
         let mut blocked_wireless_targets = HashSet::new();
+        let mut source = ComfyGraphSource::None;
 
         // 1. Try "prompt" chunk (API format)
         if let Some(prompt_json) = chunks.get("prompt") {
-            let sanitized = if prompt_json.contains("NaN") || prompt_json.contains("Infinity") {
-                let re = regex::Regex::new(r":\s*(NaN|Infinity|-Infinity)\b").unwrap();
-                re.replace_all(prompt_json, ": null").to_string()
-            } else {
-                prompt_json.clone()
-            };
-
-            if let Ok(json) = serde_json::from_str::<Value>(&sanitized) {
+            if let Some(json) = parse_prompt_chunk(prompt_json) {
                 if let Some(obj) = json.as_object() {
                     for (id, node) in obj {
                         let mut node_obj = node.clone();
@@ -56,6 +58,9 @@ impl ComfyGraph {
                     }
                 }
             }
+        }
+        if !nodes_map.is_empty() {
+            source = ComfyGraphSource::ApiPrompt;
         }
 
         // 2. Fallback to "workflow" chunk (UI format)
@@ -210,6 +215,9 @@ impl ComfyGraph {
                             }
                             nodes_map.insert(id, node);
                         }
+                        if !nodes_map.is_empty() {
+                            source = ComfyGraphSource::ExpandedWorkflow;
+                        }
                     }
                 }
             }
@@ -228,6 +236,7 @@ impl ComfyGraph {
             nodes: nodes_map,
             broadcasters,
             blocked_wireless_targets,
+            source,
         }
     }
 
@@ -239,6 +248,10 @@ impl ComfyGraph {
     #[allow(dead_code)]
     pub fn nodes(&self) -> &HashMap<String, Value> {
         &self.nodes
+    }
+
+    pub(crate) fn source(&self) -> ComfyGraphSource {
+        self.source
     }
 
     fn blocks_wireless_input(&self, node_id: &str, input_name: &str) -> bool {
@@ -261,6 +274,15 @@ impl ComfyGraph {
 }
 
 // Helpers
+pub(crate) fn parse_prompt_chunk(prompt_json: &str) -> Option<Value> {
+    if prompt_json.contains("NaN") || prompt_json.contains("Infinity") {
+        let re = regex::Regex::new(r":\s*(NaN|Infinity|-Infinity)\b").ok()?;
+        serde_json::from_str(&re.replace_all(prompt_json, ": null")).ok()
+    } else {
+        serde_json::from_str(prompt_json).ok()
+    }
+}
+
 pub(crate) fn compare_node_ids(left_id: &str, right_id: &str) -> Ordering {
     match (left_id.parse::<u64>(), right_id.parse::<u64>()) {
         (Ok(left), Ok(right)) => left.cmp(&right).then_with(|| left_id.cmp(right_id)),
