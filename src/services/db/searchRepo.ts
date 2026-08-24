@@ -8,7 +8,10 @@ import { commands } from '../../bindings';
 import { resourceReferenceEqualsSql, resourceReferenceSql } from '../../utils/sqlHelpers';
 
 export interface LibraryStats {
+    totalItems?: number;
     totalImages: number;
+    totalVideos?: number;
+    totalBytes?: number;
     totalGenerations: number;
     avgSteps: number;
     estSizeMB: string;
@@ -17,7 +20,10 @@ export interface LibraryStats {
 }
 
 export interface LibraryStatsSummary {
+    totalItems?: number;
     totalImages: number;
+    totalVideos?: number;
+    totalBytes?: number;
     totalGenerations: number;
     avgSteps: number;
     estSizeMB: string;
@@ -110,6 +116,13 @@ interface BasicStatsRow {
 
 interface AverageStepsRow {
     avg_steps: number | null;
+}
+
+interface MediaStatsRow {
+    total_items: number;
+    total_images: number;
+    total_videos: number;
+    total_bytes: number;
 }
 
 interface ModelStatsRow {
@@ -813,20 +826,27 @@ const getScopedFacetCountMaps = async (
 };
 
 const buildLibraryStatsSummary = (
-    total: number,
+    mediaStats: MediaStatsRow | undefined,
     averageSteps: number | null | undefined,
     modelRows: ModelStatsRow[]
-): LibraryStatsSummary => ({
-    totalImages: total,
-    totalGenerations: total,
-    avgSteps: Math.round(averageSteps ?? 0),
-    estSizeMB: ((total * 2.4)).toFixed(1),
-    modelStats: modelRows.map(r => ({
-        name: r.name || 'Unknown',
-        fullName: r.name || 'Unknown',
-        count: r.count
-    }))
-});
+): LibraryStatsSummary => {
+    const totalItems = mediaStats?.total_items ?? 0;
+    const totalBytes = mediaStats?.total_bytes ?? 0;
+    return {
+        totalItems,
+        totalImages: mediaStats?.total_images ?? 0,
+        totalVideos: mediaStats?.total_videos ?? 0,
+        totalBytes,
+        totalGenerations: totalItems,
+        avgSteps: Math.round(averageSteps ?? 0),
+        estSizeMB: (totalBytes / (1024 * 1024)).toFixed(1),
+        modelStats: modelRows.map(r => ({
+            name: r.name || 'Unknown',
+            fullName: r.name || 'Unknown',
+            count: r.count
+        }))
+    };
+};
 
 export const getLibraryStatsSummary = async (
     whereClause: string = '',
@@ -842,6 +862,9 @@ export const getLibraryStatsSummary = async (
 
     const db = await getDb();
     const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
+        'images.rowid AS rowid',
+        'images.media_type AS media_type',
+        'images.file_size AS file_size',
         'images.steps AS steps'
     ], {});
     const modelScopedParts = buildScopedImageQueryParts(
@@ -859,8 +882,18 @@ export const getLibraryStatsSummary = async (
     );
 
     try {
-        const total = await countImages(whereClause, params, collectionId, loraName);
-
+        const mediaStatsQuery = `
+            ${scopedParts.cteSql}
+            SELECT
+                COUNT(*) AS total_items,
+                COALESCE(SUM(CASE WHEN media_type = 'image' THEN 1 ELSE 0 END), 0) AS total_images,
+                COALESCE(SUM(CASE WHEN media_type = 'video' THEN 1 ELSE 0 END), 0) AS total_videos,
+                COALESCE(SUM(file_size), 0) AS total_bytes
+            FROM (
+                SELECT DISTINCT rowid, media_type, file_size
+                FROM filtered_images
+            )
+        `;
         const averageStepsQuery = `
             ${scopedParts.cteSql}
             SELECT AVG(steps) AS avg_steps
@@ -877,11 +910,12 @@ export const getLibraryStatsSummary = async (
             ORDER BY count DESC
         `;
 
-        const [averageRows, modelRows] = await Promise.all([
+        const [mediaStatsRows, averageRows, modelRows] = await Promise.all([
+            timeDbCall('libraryStats.mediaStats', scopedParts.reason, () => db.select<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)),
             timeDbCall('libraryStats.avgSteps', scopedParts.reason, () => db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)),
             timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams))
         ]);
-        const summary = buildLibraryStatsSummary(total, averageRows[0]?.avg_steps, modelRows);
+        const summary = buildLibraryStatsSummary(mediaStatsRows[0], averageRows[0]?.avg_steps, modelRows);
 
         if (!whereClause && !collectionId && !loraName) {
             globalStatsSummaryCache = summary;
@@ -891,7 +925,10 @@ export const getLibraryStatsSummary = async (
     } catch (e) {
         console.error('[DB] Failed to get library stats summary', e);
         return {
+            totalItems: 0,
             totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',
@@ -914,7 +951,10 @@ export const getLibraryStats = async (whereClause: string = '', params: unknown[
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
         return {
+            totalItems: 0,
             totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',

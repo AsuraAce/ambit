@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 71: Make dirty-ledger writes idempotent even when a containing
+/// Migration 72: Make dirty-ledger writes idempotent even when a containing
 /// SQLite UPSERT supplies a conflicting outer conflict policy.
-pub fn migration71() -> Migration {
+pub fn migration72() -> Migration {
     Migration {
-        version: 71,
+        version: 72,
         description: "fix_invoke_scope_dirty_item_upsert_conflicts",
         sql: r#"
             DROP TRIGGER IF EXISTS invoke_scope_cache_images_insert_detail;

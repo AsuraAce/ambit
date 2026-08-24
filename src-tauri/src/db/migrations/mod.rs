@@ -34,12 +34,13 @@ pub mod m64_invoke_image_references;
 pub mod m65_invoke_owner_scope;
 pub mod m66_invoke_collection_owner;
 pub mod m67_removed_restore_state;
-pub mod m68_invoke_scope_cache;
-pub mod m69_invoke_scoped_views;
-pub mod m70_invoke_scope_dirty_items;
-pub mod m71_invoke_scope_dirty_conflicts;
-pub mod m72_ambit_collection_scope;
-pub mod m73_invoke_scope_literal_prefix;
+pub mod m68_video_library_assets;
+pub mod m69_invoke_scope_cache;
+pub mod m70_invoke_scoped_views;
+pub mod m71_invoke_scope_dirty_items;
+pub mod m72_invoke_scope_dirty_conflicts;
+pub mod m73_ambit_collection_scope;
+pub mod m74_invoke_scope_literal_prefix;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -83,12 +84,13 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m65_invoke_owner_scope::migration65());
     migrations.push(m66_invoke_collection_owner::migration66());
     migrations.push(m67_removed_restore_state::migration67());
-    migrations.push(m68_invoke_scope_cache::migration68());
-    migrations.push(m69_invoke_scoped_views::migration69());
-    migrations.push(m70_invoke_scope_dirty_items::migration70());
-    migrations.push(m71_invoke_scope_dirty_conflicts::migration71());
-    migrations.push(m72_ambit_collection_scope::migration72());
-    migrations.push(m73_invoke_scope_literal_prefix::migration73());
+    migrations.push(m68_video_library_assets::migration68());
+    migrations.push(m69_invoke_scope_cache::migration69());
+    migrations.push(m70_invoke_scoped_views::migration70());
+    migrations.push(m71_invoke_scope_dirty_items::migration71());
+    migrations.push(m72_invoke_scope_dirty_conflicts::migration72());
+    migrations.push(m73_ambit_collection_scope::migration73());
+    migrations.push(m74_invoke_scope_literal_prefix::migration74());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -100,7 +102,7 @@ mod tests {
     use super::get_migrations;
 
     #[test]
-    fn migrations_include_mainline_through_ambit_collection_scope_72() {
+    fn migrations_include_mainline_through_invoke_scope_literal_prefix_74() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -131,6 +133,7 @@ mod tests {
         assert!(versions.contains(&71));
         assert!(versions.contains(&72));
         assert!(versions.contains(&73));
+        assert!(versions.contains(&74));
     }
 
     #[test]
@@ -141,8 +144,15 @@ mod tests {
             .collect();
         let mut sorted = versions.clone();
         sorted.sort_unstable();
+        let mut unique = sorted.clone();
+        unique.dedup();
 
         assert_eq!(versions, sorted);
+        assert_eq!(
+            versions.len(),
+            unique.len(),
+            "migration versions must be unique"
+        );
     }
 
     #[test]
@@ -156,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_ambit_collection_scope_72_pending() {
+    fn database_at_mainline_49_has_migrations_through_invoke_scope_literal_prefix_74_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -170,7 +180,7 @@ mod tests {
             pending_after_49,
             vec![
                 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
-                71, 72, 73
+                71, 72, 73, 74
             ]
         );
     }

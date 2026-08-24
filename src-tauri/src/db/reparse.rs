@@ -99,6 +99,7 @@ pub async fn start_reparse_job(
             let mut clauses = vec![
                 "invoke_scope_hidden = 0".to_string(),
                 "is_deleted = 0".to_string(),
+                "COALESCE(media_type, 'image') != 'video'".to_string(),
                 "original_metadata_json IS NOT NULL".to_string(),
                 "original_metadata_json != ''".to_string()
             ];

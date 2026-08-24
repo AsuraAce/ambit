@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AIImage, GeneratorTool } from '../../../types';
+import { AIImage, GeneratorTool, isVideoAsset, type VideoGenerationMode } from '../../../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { ImageViewer } from '../../../features/viewer/components/ImageViewer';
+import { VideoViewer } from '../../../features/viewer/components/VideoViewer';
 import { CompareModal } from '../../../features/viewer/components/CompareModal';
 import { useMaintenanceData, MaintenanceTab } from '../../../hooks/useMaintenanceData';
 import { TrashTab } from './TrashTab';
@@ -21,6 +22,8 @@ import { useLibraryContext } from '../../../contexts/LibraryContext';
 import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
 import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution } from '../../../bindings';
+import { isImageMasked } from '../../../utils/maskingUtils';
+import { useSettingsStore } from '../../../stores/settingsStore';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -34,9 +37,14 @@ interface MaintenanceViewProps {
     onRegenerateThumbnails?: (ids?: string[]) => void;
     maskedKeywords: string[];
     onUpdatePrompt?: (id: string, prompt: string) => void;
+    onUpdateNegativePrompt?: (id: string, prompt: string) => void;
     onUpdateModel?: (id: string, model: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
+    onUpdateGenerationMode?: (id: string, mode: VideoGenerationMode) => void;
     onUpdateNotes?: (id: string, notes: string) => void;
+    onRevertMetadata?: (id: string) => void;
+    onSearch: (term: string) => void;
+    onOpenSettings: () => void;
     onRecoverMetadata?: (targetId: string, onRecovered: (image: AIImage) => void) => void;
     onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
@@ -45,6 +53,7 @@ interface MaintenanceViewProps {
     onViewerOpenChange: (isOpen: boolean) => void;
     onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     isShortcutBlocked: boolean;
+    modelOptions?: readonly string[];
 }
 
 // Lazy load LibraryHealth
@@ -59,9 +68,14 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onRegenerateThumbnails,
     maskedKeywords,
     onUpdatePrompt,
+    onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
+    onUpdateGenerationMode,
     onUpdateNotes,
+    onRevertMetadata,
+    onSearch,
+    onOpenSettings,
     onRecoverMetadata,
     onToggleFavorite,
     onTogglePin,
@@ -69,7 +83,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     availableTags,
     onViewerOpenChange,
     onOpenReferencedImage,
-    isShortcutBlocked
+    isShortcutBlocked,
+    modelOptions = []
 }) => {
     // --- State ---
     const [activeTab, setActiveTabOriginal] = useState<MaintenanceTab>('missing');
@@ -88,9 +103,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const [includeUpgradeable, setIncludeUpgradeable] = useState(false);
 
     const [viewingImageId, setViewingImageId] = useState<string | null>(null);
+    const [viewerRevealGrantId, setViewerRevealGrantId] = useState<string | null>(null);
     const [compareImages, setCompareImages] = useState<[AIImage, AIImage] | null>(null);
     const [recoveredImages, setRecoveredImages] = useState<Map<string, AIImage>>(() => new Map());
     const [removedAction, setRemovedAction] = useState<'restoring' | 'deleting' | null>(null);
+    const privacyEnabled = useSettingsStore(state => state.privacyEnabled);
     const [deleteConfirmationIds, setDeleteConfirmationIds] = useState<string[] | null>(null);
     const [deleteConfirmationSource, setDeleteConfirmationSource] = useState<'removed' | 'intermediates'>('removed');
     const [deleteConfirmationError, setDeleteConfirmationError] = useState(false);
@@ -216,11 +233,16 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     // Wrapper for selection to match expected signature in sub-components if needed
     // Most subcomponents expect `onItemClick: (id, index, e) => void`
     // useSelection.handleImageClick expects `(e, id, index, setViewerIndex)`
-    const handleItemClickAdapter = useCallback((id: string, index: number, e: React.MouseEvent) => {
+    const openViewer = useCallback((id: string, revealGranted = false) => {
+        setViewerRevealGrantId(revealGranted ? id : null);
+        setViewingImageId(id);
+    }, []);
+
+    const handleItemClickAdapter = useCallback((id: string, index: number, e: React.MouseEvent, revealGranted = false) => {
         handleImageClick(e, id, index, () => {
-            setViewingImageId(id);
+            openViewer(id, revealGranted);
         });
-    }, [handleImageClick, setViewingImageId]);
+    }, [handleImageClick, openViewer]);
 
     const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
         const opened = await onOpenReferencedImage(imageId);
@@ -387,6 +409,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             console.error('[Maintenance] Viewer cleanup failed', error);
             return;
         }
+        setViewerRevealGrantId(null);
         setViewingImageId(null);
 
         if (activeTab === 'missing') {
@@ -596,7 +619,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         scanProgress={duplicateScanProgress}
                                         scanResult={lastDuplicateScanResult}
                                         onCancelScan={cancelDuplicateScan}
-                                        onViewImage={setViewingImageId}
+                                        onViewImage={openViewer}
                                         onCompareImages={(imageA, imageB) => setCompareImages([imageA, imageB])}
                                         scrollContainerRef={scrollContainerRef}
                                         onRangeSelection={handleRangeAdapter}
@@ -612,7 +635,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         onSelectAll={handleSelectAll}
                                         onClearSelection={clearSelection}
                                         onRemoveFromLibrary={handleDeleteSelected}
-                                        onViewImage={setViewingImageId}
+                                        onViewImage={openViewer}
                                         maskedKeywords={maskedKeywords}
                                         scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                         onRangeSelection={handleRangeAdapter}
@@ -636,7 +659,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                             onClearSelection={clearSelection}
                                             onDeleteSelected={handleDeleteSelected}
                                             onPurgeMissing={handlePurgeMissing}
-                                            onViewImage={setViewingImageId}
+                                            onViewImage={openViewer}
                                             maskedKeywords={maskedKeywords}
                                             scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                             onRangeSelection={handleRangeAdapter}
@@ -671,7 +694,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                                         onClearSelection={clearSelection}
                                         onDeleteSelected={handleDeleteSelected}
                                         onUnmarkSelected={handleUnmarkIntermediates}
-                                        onViewImage={setViewingImageId}
+                                        onViewImage={openViewer}
                                         maskedKeywords={maskedKeywords}
                                         scrollContainerRef={scrollContainerRef as React.RefObject<HTMLElement | null>}
                                         onRangeSelection={handleRangeAdapter}
@@ -720,37 +743,87 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                 </AnimatePresence>
             </div>
 
-            {/* Global Image Viewer Portal */}
+            {/* Global media viewer portal */}
             {viewingImageId && targetImage && (
-                <ImageViewer
-                    image={targetImage}
-                    isOpen={true}
-                    isShortcutBlocked={isShortcutBlocked}
-                    onClose={() => setViewingImageId(null)}
-                    onNext={() => {
-                        const list = currentList; // Use memoized current list
-                        const idx = list.findIndex(i => i.id === viewingImageId);
-                        if (idx !== -1 && idx < list.length - 1) setViewingImageId(list[idx + 1].id);
-                    }}
-                    onPrev={() => {
-                        const list = currentList;
-                        const idx = list.findIndex(i => i.id === viewingImageId);
-                        if (idx > 0) setViewingImageId(list[idx - 1].id);
-                    }}
-                    onSetCollectionMembership={onSetCollectionMembership}
-                    onSearch={() => { }}
-                    onToggleFavorite={(id) => onToggleFavorite?.(id)}
-                    onTogglePin={onTogglePin}
-                    onUpdatePrompt={onUpdatePrompt}
-                    onUpdateModel={onUpdateModel}
-                    onUpdateTool={onUpdateTool}
-                    onUpdateNotes={onUpdateNotes}
-                    onRecoverMetadata={() => onRecoverMetadata?.(viewingImageId, handleRecoveredImage)}
-                    availableTags={availableTags}
-                    onOpenSettings={() => { }}
-                    onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
-                    onOpenReferencedImage={handleOpenReferencedImage}
-                />
+                isVideoAsset(targetImage) ? (
+                    <VideoViewer
+                        video={targetImage}
+                        isMasked={isImageMasked(targetImage, privacyEnabled, maskedKeywords)}
+                        initiallyRevealed={viewerRevealGrantId === targetImage.id}
+                        onClose={() => { setViewerRevealGrantId(null); setViewingImageId(null); }}
+                        onNext={() => {
+                            const idx = currentList.findIndex(item => item.id === viewingImageId);
+                            if (idx !== -1 && idx < currentList.length - 1) {
+                                setViewerRevealGrantId(null);
+                                setViewingImageId(currentList[idx + 1].id);
+                            }
+                        }}
+                        onPrev={() => {
+                            const idx = currentList.findIndex(item => item.id === viewingImageId);
+                            if (idx > 0) {
+                                setViewerRevealGrantId(null);
+                                setViewingImageId(currentList[idx - 1].id);
+                            }
+                        }}
+                        onToggleFavorite={activeTab === 'trash' || !onToggleFavorite ? undefined : onToggleFavorite}
+                        onTogglePin={activeTab === 'trash' ? undefined : onTogglePin}
+                        onDelete={activeTab === 'trash' ? undefined : () => { void handleViewerCleanup(); }}
+                        onUpdateNotes={activeTab === 'trash' ? undefined : onUpdateNotes}
+                        onUpdatePrompt={activeTab === 'trash' ? undefined : onUpdatePrompt}
+                        onUpdateNegativePrompt={activeTab === 'trash' ? undefined : onUpdateNegativePrompt}
+                        onUpdateModel={activeTab === 'trash' ? undefined : onUpdateModel}
+                        onUpdateTool={activeTab === 'trash' ? undefined : onUpdateTool}
+                        onUpdateGenerationMode={activeTab === 'trash' ? undefined : onUpdateGenerationMode}
+                        onRevertMetadata={activeTab === 'trash' ? undefined : onRevertMetadata}
+                        onSearch={onSearch}
+                        onSetCollectionMembership={activeTab === 'trash' ? undefined : onSetCollectionMembership}
+                        modelOptions={modelOptions}
+                        isShortcutBlocked={isShortcutBlocked}
+                        canNavigatePrevious={currentList.findIndex(item => item.id === viewingImageId) > 0}
+                        canNavigateNext={currentList.findIndex(item => item.id === viewingImageId) < currentList.length - 1}
+                    />
+                ) : (
+                    <ImageViewer
+                        image={targetImage}
+                        isOpen={true}
+                        isMasked={isImageMasked(targetImage, privacyEnabled, maskedKeywords)}
+                        initiallyRevealed={viewerRevealGrantId === targetImage.id}
+                        isShortcutBlocked={isShortcutBlocked}
+                        onClose={() => { setViewerRevealGrantId(null); setViewingImageId(null); }}
+                        onNext={() => {
+                            const idx = currentList.findIndex(i => i.id === viewingImageId);
+                            if (idx !== -1 && idx < currentList.length - 1) {
+                                setViewerRevealGrantId(null);
+                                setViewingImageId(currentList[idx + 1].id);
+                            }
+                        }}
+                        onPrev={() => {
+                            const idx = currentList.findIndex(i => i.id === viewingImageId);
+                            if (idx > 0) {
+                                setViewerRevealGrantId(null);
+                                setViewingImageId(currentList[idx - 1].id);
+                            }
+                        }}
+                        onSetCollectionMembership={activeTab === 'trash' ? undefined : onSetCollectionMembership}
+                        onSearch={onSearch}
+                        onToggleFavorite={activeTab === 'trash' || !onToggleFavorite ? undefined : onToggleFavorite}
+                        onTogglePin={activeTab === 'trash' ? undefined : onTogglePin}
+                        onUpdatePrompt={activeTab === 'trash' ? undefined : onUpdatePrompt}
+                        onUpdateNegativePrompt={activeTab === 'trash' ? undefined : onUpdateNegativePrompt}
+                        onUpdateModel={activeTab === 'trash' ? undefined : onUpdateModel}
+                        onUpdateTool={activeTab === 'trash' ? undefined : onUpdateTool}
+                        onUpdateNotes={activeTab === 'trash' ? undefined : onUpdateNotes}
+                        onRevertMetadata={activeTab === 'trash' ? undefined : onRevertMetadata}
+                        onRecoverMetadata={activeTab === 'trash' || !onRecoverMetadata
+                            ? undefined
+                            : () => onRecoverMetadata(viewingImageId, handleRecoveredImage)}
+                        availableTags={availableTags}
+                        modelOptions={modelOptions}
+                        onOpenSettings={onOpenSettings}
+                        onDelete={activeTab === 'trash' ? undefined : handleViewerCleanup}
+                        onOpenReferencedImage={handleOpenReferencedImage}
+                    />
+                )
             )}
 
             {compareImages && (

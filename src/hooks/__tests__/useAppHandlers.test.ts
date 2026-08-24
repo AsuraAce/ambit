@@ -143,6 +143,25 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Updated', 'success');
     });
 
+    it('ignores unchanged prompt, model, and note values', async () => {
+        const { result } = renderHandlers();
+
+        await act(async () => {
+            await result.current.handleUpdatePrompt('img1', 'A cat');
+            await result.current.handleUpdateNegativePrompt('img1', 'low res');
+            await result.current.handleUpdateModel('img1', 'Model A');
+            await result.current.handleUpdateModel('img1', '   ');
+            await result.current.handleUpdateTool('img1', GeneratorTool.AUTOMATIC1111);
+            await result.current.handleUpdateNotes('img1', '');
+        });
+
+        expect(mockSetImages).not.toHaveBeenCalled();
+        expect(mockUpdateImageMetadataFields).not.toHaveBeenCalled();
+        expect(mockUpdateImageNotesCol).not.toHaveBeenCalled();
+        expect(mockRebuildFacetCacheIncremental).not.toHaveBeenCalled();
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
     it('should handle grouping images into a stack', () => {
         const { result } = renderHandlers();
 
@@ -193,7 +212,7 @@ describe('useAppHandlers', () => {
 
             expect(mockSetImages).not.toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(
-                'Could not remove the selected images. The library was left unchanged.',
+                'Could not remove the selected items. The library was left unchanged.',
                 'error'
             );
         } finally {
@@ -211,9 +230,9 @@ describe('useAppHandlers', () => {
             await act(async () => result.current.handleRemoveFromLibrary(['img1']));
 
             expect(dispatchedImages).toEqual([]);
-            expect(mockAddToast).toHaveBeenCalledWith('Removed 1 image from the library', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith('Removed 1 item from the library', 'success');
             expect(mockAddToast).toHaveBeenCalledWith(
-                'Images were removed, but some views may need a refresh.',
+                'Items were removed, but some views may need a refresh.',
                 'warning'
             );
         } finally {
@@ -439,6 +458,20 @@ describe('useAppHandlers', () => {
         expect(mockAddToast).toHaveBeenCalledWith('Saved', 'success');
     });
 
+    it('rolls back notes and reports an error when persistence fails', async () => {
+        dispatchedImages = [mockImages[0], { ...mockImages[0], id: 'img2' }];
+        mockUpdateImageNotesCol.mockRejectedValueOnce(new Error('missing row'));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHandlers();
+
+        await act(async () => result.current.handleUpdateNotes('img1', 'note'));
+
+        expect(dispatchedImages.map(image => image.notes)).toEqual([undefined, undefined]);
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to save notes', 'error');
+        expect(error).toHaveBeenCalledWith('[Notes] Failed to persist notes', expect.any(Error));
+        error.mockRestore();
+    });
+
     it('applies metadata edits to a directly opened asset outside the gallery', async () => {
         let directImage: AIImage = {
             ...mockImages[0],
@@ -509,7 +542,7 @@ describe('useAppHandlers', () => {
         await act(async () => result.current.handleResolveDuplicate([{ keepId: 'img1', removeIds: ['img2', 'img3'] }]));
         expect(mockAddToast).toHaveBeenCalledWith('Moved 2 duplicates to Removed', 'success');
         await act(async () => result.current.handleRemoveFromLibrary(['img1', 'img2']));
-        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 images from the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Removed 2 items from the library', 'success');
     });
 
     it('keeps local images unchanged and reports a failed duplicate transaction', async () => {
@@ -566,7 +599,7 @@ describe('useAppHandlers', () => {
         await act(async () => result.current.handleRestoreImages(['img1']));
         expect(mockRefreshHiddenAvailability).toHaveBeenCalledOnce();
         expect(mockSetImages).not.toHaveBeenCalled();
-        expect(mockAddToast).toHaveBeenCalledWith('Restored 1 image to the library', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Restored 1 item to the library', 'success');
     });
 
     it('completes restore updates when hidden availability refresh fails', async () => {
@@ -579,7 +612,7 @@ describe('useAppHandlers', () => {
             await act(async () => result.current.handleRestoreImages(['img1']));
 
             expect(mockRestoreRemovedImages).toHaveBeenCalledWith(['img1']);
-            expect(mockAddToast).toHaveBeenCalledWith('Restored 1 image to the library', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith('Restored 1 item to the library', 'success');
             expect(mockRefreshMaintenanceCounts).toHaveBeenCalledOnce();
             expect(mockRefreshFacetCacheForResourcesStrict).toHaveBeenCalledOnce();
             expect(errorSpy).toHaveBeenCalledWith(
@@ -587,7 +620,7 @@ describe('useAppHandlers', () => {
                 refreshError
             );
             expect(mockAddToast).toHaveBeenCalledWith(
-                'Images were restored, but some views may need a refresh.',
+                'Items were restored, but some views may need a refresh.',
                 'warning'
             );
         } finally {
@@ -609,7 +642,7 @@ describe('useAppHandlers', () => {
             expect(mockRefreshMaintenanceCounts).not.toHaveBeenCalled();
             expect(mockRefreshFacetCacheForResourcesStrict).not.toHaveBeenCalled();
             expect(mockAddToast).toHaveBeenCalledWith(
-                'Could not restore the selected images. Their Removed entries were kept.',
+                'Could not restore the selected items. Their Removed entries were kept.',
                 'error'
             );
         } finally {

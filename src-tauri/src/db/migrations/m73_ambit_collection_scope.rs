@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 72: Give Ambit collections the same owner-aware projection model
+/// Migration 73: Give Ambit collections the same owner-aware projection model
 /// as InvokeAI boards while preserving unscoped legacy collections.
-pub fn migration72() -> Migration {
+pub fn migration73() -> Migration {
     Migration {
-        version: 72,
+        version: 73,
         description: "scope_ambit_collections_by_invoke_owner",
         sql: r#"
             DROP TRIGGER IF EXISTS invoke_scope_cache_collections_insert_dirty;
@@ -259,7 +259,7 @@ pub fn migration72() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration72;
+    use super::migration73;
     use rusqlite::Connection;
 
     fn setup() -> Connection {
@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn infers_existing_ambit_collection_scopes_and_projects_them_by_owner() {
         let conn = setup();
-        conn.execute_batch(migration72().sql).expect("migration 72");
+        conn.execute_batch(migration73().sql).expect("migration 73");
 
         assert_eq!(
             collection_scope(&conn, "single-a"),
@@ -412,7 +412,7 @@ mod tests {
     #[test]
     fn migration_and_collection_triggers_record_only_idempotent_collection_repairs() {
         let conn = setup();
-        conn.execute_batch(migration72().sql).expect("migration 72");
+        conn.execute_batch(migration73().sql).expect("migration 73");
 
         conn.execute(
             "UPDATE collections SET filter_state = '{}' WHERE id = 'single-a'",

@@ -1,26 +1,37 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    Wand2, Undo2, Copy, Check, Palette, Settings2, FileJson, ClipboardList,
-    Pencil, Sparkles, Eye, Shuffle, Tag, Puzzle, Code, Target, Link
+    Wand2, Undo2, Copy, Check, ClipboardList,
+    Sparkles, Eye, Shuffle, Tag, Puzzle, Code, Target, Link, Plus
 } from 'lucide-react';
-import { AIImage, GeneratorTool, ModelType } from '../../../../types';
-import { formatModelName } from '../../../../utils/formatUtils';
-import { ParamItem } from './ParamItem';
-import { ResourceSection } from './ResourceSection';
+import { AIImage, GeneratorTool } from '../../../../types';
+import { ResourcesSection } from './ResourcesSection';
 import { MetadataRawInspector } from './MetadataRawInspector';
 import { HighlightedPromptText } from './HighlightedPromptText';
 import type { PromptHighlightSpec } from '../../utils/searchHighlights';
 import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 import { formatInvokeImageCategory, isKnownInvokeImageAsset } from '../../../../utils/invokeImageSource';
 import { InvokeReferenceLinks } from './InvokeReferenceLinks';
+import { MetadataTextAreaField } from './MetadataTextAreaField';
+import { MetadataChip } from './MetadataChip';
+import { MetadataParameterList } from './MetadataParameterList';
+import { MetadataSectionHeader } from './MetadataSectionHeader';
+import { getModelPresentation } from './modelPresentation';
+import { MetadataGeneratorField } from './MetadataGeneratorField';
+import { MetadataModelField } from './MetadataModelField';
+import { MetadataDisclosureSection } from './MetadataDisclosureSection';
+import type { MetadataDisclosureController } from '../../hooks/useMetadataDisclosureState';
 
 interface MetadataInfoTabProps {
     image: AIImage;
     promptValue: string;
     setPromptValue: (s: string) => void;
     negativePromptValue: string;
-    palette: string[];
-    isPaletteLoading: boolean;
+    setNegativePromptValue: (value: string) => void;
+    availableTags: string[];
+    modelOptions?: readonly string[];
+    disclosure?: MetadataDisclosureController;
+    onUpdatePrompt?: (id: string, prompt: string) => void;
+    onUpdateNegativePrompt?: (id: string, prompt: string) => void;
     onSearch: (term: string) => void;
     onClose: () => void;
     onRecoverMetadata?: () => void;
@@ -41,8 +52,12 @@ export const MetadataInfoTab = ({
     promptValue,
     setPromptValue,
     negativePromptValue,
-    palette,
-    isPaletteLoading,
+    setNegativePromptValue,
+    availableTags,
+    modelOptions = [],
+    disclosure,
+    onUpdatePrompt,
+    onUpdateNegativePrompt,
     onSearch,
     onClose,
     onRecoverMetadata,
@@ -57,28 +72,34 @@ export const MetadataInfoTab = ({
     searchHighlights,
     onOpenReferencedImage
 }: MetadataInfoTabProps) => {
-    // Local UI State
-    const [isGenDataOpen, setIsGenDataOpen] = useState(() => localStorage.getItem('aigallery_gendata_open') === 'true');
-    const [isEditingModel, setIsEditingModel] = useState(false);
-    const [editedModel, setEditedModel] = useState('');
-    const [isCustomModel, setIsCustomModel] = useState(false);
-    const [isEditingTool, setIsEditingTool] = useState(false);
-    const [editedTool, setEditedTool] = useState<GeneratorTool>(GeneratorTool.UNKNOWN);
-
     // Feedback State
     const [copiedPrompt, setCopiedPrompt] = useState(false);
     const [copiedData, setCopiedData] = useState(false);
-    const [copiedWorkflow, setCopiedWorkflow] = useState(false);
-    const [copiedColor, setCopiedColor] = useState<string | null>(null);
+    const [isPromptDirty, setIsPromptDirty] = useState(false);
+    const [isNegativePromptDirty, setIsNegativePromptDirty] = useState(false);
+    const [showOriginalPrompt, setShowOriginalPrompt] = useState(false);
+    const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
+    const promptDraftRef = useRef(promptValue);
+    const promptDirtyRef = useRef(false);
+    const promptSuggestionsRef = useRef<HTMLDivElement>(null);
+    const negativePromptDraftRef = useRef(negativePromptValue);
 
     // --- Helpers ---
-    const toggleGenData = () => {
-        setIsGenDataOpen(prev => {
-            const newState = !prev;
-            localStorage.setItem('aigallery_gendata_open', String(newState));
-            return newState;
-        });
-    };
+    useEffect(() => {
+        setIsPromptDirty(false);
+        promptDirtyRef.current = false;
+        setIsNegativePromptDirty(false);
+        setShowOriginalPrompt(false);
+        setPromptSuggestions([]);
+    }, [image.id]);
+
+    useEffect(() => {
+        promptDraftRef.current = promptValue;
+    }, [promptValue]);
+
+    useEffect(() => {
+        negativePromptDraftRef.current = negativePromptValue;
+    }, [negativePromptValue]);
 
     const isModified = (key: keyof typeof image.metadata) => {
         if (!image.originalMetadata || isLoading) return false;
@@ -113,19 +134,13 @@ export const MetadataInfoTab = ({
         return true;
     };
 
-    const isGenDataModified = () => {
-        if (!image.originalMetadata) return false;
-        const keys = [
-            'steps', 'cfg', 'seed', 'sampler', 'model', 'overrideModel', 'tool',
-            'vae', 'clipSkip', 'denoisingStrength', 'hiresUpscale', 'hiresSteps', 'hiresUpscaler'
-        ] as const;
-        return keys.some(k => isModified(k));
-    };
-
     const hasModifications = () => {
         return (
             isModified('positivePrompt') ||
-            isModified('negativePrompt')
+            isModified('negativePrompt') ||
+            isModified('tool') ||
+            isModified('model') ||
+            isModified('overrideModel')
         );
     };
 
@@ -137,6 +152,7 @@ export const MetadataInfoTab = ({
     const invokeImageOrigin = image.invokeImageOrigin?.trim() || undefined;
     const hasInvokeSource = Boolean(invokeImageName || invokeImageCategory || invokeImageOrigin);
     const isInvokeImageAsset = isKnownInvokeImageAsset(image.invokeImageCategory);
+    const modelPresentation = getModelPresentation(image.metadata);
 
     const handleCopyPrompt = () => {
         navigator.clipboard.writeText(promptValue);
@@ -144,10 +160,86 @@ export const MetadataInfoTab = ({
         setTimeout(() => setCopiedPrompt(false), 2000);
     };
 
-    const handleCopyWorkflow = () => {
-        navigator.clipboard.writeText(image.metadata.workflowJson!);
-        setCopiedWorkflow(true);
-        setTimeout(() => setCopiedWorkflow(false), 2000);
+    const handlePromptChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+        const nextValue = event.target.value;
+        promptDraftRef.current = nextValue;
+        setPromptValue(nextValue);
+        setIsPromptDirty(true);
+        promptDirtyRef.current = true;
+        const lastToken = nextValue.split(',').pop()?.trim().toLowerCase();
+        setPromptSuggestions(lastToken && lastToken.length > 1
+            ? availableTags.filter(tag => tag.toLowerCase().includes(lastToken)
+                && tag.toLowerCase() !== lastToken).slice(0, 5)
+            : []);
+    };
+
+    const commitPrompt = () => {
+        if (!showOriginalPrompt && promptDirtyRef.current) {
+            onUpdatePrompt?.(image.id, promptDraftRef.current);
+            promptDirtyRef.current = false;
+            setIsPromptDirty(false);
+        }
+    };
+
+    const savePrompt = (event: React.FocusEvent<HTMLTextAreaElement>) => {
+        if (event.relatedTarget instanceof Node && promptSuggestionsRef.current?.contains(event.relatedTarget)) return;
+        commitPrompt();
+        setTimeout(() => setPromptSuggestions([]), 200);
+    };
+
+    const selectPromptSuggestion = (suggestion: string) => {
+        const parts = promptDraftRef.current.split(',');
+        parts.pop();
+        const nextValue = [...parts, suggestion].join(', ') + ', ';
+        promptDraftRef.current = nextValue;
+        setPromptValue(nextValue);
+        promptDirtyRef.current = false;
+        setIsPromptDirty(false);
+        setPromptSuggestions([]);
+        onUpdatePrompt?.(image.id, nextValue);
+    };
+
+    const saveNegativePrompt = () => {
+        if (isNegativePromptDirty) {
+            onUpdateNegativePrompt?.(image.id, negativePromptDraftRef.current);
+            setIsNegativePromptDirty(false);
+        }
+    };
+
+    const handleParseClipboard = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (!text || !text.includes('Steps:')) return;
+            const lines = text.split('\n');
+            let positive = '';
+            let negative = '';
+            let state = 0;
+            for (const line of lines) {
+                const clean = line.trim();
+                if (!clean) continue;
+                if (clean.startsWith('Negative prompt:')) {
+                    state = 1;
+                    negative = clean.replace('Negative prompt:', '').trim();
+                    continue;
+                }
+                if (clean.startsWith('Steps:')) {
+                    state = 2;
+                    continue;
+                }
+                if (state === 0) positive += (positive ? '\n' : '') + clean;
+                else if (state === 1) negative += (negative ? '\n' : '') + clean;
+            }
+            if (positive) {
+                setPromptValue(positive);
+                onUpdatePrompt?.(image.id, positive);
+            }
+            if (negative) {
+                setNegativePromptValue(negative);
+                onUpdateNegativePrompt?.(image.id, negative);
+            }
+        } catch (error) {
+            console.error('Clipboard paste failed', error);
+        }
     };
 
     const handleCopyGenData = () => {
@@ -179,10 +271,7 @@ export const MetadataInfoTab = ({
         <>
             {hasInvokeSource ? (
                 <section className="rounded-xl border border-gray-200 bg-white/50 p-4 dark:border-white/5 dark:bg-zinc-800/30" aria-labelledby="invoke-source-heading">
-                    <div className="mb-3 flex items-center gap-2">
-                        <Link className="h-3.5 w-3.5 text-sage-500" />
-                        <h3 id="invoke-source-heading" className="text-xs font-bold uppercase tracking-wider text-gray-500">Source</h3>
-                    </div>
+                    <MetadataSectionHeader title="Source" icon={Link} headingId="invoke-source-heading" className="mb-3" />
                     <dl className="space-y-2 text-xs">
                         <div className="flex items-start justify-between gap-4">
                             <dt className="text-gray-400">System</dt>
@@ -221,263 +310,111 @@ export const MetadataInfoTab = ({
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 animate-in fade-in slide-in-from-right-4 duration-300">
                 <div className="space-y-6 flex-1">
 
+                    <MetadataTextAreaField
+                        kind="positivePrompt"
+                        value={showOriginalPrompt ? (image.originalMetadata?.positivePrompt ?? '') : promptValue}
+                        onChange={handlePromptChange}
+                        onBlur={savePrompt}
+                        readOnly={showOriginalPrompt || !onUpdatePrompt}
+                        isDirty={isPromptDirty}
+                        source={isModified('positivePrompt') ? 'user_override' : undefined}
+                        headerAction={<div className="flex items-center gap-1">
+                            {image.originalMetadata && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt ? (
+                                <div className="flex rounded-lg border border-white/10 bg-white/5 p-0.5">
+                                    <button type="button" onClick={() => setShowOriginalPrompt(false)} className={`rounded px-2 py-0.5 text-[10px] font-bold ${!showOriginalPrompt ? 'bg-sage-600 text-white' : 'text-zinc-500'}`}>Current</button>
+                                    <button type="button" onClick={() => setShowOriginalPrompt(true)} className={`rounded px-2 py-0.5 text-[10px] font-bold ${showOriginalPrompt ? 'bg-sage-600 text-white' : 'text-zinc-500'}`}>Original</button>
+                                </div>
+                            ) : null}
+                            {onRecoverMetadata ? <TooltipButton label="Recover Prompt with AI" content="Recover Prompt with AI" onClick={onRecoverMetadata} className="rounded p-1.5 text-amethyst-400 hover:bg-white/5"><Wand2 className="h-3.5 w-3.5" /></TooltipButton> : null}
+                            {onUpdatePrompt && onUpdateNegativePrompt && (image.metadata.tool === GeneratorTool.AUTOMATIC1111
+                                || image.metadata.tool === GeneratorTool.FORGE
+                                || image.metadata.tool === GeneratorTool.UNKNOWN) ? <TooltipButton label="Parse Prompt from Clipboard" content="Parse Prompt from Clipboard" onClick={() => void handleParseClipboard()} className="rounded p-1.5 text-sage-400 hover:bg-white/5"><ClipboardList className="h-3.5 w-3.5" /></TooltipButton> : null}
+                            {image.originalMetadata && !isLoading && hasModifications() && onRevertMetadata ? <TooltipButton label="Revert All Metadata to Original" content="Revert All Metadata to Original" onClick={() => onRevertMetadata(image.id)} className="rounded p-1.5 text-orange-400 hover:bg-white/5"><Undo2 className="h-3.5 w-3.5" /></TooltipButton> : null}
+                            <TooltipButton label="Copy Prompt" content="Copy Prompt" onClick={handleCopyPrompt} className="rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300">{copiedPrompt ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}</TooltipButton>
+                        </div>}
+                        overlay={promptSuggestions.length > 0 ? <div ref={promptSuggestionsRef} className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-lg border border-white/10 bg-zinc-900 shadow-xl">
+                            {promptSuggestions.map(suggestion => <button key={suggestion} type="button" className="group flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-white/5" onMouseDown={event => event.preventDefault()} onBlur={event => {
+                                if (!(event.relatedTarget instanceof Node) || !promptSuggestionsRef.current?.contains(event.relatedTarget)) {
+                                    commitPrompt();
+                                    setPromptSuggestions([]);
+                                }
+                            }} onClick={() => selectPromptSuggestion(suggestion)}><span className="font-mono text-zinc-300">{suggestion}</span><Plus className="h-3 w-3 text-zinc-500 group-hover:text-sage-400" /></button>)}
+                        </div> : null}
+                    />
+
+                    {searchHighlights?.positivePrompt?.length && promptValue ? <div className="rounded-lg border border-sage-500/20 bg-sage-500/5 p-3 text-xs text-zinc-300"><HighlightedPromptText text={promptValue} terms={searchHighlights.positivePrompt} /></div> : null}
+
+                    <MetadataTextAreaField
+                        kind="negativePrompt"
+                        value={negativePromptValue}
+                        onChange={event => { negativePromptDraftRef.current = event.target.value; setNegativePromptValue(event.target.value); setIsNegativePromptDirty(true); }}
+                        onBlur={saveNegativePrompt}
+                        readOnly={!onUpdateNegativePrompt}
+                        isDirty={isNegativePromptDirty}
+                        source={isModified('negativePrompt') ? 'user_override' : undefined}
+                    />
+
+                    {searchHighlights?.negativePrompt?.length && negativePromptValue ? <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-zinc-300"><HighlightedPromptText text={negativePromptValue} terms={searchHighlights.negativePrompt} /></div> : null}
+
                     {isInvokeImageAsset ? invokeProvenance : null}
 
-                    {/* Positive Prompt */}
-                    <div>
-                        <div className="flex justify-between items-center mb-2">
-                            <div className="flex items-center gap-2">
-                                <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3>
-                                {/* Toggle: Original / current saved prompt */}
-                                {image.originalMetadata && !isLoading && image.originalMetadata.positivePrompt !== image.metadata.positivePrompt && (
-                                    <div className="flex gap-1 p-0.5 bg-gray-100 dark:bg-zinc-800/50 rounded-lg border border-gray-200 dark:border-white/10">
-                                        <button
-                                            onClick={() => setPromptValue(image.metadata.positivePrompt || '')}
-                                            className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.metadata.positivePrompt ? 'bg-amethyst-500 text-white shadow' : 'text-gray-500 hover:text-amethyst-500'}`}
-                                            title="Show the current saved prompt"
-                                        >
-                                            Current
-                                        </button>
-                                        <button
-                                            onClick={() => setPromptValue(image.originalMetadata?.positivePrompt || '')}
-                                            className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${promptValue === image.originalMetadata?.positivePrompt ? 'bg-sage-500 text-white shadow' : 'text-gray-500 hover:text-sage-500'}`}
-                                            title="Show the original imported prompt"
-                                        >
-                                            Original
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {onRecoverMetadata && (
-                                    <TooltipButton label="Recover Prompt with AI" content="Recover Prompt with AI" onClick={onRecoverMetadata} className="text-amethyst-600 dark:text-amethyst-400 hover:text-amethyst-500 p-1.5 rounded bg-amethyst-100 dark:bg-amethyst-900/20 border border-amethyst-200 dark:border-amethyst-500/20 transition-colors">
-                                        <Wand2 className="w-3.5 h-3.5" />
-                                    </TooltipButton>
-                                )}
-                                {image.originalMetadata && !isLoading && hasModifications() && onRevertMetadata && (
-                                    <TooltipButton label="Revert All Metadata to Original" content="Revert All Metadata to Original" onClick={() => onRevertMetadata(image.id)} className="text-xs text-orange-600 dark:text-orange-400 hover:text-orange-500 flex items-center gap-1 transition-colors px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-500/20">
-                                        <Undo2 className="w-3 h-3" />
-                                    </TooltipButton>
-                                )}
-                                <button onClick={handleCopyPrompt} className="text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 text-xs flex items-center gap-1 transition-colors bg-sage-100 dark:bg-sage-500/10 px-2 py-1 rounded border border-sage-200 dark:border-sage-500/20">
-                                    {copiedPrompt ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                                    {copiedPrompt ? "Copied" : "Copy"}
-                                </button>
-                            </div>
-                        </div>
-                        <div className={`p-4 bg-white dark:bg-zinc-950/50 rounded-xl border text-sm font-sans leading-relaxed max-h-48 overflow-y-auto shadow-inner transition-colors ${!isLoading && promptValue !== (image.originalMetadata?.positivePrompt ?? image.metadata.positivePrompt) ? 'border-amber-300 dark:border-amber-500/30 text-gray-800 dark:text-gray-200' : 'border-gray-200 dark:border-white/5 text-gray-700 dark:text-gray-300'}`}>
-                            {promptValue ? (
-                                <HighlightedPromptText text={promptValue} terms={searchHighlights?.positivePrompt} />
-                            ) : (
-                                <span className="text-gray-500 dark:text-gray-600 italic text-xs">No prompt data found. Use the wand icon to recover with AI or refresh from folder.</span>
-                            )}
-                        </div>
-                    </div>
+                    <MetadataGeneratorField
+                        key={`generator:${image.id}`}
+                        value={image.metadata.tool}
+                        modified={isModified('tool')}
+                        onSave={onUpdateTool ? value => onUpdateTool(image.id, value) : undefined}
+                    />
 
-                    {/* Negative Prompt */}
-                    {image.metadata.negativePrompt && (
-                        <div>
-                            <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider mb-2">Negative Prompt</h3>
-                            <div className={`p-4 bg-white dark:bg-zinc-950/30 rounded-xl border text-xs leading-relaxed max-h-32 overflow-y-auto transition-colors ${isModified('negativePrompt') ? 'border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-200/80 shadow-inner bg-amber-50/10' : 'border-gray-200 dark:border-white/5 text-red-600/80 dark:text-red-200/60 font-sans'}`}>
-                                <HighlightedPromptText text={image.metadata.negativePrompt} terms={searchHighlights?.negativePrompt} />
-                            </div>
-                        </div>
-                    )}
+                    <MetadataModelField
+                        key={`model:${image.id}`}
+                        presentation={modelPresentation}
+                        options={modelOptions}
+                        modified={isModified('model') || isModified('overrideModel')}
+                        onSave={onUpdateModel ? value => onUpdateModel(image.id, value) : undefined}
+                    />
 
-                    {/* Palette */}
-                    <div>
-                        <div className="flex items-center gap-2 mb-3">
-                            <Palette className="w-3 h-3 text-sage-500" />
-                            <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Color Palette</h3>
-                        </div>
-                        {isPaletteLoading ? (
-                            <div className="flex gap-2 animate-pulse">{[1, 2, 3, 4, 5].map(i => <div key={i} className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-white/5" />)}</div>
-                        ) : palette.length > 0 ? (
-                            <div className="flex gap-2">
-                                {palette.map((color, i) => (
-                                    <button type="button" aria-label={`Copy Color ${color}`} key={i} onClick={() => { navigator.clipboard.writeText(color); setCopiedColor(color); setTimeout(() => setCopiedColor(null), 1500); }} className="w-10 h-10 rounded-lg shadow-sm border border-gray-200 dark:border-white/10 hover:scale-110 transition-transform relative group" style={{ backgroundColor: color }}>
-                                        {copiedColor === color && <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-lg"><Check className="w-4 h-4 text-white" /></div>}
-                                    </button>
-                                ))}
-                            </div>
-                        ) : <span className="text-xs text-gray-400 italic">No palette extracted</span>}
-                    </div>
-
-                    {/* Gen Data */}
-                    <div className={`border rounded-xl bg-white/50 dark:bg-zinc-800/30 overflow-hidden ${isGenDataModified() ? 'border-amber-300 dark:border-amber-500/30' : 'border-gray-200 dark:border-white/5'}`}>
-                        <button type="button" aria-expanded={isGenDataOpen} onClick={toggleGenData} className="w-full flex items-center justify-between p-3 bg-gray-50/50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-                            <div className="flex items-center gap-2">
-                                <Settings2 className="w-3.5 h-3.5 text-gray-500" />
-                                <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Generation Data</h3>
-                                {isGenDataModified() && !isLoading && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 ml-1" />}
-                            </div>
-                        </button>
-
-                        {isGenDataOpen && (
-                            <div className="p-4 space-y-3 animate-in slide-in-from-top-2">
-                                <div className="flex justify-end gap-2">
-                                    {image.metadata.workflowJson && (
-                                        <button onClick={handleCopyWorkflow} className="text-[10px] text-sage-600 hover:text-sage-700 dark:text-sage-500 dark:hover:text-sage-400 flex items-center gap-1 transition-colors hover:underline">
-                                            {copiedWorkflow ? <Check className="w-3 h-3 text-sage-500" /> : <FileJson className="w-3 h-3" />} Copy Workflow
-                                        </button>
-                                    )}
-                                    <button onClick={handleCopyGenData} className="text-[10px] text-gray-400 hover:text-gray-900 dark:hover:text-white flex items-center gap-1 transition-colors hover:underline">
-                                        {copiedData ? <Check className="w-3 h-3 text-green-500" /> : <ClipboardList className="w-3 h-3" />} Copy Params
-                                    </button>
-                                </div>
-                                <div className="grid grid-cols-2 gap-3">
-
-                                    {/* TOOL ROW */}
-                                    <div className={`bg-white dark:bg-zinc-800/50 p-3 rounded-xl col-span-2 group relative border transition-colors ${isModified('tool') ? 'border-amber-500/30 bg-amber-50/50 dark:bg-amber-900/10' : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'}`}>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className={`text-[10px] uppercase font-bold tracking-wider ${isModified('tool') ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400 dark:text-zinc-500'}`}>Generator Software</div>
-                                            {onUpdateTool && !isEditingTool && (
-                                                <button type="button" aria-label="Edit Generation Tool" onClick={() => { setIsEditingTool(true); setEditedTool(image.metadata.tool); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
-                                            )}
-                                        </div>
-
-                                        {isEditingTool ? (
-                                            <div className="mt-1 flex flex-col gap-2 bg-gray-50 dark:bg-black/20 p-2 rounded-lg border border-gray-200 dark:border-white/10 animate-in fade-in slide-in-from-top-1">
-                                                <select
-                                                    value={editedTool}
-                                                    onChange={(e) => setEditedTool(e.target.value as GeneratorTool)}
-                                                    className="w-full bg-white dark:bg-zinc-900 text-xs text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded p-1.5 focus:border-sage-500 outline-none"
-                                                >
-                                                    {Object.values(GeneratorTool).map(t => <option key={t} value={t}>{t}</option>)}
-                                                </select>
-                                                <div className="flex justify-end gap-2">
-                                                    <button onClick={() => setIsEditingTool(false)} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">Cancel</button>
-                                                    <button onClick={() => { onUpdateTool && onUpdateTool(image.id, editedTool); setIsEditingTool(false); }} className="px-2 py-1 text-xs bg-sage-600 hover:bg-sage-500 text-white rounded transition-colors flex items-center gap-1">
-                                                        <Check className="w-3 h-3" /> Save
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="text-sm text-gray-700 dark:text-gray-300 truncate font-mono">{image.metadata.tool}</div>
-                                        )}
-                                    </div>
-
-                                    {/* Model Row */}
-                                    <div className={`bg-white dark:bg-zinc-800/50 p-3 rounded-xl col-span-2 group relative border transition-colors ${isModified('model') || isModified('overrideModel') ? 'border-amber-500/30 bg-amber-50/50 dark:bg-amber-900/10' : 'border-gray-200 dark:border-white/5 hover:border-gray-300 dark:hover:border-white/10'}`}>
-                                        <div className="flex items-center justify-between mb-1">
-                                            <div className={`text-[10px] uppercase font-bold tracking-wider ${isModified('model') ? 'text-amber-600 dark:text-amber-500' : 'text-gray-400 dark:text-zinc-500'}`}>Model</div>
-                                            {onUpdateModel && !isEditingModel && (
-                                                <button type="button" aria-label="Edit Model" onClick={() => { setIsEditingModel(true); setEditedModel(image.metadata.overrideModel || image.metadata.model); setIsCustomModel(false); }} className="text-gray-400 hover:text-gray-900 dark:hover:text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"><Pencil className="w-3 h-3" /></button>
-                                            )}
-                                        </div>
-
-                                        {isEditingModel ? (
-                                            <div className="mt-1 flex flex-col gap-2 bg-gray-50 dark:bg-black/20 p-2 rounded-lg border border-gray-200 dark:border-white/10 animate-in fade-in slide-in-from-top-1">
-                                                {!isCustomModel ? (
-                                                    <select
-                                                        value={Object.values(ModelType).includes(editedModel as ModelType) ? editedModel : 'custom'}
-                                                        onChange={(e) => {
-                                                            if (e.target.value === 'custom') {
-                                                                setIsCustomModel(true);
-                                                                setEditedModel('');
-                                                            } else {
-                                                                setEditedModel(e.target.value);
-                                                            }
-                                                        }}
-                                                        className="w-full bg-white dark:bg-zinc-900 text-xs text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded p-1.5 focus:border-sage-500 outline-none"
-                                                    >
-                                                        <option value={image.metadata.model} disabled>Current: {image.metadata.model}</option>
-                                                        {Object.values(ModelType).map(m => <option key={m} value={m}>{m}</option>)}
-                                                        <option value="custom">Custom / Other...</option>
-                                                    </select>
-                                                ) : (
-                                                    <input
-                                                        type="text"
-                                                        value={editedModel}
-                                                        onChange={(e) => setEditedModel(e.target.value)}
-                                                        placeholder="Enter model name..."
-                                                        autoFocus
-                                                        className="w-full bg-white dark:bg-zinc-900 text-xs text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded p-1.5 focus:border-sage-500 outline-none"
-                                                    />
-                                                )}
-
-                                                <div className="flex justify-end gap-2">
-                                                    <button onClick={() => { setIsEditingModel(false); setIsCustomModel(false); }} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors">Cancel</button>
-                                                    <button onClick={() => { onUpdateModel && onUpdateModel(image.id, editedModel); setIsEditingModel(false); setIsCustomModel(false); }} className="px-2 py-1 text-xs bg-sage-600 hover:bg-sage-500 text-white rounded transition-colors flex items-center gap-1">
-                                                        <Check className="w-3 h-3" /> Save
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-sm text-sage-800 dark:text-sage-200 truncate font-medium font-sans" title={image.metadata.overrideModel || image.metadata.model}>
-                                                    {formatModelName(image.metadata.overrideModel || image.metadata.model)}
-                                                </div>
-                                                {image.metadata.overrideModel && <div className="text-[10px] text-amber-600 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/20 px-1.5 rounded border border-amber-200 dark:border-amber-500/20">Override</div>}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <ParamItem label="Sampler" value={image.metadata.sampler || 'Unknown'} isModified={isModified('sampler')} />
-                                    <ParamItem label="Steps" value={(image.metadata.steps ?? 0).toString()} isModified={isModified('steps')} />
-                                    <ParamItem label="CFG Scale" value={(image.metadata.cfg ?? 0).toString()} isModified={isModified('cfg')} />
-                                    <ParamItem
-                                        label="Seed"
-                                        value={image.metadata.seed?.toString() ?? 'Unknown'}
-                                        fullWidth
-                                        isModified={isModified('seed')}
-                                        allowZero
-                                        showUnknown
-                                    />
-
-                                    {/* Advanced Fields */}
-                                    <ParamItem label="VAE" value={image.metadata.vae || ''} isModified={isModified('vae')} />
-                                    <ParamItem label="Clip Skip" value={image.metadata.clipSkip?.toString() || ''} isModified={isModified('clipSkip')} />
-                                    <ParamItem label="Denoising" value={image.metadata.denoisingStrength?.toString() || ''} isModified={isModified('denoisingStrength')} />
-
-                                    {/* Hires Fix */}
-                                    {(image.metadata.hiresUpscale || image.metadata.hiresSteps || image.metadata.hiresUpscaler) && (
-                                        <>
-                                            <div className="col-span-2 h-px bg-gray-200 dark:bg-white/5 my-1" />
-                                            <ParamItem label="Hires Upscale" value={image.metadata.hiresUpscale?.toString() || ''} isModified={isModified('hiresUpscale')} />
-                                            <ParamItem label="Hires Steps" value={image.metadata.hiresSteps?.toString() || ''} isModified={isModified('hiresSteps')} />
-                                            <ParamItem label="Hires Upscaler" value={image.metadata.hiresUpscaler || ''} fullWidth isModified={isModified('hiresUpscaler')} />
-                                        </>
-                                    )}
-
-                                    {image.metadata.modelHash && (
-                                        <>
-                                            <div className="col-span-2 h-px bg-gray-200 dark:bg-white/5 my-1" />
-                                            <ParamItem label="Model Hash" value={image.metadata.modelHash} fullWidth />
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    <MetadataParameterList rows={[
+                        { label: 'Seed', value: image.metadata.seed?.toString() ?? 'Unknown', modified: isModified('seed') },
+                        { label: 'Steps', value: image.metadata.steps > 0 ? image.metadata.steps.toString() : 'Unknown', modified: isModified('steps') },
+                        { label: 'CFG', value: image.metadata.cfg > 0 ? image.metadata.cfg.toString() : 'Unknown', modified: isModified('cfg') },
+                        { label: 'Sampler', value: image.metadata.sampler || 'Unknown', modified: isModified('sampler') },
+                        { label: 'VAE', value: image.metadata.vae || 'Unknown', modified: isModified('vae'), optional: true },
+                        { label: 'Clip Skip', value: image.metadata.clipSkip?.toString() || 'Unknown', modified: isModified('clipSkip'), optional: true },
+                        { label: 'Denoising', value: image.metadata.denoisingStrength?.toString() || 'Unknown', modified: isModified('denoisingStrength'), optional: true },
+                        { label: 'Hires Upscale', value: image.metadata.hiresUpscale?.toString() || 'Unknown', modified: isModified('hiresUpscale'), optional: true },
+                        { label: 'Hires Steps', value: image.metadata.hiresSteps?.toString() || 'Unknown', modified: isModified('hiresSteps'), optional: true },
+                        { label: 'Hires Upscaler', value: image.metadata.hiresUpscaler || 'Unknown', modified: isModified('hiresUpscaler'), optional: true },
+                        { label: 'Model Hash', value: modelPresentation.isHashFallback ? 'Unknown' : (image.metadata.modelHash || 'Unknown'), optional: true },
+                    ]} expanded={disclosure?.isExpanded('generationParameters')} onExpandedChange={expanded => disclosure?.setExpanded('generationParameters', expanded)} headerAction={
+                        <TooltipButton label="Copy generation data" content="Copy prompts and generation settings in the best available source-compatible format." onClick={handleCopyGenData} className="rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-300">
+                            {copiedData ? <Check className="h-3.5 w-3.5 text-green-500" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                        </TooltipButton>
+                    } />
 
                     {/* Tags */}
                     {smartTags.length > 0 && (
-                        <div>
-                            <div className="flex items-center gap-2 mb-3">
-                                <Tag className="w-3 h-3 text-sage-500" />
-                                <h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Smart Tags</h3>
-                            </div>
+                        <MetadataDisclosureSection title="Smart Tags" icon={Tag} count={smartTags.length} expanded={disclosure?.isExpanded('smartTags')} onExpandedChange={expanded => disclosure?.setExpanded('smartTags', expanded)}>
                             <div className="flex flex-wrap gap-2">
-                                {smartTags.map((tag, i) => (
-                                    <button key={i} onClick={() => { onSearch(tag); onClose(); }} className="px-2.5 py-1 text-xs bg-gray-100 dark:bg-zinc-800 hover:bg-sage-100 dark:hover:bg-sage-900/40 border border-gray-200 dark:border-white/5 rounded-lg transition-all truncate max-w-[150px] text-gray-600 dark:text-gray-400">
-                                        {tag}
-                                    </button>
-                                ))}
+                                {smartTags.map((tag, i) => <MetadataChip key={i} onClick={() => { onSearch(tag); onClose(); }} className="max-w-[150px]">
+                                    <span className="truncate px-2 py-1.5 text-xs text-gray-600 group-hover:text-sage-600 dark:text-gray-400 dark:group-hover:text-sage-300">{tag}</span>
+                                </MetadataChip>)}
                             </div>
-                        </div>
+                        </MetadataDisclosureSection>
                     )}
 
-                    {/* Resources & Addons */}
-                    {(image.metadata.loras || image.metadata.controlNets || image.metadata.ipAdapters || image.metadata.embeddings || image.metadata.hypernetworks) && (
-                        <div className="bg-white dark:bg-zinc-900/40 border border-gray-200 dark:border-white/5 rounded-xl p-4">
-                            <ResourceSection title="LoRAs" items={image.metadata.loras || []} icon={Puzzle} onSearch={onSearch} onClose={onClose} />
-                            <ResourceSection title="Embeddings" items={image.metadata.embeddings || []} icon={Code} onSearch={onSearch} onClose={onClose} />
-                            <ResourceSection title="Hypernetworks" items={image.metadata.hypernetworks || []} icon={Sparkles} onSearch={onSearch} onClose={onClose} />
-                            <ResourceSection title="ControlNet" items={image.metadata.controlNets || []} icon={Target} onSearch={onSearch} onClose={onClose} />
-                            <ResourceSection title="IP-Adapters" items={image.metadata.ipAdapters || []} icon={Link} onSearch={onSearch} onClose={onClose} />
-                        </div>
-                    )}
+                    <ResourcesSection
+                        groups={[
+                            { title: 'LoRAs', items: image.metadata.loras, icon: Puzzle, filterKind: 'lora' },
+                            { title: 'Embeddings', items: image.metadata.embeddings, icon: Code, filterKind: 'embedding' },
+                            { title: 'Hypernetworks', items: image.metadata.hypernetworks, icon: Sparkles, filterKind: 'hypernet' },
+                            { title: 'ControlNets', items: image.metadata.controlNets, icon: Target, filterKind: 'controlnet' },
+                            { title: 'IP adapters', items: image.metadata.ipAdapters, icon: Link, filterKind: 'ipadapter' },
+                        ]}
+                        onSearch={onSearch}
+                        onClose={onClose}
+                        expanded={disclosure?.isExpanded('resources')}
+                        onExpandedChange={expanded => disclosure?.setExpanded('resources', expanded)}
+                    />
 
                     {!isInvokeImageAsset ? invokeProvenance : null}
 
@@ -487,7 +424,7 @@ export const MetadataInfoTab = ({
             </div>
 
             {/* AI Tools Footer */}
-            <div className="p-4 border-t border-gray-200 dark:border-white/5 bg-white dark:bg-zinc-900 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
+            <div className="shrink-0 p-4 border-t border-gray-200 dark:border-white/5 bg-white dark:bg-zinc-900 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-amethyst-500" />

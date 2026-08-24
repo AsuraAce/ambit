@@ -54,7 +54,7 @@ export const useMaintenanceOps = ({
             const affectedIds = new Set(result.affectedIds);
             setImages(prev => prev.filter(img => !affectedIds.has(img.id)));
             removeImagesFromQueryCaches(queryClient, affectedIds);
-            addToast(`Removed ${affectedIds.size} image${affectedIds.size === 1 ? '' : 's'} from the library`, 'success');
+            addToast(`Removed ${affectedIds.size} item${affectedIds.size === 1 ? '' : 's'} from the library`, 'success');
 
             try {
                 console.info(`${logPrefix}: refreshing collections`);

@@ -23,7 +23,15 @@ const mockIncrementFacetCacheVersion = vi.fn();
 const mockRefreshCollections = vi.fn();
 const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
-let mockStoreImages = [
+const mockUpdateImagesQueryCaches = vi.fn();
+let mockStoreImages: Array<{
+    id: string;
+    isFavorite?: boolean;
+    isPinned?: boolean;
+    filename: string;
+    timestamp: number;
+    mediaType?: 'image' | 'video';
+}> = [
     { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
     { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
 ];
@@ -44,6 +52,14 @@ vi.mock('../../services/db/imageRepo', () => ({
 vi.mock('../../services/db/maintenanceRepo', () => ({
     backfillParameterColumns: () => mockBackfillParameterColumns(),
 }));
+
+vi.mock('../../utils/imageQueryCache', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../utils/imageQueryCache')>();
+    return {
+        ...actual,
+        updateImagesQueryCaches: (...args: unknown[]) => mockUpdateImagesQueryCaches(...args),
+    };
+});
 
 vi.mock('../../stores/searchStore', () => ({
     useSearchStore: (selector: any) => selector({
@@ -493,12 +509,27 @@ describe('useAppActions', () => {
         expect(mockSetSelectedIds).not.toHaveBeenCalled();
     });
 
+    it('passes video selections to the shared ZIP exporter', async () => {
+        mockStoreImages = [{ id: 'video', mediaType: 'video', filename: 'clip.mp4', timestamp: 100 }];
+        const videoProps = { ...props, selectedIds: new Set(['video']) };
+        const { result } = renderHook(() => useAppActions(videoProps));
+
+        await act(async () => result.current.handleExportConfirm('videos.zip', 'C:/out'));
+
+        expect(mockFileOps.exportImages).toHaveBeenCalledWith(
+            'videos.zip',
+            videoProps.selectedIds,
+            'C:/out',
+            expect.any(Function)
+        );
+    });
+
     it('bulk-unfavorites selected favorites and rolls back favorite failures', async () => {
         const allFavoriteProps = { ...props, selectedIds: new Set(['2']) };
         const first = renderHook(() => useAppActions(allFavoriteProps));
         act(() => first.result.current.handleBulkFavorite());
         expect(mockToggleImageFavorite).toHaveBeenCalledWith('2', false);
-        expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 images', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 item', 'success');
         first.unmount();
 
         mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
@@ -525,7 +556,7 @@ describe('useAppActions', () => {
         const first = renderHook(() => useAppActions(selectedPinned));
         act(() => first.result.current.handleBulkPin());
         expect(mockToggleImagePin).toHaveBeenCalledWith('2', false);
-        expect(mockAddToast).toHaveBeenCalledWith('Unpinned 1 images', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('Unpinned 1 item', 'info');
         first.unmount();
 
         mockToggleImagePin.mockRejectedValueOnce(new Error('bulk pin failed'));
@@ -541,22 +572,25 @@ describe('useAppActions', () => {
         await act(async () => result.current.handleBulkMask('1', true));
         const maskTrue = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskTrue(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
+        expect(mockUpdateImagesQueryCaches).toHaveBeenCalledOnce();
+        const updateCachedImage = mockUpdateImagesQueryCaches.mock.calls[0][1] as (image: AIImage) => AIImage;
+        expect(updateCachedImage({ ...mockStoreImages[0], userMasked: false } as AIImage).userMasked).toBe(true);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Manually Masked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Manually Masked', 'info');
 
         await act(async () => result.current.handleBulkMask('1', false));
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Unmasked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Unmasked', 'info');
         await act(async () => result.current.handleBulkMask('1', null));
         const maskAuto = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskAuto(mockStoreImages).map(image => image.userMasked)).toEqual([undefined, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', null);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Reset to Auto Mask', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Reset to Auto Mask', 'info');
 
         await act(async () => result.current.handleBulkMask());
         const maskToggle = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskToggle(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Mask Toggled', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
         expect(mockRebuildThumbnailFacetCache).toHaveBeenCalled();
         expect(mockIncrementFacetCacheVersion).toHaveBeenCalled();
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
@@ -578,7 +612,7 @@ describe('useAppActions', () => {
         const { result } = renderHook(() => useAppActions(props));
         await act(async () => result.current.handleBulkMask('missing'));
         expect(mockToggleImageMask).not.toHaveBeenCalled();
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Mask Toggled', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
     });
 
     it('invalidates hidden privacy queries and pluralizes bulk mask feedback', async () => {
@@ -586,7 +620,7 @@ describe('useAppActions', () => {
         mockSettings = { ...mockSettings, maskingMode: 'hide' };
         const multi = renderHook(() => useAppActions({ ...props, selectedIds: new Set(['1', '2']) }));
         await act(async () => multi.result.current.handleBulkMask(undefined, true));
-        expect(mockAddToast).toHaveBeenCalledWith('2 images Manually Masked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('2 items Manually Masked', 'info');
     });
 
     it('disables privacy mode when already enabled', () => {

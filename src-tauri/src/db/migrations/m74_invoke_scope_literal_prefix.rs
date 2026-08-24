@@ -1,9 +1,13 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 73: Correct Invoke root classification and ambiguous Ambit collection scopes.
-pub fn migration73() -> Migration {
+/// Migration 74: Correct Invoke root classification and ambiguous Ambit collection scopes.
+///
+/// Migrations 69-73 were never released before this corrective migration. Re-inferring
+/// collection scope here repairs development databases whose values came from migration 73;
+/// later migrations must preserve user-selected scope instead of repeating this inference.
+pub fn migration74() -> Migration {
     Migration {
-        version: 73,
+        version: 74,
         description: "repair_invoke_scope_literal_prefixes",
         sql: r#"
             DROP TABLE IF EXISTS temp.invoke_scope_m73_changed;
@@ -321,17 +325,17 @@ pub fn migration73() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration73;
+    use super::migration74;
     use crate::db::migrations::init_db;
     use rusqlite::Connection;
 
-    fn apply_through_72(conn: &Connection) {
+    fn apply_through_73(conn: &Connection) {
         for migration in init_db()
             .into_iter()
-            .filter(|migration| migration.version <= 72)
+            .filter(|migration| migration.version <= 73)
         {
             conn.execute_batch(migration.sql)
-                .expect("apply migrations through 72");
+                .expect("apply migrations through 73");
         }
     }
 
@@ -347,7 +351,7 @@ mod tests {
     #[test]
     fn repairs_upgraded_ambit_scopes_and_replaces_wildcard_source_trigger() {
         let conn = Connection::open_in_memory().expect("in-memory db");
-        apply_through_72(&conn);
+        apply_through_73(&conn);
         conn.execute_batch(
             "
             INSERT INTO invoke_owner_scope_state (
@@ -393,8 +397,8 @@ mod tests {
         )
         .expect("seed upgrade state");
 
-        conn.execute_batch(migration73().sql)
-            .expect("apply migration 73");
+        conn.execute_batch(migration74().sql)
+            .expect("apply migration 74");
 
         assert_eq!(scope(&conn, "mixed-local"), (None, None));
         assert_eq!(

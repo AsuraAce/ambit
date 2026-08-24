@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { commands, type DeleteRemovedImagesResult, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
@@ -73,6 +73,16 @@ type RemovedImageRow = ImageRow & {
 };
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
+
+const assertMutationMatched = (
+    result: { rowsAffected: number } | undefined,
+    assetId: string,
+    operation: string
+): void => {
+    if (result?.rowsAffected === 0) {
+        throw new Error(`${operation} failed because the asset was not found: ${assetId}`);
+    }
+};
 
 const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] => {
     const chunks: T[][] = [];
@@ -329,6 +339,24 @@ export const moveImagePathIdentity = async (
     return result.moved === 1;
 };
 
+export const markImagePathIdentitiesMissing = async (ids: string[]): Promise<number> => {
+    if (ids.length === 0) return 0;
+
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (isBrowserMockMode()) {
+        let marked = 0;
+        normalizedIds.forEach(id => {
+            const existing = getBrowserMockImages().find(image => image.id === id);
+            if (!existing || existing.isMissing) return;
+            updateBrowserMockImage(id, { isMissing: true });
+            marked++;
+        });
+        return marked;
+    }
+
+    return unwrap(commands.markImagePathIdentitiesMissing(normalizedIds));
+};
+
 /**
  * Rebuilds the facet_cache table with pre-computed counts for all resources.
  * This runs the expensive queries once per import, so getFacets becomes instant.
@@ -454,7 +482,16 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
         if (image) {
-            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates } });
+            const fieldSources = image.mediaType === 'video'
+                ? Object.keys(updates).reduce((sources, key) => {
+                    if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                        sources[key as VideoMetadataField] = 'user_override';
+                        if (key === 'overrideModel') sources.model = 'user_override';
+                    }
+                    return sources;
+                }, { ...image.metadata.fieldSources })
+                : image.metadata.fieldSources;
+            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates, fieldSources } });
         }
         return;
     }
@@ -470,12 +507,20 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         Object.entries(updates).forEach(([key, value]) => {
             // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
             // Otherwise SQLite might store it as a literal string "[object Object]" or similar corruption.
+            const previousExpr = jsonSetExpr;
             if (value !== null && typeof value === 'object') {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', json(?))`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', json(?))`;
                 params.push(JSON.stringify(value));
             } else {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', ?)`;
                 params.push(value);
+            }
+            if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                let videoExpr = `json_set(${jsonSetExpr}, '$.fieldSources.${key}', 'user_override')`;
+                if (key === 'overrideModel') {
+                    videoExpr = `json_set(${videoExpr}, '$.fieldSources.model', 'user_override')`;
+                }
+                jsonSetExpr = `CASE WHEN media_type = 'video' THEN ${videoExpr} ELSE ${jsonSetExpr} END`;
             }
         });
 
@@ -500,6 +545,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         if ('seed' in updates) {
             query += ', seed = ?';
             params.push(updates.seed ?? null);
+        }
+
+        if ('generationMode' in updates || 'generationType' in updates) {
+            query += ', generation_type = ?';
+            params.push(updates.generationMode ?? updates.generationType ?? null);
         }
 
         // SPECIAL CASE: Model name is also denormalized for filtering
@@ -546,6 +596,7 @@ export const revertImageMetadata = async (id: string) => {
                     model_name = NULL,
                     resolved_model_name = NULL,
                     seed = NULL,
+                    generation_type = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
                 WHERE id = ?
@@ -574,7 +625,8 @@ export const revertImageMetadata = async (id: string) => {
                     resolved_model_name = ?,
                     seed = ?,
                     positive_prompt = ?,
-                    negative_prompt = ?
+                    negative_prompt = ?,
+                    generation_type = ?
                 WHERE id = ?
             `, [
                 img.original_parsed_json, // Use the exact same JSON string!
@@ -585,12 +637,13 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.seed ?? null,
                 originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
                 originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
+                originalMetadata.generationMode ?? originalMetadata.generationType ?? null,
                 normalizedId
             ]);
         } catch (e) {
             console.error('[DB] Failed to revert metadata:', e);
             // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
+            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
         }
     });
 };
@@ -607,7 +660,8 @@ export const updateImageNotesCol = async (id: string, notes: string | null) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
-        await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        const result = await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        assertMutationMatched(result, normalizedId, 'Updating notes');
     });
 };
 
@@ -777,7 +831,8 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
@@ -790,7 +845,8 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -805,7 +861,8 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     if (userMasked === true) value = 1;
     if (userMasked === false) value = 0;
 
-    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    const result = await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    assertMutationMatched(result, normalizedId, 'Updating content mask');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -846,6 +903,19 @@ export const deleteImage = async (id: string) => {
     await db.execute('DELETE FROM image_controlnets WHERE image_id = $1', [normalizedId]);
     await db.execute('DELETE FROM image_ipadapters WHERE image_id = $1', [normalizedId]);
     await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
+};
+
+export const updateVideoPlaybackStatus = async (
+    id: string,
+    status: 'unknown' | 'playable' | 'external_required'
+) => {
+    if (isBrowserMockMode()) return;
+    const db = await getDb();
+    const result = await db.execute(
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video'",
+        [status, normalizePath(id)]
+    );
+    assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
 };
 
 const emptyRemovedLifecycleResult = (): RemovedLifecycleMutationResult => ({

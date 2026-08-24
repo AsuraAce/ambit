@@ -1,6 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage, GeneratorTool, ImageMetadata, OriginalState } from '../../types';
+import { AIImage, GeneratorTool, ImageMetadata, OriginalState, VideoAsset, type VideoGenerationMode } from '../../types';
 
 const INVOKE_IMAGE_SOURCE_COLUMNS = [
     'invoke_image_name',
@@ -25,6 +25,10 @@ export const getImageFieldsLight = (alias = 'images'): string => {
         ${prefix}model_name, ${prefix}model_hash, ${prefix}tool, ${prefix}resolved_model_name, ${prefix}file_hash,
         ${prefix}steps, ${prefix}seed, ${prefix}cfg, ${prefix}sampler, ${prefix}generation_type,
         ${prefix}positive_prompt, ${prefix}negative_prompt
+        , ${prefix}media_type, ${prefix}media_container, ${prefix}media_mime_type,
+        ${prefix}duration_ms, ${prefix}video_codec, ${prefix}video_profile,
+        ${prefix}audio_present, ${prefix}audio_codec, ${prefix}frame_rate_num, ${prefix}frame_rate_den,
+        ${prefix}rotation_degrees, ${prefix}probe_status, ${prefix}playback_status
     `;
 };
 
@@ -44,7 +48,9 @@ export const REMOVED_IMAGE_FIELDS = `
     original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
     NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
     NULL as steps, NULL as seed, NULL as cfg, NULL as sampler, NULL as generation_type,
-    NULL as positive_prompt, NULL as negative_prompt
+    NULL as positive_prompt, NULL as negative_prompt,
+    media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
+    audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
 `;
 
 export type ImageRow = Record<string, unknown>;
@@ -60,25 +66,46 @@ const asNumber = (value: unknown): number | undefined =>
 const asBoolean = (value: unknown): boolean =>
     value === true || value === 1 || value === '1';
 
+const VIDEO_GENERATION_MODES = new Set<VideoGenerationMode>([
+    'text_to_video',
+    'image_to_video',
+    'first_last_frame_to_video',
+    'video_editing',
+    'audio_lip_sync',
+    'guided_video',
+    'unknown',
+]);
+
+const asVideoGenerationMode = (value: unknown): VideoGenerationMode | undefined => {
+    const mode = asString(value) as VideoGenerationMode | undefined;
+    return mode && VIDEO_GENERATION_MODES.has(mode) ? mode : undefined;
+};
+
 const parseJson = <T>(value: unknown): T | undefined => {
     if (typeof value !== 'string' || value.length === 0) return undefined;
     return JSON.parse(value) as T;
 };
 
-const buildLightMetadata = (row: ImageRow): ImageMetadata => ({
-    tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
-    model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
-    seed: asNumber(row.seed),
-    steps: asNumber(row.steps) ?? 0,
-    cfg: asNumber(row.cfg) ?? 0,
-    sampler: asString(row.sampler) || 'Unknown',
-    positivePrompt: asString(row.positive_prompt) || '',
-    negativePrompt: asString(row.negative_prompt) || '',
-    modelHash: asString(row.model_hash),
-    generationType: (asString(row.generation_type) || 'unknown') as ImageMetadata['generationType'],
-    isGrid: asBoolean(row.is_grid_gen),
-    isIntermediate: asBoolean(row.is_intermediate_gen)
-});
+const buildLightMetadata = (row: ImageRow): ImageMetadata => {
+    const generationType = (asString(row.generation_type) || 'unknown') as ImageMetadata['generationType'];
+    return {
+        tool: (asString(row.tool) || GeneratorTool.UNKNOWN) as GeneratorTool,
+        model: asString(row.resolved_model_name) || asString(row.model_name) || 'Unknown',
+        seed: asNumber(row.seed),
+        steps: asNumber(row.steps) ?? 0,
+        cfg: asNumber(row.cfg) ?? 0,
+        sampler: asString(row.sampler) || 'Unknown',
+        positivePrompt: asString(row.positive_prompt) || '',
+        negativePrompt: asString(row.negative_prompt) || '',
+        modelHash: asString(row.model_hash),
+        generationType,
+        generationMode: asString(row.media_type) === 'video'
+            ? asVideoGenerationMode(generationType)
+            : undefined,
+        isGrid: asBoolean(row.is_grid_gen),
+        isIntermediate: asBoolean(row.is_intermediate_gen)
+    };
+};
 
 // Helper to keep mapping consistent
 export function mapRowToImage(row: ImageRow): AIImage {
@@ -106,6 +133,7 @@ export function mapRowToImage(row: ImageRow): AIImage {
     const originalMetadata = parseJson<ImageMetadata>(row.original_parsed_json);
 
     const result: AIImage = {
+        mediaType: asString(row.media_type) === 'video' ? 'video' : 'image',
         id: asString(row.id) || normalizedPath,
         url: convertFileSrc(normalizedPath),
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
@@ -138,6 +166,23 @@ export function mapRowToImage(row: ImageRow): AIImage {
             : undefined,
         originalState: parseJson<OriginalState>(row.original_state_json)
     };
+
+    if (result.mediaType === 'video') {
+        Object.assign(result, {
+            mediaContainer: asString(row.media_container),
+            mediaMimeType: asString(row.media_mime_type),
+            durationMs: asNumber(row.duration_ms) ?? 0,
+            videoCodec: asString(row.video_codec) || 'Unknown',
+            videoProfile: asString(row.video_profile),
+            audioPresent: asBoolean(row.audio_present),
+            audioCodec: asString(row.audio_codec),
+            frameRateNum: asNumber(row.frame_rate_num),
+            frameRateDen: asNumber(row.frame_rate_den),
+            rotationDegrees: (asNumber(row.rotation_degrees) ?? 0) as VideoAsset['rotationDegrees'],
+            probeStatus: asString(row.probe_status) === 'invalid' ? 'invalid' : 'ready',
+            playbackStatus: (asString(row.playback_status) || 'unknown') as VideoAsset['playbackStatus']
+        } satisfies Partial<VideoAsset>);
+    }
 
     // FALLBACK: If metadata is very sparse (missing props from json_extract usually)
     // and we have originalMetadata, use it as a base.

@@ -181,7 +181,7 @@ describe('GlobalModals', () => {
     it('routes confirmation actions and uses selected-count delete copy', async () => {
         const props = setup();
         expect(captures.confirms).toHaveLength(2);
-        expect(captures.confirms[0].message).toContain('Remove 2 image(s)');
+        expect(captures.confirms[0].message).toContain('Remove 2 items');
         expect(captures.confirms[1].message).toContain('"regular"');
         expect(captures.confirms[1].confirmLabel).toBe('Delete Collection');
         await act(async () => {
@@ -265,7 +265,8 @@ describe('GlobalModals', () => {
         expect(captures.props.compare.imageA).toBe(images[0]);
         expect(captures.props.compare.imageB).toBe(images[1]);
         expect(captures.props.addToCollection.sourceCollectionId).toBeUndefined();
-        expect(captures.confirms[0].message).toContain('Remove 1 image(s)');
+        expect(captures.confirms[0].message).toContain('Remove 1 item');
+        expect(captures.confirms[0].message).toContain('original file on disk');
     });
 
     it('suppresses conditional modals and supplies collection-editor defaults', async () => {

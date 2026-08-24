@@ -38,8 +38,8 @@ Acceptance:
 - Cache preparation records a `building` generation before derived work starts;
   a content mutation invalidates that generation and prevents a stale commit.
 - Failed preparation restores the previous coherent scope.
-- Owner-specific source fingerprints avoid source catch-up when another owner
-  changed in the shared InvokeAI database.
+- Owner-specific source fingerprints remain diagnostic evidence, but do not skip
+  catch-up because aggregate facts cannot prove source freshness.
 
 ## Package 2 - Logical scoped views
 
@@ -93,14 +93,14 @@ Acceptance:
   owners: System with 154,719 images plus two new owners with 36 and 4 images.
   Ambit's dev database stores all 370 boards with `invoke_owner_id = system`;
   a non-System owner therefore sees zero boards, while System sees all 370.
-- The real 1.4 GB dev catalog upgraded through migration 69. Its initial dirty
+- The real 1.4 GB dev catalog upgraded through the pre-video migration 69 (now migration 70). Its initial dirty
   All-users cache completed the one-time cold build and committed generation 1
   as ready; the desktop window remained responsive.
 - The supplied trace spent 378.374 seconds in the LoRA matched-row insert. The
   equivalent matched phase on the 1.4 GB dev catalog is about 1 millisecond
   after replacing the correlated per-model scan with preaggregated matches.
 - A transactionally consistent copy of the real 1.4 GB dev catalog upgraded
-  through migration 70 in 64 milliseconds and passed SQLite integrity and
+  through the pre-video migration 70 (now migration 71) in 64 milliseconds and passed SQLite integrity and
   foreign-key checks. Restoring prepared owner snapshots through the exact
   backend switch transaction took 328 milliseconds for the first measured
   restore and 55 milliseconds warm; neither path rebuilt facets.

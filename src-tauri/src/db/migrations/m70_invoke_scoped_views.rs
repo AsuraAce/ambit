@@ -1,9 +1,9 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 69: Replace owner switching row rewrites with indexed logical views.
-pub fn migration69() -> Migration {
+/// Migration 70: Replace owner switching row rewrites with indexed logical views.
+pub fn migration70() -> Migration {
     Migration {
-        version: 69,
+        version: 70,
         description: "add_invoke_logical_scoped_views",
         sql: r#"
             ALTER TABLE images ADD COLUMN invoke_source_id TEXT;
@@ -526,7 +526,7 @@ pub fn migration69() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration69;
+    use super::migration70;
     use rusqlite::Connection;
 
     fn source_schema() -> Connection {
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn views_fail_closed_and_switch_without_rewriting_rows() {
         let conn = source_schema();
-        conn.execute_batch(migration69().sql)
+        conn.execute_batch(migration70().sql)
             .expect("apply migration");
 
         assert_eq!(ids(&conn, "scoped_images"), vec!["a", "copied", "local"]);
@@ -664,7 +664,7 @@ mod tests {
     #[test]
     fn scoped_image_view_preserves_the_large_library_fast_sort_plan() {
         let conn = source_schema();
-        conn.execute_batch(migration69().sql)
+        conn.execute_batch(migration70().sql)
             .expect("apply migration");
 
         let plan: Vec<String> = conn
@@ -701,7 +701,7 @@ mod tests {
         let conn = source_schema();
         conn.execute("DELETE FROM invoke_owner_scope_state", [])
             .expect("remove verified source");
-        conn.execute_batch(migration69().sql)
+        conn.execute_batch(migration70().sql)
             .expect("apply migration");
 
         assert_eq!(
@@ -715,7 +715,7 @@ mod tests {
     #[test]
     fn invoke_mutations_dirty_only_matching_owner_and_aggregate_scopes() {
         let conn = source_schema();
-        conn.execute_batch(migration69().sql)
+        conn.execute_batch(migration70().sql)
             .expect("apply migration");
 
         conn.execute(

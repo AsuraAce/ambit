@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 70: Persist the reason an Invoke owner-scope cache became dirty so
+/// Migration 71: Persist the reason an Invoke owner-scope cache became dirty so
 /// activation can repair only the affected resources or collection projection.
-pub fn migration70() -> Migration {
+pub fn migration71() -> Migration {
     Migration {
-        version: 70,
+        version: 71,
         description: "add_invoke_scope_selective_dirty_items",
         sql: r#"
             CREATE TABLE invoke_scope_cache_dirty_items (

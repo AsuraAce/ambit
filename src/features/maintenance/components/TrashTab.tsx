@@ -9,7 +9,7 @@ import { MaintenanceHeader } from './MaintenanceHeader';
 interface TrashTabProps {
     images: AIImage[];
     selectedIds: Set<string>;
-    onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
+    onItemClick: (id: string, index: number, e: React.MouseEvent, revealGranted?: boolean) => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
     onRestoreSelected: () => void;
@@ -42,7 +42,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 img={img}
                 style={style}
                 isSelected={selectedIds.has(img.id)}
-                onClick={(e) => onItemClick(img.id, index, e)}
+                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
                 maskedKeywords={maskedKeywords}
                 imageClassName={selectedIds.has(img.id) ? 'opacity-100' : 'opacity-70 grayscale'}
             />
@@ -57,7 +57,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Removed List is Empty</h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
-                    No library-removed images found. Files you remove from Ambit while keeping them on disk will appear here.
+                    No library-removed items found. Files you remove from Ambit while keeping them on disk will appear here.
                 </p>
             </div>
         );
@@ -85,7 +85,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 </>
             ) : (
                 <div className="px-4 py-2 text-gray-400 text-xs font-medium italic">
-                    Select images to restore or delete from disk
+                    Select items to restore or delete from disk
                 </div>
             )}
         </div>
@@ -95,7 +95,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
         <div className="w-full pb-32 animate-in slide-in-from-bottom-4 flex flex-col items-stretch">
             <MaintenanceHeader
                 title="Removed from Library"
-                description={`Found ${images.length} images removed from Ambit while kept on disk.`}
+                description={`Found ${images.length} ${images.length === 1 ? 'item' : 'items'} removed from Ambit while kept on disk.`}
                 icon={<Trash2 className="w-6 h-6" />}
                 count={images.length}
                 onSelectAll={onSelectAll}

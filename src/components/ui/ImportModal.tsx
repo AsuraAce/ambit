@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
+import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight, Video } from 'lucide-react';
 
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',
@@ -16,13 +16,15 @@ interface ImportModalProps {
     onClose: () => void;
     onOpenSettings: (tab: 'invokeai' | 'a1111' | 'comfyui' | 'folders') => void;
     onImportFiles: () => void;
+    onImportVideos: () => void;
 }
 
 export const ImportModal: React.FC<ImportModalProps> = ({
     isOpen,
     onClose,
     onOpenSettings,
-    onImportFiles
+    onImportFiles,
+    onImportVideos
 }) => {
     const dialogRef = React.useRef<HTMLDivElement>(null);
     const headingRef = React.useRef<HTMLHeadingElement>(null);
@@ -106,7 +108,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     tabIndex={-1}
                                     className="text-xl font-black text-gray-900 dark:text-white tracking-tight outline-none"
                                 >
-                                    Add Images to Your Library
+                                    Add Media to Your Library
                                 </h2>
                             </div>
                             <button
@@ -176,16 +178,23 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     <h3 className="font-black text-sm text-gray-900 dark:text-white tracking-tight">One-Time Import</h3>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
-                                    For images from downloaded packs, other apps, or screenshots.
+                                    Choose images or manually add generated videos. Folder monitoring remains image-only.
                                 </p>
 
-                                <div className="flex gap-3">
+                                <div className="grid grid-cols-3 gap-3">
                                     <button
                                         onClick={() => { onImportFiles(); onClose(); }}
                                         className="flex-1 px-4 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] hover:shadow-xl active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
                                     >
                                         <FileUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        Select Files
+                                        Select Images
+                                    </button>
+                                    <button
+                                        onClick={() => { onImportVideos(); onClose(); }}
+                                        className="flex-1 px-4 py-4 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
+                                    >
+                                        <Video className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        Select Videos
                                     </button>
                                     <button
                                         onClick={() => handleOpenSettings('folders')}

@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2 } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2, Play, Video } from 'lucide-react';
+import { AIImage, isVideoAsset } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { formatModelName } from '../../../utils/formatUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -14,7 +14,7 @@ interface ImageCardProps {
   isSelected: boolean;
   isMasked?: boolean;
   isThumbnail?: boolean; // New Prop
-  onClick: (e: React.MouseEvent) => void;
+  onClick: (e: React.MouseEvent, revealGranted?: boolean) => void;
   onToggleSelection: (e: React.MouseEvent) => void;
   onToggleFavorite: (e: React.MouseEvent) => void;
   onTogglePin?: (e: React.MouseEvent) => void;
@@ -46,6 +46,8 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
   const shouldBlur = isMasked && !isRevealed;
   const isMissing = !!image.isMissing;
+  const isVideo = isVideoAsset(image);
+  const hasVideoPoster = isVideo && image.thumbnailSource === 'ambit-video-v1';
   const invokeAssetLabel = getInvokeImageAssetLabel(image.invokeImageCategory);
   const invokeAssetMarkerLabel = invokeAssetLabel ? `Asset · ${invokeAssetLabel}` : undefined;
 
@@ -68,7 +70,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
       `}
       onMouseDown={onMouseDown}
-      onClick={onClick}
+      onClick={(e) => onClick(e, isMasked && isRevealed)}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
@@ -79,18 +81,32 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       onDrag={onDrag}
       onDragEnd={onDragEnd}
     >
-      <SmartImage
-        src={image.thumbnailUrl}
-        fallbackSrc={image.url}
-        microSrc={image.microThumbnail}
-        alt={image.filename}
-        onImageError={onImageError}
-        loading="lazy"
-        className={`w-full h-full transition-all duration-700 ease-spring 
-            ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'} 
-            ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
-        `}
-      />
+      {isVideo && !hasVideoPoster ? (
+        <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black ${shouldBlur ? 'blur-xl scale-110 opacity-50' : ''}`}>
+          <Video className="h-12 w-12 text-white/30" />
+        </div>
+      ) : (
+        <SmartImage
+          src={image.thumbnailUrl}
+          fallbackSrc={isVideo ? undefined : image.url}
+          microSrc={image.microThumbnail}
+          alt={image.filename}
+          onImageError={onImageError}
+          loading="lazy"
+          className={`w-full h-full transition-all duration-700 ease-spring
+              ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'}
+              ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
+          `}
+        />
+      )}
+
+      {isVideo && !shouldBlur && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          <div className="rounded-full border border-white/20 bg-black/60 p-3 shadow-xl backdrop-blur-md">
+            <Play className="h-6 w-6 fill-white text-white" />
+          </div>
+        </div>
+      )}
 
 
 
@@ -112,7 +128,10 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             Hidden Content
           </span>
           <button
-            onClick={(e) => { e.stopPropagation(); setIsRevealed(true); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsRevealed(true);
+            }}
             className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
           >
             Reveal
@@ -197,13 +216,16 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                     : modelValue && typeof modelValue === 'object' && 'name' in modelValue
                       ? String((modelValue as { name?: unknown }).name || '')
                       : '';
+                  if (isVideo) return image.videoCodec;
                   if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);
                   if (model && model !== 'Unknown') return formatModelName(model);
                   if (image.metadata.modelHash) return `Hash: ${image.metadata.modelHash.slice(0, 8)}`;
                   return 'Model';
                 })()}
               </div>
-              <div className="text-[10px] text-gray-300 font-mono">{image.width}x{image.height}</div>
+              <div className="text-[10px] text-gray-300 font-mono">
+                {image.width}x{image.height}{isVideo ? ` · ${formatVideoDuration(image.durationMs)}` : ''}
+              </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {/* Manual Hide Button (Only if it was masked originally) */}
@@ -249,4 +271,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
     </div>
   );
+};
+
+const formatVideoDuration = (durationMs: number): string => {
+  const seconds = Math.max(0, Math.round(durationMs / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };

@@ -599,6 +599,30 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(collections[0].thumbnail).toBe('asset://img-empty');
     });
 
+    it('does not fall back to a video source when a custom video thumbnail has no poster', async () => {
+        dbMocks.select.mockImplementation(async (query: string) => {
+            if (query.includes('SELECT * FROM scoped_collections')) return [makeCollectionRow({ custom_thumbnail: 'video-empty' })];
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 1 }];
+            if (query.includes('ranked_thumbnails')) return [];
+            if (query.includes('WHERE id IN')) {
+                return [{
+                    id: 'video-empty',
+                    path: 'C:/videos/empty.mp4',
+                    thumb: null,
+                    privacy_hidden: 0,
+                    media_type: 'video'
+                }];
+            }
+            return [];
+        });
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+
+        const collections = await getAllCollectionsWithStats();
+
+        expect(collections[0].thumbnail).toBeUndefined();
+        expect(collections[0].thumbnailSourceKind).toBe('customImage');
+    });
+
     it('marks dynamic thumbnails sensitive, exposes a safe alternative, and orders pinned first', async () => {
         let dynamicQuery = '';
         dbMocks.select.mockImplementation(async (query: string) => {
@@ -1103,11 +1127,11 @@ describe('collectionRepo membership helpers', () => {
     it('delegates collection additions to the atomic native mutation', async () => {
         const { addImagesToCollection } = await import('../collectionRepo');
 
-        await addImagesToCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
+        await addImagesToCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
         expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
             operation: 'add',
-            imageIds: ['C:/images/a.png', 'C:/images/b.png'],
+            imageIds: ['//?/C:/images/a.png', 'C:/images/b.png'],
             sourceCollectionId: null,
             targetCollectionId: 'c1',
         });
@@ -1117,11 +1141,11 @@ describe('collectionRepo membership helpers', () => {
     it('delegates collection removals to the atomic native mutation', async () => {
         const { removeImagesFromCollection } = await import('../collectionRepo');
 
-        await removeImagesFromCollection('c1', ['C:\\images\\a.png', 'C:/images/b.png']);
+        await removeImagesFromCollection('c1', ['\\\\?\\C:\\images\\a.png', 'C:/images/b.png']);
 
         expect(bindingMocks.mutateCollectionMembership).toHaveBeenCalledWith({
             operation: 'remove',
-            imageIds: ['C:/images/a.png', 'C:/images/b.png'],
+            imageIds: ['//?/C:/images/a.png', 'C:/images/b.png'],
             sourceCollectionId: 'c1',
             targetCollectionId: null,
         });

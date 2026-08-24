@@ -9,6 +9,8 @@ pub struct FolderStats {
     pub total_files: usize,
     #[serde(rename = "imageFiles")]
     pub image_files: usize,
+    #[serde(rename = "videoFiles")]
+    pub video_files: usize,
     #[serde(rename = "thumbnailFiles")]
     pub thumbnail_files: usize,
     #[serde(rename = "otherFiles")]
@@ -17,6 +19,13 @@ pub struct FolderStats {
     pub directory_checked: String,
     #[serde(rename = "subfolders")]
     pub subfolders: HashMap<String, usize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaCandidateKind {
+    Image,
+    Video,
 }
 
 #[derive(Serialize, Type)]
@@ -43,4 +52,6 @@ pub struct FileEntry {
     pub path: String,
     pub modified: u64,
     pub size: u64,
+    #[serde(rename = "mediaType")]
+    pub media_type: MediaCandidateKind,
 }

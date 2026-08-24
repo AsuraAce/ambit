@@ -29,6 +29,13 @@ type AppLayoutProbe = {
     onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
     isViewerShortcutBlocked: boolean;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
+    handleImageClick: (
+        event: React.MouseEvent,
+        id: string,
+        index: number,
+        callback: (index: number) => void,
+        revealGranted?: boolean,
+    ) => void;
     searchProps: {
         onFocus: () => void;
         onBlur: () => void;
@@ -84,6 +91,8 @@ type ImportModalProbe = {
 
 type ViewerProbe = {
     image: AIImage;
+    isMasked: boolean;
+    initiallyRevealed: boolean;
     isShortcutBlocked: boolean;
     onClose: () => void;
     onNext: () => void;
@@ -313,7 +322,7 @@ vi.mock('./stores/settingsStore', () => {
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
-        flushSettings: mocks.flushSettings
+        flushSettings: mocks.flushSettings,
     });
     useSettingsStore.getState = storeState;
     return { useSettingsStore };
@@ -960,7 +969,7 @@ describe('App orchestration', () => {
         expect(mocks.modals.setCollectionToEditId).toHaveBeenCalledWith('collection-a');
         await act(async () => layout.handleRemoveFromCollection());
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
-        expect(mocks.addToast).toHaveBeenCalledWith('Removed 1 images from collection', 'info');
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('images from collection'), 'info');
         await act(async () => {
             expect(await layout.onSetCollectionMembership('one', 'target', true)).toBe(true);
             expect(await layout.onSetCollectionMembership('one', 'target', false)).toBe(true);
@@ -978,6 +987,28 @@ describe('App orchestration', () => {
         requireProbe(captured.contextMenu, 'AppContextMenu').onMoveToCollection();
         expect(mocks.modals.setSourceCollectionId).toHaveBeenCalledWith('collection-a');
         requireProbe(captured.contextMenu, 'AppContextMenu').onClose();
+    });
+
+    it('keeps the selection when bulk collection removal does not persist', async () => {
+        mocks.collections = [{
+            id: 'collection-a',
+            name: 'Collection A',
+            imageIds: ['one'],
+            count: 1,
+            createdAt: 1,
+            source: 'ambit'
+        }];
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.selectedIds = new Set(['one']);
+        mocks.removeImagesFromCollection.mockResolvedValueOnce(false);
+        render(<App />);
+        const clearCount = mocks.clearSelection.mock.calls.length;
+
+        await act(async () => requireProbe(captured.appLayout, 'AppLayout').handleRemoveFromCollection());
+
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearCount);
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('from collection'), 'info');
     });
 
     it('routes committed navbar searches by view and opens syntax help', () => {
@@ -1290,6 +1321,41 @@ describe('App orchestration', () => {
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
         expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('grants one revealed card opening without reusing it for a direct reopen', async () => {
+        mocks.privacyEnabled = true;
+        mocks.images = [
+            { ...image('one'), userMasked: true },
+            { ...image('two'), userMasked: true },
+        ];
+        mocks.handleImageClick.mockImplementationOnce((
+            _event: React.MouseEvent,
+            _id: string,
+            index: number,
+            callback: (nextIndex: number) => void,
+        ) => callback(index));
+        render(<App />);
+
+        const layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.handleImageClick({} as React.MouseEvent, 'one', 0, layout.setSelectedImageIndex, true));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: true,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: false,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.initiallyRevealed).toBe(false));
+        expect(requireProbe(captured.viewer, 'ImageViewer').isMasked).toBe(true);
     });
 
     it('opens a referenced asset outside the current query without changing gallery results', async () => {

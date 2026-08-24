@@ -1,5 +1,6 @@
 
 import * as React from 'react';
+import type { FolderChange } from '../../bindings';
 import { render, act, screen, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LibraryProvider, useLibraryContext } from '../LibraryContext';
@@ -173,6 +174,8 @@ vi.mock('../../services/db/imageRepo', () => ({
     rebuildFacetCacheStrict: (...args: any[]) => mocks.rebuildFacetCacheStrict(...args),
     rebuildFacetCacheIncrementalBatchStrict: (...args: any[]) => mocks.rebuildFacetCacheIncrementalBatchStrict(...args),
     refreshFacetCacheForResourcesStrict: (...args: any[]) => mocks.refreshFacetCacheForResourcesStrict(...args),
+    moveImagePathIdentities: vi.fn().mockResolvedValue({ moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 }),
+    markImagePathIdentitiesMissing: vi.fn().mockResolvedValue(0),
     checkHiddenContentAvailability: (...args: unknown[]) => mocks.checkHiddenContentAvailability(...args)
 }));
 
@@ -713,8 +716,8 @@ describe('Library Integration (Provider Stack)', () => {
 
     it('keeps generic live imports working while running the Invoke activation catch-up', async () => {
         let hook: ReturnType<typeof useLibraryContext> | undefined;
-        let watcherCallback: ((paths?: string[]) => void) | null = null;
-        mocks.watcherStartWatching.mockImplementationOnce(async (_paths: string[], onChange: (paths?: string[]) => void) => {
+        let watcherCallback: ((changes?: FolderChange[]) => void) | null = null;
+        mocks.watcherStartWatching.mockImplementationOnce(async (_paths: string[], onChange: (changes?: FolderChange[]) => void) => {
             watcherCallback = onChange;
         });
         renderStack(h => hook = h);
@@ -748,7 +751,7 @@ describe('Library Integration (Provider Stack)', () => {
         }, { timeout: 3000 });
 
         await act(async () => {
-            watcherCallback?.(['C:/watch/new.png']);
+            watcherCallback?.([{ kind: 'create', paths: ['C:/watch/new.png'] }]);
         });
 
         await waitFor(() => {
@@ -1270,8 +1273,8 @@ describe('Library Integration (Provider Stack)', () => {
 
     it('drains scheduled Invoke activity after toggling off during detected activity', async () => {
         let hook: any;
-        let watcherCallback: ((paths?: string[]) => void) | null = null;
-        mocks.watcherStartWatching.mockImplementationOnce(async (_paths: string[], onChange: (paths?: string[]) => void) => {
+        let watcherCallback: ((changes?: FolderChange[]) => void) | null = null;
+        mocks.watcherStartWatching.mockImplementationOnce(async (_paths: string[], onChange: (changes?: FolderChange[]) => void) => {
             watcherCallback = onChange;
         });
         renderStack(h => hook = h);
@@ -1311,7 +1314,7 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.syncImages.mockReturnValueOnce(deferred.promise);
 
         await act(async () => {
-            watcherCallback?.(['D:/AmbitFixtures/InvokeAI/databases/invokeai.db-wal']);
+            watcherCallback?.([{ kind: 'modify', paths: ['D:/AmbitFixtures/InvokeAI/databases/invokeai.db-wal'] }]);
         });
 
         expect(useLibraryStore.getState().liveWatchSession.phase).toBe('watching');

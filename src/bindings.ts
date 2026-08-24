@@ -61,6 +61,14 @@ async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<I
     else return { status: "error", error: e  as any };
 }
 },
+async markImagePathIdentitiesMissing(ids: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_image_path_identities_missing", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getMainDatabaseUrl() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_main_database_url") };
@@ -630,6 +638,54 @@ async setResourceThumbnailSensitivity(modelHash: string, modelName: string | nul
     else return { status: "error", error: e  as any };
 }
 },
+async importVideoAsset(path: string, operationId: string) : Promise<Result<VideoImportOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_video_asset", { path, operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshVideoMetadata(filterRoot: string | null, forceReparse: boolean) : Promise<Result<ReparseJobResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_video_metadata", { filterRoot, forceReparse }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelVideoImport(operationId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_video_import", { operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async storeVideoPoster(assetId: string, webpBase64: string) : Promise<Result<VideoPosterResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("store_video_poster", { assetId, webpBase64 }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async prepareVideoPlayback(assetId: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_video_playback", { assetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportAssetOriginal(assetId: string, destinationDirectory: string) : Promise<Result<ExportOriginalResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_asset_original", { assetId, destinationDirectory }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveToTrash(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_to_trash", { path }) };
@@ -675,6 +731,11 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+folderChangeEvent: FolderChangeEvent
+}>({
+folderChangeEvent: "folder-change-event"
+})
 
 /** user-defined constants **/
 
@@ -701,12 +762,16 @@ export type DeleteRemovedImagesResult = { clearedIds: string[]; trashedIds: stri
 export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPinned: boolean; userMasked: boolean | null }
 export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
+export type ExportOriginalResult = { assetId: string; outputPath: string; bytesCopied: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
 export type FacetScopeCacheState = "missing" | "dirty" | "building" | "ready"
 export type FacetScopeCacheStatus = { state: FacetScopeCacheState; generation: number; builtGeneration: number | null; facetCount: number; collectionCount: number }
-export type FileEntry = { path: string; modified: number; size: number }
+export type FileEntry = { path: string; modified: number; size: number; mediaType: MediaCandidateKind }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
-export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
+export type FolderChange = { kind: FolderChangeKind; paths: string[] }
+export type FolderChangeEvent = FolderChange[]
+export type FolderChangeKind = "create" | "modify" | "rename" | "remove"
+export type FolderStats = { totalFiles: number; imageFiles: number; videoFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed?: number | null; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean; hasWorkflowHint?: boolean }
 export type ImagePathIdentityMove = { oldId: string; newId: string; thumbnailPath: string | null; thumbnailSource: string | null }
 export type ImagePathIdentityMoveResult = { moved: number; skippedTargetExists: number; skippedSourceMissing: number }
@@ -739,6 +804,8 @@ export type InvokeOwnerScopeMode = "legacy" | "unselected" | "owner" | "all"
 export type InvokeOwnerScopeRefreshResult = { changed: boolean; activeUpdated: number; removedUpdated: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
 export type InvokeScopeCacheAction = "restored" | "selective" | "full"
 export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
+export type MediaCandidateKind = "image" | "video"
+export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embedded" | "workflow_default" | "unknown"
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
@@ -776,6 +843,13 @@ export type UpdateAmbitCollectionScopeResult = { collectionId: string; invokeSou
  * Valid facet names result - used for drill-down filtering
  */
 export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[]; controlNets: string[]; ipAdapters: string[] }
+export type VideoAssetRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; mediaContainer: string | null; mediaMimeType: string | null; durationMs: number; videoCodec: string; videoProfile: string | null; audioPresent: boolean; audioCodec: string | null; frameRateNum: number | null; frameRateDen: number | null; rotationDegrees: number; metadata: VideoGenerationMetadata; originalMetadataJson: string }
+export type VideoGenerationMetadata = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; generationType: string; generationMode: VideoGenerationMode; workflowJson: string | null; fieldSources: Partial<{ [key in string]: MetadataEvidenceSource }>; conflicts: VideoMetadataConflict[]; diagnostics: VideoMetadataDiagnostic[]; parserVersion: number }
+export type VideoGenerationMode = "text_to_video" | "image_to_video" | "first_last_frame_to_video" | "video_editing" | "audio_lip_sync" | "guided_video" | "unknown"
+export type VideoImportOutcome = { status: string; asset: VideoAssetRecord | null; reason: string | null }
+export type VideoMetadataConflict = { field: string; selectedValue: string; ignoredValue: string; ignoredSource: MetadataEvidenceSource }
+export type VideoMetadataDiagnostic = { code: string; message: string }
+export type VideoPosterResult = { assetId: string; thumbnailPath: string; thumbnailSource: string }
 
 /** tauri-specta globals **/
 

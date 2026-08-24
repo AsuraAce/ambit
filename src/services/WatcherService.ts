@@ -1,4 +1,4 @@
-import { commands } from '../bindings';
+import { commands, type FolderChange } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { UnlistenFn } from '@tauri-apps/api/event';
 import { AppSettings } from '../types';
@@ -6,7 +6,7 @@ import { isBrowserMockMode } from './runtime';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
 import { listenWithCleanup } from '../utils/tauriListener';
 
-type WatcherCallback = (paths?: string[]) => void;
+export type WatcherCallback = (changes?: FolderChange[]) => void;
 
 export class WatcherService {
     private unlistenFn: UnlistenFn | null = null;
@@ -66,12 +66,13 @@ export class WatcherService {
             });
 
             // Listen for the debounced event from Rust
-            const listener = listenWithCleanup<string[]>(
+            const listener = listenWithCleanup<FolderChange[]>(
                 'folder-change-event',
                 (event) => {
-                    const pathCount = event.payload?.length || 0;
-                    console.log(`[WatcherService] Folder change detected with ${pathCount} paths`);
-                    this.diagnostic?.update({ lastEventAt: Date.now(), lastPathCount: pathCount });
+                    const changeCount = event.payload?.length || 0;
+                    const pathCount = event.payload?.reduce((total, change) => total + change.paths.length, 0) || 0;
+                    console.log(`[WatcherService] Folder change detected with ${changeCount} changes across ${pathCount} paths`);
+                    this.diagnostic?.update({ lastEventAt: Date.now(), lastChangeCount: changeCount, lastPathCount: pathCount });
                     onChangeEvent(event.payload);
                 },
                 'Native folder watcher events'

@@ -91,6 +91,51 @@ describe('repoUtils lightweight image rows', () => {
         });
     });
 
+    it('maps persisted video fields without treating the source file as a generated poster', () => {
+        const asset = mapRowToImage({
+            ...baseLightRow,
+            id: 'C:/videos/clip.mp4',
+            path: 'C:/videos/clip.mp4',
+            thumbnail_path: null,
+            media_type: 'video',
+            generation_type: 'text_to_video',
+            media_container: 'MPEG-4',
+            media_mime_type: 'video/mp4',
+            duration_ms: 2_500,
+            video_codec: 'AVC',
+            video_profile: 'High',
+            audio_present: 1,
+            audio_codec: 'AAC',
+            frame_rate_num: 30_000,
+            frame_rate_den: 1_001,
+            rotation_degrees: 90,
+            probe_status: 'ready',
+            playback_status: 'playable',
+        });
+
+        expect(asset).toMatchObject({
+            mediaType: 'video',
+            url: 'asset://C:/videos/clip.mp4',
+            thumbnailUrl: 'asset://C:/videos/clip.mp4',
+            mediaContainer: 'MPEG-4',
+            mediaMimeType: 'video/mp4',
+            durationMs: 2_500,
+            videoCodec: 'AVC',
+            videoProfile: 'High',
+            audioPresent: true,
+            audioCodec: 'AAC',
+            frameRateNum: 30_000,
+            frameRateDen: 1_001,
+            rotationDegrees: 90,
+            probeStatus: 'ready',
+            playbackStatus: 'playable',
+            metadata: expect.objectContaining({
+                generationType: 'text_to_video',
+                generationMode: 'text_to_video',
+            }),
+        });
+    });
+
     it('keeps an unavailable lightweight seed unknown', () => {
         const image = mapRowToImage({ ...baseLightRow, seed: null });
 

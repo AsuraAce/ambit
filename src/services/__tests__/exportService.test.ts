@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from '@tauri-apps/api/path';
 import { readFile, writeFile } from '@tauri-apps/plugin-fs';
-import { GeneratorTool, type AIImage } from '../../types';
+import { GeneratorTool, type AIImage, type VideoAsset } from '../../types';
 import { exportImagesToZip } from '../exportService';
 
 vi.mock('@tauri-apps/plugin-fs', () => ({ readFile: vi.fn(), writeFile: vi.fn() }));
@@ -63,9 +63,64 @@ describe('exportImagesToZip', () => {
         expect(JSON.parse(await zip.file('metadata/photo.png.json')!.async('string'))).toEqual(image().metadata);
         expect(JSON.parse(await zip.file('manifest.json')!.async('string'))).toEqual([{
             filename: 'photo.png',
+            mediaType: 'image',
             metadata: image().metadata,
             notes: 'keeper',
         }]);
+    });
+
+    it('archives original video bytes alongside images', async () => {
+        const videoBytes = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]);
+        mockedReadFile.mockResolvedValueOnce(videoBytes);
+        const clip: VideoAsset = {
+            ...image(),
+            id: 'C:/videos/clip.mp4',
+            url: 'asset://C:/videos/clip.mp4',
+            filename: 'clip.mp4',
+            mediaType: 'video',
+            durationMs: 2500,
+            videoCodec: 'h264',
+            audioPresent: true,
+            rotationDegrees: 0,
+            probeStatus: 'ready',
+            playbackStatus: 'playable',
+        };
+
+        await exportImagesToZip([clip], 'C:/exports', 'videos');
+
+        const zip = await writtenZip();
+        expect(await zip.file('clip.mp4')?.async('uint8array')).toEqual(videoBytes);
+        expect(JSON.parse(await zip.file('manifest.json')!.async('string'))[0]).toMatchObject({
+            filename: 'clip.mp4',
+            mediaType: 'video',
+            video: {
+                durationMs: 2500,
+                videoCodec: 'h264',
+                audioPresent: true,
+                playbackStatus: 'playable'
+            }
+        });
+    });
+
+    it('bounds concurrent source reads for large mixed selections', async () => {
+        type FileBytes = Awaited<ReturnType<typeof readFile>>;
+        const resolvers: Array<(value: FileBytes) => void> = [];
+        const reads = Array.from({ length: 6 }, () => new Promise<FileBytes>((resolve) => resolvers.push(resolve)));
+        let readIndex = 0;
+        mockedReadFile.mockImplementation(() => reads[readIndex++]);
+        const items = Array.from({ length: 6 }, (_, index) => image({
+            id: `C:/library/item-${index}.mp4`,
+            filename: `item-${index}.mp4`,
+            mediaType: 'video'
+        }));
+
+        const exportPromise = exportImagesToZip(items, 'C:/exports', 'bounded');
+        await vi.waitFor(() => expect(mockedReadFile).toHaveBeenCalledTimes(4));
+        resolvers.slice(0, 4).forEach(resolve => resolve(new Uint8Array([1])));
+        await vi.waitFor(() => expect(mockedReadFile).toHaveBeenCalledTimes(6));
+        resolvers.slice(4).forEach(resolve => resolve(new Uint8Array([2])));
+
+        await exportPromise;
     });
 
     it('falls back to fetch for supported remote and data URLs', async () => {
@@ -99,7 +154,7 @@ describe('exportImagesToZip', () => {
         const zip = await writtenZip();
         expect(await zip.file('local.png.error.txt')!.async('string')).toBe('Failed to read local file: C:/missing.png');
         expect(await zip.file('remote.png.error.txt')!.async('string')).toBe(
-            'Failed to download source image: https://example.test/missing.png'
+            'Failed to download source item: https://example.test/missing.png'
         );
     });
 });

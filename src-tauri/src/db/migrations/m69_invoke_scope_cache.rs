@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 68: Persist owner-scoped derived data while retaining the existing
+/// Migration 69: Persist owner-scoped derived data while retaining the existing
 /// facet and collection columns as the active compatibility projection.
-pub fn migration68() -> Migration {
+pub fn migration69() -> Migration {
     Migration {
-        version: 68,
+        version: 69,
         description: "add_invoke_scope_derived_cache",
         sql: r#"
             CREATE TABLE invoke_scope_cache_state (
@@ -299,7 +299,7 @@ pub fn migration68() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration68;
+    use super::migration69;
     use rusqlite::Connection;
 
     fn source_schema() -> Connection {
@@ -356,7 +356,7 @@ mod tests {
         )
         .expect("seed cache");
 
-        conn.execute_batch(migration68().sql)
+        conn.execute_batch(migration69().sql)
             .expect("apply migration");
 
         let state: (String, i64, Option<i64>) = conn
@@ -397,7 +397,7 @@ mod tests {
             ",
         )
         .expect("seed scope");
-        conn.execute_batch(migration68().sql)
+        conn.execute_batch(migration69().sql)
             .expect("apply migration");
 
         conn.execute("INSERT INTO images VALUES ('new', 0)", [])

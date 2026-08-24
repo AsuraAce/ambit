@@ -57,12 +57,14 @@ interface ImageThumbnailLookupRow {
     thumb?: string | null;
     privacy_hidden?: number | null;
     invoke_scope_hidden?: number | null;
+    media_type?: string | null;
 }
 
 interface CustomThumbnailMatch {
     thumb?: string | null;
     privacyHidden?: number | null;
     ownerHidden?: boolean;
+    isVideo?: boolean;
 }
 
 export interface SmartCollectionSummary {
@@ -162,12 +164,16 @@ const loadImageThumbnailLookup = async (
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
             `SELECT images.id, images.path,
-                    COALESCE(NULLIF(images.thumbnail_path, ''), images.path) as thumb,
+                    CASE
+                        WHEN images.media_type = 'video' THEN NULLIF(images.thumbnail_path, '')
+                        ELSE COALESCE(NULLIF(images.thumbnail_path, ''), images.path)
+                    END as thumb,
                     images.privacy_hidden,
                     CASE WHEN EXISTS (
                         SELECT 1 FROM scoped_images AS visible_images
                         WHERE visible_images.id = images.id
-                    ) THEN 0 ELSE 1 END AS invoke_scope_hidden
+                    ) THEN 0 ELSE 1 END AS invoke_scope_hidden,
+                    images.media_type
              FROM images AS images
              WHERE ${column} IN (${placeholders})`,
             batch
@@ -179,6 +185,7 @@ const loadImageThumbnailLookup = async (
                 thumb: row.thumb,
                 privacyHidden: row.privacy_hidden,
                 ownerHidden: row.invoke_scope_hidden === 1,
+                isVideo: row.media_type === 'video',
             });
         });
     }
@@ -429,12 +436,14 @@ const buildCollectionThumbnailSummaries = async (
                 thumbnailIsSensitive = false;
                 thumbnailSourceKind = 'customImage';
             } else if (customThumb) {
-                rawThumb = customThumb.thumb || collection.custom_thumbnail;
+                rawThumb = customThumb.thumb || (customThumb.isVideo ? undefined : collection.custom_thumbnail);
                 safeThumb = undefined;
                 thumbnailIsSensitive = customThumb.privacyHidden === 1;
                 thumbnailSourceKind = 'customImage';
             } else {
-                rawThumb = collection.custom_thumbnail;
+                rawThumb = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i.test(collection.custom_thumbnail)
+                    ? undefined
+                    : collection.custom_thumbnail;
                 safeThumb = undefined;
                 thumbnailIsSensitive = false;
                 thumbnailSourceKind = 'customPath';
@@ -992,6 +1001,7 @@ export const getSmartCollectionSummaries = async (
     try {
         const queries = smartCollections.map(c => {
             const statsFilters: FilterState = {
+                mediaType: 'all',
                 collectionId: c.id,
                 dateRange: 'all',
                 favoritesOnly: false,

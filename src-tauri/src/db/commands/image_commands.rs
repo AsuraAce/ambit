@@ -1481,6 +1481,39 @@ fn normalize_image_identity_path(path: &str) -> String {
     path.replace('\\', "/")
 }
 
+fn alternate_windows_identity_path(path: &str) -> String {
+    let normalized = normalize_image_identity_path(path);
+    if let Some(rest) = normalized.strip_prefix("//?/UNC/") {
+        return format!("//{rest}");
+    }
+    if let Some(rest) = normalized.strip_prefix("//?/") {
+        return rest.to_string();
+    }
+    if let Some(rest) = normalized.strip_prefix("//") {
+        return format!("//?/UNC/{rest}");
+    }
+    if normalized.as_bytes().get(1) == Some(&b':') {
+        return format!("//?/{normalized}");
+    }
+    normalized
+}
+
+fn preserve_source_identity_prefix(source_id: &str, requested_target: &str) -> String {
+    let source_id = normalize_image_identity_path(source_id);
+    let requested_target = normalize_image_identity_path(requested_target);
+
+    if source_id.starts_with("//?/UNC/") && !requested_target.starts_with("//?/UNC/") {
+        if let Some(rest) = requested_target.strip_prefix("//") {
+            return format!("//?/UNC/{rest}");
+        }
+    }
+    if source_id.starts_with("//?/") && !requested_target.starts_with("//?/") {
+        return format!("//?/{requested_target}");
+    }
+
+    requested_target
+}
+
 fn move_image_path_identities_inner(
     conn: &rusqlite::Connection,
     moves: &[ImagePathIdentityMove],
@@ -1497,10 +1530,18 @@ fn move_image_path_identities_inner(
 
     {
         let mut target_exists = tx
-            .prepare_cached("SELECT 1 FROM images WHERE id = ?1 LIMIT 1")
+            .prepare_cached(
+                "SELECT 1 FROM images
+                 WHERE id = ?1 OR id = ?2 OR path = ?1 OR path = ?2
+                 LIMIT 1",
+            )
             .map_err(|e| e.to_string())?;
         let mut source_identity = tx
-            .prepare_cached("SELECT path, thumbnail_path FROM images WHERE id = ?1 LIMIT 1")
+            .prepare_cached(
+                "SELECT id, path, thumbnail_path FROM images
+                 WHERE id = ?1 OR id = ?2 OR path = ?1 OR path = ?2
+                 LIMIT 1",
+            )
             .map_err(|e| e.to_string())?;
         let mut update_image = tx
             .prepare_cached(
@@ -1508,7 +1549,10 @@ fn move_image_path_identities_inner(
                  SET id = ?1,
                      path = ?1,
                      thumbnail_path = COALESCE(NULLIF(?2, ''), thumbnail_path),
-                     thumbnail_source = ?3,
+                     thumbnail_source = CASE
+                         WHEN NULLIF(?2, '') IS NULL THEN thumbnail_source
+                         ELSE ?3
+                     END,
                      is_missing = 0
                  WHERE id = ?4",
             )
@@ -1583,30 +1627,37 @@ fn move_image_path_identities_inner(
             .map_err(|e| e.to_string())?;
 
         for item in moves {
-            let old_id = normalize_image_identity_path(&item.old_id);
-            let new_id = normalize_image_identity_path(&item.new_id);
-            if old_id == new_id {
+            let requested_old_id = normalize_image_identity_path(&item.old_id);
+            let requested_new_id = normalize_image_identity_path(&item.new_id);
+            if requested_old_id == requested_new_id {
                 continue;
             }
 
+            let alternate_old_id = alternate_windows_identity_path(&requested_old_id);
+
+            let source_row = source_identity
+                .query_row(params![&requested_old_id, &alternate_old_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })
+                .optional()
+                .map_err(|e| e.to_string())?;
+            let Some((old_id, source_path, source_thumbnail_path)) = source_row else {
+                result.skipped_source_missing += 1;
+                continue;
+            };
+            let new_id = preserve_source_identity_prefix(&old_id, &requested_new_id);
+            let alternate_new_id = alternate_windows_identity_path(&new_id);
             let has_target = target_exists
-                .exists(params![&new_id])
+                .exists(params![&new_id, &alternate_new_id])
                 .map_err(|e| e.to_string())?;
             if has_target {
                 result.skipped_target_exists += 1;
                 continue;
             }
-
-            let source_row = source_identity
-                .query_row(params![&old_id], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
-                })
-                .optional()
-                .map_err(|e| e.to_string())?;
-            let Some((source_path, source_thumbnail_path)) = source_row else {
-                result.skipped_source_missing += 1;
-                continue;
-            };
             let old_path = normalize_image_identity_path(&source_path);
             let old_thumbnail_path = source_thumbnail_path
                 .as_deref()
@@ -1696,6 +1747,46 @@ fn move_image_path_identities_inner(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(result)
+}
+
+fn mark_image_path_identities_missing_inner(
+    conn: &rusqlite::Connection,
+    ids: &[String],
+) -> Result<usize, String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut marked = 0;
+    let mut seen = BTreeSet::new();
+
+    {
+        let mut mark_missing = tx
+            .prepare_cached(
+                "UPDATE images
+                 SET is_missing = 1
+                 WHERE is_missing = 0
+                   AND (id = ?1 OR id = ?2 OR path = ?1 OR path = ?2)",
+            )
+            .map_err(|e| e.to_string())?;
+
+        for id in ids {
+            let normalized = normalize_image_identity_path(id);
+            let alternate = alternate_windows_identity_path(&normalized);
+            let identity_key = if normalized.starts_with("//?/") {
+                alternate.clone()
+            } else {
+                normalized.clone()
+            };
+            if !seen.insert(identity_key) {
+                continue;
+            }
+
+            marked += mark_missing
+                .execute(params![&normalized, &alternate])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(marked)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1866,6 +1957,35 @@ pub async fn move_image_path_identities(
         }
 
         Err("Failed to move image paths after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn mark_image_path_identities_missing(
+    app: AppHandle,
+    ids: Vec<String>,
+) -> Result<usize, String> {
+    run_blocking(app, move |conn| {
+        let max_retries = 5;
+        let mut retry_delay_ms = 100;
+
+        for attempt in 0..max_retries {
+            let result = mark_image_path_identities_missing_inner(conn, &ids);
+
+            match result {
+                Ok(marked) => return Ok(marked),
+                Err(e) if e.contains("database is locked") && attempt < max_retries - 1 => {
+                    std::thread::sleep(std::time::Duration::from_millis(retry_delay_ms));
+                    retry_delay_ms *= 2;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        Err("Failed to mark missing image paths after max retries".to_string())
     })
     .await
 }
@@ -2480,10 +2600,10 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         for migration in init_db()
             .into_iter()
-            .filter(|migration| migration.version <= 70)
+            .filter(|migration| migration.version <= 71)
         {
             conn.execute_batch(&migration.sql)
-                .expect("apply migrations through dirty ledger v70");
+                .expect("apply migrations through dirty ledger v71");
         }
         conn.execute(
             "INSERT INTO invoke_scope_cache_state (
@@ -2516,17 +2636,17 @@ mod tests {
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .expect("cache state before migration 71");
+            .expect("cache state before migration 72");
         let dirty_before: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = 'all'",
                 [],
                 |row| row.get(0),
             )
-            .expect("dirty entries before migration 71");
+            .expect("dirty entries before migration 72");
 
         conn.execute_batch(
-            &crate::db::migrations::m71_invoke_scope_dirty_conflicts::migration71().sql,
+            &crate::db::migrations::m72_invoke_scope_dirty_conflicts::migration72().sql,
         )
         .expect("apply dirty-ledger conflict repair");
 
@@ -2550,14 +2670,14 @@ mod tests {
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
-            .expect("cache state after migration 71");
+            .expect("cache state after migration 72");
         let dirty_after: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = 'all'",
                 [],
                 |row| row.get(0),
             )
-            .expect("dirty entries after migration 71");
+            .expect("dirty entries after migration 72");
         assert_eq!(
             state_after, state_before,
             "trigger repair must not rebuild cache state"
@@ -4119,6 +4239,151 @@ mod tests {
             repaired_model_thumbnails, 3,
             "manual model thumbnail sources should follow moved image identities"
         );
+    }
+
+    #[test]
+    fn move_image_path_identities_matches_windows_verbatim_source_identity() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let stored_old_id = "//?/C:/library/old.webm";
+        let watcher_old_id = "C:/library/old.webm";
+        let watcher_new_id = "C:/library/renamed.webm";
+        let stored_new_id = "//?/C:/library/renamed.webm";
+        let old_thumbnail_path = "C:/thumbs/old.webp";
+        let mut image = create_image_record(stored_old_id, 100, 200, "{}");
+        image.path = stored_old_id.to_string();
+        image.thumbnail_path = old_thumbnail_path.to_string();
+        image.thumbnail_source = Some("ambit-video-v1".to_string());
+        image.is_favorite = true;
+        image.is_pinned = true;
+        super::save_images_batch_inner(&conn, &[image]).expect("initial save");
+
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, source) VALUES ('favorites', 'Favorites', 1, 'manual')",
+            [],
+        )
+        .expect("collection");
+        conn.execute(
+            "INSERT INTO collection_images (collection_id, image_id) VALUES ('favorites', ?1)",
+            params![stored_old_id],
+        )
+        .expect("collection image");
+
+        let result = super::move_image_path_identities_inner(
+            &conn,
+            &[super::ImagePathIdentityMove {
+                old_id: watcher_old_id.to_string(),
+                new_id: watcher_new_id.to_string(),
+                thumbnail_path: None,
+                thumbnail_source: None,
+            }],
+        )
+        .expect("move verbatim identity");
+
+        assert_eq!(result.moved, 1);
+        assert_eq!(result.skipped_target_exists, 0);
+        assert_eq!(result.skipped_source_missing, 0);
+
+        let moved = conn
+            .query_row(
+                "SELECT path, is_favorite, is_pinned, thumbnail_path, thumbnail_source
+                 FROM images WHERE id = ?1",
+                params![stored_new_id],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                    ))
+                },
+            )
+            .expect("moved verbatim row");
+        assert_eq!(moved.0, stored_new_id);
+        assert_eq!(moved.1, 1);
+        assert_eq!(moved.2, 1);
+        assert_eq!(moved.3, old_thumbnail_path);
+        assert_eq!(moved.4.as_deref(), Some("ambit-video-v1"));
+
+        let membership_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images WHERE image_id = ?1",
+                params![stored_new_id],
+                |row| row.get(0),
+            )
+            .expect("moved collection membership");
+        assert_eq!(membership_count, 1);
+    }
+
+    #[test]
+    fn move_image_path_identities_does_not_double_prefix_verbatim_unc_target() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let old_id = "//?/UNC/server/library/old.webm";
+        let new_id = "//?/UNC/server/library/renamed.webm";
+        let mut image = create_image_record(old_id, 100, 200, "{}");
+        image.path = old_id.to_string();
+        super::save_images_batch_inner(&conn, &[image]).expect("initial save");
+
+        let result = super::move_image_path_identities_inner(
+            &conn,
+            &[super::ImagePathIdentityMove {
+                old_id: old_id.to_string(),
+                new_id: new_id.to_string(),
+                thumbnail_path: None,
+                thumbnail_source: None,
+            }],
+        )
+        .expect("move verbatim UNC identity");
+
+        assert_eq!(result.moved, 1);
+        let stored_path: String = conn
+            .query_row(
+                "SELECT path FROM images WHERE id = ?1",
+                params![new_id],
+                |row| row.get(0),
+            )
+            .expect("moved verbatim UNC row");
+        assert_eq!(stored_path, new_id);
+    }
+
+    #[test]
+    fn mark_image_path_identities_missing_matches_windows_verbatim_identity() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let stored_id = "//?/C:/library/removed.webm";
+        let watcher_id = "C:/library/removed.webm";
+        let mut image = create_image_record(stored_id, 100, 200, "{}");
+        image.path = stored_id.to_string();
+        image.is_favorite = true;
+        image.is_pinned = true;
+        super::save_images_batch_inner(&conn, &[image]).expect("initial save");
+
+        let marked = super::mark_image_path_identities_missing_inner(
+            &conn,
+            &[watcher_id.to_string(), stored_id.to_string()],
+        )
+        .expect("mark missing through either identity form");
+
+        assert_eq!(marked, 1, "equivalent identities must only update once");
+        let state = conn
+            .query_row(
+                "SELECT is_missing, is_favorite, is_pinned FROM images WHERE id = ?1",
+                params![stored_id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .expect("missing row");
+        assert_eq!(state, (1, 1, 1));
     }
 
     #[test]
