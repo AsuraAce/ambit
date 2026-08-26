@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => {
       port: 1422,
       strictPort: true,
       host: '0.0.0.0',
+      watch: {
+        ignored: ['**/src-tauri/target/**'],
+      },
     },
     plugins: [react()],
     build: {
