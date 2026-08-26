@@ -219,7 +219,7 @@ describe('InvokeAI connection helpers', () => {
         expect(calls.find(([sql]) => sql.includes('FROM board_images bi'))?.[1]).toEqual(['owner-a']);
     });
 
-    it('loads every authoritative board, including boards without images', async () => {
+    it('loads a complete authoritative board-owner catalog, including boards without images', async () => {
         const db = createDb(async (sql) => {
             if (sql === 'PRAGMA table_info(boards)') return [{ name: 'user_id' }];
             if (sql.includes('FROM boards b')) {
@@ -249,7 +249,8 @@ describe('InvokeAI connection helpers', () => {
             ([sql]) => sql.includes('FROM boards b')
         );
         expect(boardCall?.[0]).not.toContain('EXISTS');
-        expect(boardCall?.[1]).toEqual(['owner-a']);
+        expect(boardCall?.[0]).not.toContain('WHERE b.user_id');
+        expect(boardCall?.[1]).toBeUndefined();
     });
 
     it('fingerprints only the selected owner images, boards, and memberships', async () => {

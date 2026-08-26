@@ -3,6 +3,8 @@ use crate::db::facets::FacetResourceTouches;
 use crate::db::ImageRecord;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::BTreeSet;
+use std::sync::OnceLock;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
 const PRIVACY_KEYWORDS_FINGERPRINT_KEY: &str = "masked_keywords_fingerprint";
@@ -49,6 +51,20 @@ pub struct InvokeImageSourceUpdate {
     pub invoke_image_category: Option<String>,
     pub invoke_image_origin: Option<String>,
     pub invoke_owner_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageOwnerInventoryItem {
+    pub id: String,
+    pub invoke_owner_id: Option<String>,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeImageOwnerInventoryInput {
+    pub db_path: String,
+    pub images: Vec<InvokeImageOwnerInventoryItem>,
 }
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq, Default)]
@@ -113,6 +129,7 @@ pub struct InvokeBoardSnapshotInput {
     pub boards: Vec<InvokeBoardSnapshotBoard>,
     pub memberships: Vec<InvokeBoardSnapshotMembership>,
     pub reconcile_memberships: bool,
+    pub delete_missing_collections: bool,
 }
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
@@ -164,6 +181,32 @@ pub struct InvokeScopeCacheRepairPlan {
     pub resources: FacetResourceTouches,
     pub facet_types: Vec<String>,
     pub collections_dirty: bool,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeScopeCacheBuildClaim {
+    pub scope_key: String,
+    pub generation: i64,
+    pub cache_status: FacetScopeCacheStatus,
+    pub cache_repair: InvokeScopeCacheRepairPlan,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InvokeScopeCacheBuildTicket {
+    pub scope_key: String,
+    pub generation: i64,
+}
+
+#[cfg(test)]
+impl InvokeScopeCacheBuildClaim {
+    fn ticket(&self) -> InvokeScopeCacheBuildTicket {
+        InvokeScopeCacheBuildTicket {
+            scope_key: self.scope_key.clone(),
+            generation: self.generation,
+        }
+    }
 }
 
 #[derive(
@@ -704,6 +747,92 @@ fn reconcile_invoke_image_sources_inner(
     Ok(result)
 }
 
+fn reconcile_invoke_owner_inventory_inner(
+    conn: &rusqlite::Connection,
+    input: &InvokeImageOwnerInventoryInput,
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    let db_path = normalize_invoke_root(&input.db_path);
+    if db_path.is_empty() {
+        return Err("InvokeAI database path is required".to_string());
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    tx.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_owner_inventory (
+             id TEXT PRIMARY KEY,
+             owner_id TEXT
+         );
+         DELETE FROM temp_invoke_owner_inventory;",
+    )
+    .map_err(|error| error.to_string())?;
+
+    {
+        let mut insert = tx
+            .prepare_cached(
+                "INSERT INTO temp_invoke_owner_inventory (id, owner_id)
+                 VALUES (?1, ?2)
+                 ON CONFLICT(id) DO UPDATE SET
+                     owner_id = CASE
+                         WHEN temp_invoke_owner_inventory.owner_id IS excluded.owner_id
+                         THEN excluded.owner_id
+                         ELSE NULL
+                     END",
+            )
+            .map_err(|error| error.to_string())?;
+        for item in &input.images {
+            let id = item.id.trim();
+            if id.is_empty() {
+                return Err("InvokeAI owner inventory paths cannot be empty".to_string());
+            }
+            insert
+                .execute(params![
+                    id,
+                    item.invoke_owner_id
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                ])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let source_match = if cfg!(windows) {
+        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
+    } else {
+        "invoke_source_id = ?1"
+    };
+    let mut result = InvokeImageSourceReconcileResult::default();
+    for (table, count) in [
+        ("images", &mut result.active_updated),
+        ("removed_images", &mut result.removed_updated),
+    ] {
+        *count = tx
+            .execute(
+                &format!(
+                    "UPDATE {table}
+                     SET invoke_owner_id = (
+                         SELECT inventory.owner_id
+                         FROM temp_invoke_owner_inventory inventory
+                         WHERE inventory.id = {table}.id
+                     )
+                     WHERE {source_match}
+                       AND invoke_owner_id IS NOT (
+                           SELECT inventory.owner_id
+                           FROM temp_invoke_owner_inventory inventory
+                           WHERE inventory.id = {table}.id
+                       )"
+                ),
+                [&db_path],
+            )
+            .map_err(|error| error.to_string())?;
+    }
+
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
 fn normalize_invoke_root(path: &str) -> String {
     path.replace('\\', "/").trim_end_matches('/').to_string()
 }
@@ -1157,28 +1286,27 @@ fn restore_scope_cache(conn: &Connection, scope_key: &str) -> Result<(), String>
     Ok(())
 }
 
-fn begin_active_scope_cache_build_inner(
-    conn: &Connection,
-) -> Result<FacetScopeCacheStatus, String> {
-    let scope_key: String = conn
-        .query_row(
-            "SELECT active_scope_key FROM invoke_scope_cache_control WHERE state_key = 'current'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    conn.execute(
-        "UPDATE invoke_scope_cache_state
-         SET status = 'building',
-             updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
-         WHERE scope_key = ?1",
-        [&scope_key],
-    )
-    .map_err(|error| error.to_string())?;
-    read_scope_cache_status(conn, &scope_key)
+fn invoke_scope_cache_build_session_id() -> &'static str {
+    static SESSION_ID: OnceLock<String> = OnceLock::new();
+    SESSION_ID.get_or_init(|| {
+        let started_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        format!("{}-{started_at}", std::process::id())
+    })
 }
 
-fn commit_active_scope_cache_inner(conn: &Connection) -> Result<FacetScopeCacheStatus, String> {
+fn begin_active_scope_cache_build_inner(
+    conn: &Connection,
+) -> Result<InvokeScopeCacheBuildClaim, String> {
+    begin_active_scope_cache_build_for_session_inner(conn, invoke_scope_cache_build_session_id())
+}
+
+fn begin_active_scope_cache_build_for_session_inner(
+    conn: &Connection,
+    session_id: &str,
+) -> Result<InvokeScopeCacheBuildClaim, String> {
     let scope_key: String = conn
         .query_row(
             "SELECT active_scope_key FROM invoke_scope_cache_control WHERE state_key = 'current'",
@@ -1186,32 +1314,95 @@ fn commit_active_scope_cache_inner(conn: &Connection) -> Result<FacetScopeCacheS
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
-    let build_status = read_scope_cache_status(conn, &scope_key)?;
-    if build_status.state != FacetScopeCacheState::Building {
+    let initial_status = read_scope_cache_status(conn, &scope_key)?;
+    let cache_repair = read_scope_cache_repair_plan(conn, &scope_key, &initial_status)?;
+    let cache_status = if cache_repair.action == InvokeScopeCacheAction::Restored {
+        initial_status
+    } else {
+        let updated = conn
+            .execute(
+                "UPDATE invoke_scope_cache_state
+                 SET status = 'building',
+                     build_session_id = ?3,
+                     updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                 WHERE scope_key = ?1
+                   AND generation = ?2
+                   AND (
+                       status IN ('missing', 'dirty')
+                       OR (status = 'building' AND COALESCE(build_session_id, '') <> ?3)
+                   )",
+                params![&scope_key, initial_status.generation, session_id],
+            )
+            .map_err(|error| error.to_string())?;
+        if updated != 1 {
+            return Err(
+                "Invoke owner cache changed before its repair could be claimed.".to_string(),
+            );
+        }
+        read_scope_cache_status(conn, &scope_key)?
+    };
+
+    Ok(InvokeScopeCacheBuildClaim {
+        scope_key,
+        generation: cache_status.generation,
+        cache_status,
+        cache_repair,
+    })
+}
+
+fn commit_active_scope_cache_inner(
+    conn: &Connection,
+    ticket: &InvokeScopeCacheBuildTicket,
+) -> Result<FacetScopeCacheStatus, String> {
+    commit_active_scope_cache_for_session_inner(conn, ticket, invoke_scope_cache_build_session_id())
+}
+
+fn commit_active_scope_cache_for_session_inner(
+    conn: &Connection,
+    ticket: &InvokeScopeCacheBuildTicket,
+    session_id: &str,
+) -> Result<FacetScopeCacheStatus, String> {
+    let active_scope_key: String = conn
+        .query_row(
+            "SELECT active_scope_key FROM invoke_scope_cache_control WHERE state_key = 'current'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if active_scope_key != ticket.scope_key {
+        return Err("Invoke owner cache scope changed while it was being prepared.".to_string());
+    }
+
+    let promoted = conn
+        .execute(
+            "UPDATE invoke_scope_cache_state
+             SET status = 'ready', built_generation = ?2,
+                 build_session_id = NULL,
+                 updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+             WHERE scope_key = ?1
+               AND status = 'building'
+               AND generation = ?2
+               AND build_session_id = ?3",
+            params![&ticket.scope_key, ticket.generation, session_id],
+        )
+        .map_err(|error| error.to_string())?;
+    if promoted != 1 {
+        let status = read_scope_cache_status(conn, &ticket.scope_key)?;
         return Err(format!(
-            "Invoke owner cache changed while it was being prepared (state: {:?}).",
-            build_status.state
+            "Invoke owner cache changed while it was being prepared (state: {:?}, generation: {}).",
+            status.state, status.generation
         ));
     }
+
     conn.execute(
         "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1 WHERE state_key = 'current'",
         [],
     )
     .map_err(|error| error.to_string())?;
-    // Promote within the transaction so the shared snapshot helper can capture
-    // the now-coherent active projection. Any snapshot failure rolls this back.
-    conn.execute(
-        "UPDATE invoke_scope_cache_state
-         SET status = 'ready', built_generation = generation,
-             updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
-         WHERE scope_key = ?1",
-        [&scope_key],
-    )
-    .map_err(|error| error.to_string())?;
     snapshot_active_scope_cache_if_ready(conn)?;
     conn.execute(
         "DELETE FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
-        [&scope_key],
+        [&ticket.scope_key],
     )
     .map_err(|error| error.to_string())?;
     conn.execute(
@@ -1219,7 +1410,38 @@ fn commit_active_scope_cache_inner(conn: &Connection) -> Result<FacetScopeCacheS
         [],
     )
     .map_err(|error| error.to_string())?;
-    read_scope_cache_status(conn, &scope_key)
+    read_scope_cache_status(conn, &ticket.scope_key)
+}
+
+fn abort_active_scope_cache_build_inner(
+    conn: &Connection,
+    ticket: &InvokeScopeCacheBuildTicket,
+) -> Result<FacetScopeCacheStatus, String> {
+    abort_active_scope_cache_build_for_session_inner(
+        conn,
+        ticket,
+        invoke_scope_cache_build_session_id(),
+    )
+}
+
+fn abort_active_scope_cache_build_for_session_inner(
+    conn: &Connection,
+    ticket: &InvokeScopeCacheBuildTicket,
+    session_id: &str,
+) -> Result<FacetScopeCacheStatus, String> {
+    conn.execute(
+        "UPDATE invoke_scope_cache_state
+         SET status = 'dirty',
+             build_session_id = NULL,
+             updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+         WHERE scope_key = ?1
+           AND status = 'building'
+           AND generation = ?2
+           AND build_session_id = ?3",
+        params![&ticket.scope_key, ticket.generation, session_id],
+    )
+    .map_err(|error| error.to_string())?;
+    read_scope_cache_status(conn, &ticket.scope_key)
 }
 
 fn refresh_invoke_owner_scope_inner(
@@ -1303,8 +1525,8 @@ fn refresh_invoke_owner_scope_inner(
         .map_err(|error| error.to_string())?;
         tx.commit().map_err(|e| e.to_string())?;
         return Ok(InvokeOwnerScopeRefreshResult {
-            cache_status: status,
             cache_repair,
+            cache_status: status,
             ..Default::default()
         });
     }
@@ -1366,9 +1588,21 @@ fn refresh_invoke_owner_scope_inner(
     let removed_updated = 0;
     tx.execute(
         "INSERT INTO invoke_owner_scope_state (
-             state_key, db_path, images_root, scope_mode, owner_id, updated_at
-         ) VALUES ('current', ?1, ?2, ?3, ?4, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+             state_key, db_path, images_root, scope_mode, owner_id, boards_verified, updated_at
+         ) VALUES (
+             'current', ?1, ?2, ?3, ?4,
+             CASE WHEN ?3 = 'owner' THEN 0 ELSE 1 END,
+             CAST(strftime('%s', 'now') AS INTEGER) * 1000
+         )
          ON CONFLICT(state_key) DO UPDATE SET
+             boards_verified = CASE
+                 WHEN excluded.scope_mode != 'owner' THEN 1
+                 WHEN invoke_owner_scope_state.db_path = excluded.db_path
+                  AND invoke_owner_scope_state.scope_mode = excluded.scope_mode
+                  AND invoke_owner_scope_state.owner_id IS excluded.owner_id
+                 THEN invoke_owner_scope_state.boards_verified
+                 ELSE 0
+             END,
              db_path = excluded.db_path,
              images_root = excluded.images_root,
              scope_mode = excluded.scope_mode,
@@ -1816,15 +2050,73 @@ pub async fn refresh_invoke_owner_scope(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn set_invoke_board_verification(
+    app: AppHandle,
+    db_path: String,
+    owner_id: String,
+    verified: bool,
+) -> Result<(), String> {
+    run_blocking(app, move |conn| {
+        let db_path = normalize_invoke_root(&db_path);
+        let owner_id = owner_id.trim();
+        if db_path.is_empty() || owner_id.is_empty() {
+            return Err("InvokeAI database path and owner ID are required".to_string());
+        }
+        let updated = conn
+            .execute(
+                "UPDATE invoke_owner_scope_state
+                 SET boards_verified = ?3,
+                     updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+                 WHERE state_key = 'current'
+                   AND scope_mode = 'owner'
+                   AND owner_id = ?2
+                   AND (
+                       db_path = ?1
+                       OR LOWER(RTRIM(REPLACE(db_path, '\\', '/'), '/'))
+                          = LOWER(RTRIM(REPLACE(?1, '\\', '/'), '/'))
+                   )",
+                params![db_path, owner_id, verified],
+            )
+            .map_err(|error| error.to_string())?;
+        if updated != 1 {
+            return Err(
+                "InvokeAI board verification no longer matches the active owner scope".to_string(),
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn begin_active_invoke_scope_cache_build(
     app: AppHandle,
+) -> Result<InvokeScopeCacheBuildClaim, String> {
+    run_blocking(app, move |conn| {
+        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| error.to_string())?;
+        let claim = begin_active_scope_cache_build_inner(&tx)?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(claim)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn abort_active_invoke_scope_cache_build(
+    app: AppHandle,
+    ticket: InvokeScopeCacheBuildTicket,
 ) -> Result<FacetScopeCacheStatus, String> {
     run_blocking(app, move |conn| {
         let _coordinator = crate::db::facets::lock_facet_builds()?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
-        let status = begin_active_scope_cache_build_inner(&tx)?;
+        let status = abort_active_scope_cache_build_inner(&tx, &ticket)?;
         tx.commit().map_err(|error| error.to_string())?;
         Ok(status)
     })
@@ -1835,13 +2127,14 @@ pub async fn begin_active_invoke_scope_cache_build(
 #[specta::specta]
 pub async fn commit_active_invoke_scope_cache(
     app: AppHandle,
+    ticket: InvokeScopeCacheBuildTicket,
 ) -> Result<FacetScopeCacheStatus, String> {
     run_blocking(app, move |conn| {
         let _coordinator = crate::db::facets::lock_facet_builds()?;
         let tx = conn
             .unchecked_transaction()
             .map_err(|error| error.to_string())?;
-        let status = commit_active_scope_cache_inner(&tx)?;
+        let status = commit_active_scope_cache_inner(&tx, &ticket)?;
         tx.commit().map_err(|error| error.to_string())?;
         Ok(status)
     })
@@ -1870,6 +2163,19 @@ pub async fn save_images_batch(app: AppHandle, images: Vec<ImageRecord>) -> Resu
             }
         }
         Err("Failed to save images after max retries".to_string())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn reconcile_invoke_owner_inventory(
+    app: AppHandle,
+    input: InvokeImageOwnerInventoryInput,
+) -> Result<InvokeImageSourceReconcileResult, String> {
+    run_blocking(app, move |conn| {
+        let _coordinator = crate::db::facets::lock_facet_builds()?;
+        reconcile_invoke_owner_inventory_inner(conn, &input)
     })
     .await
 }
@@ -2111,9 +2417,9 @@ fn reconcile_invoke_board_snapshot_inner(
     let upsert_boards_sql = if has_collection_updated_at {
         "INSERT INTO collections (
              id, name, is_archived, is_pinned, created_at, source,
-             invoke_owner_id, invoke_source_id, updated_at
+             invoke_owner_id, invoke_source_id, invoke_board_verified, updated_at
          )
-         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, ?2
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1, ?2
          FROM temp_invoke_board_snapshot
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
@@ -2121,30 +2427,34 @@ fn reconcile_invoke_board_snapshot_inner(
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
              invoke_source_id = excluded.invoke_source_id,
+             invoke_board_verified = 1,
              updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
          WHERE collections.name IS NOT excluded.name
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
-            OR collections.invoke_source_id IS NOT excluded.invoke_source_id"
+            OR collections.invoke_source_id IS NOT excluded.invoke_source_id
+            OR collections.invoke_board_verified IS NOT 1"
     } else {
         "INSERT INTO collections (
              id, name, is_archived, is_pinned, created_at, source,
-             invoke_owner_id, invoke_source_id
+             invoke_owner_id, invoke_source_id, invoke_board_verified
          )
-         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1
          FROM temp_invoke_board_snapshot
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
-             invoke_source_id = excluded.invoke_source_id
+             invoke_source_id = excluded.invoke_source_id,
+             invoke_board_verified = 1
          WHERE collections.name IS NOT excluded.name
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
-            OR collections.invoke_source_id IS NOT excluded.invoke_source_id"
+            OR collections.invoke_source_id IS NOT excluded.invoke_source_id
+            OR collections.invoke_board_verified IS NOT 1"
     };
-    let collections_updated = if has_collection_updated_at {
+    let mut collections_updated = if has_collection_updated_at {
         tx.execute(upsert_boards_sql, params![db_path, now])
     } else {
         tx.execute(upsert_boards_sql, params![db_path])
@@ -2167,8 +2477,8 @@ fn reconcile_invoke_board_snapshot_inner(
         InvokeOwnerScopeMode::Unselected => unreachable!(),
     };
 
-    let collections_deleted = tx
-        .execute(
+    let collections_deleted = if input.delete_missing_collections {
+        tx.execute(
             &format!(
                 "DELETE FROM collections
                  WHERE source = 'invoke'
@@ -2181,7 +2491,34 @@ fn reconcile_invoke_board_snapshot_inner(
             ),
             params![db_path, owner_param],
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| error.to_string())?
+    } else {
+        0
+    };
+
+    if !input.delete_missing_collections
+        && matches!(
+            input.mode,
+            InvokeOwnerScopeMode::All | InvokeOwnerScopeMode::Legacy
+        )
+    {
+        collections_updated += tx
+            .execute(
+                &format!(
+                    "UPDATE collections
+                     SET invoke_board_verified = 0
+                     WHERE source = 'invoke'
+                       AND {source_match}
+                       AND invoke_board_verified IS NOT 0
+                       AND NOT EXISTS (
+                           SELECT 1 FROM temp_invoke_board_snapshot snapshot
+                           WHERE snapshot.board_id = collections.id
+                       )"
+                ),
+                [&db_path],
+            )
+            .map_err(|error| error.to_string())?;
+    }
 
     let mut result = InvokeBoardSnapshotResult {
         collections_updated,
@@ -2946,6 +3283,76 @@ mod tests {
     }
 
     #[test]
+    fn authoritative_owner_inventory_reassigns_transfers_and_unassigns_missing_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute_batch(
+            "INSERT INTO images (
+                 id, path, timestamp, invoke_source_id, invoke_owner_id
+             ) VALUES
+                 ('active-moved', 'C:/Invoke/outputs/images/moved.png', 1, 'invoke.db', 'owner-a'),
+                 ('other-source', 'C:/Other/outputs/images/other.png', 2, 'other.db', 'owner-a');
+             INSERT INTO removed_images (
+                 id, path, timestamp, removed_at, invoke_source_id, invoke_owner_id
+             ) VALUES
+                 ('removed-missing', 'C:/Invoke/outputs/images/missing.png', 3, 4, 'invoke.db', 'owner-a');",
+        )
+        .expect("seed ownership rows");
+
+        let result = super::reconcile_invoke_owner_inventory_inner(
+            &conn,
+            &super::InvokeImageOwnerInventoryInput {
+                db_path: "invoke.db".to_string(),
+                images: vec![super::InvokeImageOwnerInventoryItem {
+                    id: "active-moved".to_string(),
+                    invoke_owner_id: Some("owner-b".to_string()),
+                }],
+            },
+        )
+        .expect("reconcile complete inventory");
+
+        assert_eq!(result.active_updated, 1);
+        assert_eq!(result.removed_updated, 1);
+        let active_owner: Option<String> = conn
+            .query_row(
+                "SELECT invoke_owner_id FROM images WHERE id = 'active-moved'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("active owner");
+        let removed_owner: Option<String> = conn
+            .query_row(
+                "SELECT invoke_owner_id FROM removed_images WHERE id = 'removed-missing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("removed owner");
+        let other_owner: Option<String> = conn
+            .query_row(
+                "SELECT invoke_owner_id FROM images WHERE id = 'other-source'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("other source owner");
+        assert_eq!(active_owner.as_deref(), Some("owner-b"));
+        assert_eq!(removed_owner, None);
+        assert_eq!(other_owner.as_deref(), Some("owner-a"));
+
+        let repeated = super::reconcile_invoke_owner_inventory_inner(
+            &conn,
+            &super::InvokeImageOwnerInventoryInput {
+                db_path: "invoke.db".to_string(),
+                images: vec![super::InvokeImageOwnerInventoryItem {
+                    id: "active-moved".to_string(),
+                    invoke_owner_id: Some("owner-b".to_string()),
+                }],
+            },
+        )
+        .expect("repeat inventory");
+        assert_eq!(repeated, super::InvokeImageSourceReconcileResult::default());
+    }
+
+    #[test]
     fn owner_scope_reconciles_active_and_removed_rows_without_deleting_or_touching_other_roots() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -3173,7 +3580,8 @@ mod tests {
             first_a.cache_status.state,
             super::FacetScopeCacheState::Missing
         );
-        super::begin_active_scope_cache_build_inner(&conn).expect("begin owner a cache");
+        let claim_a =
+            super::begin_active_scope_cache_build_inner(&conn).expect("begin owner a cache");
         conn.execute("DELETE FROM facet_cache", []).unwrap();
         conn.execute(
             "INSERT INTO facet_cache (facet_type, resource_name, count)
@@ -3186,7 +3594,8 @@ mod tests {
             [],
         )
         .unwrap();
-        super::commit_active_scope_cache_inner(&conn).expect("commit owner a cache");
+        super::commit_active_scope_cache_inner(&conn, &claim_a.ticket())
+            .expect("commit owner a cache");
 
         let first_b = super::refresh_invoke_owner_scope_inner(&conn, &scope("b"))
             .expect("activate cold owner b");
@@ -3194,7 +3603,8 @@ mod tests {
             first_b.cache_repair.action,
             super::InvokeScopeCacheAction::Full
         );
-        super::begin_active_scope_cache_build_inner(&conn).expect("begin owner b cache");
+        let claim_b =
+            super::begin_active_scope_cache_build_inner(&conn).expect("begin owner b cache");
         conn.execute("DELETE FROM facet_cache", []).unwrap();
         conn.execute(
             "INSERT INTO facet_cache (facet_type, resource_name, count)
@@ -3207,7 +3617,8 @@ mod tests {
             [],
         )
         .unwrap();
-        super::commit_active_scope_cache_inner(&conn).expect("commit owner b cache");
+        super::commit_active_scope_cache_inner(&conn, &claim_b.ticket())
+            .expect("commit owner b cache");
 
         let warm_a = super::refresh_invoke_owner_scope_inner(&conn, &scope("a"))
             .expect("restore owner a cache");
@@ -3263,16 +3674,27 @@ mod tests {
             .unwrap();
         assert_eq!(stale_but_isolated_facet, ("Owner A".into(), 11));
 
-        super::begin_active_scope_cache_build_inner(&conn).expect("begin selective owner-a repair");
+        let selective_claim = super::begin_active_scope_cache_build_inner(&conn)
+            .expect("begin selective owner-a repair");
+        assert_eq!(
+            selective_claim.cache_repair.resources.loras,
+            vec!["NewDetailer".to_string()],
+            "dirty reasons added before the claim must be part of the claimed plan"
+        );
         let touches = crate::db::facets::FacetResourceTouches {
             loras: vec!["NewDetailer".to_string()],
             ..Default::default()
         };
         crate::db::facets::refresh_live_facet_resources_in_transaction(&conn, &touches)
             .expect("repair exact owner-a resource");
-        let committed_a =
-            super::commit_active_scope_cache_inner(&conn).expect("commit selective owner-a repair");
+        let committed_a = super::commit_active_scope_cache_inner(&conn, &selective_claim.ticket())
+            .expect("commit selective owner-a repair");
         assert_eq!(committed_a.state, super::FacetScopeCacheState::Ready);
+        assert_eq!(committed_a.generation, selective_claim.generation);
+        assert_eq!(
+            committed_a.built_generation,
+            Some(selective_claim.generation)
+        );
         let owner_a_dirty_items: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items
@@ -3492,6 +3914,184 @@ mod tests {
     }
 
     #[test]
+    fn scope_cache_abort_releases_exact_build_for_retry_and_retains_dirty_ledger() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let input = super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("a".to_string()),
+            force_refresh: false,
+        };
+        super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
+        let claim = super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
+        conn.execute(
+            "INSERT OR IGNORE INTO invoke_scope_cache_dirty_items
+             (scope_key, domain, facet_type, resource_name)
+             VALUES (?1, 'full', '', '')",
+            [&claim.scope_key],
+        )
+        .expect("seed dirty reason");
+
+        let aborted = super::abort_active_scope_cache_build_inner(&conn, &claim.ticket())
+            .expect("abort cache build");
+        assert_eq!(aborted.state, super::FacetScopeCacheState::Dirty);
+        let retained: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
+                [&claim.scope_key],
+                |row| row.get(0),
+            )
+            .expect("retained dirty reasons");
+        assert_eq!(retained, 1);
+
+        let retry =
+            super::begin_active_scope_cache_build_inner(&conn).expect("retry released cache build");
+        assert_eq!(retry.scope_key, claim.scope_key);
+        assert_eq!(retry.generation, claim.generation);
+        assert_eq!(
+            retry.cache_status.state,
+            super::FacetScopeCacheState::Building
+        );
+    }
+
+    #[test]
+    fn scope_cache_claim_reclaims_a_prior_session_build_after_restart() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let db_path = std::env::temp_dir().join(format!(
+            "ambit-scope-claim-restart-{}-{unique}.db",
+            std::process::id()
+        ));
+        let (scope_key, generation) = {
+            let conn = Connection::open(&db_path).expect("open first session db");
+            apply_all_migrations(&conn);
+            let input = super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("a".to_string()),
+                force_refresh: false,
+            };
+            super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
+            let claim = super::begin_active_scope_cache_build_for_session_inner(
+                &conn,
+                "session-before-restart",
+            )
+            .expect("claim before restart");
+            conn.execute(
+                "INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+                 VALUES (?1, 'full', '', '')",
+                [&claim.scope_key],
+            )
+            .expect("record invalidation during abandoned build");
+            let duplicate = super::begin_active_scope_cache_build_for_session_inner(
+                &conn,
+                "session-before-restart",
+            )
+            .expect_err("same session must not steal an active claim");
+            assert!(duplicate.contains("changed before its repair could be claimed"));
+            (claim.scope_key, claim.generation)
+        };
+
+        {
+            let conn = Connection::open(&db_path).expect("reopen db after restart");
+            let reclaimed = super::begin_active_scope_cache_build_for_session_inner(
+                &conn,
+                "session-after-restart",
+            )
+            .expect("reclaim prior-session build");
+            assert_eq!(reclaimed.scope_key, scope_key);
+            assert_eq!(reclaimed.generation, generation);
+            assert_eq!(
+                reclaimed.cache_status.state,
+                super::FacetScopeCacheState::Building
+            );
+            let build_session_id: String = conn
+                .query_row(
+                    "SELECT build_session_id FROM invoke_scope_cache_state WHERE scope_key = ?1",
+                    [&scope_key],
+                    |row| row.get(0),
+                )
+                .expect("reclaimed build session");
+            assert_eq!(build_session_id, "session-after-restart");
+            let retained: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
+                    [&scope_key],
+                    |row| row.get(0),
+                )
+                .expect("retained repair ledger");
+            assert!(retained > 0);
+            super::abort_active_scope_cache_build_for_session_inner(
+                &conn,
+                &reclaimed.ticket(),
+                "session-after-restart",
+            )
+            .expect("release reclaimed build");
+        }
+        std::fs::remove_file(&db_path).expect("remove restart fixture db");
+    }
+
+    #[test]
+    fn owner_scope_activation_preserves_only_matching_board_verification() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let owner_a = super::InvokeOwnerScopeInput {
+            db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+            images_root: "C:/Invoke".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("a".to_string()),
+            force_refresh: false,
+        };
+
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_a).expect("activate owner A");
+        conn.execute(
+            "UPDATE invoke_owner_scope_state SET boards_verified = 1 WHERE state_key = 'current'",
+            [],
+        )
+        .expect("verify owner A boards");
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_a).expect("reactivate owner A");
+        let same_owner_verified: i64 = conn
+            .query_row(
+                "SELECT boards_verified FROM invoke_owner_scope_state WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("same-owner verification");
+        assert_eq!(same_owner_verified, 1);
+
+        let mut owner_b = owner_a.clone();
+        owner_b.owner_id = Some("b".to_string());
+        super::refresh_invoke_owner_scope_inner(&conn, &owner_b).expect("activate owner B");
+        let changed_owner_verified: i64 = conn
+            .query_row(
+                "SELECT boards_verified FROM invoke_owner_scope_state WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("changed-owner verification");
+        assert_eq!(changed_owner_verified, 0);
+
+        let mut all_users = owner_a;
+        all_users.mode = super::InvokeOwnerScopeMode::All;
+        all_users.owner_id = None;
+        super::refresh_invoke_owner_scope_inner(&conn, &all_users).expect("activate All users");
+        let all_users_verified: i64 = conn
+            .query_row(
+                "SELECT boards_verified FROM invoke_owner_scope_state WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("All users verification");
+        assert_eq!(all_users_verified, 1);
+    }
+
+    #[test]
     fn scope_cache_commit_rejects_content_changes_during_build() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -3503,7 +4103,7 @@ mod tests {
             force_refresh: false,
         };
         super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
-        super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
+        let claim = super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
 
         let mut image = create_image_record("late", 100, 10, "{}");
         image.path = "C:/Invoke/outputs/images/late.png".to_string();
@@ -3511,7 +4111,7 @@ mod tests {
         image.invoke_owner_id = Some("a".to_string());
         super::save_images_batch_inner(&conn, &[image]).expect("mutate active scope");
 
-        let error = super::commit_active_scope_cache_inner(&conn)
+        let error = super::commit_active_scope_cache_inner(&conn, &claim.ticket())
             .expect_err("dirty build must not be promoted");
         assert!(error.contains("changed while it was being prepared"));
         let status = super::read_scope_cache_status(
@@ -3524,6 +4124,18 @@ mod tests {
         )
         .expect("cache status");
         assert_eq!(status.state, super::FacetScopeCacheState::Dirty);
+        assert!(status.generation > claim.generation);
+        let retained_dirty_reasons: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items WHERE scope_key = ?1",
+                [&claim.scope_key],
+                |row| row.get(0),
+            )
+            .expect("retained dirty ledger");
+        assert!(
+            retained_dirty_reasons > 0,
+            "a rejected commit must retain dirty reasons"
+        );
     }
 
     #[test]
@@ -3538,7 +4150,7 @@ mod tests {
             force_refresh: false,
         };
         super::refresh_invoke_owner_scope_inner(&conn, &input).expect("activate owner");
-        super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
+        let claim = super::begin_active_scope_cache_build_inner(&conn).expect("begin cache build");
 
         conn.execute(
             "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
@@ -3547,7 +4159,7 @@ mod tests {
         )
         .expect("mutate shared model inventory");
 
-        let error = super::commit_active_scope_cache_inner(&conn)
+        let error = super::commit_active_scope_cache_inner(&conn, &claim.ticket())
             .expect_err("a model mutation must invalidate the active build");
         assert!(error.contains("changed while it was being prepared"));
         let status = super::read_scope_cache_status(
@@ -4783,7 +5395,42 @@ mod tests {
                 board_id: "kept-board".to_string(),
             }],
             reconcile_memberships: true,
+            delete_missing_collections: true,
         };
+        let mut catalog_snapshot = snapshot.clone();
+        catalog_snapshot.mode = super::InvokeOwnerScopeMode::All;
+        catalog_snapshot.owner_id = None;
+        catalog_snapshot
+            .boards
+            .push(super::InvokeBoardSnapshotBoard {
+                id: "owner-b-board".to_string(),
+                name: "Owner B".to_string(),
+                created_at: 1,
+                owner_id: Some("owner-b".to_string()),
+            });
+        catalog_snapshot.reconcile_memberships = false;
+        catalog_snapshot.delete_missing_collections = false;
+        let catalog_result = super::reconcile_invoke_board_snapshot_inner(&conn, &catalog_snapshot)
+            .expect("apply non-destructive owner catalog");
+        assert_eq!(catalog_result.collections_deleted, 0);
+        let transferred_board: (Option<String>, i64) = conn
+            .query_row(
+                "SELECT invoke_owner_id, invoke_board_verified
+                 FROM collections WHERE id = 'old-board'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("old board remains");
+        assert_eq!(transferred_board, (Some("owner-a".to_string()), 0));
+        let retained_membership: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images WHERE collection_id = 'old-board'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("retained old-board membership");
+        assert_eq!(retained_membership, 1);
+
         let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
             .expect("replace owner A board snapshot");
 
@@ -4902,6 +5549,7 @@ mod tests {
                     },
                 ],
                 reconcile_memberships: true,
+                delete_missing_collections: true,
             };
 
             let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)

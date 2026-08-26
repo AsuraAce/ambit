@@ -21,7 +21,7 @@ interface InvokeDbSnapshotConfig {
 }
 
 export const INVOKE_PATH_REPAIR_SNAPSHOT_VERSION = 1;
-export const INVOKE_IMPORT_SCHEMA_VERSION = 4;
+export const INVOKE_IMPORT_SCHEMA_VERSION = 5;
 export const INVOKE_BOARD_OWNER_SCHEMA_VERSION = 1;
 
 const sortedFiles = (files: InvokeDbSnapshotFile[]): InvokeDbSnapshotFile[] =>

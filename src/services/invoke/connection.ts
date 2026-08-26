@@ -296,13 +296,10 @@ export async function fetchBoards(
         const ownerSelect = scope.mode !== 'legacy' && boardColumns.has('user_id')
             ? ', b.user_id'
             : '';
-        const ownerClause = scope.mode === 'owner' ? 'WHERE b.user_id = ?' : '';
-        const ownerParams = scope.mode === 'owner' ? [scope.ownerId] : [];
         const rows = await db.select<BoardRow[]>(`
             SELECT b.board_id, b.board_name, b.created_at${ownerSelect}
             FROM boards b
-            ${ownerClause}
-        `, ownerParams);
+        `);
 
         rows.forEach(board => {
             const timeRaw = board.created_at.includes('Z') ? board.created_at : `${board.created_at} Z`;

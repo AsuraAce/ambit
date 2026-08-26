@@ -60,11 +60,34 @@ const mocks = vi.hoisted(() => ({
     clearCollectionOwnerScopeCaches: vi.fn().mockResolvedValue(undefined),
     beginActiveInvokeScopeCacheBuild: vi.fn().mockResolvedValue({
         status: 'ok',
-        data: { state: 'building', generation: 0, builtGeneration: null, facetCount: 0, collectionCount: 0 }
+        data: {
+            scopeKey: 'test-scope',
+            generation: 0,
+            cacheStatus: {
+                state: 'building',
+                generation: 0,
+                builtGeneration: null,
+                facetCount: 0,
+                collectionCount: 0,
+            },
+            cacheRepair: {
+                action: 'full',
+                resources: {
+                    checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                    controlNets: [], ipAdapters: [], tools: [],
+                },
+                facetTypes: [],
+                collectionsDirty: true,
+            },
+        },
     }),
     commitActiveInvokeScopeCache: vi.fn().mockResolvedValue({
         status: 'ok',
         data: { state: 'ready', generation: 0, builtGeneration: 0, facetCount: 0, collectionCount: 0 }
+    }),
+    abortActiveInvokeScopeCacheBuild: vi.fn().mockResolvedValue({
+        status: 'ok',
+        data: { state: 'dirty', generation: 0, builtGeneration: null, facetCount: 0, collectionCount: 0 }
     }),
     discoverInvokeOwners: vi.fn(),
     readInvokeSourceFingerprint: vi.fn().mockResolvedValue({
@@ -138,6 +161,7 @@ vi.mock('../../bindings', () => ({
         getInvokeDbSnapshot: (...args: unknown[]) => mocks.getInvokeDbSnapshot(...args),
         beginActiveInvokeScopeCacheBuild: (...args: unknown[]) => mocks.beginActiveInvokeScopeCacheBuild(...args),
         commitActiveInvokeScopeCache: (...args: unknown[]) => mocks.commitActiveInvokeScopeCache(...args),
+        abortActiveInvokeScopeCacheBuild: (...args: unknown[]) => mocks.abortActiveInvokeScopeCacheBuild(...args),
     }
 }));
 
@@ -269,6 +293,37 @@ const createTargetedResult = ({
         ipAdapters: [],
         tools: []
     }
+});
+const createInvokeScopeCacheClaim = (
+    cacheRepair: {
+        action: 'restored' | 'selective' | 'full';
+        resources: {
+            checkpoints: string[];
+            loras: string[];
+            embeddings: string[];
+            hypernetworks: string[];
+            controlNets: string[];
+            ipAdapters: string[];
+            tools: string[];
+        };
+        facetTypes: string[];
+        collectionsDirty: boolean;
+    },
+    generation: number
+) => ({
+    status: 'ok' as const,
+    data: {
+        scopeKey: 'test-scope',
+        generation,
+        cacheStatus: {
+            state: 'building' as const,
+            generation,
+            builtGeneration: generation > 0 ? generation - 1 : null,
+            facetCount: 10,
+            collectionCount: 2,
+        },
+        cacheRepair,
+    },
 });
 
 const defaultSetCollections = useCollectionStore.getInitialState().setCollections;
@@ -1764,6 +1819,15 @@ describe('Library Integration (Provider Stack)', () => {
                 collectionCount: 2,
             },
         });
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'restored',
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        }, 0));
 
         renderSyncStack(h => libraryHook = h, h => syncHook = h);
         await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
@@ -1783,6 +1847,15 @@ describe('Library Integration (Provider Stack)', () => {
                 pathRepairVersion: INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
                 importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
                 files: [],
+                sourceFingerprint: {
+                    schemaVersion: 1,
+                    imageCount: 0,
+                    imageUpdatedAt: null,
+                    boardCount: 0,
+                    boardUpdatedAt: null,
+                    membershipCount: 0,
+                    membershipMaxRowId: null,
+                },
             },
         }));
 
@@ -1793,7 +1866,41 @@ describe('Library Integration (Provider Stack)', () => {
             forceVisibilityRefresh: false,
         }));
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
-        expect(mocks.clearLibraryStatsCache).not.toHaveBeenCalled();
+        expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
+        expect(mocks.clearLibraryStatsCache).toHaveBeenCalledOnce();
+
+        mocks.applyInvokeOwnerScope.mockClear();
+        mocks.readInvokeSourceFingerprint.mockResolvedValueOnce({
+            schemaVersion: 1,
+            imageCount: 1,
+            imageUpdatedAt: 200,
+            boardCount: 0,
+            boardUpdatedAt: null,
+            membershipCount: 0,
+            membershipMaxRowId: null,
+        });
+        mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
+            changed: false,
+            sourceFactsUpdated: 1,
+            activeVisibilityUpdated: 1,
+            removedVisibilityUpdated: 0,
+            boardCollectionsUpdated: 0,
+            mode: 'owner',
+        });
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'restored',
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        }, 1));
+
+        await expect(syncHook!.retryInvokeOwnerScope()).resolves.toBe(true);
+        expect(mocks.applyInvokeOwnerScope).toHaveBeenCalledWith(expect.objectContaining({
+            reconcileSourceFacts: true,
+        }));
     });
 
     it('publishes boards reconciled while restoring a saved All users scope', async () => {
@@ -1850,8 +1957,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             includeThumbnails: false,
             scheduleSmartRefresh: false,
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(syncHook?.invokeOwnerScopeState.scope).toMatchObject({ mode: 'all' });
     });
@@ -1918,8 +2024,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             includeThumbnails: false,
             scheduleSmartRefresh: false,
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
     });
 
@@ -3008,6 +3113,15 @@ describe('Library Integration (Provider Stack)', () => {
         refreshCollections.mockClear();
         refreshCollectionThumbnails.mockClear();
         refreshSmartCounts.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'restored',
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        }, 0));
 
         await expect(syncHook!.selectInvokeOwnerScope({
             dbPath: discovery.dbPath,
@@ -3017,7 +3131,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(mocks.rebuildFacetCacheStrict).not.toHaveBeenCalled();
         expect(mocks.clearCollectionOwnerScopeCaches).not.toHaveBeenCalled();
-        expect(mocks.beginActiveInvokeScopeCacheBuild).not.toHaveBeenCalled();
+        expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledOnce();
         expect(refreshCollectionThumbnails).not.toHaveBeenCalled();
         expect(mocks.commitActiveInvokeScopeCache).not.toHaveBeenCalled();
         expect(refreshCollections).toHaveBeenCalled();
@@ -3030,6 +3144,20 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.commitActiveInvokeScopeCache.mockClear();
         refreshCollectionThumbnails.mockClear();
         refreshSmartCounts.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'selective',
+            resources: {
+                checkpoints: [],
+                loras: ['NewDetailer'],
+                embeddings: [],
+                hypernetworks: [],
+                controlNets: [],
+                ipAdapters: [],
+                tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: false,
+        }, 1));
         mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
             changed: false,
             sourceFactsUpdated: 0,
@@ -3088,6 +3216,15 @@ describe('Library Integration (Provider Stack)', () => {
         mocks.commitActiveInvokeScopeCache.mockClear();
         refreshCollectionThumbnails.mockClear();
         refreshSmartCounts.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'selective',
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: true,
+        }, 2));
         mocks.applyInvokeOwnerScope.mockResolvedValueOnce({
             changed: false,
             sourceFactsUpdated: 0,
@@ -3125,20 +3262,177 @@ describe('Library Integration (Provider Stack)', () => {
         expect(refreshCollections).toHaveBeenLastCalledWith(false, {
             includeThumbnails: false,
             scheduleSmartRefresh: false,
-            throwOnError: true,
-            retryOnSuperseded: true,
+            consistency: 'authoritative',
         });
         expect(refreshSmartCounts).toHaveBeenCalledWith(expect.objectContaining({
             includeArchived: true,
             includePromptSearch: true,
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         }));
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(false, true, {
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledOnce();
+
+        mocks.rebuildFacetCacheStrict.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+        mocks.commitActiveInvokeScopeCache.mockClear();
+        mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim({
+                action: 'full',
+                resources: {
+                    checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                    controlNets: [], ipAdapters: [], tools: [],
+                },
+                facetTypes: [],
+                collectionsDirty: true,
+            }, 3))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim({
+                action: 'restored',
+                resources: {
+                    checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                    controlNets: [], ipAdapters: [], tools: [],
+                },
+                facetTypes: [],
+                collectionsDirty: false,
+            }, 4));
+        mocks.rebuildFacetCacheStrict.mockRejectedValueOnce(new Error('facet rebuild failed'));
+
+        await expect(syncHook!.selectInvokeOwnerScope({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-b',
+        })).resolves.toBe(false);
+
+        expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({
+            scopeKey: 'test-scope',
+            generation: 3,
+        });
+
+        mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+        mocks.commitActiveInvokeScopeCache.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild.mockResolvedValueOnce(createInvokeScopeCacheClaim({
+            action: 'full',
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: true,
+        }, 5));
+        await expect(syncHook!.selectInvokeOwnerScope({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-b',
+        })).resolves.toBe(true);
+        expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({
+            scopeKey: 'test-scope',
+            generation: 5,
+        });
+    });
+
+    it('retries one superseded cache claim and rolls back after a second supersession', async () => {
+        let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
+        let syncHook: SyncHook | undefined;
+        const discovery: InvokeOwnerDiscovery = {
+            schemaMode: 'multi_user',
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', imageCount: 4 },
+                { ownerId: 'owner-b', imageCount: 5 },
+            ],
+            unassignedImageCount: 0,
+        };
+        const fullRepair = {
+            action: 'full' as const,
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: true,
+        };
+        const restoredRepair = {
+            ...fullRepair,
+            action: 'restored' as const,
+            collectionsDirty: false,
+        };
+        mocks.discoverInvokeOwners.mockResolvedValue(discovery);
+        mocks.applyInvokeOwnerScope.mockImplementation(async ({ selection }: {
+            selection?: { mode: 'owner' | 'all'; ownerId?: string };
+        }) => ({
+            changed: selection?.mode === 'owner',
+            sourceFactsUpdated: 0,
+            activeVisibilityUpdated: selection?.mode === 'owner' ? 1 : 0,
+            removedVisibilityUpdated: 0,
+            boardCollectionsUpdated: 0,
+            mode: selection?.mode ?? 'unselected',
+        }));
+        mocks.syncImages.mockResolvedValue(createNoopInvokeSyncResult());
+
+        renderSyncStack(h => libraryHook = h, h => syncHook = h);
+        await waitFor(() => expect(libraryHook?.isLoaded).toBe(true));
+        await act(async () => libraryHook?.setSettings({ invokeAiPath: 'D:/Invoke' }));
+        await waitFor(() => expect(syncHook?.invokeOwnerScopeState.status).toBe('selection_required'));
+
+        mocks.beginActiveInvokeScopeCacheBuild
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(fullRepair, 1))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(restoredRepair, 2));
+        mocks.commitActiveInvokeScopeCache.mockResolvedValueOnce({
+            status: 'error',
+            error: 'Active Invoke scope cache changed while it was being prepared.',
+        });
+
+        await expect(syncHook!.selectInvokeOwnerScope({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        })).resolves.toBe(true);
+
+        expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledTimes(2);
+        expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledOnce();
+        expect(libraryHook?.settings.invokeOwnerSelection).toEqual({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
+
+        mocks.beginActiveInvokeScopeCacheBuild.mockClear();
+        mocks.commitActiveInvokeScopeCache.mockClear();
+        mocks.beginActiveInvokeScopeCacheBuild
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(fullRepair, 3))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(fullRepair, 4))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(restoredRepair, 5))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(restoredRepair, 6));
+        mocks.commitActiveInvokeScopeCache
+            .mockResolvedValueOnce({
+                status: 'error',
+                error: 'Active Invoke scope cache changed while it was being prepared.',
+            })
+            .mockResolvedValueOnce({
+                status: 'error',
+                error: 'Active Invoke scope cache changed while it was being prepared.',
+            });
+
+        await expect(syncHook!.selectInvokeOwnerScope({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-b',
+        })).resolves.toBe(false);
+
+        expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledTimes(2);
+        expect(mocks.beginActiveInvokeScopeCacheBuild).toHaveBeenCalledTimes(4);
+        expect(libraryHook?.settings.invokeOwnerSelection).toEqual({
+            dbPath: discovery.dbPath,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
+        expect(syncHook?.invokeOwnerScopeState).toEqual(expect.objectContaining({
+            status: 'ready',
+            scope: expect.objectContaining({ mode: 'owner', ownerId: 'owner-a' }),
+        }));
     });
 
     it('ignores a second owner selection while the first application is in flight', async () => {
@@ -4123,6 +4417,75 @@ describe('Library Integration (Provider Stack)', () => {
         expect(consoleError).toHaveBeenCalledWith('[Sync] Failed to rebuild facet cache after sync', expect.any(Error));
         consoleError.mockRestore();
     });
+    it('aborts a manual cache claim when completion fails after facet rebuild and allows retry', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+
+        await waitFor(() => expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalled());
+        const refreshCollectionThumbnails = vi.fn()
+            .mockRejectedValueOnce(new Error('thumbnail refresh failed'))
+            .mockResolvedValue(undefined);
+        useCollectionStore.setState({ refreshCollectionThumbnails });
+
+        const changedSyncResult = {
+            ...createNoopInvokeSyncResult(),
+            imported: 1,
+            maxTimestamp: 200,
+            syncedIds: new Set(['image-a']),
+            boardMapping: new Map([['board-a', { name: 'Board A', createdAt: 1 }]]),
+        };
+        mocks.syncImages.mockClear()
+            .mockResolvedValueOnce(changedSyncResult)
+            .mockResolvedValueOnce({ ...changedSyncResult, maxTimestamp: 201 });
+        const fullRepair = {
+            action: 'full' as const,
+            resources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+            facetTypes: [],
+            collectionsDirty: true,
+        };
+        mocks.beginActiveInvokeScopeCacheBuild.mockClear()
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(fullRepair, 7))
+            .mockResolvedValueOnce(createInvokeScopeCacheClaim(fullRepair, 8));
+        mocks.commitActiveInvokeScopeCache.mockClear();
+        mocks.abortActiveInvokeScopeCacheBuild.mockClear();
+
+        await act(async () => hook?.startInvokeSync({ mode: 'manual' }));
+
+        expect(mocks.abortActiveInvokeScopeCacheBuild).toHaveBeenCalledWith({
+            scopeKey: 'test-scope',
+            generation: 7,
+        });
+
+        await act(async () => hook?.startInvokeSync({ mode: 'manual' }));
+
+        expect(mocks.commitActiveInvokeScopeCache).toHaveBeenCalledWith({
+            scopeKey: 'test-scope',
+            generation: 8,
+        });
+        mocks.syncImages.mockReset().mockResolvedValue({
+            imported: 5,
+            updated: 0,
+            maxTimestamp: 100,
+            syncedIds: new Set(),
+            boardMapping: new Map(),
+            touchedFacetTypes: [],
+            touchedFacetResources: {
+                checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+                controlNets: [], ipAdapters: [], tools: [],
+            },
+        });
+        mocks.beginActiveInvokeScopeCacheBuild.mockReset()
+            .mockResolvedValue(createInvokeScopeCacheClaim(fullRepair, 0));
+        consoleError.mockRestore();
+    });
+
 
     it.each([
         { failure: new Error('Aborted'), expectedStatus: 'idle' as const, mode: 'manual' as const },
@@ -4218,8 +4581,7 @@ describe('Library Integration (Provider Stack)', () => {
         expect(useLibraryStore.getState().syncProgress.total).toBe(1);
         expect(refreshCollections).toHaveBeenCalledOnce();
         expect(refreshCollections).toHaveBeenCalledWith(false, {
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         consoleWarn.mockRestore();
@@ -4249,8 +4611,7 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => hook?.startInvokeSync({ mode: 'live' }));
 
         expect(refreshCollections).toHaveBeenCalledWith(false, {
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
@@ -4282,8 +4643,7 @@ describe('Library Integration (Provider Stack)', () => {
 
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             scheduleSmartRefresh: false,
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });
@@ -4431,8 +4791,7 @@ describe('Library Integration (Provider Stack)', () => {
         ));
         expect(refreshCollections).toHaveBeenCalledWith(false, {
             scheduleSmartRefresh: false,
-            retryOnSuperseded: true,
-            throwOnError: true,
+            consistency: 'authoritative',
         });
         expect(refreshCollectionThumbnails).toHaveBeenCalledWith(true);
         expect(refreshSmartCounts).toHaveBeenCalledWith({ includeArchived: false, markPending: false });

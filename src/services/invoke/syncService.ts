@@ -550,6 +550,7 @@ export const syncImages = async (
                 boardId,
             })),
             reconcileMemberships: true,
+            deleteMissingCollections: true,
         });
         boardsChanged = boardResult.collectionsUpdated
             + boardResult.collectionsDeleted

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
     load: vi.fn(),
     listInvokeaiImages: vi.fn(),
     refreshInvokeOwnerScope: vi.fn(),
+    setInvokeBoardVerification: vi.fn(),
     reconcileInvokeSourceFacts: vi.fn(),
     fetchBoards: vi.fn(),
     reconcileInvokeBoardSnapshot: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../../../bindings', () => ({
     commands: {
         listInvokeaiImages: mocks.listInvokeaiImages,
         refreshInvokeOwnerScope: mocks.refreshInvokeOwnerScope,
+        setInvokeBoardVerification: mocks.setInvokeBoardVerification,
     },
 }));
 vi.mock('../sourceReconciliation', () => ({
@@ -59,6 +61,7 @@ describe('applyInvokeOwnerScope', () => {
         mocks.load.mockResolvedValue({
             select: vi.fn().mockResolvedValue([{ name: 'image_name' }, { name: 'user_id' }]),
         });
+        mocks.setInvokeBoardVerification.mockResolvedValue({ status: 'ok', data: null });
         mocks.reconcileInvokeSourceFacts.mockResolvedValue(3);
         mocks.fetchBoards.mockResolvedValue({ boards: new Map(), isAuthoritative: true });
         mocks.reconcileInvokeBoardSnapshot.mockResolvedValue({
@@ -121,7 +124,7 @@ describe('applyInvokeOwnerScope', () => {
         });
         mocks.reconcileInvokeBoardSnapshot.mockResolvedValueOnce({
             collectionsUpdated: 1,
-            collectionsDeleted: 1,
+            collectionsDeleted: 0,
             imagesUpdated: 0,
             membershipsDeleted: 0,
             membershipsInserted: 0,
@@ -140,8 +143,8 @@ describe('applyInvokeOwnerScope', () => {
         expect(mocks.reconcileInvokeSourceFacts).not.toHaveBeenCalled();
         expect(mocks.reconcileInvokeBoardSnapshot).toHaveBeenCalledWith({
             dbPath: discovery.dbPath,
-            mode: 'owner',
-            ownerId: 'owner-a',
+            mode: 'all',
+            ownerId: null,
             boards: [{
                 id: 'board-a',
                 name: 'Board A',
@@ -150,9 +153,15 @@ describe('applyInvokeOwnerScope', () => {
             }],
             memberships: [],
             reconcileMemberships: false,
+            deleteMissingCollections: false,
         });
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(
+            discovery.dbPath,
+            'owner-a',
+            true
+        );
         expect(result.changed).toBe(true);
-        expect(result.boardCollectionsUpdated).toBe(2);
+        expect(result.boardCollectionsUpdated).toBe(1);
     });
 
     it('keeps owner-scoped boards fail-closed when board ownership is unavailable', async () => {
@@ -169,6 +178,11 @@ describe('applyInvokeOwnerScope', () => {
         });
 
         expect(mocks.reconcileInvokeBoardSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(
+            discovery.dbPath,
+            'owner-a',
+            false
+        );
         expect(result.boardScopeWarning).toMatch(/remain hidden/i);
         expect(result.boardCollectionsUpdated).toBe(0);
     });

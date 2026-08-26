@@ -15,6 +15,7 @@ import {
     isInvokeDbSnapshotCurrent,
     isInvokeDbSnapshotScopeCurrent,
     isInvokeImportSchemaCurrent,
+    isInvokeSourceFingerprintCurrent,
     readInvokeDbSnapshotState,
     upsertInvokeDbSnapshot,
 } from '../services/invoke/dbSnapshot';
@@ -63,7 +64,7 @@ import {
     type InvokeOwnerScopeState,
 } from '../stores/invokeOwnerScopeStore';
 import { commands } from '../bindings';
-import type { InvokeScopeCacheRepairPlan } from '../bindings';
+import type { InvokeScopeCacheBuildClaim, InvokeScopeCacheRepairPlan } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 
 export type { InvokeOwnerScopeState } from '../stores/invokeOwnerScopeStore';
@@ -86,6 +87,21 @@ const FULL_INVOKE_SCOPE_CACHE_REPAIR: InvokeScopeCacheRepairPlan = {
 const resolveInvokeScopeCacheRepair = (
     repair: InvokeScopeCacheRepairPlan | undefined
 ): InvokeScopeCacheRepairPlan => repair ?? FULL_INVOKE_SCOPE_CACHE_REPAIR;
+
+const abortInvokeScopeCacheClaim = async (
+    claim: InvokeScopeCacheBuildClaim,
+    context: string
+): Promise<void> => {
+    if (claim.cacheRepair.action === 'restored') return;
+    try {
+        await unwrap(commands.abortActiveInvokeScopeCacheBuild({
+            scopeKey: claim.scopeKey,
+            generation: claim.generation,
+        }));
+    } catch (abortError) {
+        console.warn(`[InvokeAI] Failed to release an abandoned cache build claim (${context}).`, abortError);
+    }
+};
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -305,75 +321,93 @@ export const SyncProvider: React.FC<{
         return liveFacetRefreshQueueRef.current.queue(facetTypes, meta, resources);
     }, []);
 
-    const refreshAfterOwnerScopeChange = useCallback(async (cacheRepair: InvokeScopeCacheRepairPlan) => {
-        const refreshStartedAt = performance.now();
-        clearLibraryStatsCache();
-        const resourceCount = Object.values(cacheRepair.resources)
-            .reduce((total, names) => total + names.length, 0);
-        const resourceFacetTypes = Object.entries(cacheRepair.resources)
-            .filter(([, names]) => names.length > 0)
-            .map(([facetType]) => facetType);
-        const facetTypes = Array.from(new Set([
-            ...cacheRepair.facetTypes,
-            ...(resourceCount > 64 ? resourceFacetTypes : []),
-        ]));
-        const requiresCacheBuild = cacheRepair.action !== 'restored';
-        if (requiresCacheBuild) {
-            await unwrap(commands.beginActiveInvokeScopeCacheBuild());
-            if (cacheRepair.action === 'full') {
-                await clearCollectionOwnerScopeCaches();
-                await rebuildFacetCacheStrict();
-            } else {
-                if (resourceCount > 0 && resourceCount <= 64) {
-                    await refreshFacetCacheForResourcesStrict(cacheRepair.resources);
-                }
-                if (facetTypes.length > 0) {
-                    await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
-                }
-                if (cacheRepair.collectionsDirty) {
+    const refreshAfterOwnerScopeChange = useCallback(async (
+        maxAttempts: 1 | 2 = 2
+    ): Promise<InvokeScopeCacheRepairPlan> => {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const refreshStartedAt = performance.now();
+            const claim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+            const cacheRepair = claim.cacheRepair;
+            const requiresCacheBuild = cacheRepair.action !== 'restored';
+            try {
+            clearLibraryStatsCache();
+            const resourceCount = Object.values(cacheRepair.resources)
+                .reduce((total, names) => total + names.length, 0);
+            const resourceFacetTypes = Object.entries(cacheRepair.resources)
+                .filter(([, names]) => names.length > 0)
+                .map(([facetType]) => facetType);
+            const facetTypes = Array.from(new Set([
+                ...cacheRepair.facetTypes,
+                ...(resourceCount > 64 ? resourceFacetTypes : []),
+            ]));
+            if (requiresCacheBuild) {
+                if (cacheRepair.action === 'full') {
                     await clearCollectionOwnerScopeCaches();
+                    await rebuildFacetCacheStrict();
+                } else {
+                    if (resourceCount > 0 && resourceCount <= 64) {
+                        await refreshFacetCacheForResourcesStrict(cacheRepair.resources);
+                    }
+                    if (facetTypes.length > 0) {
+                        await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
+                    }
+                    if (cacheRepair.collectionsDirty) {
+                        await clearCollectionOwnerScopeCaches();
+                    }
                 }
             }
-        }
-        incrementFacetCacheVersion();
-        const [, , , , , maintenanceCounts] = await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['images'] }),
-            queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-            queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
-            invalidateInvokeReferenceQueries(queryClient),
-            refreshCollections(false, {
-                includeThumbnails: false,
-                scheduleSmartRefresh: false,
-                retryOnSuperseded: true,
-                throwOnError: true,
-            }),
-            getMaintenanceCounts(),
-        ]);
-        useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
-        if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
-            await Promise.all([
-                refreshSmartCounts({
-                    includeArchived: true,
-                    includePromptSearch: true,
-                    retryOnSuperseded: true,
-                    throwOnError: true,
+            incrementFacetCacheVersion();
+            const [, , , , , maintenanceCounts] = await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+                invalidateInvokeReferenceQueries(queryClient),
+                refreshCollections(false, {
+                    includeThumbnails: false,
+                    scheduleSmartRefresh: false,
+                    consistency: 'authoritative',
                 }),
-                refreshCollectionThumbnails(false, true, {
-                    retryOnSuperseded: true,
-                    throwOnError: true,
-                }),
+                getMaintenanceCounts(),
             ]);
+            useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
+            if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
+                await Promise.all([
+                    refreshSmartCounts({
+                        includeArchived: true,
+                        includePromptSearch: true,
+                        consistency: 'authoritative',
+                    }),
+                    refreshCollectionThumbnails(false, true, {
+                        consistency: 'authoritative',
+                    }),
+                ]);
+            }
+            if (requiresCacheBuild) {
+                await unwrap(commands.commitActiveInvokeScopeCache({
+                    scopeKey: claim.scopeKey,
+                    generation: claim.generation,
+                }));
+            }
+            console.info('[InvokeAI] Library cache refresh completed.', {
+                action: cacheRepair.action,
+                resourceCount,
+                facetTypes,
+                collectionsDirty: cacheRepair.collectionsDirty,
+                elapsedMs: Math.round(performance.now() - refreshStartedAt),
+            });
+            return cacheRepair;
+            } catch (error) {
+                if (requiresCacheBuild) {
+                    await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');
+                }
+                const message = error instanceof Error ? error.message : String(error);
+                if (attempt + 1 < maxAttempts && message.includes('changed while it was being prepared')) {
+                    continue;
+                }
+                throw error;
+            }
         }
-        if (requiresCacheBuild) {
-            await unwrap(commands.commitActiveInvokeScopeCache());
-        }
-        console.info('[InvokeAI] Library cache refresh completed.', {
-            action: cacheRepair.action,
-            resourceCount,
-            facetTypes,
-            collectionsDirty: cacheRepair.collectionsDirty,
-            elapsedMs: Math.round(performance.now() - refreshStartedAt),
-        });
+        throw new Error('Invoke owner cache changed repeatedly while it was being prepared.');
     }, [incrementFacetCacheVersion, queryClient, refreshCollectionThumbnails, refreshCollections, refreshSmartCounts]);
 
     const persistOwnerSelection = useCallback(async (
@@ -448,8 +482,15 @@ export const SyncProvider: React.FC<{
         ownerScopeAdmissionRef.current = null;
         const scope = resolveInvokeSyncScope(discovery, selection);
         const targetSnapshot = getInvokeDbSnapshotForScope(settingsRef.current, scope);
+        const sourceFingerprint = scope === null
+            ? undefined
+            : await readInvokeSourceFingerprint(rootPath, scope);
         const reconcileSourceFacts = scope !== null
-            && !isInvokeDbSnapshotScopeCurrent(targetSnapshot, scope);
+            && (
+                !isInvokeDbSnapshotScopeCurrent(targetSnapshot, scope)
+                || !sourceFingerprint
+                || !isInvokeSourceFingerprintCurrent(targetSnapshot?.sourceFingerprint, sourceFingerprint)
+            );
         const reconcileBoardOwners = scope !== null
             && settingsRef.current.syncBoardsToCollections === true
             && settingsRef.current.invokeSyncBoards !== false;
@@ -477,22 +518,24 @@ export const SyncProvider: React.FC<{
             forceVisibilityRefresh: forceRefresh,
             onProgress: reportProgress,
         });
-        const cacheRepair = resolveInvokeScopeCacheRepair(result.cacheRepair);
+        let cacheRepair = resolveInvokeScopeCacheRepair(result.cacheRepair);
         if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
             const rollback = await refreshInvokeOwnerVisibility(discovery, previousSelection);
-            await refreshAfterOwnerScopeChange(resolveInvokeScopeCacheRepair(rollback.visibility.cacheRepair));
+            await refreshAfterOwnerScopeChange();
             throw new Error('InvokeAI path changed while owner scope was loading.');
         }
         const repairedSnapshot = targetSnapshot
-            && reconcileBoardOwners
-            && !result.boardScopeWarning
+            && (reconcileSourceFacts || (reconcileBoardOwners && !result.boardScopeWarning))
             ? {
                 ...targetSnapshot,
-                syncBoardsToCollections: settingsRef.current.syncBoardsToCollections === true,
-                boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+                ...(reconcileSourceFacts && sourceFingerprint ? { sourceFingerprint } : {}),
+                ...(reconcileBoardOwners && !result.boardScopeWarning ? {
+                    syncBoardsToCollections: settingsRef.current.syncBoardsToCollections === true,
+                    boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+                } : {}),
             }
             : undefined;
-        const needsCachePreparation = scope !== null && cacheRepair.action !== 'restored';
+        const needsCachePreparation = scope !== null;
         try {
             if (result.changed
                 || result.boardCollectionsUpdated > 0
@@ -505,7 +548,7 @@ export const SyncProvider: React.FC<{
                         ? 'Updating changed InvokeAI filters and collections...'
                         : 'Rebuilding InvokeAI filters and collections...';
                 reportProgress(0, 0, repairMessage);
-                await refreshAfterOwnerScopeChange(cacheRepair);
+                cacheRepair = await refreshAfterOwnerScopeChange();
             }
             if (persistSelection || repairedSnapshot) {
                 await persistOwnerSelection(selection, rootPath, scope, repairedSnapshot);
@@ -513,7 +556,7 @@ export const SyncProvider: React.FC<{
         } catch (preparationError) {
             try {
                 const rollback = await refreshInvokeOwnerVisibility(discovery, previousSelection);
-                await refreshAfterOwnerScopeChange(resolveInvokeScopeCacheRepair(rollback.visibility.cacheRepair));
+                await refreshAfterOwnerScopeChange();
             } catch (rollbackError) {
                 throw new AggregateError(
                     [preparationError, rollbackError],
@@ -1238,6 +1281,7 @@ export const SyncProvider: React.FC<{
             }
         };
 
+        let syncCacheClaim: InvokeScopeCacheBuildClaim | null = null;
         try {
             const { syncImages } = await import('../services/invoke/syncService');
             const syncResultPromise = syncImages(
@@ -1394,7 +1438,7 @@ export const SyncProvider: React.FC<{
                             console.error('[Sync] Live image refresh invalidation failed', invalidateError);
                         });
 
-                    await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+                    const liveCacheClaim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
                     const facetRefreshPromise = queueLiveFacetRefresh(touchedFacetTypes, {
                         source: 'invoke',
                         cycleId: livePerfContext?.cycleId,
@@ -1404,8 +1448,7 @@ export const SyncProvider: React.FC<{
                     const collectionRefreshPromise = shouldRefreshBoardCollections
                         ? refreshCollections(false, {
                             scheduleSmartRefresh: false,
-                            retryOnSuperseded: true,
-                            throwOnError: true,
+                            consistency: 'authoritative',
                         }).then(() => (hasBoardMapping || boardsChanged)
                             ? Promise.all([
                                 refreshCollectionThumbnails(true),
@@ -1416,10 +1459,27 @@ export const SyncProvider: React.FC<{
                     try {
                         await Promise.all([facetRefreshPromise, collectionRefreshPromise]);
                         if (isCapturedScopeCurrent()) {
-                            await unwrap(commands.commitActiveInvokeScopeCache());
+                            if (liveCacheClaim.cacheRepair.action !== 'restored') {
+                                await unwrap(commands.commitActiveInvokeScopeCache({
+                                    scopeKey: liveCacheClaim.scopeKey,
+                                    generation: liveCacheClaim.generation,
+                                }));
+                            }
+                        } else {
+                            await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync scope drift');
                         }
                     } catch (error) {
-                        console.error('[Sync] Failed to preserve the active Invoke scope cache after live sync', error);
+                        await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync refresh');
+                        const message = error instanceof Error ? error.message : String(error);
+                        if (message.includes('changed while it was being prepared')) {
+                            try {
+                                await refreshAfterOwnerScopeChange(1);
+                            } catch (retryError) {
+                                console.error('[Sync] Active Invoke scope cache was superseded twice after live sync', retryError);
+                            }
+                        } else {
+                            console.error('[Sync] Failed to preserve the active Invoke scope cache after live sync', error);
+                        }
                     }
                 } else {
                     // MANUAL HEAVY REBUILD
@@ -1450,7 +1510,7 @@ export const SyncProvider: React.FC<{
                     }
 
                     try {
-                        await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+                        syncCacheClaim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
                         if (options.mode === 'startup') {
                             await refreshStartupFacetCache({
                                 source: 'invoke',
@@ -1465,6 +1525,10 @@ export const SyncProvider: React.FC<{
                             useLibraryStore.getState().incrementFacetCacheVersion();
                         }
                     } catch (e) {
+                        if (syncCacheClaim) {
+                            await abortInvokeScopeCacheClaim(syncCacheClaim, 'sync facet refresh');
+                            syncCacheClaim = null;
+                        }
                         console.error('[Sync] Failed to rebuild facet cache after sync', e);
                         setSyncStatus('error');
                         syncOutcome = {
@@ -1485,8 +1549,7 @@ export const SyncProvider: React.FC<{
                     } else {
                         if (shouldRefreshBoardCollections) {
                             await refreshCollections(false, {
-                                retryOnSuperseded: true,
-                                throwOnError: true,
+                                consistency: 'authoritative',
                             });
                         }
                         setSyncStatus('complete');
@@ -1496,7 +1559,19 @@ export const SyncProvider: React.FC<{
                         await refreshCollectionThumbnails(true);
                     }
 
-                    await unwrap(commands.commitActiveInvokeScopeCache());
+                    if (syncCacheClaim && syncCacheClaim.cacheRepair.action !== 'restored') {
+                        try {
+                            await unwrap(commands.commitActiveInvokeScopeCache({
+                                scopeKey: syncCacheClaim.scopeKey,
+                                generation: syncCacheClaim.generation,
+                            }));
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error);
+                            if (!message.includes('changed while it was being prepared')) throw error;
+                            await refreshAfterOwnerScopeChange(1);
+                        }
+                    }
+                    syncCacheClaim = null;
 
                     await persistInvokeSnapshot(snapshotCursor);
                     syncOutcome = { status: 'completed' };
@@ -1531,8 +1606,7 @@ export const SyncProvider: React.FC<{
                 }
                 if (shouldRefreshBoardCollections) {
                     await refreshCollections(false, {
-                        retryOnSuperseded: true,
-                        throwOnError: true,
+                        consistency: 'authoritative',
                     });
                     if (hasBoardMapping || boardsChanged) {
                         await Promise.all([
@@ -1574,6 +1648,10 @@ export const SyncProvider: React.FC<{
                 }
             }
         } finally {
+            if (syncCacheClaim) {
+                await abortInvokeScopeCacheClaim(syncCacheClaim, 'sync completion');
+                syncCacheClaim = null;
+            }
             if (activeInvokeSyncScopeRef.current === capturedScope) {
                 activeInvokeSyncScopeRef.current = null;
             }
@@ -1608,7 +1686,7 @@ export const SyncProvider: React.FC<{
             finishActiveRun(syncOutcome);
         }
         return syncOutcome;
-    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, refreshSmartCounts, setSyncStatus, setSyncProgress, setInvokeOwnerScopeState, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, startPendingInvokeLiveRerun, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, refreshAfterOwnerScopeChange, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, refreshSmartCounts, setSyncStatus, setSyncProgress, setInvokeOwnerScopeState, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, startPendingInvokeLiveRerun, updateLiveWatchSession, reportLiveImagesReceived]);
 
     runInvokeSyncRef.current = runInvokeSync;
 

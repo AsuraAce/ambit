@@ -23,6 +23,21 @@ const commandCases: CommandCase[] = [
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },
     { name: 'saveImagesBatch', invokeName: 'save_images_batch', args: [[]], payload: { images: [] }, returnsResult: true },
     {
+        name: 'reconcileInvokeOwnerInventory',
+        invokeName: 'reconcile_invoke_owner_inventory',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            images: [{ id: 'C:/invoke/asset.png', invokeOwnerId: 'owner-a' }],
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                images: [{ id: 'C:/invoke/asset.png', invokeOwnerId: 'owner-a' }],
+            },
+        },
+        returnsResult: true,
+    },
+    {
         name: 'reconcileInvokeImageSources',
         invokeName: 'reconcile_invoke_image_sources',
         args: [[{
@@ -62,8 +77,28 @@ const commandCases: CommandCase[] = [
         },
         returnsResult: true,
     },
+    {
+        name: 'setInvokeBoardVerification',
+        invokeName: 'set_invoke_board_verification',
+        args: ['C:/invoke/databases/invokeai.db', 'owner-a', true],
+        payload: { dbPath: 'C:/invoke/databases/invokeai.db', ownerId: 'owner-a', verified: true },
+        returnsResult: true,
+    },
     { name: 'beginActiveInvokeScopeCacheBuild', invokeName: 'begin_active_invoke_scope_cache_build', args: [], returnsResult: true },
-    { name: 'commitActiveInvokeScopeCache', invokeName: 'commit_active_invoke_scope_cache', args: [], returnsResult: true },
+    {
+        name: 'commitActiveInvokeScopeCache',
+        invokeName: 'commit_active_invoke_scope_cache',
+        args: [{ scopeKey: 'scope-a', generation: 3 }],
+        payload: { ticket: { scopeKey: 'scope-a', generation: 3 } },
+        returnsResult: true,
+    },
+    {
+        name: 'abortActiveInvokeScopeCacheBuild',
+        invokeName: 'abort_active_invoke_scope_cache_build',
+        args: [{ scopeKey: 'scope-a', generation: 3 }],
+        payload: { ticket: { scopeKey: 'scope-a', generation: 3 } },
+        returnsResult: true,
+    },
     {
         name: 'reconcileInvokeBoardSnapshot',
         invokeName: 'reconcile_invoke_board_snapshot',
@@ -74,6 +109,7 @@ const commandCases: CommandCase[] = [
             boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
             memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
             reconcileMemberships: true,
+            deleteMissingCollections: false,
         }],
         payload: {
             input: {
@@ -83,6 +119,7 @@ const commandCases: CommandCase[] = [
                 boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
                 memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
                 reconcileMemberships: true,
+                deleteMissingCollections: false,
             },
         },
         returnsResult: true,

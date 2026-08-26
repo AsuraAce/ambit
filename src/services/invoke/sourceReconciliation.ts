@@ -4,7 +4,7 @@ import {
     type InvokeImageReferenceSet,
     type InvokeImageSourceUpdate,
 } from '../../bindings';
-import { normalizePath } from '../../utils/pathUtils';
+import { getInvokePathIdentity } from './pathIdentity';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
 import { extractInvokeImageReferences } from './referenceExtractor';
@@ -14,6 +14,7 @@ interface InvokeSourceIdentityRow {
     source_rowid?: number;
     image_name: string;
     image_subfolder?: string | null;
+    user_id: string | null;
 }
 
 interface InvokeSourceFactRow extends InvokeSourceIdentityRow {
@@ -34,17 +35,26 @@ interface ReconcileInvokeSourceFactsOptions {
 
 const BATCH_SIZE = 500;
 
-const sourceKey = (row: InvokeSourceIdentityRow): string =>
-    `${normalizePath(row.image_subfolder || '').toLowerCase()}\u0000${normalizePath(row.image_name).toLowerCase()}`;
+const pathKey = (path: string): string => getInvokePathIdentity(path);
 
-const pathKey = (path: string): string => normalizePath(path).toLowerCase();
-
-const claimPath = (owners: Map<string, string | null>, path: string, owner: string): void => {
+const claimPath = (identities: Map<string, string | null>, path: string, sourceIdentity: string): void => {
     const key = pathKey(path);
-    if (!owners.has(key)) {
-        owners.set(key, owner);
-    } else if (owners.get(key) !== owner) {
-        owners.set(key, null);
+    if (!identities.has(key)) {
+        identities.set(key, sourceIdentity);
+    } else if (identities.get(key) !== sourceIdentity) {
+        identities.set(key, null);
+    }
+};
+
+const claimOwnerId = (
+    owners: Map<string, string | null>,
+    identity: string,
+    ownerId: string | null
+): void => {
+    if (!owners.has(identity)) {
+        owners.set(identity, ownerId);
+    } else if (owners.get(identity) !== ownerId) {
+        owners.set(identity, null);
     }
 };
 
@@ -98,35 +108,42 @@ export const reconcileInvokeSourceFacts = async ({
     const ownerPredicate = invokeOwnerPredicate(scope, 'i');
     const whereClause = ownerPredicate.clause ? `WHERE ${ownerPredicate.clause}` : '';
     onProgress(0, 0, 'Indexing InvokeAI image files...');
-    const countRows = await db.select<Array<{ count: number }>>(
+    const [identityCountRow] = await db.select<Array<{ count: number }>>(
+        'SELECT count(*) as count FROM images i'
+    );
+    const [factCountRow] = await db.select<Array<{ count: number }>>(
         `SELECT count(*) as count FROM images i ${whereClause}`,
         ownerPredicate.params
     );
-    const total = countRows[0]?.count ?? 0;
-    if (total === 0) return 0;
+    const identityTotal = identityCountRow?.count ?? 0;
+    const total = factCountRow?.count ?? 0;
     const useRowId = await supportsImageRowId(db);
     const cursorWhereClause = ownerPredicate.clause
         ? `WHERE ${ownerPredicate.clause} AND i.rowid > ?`
         : 'WHERE i.rowid > ?';
 
-    const canonicalOwners = new Map<string, string | null>();
-    const legacyOwners = new Map<string, string | null>();
+    const canonicalPathIdentities = new Map<string, string | null>();
+    const canonicalPaths = new Map<string, string>();
+    const legacyPathIdentities = new Map<string, string | null>();
     const legacyPaths = new Map<string, string>();
     const legacyTargets = new Map<string, string | null>();
+    const ownerIdBySourceIdentity = new Map<string, string | null>();
     let identityProcessed = 0;
     let identityCursor = 0;
     let identityOffset = 0;
     const identityStartedAt = performance.now();
 
-    while (identityProcessed < total) {
+    while (identityProcessed < identityTotal) {
         throwIfAborted(signal);
         const rows = await db.select<InvokeSourceIdentityRow[]>(`
-            SELECT i.image_name${subfolderSelect}${useRowId ? ', i.rowid AS source_rowid' : ''}
+            SELECT i.image_name${subfolderSelect},
+                   ${columns.has('user_id') ? 'CAST(i.user_id AS TEXT)' : 'NULL'} AS user_id
+                   ${useRowId ? ', i.rowid AS source_rowid' : ''}
             FROM images i
-            ${useRowId ? cursorWhereClause : whereClause}
+            ${useRowId ? 'WHERE i.rowid > ?' : ''}
             ORDER BY ${useRowId ? 'i.rowid ASC' : fallbackOrderBy}
             LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${identityOffset}`}
-        `, useRowId ? [...ownerPredicate.params, identityCursor] : ownerPredicate.params);
+        `, useRowId ? [identityCursor] : []);
         if (rows.length === 0) break;
 
         const resolvedPaths = await Promise.all(rows.map(row =>
@@ -136,11 +153,13 @@ export const reconcileInvokeSourceFacts = async ({
             const resolved = resolvedPaths[index];
             if (!resolved.absolutePath || resolved.ambiguous) return;
 
-            const owner = sourceKey(row);
-            claimPath(canonicalOwners, resolved.absolutePath, owner);
+            const sourceIdentity = pathKey(resolved.absolutePath);
+            claimOwnerId(ownerIdBySourceIdentity, sourceIdentity, row.user_id?.trim() || null);
+            claimPath(canonicalPathIdentities, resolved.absolutePath, sourceIdentity);
+            canonicalPaths.set(pathKey(resolved.absolutePath), resolved.absolutePath);
             const legacyPath = pathResolver.getLegacyFlatImagePath(row.image_name);
             if (legacyPath && pathKey(legacyPath) !== pathKey(resolved.absolutePath)) {
-                claimPath(legacyOwners, legacyPath, owner);
+                claimPath(legacyPathIdentities, legacyPath, sourceIdentity);
                 legacyPaths.set(pathKey(legacyPath), legacyPath);
                 claimLegacyTarget(legacyTargets, legacyPath, resolved.absolutePath);
             }
@@ -148,8 +167,8 @@ export const reconcileInvokeSourceFacts = async ({
 
         identityProcessed += rows.length;
         onProgress(
-            Math.min(identityProcessed, total),
-            total,
+            Math.min(identityProcessed, identityTotal),
+            identityTotal,
             'Mapping InvokeAI image locations...'
         );
         if (rows.length < BATCH_SIZE) break;
@@ -166,23 +185,23 @@ export const reconcileInvokeSourceFacts = async ({
     }
     console.info(`[InvokeAI] Image-location mapping completed in ${Math.round(performance.now() - identityStartedAt)}ms.`);
 
-    const aliasCandidates = Array.from(legacyOwners.entries())
-        .map(([legacyKey, owner]) => ({
+    const aliasCandidates = Array.from(legacyPathIdentities.entries())
+        .map(([legacyKey, sourceIdentity]) => ({
             legacyKey,
             legacyPath: legacyPaths.get(legacyKey),
             canonicalPath: legacyTargets.get(legacyKey),
-            owner,
+            sourceIdentity,
         }))
         .filter((candidate): candidate is {
             legacyKey: string;
             legacyPath: string;
             canonicalPath: string;
-            owner: string;
+            sourceIdentity: string;
         } => (
-            candidate.owner !== null
+            candidate.sourceIdentity !== null
             && !!candidate.legacyPath
             && !!candidate.canonicalPath
-            && !canonicalOwners.has(candidate.legacyKey)
+            && !canonicalPathIdentities.has(candidate.legacyKey)
         ));
     const pathsToVerify = Array.from(new Set(aliasCandidates.flatMap(candidate => [
         candidate.legacyPath,
@@ -213,6 +232,28 @@ export const reconcileInvokeSourceFacts = async ({
         ))
         .map(candidate => candidate.legacyKey));
 
+    const ownerInventory = Array.from(canonicalPathIdentities, ([key, sourceIdentity]) => ({
+        id: canonicalPaths.get(key),
+        invokeOwnerId: sourceIdentity ? (ownerIdBySourceIdentity.get(sourceIdentity) ?? null) : null,
+    }))
+        .filter((item): item is { id: string; invokeOwnerId: string | null } => !!item.id);
+    safeLegacyAliases.forEach(key => {
+        const sourceIdentity = legacyPathIdentities.get(key);
+        const id = legacyPaths.get(key);
+        if (sourceIdentity && id) {
+            ownerInventory.push({
+                id,
+                invokeOwnerId: ownerIdBySourceIdentity.get(sourceIdentity) ?? null,
+            });
+        }
+    });
+    throwIfAborted(signal);
+    const inventoryResult = await unwrap(commands.reconcileInvokeOwnerInventory({
+        dbPath: scope.dbPath,
+        images: ownerInventory,
+    }));
+    let updated = inventoryResult.activeUpdated + inventoryResult.removedUpdated;
+
     const categorySelect = columns.has('image_category')
         ? ', i.image_category'
         : ', NULL AS image_category';
@@ -228,7 +269,6 @@ export const reconcileInvokeSourceFacts = async ({
             ? ', i.metadata AS metadata_blob'
             : ', NULL AS metadata_blob');
     let processed = 0;
-    let updated = 0;
     let factCursor = 0;
     let factOffset = 0;
     const factsStartedAt = performance.now();
@@ -255,7 +295,7 @@ export const reconcileInvokeSourceFacts = async ({
             const resolved = resolvedPaths[index];
             if (!resolved.absolutePath || resolved.ambiguous) return;
 
-            const owner = sourceKey(row);
+            const sourceIdentity = pathKey(resolved.absolutePath);
             const updateFor = (id: string): InvokeImageSourceUpdate => ({
                 id,
                 invokeImageName: row.image_name,
@@ -274,14 +314,14 @@ export const reconcileInvokeSourceFacts = async ({
                 }
             };
             const canonicalKey = pathKey(resolved.absolutePath);
-            if (canonicalOwners.get(canonicalKey) === owner) {
+            if (canonicalPathIdentities.get(canonicalKey) === sourceIdentity) {
                 addUpdate(canonicalKey, resolved.absolutePath);
             }
 
             const legacyPath = pathResolver.getLegacyFlatImagePath(row.image_name);
             if (!legacyPath || pathKey(legacyPath) === canonicalKey) return;
             const legacyKey = pathKey(legacyPath);
-            if (safeLegacyAliases.has(legacyKey) && legacyOwners.get(legacyKey) === owner) {
+            if (safeLegacyAliases.has(legacyKey) && legacyPathIdentities.get(legacyKey) === sourceIdentity) {
                 addUpdate(legacyKey, legacyPath);
             }
         });

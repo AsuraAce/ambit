@@ -42,6 +42,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             security::delete_api_key,
             // db commands
             db::commands::image_commands::save_images_batch,
+            db::commands::image_commands::reconcile_invoke_owner_inventory,
             db::commands::image_commands::reconcile_invoke_image_sources,
             db::commands::image_commands::replace_invoke_image_references,
             db::commands::image_commands::move_image_path_identities,
@@ -61,7 +62,9 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::image_commands::get_image_count_for_path_prefix,
             db::commands::image_commands::refresh_privacy_mask_index,
             db::commands::image_commands::refresh_invoke_owner_scope,
+            db::commands::image_commands::set_invoke_board_verification,
             db::commands::image_commands::begin_active_invoke_scope_cache_build,
+            db::commands::image_commands::abort_active_invoke_scope_cache_build,
             db::commands::image_commands::commit_active_invoke_scope_cache,
             db::commands::image_commands::reconcile_invoke_board_snapshot,
             db::commands::maintenance::optimize_database,

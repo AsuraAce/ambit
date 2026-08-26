@@ -346,8 +346,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             refreshTasks.push(
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
                 refreshCollections(false, {
-                    retryOnSuperseded: true,
-                    throwOnError: true,
+                    consistency: 'authoritative',
                 })
             );
         }

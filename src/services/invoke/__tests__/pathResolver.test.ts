@@ -228,4 +228,30 @@ describe('InvokeAI image path resolver', () => {
 
         expect(listImages).toHaveBeenCalledTimes(1);
     });
+
+    it('keeps case-distinct POSIX paths separate while matching Windows paths case-insensitively', async () => {
+        const posixResolver = createInvokeImagePathResolver('/opt/invoke', vi.fn().mockResolvedValue([
+            'outputs/images/Foo.png',
+            'outputs/images/foo.png',
+        ]));
+        const windowsResolver = createInvokeImagePathResolver('D:/Invoke', vi.fn().mockResolvedValue([
+            'outputs/images/Foo.png',
+        ]));
+
+        await expect(posixResolver.resolveImagePath('Foo.png')).resolves.toMatchObject({
+            absolutePath: '/opt/invoke/outputs/images/Foo.png',
+            relativePath: 'outputs/images/Foo.png',
+            ambiguous: false,
+        });
+        await expect(posixResolver.resolveImagePath('foo.png')).resolves.toMatchObject({
+            absolutePath: '/opt/invoke/outputs/images/foo.png',
+            relativePath: 'outputs/images/foo.png',
+            ambiguous: false,
+        });
+        await expect(windowsResolver.resolveImagePath('foo.png')).resolves.toMatchObject({
+            absolutePath: 'D:/Invoke/outputs/images/Foo.png',
+            relativePath: 'outputs/images/Foo.png',
+            ambiguous: false,
+        });
+    });
 });

@@ -462,6 +462,7 @@ describe('syncImages live mode', () => {
             }],
             memberships: [{ imageName: 'owned.png', boardId: 'board-a' }],
             reconcileMemberships: true,
+            deleteMissingCollections: true,
         });
         expect(syncCollectionImages).not.toHaveBeenCalled();
         expect(result.boardMapping).toEqual(new Map([

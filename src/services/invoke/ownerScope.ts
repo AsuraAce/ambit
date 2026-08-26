@@ -101,15 +101,17 @@ export const applyInvokeOwnerScope = async ({
 
     let boardCollectionsUpdated = 0;
     let boardScopeWarning: string | undefined;
+    let boardsVerified: boolean | undefined;
     if (scope && reconcileBoardOwners) {
         onProgress(0, 0, 'Updating InvokeAI board ownership...');
         db ??= await Database.load(`sqlite:${discovery.dbPath}`);
         const sourceBoards = await fetchBoards(db, scope);
+        boardsVerified = sourceBoards.isAuthoritative;
         if (sourceBoards.isAuthoritative) {
             const boardResult = await reconcileInvokeBoardSnapshot({
                 dbPath: discovery.dbPath,
-                mode: scope.mode,
-                ownerId: scope.mode === 'owner' ? scope.ownerId : null,
+                mode: scope.mode === 'legacy' ? 'legacy' : 'all',
+                ownerId: null,
                 boards: Array.from(sourceBoards.boards, ([id, board]) => ({
                     id,
                     name: board.name,
@@ -118,6 +120,7 @@ export const applyInvokeOwnerScope = async ({
                 })),
                 memberships: [],
                 reconcileMemberships: false,
+                deleteMissingCollections: false,
             });
             boardCollectionsUpdated = boardResult.collectionsUpdated + boardResult.collectionsDeleted;
         } else {
@@ -135,6 +138,13 @@ export const applyInvokeOwnerScope = async ({
         reconcileSourceFacts || forceVisibilityRefresh
     );
     console.info(`[InvokeAI] Visibility application completed in ${Math.round(performance.now() - visibilityStartedAt)}ms.`);
+    if (scope?.mode === 'owner' && boardsVerified !== undefined) {
+        await unwrap(commands.setInvokeBoardVerification(
+            discovery.dbPath,
+            scope.ownerId,
+            boardsVerified
+        ));
+    }
 
     return {
         changed: visibility.changed || sourceFactsUpdated > 0 || boardCollectionsUpdated > 0,

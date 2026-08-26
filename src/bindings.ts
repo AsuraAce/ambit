@@ -37,6 +37,14 @@ async saveImagesBatch(images: ImageRecord[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async reconcileInvokeOwnerInventory(input: InvokeImageOwnerInventoryInput) : Promise<Result<InvokeImageSourceReconcileResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_owner_inventory", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async reconcileInvokeImageSources(updates: InvokeImageSourceUpdate[]) : Promise<Result<InvokeImageSourceReconcileResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_image_sources", { updates }) };
@@ -184,7 +192,15 @@ async refreshInvokeOwnerScope(input: InvokeOwnerScopeInput) : Promise<Result<Inv
     else return { status: "error", error: e  as any };
 }
 },
-async beginActiveInvokeScopeCacheBuild() : Promise<Result<FacetScopeCacheStatus, string>> {
+async setInvokeBoardVerification(dbPath: string, ownerId: string, verified: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_invoke_board_verification", { dbPath, ownerId, verified }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async beginActiveInvokeScopeCacheBuild() : Promise<Result<InvokeScopeCacheBuildClaim, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("begin_active_invoke_scope_cache_build") };
 } catch (e) {
@@ -192,9 +208,17 @@ async beginActiveInvokeScopeCacheBuild() : Promise<Result<FacetScopeCacheStatus,
     else return { status: "error", error: e  as any };
 }
 },
-async commitActiveInvokeScopeCache() : Promise<Result<FacetScopeCacheStatus, string>> {
+async abortActiveInvokeScopeCacheBuild(ticket: InvokeScopeCacheBuildTicket) : Promise<Result<FacetScopeCacheStatus, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("commit_active_invoke_scope_cache") };
+    return { status: "ok", data: await TAURI_INVOKE("abort_active_invoke_scope_cache_build", { ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async commitActiveInvokeScopeCache(ticket: InvokeScopeCacheBuildTicket) : Promise<Result<FacetScopeCacheStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("commit_active_invoke_scope_cache", { ticket }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -788,11 +812,13 @@ export type ImageToReparse = { id: string; tool: string; originalMetadataJson: s
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
 export type InvokeBoardSnapshotBoard = { id: string; name: string; createdAt: number; ownerId: string | null }
-export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean }
+export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean; deleteMissingCollections: boolean }
 export type InvokeBoardSnapshotMembership = { imageName: string; boardId: string }
 export type InvokeBoardSnapshotResult = { collectionsUpdated: number; collectionsDeleted: number; imagesUpdated: number; membershipsDeleted: number; membershipsInserted: number }
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
+export type InvokeImageOwnerInventoryInput = { dbPath: string; images: InvokeImageOwnerInventoryItem[] }
+export type InvokeImageOwnerInventoryItem = { id: string; invokeOwnerId: string | null }
 export type InvokeImageReferenceInput = { role: InvokeImageReferenceRole; targetInvokeImageName: string }
 export type InvokeImageReferenceReplaceResult = { sourcesReplaced: number; referencesWritten: number; skippedMissingSources: number }
 export type InvokeImageReferenceRole = "init_image" | "controlnet_image" | "controlnet_processed_image" | "ip_adapter_image" | "t2i_adapter_image" | "t2i_adapter_processed_image"
@@ -803,6 +829,8 @@ export type InvokeOwnerScopeInput = { dbPath: string; imagesRoot: string; mode: 
 export type InvokeOwnerScopeMode = "legacy" | "unselected" | "owner" | "all"
 export type InvokeOwnerScopeRefreshResult = { changed: boolean; activeUpdated: number; removedUpdated: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
 export type InvokeScopeCacheAction = "restored" | "selective" | "full"
+export type InvokeScopeCacheBuildClaim = { scopeKey: string; generation: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
+export type InvokeScopeCacheBuildTicket = { scopeKey: string; generation: number }
 export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
 export type MediaCandidateKind = "image" | "video"
 export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embedded" | "workflow_default" | "unknown"
