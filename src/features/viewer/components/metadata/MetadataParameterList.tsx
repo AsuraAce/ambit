@@ -29,14 +29,14 @@ export const MetadataParameterList: React.FC<MetadataParameterListProps> = ({
     const visibleRows = rows.filter(row => !row.optional || (row.value && row.value !== 'Unknown'));
     if (visibleRows.length === 0) return null;
 
-    const parameterList = <dl aria-label={ariaLabel} className="space-y-2 bg-black p-3 text-xs">
+    const parameterList = <dl aria-label={ariaLabel} className="space-y-2 bg-gray-50 p-3 text-xs dark:bg-black">
             {visibleRows.map(row => (
                 <div
                     key={row.label}
-                    className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-3 rounded px-1 py-0.5 ${row.modified ? 'bg-amber-400/5' : ''}`}
+                    className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-x-3 rounded px-1 py-0.5 ${row.modified ? 'bg-ember-500/5' : ''}`}
                 >
-                    <dt className={row.modified ? 'text-amber-400/80' : 'text-zinc-500'}>{row.label}</dt>
-                    <dd className="break-words text-zinc-200">{row.value || 'Unknown'}</dd>
+                    <dt className={row.modified ? 'text-ember-600 dark:text-ember-300' : 'text-gray-500 dark:text-zinc-500'}>{row.label}</dt>
+                    <dd className="break-words text-gray-700 dark:text-zinc-200">{row.value || 'Unknown'}</dd>
                     <dd className="justify-self-end">
                         <MetadataSourceBadge source={row.modified ? 'user_override' : row.source} />
                     </dd>
@@ -52,7 +52,7 @@ export const MetadataParameterList: React.FC<MetadataParameterListProps> = ({
             expanded={expanded}
             onExpandedChange={onExpandedChange}
         >
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-black">
+            <div className="overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-white/10 dark:bg-black">
                 {parameterList}
             </div>
         </MetadataDisclosureSection>

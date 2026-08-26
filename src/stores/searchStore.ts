@@ -96,6 +96,7 @@ export const useSearchStore = create<SearchState>()(
                     filters: {
                         ...INITIAL_FILTERS,
                         showIntermediates: state.filters.showIntermediates,
+                        collectionId: state.filters.collectionId,
                         showGrids: state.filters.showGrids,
                         showInvokeImageAssets: state.filters.showInvokeImageAssets,
                     }

@@ -63,7 +63,7 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
     const Icon = field.icon;
     const textareaId = React.useId();
     const dirtyClassName = isDirty && kind !== 'notes'
-        ? 'border-amber-300 bg-amber-50/10 dark:border-amber-500/50'
+        ? 'border-ember-300 bg-ember-50/70 dark:border-ember-500/50 dark:bg-ember-500/10'
         : 'border-gray-200 dark:border-white/10';
 
     return (

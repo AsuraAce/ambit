@@ -90,6 +90,7 @@ Use this file as the entry point. Do not bulk-read `docs/` unless one of the rou
 - For release automation details, read `docs/WORKFLOW_SETUP.md`.
 - For private ComfyUI support bundles and fixture intake, read `docs/comfyui-support-workflow.md`.
 - For deferred structural cleanup, read `docs/refactor.md` if present.
+- For UI color roles and light/dark theme conventions, read `docs/design-system.md`.
 - For user-facing manual coverage, start at `docs/manual/index.md`.
 
 ## Completion Checklist

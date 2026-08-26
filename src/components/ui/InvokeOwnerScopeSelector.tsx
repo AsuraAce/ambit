@@ -82,7 +82,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             })}
 
             {discovery.unassignedImageCount > 0 && (
-                <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <p className="text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     {discovery.unassignedImageCount.toLocaleString()} image rows have no owner and remain hidden in single-owner scope.
                 </p>
             )}
@@ -102,8 +102,8 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                     setIsAllUsersConfirmOpen(true);
                 }}
                 className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selection?.mode === 'all'
-                    ? 'border-amber-500 bg-amber-500/10'
-                    : 'border-gray-200 hover:border-amber-500/50 dark:border-white/10'}`}
+                    ? 'border-ember-500 bg-ember-500/10'
+                    : 'border-gray-200 hover:border-ember-500/50 dark:border-white/10'}`}
             >
                 <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
                 <span className="block text-[10px] leading-4 text-gray-500">
@@ -112,7 +112,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             </button>
 
             {selectionRequired && (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <div className="rounded-xl border border-ember-500/20 bg-ember-500/10 p-3 text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     Select an owner or explicitly choose All users. InvokeAI rows remain hidden until then.
                 </div>
             )}

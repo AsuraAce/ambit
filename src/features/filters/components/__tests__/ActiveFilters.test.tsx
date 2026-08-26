@@ -15,7 +15,7 @@ const searchMocks = vi.hoisted(() => ({
 }));
 
 const collectionMocks = vi.hoisted(() => ({
-    state: { collections: [] as Collection[], smartCollections: [] as Collection[] },
+    state: { collections: [] as Collection[], smartCollections: [] as Collection[], isLoaded: true },
 }));
 
 vi.mock('../../../../contexts/SearchContext', () => ({
@@ -86,6 +86,7 @@ describe('ActiveFilters', () => {
         };
         collectionMocks.state.collections = [];
         collectionMocks.state.smartCollections = [];
+        collectionMocks.state.isLoaded = true;
     });
 
     it('renders nothing when neither explicit nor collection filters are active', () => {
@@ -123,11 +124,11 @@ describe('ActiveFilters', () => {
         cleanup();
         collectionMocks.state.collections = [createCollection({ id: 'regular' })];
         searchMocks.state.filters = createFilters({ collectionId: 'regular' });
-        render(<ActiveFiltersUnderTest />);
-        expect(screen.getByText('Collection: Collection')).toBeTruthy();
+        const { container } = render(<ActiveFiltersUnderTest />);
+        expect(container.innerHTML).toBe('');
     });
 
-    it('clears collection and pinned chips without changing unrelated criteria', () => {
+    it('clears pinned chips without changing collection scope or unrelated criteria', () => {
         const filters = createFilters({
             searchQuery: 'portrait',
             collectionId: 'regular',
@@ -138,15 +139,6 @@ describe('ActiveFilters', () => {
         searchMocks.state.filters = filters;
         render(<ActiveFiltersUnderTest />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Clear Collection Filter Portraits' }));
-        expect(applyLatestFilterUpdate(filters)).toMatchObject({
-            searchQuery: 'portrait',
-            collectionId: null,
-            pinnedOnly: true,
-            favoritesOnly: true,
-        });
-
-        searchMocks.setFilters.mockClear();
         fireEvent.click(screen.getByRole('button', { name: 'Clear Pinned Filter' }));
         expect(applyLatestFilterUpdate(filters)).toMatchObject({
             searchQuery: 'portrait',
@@ -169,14 +161,12 @@ describe('ActiveFilters', () => {
 
         const scroller = container.querySelector('.overflow-x-auto');
         const clearAll = screen.getByRole('button', { name: /clear all/i });
-        const collectionLabel = screen.getByText(`Collection: ${collectionName}`);
         const modelLabel = screen.getByText(modelName);
 
         expect(scroller).toBeTruthy();
         expect(scroller?.className).toContain('[container-type:inline-size]');
         expect(scroller?.className).toContain('[&>*]:shrink-0');
         expect(scroller?.contains(clearAll)).toBe(false);
-        expect(collectionLabel.className).toContain('max-w-[min(40ch,calc(100cqw-3rem))]');
         expect(modelLabel.className).toContain('max-w-[min(32ch,calc(100cqw-3rem))]');
         expect(clearAll.className).toContain('shrink-0');
     });
@@ -192,6 +182,40 @@ describe('ActiveFilters', () => {
         searchMocks.state.filters = createFilters({ searchQuery: '   ' });
         rerender(<ActiveFiltersUnderTest />);
         expect(screen.queryByRole('button', { name: /clear all/i })).toBeNull();
+    });
+
+    it('waits for collections to load before declaring the selected scope unavailable', () => {
+        collectionMocks.state.isLoaded = false;
+        searchMocks.state.filters = createFilters({ collectionId: 'persisted-collection' });
+
+        const { container } = render(<ActiveFiltersUnderTest />);
+
+        expect(container.innerHTML).toBe('');
+        expect(screen.queryByText('Collection unavailable')).toBeNull();
+    });
+
+    it('renders smart search and media rules even when they are the only rules', () => {
+        collectionMocks.state.smartCollections = [
+            createCollection({
+                id: 'smart-search',
+                filters: createFilters({ searchQuery: 'quiet forest' }),
+            }),
+        ];
+        searchMocks.state.filters = createFilters({ collectionId: 'smart-search' });
+        const { rerender } = render(<ActiveFiltersUnderTest />);
+
+        expect(screen.getByText(/quiet forest/)).toBeTruthy();
+
+        collectionMocks.state.smartCollections = [
+            createCollection({
+                id: 'smart-video',
+                filters: createFilters({ mediaType: 'video' }),
+            }),
+        ];
+        searchMocks.state.filters = createFilters({ collectionId: 'smart-video' });
+        rerender(<ActiveFiltersUnderTest />);
+
+        expect(screen.getByText('Media: Videos')).toBeTruthy();
     });
 
     it('does not render a second filter strip for a navbar-query-only search', () => {

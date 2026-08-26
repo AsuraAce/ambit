@@ -29,7 +29,7 @@ export const MetadataSourceBadge: React.FC<MetadataSourceBadgeProps> = ({ source
             label={tooltip}
             content={tooltip}
             persistOnClick
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-white/5 hover:text-zinc-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-600 dark:hover:bg-white/5 dark:hover:text-zinc-400"
         >
             <Icon aria-hidden="true" className="h-3.5 w-3.5" />
         </TooltipButton>

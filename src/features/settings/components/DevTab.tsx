@@ -217,7 +217,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                     return (
                                         <div key={key} className={cn(
                                             "bg-white dark:bg-zinc-900 border rounded-xl overflow-hidden transition-all",
-                                            isOverridden ? 'border-amber-500/30 ring-1 ring-amber-500/20 shadow-sm' : 'border-gray-200 dark:border-white/5'
+                                            isOverridden ? 'border-ember-500/30 ring-1 ring-ember-500/20 shadow-sm' : 'border-gray-200 dark:border-white/5'
                                         )}>
                                             <div className="px-4 py-3 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
                                                 <div className="flex items-center gap-2">
@@ -225,7 +225,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                         {key}
                                                     </div>
                                                     {isOverridden && (
-                                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                        <span className="text-[10px] font-bold text-ember-600 dark:text-ember-300 bg-ember-100 dark:bg-ember-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                                                             <Wrench className="w-3 h-3" /> Modified
                                                         </span>
                                                     )}

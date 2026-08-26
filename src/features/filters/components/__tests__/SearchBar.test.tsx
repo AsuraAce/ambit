@@ -296,12 +296,13 @@ describe('SearchBar query readiness and trigger behavior', () => {
         expect(harness.searchProps.submitSearch).toHaveBeenCalledWith('portrait');
     });
 
-    it('expands over the toolbar without scaling and collapses on Escape', () => {
+    it('stays in toolbar flow without scaling and collapses on Escape', () => {
         const harness = renderSearchBar();
         const root = harness.container.firstElementChild;
         const input = screen.getByRole('combobox');
 
-        expect(root?.className).toContain('absolute left-6 right-6');
+        expect(root?.className).toContain('relative');
+        expect(root?.className).not.toContain('absolute');
         expect(root?.className).toContain('max-w-lg');
         expect(root?.className).not.toContain('scale-105');
 

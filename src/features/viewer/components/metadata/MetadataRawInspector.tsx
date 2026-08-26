@@ -86,9 +86,9 @@ export const MetadataRawInspector = ({ image }: MetadataRawInspectorProps) => {
                             content={rawContent ? copyLabel : 'No metadata is available to copy'}
                             disabled={!rawContent}
                             onClick={() => void copyRawContent()}
-                            className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-zinc-300"
                         >
-                            {copiedMode === rawViewMode ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                            {copiedMode === rawViewMode ? <Check className="h-3.5 w-3.5 text-sage-600 dark:text-sage-300" /> : <Copy className="h-3.5 w-3.5" />}
                         </TooltipButton>
                     </div>
 

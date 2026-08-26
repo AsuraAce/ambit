@@ -9,12 +9,12 @@ interface MaintenanceTabDefinition {
 }
 
 export const MAINTENANCE_TABS: readonly MaintenanceTabDefinition[] = [
-    { id: 'missing', label: 'Missing', color: 'text-orange-500' },
-    { id: 'thumbnails', label: 'Thumbnails', color: 'text-blue-500' },
-    { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-400' },
-    { id: 'untagged', label: 'Untagged', color: 'text-amber-500' },
-    { id: 'intermediates', label: 'Intermediates', color: 'text-blue-500' },
-    { id: 'trash', label: 'Removed', color: 'text-red-500' },
+    { id: 'missing', label: 'Missing', color: 'text-ember-600 dark:text-ember-300' },
+    { id: 'thumbnails', label: 'Thumbnails', color: 'text-sage-600 dark:text-sage-300' },
+    { id: 'duplicates', label: 'Duplicates', color: 'text-sage-600 dark:text-sage-300' },
+    { id: 'untagged', label: 'Untagged', color: 'text-ember-600 dark:text-ember-300' },
+    { id: 'intermediates', label: 'Intermediates', color: 'text-sage-600 dark:text-sage-300' },
+    { id: 'trash', label: 'Removed', color: 'text-red-600 dark:text-red-300' },
 ];
 
 interface MaintenanceTabsProps {
@@ -51,7 +51,7 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
     };
 
     return (
-        <div className="flex-shrink-0 pt-4 pl-6 pr-8 pb-4 z-20">
+        <div className="z-20 flex-shrink-0 px-6 pb-4 pt-4">
             <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-4 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg">
                 <div className="shrink-0">
                     <div className="flex items-center gap-3 mb-1">
@@ -83,7 +83,7 @@ export const MaintenanceTabs: React.FC<MaintenanceTabsProps> = ({ activeTab, onT
                             }}
                             onKeyDown={(event) => handleKeyDown(event, tab.id)}
                             className={`flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3 py-2.5 text-sm font-black transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-800 ${activeTab === tab.id
-                                ? 'bg-white dark:bg-zinc-700 text-sage-600 shadow-md transform scale-105 z-10'
+                                ? 'z-10 bg-white text-sage-600 shadow-md dark:bg-zinc-700'
                                 : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
                                 }`}
                         >

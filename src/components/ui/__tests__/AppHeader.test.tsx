@@ -303,7 +303,7 @@ describe('AppHeader', () => {
         });
         rerender(<AppHeader {...defaultProps} />);
 
-        expect(container.querySelector('.bg-violet-500')).toBeTruthy();
+        expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
         expect(screen.getByTestId('app-header-progress-rail').firstElementChild?.getAttribute('style'))
             .toContain('width: 100%');
     });

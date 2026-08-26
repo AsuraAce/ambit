@@ -50,7 +50,7 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 <MetadataSectionHeader title="Color palette" icon={Palette} />
                 {isPaletteLoading ? (
                     <div className="mt-3 flex gap-2 animate-pulse">
-                        {[1, 2, 3, 4, 5].map(item => <div key={item} className="h-10 w-10 rounded-lg bg-white/5" />)}
+                        {[1, 2, 3, 4, 5].map(item => <div key={item} className="h-10 w-10 rounded-lg bg-gray-200 dark:bg-white/5" />)}
                     </div>
                 ) : palette.length > 0 ? (
                     <div className="mt-3 flex flex-wrap gap-2">

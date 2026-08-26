@@ -102,7 +102,7 @@ export const AppHeader = React.memo(({
     // Determine color
     const isBackgroundOnly = isBackgroundHealingActive && !isNonLiveTaskActive;
     const progressColorInfo = isBackgroundOnly
-        ? { bar: 'bg-violet-500', shadow: 'shadow-[0_0_10px_rgba(139,92,246,0.3)]', bg: 'bg-violet-500/10' }
+        ? { bar: 'bg-harbor-500', shadow: 'shadow-[0_0_10px_rgba(104,127,140,0.3)]', bg: 'bg-harbor-500/10' }
         : { bar: 'bg-sage-500', shadow: 'shadow-[0_0_10px_rgba(110,121,107,0.5)]', bg: 'bg-sage-500/10' };
     const shouldHighlightImport = isNonLiveTaskActive || isBackgroundHealingActive;
     const liveWatchButtonClass = isLiveWatching
@@ -148,7 +148,7 @@ export const AppHeader = React.memo(({
                         />
                     </React.Suspense>
                     {browserMockMode && (
-                        <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                        <span className="shrink-0 rounded-md border border-ember-500/30 bg-ember-500/10 px-2 py-1 text-[11px] font-semibold text-ember-600 dark:text-ember-300">
                             Browser Mock
                         </span>
                     )}

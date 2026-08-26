@@ -65,8 +65,8 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     if (images.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="p-6 bg-red-500/10 rounded-full mb-6 border border-red-500/20">
-                    <FileWarning className="w-16 h-16 text-red-500" />
+                <div className="mb-6 rounded-full border border-sage-200 bg-sage-50 p-6 dark:border-sage-500/20 dark:bg-sage-500/10">
+                    <FileWarning className="h-16 w-16 text-sage-600 dark:text-sage-300" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">No Missing Files</h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
@@ -108,7 +108,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}
                 actions={actions}
-                variant="red"
+                variant="ember"
             />
 
             <VirtualGrid

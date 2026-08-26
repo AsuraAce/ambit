@@ -158,7 +158,7 @@ export const FilterSlider: React.FC<FilterSliderProps> = ({ label, min, max, ste
         <div className="space-y-3">
             <div className="flex items-center justify-between text-xs text-gray-500">
                 <span className="font-bold uppercase tracking-wider">{label}</span>
-                <span className="font-mono text-sage-600 dark:text-sage-400">
+                <span className="font-mono text-sage-600 dark:text-sage-300">
                     {localMin} - {localMax}
                 </span>
             </div>
@@ -412,7 +412,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
                 {selected.length > 0 && (
                     <button
                         onClick={handleClear}
-                        className="text-[10px] text-sage-600 dark:text-sage-400 hover:text-sage-800 dark:hover:text-sage-200 transition-colors"
+                        className="text-[10px] text-sage-600 dark:text-sage-300 hover:text-sage-600 dark:hover:text-sage-300 transition-colors"
                     >
                         Clear ({selected.length})
                     </button>
@@ -583,7 +583,7 @@ export const IconButtonSelect: React.FC<IconButtonSelectProps> = ({ label, optio
                                 }`}
                         >
                             <div className={`p-1.5 rounded-lg transition-colors ${isSelected ? 'bg-sage-500/20' : 'bg-gray-100 dark:bg-white/5'}`}>
-                                <Icon className={`w-4 h-4 ${isSelected ? 'text-sage-600 dark:text-sage-400' : 'text-gray-400 dark:text-zinc-500'}`} />
+                                <Icon className={`w-4 h-4 ${isSelected ? 'text-sage-600 dark:text-sage-300' : 'text-gray-400 dark:text-zinc-500'}`} />
                             </div>
                             <span className="text-[10px] font-semibold truncate w-full text-center">{opt.label}</span>
                         </button>

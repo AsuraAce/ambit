@@ -74,7 +74,7 @@ const ReferenceList = ({
                                     {group.roles.map(role => (
                                         <span
                                             key={role}
-                                            className="rounded-full border border-sage-200 bg-sage-50 px-2 py-0.5 text-[10px] font-medium text-sage-700 dark:border-sage-500/20 dark:bg-sage-500/10 dark:text-sage-300"
+                                            className="rounded-full border border-sage-200 bg-sage-50 px-2 py-0.5 text-[10px] font-medium text-sage-600 dark:border-sage-500/20 dark:bg-sage-500/10 dark:text-sage-300"
                                         >
                                             {INVOKE_REFERENCE_ROLE_LABELS[role]}
                                         </span>

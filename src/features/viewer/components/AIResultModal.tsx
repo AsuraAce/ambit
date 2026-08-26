@@ -239,7 +239,7 @@ const MasteredPromptCard: React.FC<{ prompt: string; onCopy: (text: string) => v
     };
 
     return (
-        <div className="relative bg-gradient-to-br from-amethyst-500/5 to-purple-500/5 dark:from-amethyst-500/10 dark:to-purple-500/5 rounded-xl border border-amethyst-200 dark:border-amethyst-500/20 p-5 group">
+        <div className="relative bg-gradient-to-br from-amethyst-500/5 to-amethyst-500/5 dark:from-amethyst-500/10 dark:to-amethyst-500/5 rounded-xl border border-amethyst-200 dark:border-amethyst-500/20 p-5 group">
             <div className="absolute top-3 right-3">
                 <button
                     onClick={handleCopy}

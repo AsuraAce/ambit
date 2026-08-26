@@ -187,7 +187,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col relative overflow-hidden group">
                             <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center justify-between">
                                 <span>Top Prompt Keywords</span>
-                                {isFiltering && <div className="w-4 h-4 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />}
+                                {isFiltering && <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500/20 border-t-sage-500" />}
                             </h3>
                             <div className="flex-1 min-h-0">
                                 <WordCloud

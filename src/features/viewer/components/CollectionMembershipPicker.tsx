@@ -204,7 +204,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                         aria-expanded={isSearchOpen}
                         aria-controls={searchRegionId}
                         onClick={toggleSearch}
-                        className={`rounded-lg border p-1.5 transition-colors ${isSearchOpen ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/30 dark:bg-sage-900/40 dark:text-sage-400' : 'border-gray-200 bg-gray-50 text-gray-400 hover:text-gray-600 dark:border-white/5 dark:bg-white/5 dark:hover:text-gray-300'}`}
+                        className={`rounded-lg border p-1.5 transition-colors ${isSearchOpen ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/30 dark:bg-sage-900/40 dark:text-sage-300' : 'border-gray-200 bg-gray-50 text-gray-400 hover:text-gray-600 dark:border-white/5 dark:bg-white/5 dark:hover:text-gray-300'}`}
                     >
                         <Search className="h-3.5 w-3.5" aria-hidden="true" />
                     </TooltipButton>

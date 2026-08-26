@@ -12,7 +12,7 @@ export const WordCloud: React.FC<WordCloudProps & { isLoading?: boolean }> = ({ 
     if (isLoading) {
         return (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2 h-full">
-                <div className="w-10 h-10 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />
+                <div className="h-10 w-10 animate-spin rounded-full border-2 border-sage-500/20 border-t-sage-500" />
                 <p className="text-[10px] uppercase tracking-[0.2em] font-bold opacity-40">Analyzing Library</p>
             </div>
         );
@@ -63,7 +63,7 @@ export const WordCloud: React.FC<WordCloudProps & { isLoading?: boolean }> = ({ 
 
             <div className="flex-shrink-0 pt-3 mt-2 border-t border-black/10 dark:border-white/5 flex items-center justify-between text-[9px] text-gray-500 uppercase tracking-widest font-bold">
                 <div className="flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" />
+                    <div className="h-1.5 w-1.5 rounded-full bg-sage-500 shadow-[0_0_8px_rgba(115,140,85,0.5)]" />
                     <span>Deep Analysis</span>
                 </div>
                 <div>{totalImages.toLocaleString()} Generations</div>

@@ -57,7 +57,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         <NavButton state="toggle" active={isFilterPanelOpen && (viewMode === 'grid' || viewMode === 'timeline' || viewMode === 'dashboard')} pressed={isFilterPanelOpen} onClick={() => setIsFilterPanelOpen(p => !p)} icon={<Filter />} tooltip={isFilterPanelOpen ? "Hide Filters" : "Show Filters"} />
         <NavButton state="toggle" active={filters.favoritesOnly} onClick={() => setFilters(prev => ({ ...prev, favoritesOnly: !prev.favoritesOnly }))} icon={<Heart className={filters.favoritesOnly ? "fill-red-500 text-red-500" : ""} />} tooltip={filters.favoritesOnly ? "Disable Favorites Only" : "Show Favorites Only"} />
-        <NavButton state="toggle" active={!!filters.pinnedOnly} onClick={() => setFilters(prev => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))} icon={<Pin className={filters.pinnedOnly ? "fill-amber-500 text-amber-500" : ""} />} tooltip={filters.pinnedOnly ? "Disable Pinned Only" : "Show Pinned Only"} />
+        <NavButton state="toggle" active={!!filters.pinnedOnly} onClick={() => setFilters(prev => ({ ...prev, pinnedOnly: !prev.pinnedOnly }))} icon={<Pin className={filters.pinnedOnly ? "fill-sage-500 text-sage-500" : ""} />} tooltip={filters.pinnedOnly ? "Disable Pinned Only" : "Show Pinned Only"} />
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-4">

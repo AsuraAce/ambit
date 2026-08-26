@@ -138,14 +138,14 @@ export const MetadataEditTab = ({
                                     console.error("Clipboard paste failed", e);
                                 }
                             }}
-                            className="flex items-center gap-1.5 rounded-lg border border-sage-500/20 bg-transparent px-2.5 py-1 text-[10px] font-medium text-sage-600 shadow-sm transition-all hover:border-sage-500/50 hover:bg-sage-500/10 hover:text-sage-700 active:scale-95 dark:bg-sage-500/5 dark:text-sage-400 dark:hover:text-sage-300"
+                            className="flex items-center gap-1.5 rounded-lg border border-sage-500/20 bg-transparent px-2.5 py-1 text-[10px] font-medium text-sage-600 shadow-sm transition-all hover:border-sage-500/50 hover:bg-sage-500/10 hover:text-sage-600 active:scale-95 dark:bg-sage-500/5 dark:text-sage-300 dark:hover:text-sage-300"
                             title="Paste & Parse from Clipboard (Auto1111 format)"
                         >
                             <ClipboardList className="h-3 w-3" /> Parse from Clipboard
                         </button>
                     ) : null}
                 status={isPromptDirty ? (
-                    <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:bg-amber-900/40">
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-ember-100 px-2 py-0.5 text-[10px] font-bold text-ember-600 dark:bg-ember-500/15 dark:text-ember-300">
                         <AlertCircle className="h-3 w-3" /> Unsaved
                     </div>
                 ) : null}
@@ -180,7 +180,7 @@ export const MetadataEditTab = ({
                 isDirty={isNegativePromptDirty}
                 className="mb-6"
                 status={isNegativePromptDirty ? (
-                    <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-600 dark:bg-amber-900/40">
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-ember-100 px-2 py-0.5 text-[10px] font-bold text-ember-600 dark:bg-ember-500/15 dark:text-ember-300">
                         <AlertCircle className="h-3 w-3" /> Unsaved
                     </div>
                 ) : null}
@@ -200,7 +200,7 @@ export const MetadataEditTab = ({
                 onBlur={handleNotesBlur}
                 status={isNotesDirty ? (
                     <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-600">Unsaved</span>
+                        <span className="rounded-full bg-ember-100 px-2 py-0.5 text-[10px] text-ember-600 dark:bg-ember-500/15 dark:text-ember-300">Unsaved</span>
                         <TooltipButton label="Save Notes" content="Save Notes" onClick={handleNotesBlur} className="rounded-lg bg-sage-500 p-1.5 text-white shadow-lg transition-transform hover:scale-105"><Save className="h-3.5 w-3.5" /></TooltipButton>
                     </div>
                 ) : null}

@@ -119,7 +119,7 @@ export const ComfyUITab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                             {testResult && (
                                 <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
-                                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                    ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
                                     : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                                     }`}>
                                     {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}

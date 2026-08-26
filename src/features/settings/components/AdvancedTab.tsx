@@ -242,7 +242,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
             {activeTab === 'interface' && (
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 px-1">
-                        <Monitor className="w-4 h-4 text-blue-500" />
+                        <Monitor className="w-4 h-4 text-harbor-600" />
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Interface Settings</h4>
                     </div>
 
@@ -305,7 +305,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
             {activeTab === 'support' && (
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 px-1">
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        <AlertTriangle className="w-4 h-4 text-ember-600" />
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Support Diagnostics</h4>
                     </div>
 
@@ -329,7 +329,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         </div>
 
                         {settings.logLevel === 'debug' && (
-                            <div className="p-4 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-medium leading-relaxed">
+                            <div className="p-4 bg-ember-50 dark:bg-ember-500/10 text-ember-600 dark:text-ember-300 text-xs font-medium leading-relaxed">
                                 Debug logging can be noisy. Use it when collecting information for an issue, then switch back to Info or Warn.
                             </div>
                         )}
@@ -345,7 +345,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             {dbDiagnostics ? (
                                 <div className="space-y-2 text-xs">
                                     {dbDiagnostics.isUsingRoamingFallback && (
-                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                        <div className="rounded-lg border border-ember-200 bg-ember-50 p-3 font-medium text-ember-600 dark:border-ember-400/20 dark:bg-ember-500/10 dark:text-ember-300">
                                             Ambit is using the legacy Roaming AppData database because no Local AppData database is available.
                                         </div>
                                     )}

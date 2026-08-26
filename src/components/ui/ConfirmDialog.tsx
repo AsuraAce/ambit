@@ -114,13 +114,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onKeyDown={handleDialogKeyDown}
           >
             {/* Header / Accent Bar */}
-            <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-sage-500 to-emerald-600'}`} />
+            <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-sage-500 to-sage-600'}`} />
 
             <div className="p-8">
               <div className="flex flex-col items-center text-center">
                 <div className={`p-4 rounded-2xl mb-6 shadow-xl ${isDangerous
                   ? 'bg-red-50 dark:bg-red-500/10 text-red-500'
-                  : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-400'
+                  : 'bg-sage-50 dark:bg-sage-500/10 text-sage-600 dark:text-sage-300'
                   }`}>
                   {isDangerous ? <Trash2 className="w-8 h-8" /> : <AlertTriangle className="w-8 h-8" />}
                 </div>
@@ -140,7 +140,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                   aria-label={isLoading ? 'Processing...' : undefined}
                   className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
                     ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'
-                    : 'bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-sage-500/40'
+                    : 'bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-sage-500/40'
                     } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
                 >
                   {isLoading ? (

@@ -11,23 +11,24 @@ interface FolderItemProps {
     onRefresh?: (path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => void;
 }
 
+const VARIANT_LABELS: Partial<Record<GeneratorTool, string>> = {
+    [GeneratorTool.INVOKEAI]: 'INVOKE',
+    [GeneratorTool.COMFYUI]: 'COMFY',
+    [GeneratorTool.AUTOMATIC1111]: 'A1111',
+    [GeneratorTool.SDNEXT]: 'SD.NEXT',
+    [GeneratorTool.FORGE]: 'FORGE',
+    [GeneratorTool.ANAPNOE]: 'ANAPNOE',
+};
+
 const getVariantIcon = (variant?: GeneratorTool) => {
-    switch (variant) {
-        case GeneratorTool.INVOKEAI:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-zinc-800 text-zinc-300 border border-zinc-700">INVOKE</div>;
-        case GeneratorTool.COMFYUI:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-900/30 text-blue-300 border border-blue-800/50">COMFY</div>;
-        case GeneratorTool.AUTOMATIC1111:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-orange-900/30 text-orange-300 border border-orange-800/50">A1111</div>;
-        case GeneratorTool.SDNEXT:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-900/30 text-indigo-300 border border-indigo-800/50">SD.NEXT</div>;
-        case GeneratorTool.FORGE:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-900/30 text-emerald-300 border border-emerald-800/50">FORGE</div>;
-        case GeneratorTool.ANAPNOE:
-            return <div className="px-2 py-0.5 rounded text-[10px] font-bold bg-fuchsia-900/30 text-fuchsia-300 border border-fuchsia-800/50">ANAPNOE</div>;
-        default:
-            return null;
-    }
+    const label = variant ? VARIANT_LABELS[variant] : undefined;
+    if (!label) return null;
+
+    return (
+        <div className="rounded border border-gray-200 bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+            {label}
+        </div>
+    );
 };
 
 export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onRescan, onRemove, onRefresh }) => {
@@ -51,7 +52,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     </span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
                         {folder.initialScanCancelled ? (
-                            <><Info className="w-3 h-3 text-amber-500" /> Import cancelled. Rescan to continue.</>
+                            <><Info className="w-3 h-3 text-ember-600 dark:text-ember-300" /> Import cancelled. Rescan to continue.</>
                         ) : folder.isManaged ? (
                             <><Monitor className="w-3 h-3" /> Managed Integration</>
                         ) : (
@@ -71,7 +72,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                     content={folder.isManaged && folder.variant === GeneratorTool.INVOKEAI ? "Sync with InvokeAI Database" : "Rescan Folder"}
                     onClick={() => onRescan(folder.id, path, folder.variant, folder.isManaged)}
                     disabled={isScanning}
-                    className={`p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-all ${isScanning ? 'opacity-50 cursor-wait' : ''}`}
+                    className={`rounded-lg p-1.5 text-gray-400 transition-all hover:bg-sage-50 hover:text-sage-600 dark:hover:bg-sage-500/10 dark:hover:text-sage-300 ${isScanning ? 'opacity-50 cursor-wait' : ''}`}
                 >
                     <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} />
                 </TooltipButton>

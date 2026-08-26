@@ -120,7 +120,7 @@ export const TitleBar = () => {
                         {APP_NAME.toUpperCase()}
                     </span>
                     {developerFeaturesEnabled && !isCaptureMode() && (
-                        <span className="ml-2 px-1.5 py-0.5 bg-amber-500/20 text-amber-500 text-[9px] font-bold rounded animate-pulse">
+                        <span className="ml-2 px-1.5 py-0.5 bg-ember-500/20 text-ember-600 text-[9px] font-bold rounded animate-pulse">
                             DEV
                         </span>
                     )}

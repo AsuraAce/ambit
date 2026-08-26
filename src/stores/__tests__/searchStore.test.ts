@@ -64,7 +64,7 @@ describe('searchStore', () => {
         expect(useSearchStore.getState().filters).toMatchObject({ searchQuery: '', favoritesOnly: false, pinnedOnly: false, collectionId: null });
     });
 
-    it('clears result criteria while preserving view options', () => {
+    it('clears result criteria while preserving collection scope and view options', () => {
         const state = useSearchStore.getState();
         state.setFilters({
             searchQuery: 'portrait',
@@ -87,7 +87,7 @@ describe('searchStore', () => {
             searchQuery: '',
             favoritesOnly: false,
             pinnedOnly: false,
-            collectionId: null,
+            collectionId: 'collection-1',
             models: [],
             samplers: [],
             generationTypes: [],

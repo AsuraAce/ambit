@@ -559,7 +559,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     >
                         {showsInitialLoadError ? (
                             <div role="alert" className="flex min-h-64 flex-col items-center justify-center gap-4 text-center">
-                                <AlertTriangle className="h-10 w-10 text-amber-500" aria-hidden="true" />
+                                <AlertTriangle className="h-10 w-10 text-ember-600 dark:text-ember-300" aria-hidden="true" />
                                 <div>
                                     <h3 className="font-bold text-gray-900 dark:text-white">Couldn&apos;t load {activeTabLabel} data</h3>
                                     <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Your library was not changed. Try loading this section again.</p>
@@ -576,12 +576,12 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         ) : (
                             <div inert={isLoading ? true : undefined}>
                                 {hasActiveLoadError && (
-                                    <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                                    <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ember-200 bg-ember-50 px-4 py-3 text-sm text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/10 dark:text-ember-300">
                                         <span className="flex items-center gap-2">
                                             <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
                                             Refresh failed. Showing the last loaded {activeTabLabel.toLowerCase()} data.
                                         </span>
-                                        <button type="button" onClick={() => void retryActiveTab()} className="inline-flex items-center gap-2 font-bold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500">
+                                        <button type="button" onClick={() => void retryActiveTab()} className="inline-flex items-center gap-2 font-bold underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ember-500">
                                             <RefreshCw className="h-4 w-4" aria-hidden="true" />
                                             Retry
                                         </button>

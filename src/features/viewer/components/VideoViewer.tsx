@@ -431,7 +431,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                         readOnly={!onUpdateNegativePrompt}
                     />
                     <MetadataField label="Generation mode" icon={Film} source={metadataVideo.metadata.fieldSources?.generationMode}>
-                        <select aria-label="Generation mode" value={metadataVideo.metadata.generationMode ?? 'unknown'} disabled={!onUpdateGenerationMode} onChange={event => onUpdateGenerationMode?.(video.id, event.target.value as VideoGenerationMode)} className="w-full rounded-lg border border-white/10 bg-black p-2.5 disabled:cursor-default disabled:opacity-80">
+                        <select aria-label="Generation mode" value={metadataVideo.metadata.generationMode ?? 'unknown'} disabled={!onUpdateGenerationMode} onChange={event => onUpdateGenerationMode?.(video.id, event.target.value as VideoGenerationMode)} className="w-full rounded-lg border border-gray-200 bg-white p-2.5 text-gray-900 disabled:cursor-default disabled:opacity-80 dark:border-white/10 dark:bg-black dark:text-white">
                             <option value="unknown">Unknown</option>
                             <option value="text_to_video">Text to video</option>
                             <option value="image_to_video">Image to video</option>
@@ -472,14 +472,14 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                         expanded={metadataDisclosure.isExpanded('resources')}
                         onExpandedChange={expanded => metadataDisclosure.setExpanded('resources', expanded)}
                     />
-                    {metadataVideo.metadata.conflicts && metadataVideo.metadata.conflicts.length > 0 && <section className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs"><h3 className="font-bold text-amber-200">Conflicting evidence</h3>{metadataVideo.metadata.conflicts.map((conflict, index) => <p key={`${conflict.field}:${index}`} className="mt-2 text-zinc-300">{conflict.field}: ignored {conflict.ignoredValue} from {formatSource(conflict.ignoredSource)}</p>)}</section>}
-                    {metadataVideo.metadata.diagnostics && metadataVideo.metadata.diagnostics.length > 0 && <section className="rounded-lg border border-white/10 bg-black p-3 text-xs"><h3 className="font-bold">Diagnostics</h3>{metadataVideo.metadata.diagnostics.map(diagnostic => <p key={diagnostic.code} className="mt-2 text-zinc-400">{diagnostic.message}</p>)}</section>}
-                    {onRevertMetadata && hasUserOverrides ? <button type="button" onClick={() => onRevertMetadata(video.id)} className="w-full rounded-lg border border-white/10 px-3 py-2 font-bold hover:bg-white/10">Revert user overrides</button> : null}
+                    {metadataVideo.metadata.conflicts && metadataVideo.metadata.conflicts.length > 0 && <section className="rounded-lg border border-ember-200 bg-ember-50 p-3 text-xs dark:border-ember-500/30 dark:bg-ember-500/10"><h3 className="font-bold text-ember-600 dark:text-ember-300">Conflicting evidence</h3>{metadataVideo.metadata.conflicts.map((conflict, index) => <p key={`${conflict.field}:${index}`} className="mt-2 text-gray-700 dark:text-zinc-300">{conflict.field}: ignored {conflict.ignoredValue} from {formatSource(conflict.ignoredSource)}</p>)}</section>}
+                    {metadataVideo.metadata.diagnostics && metadataVideo.metadata.diagnostics.length > 0 && <section className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs dark:border-white/10 dark:bg-black"><h3 className="font-bold">Diagnostics</h3>{metadataVideo.metadata.diagnostics.map(diagnostic => <p key={diagnostic.code} className="mt-2 text-gray-600 dark:text-zinc-400">{diagnostic.message}</p>)}</section>}
+                    {onRevertMetadata && hasUserOverrides ? <button type="button" onClick={() => onRevertMetadata(video.id)} className="w-full rounded-lg border border-gray-200 px-3 py-2 font-bold hover:bg-gray-100 dark:border-white/10 dark:hover:bg-white/10">Revert user overrides</button> : null}
                 </div>}
 
                 {activeTab === 'workflow' && (metadataVideo.metadata.workflowJson
                     ? <WorkflowInspector key={metadataVideo.id} image={metadataVideo} />
-                    : <p className="p-5 text-sm text-zinc-400">No trusted workflow evidence was found for this video.</p>)}
+                    : <p className="p-5 text-sm text-gray-500 dark:text-zinc-400">No trusted workflow evidence was found for this video.</p>)}
             </ViewerSidebarShell>
         </div>
     );

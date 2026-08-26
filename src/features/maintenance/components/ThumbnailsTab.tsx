@@ -209,7 +209,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
             <button
                 disabled={controlsDisabled}
                 onClick={handleRepairBrokenThumbnails}
-                className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed text-amber-700 dark:text-amber-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-500/20"
+                className="flex items-center gap-2 rounded-xl border border-ember-200 bg-ember-50 px-4 py-2 text-xs font-bold text-ember-600 transition-colors hover:bg-ember-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ember-500/20 dark:bg-ember-500/10 dark:text-ember-300 dark:hover:bg-ember-500/20"
                 title={disabledReason ?? 'Check thumbnail files on disk and reset missing thumbnail references'}
             >
                 <AlertTriangle className={`w-4 h-4 ${maintenanceOperation === 'repair' ? 'animate-pulse' : ''}`} />
@@ -221,7 +221,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 <button
                     disabled={controlsDisabled}
                     onClick={handleSync}
-                    className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-amber-600 dark:text-amber-400 rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-amber-500/20"
+                    className="flex items-center gap-2 rounded-xl border border-ember-200 bg-ember-100 px-3 py-2 text-xs font-bold text-ember-600 transition-colors hover:bg-ember-200 disabled:cursor-not-allowed disabled:opacity-50 dark:border-ember-500/20 dark:bg-ember-500/15 dark:text-ember-300 dark:hover:bg-ember-500/25"
                     title={disabledReason ?? 'Sync existing thumbnail files to database (heals thumbnails created before the persistence fix)'}
                 >
                     <Database className={`w-4 h-4 ${maintenanceOperation === 'sync' ? 'animate-pulse' : ''}`} />
@@ -245,7 +245,7 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}
                 actions={actions}
-                variant="blue"
+                variant="harbor"
             />
 
             {images.length > 0 ? (
@@ -262,8 +262,8 @@ export const ThumbnailsTab: React.FC<ThumbnailsTabProps> = ({
                 />
             ) : (
                 <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                    <div className="p-6 bg-blue-500/10 rounded-full mb-6 border border-blue-500/20">
-                        <Check className="w-16 h-16 text-blue-500" />
+                    <div className="mb-6 rounded-full border border-sage-200 bg-sage-50 p-6 dark:border-sage-500/20 dark:bg-sage-500/10">
+                        <Check className="h-16 w-16 text-sage-600 dark:text-sage-300" />
                     </div>
                     <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">Optimized</h2>
                     <p className="max-w-md text-center text-gray-500 dark:text-gray-400">

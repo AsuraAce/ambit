@@ -284,7 +284,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             {/* Header */}
             <div className="p-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between min-w-[18rem]">
                 <div className="flex items-center gap-2 h-7">
-                    <Filter className="w-4 h-4 text-sage-600 dark:text-sage-400" />
+                    <Filter className="w-4 h-4 text-sage-600 dark:text-sage-300" />
                     <h2 className="font-bold text-sm text-gray-800 dark:text-gray-200 uppercase tracking-wider">Library</h2>
                 </div>
 
@@ -302,7 +302,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                     {isDirty && !showUpdateButton && (
                         <button
                             onClick={clearAllFilters}
-                            className="text-[10px] font-bold text-sage-600 dark:text-sage-400 hover:text-sage-700 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
+                            className="text-[10px] font-bold text-sage-600 dark:text-sage-300 hover:text-sage-600 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
                         >
                             Reset All
                         </button>
@@ -405,17 +405,17 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                                 </div>
 
                                 {showLocalEmptyState && (
-                                    <div className="rounded-xl border border-dashed border-blue-200 dark:border-blue-500/30 bg-blue-50/70 dark:bg-blue-500/10 p-4 text-center">
-                                        <FolderSearch className="mx-auto mb-2 h-5 w-5 text-blue-600 dark:text-blue-300" />
-                                        <p className="text-xs font-semibold text-blue-900 dark:text-blue-100">No local resource folders scanned yet.</p>
-                                        <p className="mt-1 text-[11px] leading-relaxed text-blue-700/80 dark:text-blue-200/80">
+                                    <div className="rounded-xl border border-dashed border-harbor-200 bg-harbor-50/70 p-4 text-center dark:border-harbor-500/30 dark:bg-harbor-500/10">
+                                        <FolderSearch className="mx-auto mb-2 h-5 w-5 text-harbor-600 dark:text-harbor-300" />
+                                        <p className="text-xs font-semibold text-harbor-600 dark:text-harbor-300">No local resource folders scanned yet.</p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-harbor-600 dark:text-harbor-300">
                                             Add model, LoRA, embedding, ControlNet, or IP-Adapter folders to build a local asset inventory.
                                         </p>
                                         {onOpenResourceFolders && (
                                             <button
                                                 type="button"
                                                 onClick={onOpenResourceFolders}
-                                                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm shadow-blue-500/20 transition-colors hover:bg-blue-500"
+                                                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-sage-600 px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-sage-500"
                                             >
                                                 <FolderSearch className="h-3.5 w-3.5" />
                                                 Add Resource Folder

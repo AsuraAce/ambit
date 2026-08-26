@@ -102,7 +102,7 @@ export const TrashTab: React.FC<TrashTabProps> = ({
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}
                 actions={actions}
-                variant="sage"
+                variant="red"
             />
 
             <VirtualGrid

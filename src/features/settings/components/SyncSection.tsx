@@ -133,7 +133,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                 </p>
 
                 {ownerSyncBlocked && (
-                    <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-700 dark:text-amber-300">
+                    <div className="p-3 rounded-xl bg-ember-500/10 border border-ember-500/20 text-[10px] text-ember-600 dark:text-ember-300">
                         Resolve the InvokeAI owner scope above before synchronization can run.
                     </div>
                 )}
@@ -239,7 +239,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                                 disabled={foregroundInvokeSyncActive}
                                 aria-disabled={anyInvokeSyncActive}
                                 title={anyInvokeSyncActive ? 'Wait for the current InvokeAI sync to finish' : 'Clear the sync cursor for the next manual sync'}
-                                className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-[10px] font-black transition-all flex items-center gap-2 border border-amber-500/20 whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-500/10"
+                                className="px-3 py-2 bg-ember-500/10 hover:bg-ember-500/20 text-ember-600 dark:text-ember-300 rounded-lg text-[10px] font-black transition-all flex items-center gap-2 border border-ember-500/20 whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-ember-500/10"
                             >
                                 <RefreshCw className="w-3.5 h-3.5" /> Force Full Resync
                             </button>

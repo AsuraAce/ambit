@@ -453,11 +453,11 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     const DiffRow = ({ label, valA, valB }: { label: string, valA: string | number, valB: string | number }) => {
         const isDiff = valA !== valB;
         return (
-            <div className={`grid grid-cols-1 gap-1 py-3 border-b border-white/5 text-sm hover:bg-white/5 transition-colors ${isDiff ? 'bg-yellow-900/10' : ''}`}>
+            <div className={`grid grid-cols-1 gap-1 py-3 border-b border-white/5 text-sm hover:bg-white/5 transition-colors ${isDiff ? 'bg-ember-900/10' : ''}`}>
                 <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider px-4 mb-1">{label}</div>
                 <div className="grid grid-cols-2 gap-4 px-4">
-                    <div className={`truncate ${isDiff ? 'text-yellow-400 font-medium' : 'text-gray-400'}`} title={String(valA)}>{valA}</div>
-                    <div className={`truncate ${isDiff ? 'text-yellow-400 font-medium' : 'text-gray-400'}`} title={String(valB)}>{valB}</div>
+                    <div className={`truncate ${isDiff ? 'text-ember-600 font-medium' : 'text-gray-400'}`} title={String(valA)}>{valA}</div>
+                    <div className={`truncate ${isDiff ? 'text-ember-600 font-medium' : 'text-gray-400'}`} title={String(valB)}>{valB}</div>
                 </div>
             </div>
         );
@@ -498,7 +498,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                 <div className="space-y-1">
                     <div className="text-[10px] uppercase text-gray-500 font-bold">New (Image B)</div>
                     <div className="p-3 bg-zinc-900/50 rounded-lg border border-white/5 text-xs text-gray-400 font-mono leading-relaxed">
-                        {renderDiffWords(promptB, setA, 'bg-green-500/50')}
+                        {renderDiffWords(promptB, setA, 'bg-sage-500/50')}
                     </div>
                 </div>
             </div>
@@ -731,7 +731,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                     {diffMode === 'diff' && (
                                         <div className="flex gap-2 text-[10px] mr-2">
                                             <span className="text-red-400 bg-red-900/20 px-1.5 py-0.5 rounded">Removed</span>
-                                            <span className="text-green-400 bg-green-900/20 px-1.5 py-0.5 rounded">Added</span>
+                                            <span className="text-sage-300 bg-sage-900/20 px-1.5 py-0.5 rounded">Added</span>
                                         </div>
                                     )}
                                     <div className="flex bg-black rounded-lg p-0.5 border border-white/10">

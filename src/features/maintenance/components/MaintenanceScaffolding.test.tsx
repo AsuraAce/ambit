@@ -54,7 +54,7 @@ describe('ScanPlaceholder', () => {
 });
 
 describe('MaintenanceHeader', () => {
-    it.each(['sage', 'blue', 'orange', 'red'] as const)('renders the %s variant and optional content', (variant) => {
+    it.each(['sage', 'harbor', 'ember', 'red'] as const)('renders the %s variant and optional content', (variant) => {
         render(
             <MaintenanceHeader
                 title={`${variant} title`}

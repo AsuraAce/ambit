@@ -41,7 +41,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
 
     return (
         <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-white/5">
-            <div className="p-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl text-sm text-blue-800 dark:text-blue-200 flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 text-sm text-harbor-600 dark:border-harbor-500/20 dark:bg-harbor-500/10 dark:text-harbor-300">
                 <div className="flex items-start gap-3">
                     <FolderSearch className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
@@ -53,7 +53,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                     {resourceFolders.length > 0 && (
                         <div className="flex flex-col items-end gap-2">
                             {isScanning && scanProgress?.message && (
-                                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium animate-pulse truncate max-w-[200px]">
+                                <span className="max-w-[200px] truncate text-[10px] font-medium text-harbor-600 animate-pulse dark:text-harbor-300">
                                     {scanProgress.message}
                                 </span>
                             )}
@@ -61,7 +61,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                 type="button"
                                 onClick={onScanNow}
                                 disabled={isDiscoveryBusy}
-                                className={`flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg text-xs font-medium hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors ${isDiscoveryBusy ? 'opacity-70 cursor-wait' : ''}`}
+                                className={`flex items-center gap-2 rounded-lg bg-sage-100 px-3 py-1.5 text-xs font-medium text-sage-600 transition-colors hover:bg-sage-200 dark:bg-sage-500/15 dark:text-sage-300 dark:hover:bg-sage-500/25 ${isDiscoveryBusy ? 'opacity-70 cursor-wait' : ''}`}
                             >
                                 <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
                                 {isScanning ? 'Scanning...' : 'Scan Now'}
@@ -86,7 +86,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                     <span className="text-sm text-gray-700 dark:text-gray-300 font-mono truncate">{path}</span>
                                     {isBroadPath && (
                                         <span
-                                            className="flex-shrink-0 text-amber-500"
+                                            className="flex-shrink-0 text-ember-600 dark:text-ember-300"
                                             role="img"
                                             aria-label={`Broad models root ${path}`}
                                             title="Broad models root; prefer specific resource folders"
@@ -113,7 +113,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                         <div className="text-sm text-gray-400 text-center py-8 italic">No resource folders added.</div>
                     )}
                     {hasConfiguredBroadPath && (
-                        <div className="mx-2 mb-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                        <div className="mx-2 mb-2 flex items-start gap-2 rounded-lg border border-ember-200 bg-ember-50 px-3 py-2 text-xs text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/10 dark:text-ember-300">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                             <span>
                                 A configured models root may include false positives. Remove it and add specific folders such as <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span>.
@@ -143,14 +143,14 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                         <button
                             type="submit"
                             disabled={!newResourcePath.trim() || isDiscoveryBusy}
-                            className="px-4 py-2 bg-blue-600 disabled:bg-gray-300 disabled:text-gray-500 text-white rounded-lg hover:bg-blue-500 transition-colors font-medium text-sm flex items-center gap-1"
+                            className="flex items-center gap-1 rounded-lg bg-sage-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sage-500 disabled:bg-gray-300 disabled:text-gray-500"
                         >
                             {isScanning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                             {isScanning ? 'Scanning...' : 'Add Path'}
                         </button>
                     </form>
                     {showBroadPathWarning && (
-                        <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+                        <div className="mt-3 flex items-start gap-2 rounded-lg border border-ember-200 bg-ember-50 px-3 py-2 text-xs text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/10 dark:text-ember-300">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                             <span>
                                 This looks like a broad models root. Prefer specific folders such as <span className="font-mono">models/Lora</span> or <span className="font-mono">models/checkpoints</span> to avoid false positives.

@@ -154,9 +154,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                             </ul>
 
                                             <div className="flex flex-wrap gap-2">
-                                                <IntegrationButton label="InvokeAI" onClick={() => handleOpenSettings('invokeai')} color="indigo" />
-                                                <IntegrationButton label="ComfyUI" onClick={() => handleOpenSettings('comfyui')} color="emerald" />
-                                                <IntegrationButton label="SD WebUI" onClick={() => handleOpenSettings('a1111')} color="amber" />
+                                                <IntegrationButton label="InvokeAI" onClick={() => handleOpenSettings('invokeai')} />
+                                                <IntegrationButton label="ComfyUI" onClick={() => handleOpenSettings('comfyui')} />
+                                                <IntegrationButton label="SD WebUI" onClick={() => handleOpenSettings('a1111')} />
                                             </div>
                                         </div>
                                     </div>
@@ -223,17 +223,12 @@ const FeatureItem = ({ text }: { text: string }) => (
     </li>
 );
 
-const IntegrationButton = ({ label, onClick, color }: { label: string, onClick: () => void, color: 'indigo' | 'emerald' | 'amber' }) => {
-    const styles = {
-        indigo: 'hover:bg-indigo-500 hover:text-white border-indigo-500/20 text-indigo-500 bg-indigo-500/5',
-        emerald: 'hover:bg-emerald-500 hover:text-white border-emerald-500/20 text-emerald-500 bg-emerald-500/5',
-        amber: 'hover:bg-amber-500 hover:text-white border-amber-500/20 text-amber-500 bg-amber-500/5',
-    }[color];
+const IntegrationButton = ({ label, onClick }: { label: string, onClick: () => void }) => {
 
     return (
         <button
             onClick={onClick}
-            className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-tight transition-all duration-300 active:scale-95 ${styles}`}
+            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-tight text-gray-600 transition-all duration-300 hover:border-sage-300 hover:bg-sage-50 hover:text-sage-600 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
         >
             {label}
         </button>
