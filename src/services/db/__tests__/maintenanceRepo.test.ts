@@ -354,7 +354,7 @@ describe('maintenanceRepo', () => {
     it('marks missing links in batches so very large audits stay under SQLite parameter limits', async () => {
         const db = {
             select: vi.fn(),
-            execute: vi.fn().mockResolvedValue(undefined),
+            execute: vi.fn(async (_sql: string, params: unknown[] = []) => ({ rowsAffected: params.length })),
         };
         mocks.getDb.mockResolvedValue(db);
         const ids = Array.from({ length: 501 }, (_, index) => `id-${index}`);
@@ -365,6 +365,20 @@ describe('maintenanceRepo', () => {
         expect(db.execute).toHaveBeenCalledTimes(2);
         expect(db.execute.mock.calls[0][1]).toHaveLength(500);
         expect(db.execute.mock.calls[1][1]).toEqual(['id-500']);
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+    });
+
+    it('does not mark IDs hidden by an owner switch after discovery', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        mocks.getDb.mockResolvedValue(db);
+
+        const { pruneMissingLinks } = await import('../maintenanceRepo');
+        await expect(pruneMissingLinks(['stale-owner-id'])).resolves.toBe(0);
+
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
     });
 
     it('skips missing-link writes when there is nothing to prune', async () => {

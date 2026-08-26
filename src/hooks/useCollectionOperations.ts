@@ -116,8 +116,7 @@ export const useCollectionOperations = ({
     addToast(`Collection "${name}" created`, 'success');
     try {
       await refreshCollections(false, {
-        retryOnSuperseded: true,
-        throwOnError: true,
+        consistency: 'authoritative',
       });
     } catch (error) {
       console.error('[Collections] Failed to refresh after creating collection', error);

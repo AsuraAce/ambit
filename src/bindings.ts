@@ -133,6 +133,14 @@ async mutateCollectionMembership(input: CollectionMembershipMutationInput) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async migrateLegacyCollections(input: LegacyCollectionMigrationInput) : Promise<Result<LegacyCollectionMigrationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("migrate_legacy_collections", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async updateAmbitCollectionScope(input: UpdateAmbitCollectionScopeInput) : Promise<Result<UpdateAmbitCollectionScopeResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_ambit_collection_scope", { input }) };
@@ -832,6 +840,9 @@ export type InvokeScopeCacheAction = "restored" | "selective" | "full"
 export type InvokeScopeCacheBuildClaim = { scopeKey: string; generation: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
 export type InvokeScopeCacheBuildTicket = { scopeKey: string; generation: number }
 export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
+export type LegacyCollectionMigrationInput = { importKey: string; collections: LegacyCollectionMigrationItem[] }
+export type LegacyCollectionMigrationItem = { id: string; name: string; color: string | null; isArchived: boolean; isPinned: boolean; createdAt: number; updatedAt: number | null; filterState: string | null; manualExclusions: string | null; customThumbnail: string | null; imageIds: string[] }
+export type LegacyCollectionMigrationResult = { alreadyApplied: boolean; collectionsUpserted: number; membershipsInserted: number }
 export type MediaCandidateKind = "image" | "video"
 export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embedded" | "workflow_default" | "unknown"
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }

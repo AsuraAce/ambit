@@ -14,6 +14,7 @@ import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
 import { buildSqlWhereClause } from '../../utils/sqlHelpers';
 import { unwrap } from '../../utils/spectaUtils';
+import { assertMutationMatched } from './mutationGuard';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -43,6 +44,46 @@ export interface DbCollection {
     dynamic_thumbnail_cached_at?: number | null;
     dynamic_count?: number | null;
 }
+
+export const migrateLegacyCollections = async (
+    collections: Array<Partial<Collection> & { id: string; name: string }>
+): Promise<void> => {
+    if (isBrowserMockMode()) {
+        collections.forEach((collection) => {
+            const existing = getBrowserMockCollections().find(item => item.id === collection.id);
+            upsertBrowserMockCollection({
+                ...existing,
+                ...collection,
+                imageIds: [...new Set([...(existing?.imageIds ?? []), ...(collection.imageIds ?? [])])],
+                source: existing?.source ?? 'ambit',
+                invokeOwnerId: existing?.invokeOwnerId,
+                invokeSourceId: existing?.invokeSourceId,
+            });
+        });
+        return;
+    }
+
+    await unwrap(commands.migrateLegacyCollections({
+        importKey: 'library-json-collections-v1',
+        collections: collections.map(collection => ({
+            id: collection.id,
+            name: collection.name,
+            color: collection.color ?? null,
+            isArchived: collection.isArchived ?? false,
+            isPinned: collection.isPinned ?? false,
+            createdAt: collection.createdAt ?? Date.now(),
+            updatedAt: collection.updatedAt ?? null,
+            filterState: collection.filters
+                ? JSON.stringify(createDefaultFilters(collection.filters))
+                : null,
+            manualExclusions: collection.manualExclusions
+                ? JSON.stringify(collection.manualExclusions)
+                : null,
+            customThumbnail: collection.customThumbnail ?? null,
+            imageIds: collection.imageIds?.map(normalizePath) ?? [],
+        })),
+    }));
+};
 
 interface CollectionThumbnailRow {
     collection_id: string;
@@ -568,7 +609,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
             : null;
 
         try {
-            await db.execute(
+            const result = await db.execute(
                 `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, invoke_owner_id, invoke_source_id, updated_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
@@ -586,15 +627,13 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                 filter_state = excluded.filter_state,
                 manual_exclusions = excluded.manual_exclusions,
                 custom_thumbnail = excluded.custom_thumbnail,
-                source = excluded.source,
-                invoke_owner_id = excluded.invoke_owner_id,
-                invoke_source_id = excluded.invoke_source_id,
                 updated_at = CASE
                     WHEN collections.filter_state IS excluded.filter_state
                      AND collections.manual_exclusions IS excluded.manual_exclusions
                     THEN excluded.updated_at
                     ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
-                END`,
+                END
+             WHERE collections.id IN (SELECT id FROM scoped_collections)`,
                 [
                     collection.id,
                     collection.name,
@@ -612,6 +651,7 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     now
                 ]
             );
+            assertMutationMatched(result, collection.id, 'Saving collection', 'collection');
         } catch (e) {
             console.error(`[DB] Failed to upsert collection ${collection.id}`, e);
             throw e;
@@ -789,7 +829,11 @@ export const deleteCollectionFromDb = async (id: string) => {
     }
 
     const db = await getDb();
-    await db.execute('DELETE FROM collections WHERE id = ?', [id]);
+    const result = await db.execute(
+        'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
+        [id]
+    );
+    assertMutationMatched(result, id, 'Deleting collection', 'collection');
 };
 
 const browserMembershipResult = (

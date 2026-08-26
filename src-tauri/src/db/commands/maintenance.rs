@@ -109,6 +109,37 @@ pub struct CollectionMembershipMutationResult {
     pub target_collection_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationItem {
+    pub id: String,
+    pub name: String,
+    pub color: Option<String>,
+    pub is_archived: bool,
+    pub is_pinned: bool,
+    pub created_at: i64,
+    pub updated_at: Option<i64>,
+    pub filter_state: Option<String>,
+    pub manual_exclusions: Option<String>,
+    pub custom_thumbnail: Option<String>,
+    pub image_ids: Vec<String>,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationInput {
+    pub import_key: String,
+    pub collections: Vec<LegacyCollectionMigrationItem>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationResult {
+    pub already_applied: bool,
+    pub collections_upserted: usize,
+    pub memberships_inserted: usize,
+}
+
 #[derive(serde::Deserialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AmbitCollectionScopeMode {
@@ -1099,6 +1130,105 @@ fn mutate_collection_membership_inner(
     })
 }
 
+fn migrate_legacy_collections_inner(
+    conn: &rusqlite::Connection,
+    input: &LegacyCollectionMigrationInput,
+) -> Result<LegacyCollectionMigrationResult, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let mut result = LegacyCollectionMigrationResult::default();
+
+    let import_key = input.import_key.trim();
+    if import_key.is_empty() {
+        return Err("Legacy collection migration requires an import key".to_string());
+    }
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS legacy_collection_import_receipts (
+            import_key TEXT PRIMARY KEY,
+            completed_at INTEGER NOT NULL
+        );",
+    )
+    .map_err(|error| error.to_string())?;
+    if tx
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM legacy_collection_import_receipts WHERE import_key = ?1
+            )",
+            [import_key],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?
+    {
+        result.already_applied = true;
+        tx.commit().map_err(|error| error.to_string())?;
+        return Ok(result);
+    }
+
+    for collection in &input.collections {
+        let id = collection.id.trim();
+        let name = collection.name.trim();
+        if id.is_empty() || name.is_empty() {
+            return Err("Legacy collections require a non-empty ID and name".to_string());
+        }
+
+        let updated_at = collection.updated_at.unwrap_or(collection.created_at);
+        tx.execute(
+            "INSERT INTO collections (
+                id, name, color, is_archived, is_pinned, created_at, filter_state,
+                manual_exclusions, custom_thumbnail, source, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'ambit', ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color = excluded.color,
+                is_archived = excluded.is_archived,
+                is_pinned = excluded.is_pinned,
+                created_at = excluded.created_at,
+                filter_state = excluded.filter_state,
+                manual_exclusions = excluded.manual_exclusions,
+                custom_thumbnail = excluded.custom_thumbnail,
+                updated_at = excluded.updated_at",
+            params![
+                id,
+                name,
+                collection.color,
+                i64::from(collection.is_archived),
+                i64::from(collection.is_pinned),
+                collection.created_at,
+                collection.filter_state,
+                collection.manual_exclusions,
+                collection.custom_thumbnail,
+                updated_at,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+        result.collections_upserted += 1;
+
+        for image_id in normalize_requested_ids(&collection.image_ids) {
+            result.memberships_inserted += tx
+                .execute(
+                    "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                     SELECT ?1, id FROM images WHERE id = ?2",
+                    params![id, image_id],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let completed_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    tx.execute(
+        "INSERT INTO legacy_collection_import_receipts (import_key, completed_at)
+         VALUES (?1, ?2)",
+        params![import_key, completed_at],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
 fn update_ambit_collection_scope_inner(
     conn: &rusqlite::Connection,
     input: &UpdateAmbitCollectionScopeInput,
@@ -1548,6 +1678,18 @@ pub async fn mutate_collection_membership(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn migrate_legacy_collections(
+    app: AppHandle,
+    input: LegacyCollectionMigrationInput,
+) -> Result<LegacyCollectionMigrationResult, String> {
+    run_blocking(app, move |conn| {
+        migrate_legacy_collections_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn update_ambit_collection_scope(
     app: AppHandle,
     input: UpdateAmbitCollectionScopeInput,
@@ -1721,11 +1863,12 @@ pub async fn schedule_purge_transaction(
 mod tests {
     use super::{
         ensure_log_directory, hash_file_sha256, hash_file_sha256_cancellable,
-        load_file_hash_candidates, mutate_collection_membership_inner,
-        remove_images_from_library_inner, resolve_app_log_path,
+        load_file_hash_candidates, migrate_legacy_collections_inner,
+        mutate_collection_membership_inner, remove_images_from_library_inner, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
         update_ambit_collection_scope_inner, AmbitCollectionScopeMode,
         CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
+        LegacyCollectionMigrationInput, LegacyCollectionMigrationItem,
         UpdateAmbitCollectionScopeInput,
     };
     use crate::db::migrations::init_db;
@@ -2906,5 +3049,156 @@ mod tests {
 
         assert_eq!(result.invoke_source_id.as_deref(), Some("invoke.db"));
         assert_eq!(result.invoke_owner_id.as_deref(), Some("owner-a"));
+    }
+
+    #[test]
+    fn legacy_collection_migration_ignores_active_scope_and_preserves_existing_identity() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .expect("add runtime collection timestamp");
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(
+            &conn,
+            "existing-member",
+            "existing",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "hidden-member",
+            "hidden",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id IN ('existing-member', 'hidden-member');
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id, updated_at
+             ) VALUES (
+                 'hidden-collection', 'Existing name', 1, 'invoke',
+                 'invoke.db', 'owner-b', 1
+             );
+             INSERT INTO collection_images (collection_id, image_id)
+             VALUES ('hidden-collection', 'existing-member');",
+        )
+        .expect("seed hidden collection and images");
+
+        let input = LegacyCollectionMigrationInput {
+            import_key: "library-json-collections-v1".to_string(),
+            collections: vec![LegacyCollectionMigrationItem {
+                id: "hidden-collection".to_string(),
+                name: "Legacy name".to_string(),
+                color: Some("#abcdef".to_string()),
+                is_archived: false,
+                is_pinned: true,
+                created_at: 10,
+                updated_at: Some(20),
+                filter_state: None,
+                manual_exclusions: None,
+                custom_thumbnail: None,
+                image_ids: vec!["hidden-member".to_string()],
+            }],
+        };
+
+        let first = migrate_legacy_collections_inner(&conn, &input)
+            .expect("hidden legacy data should migrate");
+        conn.execute(
+            "UPDATE collections SET name = 'User edit' WHERE id = 'hidden-collection'",
+            [],
+        )
+        .expect("edit migrated collection");
+        conn.execute(
+            "DELETE FROM collection_images
+             WHERE collection_id = 'hidden-collection' AND image_id = 'hidden-member'",
+            [],
+        )
+        .expect("remove migrated membership");
+        let second = migrate_legacy_collections_inner(&conn, &input)
+            .expect("receipt should make repeated migration a no-op");
+
+        assert!(!first.already_applied);
+        assert_eq!(first.collections_upserted, 1);
+        assert_eq!(first.memberships_inserted, 1);
+        assert!(second.already_applied);
+        assert_eq!(second.collections_upserted, 0);
+        assert_eq!(second.memberships_inserted, 0);
+        let identity: (String, Option<String>, Option<String>, String) = conn
+            .query_row(
+                "SELECT source, invoke_source_id, invoke_owner_id, name
+                 FROM collections WHERE id = 'hidden-collection'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("migrated collection");
+        assert_eq!(
+            identity,
+            (
+                "invoke".to_string(),
+                Some("invoke.db".to_string()),
+                Some("owner-b".to_string()),
+                "User edit".to_string(),
+            )
+        );
+        let membership_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images
+                 WHERE collection_id = 'hidden-collection'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("membership count");
+        assert_eq!(membership_count, 1);
+    }
+
+    #[test]
+    fn legacy_collection_migration_rolls_back_the_batch_on_failure() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .expect("add runtime collection timestamp");
+        let item = |id: &str, name: &str| LegacyCollectionMigrationItem {
+            id: id.to_string(),
+            name: name.to_string(),
+            color: None,
+            is_archived: false,
+            is_pinned: false,
+            created_at: 1,
+            updated_at: None,
+            filter_state: None,
+            manual_exclusions: None,
+            custom_thumbnail: None,
+            image_ids: Vec::new(),
+        };
+
+        let error = migrate_legacy_collections_inner(
+            &conn,
+            &LegacyCollectionMigrationInput {
+                import_key: "library-json-collections-v1".to_string(),
+                collections: vec![item("valid-first", "Valid"), item("", "Invalid")],
+            },
+        )
+        .expect_err("invalid batch must fail");
+
+        assert!(error.contains("non-empty ID and name"));
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE id = 'valid-first'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("collection count");
+        assert_eq!(count, 0);
     }
 }

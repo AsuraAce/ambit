@@ -179,8 +179,7 @@ describe('useCollectionOperations', () => {
 
             expect(mockSetAllCollections).toHaveBeenCalledOnce();
             expect(mockRefreshCollections).toHaveBeenCalledWith(false, {
-                retryOnSuperseded: true,
-                throwOnError: true,
+                consistency: 'authoritative',
             });
             expect(mockAddToast).toHaveBeenCalledWith('Collection "Committed Folder" created', 'success');
             expect(mockAddToast).toHaveBeenCalledWith(

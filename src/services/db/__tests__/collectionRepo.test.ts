@@ -23,6 +23,7 @@ const bindingMocks = vi.hoisted(() => ({
     mutateCollectionMembership: vi.fn(),
     setCollectionCustomThumbnail: vi.fn(),
     updateAmbitCollectionScope: vi.fn(),
+    migrateLegacyCollections: vi.fn(),
 }));
 
 vi.mock('../../../bindings', () => ({
@@ -30,6 +31,7 @@ vi.mock('../../../bindings', () => ({
         mutateCollectionMembership: bindingMocks.mutateCollectionMembership,
         setCollectionCustomThumbnail: bindingMocks.setCollectionCustomThumbnail,
         updateAmbitCollectionScope: bindingMocks.updateAmbitCollectionScope,
+        migrateLegacyCollections: bindingMocks.migrateLegacyCollections,
     },
 }));
 
@@ -130,6 +132,10 @@ const resetRepoMocks = () => {
         status: 'ok',
         data: { collectionId: 'c1', invokeSourceId: null, invokeOwnerId: null },
     });
+    bindingMocks.migrateLegacyCollections.mockResolvedValue({
+        status: 'ok',
+        data: { alreadyApplied: false, collectionsUpserted: 0, membershipsInserted: 0 },
+    });
     dbMocks.execute.mockResolvedValue(undefined);
     dbMocks.getDb.mockResolvedValue({ select: dbMocks.select, execute: dbMocks.execute });
 };
@@ -168,8 +174,13 @@ describe('collectionRepo filter normalization', () => {
         });
 
         const calls = dbMocks.execute.mock.calls as Array<[string, unknown[]]>;
-        const params = calls[0][1];
+        const [upsertSql, params] = calls[0];
         const serializedFilters = params[6];
+        const conflictClause = upsertSql.split('ON CONFLICT(id) DO UPDATE SET')[1];
+
+        expect(conflictClause).not.toContain('source = excluded.source');
+        expect(conflictClause).not.toContain('invoke_owner_id = excluded.invoke_owner_id');
+        expect(conflictClause).not.toContain('invoke_source_id = excluded.invoke_source_id');
 
         expect(typeof serializedFilters).toBe('string');
         const filters = parsePersistedCollectionFilters(serializedFilters as string);
@@ -189,6 +200,42 @@ describe('collectionRepo filter normalization', () => {
         expect(flagParams[3]).toBe(1);
         expect(flagParams[4]).toBe(1);
         expect(flagParams[7]).toBe('["image-a"]');
+    });
+
+    it('maps the complete legacy payload to the scope-independent native transaction', async () => {
+        const { migrateLegacyCollections } = await import('../collectionRepo');
+        const filters = makeFilters({ searchQuery: 'portrait' });
+
+        await migrateLegacyCollections([makeCollection({
+            id: 'legacy',
+            name: 'Legacy',
+            color: '#abcdef',
+            createdAt: 10,
+            updatedAt: 20,
+            isArchived: true,
+            isPinned: true,
+            filters,
+            manualExclusions: ['excluded'],
+            customThumbnail: 'thumbnail',
+            imageIds: ['C:\\Images\\one.png'],
+        })]);
+
+        expect(bindingMocks.migrateLegacyCollections).toHaveBeenCalledWith({
+            importKey: 'library-json-collections-v1',
+            collections: [{
+                id: 'legacy',
+                name: 'Legacy',
+                color: '#abcdef',
+                isArchived: true,
+                isPinned: true,
+                createdAt: 10,
+                updatedAt: 20,
+                filterState: JSON.stringify(filters),
+                manualExclusions: '["excluded"]',
+                customThumbnail: 'thumbnail',
+                imageIds: ['C:/Images/one.png'],
+            }],
+        });
     });
 
     it('backfills missing dynamic collection cache columns from the TypeScript schema guard', async () => {
@@ -983,7 +1030,10 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.execute).toHaveBeenCalledWith(
             expect.stringContaining("WHERE custom_thumbnail IS NULL OR custom_thumbnail = ''")
         );
-        expect(dbMocks.execute).toHaveBeenCalledWith('DELETE FROM collections WHERE id = ?', ['c1']);
+        expect(dbMocks.execute).toHaveBeenCalledWith(
+            'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
+            ['c1']
+        );
     });
 
     it('skips cache SQL in browser mock mode', async () => {
@@ -1283,6 +1333,21 @@ describe('collectionRepo membership helpers', () => {
         });
         const params = dbMocks.execute.mock.calls.at(-1)?.[1] as unknown[];
         expect(params[10]).toBe('owner-a');
+    });
+
+    it('rejects stale collection IDs that are hidden by the active scope', async () => {
+        dbMocks.execute.mockResolvedValue({ rowsAffected: 0 });
+        const { deleteCollectionFromDb, upsertCollection } = await import('../collectionRepo');
+
+        await expect(deleteCollectionFromDb('hidden-board')).rejects.toThrow('collection was not found');
+        await expect(upsertCollection({
+            id: 'hidden-board',
+            name: 'Must not overwrite',
+        })).rejects.toThrow('collection was not found');
+
+        const [deleteSql, upsertSql] = dbMocks.execute.mock.calls.map(([sql]) => String(sql));
+        expect(deleteSql).toContain('scoped_collections');
+        expect(upsertSql).toContain('scoped_collections');
     });
 
     it('refreshes Invoke board identity without overwriting Ambit collection customizations', async () => {

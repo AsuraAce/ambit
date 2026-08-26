@@ -522,7 +522,8 @@ fn mark_current_ambit_thumbnails_stale_if_cache_missing_or_empty(
            AND COALESCE(thumbnail_version, 0) >= ?1
            AND thumbnail_path IS NOT NULL
            AND thumbnail_path != ''
-           AND path != thumbnail_path",
+           AND path != thumbnail_path
+           AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)",
         params![CURRENT_THUMBNAIL_VERSION],
     )
     .map_err(|error| error.to_string())
@@ -769,7 +770,8 @@ fn persist_thumbnail_results(
                      thumbnail_failure_count = 0,
                      thumbnail_last_error = NULL,
                      thumbnail_last_attempt_at = NULL
-                 WHERE id = ?4",
+                 WHERE id = ?4
+                   AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)",
             )
             .map_err(|e| e.to_string())?;
 
@@ -779,7 +781,8 @@ fn persist_thumbnail_results(
                  SET thumbnail_failure_count = COALESCE(thumbnail_failure_count, 0) + 1,
                      thumbnail_last_error = ?1,
                      thumbnail_last_attempt_at = ?2
-                 WHERE id = ?3",
+                 WHERE id = ?3
+                   AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)",
             )
             .map_err(|e| e.to_string())?;
 
@@ -1304,6 +1307,19 @@ mod tests {
             20,
         );
         let empty_dir = temp_thumbnail_dir("mark-stale-cache");
+        insert_image(
+            &conn,
+            "owner-hidden",
+            Some("C:/thumbs/owner-hidden.webp"),
+            Some("ambit"),
+            CURRENT_THUMBNAIL_VERSION,
+            10,
+        );
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id = 'owner-hidden'",
+            [],
+        )
+        .expect("hide other-owner row");
         let _ = fs::remove_dir_all(&empty_dir);
         fs::create_dir_all(&empty_dir).expect("create empty cache dir");
 
@@ -1332,6 +1348,17 @@ mod tests {
             .expect("version");
         assert_eq!(version, 0);
 
+        let hidden_version: i64 = conn
+            .query_row(
+                "SELECT thumbnail_version FROM images WHERE id = 'owner-hidden'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("hidden version");
+        assert_eq!(
+            hidden_version, CURRENT_THUMBNAIL_VERSION,
+            "empty-cache maintenance must not mutate another owner's thumbnail state"
+        );
         let _ = fs::remove_dir_all(&empty_dir);
     }
 
@@ -1592,6 +1619,61 @@ mod tests {
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn persistence_rechecks_scope_after_candidate_processing() {
+        let mut conn = setup_queue_db();
+        insert_image(&conn, "success", None, None, 0, 20);
+        insert_image(&conn, "failure", None, None, 0, 10);
+
+        let candidates =
+            fetch_thumbnail_candidates(&conn, false, None, 10, 10_000).expect("fetch candidates");
+        assert_eq!(candidates.len(), 2);
+        conn.execute(
+            "UPDATE images SET invoke_scope_hidden = 1 WHERE id IN ('success', 'failure')",
+            [],
+        )
+        .expect("switch owner scope after candidate fetch");
+
+        persist_thumbnail_results(
+            &mut conn,
+            &[
+                ThumbnailItemResult::Success {
+                    id: "success".to_string(),
+                    thumbnail_path: "C:/thumbs/success.webp".to_string(),
+                    micro_thumbnail: Some("micro".to_string()),
+                    reused: false,
+                    processing_ms: 10,
+                },
+                ThumbnailItemResult::Failed {
+                    id: "failure".to_string(),
+                    error: "decode failed".to_string(),
+                },
+            ],
+            100,
+        )
+        .expect("persist processed candidates");
+
+        let success: (Option<String>, Option<String>, i64) = conn
+            .query_row(
+                "SELECT thumbnail_path, thumbnail_source, thumbnail_version
+                 FROM images WHERE id = 'success'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("hidden success row");
+        assert_eq!(success, (None, None, 0));
+
+        let failure: (i64, Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT thumbnail_failure_count, thumbnail_last_error, thumbnail_last_attempt_at
+                 FROM images WHERE id = 'failure'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("hidden failure row");
+        assert_eq!(failure, (0, None, None));
     }
 
     #[test]

@@ -161,6 +161,13 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     {
+        name: 'migrateLegacyCollections',
+        invokeName: 'migrate_legacy_collections',
+        args: [{ importKey: 'library-json-collections-v1', collections: [] }],
+        payload: { input: { importKey: 'library-json-collections-v1', collections: [] } },
+        returnsResult: true,
+    },
+    {
         name: 'updateAmbitCollectionScope',
         invokeName: 'update_ambit_collection_scope',
         args: [{ collectionId: 'collection', mode: 'owner', invokeSourceId: 'C:/invoke/databases/invokeai.db', invokeOwnerId: 'owner-a' }],

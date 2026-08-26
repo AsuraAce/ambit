@@ -25,6 +25,7 @@ interface PersistedAppState {
     smartCollections: PersistedSmartCollection[];
     settings: Partial<AppSettings>;
     recentSearches: string[];
+    collectionStorageVersion?: number;
 }
 
 interface PersistedStateCandidate {
@@ -555,7 +556,8 @@ export class TauriFsRepository implements IRepository {
             && Array.isArray(candidate.smartCollections)
             && candidate.smartCollections.every(collection => isPersistedCollection(collection, true))
             && isPersistedSettings(candidate.settings)
-            && isStringArray(candidate.recentSearches);
+            && isStringArray(candidate.recentSearches)
+            && hasValidOptionalValue(candidate, 'collectionStorageVersion', value => typeof value === 'number');
     }
 
     private prepareLoadedState(saved: PersistedAppState): AppState {
@@ -707,7 +709,8 @@ export class TauriFsRepository implements IRepository {
             collections: INITIAL_COLLECTIONS,
             smartCollections: [],
             settings: createDefaultAppSettings(),
-            recentSearches: []
+            recentSearches: [],
+            collectionStorageVersion: 1,
         };
     }
 }

@@ -144,13 +144,20 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
     if (ids.length === 0) return 0;
 
     console.log(`[Verify] Marking ${ids.length} images as missing`);
+    let marked = 0;
     for (let i = 0; i < ids.length; i += 500) {
         const batch = ids.slice(i, i + 500);
         const placeholders = batch.map(() => '?').join(',');
-        await db.execute(`UPDATE images SET is_missing = 1 WHERE id IN (${placeholders})`, batch);
+        const result = await db.execute(
+            `UPDATE images SET is_missing = 1
+             WHERE id IN (${placeholders})
+               AND id IN (SELECT id FROM scoped_images)`,
+            batch
+        );
+        marked += result.rowsAffected;
     }
 
-    return ids.length;
+    return marked;
 };
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {

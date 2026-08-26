@@ -394,7 +394,7 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
             const batch = brokenIds.slice(i, i + BATCH_SIZE);
             const placeholders = batch.map(() => '?').join(',');
             await db.execute(
-                `UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (${placeholders})`,
+                `UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (${placeholders}) AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)`,
                 batch
             );
         }
