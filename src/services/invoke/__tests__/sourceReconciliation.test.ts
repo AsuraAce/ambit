@@ -3,12 +3,18 @@ import { commands } from '../../../bindings';
 import { createInvokeImagePathResolver } from '../pathResolver';
 import { reconcileInvokeSourceFacts as reconcileInvokeSourceFactsImpl } from '../sourceReconciliation';
 
+const reconcileInvokeOwnerInventory = vi.hoisted(() => vi.fn());
 const reconcileInvokeImageSources = vi.hoisted(() => vi.fn());
 const replaceInvokeImageReferences = vi.hoisted(() => vi.fn());
 const verifyImagePaths = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../bindings', () => ({
-    commands: { reconcileInvokeImageSources, replaceInvokeImageReferences, verifyImagePaths },
+    commands: {
+        reconcileInvokeOwnerInventory,
+        reconcileInvokeImageSources,
+        replaceInvokeImageReferences,
+        verifyImagePaths,
+    },
 }));
 
 const root = 'D:/InvokeAI';
@@ -45,6 +51,10 @@ const createDb = (rows: Array<{
 describe('reconcileInvokeSourceFacts', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        reconcileInvokeOwnerInventory.mockResolvedValue({
+            status: 'ok',
+            data: { activeUpdated: 0, removedUpdated: 0 },
+        });
         reconcileInvokeImageSources.mockImplementation(async (updates: unknown[]) => ({
             status: 'ok',
             data: { activeUpdated: updates.length, removedUpdated: 1 },
@@ -60,7 +70,7 @@ describe('reconcileInvokeSourceFacts', () => {
         verifyImagePaths.mockResolvedValue({ status: 'ok', data: [] });
     });
 
-    it('scopes both reconciliation passes to the selected owner', async () => {
+    it('reads a complete owner inventory while scoping detailed facts to the selected owner', async () => {
         const rows = [{ image_name: 'owned.png', user_id: 'owner-a', metadata_blob: {} }];
         const queries: Array<{ sql: string; params?: unknown[] }> = [];
         const db = {
@@ -87,17 +97,118 @@ describe('reconcileInvokeSourceFacts', () => {
         });
 
         const imageQueries = queries.filter(({ sql }) => sql.includes('FROM images i'));
-        expect(imageQueries.length).toBeGreaterThanOrEqual(3);
-        imageQueries.forEach(({ sql, params }) => {
-            expect(sql).toContain('i.user_id = ?');
-            if (sql.includes('ORDER BY i.rowid ASC')) {
-                expect(sql).toContain('i.rowid > ?');
-                expect(sql).not.toContain('OFFSET');
-                expect(params).toEqual(['owner-a', 0]);
-            } else {
-                expect(params).toEqual(['owner-a']);
-            }
+        const identityQuery = imageQueries.find(({ sql }) =>
+            sql.includes('AS user_id') && !sql.includes('metadata_blob')
+        );
+        const factQuery = imageQueries.find(({ sql }) => sql.includes('metadata_blob'));
+        expect(identityQuery?.sql).not.toContain('i.user_id = ?');
+        expect(identityQuery?.params).toEqual([0]);
+        expect(factQuery?.sql).toContain('i.user_id = ?');
+        expect(factQuery?.params).toEqual(['owner-a', 0]);
+        expect(reconcileInvokeOwnerInventory).toHaveBeenCalledWith({
+            dbPath: `${root}/databases/invokeai.db`,
+            images: [{
+                id: `${root}/outputs/images/owned.png`,
+                invokeOwnerId: 'owner-a',
+            }],
         });
+    });
+
+    it('reconciles transferred owners before writing selected-owner details', async () => {
+        const rows = [
+            { source_rowid: 1, image_name: 'moved.png', user_id: 'owner-b', metadata_blob: {} },
+            { source_rowid: 2, image_name: 'owned.png', user_id: 'owner-a', metadata_blob: {} },
+        ];
+        const db = {
+            select: vi.fn(async (sql: string, params: unknown[] = []) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) {
+                    return [{ count: sql.includes('user_id = ?') ? 1 : rows.length }];
+                }
+                if (sql.includes('FROM images i')) {
+                    const selected = sql.includes('user_id = ?')
+                        ? rows.filter(row => row.user_id === 'owner-a')
+                        : rows;
+                    const cursor = Number(params.at(-1) ?? 0);
+                    return selected.filter(row => row.source_rowid > cursor);
+                }
+                return [];
+            }),
+        };
+
+        await reconcileInvokeSourceFactsImpl({
+            db: db as never,
+            columns: new Set(['user_id']),
+            pathResolver: createInvokeImagePathResolver(root, async () => [
+                'outputs/images/moved.png',
+                'outputs/images/owned.png',
+            ]),
+            scope: {
+                mode: 'owner',
+                ownerId: 'owner-a',
+                dbPath: `${root}/databases/invokeai.db`,
+                imagesRoot: root,
+            },
+            onProgress: vi.fn(),
+        });
+
+        expect(reconcileInvokeOwnerInventory).toHaveBeenCalledWith({
+            dbPath: `${root}/databases/invokeai.db`,
+            images: expect.arrayContaining([
+                { id: `${root}/outputs/images/moved.png`, invokeOwnerId: 'owner-b' },
+                { id: `${root}/outputs/images/owned.png`, invokeOwnerId: 'owner-a' },
+            ]),
+        });
+        expect(reconcileInvokeImageSources).toHaveBeenCalledOnce();
+        expect(reconcileInvokeImageSources.mock.calls[0][0]).toEqual([
+            expect.objectContaining({
+                id: `${root}/outputs/images/owned.png`,
+                invokeOwnerId: 'owner-a',
+            }),
+        ]);
+    });
+
+    it('keeps case-distinct POSIX paths separate in the authoritative owner inventory', async () => {
+        const linuxRoot = '/opt/invokeai';
+        const rows = [
+            { source_rowid: 1, image_name: 'Foo.png', user_id: 'owner-a', metadata_blob: {} },
+            { source_rowid: 2, image_name: 'foo.png', user_id: 'owner-b', metadata_blob: {} },
+        ];
+        const db = {
+            select: vi.fn(async (sql: string, params: unknown[] = []) => {
+                if (sql.startsWith('SELECT rowid AS source_rowid')) return [{ source_rowid: 1 }];
+                if (sql.includes('SELECT count(*)')) return [{ count: rows.length }];
+                if (sql.includes('FROM images i')) {
+                    const cursor = Number(params.at(-1) ?? 0);
+                    return rows.filter(row => row.source_rowid > cursor);
+                }
+                return [];
+            }),
+        };
+
+        await reconcileInvokeSourceFactsImpl({
+            db: db as never,
+            columns: new Set(['user_id']),
+            pathResolver: createInvokeImagePathResolver(linuxRoot, async () => [
+                'outputs/images/Foo.png',
+                'outputs/images/foo.png',
+            ]),
+            scope: {
+                mode: 'all',
+                dbPath: `${linuxRoot}/databases/invokeai.db`,
+                imagesRoot: linuxRoot,
+            },
+            onProgress: vi.fn(),
+        });
+
+        expect(reconcileInvokeOwnerInventory).toHaveBeenCalledWith({
+            dbPath: `${linuxRoot}/databases/invokeai.db`,
+            images: expect.arrayContaining([
+                { id: `${linuxRoot}/outputs/images/Foo.png`, invokeOwnerId: 'owner-a' },
+                { id: `${linuxRoot}/outputs/images/foo.png`, invokeOwnerId: 'owner-b' },
+            ]),
+        });
+        expect(reconcileInvokeOwnerInventory.mock.calls[0][0].images).toHaveLength(2);
     });
 
     it('uses rowid keyset pagination across both source passes and reports truthful phases', async () => {

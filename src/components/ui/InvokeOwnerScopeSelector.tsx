@@ -18,9 +18,18 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
     onSelect,
 }) => {
     const [isAllUsersConfirmOpen, setIsAllUsersConfirmOpen] = React.useState(false);
-    const allUsersMessage = discovery.unassignedImageCount > 0
-        ? `Ambit will show every owner's images and ${discovery.unassignedImageCount.toLocaleString()} unassigned image rows from this local InvokeAI database across the gallery, collections, maintenance views, and references. You can return to a single owner at any time.`
-        : "Ambit will show every owner's images, including any unassigned image rows, from this local InvokeAI database across the gallery, collections, maintenance views, and references. You can return to a single owner at any time.";
+    const unassignedBoards = discovery.unassignedBoardCount ?? 0;
+    const unassignedDetails = [
+        discovery.unassignedImageCount > 0
+            ? `${discovery.unassignedImageCount.toLocaleString()} unassigned image rows`
+            : null,
+        unassignedBoards > 0
+            ? `${unassignedBoards.toLocaleString()} unassigned boards`
+            : null,
+    ].filter((value): value is string => value !== null).join(' and ');
+    const allUsersMessage = unassignedDetails
+        ? `Ambit will show every owner's InvokeAI content, including ${unassignedDetails}, across the gallery, collections, maintenance views, and references. You can return to a single owner at any time.`
+        : "Ambit will show every owner's InvokeAI images and boards from this local database. You can return to a single owner at any time.";
 
     return (
         <div className="space-y-3">
@@ -29,6 +38,8 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             </p>
             {discovery.owners.map(owner => {
                 const selected = selection?.mode === 'owner' && selection.ownerId === owner.ownerId;
+                const intermediateImageCount = owner.intermediateImageCount ?? 0;
+                const standardImageCount = owner.imageCount - intermediateImageCount;
                 return (
                     <button
                         key={owner.ownerId}
@@ -54,8 +65,16 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                                 </span>
                                 <span className="block break-all font-mono text-[10px] text-gray-500">{owner.ownerId}</span>
                             </span>
-                            <span className="shrink-0 text-[10px] font-bold text-gray-500">
-                                {owner.imageCount.toLocaleString()} images
+                            <span className="shrink-0 text-right text-[10px] font-bold text-gray-500">
+                                <span className="block">
+                                    {standardImageCount.toLocaleString()} {intermediateImageCount > 0 ? 'standard images' : 'images'}
+                                </span>
+                                {intermediateImageCount > 0 && (
+                                    <span className="block">{intermediateImageCount.toLocaleString()} intermediates</span>
+                                )}
+                                {owner.boardCount !== undefined && (
+                                    <span className="block">{owner.boardCount.toLocaleString()} boards</span>
+                                )}
                             </span>
                         </span>
                     </button>
@@ -65,6 +84,12 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             {discovery.unassignedImageCount > 0 && (
                 <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
                     {discovery.unassignedImageCount.toLocaleString()} image rows have no owner and remain hidden in single-owner scope.
+                </p>
+            )}
+
+            {unassignedBoards > 0 && (
+                <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                    {unassignedBoards.toLocaleString()} boards have no owner and remain hidden in single-owner scope.
                 </p>
             )}
 
@@ -82,7 +107,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             >
                 <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
                 <span className="block text-[10px] leading-4 text-gray-500">
-                    Show every owner's images, including unassigned image rows.
+                    Show every owner's images and boards, including unassigned rows.
                 </span>
             </button>
 

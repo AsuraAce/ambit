@@ -133,7 +133,7 @@ describe('useFileOperations', () => {
             expect(mockSetImages).toHaveBeenCalled();
             const updateImages = mockSetImages.mock.calls[0][0] as (images: typeof mockImages) => typeof mockImages;
             expect(updateImages(mockImages).map(image => image.id)).toEqual(['2', '3']);
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 item from the library'), 'success');
             expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });
@@ -148,7 +148,7 @@ describe('useFileOperations', () => {
             });
 
             expect(removeImagesFromLibrary).toHaveBeenCalledWith(['1']);
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 image from the library'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Removed 1 item from the library'), 'success');
             expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('collections may need a refresh'), 'warning');
             expect(mockAddToast).not.toHaveBeenCalledWith('Failed to update library state', 'error');
             expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
@@ -214,7 +214,7 @@ describe('useFileOperations', () => {
                 await result.current.exportImages('test.zip', ['non-existent'], 'C:/dest');
             });
 
-            expect(mockAddToast).toHaveBeenCalledWith('No valid images found to export', 'error');
+            expect(mockAddToast).toHaveBeenCalledWith('No valid items found to export', 'error');
         });
     });
 
@@ -237,7 +237,7 @@ describe('useFileOperations', () => {
 
             expect(processWebFiles).toHaveBeenCalled();
             expect(mockSetImages).toHaveBeenCalled();
-            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Imported 1 images'), 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Imported 1 item'), 'success');
             expect(mockRefreshCollections).toHaveBeenCalledTimes(1);
             expect(mockRefreshCollectionThumbnails).not.toHaveBeenCalled();
         });

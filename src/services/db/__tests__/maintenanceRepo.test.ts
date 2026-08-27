@@ -348,13 +348,13 @@ describe('maintenanceRepo', () => {
         }]);
 
         expect(db.select.mock.calls[0][0]).toContain('WHERE is_missing = 1');
-        expect(db.select.mock.calls[1][0]).toContain('FROM removed_images');
+        expect(db.select.mock.calls[1][0]).toContain('FROM scoped_removed_images');
     });
 
     it('marks missing links in batches so very large audits stay under SQLite parameter limits', async () => {
         const db = {
             select: vi.fn(),
-            execute: vi.fn().mockResolvedValue(undefined),
+            execute: vi.fn(async (_sql: string, params: unknown[] = []) => ({ rowsAffected: params.length })),
         };
         mocks.getDb.mockResolvedValue(db);
         const ids = Array.from({ length: 501 }, (_, index) => `id-${index}`);
@@ -365,6 +365,20 @@ describe('maintenanceRepo', () => {
         expect(db.execute).toHaveBeenCalledTimes(2);
         expect(db.execute.mock.calls[0][1]).toHaveLength(500);
         expect(db.execute.mock.calls[1][1]).toEqual(['id-500']);
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+    });
+
+    it('does not mark IDs hidden by an owner switch after discovery', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        mocks.getDb.mockResolvedValue(db);
+
+        const { pruneMissingLinks } = await import('../maintenanceRepo');
+        await expect(pruneMissingLinks(['stale-owner-id'])).resolves.toBe(0);
+
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
     });
 
     it('skips missing-link writes when there is nothing to prune', async () => {
@@ -604,6 +618,7 @@ describe('maintenanceRepo', () => {
         expect(query).toContain("file_hash != ''");
         expect(query).not.toContain('LOWER(TRIM(file_hash))');
         expect(query).toContain('is_missing = 0');
+        expect(query).not.toContain("media_type = 'image'");
         expect(query).not.toContain('file_size, width, height');
         expect(db.select.mock.calls[0]).toHaveLength(1);
     });

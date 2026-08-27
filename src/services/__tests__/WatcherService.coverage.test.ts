@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { commands } from '../../bindings';
 import { WatcherService } from '../WatcherService';
 import { isBrowserMockMode } from '../runtime';
+import type { FolderChange } from '../../bindings';
 
 vi.mock('../../bindings', () => ({
     commands: {
@@ -17,7 +18,7 @@ vi.mock('../runtime', () => ({
 const mockedStartNativeFolderWatcher = vi.mocked(commands.startNativeFolderWatcher);
 const mockedListen = vi.mocked(listen);
 const mockedIsBrowserMockMode = vi.mocked(isBrowserMockMode);
-type FolderChangeHandler = (event: Event<string[]>) => void;
+type FolderChangeHandler = (event: Event<FolderChange[]>) => void;
 
 describe('WatcherService', () => {
     beforeEach(() => {
@@ -75,18 +76,18 @@ describe('WatcherService', () => {
         emitFolderChange({
             event: 'folder-change-event',
             id: 1,
-            payload: ['C:/watch/new.png']
+            payload: [{ kind: 'create', paths: ['C:/watch/new.png'] }]
         });
         emitFolderChange({
             event: 'folder-change-event',
             id: 2,
             payload: undefined,
-        } as unknown as Event<string[]>);
+        } as unknown as Event<FolderChange[]>);
         await service.stopWatching();
 
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(1, ['C:/watch', 'D:/more']);
         expect(mockedListen).toHaveBeenCalledWith('folder-change-event', expect.any(Function));
-        expect(onChange).toHaveBeenCalledWith(['C:/watch/new.png']);
+        expect(onChange).toHaveBeenCalledWith([{ kind: 'create', paths: ['C:/watch/new.png'] }]);
         expect(onChange).toHaveBeenCalledWith(undefined);
         expect(unlisten).toHaveBeenCalledTimes(1);
         expect(mockedStartNativeFolderWatcher).toHaveBeenNthCalledWith(2, []);

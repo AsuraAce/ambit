@@ -127,7 +127,7 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
       {/* Management */}
       <MenuItem icon={<Pencil className="w-4 h-4 text-gray-400" />} label="Rename" onClick={onRename} />
       {onEditCollection && (
-        <MenuItem icon={<Settings className="w-4 h-4 text-gray-400" />} label="Edit Filters" onClick={onEditCollection} />
+        <MenuItem icon={<Settings className="w-4 h-4 text-gray-400" />} label="Edit Collection" onClick={onEditCollection} />
       )}
 
       {/* Color Tags */}

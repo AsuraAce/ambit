@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Ambit",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "identifier": "io.github.asuraace.ambit",
   "build": {
     "frontendDist": "../dist",
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com;",
+      "csp": "default-src 'self'; img-src 'self' asset: data: http://asset.localhost https://asset.localhost; media-src 'self' asset: http://asset.localhost https://asset.localhost; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com;",
       "capabilities": [
         "default"
       ],

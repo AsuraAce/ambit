@@ -41,7 +41,7 @@ fn build_parameter_scope_from_clause(
     collection_id: Option<&str>,
     lora_name: Option<&str>,
 ) -> (String, Vec<Value>) {
-    let mut from_clause = "FROM images".to_string();
+    let mut from_clause = "FROM scoped_images AS images".to_string();
     let mut join_params = Vec::new();
 
     if let Some(col_id) = collection_id {
@@ -102,17 +102,17 @@ pub async fn get_parameter_ranges(
         query_params.extend(sql_params);
 
         // Ranges
-        let steps = conn.query_row("SELECT MIN(steps), MAX(steps) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND steps > 0", [], |row| {
+        let steps = conn.query_row("SELECT MIN(steps), MAX(steps) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND steps > 0", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
 
-        let cfg = conn.query_row("SELECT MIN(cfg), MAX(cfg) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND cfg > 0", [], |row| {
+        let cfg = conn.query_row("SELECT MIN(cfg), MAX(cfg) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND cfg > 0", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) if min > 0.0 => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
 
-        let denoising_strength = conn.query_row("SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND json_extract(metadata_json, '$.denoisingStrength') IS NOT NULL", [], |row| {
+        let denoising_strength = conn.query_row("SELECT MIN(json_extract(metadata_json, '$.denoisingStrength')), MAX(json_extract(metadata_json, '$.denoisingStrength')) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND json_extract(metadata_json, '$.denoisingStrength') IS NOT NULL", [], |row| {
             let (min, max): (Option<f64>, Option<f64>) = (row.get(0).ok(), row.get(1).ok());
             Ok(match (min, max) { (Some(min), Some(max)) => Some(NumericRange { min, max }), _ => None })
         }).unwrap_or(None);
@@ -186,6 +186,42 @@ mod tests {
     }
 
     #[test]
+    fn parameter_scope_aliases_the_scoped_view_for_collection_and_lora_joins() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "
+            CREATE TABLE images (
+                id TEXT PRIMARY KEY, sampler TEXT, is_deleted INTEGER,
+                invoke_scope_hidden INTEGER
+            );
+            CREATE VIEW scoped_images AS SELECT * FROM images;
+            CREATE TABLE collection_images (collection_id TEXT, image_id TEXT);
+            CREATE TABLE image_loras (image_id TEXT, lora_name TEXT);
+            INSERT INTO images VALUES ('image', 'euler', 0, 0);
+            INSERT INTO collection_images VALUES ('collection', 'image');
+            INSERT INTO image_loras VALUES ('image', 'detailer');
+            ",
+        )
+        .expect("setup scoped parameter query");
+
+        let (from_clause, params) =
+            build_parameter_scope_from_clause(Some("collection"), Some("detailer"));
+        let sql = format!(
+            "SELECT DISTINCT sampler {from_clause}
+             WHERE invoke_scope_hidden = 0 AND is_deleted = 0"
+        );
+        let rows: Vec<String> = conn
+            .prepare(&sql)
+            .expect("prepare scoped parameter query")
+            .query_map(rusqlite::params_from_iter(params.iter()), |row| row.get(0))
+            .expect("query scoped parameters")
+            .collect::<Result<_, _>>()
+            .expect("collect scoped parameters");
+
+        assert_eq!(rows, vec!["euler".to_string()]);
+    }
+
+    #[test]
     fn seed_backfill_preserves_numeric_zero_and_rejects_ambiguous_values() {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
         conn.execute_batch(
@@ -195,6 +231,7 @@ mod tests {
                 metadata_json TEXT,
                 seed INTEGER
             );
+            CREATE VIEW scoped_images AS SELECT * FROM images;
 
             INSERT INTO images(id, metadata_json) VALUES
                 ('zero', '{"seed":0}'),
@@ -217,7 +254,7 @@ mod tests {
         .expect("backfill seed");
 
         let mut stmt = conn
-            .prepare("SELECT id, seed FROM images ORDER BY id")
+            .prepare("SELECT id, seed FROM scoped_images ORDER BY id")
             .expect("prepare seed query");
         let rows: Vec<(String, Option<i64>)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
@@ -274,7 +311,7 @@ pub struct MetadataStats {
 #[specta::specta]
 pub async fn get_metadata_stats(app: AppHandle) -> Result<MetadataStats, String> {
     run_blocking(app, move |conn| {
-        let mut stmt = conn.prepare("SELECT COUNT(*), COUNT(original_metadata_json), COUNT(parser_version), SUM(CASE WHEN parser_version = 0 THEN 1 ELSE 0 END), SUM(CASE WHEN parser_version = 1 THEN 1 ELSE 0 END) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0").map_err(|e| e.to_string())?;
+        let mut stmt = conn.prepare("SELECT COUNT(*), COUNT(original_metadata_json), COUNT(parser_version), SUM(CASE WHEN parser_version = 0 THEN 1 ELSE 0 END), SUM(CASE WHEN parser_version = 1 THEN 1 ELSE 0 END) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0").map_err(|e| e.to_string())?;
         stmt.query_row([], |row| Ok(MetadataStats {
             total: row.get(0)?, with_raw: row.get(1)?, with_pv: row.get(2)?,
             v0: row.get::<_, Option<i64>>(3)?.unwrap_or(0),

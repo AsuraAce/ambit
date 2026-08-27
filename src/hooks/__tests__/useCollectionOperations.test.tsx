@@ -167,6 +167,32 @@ describe('useCollectionOperations', () => {
             expect(mockSetAllCollections).toHaveBeenCalledTimes(2); // Initial + Rollback
             expect(mockAddToast).toHaveBeenCalledWith(expect.any(String), 'error');
         });
+
+        it('keeps a committed collection when the authoritative refresh fails', async () => {
+            const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+            mockRefreshCollections.mockRejectedValueOnce(new Error('refresh failed'));
+            const { result } = renderHook(() => useCollectionOperations(props));
+
+            await act(async () => {
+                await result.current.createCollection('Committed Folder');
+            });
+
+            expect(mockSetAllCollections).toHaveBeenCalledOnce();
+            expect(mockRefreshCollections).toHaveBeenCalledWith(false, {
+                consistency: 'authoritative',
+            });
+            expect(mockAddToast).toHaveBeenCalledWith('Collection "Committed Folder" created', 'success');
+            expect(mockAddToast).toHaveBeenCalledWith(
+                'Collection created, but the collection list may need a refresh.',
+                'warning'
+            );
+            expect(mockAddToast).not.toHaveBeenCalledWith('Failed to create collection', 'error');
+            expect(errorSpy).toHaveBeenCalledWith(
+                '[Collections] Failed to refresh after creating collection',
+                expect.any(Error)
+            );
+            errorSpy.mockRestore();
+        });
     });
 
     describe('deleteCollection', () => {
@@ -319,6 +345,7 @@ describe('useCollectionOperations', () => {
             expect(didPersist).toBe(true);
             expect(mockSetAllCollections).not.toHaveBeenCalled();
             expect(addImgs).toHaveBeenCalledWith('col1', ['img2']);
+            expect(mockAddToast).toHaveBeenCalledWith('Added to collection', 'success');
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['images'] });
             expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['libraryStats'] });
             invalidateSpy.mockRestore();
@@ -867,6 +894,22 @@ describe('useCollectionOperations', () => {
         await act(async () => result.current.setCollectionThumbnail('col1', makeImage({ thumbnailUrl: '' })));
         const thumbnailUpdater = mockSetAllCollections.mock.calls.at(-1)?.[0] as (collections: Collection[]) => Collection[];
         expect(thumbnailUpdater(mockCollections)[0].thumbnail).toBe('asset://C:/images/img2.png');
+    });
+
+    it('does not optimistically use a posterless video source as a collection thumbnail', async () => {
+        const { result } = renderHook(() => useCollectionOperations(props));
+        await act(async () => result.current.setCollectionThumbnail('col1', makeImage({
+            mediaType: 'video',
+            url: 'asset://C:/videos/clip.mp4',
+            thumbnailUrl: 'asset://C:/videos/clip.mp4',
+            thumbnailSource: undefined,
+        })));
+
+        const thumbnailUpdater = mockSetAllCollections.mock.calls.at(-1)?.[0] as (collections: Collection[]) => Collection[];
+        expect(thumbnailUpdater(mockCollections)[0]).toMatchObject({
+            customThumbnail: 'img2',
+            thumbnail: undefined,
+        });
     });
 
     it('logs background thumbnail reconciliation and invalidation failures', async () => {

@@ -2,6 +2,7 @@ import { act, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useCollectionStore } from '../collectionStore';
 import { Collection, FilterState } from '../../types';
+import type { AppState } from '../../services/repository';
 import { createDefaultFilters } from '../../utils/filterState';
 
 const collectionRepoMocks = vi.hoisted(() => ({
@@ -10,12 +11,15 @@ const collectionRepoMocks = vi.hoisted(() => ({
     mockCacheSmartCollectionCount: vi.fn(),
     mockGetCollectionThumbnailSummaries: vi.fn(),
     mockEnsureCollectionSchema: vi.fn(),
-    mockUpsertCollection: vi.fn(),
-    mockAddImagesToCollection: vi.fn(),
+    mockMigrateLegacyCollections: vi.fn(),
     mockGetCollectionImageIds: vi.fn(),
     mockDeleteCollectionFromDb: vi.fn()
 }));
-const appRepositoryMocks = vi.hoisted(() => ({ mockLoad: vi.fn() }));
+const appRepositoryMocks = vi.hoisted(() => ({
+    mockLoad: vi.fn(),
+    mockSave: vi.fn(),
+    mockUpdate: vi.fn<(updater: (state: AppState) => AppState) => Promise<AppState>>(),
+}));
 const libraryStoreMocks = vi.hoisted(() => ({
     isImporting: false
 }));
@@ -41,14 +45,17 @@ vi.mock('../../services/db/collectionRepo', () => ({
     cacheSmartCollectionCount: collectionRepoMocks.mockCacheSmartCollectionCount,
     getCollectionThumbnailSummaries: collectionRepoMocks.mockGetCollectionThumbnailSummaries,
     ensureCollectionSchema: collectionRepoMocks.mockEnsureCollectionSchema,
-    upsertCollection: collectionRepoMocks.mockUpsertCollection,
-    addImagesToCollection: collectionRepoMocks.mockAddImagesToCollection,
+    migrateLegacyCollections: collectionRepoMocks.mockMigrateLegacyCollections,
     getCollectionImageIds: collectionRepoMocks.mockGetCollectionImageIds,
     deleteCollectionFromDb: collectionRepoMocks.mockDeleteCollectionFromDb
 }));
 
 vi.mock('../../services/repository', () => ({
-    appRepository: { load: appRepositoryMocks.mockLoad }
+    appRepository: {
+        load: appRepositoryMocks.mockLoad,
+        save: appRepositoryMocks.mockSave,
+        update: appRepositoryMocks.mockUpdate,
+    }
 }));
 
 const resetCollectionStore = () => {
@@ -85,11 +92,14 @@ describe('collectionStore smart count refresh', () => {
         mockCacheSmartCollectionCount.mockResolvedValue(undefined);
         mockGetCollectionThumbnailSummaries.mockResolvedValue({});
         collectionRepoMocks.mockEnsureCollectionSchema.mockResolvedValue(undefined);
-        collectionRepoMocks.mockUpsertCollection.mockResolvedValue(undefined);
-        collectionRepoMocks.mockAddImagesToCollection.mockResolvedValue(undefined);
+        collectionRepoMocks.mockMigrateLegacyCollections.mockResolvedValue(undefined);
         collectionRepoMocks.mockGetCollectionImageIds.mockResolvedValue([]);
         collectionRepoMocks.mockDeleteCollectionFromDb.mockResolvedValue(undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue({ collections: [], smartCollections: [] });
+        appRepositoryMocks.mockSave.mockResolvedValue(undefined);
+        appRepositoryMocks.mockUpdate.mockImplementation(async updater => (
+            updater(await appRepositoryMocks.mockLoad())
+        ));
         libraryStoreMocks.isImporting = false;
         resetCollectionStore();
     });
@@ -137,6 +147,62 @@ describe('collectionStore smart count refresh', () => {
                 id: 'assets-showcase',
                 name: 'Assets: Showcase'
             })
+        ]);
+    });
+
+    it('retries a required collection refresh when a competing refresh supersedes it', async () => {
+        const requiredAttempt = createDeferred<Collection[]>();
+        const competingRefresh = createDeferred<Collection[]>();
+        const requiredRetry = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+
+        const requiredRun = useCollectionStore.getState().refreshCollections(false, {
+            consistency: 'authoritative',
+        });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshCollections();
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve([makeStaticCollection({ id: 'competing', name: 'Competing' })]);
+        await competingRun;
+
+        requiredAttempt.resolve([makeStaticCollection({ id: 'stale', name: 'Stale' })]);
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve([makeStaticCollection({ id: 'odin', name: 'Odin' })]);
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({ id: 'odin', name: 'Odin' })
+        ]);
+    });
+
+    it('serializes overlapping required collection refreshes without superseding each other', async () => {
+        const firstRefresh = createDeferred<Collection[]>();
+        const secondRefresh = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockImplementationOnce(() => firstRefresh.promise)
+            .mockImplementationOnce(() => secondRefresh.promise);
+
+        const firstRun = useCollectionStore.getState().refreshCollections(false, {
+            consistency: 'authoritative',
+        });
+        const secondRun = useCollectionStore.getState().refreshCollections(false, {
+            consistency: 'authoritative',
+        });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(1));
+
+        firstRefresh.resolve([makeStaticCollection({ id: 'first', name: 'First' })]);
+        await firstRun;
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2));
+        secondRefresh.resolve([makeStaticCollection({ id: 'second', name: 'Second' })]);
+        await secondRun;
+
+        expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2);
+        expect(useCollectionStore.getState().collections).toEqual([
+            expect.objectContaining({ id: 'second', name: 'Second' })
         ]);
     });
 
@@ -1315,6 +1381,45 @@ describe('collectionStore smart count refresh', () => {
         }));
     });
 
+    it('retries required thumbnail hydration when another run supersedes it', async () => {
+        const requiredAttempt = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        const competingRefresh = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        const requiredRetry = createDeferred<Record<string, { thumbnail: string; thumbnailSourceKind: 'dynamic' }>>();
+        mockGetCollectionThumbnailSummaries
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ count: 1 })],
+            isLoaded: true,
+        });
+
+        const requiredRun = useCollectionStore.getState().refreshCollectionThumbnails(false, true, {
+            consistency: 'authoritative',
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshCollectionThumbnails();
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve({
+            'static-1': { thumbnail: 'asset://competing.webp', thumbnailSourceKind: 'dynamic' },
+        });
+        await competingRun;
+
+        requiredAttempt.resolve({
+            'static-1': { thumbnail: 'asset://stale.webp', thumbnailSourceKind: 'dynamic' },
+        });
+        await waitFor(() => expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve({
+            'static-1': { thumbnail: 'asset://odin.webp', thumbnailSourceKind: 'dynamic' },
+        });
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({
+            thumbnail: 'asset://odin.webp'
+        }));
+    });
+
     it('does not clear newer pending thumbnail state from stale refreshes', async () => {
         let resolveFirst: ((value: Record<string, unknown>) => void) | undefined;
         let resolveSecond: ((value: Record<string, unknown>) => void) | undefined;
@@ -1382,15 +1487,26 @@ describe('collectionStore smart count refresh', () => {
         consoleError.mockRestore();
     });
 
+    it('still rejects a required collection refresh when the query itself fails', async () => {
+        const error = new Error('required refresh failed');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mockGetAllCollectionsWithStats.mockRejectedValueOnce(error);
+
+        await expect(useCollectionStore.getState().refreshCollections(false, {
+            consistency: 'authoritative',
+        })).rejects.toBe(error);
+        expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce();
+        consoleError.mockRestore();
+    });
+
     it('replaces an earlier debounced collection refresh timer', async () => {
         vi.useFakeTimers();
         try {
             const first = useCollectionStore.getState().refreshCollections(true);
             const second = useCollectionStore.getState().refreshCollections(true);
             await vi.runAllTimersAsync();
-            await second;
+            await Promise.all([first, second]);
             expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce();
-            void first;
         } finally {
             vi.useRealTimers();
         }
@@ -1403,9 +1519,8 @@ describe('collectionStore smart count refresh', () => {
             const first = useCollectionStore.getState().refreshCollectionThumbnails(true);
             const second = useCollectionStore.getState().refreshCollectionThumbnails(true);
             await vi.runAllTimersAsync();
-            await second;
+            await Promise.all([first, second]);
             expect(mockGetCollectionThumbnailSummaries).toHaveBeenCalledOnce();
-            void first;
         } finally {
             vi.useRealTimers();
         }
@@ -1437,7 +1552,7 @@ describe('collectionStore smart count refresh', () => {
         consoleError.mockRestore();
     });
 
-    it('migrates legacy regular and smart collections during fresh initialization', async () => {
+    it('migrates legacy collections even when the scoped SQLite view is empty', async () => {
         vi.resetModules();
         const { useCollectionStore: freshStore } = await import('../collectionStore');
         const regular = makeStaticCollection({ id: 'legacy', imageIds: ['one'] });
@@ -1450,11 +1565,137 @@ describe('collectionStore smart count refresh', () => {
 
         await freshStore.getState().initialize();
 
-        expect(collectionRepoMocks.mockUpsertCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'legacy', source: 'ambit' }));
-        expect(collectionRepoMocks.mockUpsertCollection).toHaveBeenCalledWith(expect.objectContaining({ id: 'smart', source: 'ambit' }));
-        expect(collectionRepoMocks.mockAddImagesToCollection).toHaveBeenCalledWith('legacy', ['one']);
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledOnce();
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledWith([regular, regularWithoutImageIds, smart]);
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
         expect(freshStore.getState().isLoaded).toBe(true);
         expect(freshStore.getState().collections).toEqual([regular, regularWithoutImageIds, smart]);
+    });
+
+    it('preserves concurrent persisted state while marking legacy migration complete', async () => {
+        const legacy = makeStaticCollection({ id: 'legacy-concurrent', imageIds: ['one'] });
+        const concurrentState = {
+            images: [],
+            collections: [legacy],
+            smartCollections: [],
+            settings: { theme: 'dark' },
+            recentSearches: ['new search'],
+        } as unknown as AppState;
+        let persistedState: AppState | undefined;
+        appRepositoryMocks.mockLoad.mockResolvedValueOnce({
+            ...concurrentState,
+            recentSearches: ['old search'],
+        });
+        appRepositoryMocks.mockUpdate.mockImplementationOnce(async updater => {
+            persistedState = updater(concurrentState);
+            return persistedState;
+        });
+        mockGetAllCollectionsWithStats
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([legacy]);
+
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        await freshStore.getState().initialize();
+
+        expect(persistedState).toMatchObject({
+            settings: { theme: 'dark' },
+            recentSearches: ['new search'],
+            collections: [],
+            smartCollections: [],
+            collectionStorageVersion: 1,
+        });
+    });
+
+    it('preserves legacy data after a partial failure and retries on the next startup', async () => {
+        const legacy = makeStaticCollection({ id: 'legacy-retry', imageIds: ['one'] });
+        const legacyState = { collections: [legacy], smartCollections: [] };
+        const migrationError = new Error('membership unavailable');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        appRepositoryMocks.mockLoad.mockResolvedValue(legacyState);
+        mockGetAllCollectionsWithStats
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([legacy]);
+        collectionRepoMocks.mockMigrateLegacyCollections
+            .mockRejectedValueOnce(migrationError)
+            .mockResolvedValueOnce(undefined);
+
+        vi.resetModules();
+        let module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+
+        expect(appRepositoryMocks.mockUpdate).not.toHaveBeenCalled();
+        expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Migration failed', migrationError);
+
+        vi.resetModules();
+        module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledTimes(2);
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
+        consoleError.mockRestore();
+    });
+
+    it('retries JSON cleanup after a committed native import without replaying data', async () => {
+        const legacy = makeStaticCollection({ id: 'legacy-receipt', imageIds: ['one'] });
+        const legacyState = { collections: [legacy], smartCollections: [] };
+        const markerError = new Error('JSON marker write failed');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        appRepositoryMocks.mockLoad.mockResolvedValue(legacyState);
+        appRepositoryMocks.mockUpdate.mockRejectedValueOnce(markerError);
+        mockGetAllCollectionsWithStats
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([legacy]);
+
+        vi.resetModules();
+        let module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledOnce();
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
+        expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Migration failed', markerError);
+
+        vi.resetModules();
+        module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledTimes(2);
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledTimes(2);
+        consoleError.mockRestore();
+    });
+
+
+    it('does not replay completed legacy migration after all SQLite collections are deleted', async () => {
+        const legacy = makeStaticCollection({ id: 'legacy-once', imageIds: ['one'] });
+        mockGetAllCollectionsWithStats
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([legacy]);
+        appRepositoryMocks.mockLoad.mockResolvedValueOnce({
+            collections: [legacy],
+            smartCollections: [],
+        });
+
+        vi.resetModules();
+        let module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledOnce();
+
+        collectionRepoMocks.mockMigrateLegacyCollections.mockClear();
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([]);
+        appRepositoryMocks.mockLoad.mockResolvedValueOnce({
+            collectionStorageVersion: 1,
+            collections: [legacy],
+            smartCollections: [],
+        });
+
+        vi.resetModules();
+        module = await import('../collectionStore');
+        await module.useCollectionStore.getState().initialize();
+
+        expect(collectionRepoMocks.mockMigrateLegacyCollections).not.toHaveBeenCalled();
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
     });
 
     it('skips empty migration data and removes only empty legacy mock collections', async () => {
@@ -1472,7 +1713,7 @@ describe('collectionStore smart count refresh', () => {
 
         await freshStore.getState().initialize();
 
-        expect(appRepositoryMocks.mockLoad).not.toHaveBeenCalled();
+        expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
         expect(collectionRepoMocks.mockDeleteCollectionFromDb).toHaveBeenCalledWith('c1');
         expect(collectionRepoMocks.mockDeleteCollectionFromDb).not.toHaveBeenCalledWith('c2');
         expect(freshStore.getState().collections).toEqual([usedLegacy, normal]);
@@ -1571,6 +1812,47 @@ describe('collectionStore smart count refresh', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('retries required smart summaries when another run supersedes them', async () => {
+        const requiredAttempt = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        const competingRefresh = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        const requiredRetry = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        mockGetSmartCollectionSummaries
+            .mockImplementationOnce(() => requiredAttempt.promise)
+            .mockImplementationOnce(() => competingRefresh.promise)
+            .mockImplementationOnce(() => requiredRetry.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({
+                id: 'odin-smart',
+                filters: createDefaultFilters({ dateRange: 'today' }),
+            })],
+            isLoaded: true,
+        });
+
+        const requiredRun = useCollectionStore.getState().refreshSmartCounts({
+            includePromptSearch: true,
+            consistency: 'authoritative',
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(1));
+
+        const competingRun = useCollectionStore.getState().refreshSmartCounts({ includePromptSearch: true });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(2));
+        competingRefresh.resolve({
+            'odin-smart': { count: 2, thumbnailSourceKind: 'dynamic' },
+        });
+        await competingRun;
+
+        requiredAttempt.resolve({
+            'odin-smart': { count: 1, thumbnailSourceKind: 'dynamic' },
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledTimes(3));
+        requiredRetry.resolve({
+            'odin-smart': { count: 3, thumbnailSourceKind: 'dynamic' },
+        });
+
+        await expect(requiredRun).resolves.toBeUndefined();
+        expect(useCollectionStore.getState().collections[0]).toEqual(expect.objectContaining({ count: 3 }));
     });
 
     it('stops an older smart refresh before its next collection begins', async () => {

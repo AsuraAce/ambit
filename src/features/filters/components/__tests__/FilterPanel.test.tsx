@@ -119,7 +119,7 @@ const emptyFacets = (): Facets => ({
 
 const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): SearchContextValue => ({
     images: [],
-    imagesQueryKey: ['images', filters, 'date_desc', false, 'blur', [], null] as ImagesQueryKey,
+    imagesQueryKey: ['images', filters, 'date_desc', false, 'blur', [], null, 'invoke:none'] as ImagesQueryKey,
     setImages: vi.fn() as Dispatch<SetStateAction<SearchContextValue['images']>>,
     filters,
     setFilters: vi.fn() as Dispatch<SetStateAction<FilterState>>,

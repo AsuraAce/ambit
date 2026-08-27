@@ -36,8 +36,10 @@ const renderTab = (value: AIImage, editCallbacks: EditCallbacks = {}) => render(
     promptValue={value.metadata.positivePrompt}
     setPromptValue={vi.fn()}
     negativePromptValue={value.metadata.negativePrompt}
-    palette={[]}
-    isPaletteLoading={false}
+    setNegativePromptValue={vi.fn()}
+    availableTags={[]}
+    onUpdatePrompt={vi.fn()}
+    onUpdateNegativePrompt={vi.fn()}
     onSearch={vi.fn()}
     onClose={vi.fn()}
     onRecoverMetadata={vi.fn()}

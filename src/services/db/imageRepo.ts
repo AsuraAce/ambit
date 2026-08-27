@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { commands, type DeleteRemovedImagesResult, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
@@ -15,6 +15,7 @@ import {
 import { isBrowserMockMode } from '../runtime';
 import { deleteBrowserMockImages, getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { clearLibraryStatsCache } from './searchRepo';
+import { assertMutationMatched } from './mutationGuard';
 import {
     clearAllCollectionThumbnailCaches,
     clearCollectionThumbnailCacheForCollections,
@@ -329,6 +330,24 @@ export const moveImagePathIdentity = async (
     return result.moved === 1;
 };
 
+export const markImagePathIdentitiesMissing = async (ids: string[]): Promise<number> => {
+    if (ids.length === 0) return 0;
+
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (isBrowserMockMode()) {
+        let marked = 0;
+        normalizedIds.forEach(id => {
+            const existing = getBrowserMockImages().find(image => image.id === id);
+            if (!existing || existing.isMissing) return;
+            updateBrowserMockImage(id, { isMissing: true });
+            marked++;
+        });
+        return marked;
+    }
+
+    return unwrap(commands.markImagePathIdentitiesMissing(normalizedIds));
+};
+
 /**
  * Rebuilds the facet_cache table with pre-computed counts for all resources.
  * This runs the expensive queries once per import, so getFacets becomes instant.
@@ -422,7 +441,7 @@ export const syncCollectionImages = async (ids?: string[]) => {
         let query = `
             INSERT OR IGNORE INTO collection_images (collection_id, image_id)
             SELECT board_id, id 
-            FROM images 
+            FROM scoped_images AS images
             WHERE board_id IS NOT NULL
               AND invoke_scope_hidden = 0
         `;
@@ -454,7 +473,16 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
         if (image) {
-            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates } });
+            const fieldSources = image.mediaType === 'video'
+                ? Object.keys(updates).reduce((sources, key) => {
+                    if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                        sources[key as VideoMetadataField] = 'user_override';
+                        if (key === 'overrideModel') sources.model = 'user_override';
+                    }
+                    return sources;
+                }, { ...image.metadata.fieldSources })
+                : image.metadata.fieldSources;
+            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates, fieldSources } });
         }
         return;
     }
@@ -470,12 +498,20 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         Object.entries(updates).forEach(([key, value]) => {
             // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
             // Otherwise SQLite might store it as a literal string "[object Object]" or similar corruption.
+            const previousExpr = jsonSetExpr;
             if (value !== null && typeof value === 'object') {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', json(?))`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', json(?))`;
                 params.push(JSON.stringify(value));
             } else {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', ?)`;
                 params.push(value);
+            }
+            if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                let videoExpr = `json_set(${jsonSetExpr}, '$.fieldSources.${key}', 'user_override')`;
+                if (key === 'overrideModel') {
+                    videoExpr = `json_set(${videoExpr}, '$.fieldSources.model', 'user_override')`;
+                }
+                jsonSetExpr = `CASE WHEN media_type = 'video' THEN ${videoExpr} ELSE ${jsonSetExpr} END`;
             }
         });
 
@@ -502,6 +538,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.seed ?? null);
         }
 
+        if ('generationMode' in updates || 'generationType' in updates) {
+            query += ', generation_type = ?';
+            params.push(updates.generationMode ?? updates.generationType ?? null);
+        }
+
         // SPECIAL CASE: Model name is also denormalized for filtering
         if ('overrideModel' in updates) {
             query += ', resolved_model_name = ?';
@@ -511,10 +552,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.model);
         }
 
-        query += ' WHERE id = ?';
+        query += ' WHERE id = ? AND id IN (SELECT id FROM scoped_images)';
         params.push(normalizedId);
 
-        await db.execute(query, params);
+        const result = await db.execute(query, params);
+        assertMutationMatched(result, normalizedId, 'Updating metadata');
     });
 };
 
@@ -532,13 +574,15 @@ export const revertImageMetadata = async (id: string) => {
         const normalizedId = normalizePath(id);
 
         // 1. Fetch the original parsed metadata (already parsed, no re-parsing needed!)
-        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
-        if (rows.length === 0) return;
+        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM scoped_images WHERE id = ?', [normalizedId]);
+        if (rows.length === 0) {
+            throw new Error(`Reverting metadata failed because the asset was not found: ${normalizedId}`);
+        }
         const img = rows[0];
 
         if (!img.original_parsed_json) {
             // If no original parsed metadata, just clear overrides
-            await db.execute(`
+            const result = await db.execute(`
                 UPDATE images 
                 SET metadata_json = NULL,
                     tool = NULL,
@@ -546,26 +590,37 @@ export const revertImageMetadata = async (id: string) => {
                     model_name = NULL,
                     resolved_model_name = NULL,
                     seed = NULL,
+                    generation_type = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
-                WHERE id = ?
+                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
             `, [normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Reverting metadata');
             return;
         }
 
+        let originalMetadata: Partial<ImageMetadata> & {
+            positive_prompt?: string;
+            negative_prompt?: string;
+        };
         try {
-            // Parse the already-stored baseline (no re-parsing from raw chunks!)
-            const originalMetadata = JSON.parse(img.original_parsed_json) as Partial<ImageMetadata> & {
-                positive_prompt?: string;
-                negative_prompt?: string;
-            };
+            originalMetadata = JSON.parse(img.original_parsed_json) as typeof originalMetadata;
+        } catch (error) {
+            console.error('[DB] Failed to parse original metadata:', error);
+            const result = await db.execute(
+                'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+                [normalizedId]
+            );
+            assertMutationMatched(result, normalizedId, 'Reverting metadata');
+            return;
+        }
 
-            // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
-            originalMetadata.isIntermediate = false;
+        // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
+        originalMetadata.isIntermediate = false;
 
-            // 2. Update metadata_json and denormalized columns with the baseline
-            // CRITICAL: Set metadata_json = original_parsed_json to ensure they match exactly
-            await db.execute(`
+        // 2. Update metadata_json and denormalized columns with the baseline
+        // CRITICAL: Set metadata_json = original_parsed_json to ensure they match exactly
+        const result = await db.execute(`
                 UPDATE images 
                 SET metadata_json = ?,
                     model_hash = ?,
@@ -574,8 +629,9 @@ export const revertImageMetadata = async (id: string) => {
                     resolved_model_name = ?,
                     seed = ?,
                     positive_prompt = ?,
-                    negative_prompt = ?
-                WHERE id = ?
+                    negative_prompt = ?,
+                    generation_type = ?
+                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
             `, [
                 img.original_parsed_json, // Use the exact same JSON string!
                 originalMetadata.modelHash || null,
@@ -585,13 +641,10 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.seed ?? null,
                 originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
                 originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
+                originalMetadata.generationMode ?? originalMetadata.generationType ?? null,
                 normalizedId
             ]);
-        } catch (e) {
-            console.error('[DB] Failed to revert metadata:', e);
-            // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
-        }
+        assertMutationMatched(result, normalizedId, 'Reverting metadata');
     });
 };
 
@@ -607,7 +660,11 @@ export const updateImageNotesCol = async (id: string, notes: string | null) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
-        await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        const result = await db.execute(
+            'UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+            [notes, normalizedId]
+        );
+        assertMutationMatched(result, normalizedId, 'Updating notes');
     });
 };
 
@@ -657,8 +714,8 @@ export const getAllImages = async (
     }
 
     const query = limit
-        ? `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy}`;
+        ? `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<ImageRow[]>(query);
     return rows.map(mapRowToImage);
@@ -682,8 +739,9 @@ export const getImagesByIds = async (
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
+        const source = options.includeOwnerHidden ? 'images' : 'scoped_images';
         const ownerScope = options.includeOwnerHidden ? '' : ' AND invoke_scope_hidden = 0';
-        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})${ownerScope}`;
+        const query = `SELECT ${getImageFieldsFull()} FROM ${source} AS images WHERE images.id IN (${placeholders})${ownerScope}`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -704,7 +762,7 @@ export const getFlatInvokeImageIdsForRoot = async (invokeRoot: string): Promise<
     const db = await getDb();
     const rows = await db.select<Array<{ id: string }>>(
         `SELECT id
-         FROM images
+         FROM scoped_images AS images
          WHERE id LIKE ?
            AND instr(substr(id, ?), '/') = 0`,
         [`${imagesPrefix}%`, imagesPrefix.length + 1]
@@ -723,7 +781,7 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM scoped_removed_images AS removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -738,7 +796,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM scoped_images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -776,7 +834,11 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [isPinned ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
@@ -789,7 +851,11 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [isFavorite ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -804,7 +870,11 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     if (userMasked === true) value = 1;
     if (userMasked === false) value = 0;
 
-    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [value, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating content mask');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -823,28 +893,24 @@ export const toggleImageIntermediate = async (id: string, isIntermediate: boolea
     const db = await getDb();
     const normalizedId = normalizePath(id);
 
-    await db.execute(
-        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2",
+    const result = await db.execute(
+        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
         [isIntermediate ? 1 : 0, normalizedId]
     );
+    assertMutationMatched(result, normalizedId, 'Updating intermediate status');
 };
 
-export const deleteImage = async (id: string) => {
-    if (isBrowserMockMode()) {
-        updateBrowserMockImage(id, { isDeleted: true });
-        return;
-    }
-
+export const updateVideoPlaybackStatus = async (
+    id: string,
+    status: 'unknown' | 'playable' | 'external_required'
+) => {
+    if (isBrowserMockMode()) return;
     const db = await getDb();
-    const normalizedId = normalizePath(id);
-    await clearCollectionThumbnailCacheForImages([normalizedId]);
-    await db.execute('DELETE FROM collection_images WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_loras WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_embeddings WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_hypernetworks WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_controlnets WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_ipadapters WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
+    const result = await db.execute(
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+        [status, normalizePath(id)]
+    );
+    assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
 };
 
 const emptyRemovedLifecycleResult = (): RemovedLifecycleMutationResult => ({
@@ -930,20 +996,6 @@ export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<Delete
     return unwrap(commands.deleteRemovedImagesFromDisk(normalizedIds));
 };
 
-export const markAsDeleted = async (ids: string[], deleted: boolean) => {
-    if (ids.length === 0) return;
-    if (isBrowserMockMode()) {
-        ids.forEach(id => updateBrowserMockImage(id, { isDeleted: deleted }));
-        return;
-    }
-
-    const normalizedIds = ids.map(normalizePath);
-    const db = await getDb();
-    const placeholders = normalizedIds.map(() => '?').join(',');
-    await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [deleted ? 1 : 0, ...normalizedIds]);
-    await clearCollectionThumbnailCacheForImages(normalizedIds);
-};
-
 export const updateImageWorkflow = async (id: string, workflowJson: string): Promise<void> => {
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
@@ -957,18 +1009,26 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
-    if (rows.length === 0) return;
-
-    try {
-        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
-        metadata.workflowJson = workflowJson;
-        metadata.hasWorkflowHint = true; // Mark as having workflow
-
-        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
-    } catch (e) {
-        console.error('[DB] Failed to update workflow for image', normalizedId, e);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
+    if (rows.length === 0) {
+        throw new Error(`Updating workflow failed because the asset was not found: ${normalizedId}`);
     }
+
+    let metadata: Partial<ImageMetadata>;
+    try {
+        metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
+    } catch (error) {
+        console.error('[DB] Failed to parse workflow metadata for image', normalizedId, error);
+        return;
+    }
+    metadata.workflowJson = workflowJson;
+    metadata.hasWorkflowHint = true;
+
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [JSON.stringify(metadata), normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating workflow');
 };
 
 export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean): Promise<void> => {
@@ -984,17 +1044,25 @@ export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean):
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
-    if (rows.length === 0) return;
-
-    try {
-        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
-        metadata.hasWorkflowHint = hasWorkflow;
-
-        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
-    } catch (e) {
-        console.error('[DB] Failed to update workflow hint for image', normalizedId, e);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
+    if (rows.length === 0) {
+        throw new Error(`Updating workflow hint failed because the asset was not found: ${normalizedId}`);
     }
+
+    let metadata: Partial<ImageMetadata>;
+    try {
+        metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
+    } catch (error) {
+        console.error('[DB] Failed to parse workflow hint metadata for image', normalizedId, error);
+        return;
+    }
+    metadata.hasWorkflowHint = hasWorkflow;
+
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [JSON.stringify(metadata), normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating workflow hint');
 };
 
 export const updateFavorite = async (id: string, isFavorite: boolean) => {
@@ -1005,7 +1073,11 @@ export const updateFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [isFavorite ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const updatePinned = async (id: string, isPinned: boolean) => {
@@ -1016,33 +1088,12 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [isPinned ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
-};
-export const updateImagesBoard = async (ids: string[], boardId: string | null) => {
-    if (ids.length === 0) return;
-    if (isBrowserMockMode()) {
-        ids.forEach(id => updateBrowserMockImage(id, { boardId: boardId ?? undefined }));
-        return;
-    }
-
-    const db = await getDb();
-    const normalizedIds = ids.map(normalizePath);
-    const placeholders = normalizedIds.map(() => '?').join(',');
-
-    await db.execute(`UPDATE images SET board_id = ? WHERE id IN (${placeholders})`, [boardId, ...normalizedIds]);
-
-    // Junction Table Sync
-    if (boardId) {
-        for (const id of normalizedIds) {
-            await db.execute('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)', [boardId, id]);
-        }
-    } else {
-        // If boardId is null, we don't necessarily know which collection to remove it from in the M:N world,
-        // but since board_id was 1:N, we should probably remove it from any 'invoke' source collections?
-        // Actually, a simpler approach is to use the dedicated collection removal tools for manual changes.
-    }
-    await clearCollectionThumbnailCacheForImages(normalizedIds);
 };
 
 export const checkHiddenContentAvailability = async (): Promise<{
@@ -1062,9 +1113,9 @@ export const checkHiddenContentAvailability = async (): Promise<{
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
     const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
@@ -1087,7 +1138,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id IN (SELECT id FROM scoped_images) AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {
@@ -1122,10 +1173,11 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const db = await getDb();
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
-    await db.execute(
-        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?',
+    const result = await db.execute(
+        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
         [normalizedThumb, 'ambit', normalizedId]
     );
+    assertMutationMatched(result, normalizedId, 'Thumbnail update');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -1171,7 +1223,7 @@ export const updateThumbnailPathsBatch = async (updates: {
                          thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
                          thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
                          thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
-                     WHERE id = ?`,
+                     WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
                     [
                         normalizedThumb,
                         microThumbnail || null,

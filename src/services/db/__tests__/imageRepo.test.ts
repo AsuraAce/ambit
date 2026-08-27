@@ -17,6 +17,7 @@ vi.mock('../../../bindings', () => ({
     commands: {
         saveImagesBatch: vi.fn(),
         moveImagePathIdentities: vi.fn(),
+        markImagePathIdentitiesMissing: vi.fn(),
         moveToTrash: vi.fn(),
         deleteRemovedImagesFromDisk: vi.fn(),
         removeImagesFromLibrary: vi.fn(),
@@ -241,13 +242,10 @@ describe('imageRepo batch removal', () => {
             toggleImageFavorite,
             toggleImageMask,
             toggleImageIntermediate,
-            deleteImage,
-            markAsDeleted,
             updateImageWorkflow,
             updateImageWorkflowHint,
             updateFavorite,
             updatePinned,
-            updateImagesBoard,
             checkHiddenContentAvailability,
             clearAllThumbnailPaths,
             updateThumbnailPath,
@@ -283,16 +281,12 @@ describe('imageRepo batch removal', () => {
         await expect(toggleImageMask('regular', null)).resolves.toBeUndefined();
         await expect(toggleImageIntermediate('regular', true)).resolves.toBeUndefined();
         await expect(toggleImageIntermediate('missing-source', true)).resolves.toBeUndefined();
-        await expect(deleteImage('regular')).resolves.toBeUndefined();
-        await expect(markAsDeleted(['regular', 'pinned'], true)).resolves.toBeUndefined();
         await expect(updateImageWorkflow('regular', '{"nodes":[]}')).resolves.toBeUndefined();
         await expect(updateImageWorkflow('missing-source', '{"nodes":[]}')).resolves.toBeUndefined();
         await expect(updateImageWorkflowHint('regular', true)).resolves.toBeUndefined();
         await expect(updateImageWorkflowHint('missing-source', true)).resolves.toBeUndefined();
         await expect(updateFavorite('regular', true)).resolves.toBeUndefined();
         await expect(updatePinned('regular', true)).resolves.toBeUndefined();
-        await expect(updateImagesBoard(['regular'], 'board-a')).resolves.toBeUndefined();
-        await expect(updateImagesBoard(['regular'], null)).resolves.toBeUndefined();
         await expect(checkHiddenContentAvailability()).resolves.toEqual({
             hasIntermediates: true,
             hasGrids: true,
@@ -386,7 +380,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('select 1 from images where ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1 from images where ifnull(is_grid_gen')) return [];
                 if (normalizedSql.includes('select 1 from images where is_invoke_asset_gen')) return [{ 1: 1 }];
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
                 return [];
@@ -466,6 +460,25 @@ describe('imageRepo batch removal', () => {
         );
     });
 
+    it('keeps the lightweight video generation mode synchronized with overrides', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { updateImageMetadataFields } = await import('../imageRepo');
+        await updateImageMetadataFields('C:/videos/clip.webm', {
+            generationMode: 'guided_video',
+            generationType: 'guided_video',
+        });
+
+        expect(db.execute).toHaveBeenCalledWith(
+            expect.stringContaining(', generation_type = ?'),
+            ['guided_video', 'guided_video', 'guided_video', 'C:/videos/clip.webm']
+        );
+    });
+
     it('restores a genuine zero seed into both JSON and the scalar column', async () => {
         const originalMetadata = {
             ...liveImportMetadata,
@@ -485,6 +498,27 @@ describe('imageRepo batch removal', () => {
         const [, params] = db.execute.mock.calls[0] as [string, unknown[]];
         expect(db.execute.mock.calls[0][0]).toContain('seed = ?');
         expect(params).toContain(0);
+    });
+
+    it('restores the scalar video generation mode from the parsed baseline', async () => {
+        const db = {
+            select: vi.fn(async () => [{
+                original_parsed_json: JSON.stringify({
+                    ...liveImportMetadata,
+                    generationType: 'text_to_video',
+                    generationMode: 'text_to_video',
+                }),
+            }]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { revertImageMetadata } = await import('../imageRepo');
+        await revertImageMetadata('C:/videos/clip.webm');
+
+        const [sql, params] = db.execute.mock.calls[0] as [string, unknown[]];
+        expect(sql).toContain('generation_type = ?');
+        expect(params.at(-2)).toBe('text_to_video');
     });
 
     it('limits user_masked cleanup to imported record ids when default-visible overrides are present', async () => {
@@ -596,6 +630,7 @@ describe('imageRepo batch removal', () => {
         const selectCalls = db.select.mock.calls as unknown as [string, unknown[]?][];
         const sql = selectCalls[0]?.[0];
         expect(sql).toBeDefined();
+        expect(sql).toContain('FROM scoped_images AS images');
         expect(sql).toContain('images.metadata_json');
         expect(sql).toContain('images.original_metadata_json');
         expect(sql).toContain('images.original_parsed_json');
@@ -606,6 +641,10 @@ describe('imageRepo batch removal', () => {
         expect(images[0].originalMetadata?.positivePrompt).toBe('original prompt');
         expect(images[0].originalChunks?.invokeai_metadata).toBe(JSON.stringify({ positive_prompt: 'raw prompt' }));
         expect(images[0].originalState).toEqual(originalState);
+
+        await getImagesByIds([id], { includeOwnerHidden: true });
+        expect((db.select.mock.calls as unknown as [string, unknown[]?][])[1]?.[0])
+            .toContain('FROM images AS images');
     });
 
     it('finds only flat InvokeAI image rows for stale path repair', async () => {
@@ -674,7 +713,7 @@ describe('imageRepo batch removal', () => {
         const db = {
             select: vi.fn(async (sql: string, params: string[] = []) => {
                 enforceParamLimit(params);
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return params.map(id => imageRowsById.get(id)).filter(Boolean);
                 }
                 if (sql.includes('FROM collection_images')) {
@@ -721,7 +760,7 @@ describe('imageRepo batch removal', () => {
         const hiddenId = 'C:/images/hidden.png';
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{
                         id: visibleId,
                         path: visibleId,
@@ -899,6 +938,7 @@ describe('imageRepo batch removal', () => {
 
         const [sql, params] = db.execute.mock.calls[0] as [string, unknown[]];
         expect(sql).toContain("json_set(metadata_json, '$.loras', json(?))");
+        expect(sql).toContain("'$.fieldSources.tool', 'user_override'");
         expect(sql).toContain(', tool = ?');
         expect(sql).toContain(', positive_prompt = ?');
         expect(sql).toContain(', negative_prompt = ?');
@@ -957,7 +997,7 @@ describe('imageRepo batch removal', () => {
         });
     });
 
-    it('skips workflow edits when the image is missing or metadata JSON is malformed', async () => {
+    it('rejects hidden workflow targets and skips malformed metadata JSON', async () => {
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const db = {
             select: vi.fn()
@@ -970,19 +1010,19 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
 
         const { updateImageWorkflow, updateImageWorkflowHint } = await import('../imageRepo');
-        await updateImageWorkflow('C:/images/missing-workflow.png', '{"nodes":[]}');
+        await expect(updateImageWorkflow('C:/images/missing-workflow.png', '{"nodes":[]}')).rejects.toThrow('asset was not found');
         await updateImageWorkflow('C:/images/bad-workflow.png', '{"nodes":[]}');
-        await updateImageWorkflowHint('C:/images/missing-hint.png', true);
+        await expect(updateImageWorkflowHint('C:/images/missing-hint.png', true)).rejects.toThrow('asset was not found');
         await updateImageWorkflowHint('C:/images/bad-hint.png', false);
 
         expect(db.execute).not.toHaveBeenCalled();
         expect(console.error).toHaveBeenCalledWith(
-            '[DB] Failed to update workflow for image',
+            '[DB] Failed to parse workflow metadata for image',
             'C:/images/bad-workflow.png',
             expect.any(SyntaxError)
         );
         expect(console.error).toHaveBeenCalledWith(
-            '[DB] Failed to update workflow hint for image',
+            '[DB] Failed to parse workflow hint metadata for image',
             'C:/images/bad-hint.png',
             expect.any(SyntaxError)
         );
@@ -1127,7 +1167,7 @@ describe('imageRepo batch removal', () => {
                 if (normalizedSql.includes('count(*) as count')) return [{ count: 0 }];
                 if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_intermediate_gen')) return [{ 1: 1 }];
                 if (normalizedSql.includes('select 1') && normalizedSql.includes('ifnull(is_grid_gen')) return [];
-                if (sql.includes('FROM images')) {
+                if (sql.includes('FROM scoped_images')) {
                     return [{ id: 'C:/images/a.png', metadata_json: JSON.stringify(liveImportMetadata), timestamp: 1 }];
                 }
                 return [];
@@ -1144,11 +1184,8 @@ describe('imageRepo batch removal', () => {
             toggleImageFavorite,
             toggleImageMask,
             toggleImageIntermediate,
-            deleteImage,
-            markAsDeleted,
             updateFavorite,
             updatePinned,
-            updateImagesBoard,
             checkHiddenContentAvailability,
             updateThumbnailPath,
         } = await import('../imageRepo');
@@ -1160,12 +1197,8 @@ describe('imageRepo batch removal', () => {
         await toggleImageFavorite('C:/images/fav.png', false);
         await toggleImageMask('C:/images/mask.png', null);
         await toggleImageIntermediate('C:/images/intermediate.png', true);
-        await deleteImage('C:/images/delete.png');
-        await markAsDeleted(['C:/images/deleted.png'], true);
         await updateFavorite('C:/images/update-fav.png', true);
         await updatePinned('C:/images/update-pin.png', false);
-        await updateImagesBoard(['C:/images/board.png'], 'board-a');
-        await updateImagesBoard([], 'board-a');
         await expect(checkHiddenContentAvailability()).resolves.toEqual({
             hasIntermediates: true,
             hasGrids: false,
@@ -1174,20 +1207,95 @@ describe('imageRepo batch removal', () => {
         await updateThumbnailPath('C:/images/thumb.png', 'C:/thumbs/thumb.webp');
 
         const sqlCalls = db.execute.mock.calls.map(([sql]) => String(sql));
-        expect(sqlCalls).toContain('UPDATE images SET notes = ? WHERE id = ?');
-        expect(sqlCalls).toContain('UPDATE images SET is_pinned = $1 WHERE id = $2');
-        expect(sqlCalls).toContain('UPDATE images SET is_favorite = $1 WHERE id = $2');
-        expect(sqlCalls).toContain('UPDATE images SET user_masked = $1 WHERE id = $2');
-        expect(sqlCalls).toContain("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2");
-        expect(sqlCalls).toContain('DELETE FROM images WHERE id = $1');
-        expect(sqlCalls).toContain('UPDATE images SET is_deleted = ? WHERE id IN (?)');
-        expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ?');
-        expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ?');
-        expect(sqlCalls).toContain('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)');
-        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?');
+        expect(sqlCalls).toContain('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)");
+        expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls.some(sql => sql.includes('DELETE FROM images'))).toBe(false);
+        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
     });
 
-    it('returns without touching metadata when revert has no source row', async () => {
+    it('rejects a thumbnail write when the image became hidden after it was queued', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { updateThumbnailPath } = await import('../imageRepo');
+        await expect(updateThumbnailPath('hidden-owner-image', 'thumb.webp'))
+            .rejects.toThrow('Thumbnail update failed because the asset was not found');
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+    });
+
+    it('preserves verbatim video identities for user-facing mutations', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 1 }),
+        };
+        getDbMock.mockResolvedValue(db);
+        const verbatimId = '\\\\?\\C:\\videos\\clip.mp4';
+        const canonicalId = '//?/C:/videos/clip.mp4';
+        const {
+            updateImageNotesCol,
+            toggleImagePin,
+            toggleImageFavorite,
+            toggleImageMask,
+            updateVideoPlaybackStatus,
+        } = await import('../imageRepo');
+
+        await updateImageNotesCol(verbatimId, 'motion reference');
+        await toggleImagePin(verbatimId, true);
+        await toggleImageFavorite(verbatimId, true);
+        await toggleImageMask(verbatimId, false);
+        await updateVideoPlaybackStatus(verbatimId, 'playable');
+
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', ['motion reference', canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, canonicalId]);
+        expect(db.execute).toHaveBeenCalledWith(
+            "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+            ['playable', canonicalId]
+        );
+    });
+
+    it('rejects user-facing mutations when the asset identity matches no row', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        getDbMock.mockResolvedValue(db);
+        const {
+            updateImageMetadataFields,
+            updateImageNotesCol,
+            toggleImagePin,
+            toggleImageFavorite,
+            toggleImageMask,
+            toggleImageIntermediate,
+            updateVideoPlaybackStatus,
+            updateFavorite,
+            updatePinned,
+        } = await import('../imageRepo');
+
+        await expect(updateImageMetadataFields('C:/hidden.mp4', { model: 'hidden' })).rejects.toThrow('asset was not found');
+        await expect(updateImageNotesCol('C:/hidden.mp4', 'note')).rejects.toThrow('asset was not found');
+        await expect(toggleImagePin('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(toggleImageFavorite('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(toggleImageMask('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(toggleImageIntermediate('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(updateVideoPlaybackStatus('C:/hidden.mp4', 'playable')).rejects.toThrow('asset was not found');
+        await expect(updateFavorite('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        await expect(updatePinned('C:/hidden.mp4', true)).rejects.toThrow('asset was not found');
+        const mutationSql = db.execute.mock.calls.map(([sql]) => String(sql));
+        expect(mutationSql).toHaveLength(9);
+        mutationSql.forEach(sql => expect(sql).toContain('scoped_images'));
+    });
+
+    it('rejects metadata revert when the scoped source row is unavailable', async () => {
         const db = {
             select: vi.fn(async () => []),
             execute: vi.fn(),
@@ -1195,7 +1303,7 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
 
         const { revertImageMetadata } = await import('../imageRepo');
-        await revertImageMetadata('C:/images/missing-original.png');
+        await expect(revertImageMetadata('C:/images/missing-original.png')).rejects.toThrow('asset was not found');
 
         expect(db.execute).not.toHaveBeenCalled();
     });
@@ -1437,7 +1545,7 @@ describe('imageRepo batch removal', () => {
         await expect(clearAllThumbnailPaths()).resolves.toBe(4);
 
         expect(db.execute).toHaveBeenCalledWith(
-            expect.stringContaining('WHERE invoke_scope_hidden = 0')
+            expect.stringContaining('id IN (SELECT id FROM scoped_images)')
         );
     });
 
@@ -1461,29 +1569,34 @@ describe('imageRepo batch removal', () => {
         );
     });
 
-    it('handles empty batches and delegates normalized path identity moves', async () => {
+    it('handles empty batches and delegates normalized path identity writes', async () => {
         const { commands } = await import('../../../bindings');
         vi.mocked(commands.moveImagePathIdentities).mockResolvedValue({
             status: 'ok',
             data: { moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 }
         });
+        vi.mocked(commands.markImagePathIdentitiesMissing).mockResolvedValue({
+            status: 'ok',
+            data: 1
+        });
         const {
             insertImagesBatch,
+            markImagePathIdentitiesMissing,
             moveImagePathIdentities,
             moveImagePathIdentity,
             getRemovedImagesByIds,
             removeImagesFromLibrary,
-            restoreRemovedImages,
-            markAsDeleted
+            restoreRemovedImages
         } = await import('../imageRepo');
 
         await insertImagesBatch([]);
+        await expect(markImagePathIdentitiesMissing([])).resolves.toBe(0);
+        await expect(markImagePathIdentitiesMissing(['C:\\gone.webm'])).resolves.toBe(1);
         await expect(moveImagePathIdentities([])).resolves.toEqual({ moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 });
         await expect(moveImagePathIdentity('C:\\old.png', 'C:\\new.png', 'C:\\thumb.webp', 'source')).resolves.toBe(true);
         await expect(getRemovedImagesByIds([])).resolves.toEqual([]);
         await removeImagesFromLibrary([]);
         await restoreRemovedImages([]);
-        await markAsDeleted([], true);
 
         expect(commands.moveImagePathIdentities).toHaveBeenCalledWith([{
             oldId: 'C:/old.png',
@@ -1491,6 +1604,7 @@ describe('imageRepo batch removal', () => {
             thumbnailPath: 'C:/thumb.webp',
             thumbnailSource: 'source'
         }]);
+        expect(commands.markImagePathIdentitiesMissing).toHaveBeenCalledWith(['C:/gone.webm']);
         expect(getDbMock).not.toHaveBeenCalled();
     });
 
@@ -1538,7 +1652,7 @@ describe('imageRepo batch removal', () => {
 
         expect(db.execute).toHaveBeenCalledWith(expect.stringContaining('resolved_model_name = ?'), ['override', 'override', 'C:/images/a.png']);
         expect(db.execute).toHaveBeenCalledWith(
-            'UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?',
+            'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
             ['C:/images/a.png']
         );
         expect(db.select.mock.calls[1][0]).toContain('IFNULL(is_intermediate_gen, 0) = 0');
@@ -1552,8 +1666,8 @@ describe('imageRepo batch removal', () => {
         const { toggleImageMask } = await import('../imageRepo');
         await toggleImageMask('C:/true.png', true);
         await toggleImageMask('C:/false.png', false);
-        expect(db.execute).toHaveBeenNthCalledWith(1, 'UPDATE images SET user_masked = $1 WHERE id = $2', [1, 'C:/true.png']);
-        expect(db.execute).toHaveBeenNthCalledWith(2, 'UPDATE images SET user_masked = $1 WHERE id = $2', [0, 'C:/false.png']);
+        expect(db.execute).toHaveBeenNthCalledWith(1, 'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, 'C:/true.png']);
+        expect(db.execute).toHaveBeenNthCalledWith(2, 'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, 'C:/false.png']);
     });
 
     it('returns cleanly when removal or restoration rows are absent and skips empty membership payloads', async () => {
@@ -1568,7 +1682,7 @@ describe('imageRepo batch removal', () => {
         const restoreRows = [[], [removedRow], [{ ...removedRow, collection_ids_json: '{bad' }]];
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (!sql.includes('FROM removed_images')) return [];
+                if (!sql.includes('FROM scoped_removed_images')) return [];
                 return restoreRows.shift() ?? [];
             }),
             execute: vi.fn()
@@ -1579,8 +1693,12 @@ describe('imageRepo batch removal', () => {
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const { removeImagesFromLibrary, restoreRemovedImages } = await import('../imageRepo');
 
-        await removeImagesFromLibrary(['C:/missing.png']);
-        await restoreRemovedImages(['C:/missing.png']);
+        await expect(removeImagesFromLibrary(['C:/missing.png'])).resolves.toEqual(expect.objectContaining({
+            affectedIds: ['C:/missing.png'],
+        }));
+        await expect(restoreRemovedImages(['C:/missing.png'])).resolves.toEqual(expect.objectContaining({
+            affectedIds: ['C:/missing.png'],
+        }));
         await restoreRemovedImages(['C:/removed/a.png']);
         await restoreRemovedImages(['C:/removed/bad.png']);
         const { commands: lifecycleCommands } = await import('../../../bindings');
@@ -1633,27 +1751,24 @@ describe('imageRepo batch removal', () => {
         getDbMock.mockResolvedValue(db);
         const {
             getAllImages, toggleImagePin, toggleImageFavorite, toggleImageIntermediate,
-            markAsDeleted, updateFavorite, updatePinned, updateImageWorkflow,
-            updateImageWorkflowHint, updateImagesBoard
+            updateFavorite, updatePinned, updateImageWorkflow,
+            updateImageWorkflowHint
         } = await import('../imageRepo');
 
         await expect(getAllImages()).resolves.toHaveLength(1);
         await toggleImagePin('C:/a.png', false);
         await toggleImageFavorite('C:/a.png', true);
         await toggleImageIntermediate('C:/a.png', false);
-        await markAsDeleted(['C:/a.png'], false);
         await updateFavorite('C:/a.png', false);
         await updatePinned('C:/a.png', true);
         await updateImageWorkflow('C:/a.png', '{}');
         await updateImageWorkflowHint('C:/a.png', false);
-        await updateImagesBoard(['C:/a.png'], null);
 
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2', [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2', [1, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2", [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_deleted = ? WHERE id IN (?)', [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = ? WHERE id = ?', [0, 'C:/a.png']);
-        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ?', [1, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [0, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)', [1, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith("UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)", [0, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [0, 'C:/a.png']);
+        expect(db.execute).toHaveBeenCalledWith('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)', [1, 'C:/a.png']);
     });
 
     it('passes null-heavy removal records to native lifecycle handling and deletes pathless tombstones', async () => {
@@ -1667,9 +1782,9 @@ describe('imageRepo batch removal', () => {
         };
         const db = {
             select: vi.fn(async (sql: string) => {
-                if (sql.includes('FROM images')) return [tombstone];
+                if (sql.includes('FROM scoped_images')) return [tombstone];
                 if (sql.includes('FROM collection_images')) return [];
-                if (sql.includes('FROM removed_images')) return [{ id: tombstone.id, path: '', thumbnail_path: null }];
+                if (sql.includes('FROM scoped_removed_images')) return [{ id: tombstone.id, path: '', thumbnail_path: null }];
                 return [];
             }),
             execute: vi.fn()
@@ -1760,8 +1875,8 @@ describe('imageRepo batch removal', () => {
                     { image_id: row.id, collection_id: 'one' },
                     { image_id: row.id, collection_id: 'two' }
                 ];
-                if (sql.includes('FROM removed_images')) return [{ id: row.id, path: row.path, thumbnail_path: null }];
-                if (sql.includes('FROM images') && !removalDone) {
+                if (sql.includes('FROM scoped_removed_images')) return [{ id: row.id, path: row.path, thumbnail_path: null }];
+                if (sql.includes('FROM scoped_images') && !removalDone) {
                     removalDone = true;
                     return [row];
                 }

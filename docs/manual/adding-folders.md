@@ -2,24 +2,27 @@
 
 [Back to manual index](index.md)
 
-Ambit builds its library by scanning local image folders and selected files. It catalogs supported image files, parses generation metadata when available, and keeps the original files on disk.
+Ambit builds its library by scanning local image folders and selected files. It catalogs supported image files, accepts supported videos through manual selection, and keeps the original files on disk.
 
 ## Import Choices
 
-When Ambit asks you to add images, you can choose between integration setup and one-time import.
+When Ambit asks you to add media, you can choose between integration setup and one-time import.
 
 ```mermaid
 flowchart TD
-    A["Add Images"] --> B["Set Up Integration"]
+    A["Add Media"] --> B["Set Up Integration"]
     A --> C["One-Time Import"]
     B --> D["InvokeAI"]
     B --> E["ComfyUI"]
     B --> F["SD WebUI / A1111 / Forge"]
-    C --> G["Select Files"]
+    C --> G["Select Images"]
+    C --> I["Select Videos"]
     C --> H["Add Folder"]
 ```
 
 Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for downloaded packs, screenshots, archives, or individual files.
+
+Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder monitoring and Live Watch remain image-only in this phase.
 
 ## Monitored Image Folders
 

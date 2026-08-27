@@ -40,6 +40,17 @@ describe('useGlobalShortcuts', () => {
         vi.clearAllMocks();
     });
 
+    it('blocks every window shortcut while the retained owner view is inert', () => {
+        renderHook(() => useGlobalShortcuts({ ...defaultProps, disabled: true }));
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete' }));
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }));
+
+        Object.values(mockActions).forEach(action => expect(action).not.toHaveBeenCalled());
+    });
+
     it('should trigger toggleShortcuts on "?" key', () => {
         renderHook(() => useGlobalShortcuts(defaultProps));
 

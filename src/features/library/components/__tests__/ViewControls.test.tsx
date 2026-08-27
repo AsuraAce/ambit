@@ -63,6 +63,19 @@ describe('ViewControls', () => {
         expect(props.setThumbnailSize).toHaveBeenCalledWith(325);
     });
 
+    it('filters the gallery by all items, images, or videos', () => {
+        const { rerender, props } = setup();
+        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Videos' }));
+        expect(mocks.filters.mediaType).toBe('video');
+        rerender(<ViewControls {...props} />);
+        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Images' }));
+        expect(mocks.filters.mediaType).toBe('image');
+    });
+
     it('selects every sort option, closes after selection, and dismisses outside clicks', () => {
         setup();
         const options: Array<[SortOption, string]> = [
@@ -212,6 +225,29 @@ describe('ViewControls', () => {
         expect(screen.getByText('84')).toBeTruthy();
         expect(screen.getByText('Library')).toBeTruthy();
         expect(screen.queryByText('...')).toBeNull();
+    });
+
+    it('does not retain an All Users count while a different owner is loading', () => {
+        vi.useFakeTimers();
+        const { rerender, props } = setup({
+            displayedCount: 150_000,
+            totalCount: 150_000,
+            scopeName: 'Library',
+            ownerPresentationKey: 'all',
+            isFiltering: false,
+        });
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={0}
+            totalCount={0}
+            scopeName="Library"
+            ownerPresentationKey="owner:jupiter"
+            isFiltering
+        />);
+
+        expect(screen.queryByText('150,000')).toBeNull();
+        expect(screen.queryByText('0')).toBeNull();
     });
 
     it('shows a stable loading state only for a sustained board query', () => {

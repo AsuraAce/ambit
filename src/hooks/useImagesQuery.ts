@@ -6,6 +6,8 @@ import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { searchBrowserMockImages } from '../services/browserMockData';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
+import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { getInvokeOwnerQueryScopeKey, previousQueryMatchesInvokeScope } from '../utils/invokeOwnerQueryScope';
 
 interface UseImagesQueryProps {
     filters: FilterState;
@@ -23,14 +25,15 @@ export type ImagesQueryKey = readonly [
     boolean,
     AppSettings['maskingMode'],
     AppSettings['maskedKeywords'],
-    string | null
+    string | null,
+    string
 ];
 
 const hasMatchingPrivacyScope = (
     previousKey: readonly unknown[] | undefined,
     currentKey: ImagesQueryKey
 ): boolean => {
-    if (!previousKey || previousKey.length < 6) return false;
+    if (!previousKey || previousKey.length < 8) return false;
 
     const previousKeywords = previousKey[5];
     if (!Array.isArray(previousKeywords)) return false;
@@ -38,7 +41,8 @@ const hasMatchingPrivacyScope = (
     return previousKey[3] === currentKey[3]
         && previousKey[4] === currentKey[4]
         && previousKeywords.length === currentKey[5].length
-        && previousKeywords.every((keyword, index) => keyword === currentKey[5][index]);
+        && previousKeywords.every((keyword, index) => keyword === currentKey[5][index])
+        && previousQueryMatchesInvokeScope(previousKey, currentKey[7]);
 };
 
 export const useImagesQuery = ({
@@ -53,6 +57,9 @@ export const useImagesQuery = ({
     const PAGE_SIZE = 1000;
     const useBrowserMocks = isBrowserMockMode();
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(state => (
+        getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
+    ));
 
     // Stable reference: only track the active collection's smart filter definition
     const activeCollectionId = filters.collectionId;
@@ -75,8 +82,9 @@ export const useImagesQuery = ({
         privacyEnabled,
         settings.maskingMode,
         effectiveMaskedKeywords,
-        smartFilterHash
-    ], [effectiveMaskedKeywords, filters, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]);
+        smartFilterHash,
+        invokeOwnerScopeKey
+    ], [effectiveMaskedKeywords, filters, invokeOwnerScopeKey, privacyEnabled, settings.maskingMode, smartFilterHash, sortOption]);
 
     const query = useInfiniteQuery({
         queryKey: imagesQueryKey,

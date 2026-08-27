@@ -1,9 +1,9 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-08-08
+Last reviewed: 2026-08-09
 
 ## System Overview
-Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Images and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring.
+Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Library assets and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring. Images remain the default asset type; manually imported videos use an explicit discriminator and bounded native probe.
 
 ## Major Subsystems
 
@@ -23,7 +23,7 @@ Related docs: `docs/refactor.md#persistence-boundary-cleanup`
 
 ### Metadata Extraction, Scanning, and Watcher Flows
 Purpose: scan image files, extract metadata and workflows, resolve models, and watch library folders.
-Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
+Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/media.rs`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
 Risks: parser heuristics and watcher behavior can create wrong metadata or miss library changes; external path handling must stay scoped and local
 Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`, `docs/comfyui-support-workflow.md`
@@ -64,9 +64,14 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
 - Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
 - Large library browsing paths must remain virtualized and performance-conscious.
+- Gallery and timeline results for videos render static posters or a generic placeholder; they must not instantiate background video players.
+- The bundled MediaInfo sidecar is invoked only by Rust-owned fixed arguments against canonical picker-scoped regular files, with bounded output, timeout, cancellation, and single-process concurrency.
 - Gallery and Maintenance should reuse the shared `ImageViewer` presentation instead of developing separate viewer implementations. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.
 - Removal is a recoverable database lifecycle: active images are transactionally tombstoned in `removed_images`, including their file hash and parser version, and restore reconstructs the active row plus supported memberships/resources in one transaction. Remove, restore, duplicate tombstoning, and final deletion share a process-wide coordinator so restore cannot race a source-file trash operation. Final deletion clears the tombstone only after OS-trash success (or when the source is already missing). Collection membership moves are likewise native transactions rather than frontend SQL sequences.
 - Full facet rebuilds populate a temporary staging table and swap into the live cache in a short transaction. Full and incremental refreshes share one coordinator so a queued targeted refresh cannot be overwritten by an older full-build snapshot.
+- InvokeAI owner scope is a logical projection over one canonical Ambit database, not a separate database per user. Active images, Removed images, Invoke boards, and owner-aware Ambit collections carry an Invoke source identity; user-facing reads go through indexed scoped views driven by the atomic current-scope record. Ambit collections created in an owner view belong to that owner, collections created in `All users` are aggregate-only, and legacy unscoped collections remain shared until explicitly reassigned. Changing owners does not rewrite visibility across image rows. InvokeAI administrator status does not widen an owner projection; `All users` is the only aggregate scope. The reserved `system` owner is an ordinary owner projection, while discovery presents standard and intermediate image counts separately.
+- Facet and collection-derived caches have persistent per-scope snapshots. Mutations invalidate only scopes that can observe the changed Invoke owner (plus aggregate scopes), while local-library and global model changes invalidate every scope. A persisted dirty ledger distinguishes exact facet resources, whole facet types, collection summaries, and unknown full-rebuild causes. Dirty-ledger trigger writes use an explicit UPSERT conflict target because SQLite propagates a containing statement's conflict policy into trigger programs; shorthand `INSERT OR IGNORE` is not safe inside Ambit's image and board UPSERTs. A current snapshot activates immediately; a precisely dirty snapshot activates and repairs only its ledger entries; missing, legacy-dirty, or otherwise uncertain state falls back to a full rebuild. Cache builds use a generation handshake, so mutations during preparation prevent a partial projection from being committed as ready.
+- An InvokeAI owner transition reserves synchronization until its target catch-up either succeeds or rolls back. Duplicate startup requests coalesce with the selected scope, same-scope startup callers share one active result, and Live Watch drains only after both the active run and owner transition have settled; unrelated callers cannot overwrite the selector's success decision. Enabled owner application refreshes the authoritative board catalog even for a current schema marker, so an owner-owned board remains visible with zero scoped members when all source members belong to other owners. A changed catch-up invalidates the image query; privacy-gated queries fetch after the target scope becomes ready instead of requiring a page reload. A required collection refresh that loses a normal newest-result-wins race retries until it applies a current scoped snapshot; genuine query failures still fail closed. Background Live Watch refreshes preserve the current settings and collection presentation: foreground preparation controls stay hidden, and collection summaries update without replacing established thumbnails or counts with pending placeholders.
 
 ## High-Risk Areas
 - `src/App.tsx`: app shell integration point for selection, viewer, import, shortcuts, modals, and layout state.

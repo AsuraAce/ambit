@@ -45,7 +45,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
         isStatsSummaryLoading,
         isKeywordStatsLoading
     } = useLibraryContext();
-    const { totalGenerations, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
+    const { totalGenerations, totalItems, totalImages, totalVideos, avgSteps, estSizeMB, modelStats, keywordStats } = stats;
     const modelChartStats: ModelChartStat[] = modelStats ?? [];
     const maxModelCount = Math.max(1, ...modelChartStats.map(stat => stat.count));
     const shouldShowWordCloudLoading = isStatsSummaryLoading || (isKeywordStatsLoading && keywordStats.length === 0);
@@ -91,13 +91,15 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         </div>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
                         <StatCard
-                            label="Total Images"
-                            value={totalGenerations}
+                            label="Total Items"
+                            value={totalItems ?? totalGenerations}
                             isLoading={isStatsSummaryLoading}
                             loadingText={analysisTargetLabel}
                         />
+                        <StatCard label="Images" value={totalImages} isLoading={isStatsSummaryLoading} />
+                        <StatCard label="Videos" value={totalVideos ?? 0} isLoading={isStatsSummaryLoading} />
                         <StatCard
                             label="Avg. Steps"
                             value={avgSteps > 0 ? avgSteps : '—'}
@@ -105,10 +107,10 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                             loadingText="Computing generation summary"
                         />
                         <StatCard
-                            label="Disk Usage (Est.)"
+                            label="Storage Used"
                             value={`${estSizeMB} MB`}
                             isLoading={isStatsSummaryLoading}
-                            loadingText="Estimating library footprint"
+                            loadingText="Measuring library files"
                         />
                     </div>
 

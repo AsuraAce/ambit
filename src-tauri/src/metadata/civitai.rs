@@ -52,7 +52,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
         .prepare(
             "SELECT DISTINCT hash FROM (
                 SELECT DISTINCT i.model_hash as hash
-                FROM images i
+                FROM scoped_images i
                 WHERE i.model_hash IS NOT NULL
                 AND i.invoke_scope_hidden = 0
                 AND NOT EXISTS (
@@ -63,7 +63,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
                 UNION
 
                 SELECT DISTINCT json_extract(i.metadata_json, '$.modelHash') as hash
-                FROM images i
+                FROM scoped_images i
                 WHERE json_extract(i.metadata_json, '$.modelHash') IS NOT NULL
                 AND i.invoke_scope_hidden = 0
                 AND NOT EXISTS (
@@ -80,7 +80,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
                     OR lookup_source = 'disk_scan'
                     OR lookup_source LIKE 'local_cache%'
                     OR EXISTS (
-                        SELECT 1 FROM images visible_image
+                        SELECT 1 FROM scoped_images visible_image
                         WHERE visible_image.invoke_scope_hidden = 0
                           AND (
                               visible_image.model_hash = models.hash
@@ -91,7 +91,7 @@ fn collect_hashes_to_resolve(conn: &Connection) -> Result<Vec<String>, String> {
                 AND (
                     COALESCE(lookup_source, '') NOT LIKE 'harvest_%'
                     OR EXISTS (
-                        SELECT 1 FROM images visible_image
+                        SELECT 1 FROM scoped_images visible_image
                         WHERE visible_image.invoke_scope_hidden = 0
                           AND (
                               visible_image.model_hash = models.hash
@@ -134,7 +134,7 @@ fn count_unresolved_hashes(conn: &Connection) -> Result<(usize, usize), String> 
     let mut stmt = conn
         .prepare(
             "SELECT DISTINCT i.model_hash, i.model_name
-             FROM images i
+             FROM scoped_images i
              LEFT JOIN models m ON m.hash = i.model_hash
              WHERE i.model_hash IS NOT NULL
              AND i.model_hash != ''
@@ -480,7 +480,7 @@ pub async fn resolve_hashes_online(
                             WHEN instr(j.value, ':') > 0 THEN substr(j.value, 1, instr(j.value, ':') - 1)
                             ELSE j.value 
                         END as clean_name
-                     FROM images, json_each(metadata_json, '$.loras') j
+                     FROM scoped_images AS images, json_each(metadata_json, '$.loras') j
                      WHERE images.invoke_scope_hidden = 0
                  ) 
                  WHERE clean_name IS NOT NULL AND clean_name != ''",
@@ -496,7 +496,7 @@ pub async fn resolve_hashes_online(
                     'harvest_embedding', 
                     ?1,
                     'embeddings'
-                 FROM images, json_each(metadata_json, '$.embeddings') j
+                 FROM scoped_images AS images, json_each(metadata_json, '$.embeddings') j
                  WHERE images.invoke_scope_hidden = 0
                    AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
@@ -511,7 +511,7 @@ pub async fn resolve_hashes_online(
                     'harvest_hypernet', 
                     ?1,
                     'hypernetworks'
-                 FROM images, json_each(metadata_json, '$.hypernetworks') j
+                 FROM scoped_images AS images, json_each(metadata_json, '$.hypernetworks') j
                  WHERE images.invoke_scope_hidden = 0
                    AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
@@ -526,7 +526,7 @@ pub async fn resolve_hashes_online(
                     'harvest_checkpoint', 
                     ?1,
                     'checkpoint'
-                 FROM images
+                 FROM scoped_images
                  WHERE invoke_scope_hidden = 0
                  AND (json_extract(metadata_json, '$.modelHash') IS NOT NULL OR json_extract(metadata_json, '$.model') IS NOT NULL)
                  AND json_extract(metadata_json, '$.model') IS NOT NULL",
@@ -542,7 +542,7 @@ pub async fn resolve_hashes_online(
                     'harvest_controlnet', 
                     ?1,
                     'control_nets'
-                 FROM images, json_each(metadata_json, '$.controlNets') j
+                 FROM scoped_images AS images, json_each(metadata_json, '$.controlNets') j
                  WHERE images.invoke_scope_hidden = 0
                    AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
@@ -557,7 +557,7 @@ pub async fn resolve_hashes_online(
                     'harvest_ipadapter', 
                     ?1,
                     'ip_adapters'
-                 FROM images, json_each(metadata_json, '$.ipAdapters') j
+                 FROM scoped_images AS images, json_each(metadata_json, '$.ipAdapters') j
                  WHERE images.invoke_scope_hidden = 0
                    AND j.value IS NOT NULL AND j.value != ''",
                 params![now],
@@ -700,7 +700,7 @@ pub async fn resolve_hashes_online(
                     COALESCE(
                         (
                             SELECT model_name
-                            FROM images
+                            FROM scoped_images
                             WHERE model_hash = ?1
                             AND invoke_scope_hidden = 0
                             AND model_name IS NOT NULL
@@ -757,7 +757,7 @@ fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlit
         "UPDATE images
          SET resolved_model_name = model_name
          WHERE model_name IS NOT NULL
-         AND invoke_scope_hidden = 0
+         AND id IN (SELECT id FROM scoped_images)
          AND model_name != ''
          AND (
             resolved_model_name IS NULL
@@ -781,7 +781,7 @@ fn update_images_with_resolved_names(conn: &Connection) -> Result<usize, rusqlit
             LIMIT 1
          )
          WHERE model_hash IS NOT NULL
-         AND invoke_scope_hidden = 0
+         AND id IN (SELECT id FROM scoped_images)
          AND EXISTS (
             SELECT 1
             FROM models m
@@ -1118,7 +1118,7 @@ mod tests {
 
         let resolved: String = conn
             .query_row(
-                "SELECT resolved_model_name FROM images WHERE id = 'img1'",
+                "SELECT resolved_model_name FROM scoped_images WHERE id = 'img1'",
                 [],
                 |row| row.get(0),
             )
@@ -1147,7 +1147,7 @@ mod tests {
 
         let resolved: String = conn
             .query_row(
-                "SELECT resolved_model_name FROM images WHERE id = 'img1'",
+                "SELECT resolved_model_name FROM scoped_images WHERE id = 'img1'",
                 [],
                 |row| row.get(0),
             )

@@ -44,6 +44,30 @@ describe('sqlHelpers', () => {
             expect(where).toContain('is_pinned = 1');
         });
 
+        it.each(['image', 'video'] as const)('filters the library to %s assets', (mediaType) => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).toContain('media_type = ?');
+            expect(params).toEqual([mediaType]);
+        });
+
+        it('does not constrain media type for the All filter', () => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType: 'all' },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).not.toContain('media_type = ?');
+            expect(params).toEqual([]);
+        });
+
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
             expect(where).toContain("resolved_model_name = ?");
@@ -470,6 +494,30 @@ describe('sqlHelpers', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, collectionId: 'col2' }, false, 'blur', [], mockCollections);
                 expect(where).toContain("positive_prompt LIKE ?"); // From smart filters
                 expect(params).toContain('%ocean%');
+            });
+
+            it('keeps an owner-scoped Ambit smart collection owner-limited in All Users', () => {
+                const ownerCollection: Collection = {
+                    ...mockCollections[1],
+                    id: 'owner-smart',
+                    source: 'ambit',
+                    invokeSourceId: 'C:/Invoke/databases/invokeai.db',
+                    invokeOwnerId: 'jupiter',
+                };
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: ownerCollection.id },
+                    false,
+                    'blur',
+                    [],
+                    [ownerCollection]
+                );
+
+                expect(where).toContain('invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?)');
+                expect(params).toEqual([
+                    '%ocean%',
+                    'C:/Invoke/databases/invokeai.db',
+                    'jupiter',
+                ]);
             });
 
             it('should pre-empt smart collection date if global date is set', () => {

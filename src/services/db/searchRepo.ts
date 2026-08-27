@@ -8,7 +8,10 @@ import { commands } from '../../bindings';
 import { resourceReferenceEqualsSql, resourceReferenceSql } from '../../utils/sqlHelpers';
 
 export interface LibraryStats {
+    totalItems?: number;
     totalImages: number;
+    totalVideos?: number;
+    totalBytes?: number;
     totalGenerations: number;
     avgSteps: number;
     estSizeMB: string;
@@ -17,7 +20,10 @@ export interface LibraryStats {
 }
 
 export interface LibraryStatsSummary {
+    totalItems?: number;
     totalImages: number;
+    totalVideos?: number;
+    totalBytes?: number;
     totalGenerations: number;
     avgSteps: number;
     estSizeMB: string;
@@ -110,6 +116,13 @@ interface BasicStatsRow {
 
 interface AverageStepsRow {
     avg_steps: number | null;
+}
+
+interface MediaStatsRow {
+    total_items: number;
+    total_images: number;
+    total_videos: number;
+    total_bytes: number;
 }
 
 interface ModelStatsRow {
@@ -377,8 +390,6 @@ const getDiskModifiedAtForFacetRow = (
 
 const BASE_VISIBLE_WHERE = "WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0";
 const DEFAULT_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
-const BASE_PRIVACY_VISIBLE_WHERE = `${BASE_VISIBLE_WHERE} AND privacy_hidden = 0`;
-const PRIVACY_VISIBLE_WHERE = `${DEFAULT_VISIBLE_WHERE} AND privacy_hidden = 0`;
 const KEYWORD_BATCH_SIZE = 500;
 
 const isDefaultGlobalScope = (
@@ -389,61 +400,6 @@ const isDefaultGlobalScope = (
 ): boolean => {
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     return !collectionId && !loraName && finalWhere === DEFAULT_VISIBLE_WHERE && params.length === 0;
-};
-
-const hasPrivacyFilter = (whereClause: string) => /\bprivacy_hidden\s*=\s*0\b/.test(whereClause);
-const hasInvokeAssetVisibilityFilter = (whereClause: string) =>
-    whereClause.includes('IFNULL(is_invoke_asset_gen, 0) = 0');
-const hasInvokeOwnerVisibilityFilter = (whereClause: string) =>
-    whereClause.includes('invoke_scope_hidden = 0');
-const hasFastSortVisibilityPrefix = (whereClause: string) =>
-    whereClause.includes('is_deleted = 0') &&
-    whereClause.includes('IFNULL(is_intermediate_gen, 0) = 0') &&
-    whereClause.includes('IFNULL(is_grid_gen, 0) = 0');
-
-const selectImageSortIndex = (whereClause: string, sortField: string): string | null => {
-    if (!hasFastSortVisibilityPrefix(whereClause)) return null;
-
-    if (sortField === 'timestamp') {
-        if (hasInvokeOwnerVisibilityFilter(whereClause) && hasInvokeAssetVisibilityFilter(whereClause)) {
-            return 'idx_images_invoke_scope_fast_sort_v1';
-        }
-        if (hasInvokeAssetVisibilityFilter(whereClause)) return 'idx_images_invoke_asset_fast_sort_v1';
-        return hasPrivacyFilter(whereClause) ? 'idx_images_privacy_fast_sort_v1' : 'idx_images_fast_sort_v3';
-    }
-    if (sortField === 'path') return 'idx_images_name_sort_v1';
-    if (sortField === 'file_size') return 'idx_images_size_sort_v1';
-
-    return null;
-};
-
-const selectModelStatsIndex = (whereClause: string): string =>
-    hasPrivacyFilter(whereClause) && hasFastSortVisibilityPrefix(whereClause)
-        ? 'idx_images_privacy_model_stats_v1'
-        : 'idx_images_model_stats_v2';
-
-const selectAverageStepsScopeIndex = (
-    whereClause: string,
-    params: unknown[],
-    collectionId?: string,
-    loraName?: string
-): string | null => {
-    if (collectionId || loraName || params.length > 0) return null;
-    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
-        return 'idx_images_invoke_scope_fast_sort_v1';
-    }
-    if (whereClause === BASE_VISIBLE_WHERE) return 'idx_images_fast_sort_v3';
-    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
-    return null;
-};
-
-const selectCountVisibilityIndex = (whereClause: string, params: unknown[]): string | null => {
-    if (params.length > 0) return null;
-    if (whereClause === DEFAULT_VISIBLE_WHERE || whereClause === PRIVACY_VISIBLE_WHERE) {
-        return 'idx_images_invoke_scope_fast_sort_v1';
-    }
-    if (whereClause === BASE_PRIVACY_VISIBLE_WHERE) return 'idx_images_privacy_fast_sort_v1';
-    return null;
 };
 
 const appendTrailingPredicate = (whereClause: string, predicate?: string): string => (
@@ -463,7 +419,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             SELECT count(*) as count 
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
-            JOIN images ON images.id = ci.image_id
+            JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, loraName, ...params]));
@@ -475,7 +431,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
         const query = `
             SELECT count(*) as count 
             FROM collection_images ci
-            CROSS JOIN images ON images.id = ci.image_id
+            CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
         const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, ...params]));
@@ -487,7 +443,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
         const query = `
             SELECT count(*) as count 
             FROM image_loras il
-            CROSS JOIN images ON images.id = il.image_id
+            CROSS JOIN scoped_images AS images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
         `;
         const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [loraName, ...params]));
@@ -495,8 +451,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     }
 
     // Simple count using denormalized columns - no JOIN needed
-    const countIndex = selectCountVisibilityIndex(finalWhere, params);
-    const fromClause = countIndex ? `FROM images INDEXED BY ${countIndex}` : 'FROM images';
+    const fromClause = 'FROM scoped_images AS images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
@@ -510,7 +465,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
     const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
-        `SELECT count(*) as count FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
+        `SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
     ));
     return result[0]?.count || 0;
 };
@@ -520,7 +475,7 @@ export const searchImageIds = async (whereClause: string, params: unknown[]): Pr
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
 
     // Simple query using denormalized columns - no JOIN needed
-    const query = `SELECT id FROM images ${finalWhere}`;
+    const query = `SELECT id FROM scoped_images AS images ${finalWhere}`;
 
     const rows = await db.select<{ id: string }[]>(query, params);
     return rows.map(r => r.id);
@@ -598,7 +553,7 @@ export const searchImages = async (
             SELECT ${getImageFieldsLight()}
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
-            JOIN images ON images.id = ci.image_id
+            JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
             ${cursorWhere.sql}
             ${orderBy}
@@ -613,7 +568,7 @@ export const searchImages = async (
         const query = `
             SELECT ${getImageFieldsLight()}
             FROM collection_images ci
-            CROSS JOIN images ON images.id = ci.image_id
+            CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
             ${cursorWhere.sql}
             ${orderBy}
@@ -629,7 +584,7 @@ export const searchImages = async (
         const query = `
             SELECT ${getImageFieldsLight()}
             FROM image_loras il
-            CROSS JOIN images ON images.id = il.image_id
+            CROSS JOIN scoped_images AS images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
             ${cursorWhere.sql}
             ${orderBy}
@@ -645,10 +600,9 @@ export const searchImages = async (
     // If table alias is implied, we might need to strip prefixes if query fails.
     // But 'images' table name is valid in simple select.
 
-    // Safer to leave prefixes if FROM images is used.
+    // Keep table-style prefixes because the scoped view is consistently aliased as images.
 
-    const sortIndex = selectImageSortIndex(finalWhere, sortField);
-    const fromClause = sortIndex ? `FROM images INDEXED BY ${sortIndex}` : 'FROM images';
+    const fromClause = 'FROM scoped_images AS images';
     const query = `
         SELECT ${getImageFieldsLight()}
         ${fromClause}
@@ -679,7 +633,7 @@ const buildScopedImageSourceParts = (
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const reason = describeDbQueryReason(finalWhere, collectionId, loraName);
     const {
-        defaultFromClause = 'FROM images',
+        defaultFromClause = 'FROM scoped_images AS images',
         trailingPredicate,
         trailingParams = []
     } = options;
@@ -689,7 +643,7 @@ const buildScopedImageSourceParts = (
             fromClause: `
                 FROM collection_images ci
                 JOIN image_loras il ON il.image_id = ci.image_id
-                JOIN images ON images.id = ci.image_id
+                JOIN scoped_images AS images ON images.id = ci.image_id
             `,
             scopedWhere: appendTrailingPredicate(
                 finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`),
@@ -704,7 +658,7 @@ const buildScopedImageSourceParts = (
         return {
             fromClause: `
                 FROM collection_images ci
-                CROSS JOIN images ON images.id = ci.image_id
+                CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             `,
             scopedWhere: appendTrailingPredicate(
                 finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND'),
@@ -719,7 +673,7 @@ const buildScopedImageSourceParts = (
         return {
             fromClause: `
                 FROM image_loras il
-                CROSS JOIN images ON images.id = il.image_id
+                CROSS JOIN scoped_images AS images ON images.id = il.image_id
             `,
             scopedWhere: appendTrailingPredicate(
                 finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`),
@@ -750,7 +704,7 @@ const buildScopedImageQueryParts = (
 
     return {
         cteSql: `
-            WITH scoped_images AS (
+            WITH filtered_images AS (
                 SELECT ${selectedColumns.join(', ')}
                 ${sourceParts.fromClause}
                 ${sourceParts.scopedWhere}
@@ -767,7 +721,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(resolved_model_name, model_name, 'Unknown') AS name, count(*) AS count
-                FROM scoped_images
+                FROM filtered_images
                 GROUP BY name
             `;
         case 'loras': {
@@ -775,7 +729,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN image_loras il ON il.image_id = si.id
                 GROUP BY ${nameExpr}
             `;
@@ -785,7 +739,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN image_embeddings ie ON ie.image_id = si.id
                 GROUP BY ${nameExpr}
             `;
@@ -795,7 +749,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN image_hypernetworks ih ON ih.image_id = si.id
                 GROUP BY ${nameExpr}
             `;
@@ -805,7 +759,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN image_controlnets ic ON ic.image_id = si.id
                 GROUP BY ${nameExpr}
             `;
@@ -815,7 +769,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(${nameExpr}, 'Unknown') AS name, count(DISTINCT si.id) AS count
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN image_ipadapters ii ON ii.image_id = si.id
                 GROUP BY ${nameExpr}
             `;
@@ -824,7 +778,7 @@ const buildScopedFacetCountSql = (cacheType: string, cteSql: string): string | n
             return `
                 ${cteSql}
                 SELECT COALESCE(tool, 'Unknown') AS name, count(*) AS count
-                FROM scoped_images
+                FROM filtered_images
                 GROUP BY name
             `;
         default:
@@ -872,20 +826,27 @@ const getScopedFacetCountMaps = async (
 };
 
 const buildLibraryStatsSummary = (
-    total: number,
+    mediaStats: MediaStatsRow | undefined,
     averageSteps: number | null | undefined,
     modelRows: ModelStatsRow[]
-): LibraryStatsSummary => ({
-    totalImages: total,
-    totalGenerations: total,
-    avgSteps: Math.round(averageSteps ?? 0),
-    estSizeMB: ((total * 2.4)).toFixed(1),
-    modelStats: modelRows.map(r => ({
-        name: r.name || 'Unknown',
-        fullName: r.name || 'Unknown',
-        count: r.count
-    }))
-});
+): LibraryStatsSummary => {
+    const totalItems = mediaStats?.total_items ?? 0;
+    const totalBytes = mediaStats?.total_bytes ?? 0;
+    return {
+        totalItems,
+        totalImages: mediaStats?.total_images ?? 0,
+        totalVideos: mediaStats?.total_videos ?? 0,
+        totalBytes,
+        totalGenerations: totalItems,
+        avgSteps: Math.round(averageSteps ?? 0),
+        estSizeMB: (totalBytes / (1024 * 1024)).toFixed(1),
+        modelStats: modelRows.map(r => ({
+            name: r.name || 'Unknown',
+            fullName: r.name || 'Unknown',
+            count: r.count
+        }))
+    };
+};
 
 export const getLibraryStatsSummary = async (
     whereClause: string = '',
@@ -900,14 +861,12 @@ export const getLibraryStatsSummary = async (
     }
 
     const db = await getDb();
-    const averageScopeIndex = selectAverageStepsScopeIndex(finalWhere, params, collectionId, loraName);
     const scopedParts = buildScopedImageQueryParts(whereClause, params, collectionId, loraName, [
-        'images.rowid AS rowid'
-    ], {
-        defaultFromClause: averageScopeIndex
-            ? `FROM images INDEXED BY ${averageScopeIndex}`
-            : 'FROM images'
-    });
+        'images.rowid AS rowid',
+        'images.media_type AS media_type',
+        'images.file_size AS file_size',
+        'images.steps AS steps'
+    ], {});
     const modelScopedParts = buildScopedImageQueryParts(
         whereClause,
         params,
@@ -919,34 +878,44 @@ export const getLibraryStatsSummary = async (
             'images.resolved_model_name AS resolved_model_name',
             'images.model_name AS model_name'
         ],
-        { defaultFromClause: `FROM images INDEXED BY ${selectModelStatsIndex(finalWhere)}` }
+        {}
     );
 
     try {
-        const total = await countImages(whereClause, params, collectionId, loraName);
-
+        const mediaStatsQuery = `
+            ${scopedParts.cteSql}
+            SELECT
+                COUNT(*) AS total_items,
+                COALESCE(SUM(CASE WHEN media_type = 'image' THEN 1 ELSE 0 END), 0) AS total_images,
+                COALESCE(SUM(CASE WHEN media_type = 'video' THEN 1 ELSE 0 END), 0) AS total_videos,
+                COALESCE(SUM(file_size), 0) AS total_bytes
+            FROM (
+                SELECT DISTINCT rowid, media_type, file_size
+                FROM filtered_images
+            )
+        `;
         const averageStepsQuery = `
             ${scopedParts.cteSql}
             SELECT AVG(steps) AS avg_steps
-            FROM images INDEXED BY idx_images_steps
+            FROM filtered_images
             WHERE steps > 0
-              AND images.rowid IN (SELECT rowid FROM scoped_images)
         `;
         const modelQuery = `
             ${modelScopedParts.cteSql}
             SELECT
                 COALESCE(resolved_model_name, model_name, 'Unknown') as name,
                 count(*) as count
-            FROM scoped_images
+            FROM filtered_images
             GROUP BY name
             ORDER BY count DESC
         `;
 
-        const [averageRows, modelRows] = await Promise.all([
+        const [mediaStatsRows, averageRows, modelRows] = await Promise.all([
+            timeDbCall('libraryStats.mediaStats', scopedParts.reason, () => db.select<MediaStatsRow[]>(mediaStatsQuery, scopedParts.queryParams)),
             timeDbCall('libraryStats.avgSteps', scopedParts.reason, () => db.select<AverageStepsRow[]>(averageStepsQuery, scopedParts.queryParams)),
             timeDbCall('libraryStats.modelStats', modelScopedParts.reason, () => db.select<ModelStatsRow[]>(modelQuery, modelScopedParts.queryParams))
         ]);
-        const summary = buildLibraryStatsSummary(total, averageRows[0]?.avg_steps, modelRows);
+        const summary = buildLibraryStatsSummary(mediaStatsRows[0], averageRows[0]?.avg_steps, modelRows);
 
         if (!whereClause && !collectionId && !loraName) {
             globalStatsSummaryCache = summary;
@@ -956,7 +925,10 @@ export const getLibraryStatsSummary = async (
     } catch (e) {
         console.error('[DB] Failed to get library stats summary', e);
         return {
+            totalItems: 0,
             totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',
@@ -979,7 +951,10 @@ export const getLibraryStats = async (whereClause: string = '', params: unknown[
     } catch (e) {
         console.error('[DB] Failed to get library stats', e);
         return {
+            totalItems: 0,
             totalImages: 0,
+            totalVideos: 0,
+            totalBytes: 0,
             totalGenerations: 0,
             avgSteps: 0,
             estSizeMB: '0',
@@ -1023,7 +998,7 @@ export const getKeywordStats = async (
             const promptQuery = `
                 ${scopedParts.cteSql}
                 SELECT si.rowid, images_fts.positive_prompt
-                FROM scoped_images si
+                FROM filtered_images si
                 JOIN images_fts ON images_fts.rowid = si.rowid
                 ORDER BY si.rowid ASC
                 LIMIT ${KEYWORD_BATCH_SIZE}

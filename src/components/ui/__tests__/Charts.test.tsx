@@ -80,7 +80,7 @@ describe('StatsDashboard', () => {
 
         expect(screen.getAllByText('Analyzing 118,000 library images')).toHaveLength(2);
         expect(screen.getByText('Computing generation summary')).toBeTruthy();
-        expect(screen.getByText('Estimating library footprint')).toBeTruthy();
+        expect(screen.getByText('Measuring library files')).toBeTruthy();
         expect(screen.queryByText('No model stats found')).toBeNull();
         expect(screen.queryByText('No keywords found')).toBeNull();
         expect(screen.queryByText('0 MB')).toBeNull();
@@ -92,7 +92,9 @@ describe('StatsDashboard', () => {
 
         render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
 
-        expect(screen.getByText('Total Images')).toBeTruthy();
+        expect(screen.getByText('Total Items')).toBeTruthy();
+        expect(screen.getByText('Images')).toBeTruthy();
+        expect(screen.getByText('Videos')).toBeTruthy();
         expect(screen.getByText('28')).toBeTruthy();
         expect(screen.getByText('Avg. Steps').parentElement?.textContent).toContain('28');
         expect(screen.getByText('4.8 MB')).toBeTruthy();
@@ -135,7 +137,7 @@ describe('StatsDashboard', () => {
 
         render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
 
-        expect(screen.getByText('Total Images')).toBeTruthy();
+        expect(screen.getByText('Total Items')).toBeTruthy();
         expect(screen.getByText('0 MB')).toBeTruthy();
         expect(screen.getByText('No model stats found')).toBeTruthy();
         expect(screen.getByText('No keywords found')).toBeTruthy();
@@ -187,6 +189,6 @@ describe('StatsDashboard', () => {
 
         expect(screen.getByText('No model stats found')).toBeTruthy();
         expect(screen.getByText('No keywords found')).toBeTruthy();
-        expect(screen.getByText('Total Images')).toBeTruthy();
+        expect(screen.getByText('Total Items')).toBeTruthy();
     });
 });

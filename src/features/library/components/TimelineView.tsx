@@ -16,7 +16,7 @@ interface TimelineViewProps {
     selectedIds: Set<string>;
     thumbnailSize?: number;
     sortOption: SortOption;
-    onImageClick: (e: React.MouseEvent, id: string, index: number) => void;
+    onImageClick: (e: React.MouseEvent, id: string, index: number, revealGranted?: boolean) => void;
     onSelectionToggle: (e: React.MouseEvent, id: string) => void;
     onToggleFavorite: (e: React.MouseEvent, id: string) => void;
     onTogglePin?: (e: React.MouseEvent, id: string) => void;
@@ -188,7 +188,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                                         console.error('[TimelineView] Failed to set drag data:', err);
                                                     }
                                                 }}
-                                                onClick={(e) => onImageClick(e, subItem.image.id, timelineSourceIndexes[subItem.globalIndex] ?? subItem.globalIndex)}
+                                                onClick={(e, revealGranted) => onImageClick(e, subItem.image.id, timelineSourceIndexes[subItem.globalIndex] ?? subItem.globalIndex, revealGranted)}
                                                 onToggleSelection={(e) => onSelectionToggle(e, subItem.image.id)}
                                                 onToggleFavorite={(e) => onToggleFavorite(e, subItem.image.id)}
                                                 onTogglePin={onTogglePin ? (e) => onTogglePin(e, subItem.image.id) : undefined}

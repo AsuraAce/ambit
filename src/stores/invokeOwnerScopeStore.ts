@@ -10,6 +10,7 @@ export interface InvokeOwnerScopeState {
     scope?: InvokeSyncScope;
     discovery?: InvokeOwnerDiscovery;
     error?: string;
+    warning?: string;
     failure?: {
         kind: 'source_unavailable' | 'preparation_failed';
         details: string;

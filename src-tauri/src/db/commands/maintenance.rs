@@ -1,7 +1,7 @@
 use super::run_blocking;
 use crate::db::facets::FacetResourceTouches;
 use crate::db::{resolve_db_path, resolve_db_path_info, resolve_main_database_url};
-use rusqlite::{params, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, File};
@@ -109,6 +109,62 @@ pub struct CollectionMembershipMutationResult {
     pub target_collection_id: Option<String>,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationItem {
+    pub id: String,
+    pub name: String,
+    pub color: Option<String>,
+    pub is_archived: bool,
+    pub is_pinned: bool,
+    pub created_at: i64,
+    pub updated_at: Option<i64>,
+    pub filter_state: Option<String>,
+    pub manual_exclusions: Option<String>,
+    pub custom_thumbnail: Option<String>,
+    pub image_ids: Vec<String>,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationInput {
+    pub import_key: String,
+    pub collections: Vec<LegacyCollectionMigrationItem>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyCollectionMigrationResult {
+    pub already_applied: bool,
+    pub collections_upserted: usize,
+    pub memberships_inserted: usize,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbitCollectionScopeMode {
+    Global,
+    All,
+    Owner,
+}
+
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAmbitCollectionScopeInput {
+    pub collection_id: String,
+    pub mode: AmbitCollectionScopeMode,
+    pub db_path: Option<String>,
+    pub owner_id: Option<String>,
+}
+
+#[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateAmbitCollectionScopeResult {
+    pub collection_id: String,
+    pub invoke_source_id: Option<String>,
+    pub invoke_owner_id: Option<String>,
+}
+
 static REMOVED_LIFECYCLE_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
 
 pub(crate) fn lock_removed_lifecycle() -> MutexGuard<'static, ()> {
@@ -141,13 +197,26 @@ struct FileHashBackfillProgress {
     message: String,
 }
 
+#[cfg(test)]
 fn hash_file_sha256(path: &str) -> Result<String, String> {
+    let is_cancelled = AtomicBool::new(false);
+    hash_file_sha256_cancellable(path, &is_cancelled)?
+        .ok_or_else(|| "File hashing was cancelled".to_string())
+}
+
+fn hash_file_sha256_cancellable(
+    path: &str,
+    is_cancelled: &AtomicBool,
+) -> Result<Option<String>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 1024 * 1024];
 
     loop {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         let read = reader.read(&mut buffer).map_err(|e| e.to_string())?;
         if read == 0 {
             break;
@@ -155,7 +224,84 @@ fn hash_file_sha256(path: &str) -> Result<String, String> {
         hasher.update(&buffer[..read]);
     }
 
-    Ok(hex::encode(hasher.finalize()))
+    Ok(Some(hex::encode(hasher.finalize())))
+}
+
+fn load_file_hash_candidates(
+    conn: &Connection,
+    requested_limit: i64,
+) -> Result<Vec<(String, String)>, String> {
+    let mut stmt = conn
+        .prepare(
+            "
+            SELECT id, path
+            FROM scoped_images
+            WHERE invoke_scope_hidden = 0
+              AND is_deleted = 0
+              AND is_missing = 0
+              AND group_id IS NULL
+              AND IFNULL(is_intermediate_gen, 0) = 0
+              AND (file_hash IS NULL OR file_hash = '')
+              AND path NOT LIKE 'blob:%'
+              AND path NOT LIKE 'data:%'
+              AND file_size IN (
+                SELECT file_size
+                FROM scoped_images
+                WHERE invoke_scope_hidden = 0
+                  AND is_deleted = 0
+                  AND is_missing = 0
+                  AND group_id IS NULL
+                  AND IFNULL(is_intermediate_gen, 0) = 0
+                  AND path NOT LIKE 'blob:%'
+                  AND path NOT LIKE 'data:%'
+                GROUP BY file_size
+                HAVING COUNT(*) > 1
+              )
+            ORDER BY file_size DESC, timestamp DESC
+            LIMIT ?1
+            ",
+        )
+        .map_err(|e| e.to_string())?;
+
+    let rows = stmt
+        .query_map([requested_limit], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, rusqlite::Error>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn count_remaining_file_hash_candidates(conn: &Connection) -> usize {
+    conn.query_row(
+        "
+        SELECT COUNT(*)
+        FROM scoped_images
+        WHERE invoke_scope_hidden = 0
+          AND is_deleted = 0
+          AND is_missing = 0
+          AND group_id IS NULL
+          AND IFNULL(is_intermediate_gen, 0) = 0
+          AND (file_hash IS NULL OR file_hash = '')
+          AND path NOT LIKE 'blob:%'
+          AND path NOT LIKE 'data:%'
+          AND file_size IN (
+            SELECT file_size
+            FROM scoped_images
+            WHERE invoke_scope_hidden = 0
+              AND is_deleted = 0
+              AND is_missing = 0
+              AND group_id IS NULL
+              AND IFNULL(is_intermediate_gen, 0) = 0
+              AND path NOT LIKE 'blob:%'
+              AND path NOT LIKE 'data:%'
+            GROUP BY file_size
+            HAVING COUNT(*) > 1
+          )
+        ",
+        [],
+        |row| row.get::<_, i64>(0),
+    )
+    .unwrap_or(0) as usize
 }
 
 fn load_eligible_duplicate_record(
@@ -164,7 +310,7 @@ fn load_eligible_duplicate_record(
 ) -> Result<Option<DuplicateRecordState>, String> {
     tx.query_row(
         "SELECT id, file_hash, is_favorite, is_pinned, user_masked
-         FROM images
+         FROM scoped_images
          WHERE id = ?1
            AND invoke_scope_hidden = 0
            AND is_deleted = 0
@@ -278,8 +424,12 @@ fn persist_removed_duplicate(
                 micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
-                collection_ids_json, invoke_image_name, invoke_image_category,
-                invoke_image_origin, invoke_owner_id, invoke_scope_hidden, parser_version
+                collection_ids_json, media_type, media_container, media_mime_type,
+                duration_ms, video_codec, video_profile, audio_present, audio_codec,
+                frame_rate_num, frame_rate_den, rotation_degrees, probe_status,
+                playback_status, invoke_image_name, invoke_image_category,
+                invoke_image_origin, invoke_owner_id, invoke_scope_hidden, parser_version,
+                invoke_source_id
              )
              SELECT
                 id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
@@ -299,9 +449,12 @@ fn persist_removed_duplicate(
                     )
                     ELSE NULL
                 END,
+                media_type, media_container, media_mime_type, duration_ms, video_codec,
+                video_profile, audio_present, audio_codec, frame_rate_num, frame_rate_den,
+                rotation_degrees, probe_status, playback_status,
                 invoke_image_name, invoke_image_category, invoke_image_origin,
-                invoke_owner_id, invoke_scope_hidden, parser_version
-             FROM images
+                invoke_owner_id, invoke_scope_hidden, parser_version, invoke_source_id
+             FROM scoped_images
              WHERE id = ?1",
             params![image_id, removed_at],
         )
@@ -463,7 +616,7 @@ fn remove_images_from_library_inner(
     for id in normalized_ids {
         let metadata_json = tx
             .query_row(
-                "SELECT metadata_json FROM images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                "SELECT metadata_json FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0",
                 [&id],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -513,7 +666,31 @@ fn restore_resource_junctions(tx: &Transaction<'_>, image_id: &str) -> Result<()
     Ok(())
 }
 
-fn restore_removed_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), String> {
+fn stored_filesystem_path(path: &str) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(rest) = path.strip_prefix("//?/UNC/") {
+            return PathBuf::from(format!(r"\\?\UNC\{}", rest.replace('/', "\\")));
+        }
+        if let Some(rest) = path.strip_prefix("//?/") {
+            return PathBuf::from(format!(r"\\?\{}", rest.replace('/', "\\")));
+        }
+    }
+    PathBuf::from(path)
+}
+
+fn is_missing_filesystem_source(path: &str, invoke_image_name: Option<&str>) -> bool {
+    if invoke_image_name.is_some() || path.starts_with("blob:") || path.starts_with("data:") {
+        return false;
+    }
+    !stored_filesystem_path(path).is_file()
+}
+
+fn restore_removed_record(
+    tx: &Transaction<'_>,
+    image_id: &str,
+    is_missing: bool,
+) -> Result<(), String> {
     let inserted = tx
         .execute(
             "INSERT INTO images (
@@ -523,14 +700,17 @@ fn restore_removed_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), St
                 original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
                 invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id,
                 invoke_scope_hidden, model_hash, model_name, tool, resolved_model_name, steps, seed,
-                cfg, sampler, generation_type, parser_version, positive_prompt, negative_prompt
+                cfg, sampler, generation_type, parser_version, positive_prompt, negative_prompt,
+                invoke_source_id, media_type, media_container, media_mime_type, duration_ms,
+                video_codec, video_profile, audio_present, audio_codec, frame_rate_num,
+                frame_rate_den, rotation_degrees, probe_status, playback_status
              )
              SELECT
                 id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path,
                 micro_thumbnail, thumbnail_source,
                 CASE WHEN thumbnail_source = 'ambit' AND thumbnail_path IS NOT NULL
                            AND thumbnail_path != '' AND path != thumbnail_path THEN 1 ELSE 0 END,
-                is_favorite, is_pinned, 0, is_missing, user_masked, group_id, board_id, notes,
+                is_favorite, is_pinned, 0, ?2, user_masked, group_id, board_id, notes,
                 original_metadata_json, original_parsed_json, original_state_json, is_corrupt,
                 invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id,
                 invoke_scope_hidden,
@@ -549,10 +729,13 @@ fn restore_removed_record(tx: &Transaction<'_>, image_id: &str) -> Result<(), St
                 COALESCE(NULLIF(json_extract(metadata_json, '$.positivePrompt'), ''),
                          NULLIF(json_extract(metadata_json, '$.positive_prompt'), '')),
                 COALESCE(NULLIF(json_extract(metadata_json, '$.negativePrompt'), ''),
-                         NULLIF(json_extract(metadata_json, '$.negative_prompt'), ''))
-             FROM removed_images
+                         NULLIF(json_extract(metadata_json, '$.negative_prompt'), '')),
+                invoke_source_id, media_type, media_container, media_mime_type, duration_ms,
+                video_codec, video_profile, audio_present, audio_codec, frame_rate_num,
+                frame_rate_den, rotation_degrees, probe_status, playback_status
+             FROM scoped_removed_images
              WHERE id = ?1 AND invoke_scope_hidden = 0",
-            [image_id],
+            params![image_id, i64::from(is_missing)],
         )
         .map_err(|error| error.to_string())?;
     if inserted != 1 {
@@ -576,25 +759,28 @@ fn restore_removed_images_inner(
     for id in normalized_ids {
         let removed = tx
             .query_row(
-                "SELECT metadata_json, collection_ids_json
-                 FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                "SELECT metadata_json, collection_ids_json, path, invoke_image_name
+                 FROM scoped_removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
                 [&id],
                 |row| {
                     Ok((
                         row.get::<_, Option<String>>(0)?,
                         row.get::<_, Option<String>>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
                     ))
                 },
             )
             .optional()
             .map_err(|error| error.to_string())?;
-        let Some((metadata_json, collection_ids_json)) = removed else {
+        let Some((metadata_json, collection_ids_json, path, invoke_image_name)) = removed else {
             result.not_found_ids.push(id);
             continue;
         };
 
         collect_touched_resources(metadata_json.as_deref(), &mut result.touched_resources);
-        restore_removed_record(&tx, &id)?;
+        let is_missing = is_missing_filesystem_source(&path, invoke_image_name.as_deref());
+        restore_removed_record(&tx, &id, is_missing)?;
 
         if let Some(collection_ids_json) = collection_ids_json {
             match serde_json::from_str::<Vec<String>>(&collection_ids_json) {
@@ -603,7 +789,7 @@ fn restore_removed_images_inner(
                         let inserted = tx
                             .execute(
                                 "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-                                 SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?1)",
+                                 SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM scoped_collections WHERE id = ?1)",
                                 params![collection_id, id],
                             )
                             .map_err(|error| error.to_string())?;
@@ -625,7 +811,11 @@ fn restore_removed_images_inner(
 
         let deleted = tx
             .execute(
-                "DELETE FROM removed_images WHERE id = ?1 AND invoke_scope_hidden = 0",
+                "DELETE FROM removed_images
+                 WHERE id IN (
+                     SELECT id FROM scoped_removed_images
+                     WHERE id = ?1 AND invoke_scope_hidden = 0
+                 )",
                 [&id],
             )
             .map_err(|error| error.to_string())?;
@@ -645,6 +835,9 @@ struct MembershipCollectionState {
     id: String,
     filter_state: Option<String>,
     manual_exclusions: Option<String>,
+    source: String,
+    invoke_source_id: Option<String>,
+    invoke_owner_id: Option<String>,
 }
 
 fn load_membership_collection(
@@ -652,19 +845,74 @@ fn load_membership_collection(
     collection_id: &str,
 ) -> Result<MembershipCollectionState, String> {
     tx.query_row(
-        "SELECT id, filter_state, manual_exclusions FROM collections WHERE id = ?1",
+        "SELECT id, filter_state, manual_exclusions, COALESCE(source, 'ambit'), invoke_source_id, invoke_owner_id
+         FROM scoped_collections WHERE id = ?1",
         [collection_id],
         |row| {
             Ok(MembershipCollectionState {
                 id: row.get(0)?,
                 filter_state: row.get(1)?,
                 manual_exclusions: row.get(2)?,
+                source: row.get(3)?,
+                invoke_source_id: row.get(4)?,
+                invoke_owner_id: row.get(5)?,
             })
         },
     )
     .optional()
     .map_err(|error| error.to_string())?
     .ok_or_else(|| format!("Collection '{}' is no longer available", collection_id))
+}
+
+fn validate_image_for_collection_scope(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_id: &str,
+) -> Result<(), String> {
+    if collection.source == "invoke" {
+        return Ok(());
+    }
+
+    let image_scope = tx
+        .query_row(
+            "SELECT invoke_source_id, invoke_owner_id FROM images WHERE id = ?1",
+            [image_id],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("Image '{}' is no longer available", image_id))?;
+
+    let Some(image_source_id) = image_scope.0 else {
+        return Ok(());
+    };
+    let Some(collection_source_id) = collection.invoke_source_id.as_deref() else {
+        return Err(format!(
+            "Collection '{}' uses legacy shared visibility. Assign it to All Users or an owner before adding InvokeAI images.",
+            collection.id
+        ));
+    };
+    if image_source_id != collection_source_id {
+        return Err(format!(
+            "Image '{}' belongs to a different InvokeAI database than collection '{}'.",
+            image_id, collection.id
+        ));
+    }
+    if let Some(collection_owner_id) = collection.invoke_owner_id.as_deref() {
+        if image_scope.1.as_deref() != Some(collection_owner_id) {
+            return Err(format!(
+                "Image '{}' belongs to a different InvokeAI owner than collection '{}'.",
+                image_id, collection.id
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn add_manual_exclusions(
@@ -820,7 +1068,7 @@ fn mutate_collection_membership_inner(
     for image_id in &image_ids {
         let exists: bool = tx
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1 AND invoke_scope_hidden = 0)",
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0)",
                 [image_id],
                 |row| row.get(0),
             )
@@ -850,6 +1098,9 @@ fn mutate_collection_membership_inner(
         CollectionMembershipOperation::Add | CollectionMembershipOperation::Move
     ) {
         let target = target.as_ref().expect("target validated above");
+        for image_id in &image_ids {
+            validate_image_for_collection_scope(&tx, target, image_id)?;
+        }
         remove_manual_exclusions(&tx, target, &image_ids)?;
         for image_id in &image_ids {
             tx.execute(
@@ -877,6 +1128,286 @@ fn mutate_collection_membership_inner(
         source_collection_id: source.map(|collection| collection.id),
         target_collection_id: target.map(|collection| collection.id),
     })
+}
+
+fn migrate_legacy_collections_inner(
+    conn: &rusqlite::Connection,
+    input: &LegacyCollectionMigrationInput,
+) -> Result<LegacyCollectionMigrationResult, String> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let mut result = LegacyCollectionMigrationResult::default();
+
+    let import_key = input.import_key.trim();
+    if import_key.is_empty() {
+        return Err("Legacy collection migration requires an import key".to_string());
+    }
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS legacy_collection_import_receipts (
+            import_key TEXT PRIMARY KEY,
+            completed_at INTEGER NOT NULL
+        );",
+    )
+    .map_err(|error| error.to_string())?;
+    if tx
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM legacy_collection_import_receipts WHERE import_key = ?1
+            )",
+            [import_key],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?
+    {
+        result.already_applied = true;
+        tx.commit().map_err(|error| error.to_string())?;
+        return Ok(result);
+    }
+
+    for collection in &input.collections {
+        let id = collection.id.trim();
+        let name = collection.name.trim();
+        if id.is_empty() || name.is_empty() {
+            return Err("Legacy collections require a non-empty ID and name".to_string());
+        }
+
+        let updated_at = collection.updated_at.unwrap_or(collection.created_at);
+        tx.execute(
+            "INSERT INTO collections (
+                id, name, color, is_archived, is_pinned, created_at, filter_state,
+                manual_exclusions, custom_thumbnail, source, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'ambit', ?10)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                color = excluded.color,
+                is_archived = excluded.is_archived,
+                is_pinned = excluded.is_pinned,
+                created_at = excluded.created_at,
+                filter_state = excluded.filter_state,
+                manual_exclusions = excluded.manual_exclusions,
+                custom_thumbnail = excluded.custom_thumbnail,
+                updated_at = excluded.updated_at",
+            params![
+                id,
+                name,
+                collection.color,
+                i64::from(collection.is_archived),
+                i64::from(collection.is_pinned),
+                collection.created_at,
+                collection.filter_state,
+                collection.manual_exclusions,
+                collection.custom_thumbnail,
+                updated_at,
+            ],
+        )
+        .map_err(|error| error.to_string())?;
+        result.collections_upserted += 1;
+
+        for image_id in normalize_requested_ids(&collection.image_ids) {
+            result.memberships_inserted += tx
+                .execute(
+                    "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                     SELECT ?1, id FROM images WHERE id = ?2",
+                    params![id, image_id],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let completed_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    tx.execute(
+        "INSERT INTO legacy_collection_import_receipts (import_key, completed_at)
+         VALUES (?1, ?2)",
+        params![import_key, completed_at],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(result)
+}
+
+fn update_ambit_collection_scope_inner(
+    conn: &rusqlite::Connection,
+    input: &UpdateAmbitCollectionScopeInput,
+) -> Result<UpdateAmbitCollectionScopeResult, String> {
+    let collection_id = input.collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("Collection ID is required".to_string());
+    }
+
+    let db_path = input
+        .db_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let owner_id = input
+        .owner_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let (target_source_id, target_owner_id) = match input.mode {
+        AmbitCollectionScopeMode::Global => (None, None),
+        AmbitCollectionScopeMode::All => {
+            (
+                Some(db_path.ok_or_else(|| {
+                    "All Users visibility requires an InvokeAI database".to_string()
+                })?),
+                None,
+            )
+        }
+        AmbitCollectionScopeMode::Owner => (
+            Some(
+                db_path
+                    .ok_or_else(|| "Owner visibility requires an InvokeAI database".to_string())?,
+            ),
+            Some(owner_id.ok_or_else(|| "Owner visibility requires an owner".to_string())?),
+        ),
+    };
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let mut validation_state = load_membership_collection(&tx, collection_id)?;
+    if validation_state.source == "invoke" {
+        return Err("InvokeAI board ownership is managed by InvokeAI".to_string());
+    }
+    validation_state.invoke_source_id = target_source_id.map(str::to_string);
+    validation_state.invoke_owner_id = target_owner_id.map(str::to_string);
+
+    let candidate_ids = {
+        let mut statement = tx
+            .prepare(
+                "SELECT image_id FROM collection_images WHERE collection_id = ?1
+                 UNION
+                 SELECT COALESCE(
+                     (SELECT by_id.id FROM images by_id
+                      WHERE by_id.id = collections.custom_thumbnail),
+                     (SELECT by_path.id FROM images by_path
+                      WHERE by_path.path = collections.custom_thumbnail),
+                     collections.custom_thumbnail
+                 )
+                 FROM collections
+                 WHERE id = ?1 AND custom_thumbnail IS NOT NULL AND custom_thumbnail != ''",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([collection_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+
+    for image_id in &candidate_ids {
+        validate_image_for_collection_scope(&tx, &validation_state, image_id)?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let has_updated_at = tx
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM pragma_table_info('collections') WHERE name = 'updated_at')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let update_sql = if has_updated_at {
+        "UPDATE collections
+         SET invoke_source_id = ?1, invoke_owner_id = ?2, updated_at = ?3,
+             dynamic_count = NULL, dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE id = ?4"
+    } else {
+        "UPDATE collections
+         SET invoke_source_id = ?1, invoke_owner_id = ?2,
+             dynamic_count = NULL, dynamic_thumbnail_path = NULL,
+             dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+             dynamic_thumbnail_cached_at = NULL
+         WHERE id = ?4"
+    };
+    tx.execute(
+        update_sql,
+        params![target_source_id, target_owner_id, now, collection_id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.commit().map_err(|error| error.to_string())?;
+
+    Ok(UpdateAmbitCollectionScopeResult {
+        collection_id: collection_id.to_string(),
+        invoke_source_id: target_source_id.map(str::to_string),
+        invoke_owner_id: target_owner_id.map(str::to_string),
+    })
+}
+
+fn set_collection_custom_thumbnail_inner(
+    conn: &rusqlite::Connection,
+    collection_id: &str,
+    image_id: Option<&str>,
+) -> Result<(), String> {
+    let collection_id = collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("Collection ID is required".to_string());
+    }
+    let image_id = image_id.map(str::trim).filter(|value| !value.is_empty());
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let collection = load_membership_collection(&tx, collection_id)?;
+    if let Some(image_id) = image_id {
+        let visible: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = ?1 AND invoke_scope_hidden = 0)",
+                [image_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| error.to_string())?;
+        if !visible {
+            return Err(format!("Image '{}' is no longer available", image_id));
+        }
+        validate_image_for_collection_scope(&tx, &collection, image_id)?;
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis() as i64;
+    let has_updated_at = tx
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM pragma_table_info('collections') WHERE name = 'updated_at')",
+            [],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if has_updated_at {
+        tx.execute(
+            "UPDATE collections SET custom_thumbnail = ?1, updated_at = ?2 WHERE id = ?3",
+            params![image_id, now, collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    } else {
+        tx.execute(
+            "UPDATE collections SET custom_thumbnail = ?1 WHERE id = ?2",
+            params![image_id, collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    if image_id.is_none() {
+        tx.execute(
+            "UPDATE collections SET dynamic_thumbnail_path = NULL,
+                 dynamic_safe_thumbnail_path = NULL, dynamic_thumbnail_is_sensitive = NULL,
+                 dynamic_thumbnail_cached_at = NULL WHERE id = ?1",
+            [collection_id],
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    tx.commit().map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn resolve_exact_duplicate_groups_inner(
@@ -1048,14 +1579,14 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
         let app_log_path = resolve_app_log_path(&app_log_dir, &app_clone.package_info().name);
         let image_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0",
                 [],
                 |r| r.get(0),
             )
             .unwrap_or(0);
         let deleted_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 1",
                 [],
                 |r| r.get(0),
             )
@@ -1068,7 +1599,7 @@ pub async fn get_db_diagnostics(app: AppHandle) -> Result<DbDiagnostics, String>
             .unwrap_or(0);
         let tool_null_count: i64 = conn
             .query_row(
-                "SELECT COUNT(*) FROM images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
+                "SELECT COUNT(*) FROM scoped_images WHERE invoke_scope_hidden = 0 AND json_extract(metadata_json, '$.tool') IS NULL",
                 [],
                 |r| r.get(0),
             )
@@ -1147,6 +1678,43 @@ pub async fn mutate_collection_membership(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn migrate_legacy_collections(
+    app: AppHandle,
+    input: LegacyCollectionMigrationInput,
+) -> Result<LegacyCollectionMigrationResult, String> {
+    run_blocking(app, move |conn| {
+        migrate_legacy_collections_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn update_ambit_collection_scope(
+    app: AppHandle,
+    input: UpdateAmbitCollectionScopeInput,
+) -> Result<UpdateAmbitCollectionScopeResult, String> {
+    run_blocking(app, move |conn| {
+        update_ambit_collection_scope_inner(conn, &input)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn set_collection_custom_thumbnail(
+    app: AppHandle,
+    collection_id: String,
+    image_id: Option<String>,
+) -> Result<(), String> {
+    run_blocking(app, move |conn| {
+        set_collection_custom_thumbnail_inner(conn, &collection_id, image_id.as_deref())
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn backfill_image_file_hashes(
     app: AppHandle,
     state: tauri::State<'_, FileHashBackfillState>,
@@ -1157,46 +1725,7 @@ pub async fn backfill_image_file_hashes(
     let is_cancelled = state.is_cancelled.clone();
     run_blocking(app, move |conn| {
         let requested_limit = limit.unwrap_or(u32::MAX) as i64;
-        let rows: Vec<(String, String)> = {
-            let mut stmt = conn
-                .prepare(
-                    "
-                    SELECT id, path
-                    FROM images
-                    WHERE invoke_scope_hidden = 0
-                      AND is_deleted = 0
-                      AND is_missing = 0
-                      AND group_id IS NULL
-                      AND IFNULL(is_intermediate_gen, 0) = 0
-                      AND (file_hash IS NULL OR file_hash = '')
-                      AND path NOT LIKE 'blob:%'
-                      AND path NOT LIKE 'data:%'
-                      AND file_size IN (
-                        SELECT file_size
-                        FROM images
-                        WHERE invoke_scope_hidden = 0
-                          AND is_deleted = 0
-                          AND is_missing = 0
-                          AND group_id IS NULL
-                          AND IFNULL(is_intermediate_gen, 0) = 0
-                          AND path NOT LIKE 'blob:%'
-                          AND path NOT LIKE 'data:%'
-                        GROUP BY file_size
-                        HAVING COUNT(*) > 1
-                      )
-                    ORDER BY file_size DESC, timestamp DESC
-                    LIMIT ?1
-                    ",
-                )
-                .map_err(|e| e.to_string())?;
-
-            let mapped = stmt
-                .query_map([requested_limit], |row| Ok((row.get(0)?, row.get(1)?)))
-                .map_err(|e| e.to_string())?
-                .collect::<Result<Vec<_>, rusqlite::Error>>()
-                .map_err(|e| e.to_string())?;
-            mapped
-        };
+        let rows = load_file_hash_candidates(conn, requested_limit)?;
 
         let total = rows.len();
         let mut scanned = 0;
@@ -1227,15 +1756,19 @@ pub async fn backfill_image_file_hashes(
                     .map_err(|e| e.to_string())?;
                 missing += 1;
             } else {
-                match hash_file_sha256(path) {
-                    Ok(hash) => {
+                match hash_file_sha256_cancellable(path, &is_cancelled) {
+                    Ok(Some(hash)) => {
                         update_hash
                             .execute(params![hash, id])
                             .map_err(|e| e.to_string())?;
                         updated += 1;
                     }
+                    Ok(None) => {
+                        was_cancelled = true;
+                        break;
+                    }
                     Err(e) => {
-                        log::warn!("[Maintenance] Failed to hash image {}: {}", path, e);
+                        log::warn!("[Maintenance] Failed to hash media file {}: {}", path, e);
                         errors += 1;
                     }
                 }
@@ -1248,7 +1781,7 @@ pub async fn backfill_image_file_hashes(
                     FileHashBackfillProgress {
                         current: index + 1,
                         total,
-                        message: "Hashing images for exact duplicate detection...".to_string(),
+                        message: "Hashing media for exact duplicate detection...".to_string(),
                     },
                 );
                 last_emit = std::time::Instant::now();
@@ -1258,37 +1791,7 @@ pub async fn backfill_image_file_hashes(
         drop(update_hash);
         drop(mark_missing);
 
-        let remaining = conn
-            .query_row(
-                "
-                SELECT COUNT(*)
-                FROM images
-                WHERE invoke_scope_hidden = 0
-                  AND is_deleted = 0
-                  AND is_missing = 0
-                  AND group_id IS NULL
-                  AND IFNULL(is_intermediate_gen, 0) = 0
-                  AND (file_hash IS NULL OR file_hash = '')
-                  AND path NOT LIKE 'blob:%'
-                  AND path NOT LIKE 'data:%'
-                  AND file_size IN (
-                    SELECT file_size
-                    FROM images
-                    WHERE invoke_scope_hidden = 0
-                      AND is_deleted = 0
-                      AND is_missing = 0
-                      AND group_id IS NULL
-                      AND IFNULL(is_intermediate_gen, 0) = 0
-                      AND path NOT LIKE 'blob:%'
-                      AND path NOT LIKE 'data:%'
-                    GROUP BY file_size
-                    HAVING COUNT(*) > 1
-                  )
-                ",
-                [],
-                |row| row.get::<_, i64>(0),
-            )
-            .unwrap_or(0) as usize;
+        let remaining = count_remaining_file_hash_candidates(conn);
 
         Ok(FileHashBackfillResult {
             scanned,
@@ -1359,15 +1862,20 @@ pub async fn schedule_purge_transaction(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_log_directory, hash_file_sha256, mutate_collection_membership_inner,
-        remove_images_from_library_inner, resolve_app_log_path,
+        ensure_log_directory, hash_file_sha256, hash_file_sha256_cancellable,
+        load_file_hash_candidates, migrate_legacy_collections_inner,
+        mutate_collection_membership_inner, remove_images_from_library_inner, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
+        update_ambit_collection_scope_inner, AmbitCollectionScopeMode,
         CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
+        LegacyCollectionMigrationInput, LegacyCollectionMigrationItem,
+        UpdateAmbitCollectionScopeInput,
     };
     use crate::db::migrations::init_db;
     use rusqlite::{params, Connection};
     use std::fs::File;
     use std::io::Write;
+    use std::sync::atomic::AtomicBool;
 
     fn apply_all_migrations(conn: &Connection) {
         for migration in init_db() {
@@ -1407,6 +1915,18 @@ mod tests {
         .expect("seed image");
     }
 
+    fn activate_test_owner_scope(conn: &Connection, mode: &str, owner_id: Option<&str>) {
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state
+                (state_key, db_path, images_root, scope_mode, owner_id, updated_at)
+             VALUES ('current', 'invoke.db', 'C:/Invoke', ?1, ?2, 1)
+             ON CONFLICT(state_key) DO UPDATE SET scope_mode = excluded.scope_mode,
+                 owner_id = excluded.owner_id",
+            params![mode, owner_id],
+        )
+        .expect("activate test scope");
+    }
+
     #[test]
     fn hashes_same_bytes_independent_of_path() {
         let first = std::env::temp_dir().join("ambit_hash_test_a.bin");
@@ -1427,6 +1947,47 @@ mod tests {
             first_hash,
             "f10266197016b8e8842aeba6800100997ce04f35a45a3bff974711e9615ea597"
         );
+    }
+
+    #[test]
+    fn file_hashing_honors_cancellation_before_reading_the_next_chunk() {
+        let path = std::env::temp_dir().join("ambit_hash_cancel_test.bin");
+        File::create(&path)
+            .unwrap()
+            .write_all(b"bytes that must remain unhashed")
+            .unwrap();
+        let is_cancelled = AtomicBool::new(true);
+
+        let result = hash_file_sha256_cancellable(&path.to_string_lossy(), &is_cancelled).unwrap();
+
+        let _ = std::fs::remove_file(path);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn file_hash_candidates_include_images_and_videos_with_matching_sizes() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_image(&conn, "image", "", false, false, None, "{}", None, None);
+        seed_image(&conn, "video", "", false, false, None, "{}", None, None);
+        seed_image(&conn, "unique", "", false, false, None, "{}", None, None);
+        conn.execute(
+            "UPDATE images
+             SET media_type = 'video', duration_ms = 1000, video_codec = 'h264',
+                 audio_present = 0, rotation_degrees = 0, probe_status = 'ready',
+                 playback_status = 'playable'
+             WHERE id = 'video'",
+            [],
+        )
+        .unwrap();
+        conn.execute("UPDATE images SET file_size = 200 WHERE id = 'unique'", [])
+            .unwrap();
+
+        let candidates = load_file_hash_candidates(&conn, i64::MAX).unwrap();
+        let mut ids = candidates.into_iter().map(|(id, _)| id).collect::<Vec<_>>();
+        ids.sort();
+
+        assert_eq!(ids, ["image", "video"]);
     }
 
     #[test]
@@ -1577,6 +2138,142 @@ mod tests {
                 17,
             )
         );
+    }
+
+    #[test]
+    fn restore_preserves_video_state_and_rechecks_local_source_presence() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let root = std::env::temp_dir().join(format!(
+            "ambit_removed_video_restore_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let present_path = root.join("present.webm");
+        let missing_path = root.join("missing.webm");
+        std::fs::write(&present_path, b"present").unwrap();
+        std::fs::write(&missing_path, b"removed later").unwrap();
+        let present_id = present_path.to_string_lossy().replace('\\', "/");
+        let missing_id = missing_path.to_string_lossy().replace('\\', "/");
+
+        for id in [&present_id, &missing_id] {
+            seed_image(
+                &conn,
+                id,
+                "video-hash",
+                true,
+                true,
+                Some(true),
+                "{}",
+                None,
+                Some("video notes"),
+            );
+            conn.execute(
+                "UPDATE images
+                 SET timestamp = 4242, media_type = 'video', media_container = 'webm',
+                     media_mime_type = 'video/webm', duration_ms = 2000,
+                     video_codec = 'vp9', video_profile = '0', audio_present = 1,
+                     audio_codec = 'opus', frame_rate_num = 30, frame_rate_den = 1,
+                     rotation_degrees = 0, probe_status = 'ready', playback_status = 'playable'
+                 WHERE id = ?1",
+                [id],
+            )
+            .unwrap();
+        }
+
+        remove_images_from_library_inner(&conn, &[present_id.clone(), missing_id.clone()]).unwrap();
+        std::fs::remove_file(&missing_path).unwrap();
+        restore_removed_images_inner(&conn, &[present_id.clone(), missing_id.clone()]).unwrap();
+
+        let restored = |id: &str| {
+            conn.query_row(
+                "SELECT timestamp, is_missing, media_type, media_container, media_mime_type,
+                        duration_ms, video_codec, video_profile, audio_present, audio_codec,
+                        frame_rate_num, frame_rate_den, rotation_degrees, probe_status,
+                        playback_status, is_favorite, is_pinned, user_masked, notes
+                 FROM images WHERE id = ?1",
+                [id],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        (
+                            (
+                                row.get::<_, String>(2)?,
+                                row.get::<_, String>(3)?,
+                                row.get::<_, String>(4)?,
+                                row.get::<_, i64>(5)?,
+                                row.get::<_, String>(6)?,
+                                row.get::<_, String>(7)?,
+                                row.get::<_, i64>(8)?,
+                                row.get::<_, String>(9)?,
+                            ),
+                            (
+                                row.get::<_, i64>(10)?,
+                                row.get::<_, i64>(11)?,
+                                row.get::<_, i64>(12)?,
+                                row.get::<_, String>(13)?,
+                                row.get::<_, String>(14)?,
+                                row.get::<_, i64>(15)?,
+                                row.get::<_, i64>(16)?,
+                                row.get::<_, Option<i64>>(17)?,
+                                row.get::<_, String>(18)?,
+                            ),
+                        ),
+                    ))
+                },
+            )
+            .unwrap()
+        };
+        let expected_state = (
+            (
+                "video".to_string(),
+                "webm".to_string(),
+                "video/webm".to_string(),
+                2000,
+                "vp9".to_string(),
+                "0".to_string(),
+                1,
+                "opus".to_string(),
+            ),
+            (
+                30,
+                1,
+                0,
+                "ready".to_string(),
+                "playable".to_string(),
+                1,
+                1,
+                Some(1),
+                "video notes".to_string(),
+            ),
+        );
+        let present = restored(&present_id);
+        let missing = restored(&missing_id);
+        assert_eq!(
+            present.0, 4242,
+            "restore must preserve the original library timestamp"
+        );
+        assert_eq!(
+            missing.0, 4242,
+            "restore must preserve the original library timestamp"
+        );
+        assert_eq!(
+            present.1, 0,
+            "an existing source must remain available after restore"
+        );
+        assert_eq!(
+            missing.1, 1,
+            "a removed source must restore as missing instead of playable"
+        );
+        assert_eq!(present.2, expected_state);
+        assert_eq!(missing.2, expected_state);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2144,5 +2841,364 @@ mod tests {
             .unwrap();
         assert_eq!(active_count, 4);
         assert_eq!(removed_count, 0);
+    }
+
+    #[test]
+    fn all_users_cannot_add_another_owners_image_to_an_owner_scoped_ambit_collection() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owner-a-image",
+            "a",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "owner-b-image",
+            "b",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
+             WHERE id = 'owner-a-image';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id = 'owner-b-image';
+             INSERT INTO collections (id, name, created_at, source, invoke_source_id, invoke_owner_id)
+             VALUES ('owner-a-collection', 'Owner A', 1, 'ambit', 'invoke.db', 'owner-a');",
+        )
+        .expect("seed scoped rows");
+
+        let error = mutate_collection_membership_inner(
+            &conn,
+            &CollectionMembershipMutationInput {
+                operation: CollectionMembershipOperation::Add,
+                image_ids: vec!["owner-b-image".to_string()],
+                source_collection_id: None,
+                target_collection_id: Some("owner-a-collection".to_string()),
+            },
+        )
+        .expect_err("cross-owner membership must fail");
+
+        assert!(error.contains("different InvokeAI owner"));
+        assert_eq!(table_count(&conn, "collection_images"), 0);
+    }
+
+    #[test]
+    fn collection_scope_reassignment_is_atomic_and_accepts_mixed_owners_only_for_all_users() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owner-a-image",
+            "a",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "owner-b-image",
+            "b",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
+             WHERE id = 'owner-a-image';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id = 'owner-b-image';
+             INSERT INTO collections (id, name, created_at, source)
+             VALUES ('mixed', 'Mixed', 1, 'ambit');
+             INSERT INTO collection_images VALUES ('mixed', 'owner-a-image');
+             INSERT INTO collection_images VALUES ('mixed', 'owner-b-image');",
+        )
+        .expect("seed mixed collection");
+
+        let owner_error = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "mixed".to_string(),
+                mode: AmbitCollectionScopeMode::Owner,
+                db_path: Some("invoke.db".to_string()),
+                owner_id: Some("owner-a".to_string()),
+            },
+        )
+        .expect_err("mixed collection cannot become owner scoped");
+        assert!(owner_error.contains("different InvokeAI owner"));
+        let unchanged: (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT invoke_source_id, invoke_owner_id FROM collections WHERE id = 'mixed'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("unchanged scope");
+        assert_eq!(unchanged, (None, None));
+
+        let result = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "mixed".to_string(),
+                mode: AmbitCollectionScopeMode::All,
+                db_path: Some("invoke.db".to_string()),
+                owner_id: None,
+            },
+        )
+        .expect("All Users accepts mixed owners");
+        assert_eq!(result.invoke_source_id.as_deref(), Some("invoke.db"));
+        assert_eq!(result.invoke_owner_id, None);
+    }
+
+    #[test]
+    fn collection_scope_reassignment_cannot_mutate_a_hidden_owner_collection() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        conn.execute(
+            "INSERT INTO collections (
+                id, name, created_at, source, invoke_source_id, invoke_owner_id
+             ) VALUES ('owner-b-collection', 'Owner B', 1, 'ambit', 'invoke.db', 'owner-b')",
+            [],
+        )
+        .expect("seed hidden collection");
+
+        let error = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "owner-b-collection".to_string(),
+                mode: AmbitCollectionScopeMode::Global,
+                db_path: None,
+                owner_id: None,
+            },
+        )
+        .expect_err("a hidden collection must not be reassigned");
+
+        assert!(error.contains("no longer available"));
+        let unchanged: (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT invoke_source_id, invoke_owner_id
+                 FROM collections WHERE id = 'owner-b-collection'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("hidden collection remains");
+        assert_eq!(
+            unchanged,
+            (Some("invoke.db".to_string()), Some("owner-b".to_string()))
+        );
+    }
+
+    #[test]
+    fn collection_scope_reassignment_accepts_a_path_form_custom_thumbnail() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(
+            &conn,
+            "thumbnail-image",
+            "thumbnail-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET path = 'C:/Invoke/images/thumbnail.png',
+                 invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a'
+             WHERE id = 'thumbnail-image';
+             INSERT INTO collections (id, name, created_at, source, custom_thumbnail)
+             VALUES (
+                 'path-thumbnail-collection', 'Path thumbnail', 1, 'ambit',
+                 'C:/Invoke/images/thumbnail.png'
+             );",
+        )
+        .expect("seed path-form thumbnail collection");
+
+        let result = update_ambit_collection_scope_inner(
+            &conn,
+            &UpdateAmbitCollectionScopeInput {
+                collection_id: "path-thumbnail-collection".to_string(),
+                mode: AmbitCollectionScopeMode::Owner,
+                db_path: Some("invoke.db".to_string()),
+                owner_id: Some("owner-a".to_string()),
+            },
+        )
+        .expect("an exact image path should resolve for scope validation");
+
+        assert_eq!(result.invoke_source_id.as_deref(), Some("invoke.db"));
+        assert_eq!(result.invoke_owner_id.as_deref(), Some("owner-a"));
+    }
+
+    #[test]
+    fn legacy_collection_migration_ignores_active_scope_and_preserves_existing_identity() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .expect("add runtime collection timestamp");
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(
+            &conn,
+            "existing-member",
+            "existing",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "hidden-member",
+            "hidden",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-b'
+             WHERE id IN ('existing-member', 'hidden-member');
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id, updated_at
+             ) VALUES (
+                 'hidden-collection', 'Existing name', 1, 'invoke',
+                 'invoke.db', 'owner-b', 1
+             );
+             INSERT INTO collection_images (collection_id, image_id)
+             VALUES ('hidden-collection', 'existing-member');",
+        )
+        .expect("seed hidden collection and images");
+
+        let input = LegacyCollectionMigrationInput {
+            import_key: "library-json-collections-v1".to_string(),
+            collections: vec![LegacyCollectionMigrationItem {
+                id: "hidden-collection".to_string(),
+                name: "Legacy name".to_string(),
+                color: Some("#abcdef".to_string()),
+                is_archived: false,
+                is_pinned: true,
+                created_at: 10,
+                updated_at: Some(20),
+                filter_state: None,
+                manual_exclusions: None,
+                custom_thumbnail: None,
+                image_ids: vec!["hidden-member".to_string()],
+            }],
+        };
+
+        let first = migrate_legacy_collections_inner(&conn, &input)
+            .expect("hidden legacy data should migrate");
+        conn.execute(
+            "UPDATE collections SET name = 'User edit' WHERE id = 'hidden-collection'",
+            [],
+        )
+        .expect("edit migrated collection");
+        conn.execute(
+            "DELETE FROM collection_images
+             WHERE collection_id = 'hidden-collection' AND image_id = 'hidden-member'",
+            [],
+        )
+        .expect("remove migrated membership");
+        let second = migrate_legacy_collections_inner(&conn, &input)
+            .expect("receipt should make repeated migration a no-op");
+
+        assert!(!first.already_applied);
+        assert_eq!(first.collections_upserted, 1);
+        assert_eq!(first.memberships_inserted, 1);
+        assert!(second.already_applied);
+        assert_eq!(second.collections_upserted, 0);
+        assert_eq!(second.memberships_inserted, 0);
+        let identity: (String, Option<String>, Option<String>, String) = conn
+            .query_row(
+                "SELECT source, invoke_source_id, invoke_owner_id, name
+                 FROM collections WHERE id = 'hidden-collection'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("migrated collection");
+        assert_eq!(
+            identity,
+            (
+                "invoke".to_string(),
+                Some("invoke.db".to_string()),
+                Some("owner-b".to_string()),
+                "User edit".to_string(),
+            )
+        );
+        let membership_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images
+                 WHERE collection_id = 'hidden-collection'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("membership count");
+        assert_eq!(membership_count, 1);
+    }
+
+    #[test]
+    fn legacy_collection_migration_rolls_back_the_batch_on_failure() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .expect("add runtime collection timestamp");
+        let item = |id: &str, name: &str| LegacyCollectionMigrationItem {
+            id: id.to_string(),
+            name: name.to_string(),
+            color: None,
+            is_archived: false,
+            is_pinned: false,
+            created_at: 1,
+            updated_at: None,
+            filter_state: None,
+            manual_exclusions: None,
+            custom_thumbnail: None,
+            image_ids: Vec::new(),
+        };
+
+        let error = migrate_legacy_collections_inner(
+            &conn,
+            &LegacyCollectionMigrationInput {
+                import_key: "library-json-collections-v1".to_string(),
+                collections: vec![item("valid-first", "Valid"), item("", "Invalid")],
+            },
+        )
+        .expect_err("invalid batch must fail");
+
+        assert!(error.contains("non-empty ID and name"));
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collections WHERE id = 'valid-first'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("collection count");
+        assert_eq!(count, 0);
     }
 }

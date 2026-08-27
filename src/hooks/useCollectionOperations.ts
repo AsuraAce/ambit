@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, Collection, SmartCollection, FilterState } from '../types';
+import { AIImage, Collection, SmartCollection, FilterState, isVideoAsset } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useCollectionStore } from '../stores/collectionStore';
+import type { CollectionRefreshOptions } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
   upsertCollection,
@@ -13,14 +14,17 @@ import {
   addImagesToCollection as addImgsToCol,
   removeImagesFromCollection as removeImgsFromCol,
   moveImagesBetweenCollections as moveImgsBetweenCols,
-  setCollectionCustomThumbnail
+  setCollectionCustomThumbnail,
+  updateAmbitCollectionScope,
+  type AmbitCollectionScopeTarget
 } from '../services/db/collectionRepo';
+import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 interface UseCollectionOperationsProps {
   collections: Collection[];
   smartCollections: SmartCollection[];
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-  refreshCollections: (debounced?: boolean) => Promise<void>;
+  refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
   activeCollectionId: string | null;
@@ -40,6 +44,7 @@ export const useCollectionOperations = ({
   const maskedKeywords = useSettingsStore(s => getEffectiveMaskedKeywords(s.settings));
   const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
   const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+  const invokeOwnerScope = useInvokeOwnerScopeStore(s => s.ownerScopeState.scope);
   const activeCollectionIdRef = React.useRef(activeCollectionId);
   const membershipMutationTailsRef = React.useRef(new Map<string, Promise<void>>());
   activeCollectionIdRef.current = activeCollectionId;
@@ -89,6 +94,8 @@ export const useCollectionOperations = ({
       name,
       createdAt: Date.now(),
       source: 'ambit',
+      invokeSourceId: invokeOwnerScope?.mode === 'legacy' ? undefined : invokeOwnerScope?.dbPath,
+      invokeOwnerId: invokeOwnerScope?.mode === 'owner' ? invokeOwnerScope.ownerId : undefined,
       imageIds: [],
       count: 0,
       filters // Hybrid Support: Initialize with filters if provided
@@ -99,15 +106,23 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection(newCol);
-      addToast(`Collection "${name}" created`, 'success');
-      // Background refresh to ensure everything is in sync (smart stats etc)
-      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.filter(c => c.id !== id));
       addToast("Failed to create collection", "error");
+      return;
     }
-  }, [setAllCollections, refreshCollections, addToast]);
+
+    addToast(`Collection "${name}" created`, 'success');
+    try {
+      await refreshCollections(false, {
+        consistency: 'authoritative',
+      });
+    } catch (error) {
+      console.error('[Collections] Failed to refresh after creating collection', error);
+      addToast('Collection created, but the collection list may need a refresh.', 'warning');
+    }
+  }, [setAllCollections, refreshCollections, addToast, invokeOwnerScope]);
 
   const updateCollectionFilters = useCallback(async (id: string, filters: FilterState | undefined) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
@@ -146,6 +161,40 @@ export const useCollectionOperations = ({
       addToast("Failed to update filters", "error");
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
+
+  const updateCollectionScope = useCallback(async (
+    id: string,
+    target: AmbitCollectionScopeTarget
+  ): Promise<boolean> => {
+    const collection = [...collections, ...smartCollections].find(item => item.id === id);
+    if (!collection || collection.source === 'invoke') return false;
+
+    try {
+      await updateAmbitCollectionScope(id, target);
+      if (activeCollectionIdRef.current === id) {
+        const activeScope = useInvokeOwnerScopeStore.getState().ownerScopeState.scope;
+        const remainsVisible = activeScope?.mode === 'all'
+          || (activeScope?.mode === 'owner'
+            && target.mode === 'owner'
+            && activeScope.ownerId === target.ownerId);
+        if (!remainsVisible) {
+          setFilters(previous => ({ ...previous, collectionId: null }));
+        }
+      }
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+        queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+      ]);
+      addToast('Collection visibility updated', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(message || 'Failed to update collection visibility', 'error');
+      return false;
+    }
+  }, [addToast, collections, queryClient, refreshCollections, setFilters, smartCollections]);
 
   const deleteCollection = useCallback(async (id: string) => {
     const original = [...collections, ...smartCollections].find(c => c.id === id);
@@ -259,7 +308,7 @@ export const useCollectionOperations = ({
         return false;
       }
 
-      addToast(`Added images to collection`, 'success');
+      addToast('Added to collection', 'success');
       try {
         await Promise.all([
           refreshCollections(),
@@ -358,10 +407,13 @@ export const useCollectionOperations = ({
       return;
     }
 
+    const thumbnail = isVideoAsset(image)
+      ? image.thumbnailSource === 'ambit-video-v1' ? image.thumbnailUrl : undefined
+      : image.thumbnailUrl || image.url;
     const nextCollection: Collection = {
       ...col,
       customThumbnail: image.id,
-      thumbnail: image.thumbnailUrl || image.url,
+      thumbnail,
       safeThumbnail: undefined,
       thumbnailIsSensitive: isImageMasked(image, true, maskedKeywords),
       thumbnailSourceKind: 'customImage'
@@ -420,6 +472,7 @@ export const useCollectionOperations = ({
   return {
     createCollection,
     updateCollectionFilters,
+    updateCollectionScope,
     deleteCollection,
     renameCollection,
     setCollectionColor,

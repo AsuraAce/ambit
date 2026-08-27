@@ -5,6 +5,7 @@ const PURGE_DATABASE_FILES: [&str; 3] = ["images.db-wal", "images.db-shm", "imag
 const PURGE_MARKER_FILE: &str = ".purge_on_restart";
 pub(crate) const PURGE_JOURNAL_FILE: &str = "library.purge.json";
 pub(crate) const PURGE_COMPLETION_FILE: &str = "library.purge.completed";
+#[cfg(test)]
 const DEVELOPMENT_IDENTIFIER: &str = "com.ambit.dev";
 const PRODUCTION_IDENTIFIER_PATHS: [&str; 2] =
     [PRODUCTION_IDENTIFIER, LEGACY_PRODUCTION_IDENTIFIER];
@@ -45,7 +46,7 @@ struct DatabaseFileMove {
 
 #[derive(Debug, Clone)]
 struct AppProfileDir {
-    identifier: &'static str,
+    identifier: String,
     path: std::path::PathBuf,
 }
 
@@ -337,13 +338,8 @@ struct DeferredPurgeOutcome {
 }
 
 #[cfg(not(test))]
-pub(crate) fn check_and_execute_deferred_purge() -> Result<(), String> {
+pub(crate) fn check_and_execute_deferred_purge(active_identifier: &str) -> Result<(), String> {
     let roots = app_data_roots_to_check();
-    let active_identifier = if cfg!(debug_assertions) {
-        DEVELOPMENT_IDENTIFIER
-    } else {
-        PRODUCTION_IDENTIFIER
-    };
     let outcome = execute_deferred_purge_for_roots(&roots, active_identifier);
     if outcome.profiles_purged > 0 {
         println!(
@@ -365,13 +361,13 @@ pub(crate) fn check_and_execute_deferred_purge() -> Result<(), String> {
 
 fn execute_deferred_purge_for_roots(
     roots: &[std::path::PathBuf],
-    active_identifier: &'static str,
+    active_identifier: &str,
 ) -> DeferredPurgeOutcome {
-    let purge_targets: Vec<AppProfileDir> = profile_dirs_for_roots(roots)
+    let purge_targets: Vec<AppProfileDir> = profile_dirs_for_roots(roots, Some(active_identifier))
         .into_iter()
         .filter(|profile| {
             if is_production_identifier(active_identifier) {
-                is_production_identifier(profile.identifier)
+                is_production_identifier(&profile.identifier)
             } else {
                 profile.identifier == active_identifier
             }
@@ -667,12 +663,23 @@ fn read_purge_transaction(path: &std::path::Path) -> Result<PurgeTransactionArti
         .map_err(|error| format!("Failed to parse {}: {error}", path.display()))
 }
 
-fn profile_dirs_for_roots(roots: &[std::path::PathBuf]) -> Vec<AppProfileDir> {
+fn profile_dirs_for_roots(
+    roots: &[std::path::PathBuf],
+    active_identifier: Option<&str>,
+) -> Vec<AppProfileDir> {
     let mut profiles = Vec::new();
     for root in roots {
         for identifier in APP_IDENTIFIER_PATHS {
             profiles.push(AppProfileDir {
-                identifier,
+                identifier: identifier.to_string(),
+                path: root.join(identifier),
+            });
+        }
+        if let Some(identifier) =
+            active_identifier.filter(|identifier| !APP_IDENTIFIER_PATHS.contains(identifier))
+        {
+            profiles.push(AppProfileDir {
+                identifier: identifier.to_string(),
                 path: root.join(identifier),
             });
         }
@@ -1232,7 +1239,7 @@ fn escape_sql_like(value: &str) -> String {
 
 #[cfg(not(test))]
 pub(crate) fn app_identifier_dirs_to_check() -> Vec<std::path::PathBuf> {
-    profile_dirs_for_roots(&app_data_roots_to_check())
+    profile_dirs_for_roots(&app_data_roots_to_check(), None)
         .into_iter()
         .map(|profile| profile.path)
         .collect()
@@ -1595,6 +1602,29 @@ mod identifier_migration_tests {
         assert_db_triplet_missing(&dev_profile);
         assert_db_triplet_exists(&local_profile);
         assert_db_triplet_exists(&roaming_profile);
+        cleanup(&root);
+    }
+
+    #[test]
+    fn deferred_custom_smoke_purge_never_touches_shared_development_profile() {
+        const SMOKE_IDENTIFIER: &str = "com.ambit.dev.video-smoke";
+        let root = unique_temp_root("purge-video-smoke-only");
+        let local_root = root.join("Local");
+        let smoke_profile = local_root.join(SMOKE_IDENTIFIER);
+        let dev_profile = local_root.join(DEVELOPMENT_IDENTIFIER);
+        write_purge_marker(&smoke_profile);
+        write_db_triplet(&smoke_profile, "smoke");
+        write_purge_marker(&dev_profile);
+        write_db_triplet(&dev_profile, "dev");
+
+        let outcome =
+            execute_deferred_purge_for_roots(std::slice::from_ref(&local_root), SMOKE_IDENTIFIER);
+
+        assert_eq!(outcome.database_files_deleted, 3);
+        assert_eq!(outcome.markers_deleted, 1);
+        assert_db_triplet_missing(&smoke_profile);
+        assert_db_triplet_exists(&dev_profile);
+        assert!(dev_profile.join(PURGE_MARKER_FILE).exists());
         cleanup(&root);
     }
 

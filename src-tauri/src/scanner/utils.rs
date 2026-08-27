@@ -149,11 +149,11 @@ fn path_is_known_media_file(
     let is_known: i64 = conn
         .query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
+                SELECT 1 FROM scoped_images
                 WHERE invoke_scope_hidden = 0
                   AND (id IN (?1, ?2) OR path IN (?1, ?2))
                 UNION ALL
-                SELECT 1 FROM removed_images
+                SELECT 1 FROM scoped_removed_images
                 WHERE invoke_scope_hidden = 0
                   AND (id IN (?1, ?2) OR path IN (?1, ?2))
             )",
@@ -416,6 +416,13 @@ mod tests {
             [],
         )
             .unwrap();
+        conn.execute_batch(
+            "CREATE VIEW scoped_images AS
+                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
+             CREATE VIEW scoped_removed_images AS
+                 SELECT * FROM removed_images WHERE invoke_scope_hidden = 0;",
+        )
+        .unwrap();
         conn
     }
 

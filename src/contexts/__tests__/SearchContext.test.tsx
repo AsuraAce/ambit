@@ -179,7 +179,7 @@ describe('SearchProvider', () => {
             isFetchingNextPage: false,
             isLoading: false,
             isPlaceholderData: false,
-            queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, 'invoke:none'] as ImagesQueryKey
         };
         mocks.imagesQueryArgs.current = null;
         mocks.statsQuery.current = {
@@ -364,7 +364,7 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const view = renderProvider();
@@ -379,7 +379,7 @@ describe('SearchProvider', () => {
             ...(mocks.imagesQuery.current as object),
             data: undefined,
             isFetching: true,
-            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey
         };
         view.rerender(<SearchProvider><Consumer /></SearchProvider>);
 
@@ -417,7 +417,7 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [blurred], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'blur', ['face'], null, 'invoke:none'] as ImagesQueryKey
         };
         vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const view = render(<SearchProvider><TransitionConsumer /></SearchProvider>);
@@ -432,7 +432,7 @@ describe('SearchProvider', () => {
         mocks.imagesQuery.current = {
             ...(mocks.imagesQuery.current as object),
             data: { pages: [{ images: [safe], totalCount: 1, globalCount: 2 }] },
-            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null] as ImagesQueryKey
+            queryKey: ['images', baseFilters, 'date_desc', true, 'hide', ['face'], null, 'invoke:none'] as ImagesQueryKey
         };
         view.rerender(<SearchProvider><TransitionConsumer /></SearchProvider>);
 
