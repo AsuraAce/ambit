@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '../../../test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from '../../../test/testUtils';
 import { describe, expect, it, vi } from 'vitest';
 import type { InvokeOwnerScopeState } from '../../../contexts/SyncContext';
 import { InvokeOwnerScopeGate } from '../InvokeOwnerScopeGate';
@@ -25,10 +25,10 @@ describe('InvokeOwnerScopeGate', () => {
         expect(screen.getByRole('status')).toBeTruthy();
         expect(screen.getByText('InvokeAI library')).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Preparing your InvokeAI view' })).toBeTruthy();
-        expect(screen.getByText(/verifying which InvokeAI images/i)).toBeTruthy();
-        expect(screen.getByText('No images or collections are being deleted.')).toBeTruthy();
+        expect(screen.getByText(/loading the images, boards, and filters/i)).toBeTruthy();
+        expect(screen.getByText('Your library remains unchanged while this view loads.')).toBeTruthy();
         expect(screen.getByText('Checking InvokeAI owner information...')).toBeTruthy();
-        expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBeNull();
+        expect(screen.queryByRole('progressbar')).toBeNull();
     });
 
     it('shows real reconciliation counts without inventing a global percentage', () => {
@@ -41,6 +41,38 @@ describe('InvokeOwnerScopeGate', () => {
         expect(screen.getByText('Updating InvokeAI image details...')).toBeTruthy();
         expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('500');
         expect(screen.getByRole('progressbar').getAttribute('aria-valuemax')).toBe('2000');
+    });
+
+    it('names the target owner and reports elapsed time for a sustained switch', async () => {
+        vi.useFakeTimers();
+        try {
+            renderGate({
+                status: 'applying',
+                rootPath: 'D:/Invoke',
+                scope: {
+                    mode: 'owner',
+                    ownerId: 'owner-a',
+                    dbPath: 'D:/Invoke/databases/invokeai.db',
+                    imagesRoot: 'D:/Invoke',
+                },
+                discovery: {
+                    schemaMode: 'multi_user',
+                    dbPath: 'D:/Invoke/databases/invokeai.db',
+                    imagesRoot: 'D:/Invoke',
+                    owners: [{ ownerId: 'owner-a', displayName: 'Odin', imageCount: 12 }],
+                    unassignedImageCount: 0,
+                },
+                progress: { current: 0, total: 0, message: 'Updating changed InvokeAI filters...' },
+            });
+
+            expect(screen.getByRole('heading', { name: 'Switching to Odin' })).toBeTruthy();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(5000);
+            });
+            expect(screen.getByText(/5s elapsed/)).toBeTruthy();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('owns multi-user selection, applies an owner immediately, and focuses its heading', async () => {

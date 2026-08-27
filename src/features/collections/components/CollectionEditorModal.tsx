@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Collection, FilterState } from '../../../types';
-import { X, Save, Trash2, Filter, Info } from 'lucide-react';
+import { X, Save, Trash2, Filter, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
+import { useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
+import type { AmbitCollectionScopeTarget } from '../../../services/db/collectionRepo';
 
 interface CollectionEditorModalProps {
     isOpen: boolean;
@@ -11,6 +13,7 @@ interface CollectionEditorModalProps {
     collection: Collection | null;
     filters: FilterState; // Current active filters in global state
     onSave: (id: string, newFilters: FilterState | undefined) => void;
+    onUpdateScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
 }
 
 export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
@@ -18,10 +21,14 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     onClose,
     collection,
     filters,
-    onSave
+    onSave,
+    onUpdateScope = async () => false
 }) => {
     // Local state for editing the saved filters
     const [draftFilters, setDraftFilters] = useState<FilterState | null>(null);
+    const [scopeSelection, setScopeSelection] = useState('global');
+    const [isSavingScope, setIsSavingScope] = useState(false);
+    const discovery = useInvokeOwnerScopeStore(state => state.ownerScopeState.discovery);
 
     // Initialize draft filters when collection opens
     useEffect(() => {
@@ -30,11 +37,38 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         } else {
             setDraftFilters(null);
         }
+        setScopeSelection(collection?.invokeOwnerId
+            ? `owner:${collection.invokeOwnerId}`
+            : collection?.invokeSourceId
+                ? 'all'
+                : 'global');
     }, [collection]); // Simplified dependency
 
     if (!collection) return null;
 
     const hasFilters = !!draftFilters;
+    const canEditScope = collection.source !== 'invoke'
+        && discovery?.schemaMode === 'multi_user';
+    const scopeChanged = scopeSelection !== (collection.invokeOwnerId
+        ? `owner:${collection.invokeOwnerId}`
+        : collection.invokeSourceId
+            ? 'all'
+            : 'global');
+
+    const handleSaveScope = async () => {
+        if (!discovery || scopeSelection === 'global') return;
+        setIsSavingScope(true);
+        const ownerId = scopeSelection.startsWith('owner:')
+            ? scopeSelection.slice('owner:'.length)
+            : undefined;
+        const succeeded = await onUpdateScope(collection.id, {
+            mode: ownerId ? 'owner' : 'all',
+            dbPath: discovery.dbPath,
+            ownerId,
+        });
+        setIsSavingScope(false);
+        if (succeeded) onClose();
+    };
 
     const handleSaveDraft = () => {
         // If all filters are removed/empty, we might want to ask if they want to make it static?
@@ -246,6 +280,57 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                         </div>
 
                         <div className="space-y-6">
+                            <div className="p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl border border-gray-200 dark:border-white/5">
+                                <div className="font-medium text-gray-900 dark:text-white flex items-center gap-2 mb-2">
+                                    <Users className="w-4 h-4 text-sage-500" />
+                                    Visibility
+                                </div>
+                                {collection.source === 'invoke' ? (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        Managed by InvokeAI · {discovery?.owners.find(owner => owner.ownerId === collection.invokeOwnerId)?.displayName || collection.invokeOwnerId || 'System'}
+                                    </p>
+                                ) : canEditScope ? (
+                                    <div className="space-y-3">
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            Choose which InvokeAI library view can show this collection.
+                                        </p>
+                                        <select
+                                            aria-label="Collection visibility"
+                                            value={scopeSelection}
+                                            onChange={(event) => setScopeSelection(event.target.value)}
+                                            className="w-full rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-zinc-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+                                        >
+                                            {scopeSelection === 'global' && (
+                                                <option value="global" disabled>Shared (legacy)</option>
+                                            )}
+                                            <option value="all">All Users</option>
+                                            {discovery.owners.map(owner => (
+                                                <option key={owner.ownerId} value={`owner:${owner.ownerId}`}>
+                                                    {owner.displayName || 'Unnamed owner'}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {scopeChanged && scopeSelection !== 'global' && (
+                                            <button
+                                                type="button"
+                                                onClick={() => void handleSaveScope()}
+                                                disabled={isSavingScope}
+                                                className="w-full px-3 py-2 rounded-lg bg-sage-600 text-white text-sm font-medium hover:bg-sage-500 disabled:opacity-50"
+                                            >
+                                                {isSavingScope ? 'Updating…' : 'Update Visibility'}
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {collection.invokeOwnerId
+                                            ? collection.invokeOwnerId
+                                            : collection.invokeSourceId
+                                                ? 'All Users'
+                                                : 'Shared across library views'}
+                                    </p>
+                                )}
+                            </div>
                             <div className="space-y-4">
                                 {/* Current Rules Editor */}
                                 <div className="p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl border border-gray-200 dark:border-white/5">

@@ -4,6 +4,7 @@ import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, Recov
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 import type { ImportResult } from '../services/importService';
 import { createDefaultFilters } from '../utils/filterState';
+import type { AmbitCollectionScopeTarget } from '../services/db/collectionRepo';
 
 const SettingsModal = React.lazy(() => import('../features/settings/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 const ExportModal = React.lazy(() => import('../features/library/components/ExportModal').then(module => ({ default: module.ExportModal })));
@@ -58,6 +59,7 @@ interface GlobalModalsProps {
     filters?: FilterState;
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: FilterState | undefined) => void | Promise<void>;
+    onUpdateCollectionScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
@@ -103,6 +105,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     filters,
     collectionToEditId,
     onSaveCollectionFilters,
+    onUpdateCollectionScope,
     onScanFolder, // Added
     onInvokeSync, // Added for managed InvokeAI sync
     hasPendingUpdate,
@@ -279,6 +282,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         collection={[...collections, ...smartCollections].find(c => c.id === collectionToEditId) || null}
                         filters={filters ?? createDefaultFilters()}
                         onSave={onSaveCollectionFilters || (() => { })}
+                        onUpdateScope={onUpdateCollectionScope || (async () => false)}
                     />
                 )}
             </React.Suspense>

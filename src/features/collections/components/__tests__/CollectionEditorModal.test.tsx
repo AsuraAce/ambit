@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Collection, FilterState, GeneratorTool } from '../../../../types';
 import { CollectionEditorModal } from '../CollectionEditorModal';
+import { useInvokeOwnerScopeStore } from '../../../../stores/invokeOwnerScopeStore';
 
 vi.mock('framer-motion', async () => {
     const ReactModule = await import('react');
@@ -65,6 +66,44 @@ describe('CollectionEditorModal', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
+    });
+
+    it('offers All Users and discovered owners for Ambit collection visibility', async () => {
+        const onUpdateScope = vi.fn().mockResolvedValue(true);
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            scope: { mode: 'all', dbPath: 'invoke.db', imagesRoot: 'C:/Invoke' },
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'invoke.db',
+                imagesRoot: 'C:/Invoke',
+                unassignedImageCount: 0,
+                owners: [{ ownerId: 'jupiter', displayName: 'Jupiter', imageCount: 4 }],
+            },
+        });
+        render(
+            <CollectionEditorModal
+                isOpen
+                onClose={onClose}
+                collection={{ ...createCollection(), source: 'ambit', invokeSourceId: 'invoke.db' }}
+                filters={currentFilters}
+                onSave={onSave}
+                onUpdateScope={onUpdateScope}
+            />,
+        );
+
+        fireEvent.change(screen.getByRole('combobox', { name: 'Collection visibility' }), {
+            target: { value: 'owner:jupiter' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Update Visibility' }));
+
+        await waitFor(() => expect(onUpdateScope).toHaveBeenCalledWith('collection-1', {
+            mode: 'owner',
+            dbPath: 'invoke.db',
+            ownerId: 'jupiter',
+        }));
+        expect(onClose).toHaveBeenCalled();
     });
 
     it('renders nothing without a collection or while closed', () => {

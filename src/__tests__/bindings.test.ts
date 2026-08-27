@@ -23,6 +23,21 @@ const commandCases: CommandCase[] = [
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },
     { name: 'saveImagesBatch', invokeName: 'save_images_batch', args: [[]], payload: { images: [] }, returnsResult: true },
     {
+        name: 'reconcileInvokeOwnerInventory',
+        invokeName: 'reconcile_invoke_owner_inventory',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            images: [{ id: 'C:/invoke/asset.png', invokeOwnerId: 'owner-a' }],
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                images: [{ id: 'C:/invoke/asset.png', invokeOwnerId: 'owner-a' }],
+            },
+        },
+        returnsResult: true,
+    },
+    {
         name: 'reconcileInvokeImageSources',
         invokeName: 'reconcile_invoke_image_sources',
         args: [[{
@@ -63,6 +78,53 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     {
+        name: 'setInvokeBoardVerification',
+        invokeName: 'set_invoke_board_verification',
+        args: ['C:/invoke/databases/invokeai.db', 'owner-a', true],
+        payload: { dbPath: 'C:/invoke/databases/invokeai.db', ownerId: 'owner-a', verified: true },
+        returnsResult: true,
+    },
+    { name: 'beginActiveInvokeScopeCacheBuild', invokeName: 'begin_active_invoke_scope_cache_build', args: [], returnsResult: true },
+    {
+        name: 'commitActiveInvokeScopeCache',
+        invokeName: 'commit_active_invoke_scope_cache',
+        args: [{ scopeKey: 'scope-a', generation: 3 }],
+        payload: { ticket: { scopeKey: 'scope-a', generation: 3 } },
+        returnsResult: true,
+    },
+    {
+        name: 'abortActiveInvokeScopeCacheBuild',
+        invokeName: 'abort_active_invoke_scope_cache_build',
+        args: [{ scopeKey: 'scope-a', generation: 3 }],
+        payload: { ticket: { scopeKey: 'scope-a', generation: 3 } },
+        returnsResult: true,
+    },
+    {
+        name: 'reconcileInvokeBoardSnapshot',
+        invokeName: 'reconcile_invoke_board_snapshot',
+        args: [{
+            dbPath: 'C:/invoke/databases/invokeai.db',
+            mode: 'owner',
+            ownerId: 'owner-a',
+            boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
+            memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
+            reconcileMemberships: true,
+            deleteMissingCollections: false,
+        }],
+        payload: {
+            input: {
+                dbPath: 'C:/invoke/databases/invokeai.db',
+                mode: 'owner',
+                ownerId: 'owner-a',
+                boards: [{ id: 'board-a', name: 'Board A', createdAt: 1, ownerId: 'owner-a' }],
+                memberships: [{ imageName: 'image.png', boardId: 'board-a' }],
+                reconcileMemberships: true,
+                deleteMissingCollections: false,
+            },
+        },
+        returnsResult: true,
+    },
+    {
         name: 'replaceInvokeImageReferences',
         invokeName: 'replace_invoke_image_references',
         args: [[{
@@ -98,6 +160,21 @@ const commandCases: CommandCase[] = [
         payload: { input: { operation: 'move', imageIds: ['image'], sourceCollectionId: 'source', targetCollectionId: 'target' } },
         returnsResult: true,
     },
+    {
+        name: 'migrateLegacyCollections',
+        invokeName: 'migrate_legacy_collections',
+        args: [{ importKey: 'library-json-collections-v1', collections: [] }],
+        payload: { input: { importKey: 'library-json-collections-v1', collections: [] } },
+        returnsResult: true,
+    },
+    {
+        name: 'updateAmbitCollectionScope',
+        invokeName: 'update_ambit_collection_scope',
+        args: [{ collectionId: 'collection', mode: 'owner', invokeSourceId: 'C:/invoke/databases/invokeai.db', invokeOwnerId: 'owner-a' }],
+        payload: { input: { collectionId: 'collection', mode: 'owner', invokeSourceId: 'C:/invoke/databases/invokeai.db', invokeOwnerId: 'owner-a' } },
+        returnsResult: true,
+    },
+    { name: 'setCollectionCustomThumbnail', invokeName: 'set_collection_custom_thumbnail', args: ['collection', 'image'], payload: { collectionId: 'collection', imageId: 'image' }, returnsResult: true },
     { name: 'backfillImageFileHashes', invokeName: 'backfill_image_file_hashes', args: [10], payload: { limit: 10 }, returnsResult: true },
     { name: 'cancelImageFileHashBackfill', invokeName: 'cancel_image_file_hash_backfill', args: [], returnsResult: false },
     { name: 'refreshBoardsNative', invokeName: 'refresh_boards_native', args: [{ board: 'collection' }], payload: { boardMapping: { board: 'collection' } }, returnsResult: true },

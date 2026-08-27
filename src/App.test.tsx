@@ -226,6 +226,7 @@ const mocks = vi.hoisted(() => ({
     retryInvokeOwnerScope: vi.fn(),
     invokeOwnerScopeState: { status: 'ready' } as InvokeOwnerScopeState,
     isInvokeSyncActive: false,
+    isLiveSyncing: false,
     getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
@@ -438,6 +439,7 @@ vi.mock('./contexts/SyncContext', () => ({
     useSync: () => ({
         startInvokeSync: mocks.startInvokeSync,
         isInvokeSyncActive: mocks.isInvokeSyncActive,
+        isLiveSyncing: mocks.isLiveSyncing,
         invokeOwnerScopeState: mocks.invokeOwnerScopeState,
         selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
         retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
@@ -524,6 +526,7 @@ describe('App orchestration', () => {
         mocks.images = [image('one'), image('two')];
         mocks.invokeOwnerScopeState = { status: 'ready' };
         mocks.isInvokeSyncActive = false;
+        mocks.isLiveSyncing = false;
         useLibraryStore.setState({ isStartupCatchupPending: false });
         mocks.churnClearAllFiltersIdentity = false;
         mocks.filters = createDefaultFilters();
@@ -703,7 +706,7 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
     });
 
-    it('keeps a revealed owner gate through a brief privacy handoff', async () => {
+    it('keeps owner admission and a brief privacy handoff behind the startup splash', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
@@ -722,7 +725,8 @@ describe('App orchestration', () => {
         await act(async () => {
             await vi.advanceTimersByTimeAsync(700);
         });
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
 
         mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
         mocks.privacyEnabled = true;
@@ -730,8 +734,9 @@ describe('App orchestration', () => {
         mocks.privacyExposureBlocked = true;
         view.rerender(<App />);
 
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
-        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(699);
@@ -745,7 +750,7 @@ describe('App orchestration', () => {
         expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
     });
 
-    it('reveals sustained initial InvokeAI preparation and prevents a completion flash', async () => {
+    it('keeps sustained initial InvokeAI preparation behind the startup splash', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
@@ -765,29 +770,18 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(700);
         });
 
-        expect(document.getElementById('static-loading')).toBeNull();
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
 
         mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
-        expect(screen.getByText('Checking InvokeAI owner information...')).toBeTruthy();
-        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(499);
-        });
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(1);
-        });
+        expect(document.getElementById('static-loading')?.style.opacity).toBe('0');
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
-        expect(document.getElementById('static-loading')).toBeNull();
     });
 
-    it('holds a revealed owner gate before admitting a trusted offline view', async () => {
+    it('keeps initial owner admission behind the splash before showing a trusted offline view', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
@@ -806,7 +800,8 @@ describe('App orchestration', () => {
         await act(async () => {
             await vi.advanceTimersByTimeAsync(700);
         });
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
 
         mocks.invokeOwnerScopeState = {
             status: 'offline_ready',
@@ -823,22 +818,12 @@ describe('App orchestration', () => {
         };
         view.rerender(<App />);
 
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
-        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(499);
-        });
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
-
-        await act(async () => {
-            await vi.advanceTimersByTimeAsync(1);
-        });
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(document.getElementById('static-loading')?.style.opacity).toBe('0');
     });
 
-    it('keeps a revealed preparation gate visible when the configured root changes', async () => {
+    it('keeps the startup splash visible when the configured InvokeAI root changes during admission', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
@@ -853,17 +838,19 @@ describe('App orchestration', () => {
         await act(async () => {
             await vi.advanceTimersByTimeAsync(700);
         });
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
 
         mocks.settings = { ...mocks.settings, invokeAiPath: 'D:/InvokeB' };
         mocks.invokeOwnerScopeState = { status: 'discovering', rootPath: 'D:/InvokeB' };
         view.rerender(<App />);
 
-        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
     });
 
-    it('shows actionable initial owner states and later runtime scope changes immediately', async () => {
+    it('shows actionable owner states immediately and delays runtime preparation for 400 ms', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
         staticLoader.id = 'static-loading';
@@ -897,11 +884,69 @@ describe('App orchestration', () => {
 
         mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(399);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
     });
 
-    it('shows collection catch-up only while enabled InvokeAI board collections can populate', () => {
+    it('never shows the gate for a switch that completes within the grace period', async () => {
+        vi.useFakeTimers();
+        const previousImage = image('previous-owner-image');
+        const nextImage = image('next-owner-image');
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.images = [previousImage];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+        const clearFiltersCallsBeforeSwitch = mocks.clearAllFilters.mock.calls.length;
+
+        mocks.images = [];
+        mocks.invokeOwnerScopeState = {
+            status: 'applying',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-b',
+            },
+        };
+        view.rerender(<App />);
+
+        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([previousImage]);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(399);
+        });
+        mocks.images = [nextImage];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([nextImage]);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+    });
+    it('shows collection catch-up only for startup or foreground InvokeAI board synchronization', () => {
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
             invokeAiPath: 'D:/Invoke',
@@ -921,6 +966,17 @@ describe('App orchestration', () => {
         mocks.settings = { ...mocks.settings, invokeSyncBoards: true, syncBoardsToCollections: false };
         view.rerender(<App />);
         expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+
+        mocks.settings = { ...mocks.settings, syncBoardsToCollections: true };
+        useLibraryStore.setState({ isStartupCatchupPending: false });
+        mocks.isInvokeSyncActive = true;
+        mocks.isLiveSyncing = true;
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+
+        mocks.isLiveSyncing = false;
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(true);
     });
 
     it('handles view, layout, search focus, collection, and export commands', async () => {
@@ -1384,7 +1440,7 @@ describe('App orchestration', () => {
         expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(hiddenAsset.id);
     });
 
-    it('closes direct and gallery viewers before owner visibility changes', async () => {
+    it('retains an inert runtime view during the grace period and cleans it before the gate', async () => {
         const localImage = image('local-image');
         const ownerGalleryImage = {
             ...image('owner-a-gallery'),
@@ -1410,24 +1466,40 @@ describe('App orchestration', () => {
         });
         await waitFor(() => expect(captured.viewer?.image.id).toBe(referencedAsset.id));
 
+        const clearSelectionCallsBeforeSwitch = mocks.clearSelection.mock.calls.length;
+        const clearFiltersCallsBeforeSwitch = mocks.clearAllFilters.mock.calls.length;
+        vi.useFakeTimers();
         mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
 
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCallsBeforeSwitch);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(400);
+        });
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
-        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
-        expect(mocks.clearSelection).toHaveBeenCalled();
-        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCallsBeforeSwitch + 1);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
 
         view.rerender(<App />);
-        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(1);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
 
         mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
         mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
         view.rerender(<App />);
-        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(2);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(400);
+        });
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 2);
     });
 
     it('blocks a configured InvokeAI library before discovery and while discovery belongs to an older root', () => {

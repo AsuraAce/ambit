@@ -70,7 +70,7 @@ export const verifyLibraryIntegrity = async (
     }
 
     const db = await getDb();
-    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0');
+    const allImages = await db.select<ImagePathRow[]>('SELECT id, path FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_missing = 0 AND is_deleted = 0');
     const total = allImages.length;
 
     if (total === 0) return { scanned: 0, total: 0, missingIds: [], sampleMissingPaths: [], wasCancelled: false };
@@ -125,7 +125,7 @@ export const getMissingImages = async (): Promise<AIImage[]> => {
     const db = await getDb();
     const rows = await db.select<ImageRow[]>(`
         SELECT ${getImageFieldsLight()}
-        FROM images
+        FROM scoped_images AS images
         WHERE is_missing = 1
           AND invoke_scope_hidden = 0
           AND is_deleted = 0
@@ -144,13 +144,20 @@ export const pruneMissingLinks = async (ids: string[]): Promise<number> => {
     if (ids.length === 0) return 0;
 
     console.log(`[Verify] Marking ${ids.length} images as missing`);
+    let marked = 0;
     for (let i = 0; i < ids.length; i += 500) {
         const batch = ids.slice(i, i + 500);
         const placeholders = batch.map(() => '?').join(',');
-        await db.execute(`UPDATE images SET is_missing = 1 WHERE id IN (${placeholders})`, batch);
+        const result = await db.execute(
+            `UPDATE images SET is_missing = 1
+             WHERE id IN (${placeholders})
+               AND id IN (SELECT id FROM scoped_images)`,
+            batch
+        );
+        marked += result.rowsAffected;
     }
 
-    return ids.length;
+    return marked;
 };
 
 export const getDeletedImages = async (): Promise<AIImage[]> => {
@@ -159,7 +166,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM scoped_removed_images AS removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 
@@ -170,7 +177,7 @@ export const getIntermediateImages = async (whereClause: string = '', params: un
 
     const db = await getDb();
     let query = `
-        SELECT ${getImageFieldsLight()} FROM images
+        SELECT ${getImageFieldsLight()} FROM scoped_images AS images
         WHERE IFNULL(is_intermediate_gen, 0) = 1
         AND media_type = 'image'
         AND invoke_scope_hidden = 0
@@ -203,7 +210,7 @@ export const getUntaggedImages = async (whereClause: string = '', params: unknow
 
     const db = await getDb();
     let query = `
-        SELECT ${getImageFieldsLight()} FROM images
+        SELECT ${getImageFieldsLight()} FROM scoped_images AS images
         WHERE (positive_prompt IS NULL OR positive_prompt = '')
         AND media_type = 'image'
         AND invoke_scope_hidden = 0
@@ -268,7 +275,7 @@ export const getUnoptimizedImages = async (whereClause: string = '', params: unk
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT ${getImageFieldsLight()} FROM images
+        SELECT ${getImageFieldsLight()} FROM scoped_images AS images
         WHERE ${unoptimizedCondition}
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
@@ -308,7 +315,7 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT COUNT(*) as count FROM images 
+        SELECT COUNT(*) as count FROM scoped_images AS images
         WHERE ${unoptimizedCondition}
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
@@ -353,7 +360,7 @@ export const getUnoptimizedImageEntries = async (
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT id, path FROM images 
+        SELECT id, path FROM scoped_images AS images
         WHERE ${unoptimizedCondition}
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
@@ -421,7 +428,7 @@ export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
     const query = `
         WITH eligible AS (
             SELECT id, file_hash
-            FROM images
+            FROM scoped_images AS images
             WHERE is_deleted = 0
               AND invoke_scope_hidden = 0
               AND is_missing = 0
@@ -437,7 +444,7 @@ export const getDuplicateCandidates = async (): Promise<AIImage[]> => {
             HAVING COUNT(*) > 1
         )
         SELECT ${getImageFieldsLight()}
-        FROM images
+        FROM scoped_images AS images
         WHERE id IN (SELECT id FROM eligible WHERE file_hash IN (SELECT file_hash FROM duplicate_hashes))
         ORDER BY file_hash DESC, file_size DESC, timestamp DESC
     `;
@@ -475,17 +482,17 @@ export const getMaintenanceCounts = async () => {
     const res = await db.select<MaintenanceCountRow[]>(`
         SELECT 
             COUNT(*) FILTER (
-                 WHERE (positive_prompt IS NULL OR positive_prompt = '')
-                   AND media_type = 'image'
-                   AND invoke_scope_hidden = 0
-                   AND is_deleted = 0
-                   AND IFNULL(is_intermediate_gen, 0) = 0
-                   AND IFNULL(is_invoke_asset_gen, 0) = 0
-             ) as untagged,
-             COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
-             COUNT(*) FILTER (WHERE media_type = 'image' AND invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-             (SELECT COUNT(*) FROM removed_images WHERE invoke_scope_hidden = 0) as trash
-        FROM images
+                WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                  AND media_type = 'image'
+                  AND invoke_scope_hidden = 0
+                  AND is_deleted = 0
+                  AND IFNULL(is_intermediate_gen, 0) = 0
+                  AND IFNULL(is_invoke_asset_gen, 0) = 0
+            ) as untagged,
+            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
+            COUNT(*) FILTER (WHERE media_type = 'image' AND invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
+            (SELECT COUNT(*) FROM scoped_removed_images WHERE invoke_scope_hidden = 0) as trash
+        FROM scoped_images AS images
     `);
 
     const counts = res[0] || {};

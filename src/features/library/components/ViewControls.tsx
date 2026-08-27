@@ -14,6 +14,7 @@ interface CountPresentation {
     displayedCount: number;
     totalCount: number;
     scopeName: string;
+    ownerPresentationKey: string;
 }
 
 interface ViewControlsProps {
@@ -29,6 +30,7 @@ interface ViewControlsProps {
     displayedCount: number;
     totalCount: number;
     scopeName: string;
+    ownerPresentationKey?: string;
     isFiltering?: boolean;
 }
 
@@ -44,7 +46,8 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     displayedCount,
     totalCount,
     scopeName,
-    isFiltering
+    isFiltering,
+    ownerPresentationKey = 'invoke:none'
 }) => {
     // Legacy Context (for hidden content not yet in store)
     const { availableHiddenContent, filters, setFilters, sortOption, setSortOption } = useSearch();
@@ -57,7 +60,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     const sortMenuRef = useRef<HTMLDivElement>(null);
     const viewMenuRef = useRef<HTMLDivElement>(null);
     const settledCountPresentationRef = useRef<CountPresentation | null>(
-        isFiltering ? null : { displayedCount, totalCount, scopeName }
+        isFiltering ? null : { displayedCount, totalCount, scopeName, ownerPresentationKey }
     );
     const isCountLoadingVisible = useDelayedBusyPresentation(Boolean(isFiltering), {
         revealDelayMs: COUNT_LOADING_REVEAL_DELAY_MS,
@@ -66,18 +69,20 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
 
     React.useLayoutEffect(() => {
         if (isFiltering) return;
-        settledCountPresentationRef.current = { displayedCount, totalCount, scopeName };
-    }, [displayedCount, isFiltering, scopeName, totalCount]);
+        settledCountPresentationRef.current = { displayedCount, totalCount, scopeName, ownerPresentationKey };
+    }, [displayedCount, isFiltering, ownerPresentationKey, scopeName, totalCount]);
 
     const showCountLoading = isCountLoadingVisible;
+    const settledCountPresentation = settledCountPresentationRef.current;
+    const hasSettledCurrentOwnerScope = settledCountPresentation?.ownerPresentationKey === ownerPresentationKey;
     const isAwaitingFirstSettledCount = Boolean(isFiltering)
         && !showCountLoading
-        && settledCountPresentationRef.current === null;
+        && !hasSettledCurrentOwnerScope;
     const countPresentation = isFiltering
         && !showCountLoading
-        && settledCountPresentationRef.current
-        ? settledCountPresentationRef.current
-        : { displayedCount, totalCount, scopeName };
+        && hasSettledCurrentOwnerScope
+        ? settledCountPresentation!
+        : { displayedCount, totalCount, scopeName, ownerPresentationKey };
 
     // Click outside listener
     useEffect(() => {

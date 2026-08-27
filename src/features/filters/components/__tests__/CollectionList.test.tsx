@@ -380,6 +380,9 @@ describe('CollectionList interactions', () => {
     it('persists sort selections and exercises the open dropdown trigger style', () => {
         renderList();
         fireEvent.click(screen.getByRole('button', { name: 'Sort Collections' }));
+        expect(screen.getByText('Recently Updated')).toBeTruthy();
+        expect(screen.getByText('Least Recently Updated')).toBeTruthy();
+        expect(screen.queryByText('Recently Used')).toBeNull();
         fireEvent.click(screen.getByText('Name (A-Z)'));
         const update = settingsContextMocks.setSettings.mock.calls.at(-1)?.[0];
         expect(update({}).resourceSortOptions.collections).toBe('name_asc');

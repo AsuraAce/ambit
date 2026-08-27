@@ -1,4 +1,5 @@
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
+import { isSameInvokePath } from './pathIdentity';
 
 interface InvokeSyncScopeBase {
     dbPath: string;
@@ -23,7 +24,7 @@ export const resolveInvokeSyncScope = (
         };
     }
 
-    if (!selection || selection.dbPath !== discovery.dbPath) return null;
+    if (!selection || !isSameInvokePath(selection.dbPath, discovery.dbPath)) return null;
 
     if (selection.mode === 'all') {
         return {
@@ -58,7 +59,7 @@ export const isInvokeSyncScopeSelectionCurrent = (
     selection?: InvokeOwnerSelection
 ): boolean => {
     if (scope.mode === 'legacy') return true;
-    if (!selection || selection.dbPath !== scope.dbPath) return false;
+    if (!selection || !isSameInvokePath(selection.dbPath, scope.dbPath)) return false;
     if (scope.mode === 'all') return selection.mode === 'all';
 
     return selection.mode === 'owner' && selection.ownerId.trim() === scope.ownerId;

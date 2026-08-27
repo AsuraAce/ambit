@@ -4,7 +4,10 @@ const mocks = vi.hoisted(() => ({
     load: vi.fn(),
     listInvokeaiImages: vi.fn(),
     refreshInvokeOwnerScope: vi.fn(),
+    setInvokeBoardVerification: vi.fn(),
     reconcileInvokeSourceFacts: vi.fn(),
+    fetchBoards: vi.fn(),
+    reconcileInvokeBoardSnapshot: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-sql', () => ({ default: { load: mocks.load } }));
@@ -12,10 +15,17 @@ vi.mock('../../../bindings', () => ({
     commands: {
         listInvokeaiImages: mocks.listInvokeaiImages,
         refreshInvokeOwnerScope: mocks.refreshInvokeOwnerScope,
+        setInvokeBoardVerification: mocks.setInvokeBoardVerification,
     },
 }));
 vi.mock('../sourceReconciliation', () => ({
     reconcileInvokeSourceFacts: mocks.reconcileInvokeSourceFacts,
+}));
+vi.mock('../connection', () => ({
+    fetchBoards: mocks.fetchBoards,
+}));
+vi.mock('../../db/collectionRepo', () => ({
+    reconcileInvokeBoardSnapshot: mocks.reconcileInvokeBoardSnapshot,
 }));
 
 const discovery = {
@@ -26,16 +36,44 @@ const discovery = {
     unassignedImageCount: 0,
 };
 
+const restoredCacheResult = {
+    cacheStatus: {
+        state: 'ready' as const,
+        generation: 0,
+        builtGeneration: 0,
+        facetCount: 10,
+        collectionCount: 2,
+    },
+    cacheRepair: {
+        action: 'restored' as const,
+        resources: {
+            checkpoints: [], loras: [], embeddings: [], hypernetworks: [],
+            controlNets: [], ipAdapters: [], tools: [],
+        },
+        facetTypes: [],
+        collectionsDirty: false,
+    },
+};
+
 describe('applyInvokeOwnerScope', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.load.mockResolvedValue({
             select: vi.fn().mockResolvedValue([{ name: 'image_name' }, { name: 'user_id' }]),
         });
+        mocks.setInvokeBoardVerification.mockResolvedValue({ status: 'ok', data: null });
         mocks.reconcileInvokeSourceFacts.mockResolvedValue(3);
+        mocks.fetchBoards.mockResolvedValue({ boards: new Map(), isAuthoritative: true });
+        mocks.reconcileInvokeBoardSnapshot.mockResolvedValue({
+            collectionsUpdated: 0,
+            collectionsDeleted: 0,
+            imagesUpdated: 0,
+            membershipsDeleted: 0,
+            membershipsInserted: 0,
+        });
         mocks.refreshInvokeOwnerScope.mockResolvedValue({
             status: 'ok',
-            data: { changed: true, activeUpdated: 2, removedUpdated: 1 },
+            data: { changed: true, activeUpdated: 2, removedUpdated: 1, ...restoredCacheResult },
         });
     });
 
@@ -68,8 +106,85 @@ describe('applyInvokeOwnerScope', () => {
             sourceFactsUpdated: 3,
             activeVisibilityUpdated: 2,
             removedVisibilityUpdated: 1,
+            boardCollectionsUpdated: 0,
+            boardScopeWarning: undefined,
             mode: 'owner',
+            ...restoredCacheResult,
         });
+    });
+
+    it('repairs board owner metadata even when no image rows need syncing', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.fetchBoards.mockResolvedValueOnce({
+            isAuthoritative: true,
+            boards: new Map([[
+                'board-a',
+                { name: 'Board A', createdAt: 123, ownerId: 'owner-a' },
+            ]]),
+        });
+        mocks.reconcileInvokeBoardSnapshot.mockResolvedValueOnce({
+            collectionsUpdated: 1,
+            collectionsDeleted: 0,
+            imagesUpdated: 0,
+            membershipsDeleted: 0,
+            membershipsInserted: 0,
+        });
+        mocks.refreshInvokeOwnerScope.mockResolvedValueOnce({
+            status: 'ok',
+            data: { changed: false, activeUpdated: 0, removedUpdated: 0, ...restoredCacheResult },
+        });
+
+        const result = await applyInvokeOwnerScope({
+            discovery,
+            selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: true,
+        });
+
+        expect(mocks.reconcileInvokeSourceFacts).not.toHaveBeenCalled();
+        expect(mocks.reconcileInvokeBoardSnapshot).toHaveBeenCalledWith({
+            dbPath: discovery.dbPath,
+            mode: 'all',
+            ownerId: null,
+            boards: [{
+                id: 'board-a',
+                name: 'Board A',
+                createdAt: 123,
+                ownerId: 'owner-a',
+            }],
+            memberships: [],
+            reconcileMemberships: false,
+            deleteMissingCollections: false,
+        });
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(
+            discovery.dbPath,
+            'owner-a',
+            true
+        );
+        expect(result.changed).toBe(true);
+        expect(result.boardCollectionsUpdated).toBe(1);
+    });
+
+    it('keeps owner-scoped boards fail-closed when board ownership is unavailable', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.fetchBoards.mockResolvedValueOnce({
+            isAuthoritative: false,
+            boards: new Map(),
+        });
+
+        const result = await applyInvokeOwnerScope({
+            discovery,
+            selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: true,
+        });
+
+        expect(mocks.reconcileInvokeBoardSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(
+            discovery.dbPath,
+            'owner-a',
+            false
+        );
+        expect(result.boardScopeWarning).toMatch(/remain hidden/i);
+        expect(result.boardCollectionsUpdated).toBe(0);
     });
 
     it('uses fail-closed unselected mode and preserves legacy unscoped behavior', async () => {
@@ -99,7 +214,7 @@ describe('applyInvokeOwnerScope', () => {
         mocks.reconcileInvokeSourceFacts.mockResolvedValueOnce(0);
         mocks.refreshInvokeOwnerScope.mockResolvedValueOnce({
             status: 'ok',
-            data: { changed: false, activeUpdated: 0, removedUpdated: 0 },
+            data: { changed: false, activeUpdated: 0, removedUpdated: 0, ...restoredCacheResult },
         });
 
         await applyInvokeOwnerScope({

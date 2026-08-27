@@ -11,7 +11,7 @@ const RESOURCE_INDEX_PROGRESS_INTERVAL_MS: u128 = 250;
 
 static FACET_BUILD_COORDINATOR: OnceLock<Mutex<()>> = OnceLock::new();
 
-fn lock_facet_builds() -> Result<MutexGuard<'static, ()>, String> {
+pub(crate) fn lock_facet_builds() -> Result<MutexGuard<'static, ()>, String> {
     FACET_BUILD_COORDINATOR
         .get_or_init(|| Mutex::new(()))
         .lock()
@@ -67,6 +67,39 @@ fn swap_staged_facet_cache(conn: &mut rusqlite::Connection) -> Result<usize, Str
 
 fn should_log_resource_refresh(elapsed: std::time::Duration) -> bool {
     elapsed.as_millis() >= SLOW_RESOURCE_REFRESH_LOG_THRESHOLD_MS
+}
+
+fn with_active_scope_model_invalidation_suppressed<T>(
+    conn: &rusqlite::Connection,
+    operation: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let updated = conn
+        .execute(
+            "UPDATE invoke_scope_cache_control
+             SET suppress_active_model_invalidation = 1
+             WHERE state_key = 'current'",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+    if updated != 1 {
+        return Err("Invoke scope cache control row is missing".to_string());
+    }
+
+    let result = operation();
+    let reset_result = conn
+        .execute(
+            "UPDATE invoke_scope_cache_control
+             SET suppress_active_model_invalidation = 0
+             WHERE state_key = 'current'",
+            [],
+        )
+        .map_err(|error| error.to_string());
+
+    match (result, reset_result) {
+        (Ok(value), Ok(_)) => Ok(value),
+        (Err(error), _) => Err(error),
+        (Ok(_), Err(error)) => Err(error),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -599,17 +632,20 @@ fn manual_thumbnail_image(
 ) -> Result<Option<(String, i64, i64)>, String> {
     for column in ["id", "path", "thumbnail_path"] {
         let query = if column == "thumbnail_path" {
-            "SELECT id, COALESCE(privacy_hidden, 0), invoke_scope_hidden
-             FROM images
-             WHERE thumbnail_path = ?1
-             AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
+            "SELECT i.id, COALESCE(i.privacy_hidden, 0),
+                    NOT EXISTS (SELECT 1 FROM scoped_images visible WHERE visible.id = i.id) AS owner_hidden
+             FROM images i
+             WHERE i.thumbnail_path = ?1
+             AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
+             ORDER BY owner_hidden ASC
              LIMIT 1"
                 .to_string()
         } else {
             format!(
-                "SELECT id, COALESCE(privacy_hidden, 0), invoke_scope_hidden
-                 FROM images
-                 WHERE {column} = ?1
+                "SELECT i.id, COALESCE(i.privacy_hidden, 0),
+                        NOT EXISTS (SELECT 1 FROM scoped_images visible WHERE visible.id = i.id)
+                 FROM images i
+                 WHERE i.{column} = ?1
                  LIMIT 1"
             )
         };
@@ -708,7 +744,10 @@ fn sanitize_owner_hidden_facet_thumbnails(conn: &rusqlite::Connection) -> Result
          WHERE EXISTS (
              SELECT 1
              FROM images owner_hidden
-             WHERE owner_hidden.invoke_scope_hidden = 1
+             WHERE NOT EXISTS (
+                       SELECT 1 FROM scoped_images visible
+                       WHERE visible.id = owner_hidden.id
+                   )
                AND (
                    owner_hidden.id = facet_cache.thumbnail_image_id
                    OR owner_hidden.id = facet_cache.thumbnail_path
@@ -841,7 +880,7 @@ fn query_checkpoint_stats(
     if is_unknown {
         conn.query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'",
@@ -851,7 +890,7 @@ fn query_checkpoint_stats(
     } else {
         conn.query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND resolved_model_name = ?1",
@@ -885,7 +924,7 @@ fn query_checkpoint_thumb(
         conn.query_row(
             &format!(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
-                 FROM images
+                 FROM scoped_images
                  WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                  AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
@@ -901,7 +940,7 @@ fn query_checkpoint_thumb(
         conn.query_row(
             &format!(
                 "SELECT id, thumbnail_path, COALESCE(privacy_hidden, 0)
-                 FROM images
+                 FROM scoped_images
                  WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                  AND IFNULL(is_invoke_asset_gen, 0) = 0
                  {privacy_filter}
@@ -927,7 +966,7 @@ fn query_checkpoint_hash(
     if is_unknown {
         conn.query_row(
             "SELECT model_hash
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
@@ -940,7 +979,7 @@ fn query_checkpoint_hash(
     } else {
         conn.query_row(
             "SELECT model_hash
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND (?1 OR IFNULL(is_invoke_asset_gen, 0) = 0)
              AND model_hash IS NOT NULL AND model_hash != ''
@@ -963,7 +1002,7 @@ fn query_checkpoint_has_images(
     let result = if is_unknown {
         conn.query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
+                SELECT 1 FROM scoped_images
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND COALESCE(NULLIF(resolved_model_name, ''), 'Unknown') = 'Unknown'
             )",
@@ -973,7 +1012,7 @@ fn query_checkpoint_has_images(
     } else {
         conn.query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
+                SELECT 1 FROM scoped_images
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND resolved_model_name = ?1
             )",
             [name],
@@ -1047,7 +1086,7 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
     let stats = conn
         .query_row(
             "SELECT COUNT(*), MAX(timestamp), MIN(timestamp)
-             FROM images
+             FROM scoped_images
              WHERE invoke_scope_hidden = 0 AND is_deleted = 0
              AND IFNULL(is_invoke_asset_gen, 0) = 0
              AND COALESCE(tool, 'Unknown') = ?1",
@@ -1065,7 +1104,7 @@ fn refresh_tool_facet(conn: &rusqlite::Connection, name: &str) -> Result<bool, S
     let has_images = conn
         .query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
+                SELECT 1 FROM scoped_images
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND COALESCE(tool, 'Unknown') = ?1
             )",
             [name],
@@ -1114,6 +1153,7 @@ fn refresh_resource_facet(
     let match_started_at = std::time::Instant::now();
     conn.execute("DROP TABLE IF EXISTS live_resource_matches", [])
         .map_err(|e| e.to_string())?;
+    let clean_ref = resource_clean_ref_sql(&format!("jt.{}", config.name_col));
     let matches_sql = format!(
         "CREATE TEMP TABLE live_resource_matches AS
          SELECT
@@ -1124,10 +1164,17 @@ fn refresh_resource_facet(
             COALESCE(i.privacy_hidden, 0) AS privacy_hidden,
             COALESCE(i.is_invoke_asset_gen, 0) AS is_invoke_asset_gen
          FROM {} jt
-         JOIN images i ON i.id = jt.image_id
+         JOIN scoped_images i ON i.id = jt.image_id
          WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
-         AND jt.{} = ?1",
-        config.junction_table, config.name_col
+         AND ({}) COLLATE NOCASE IN (
+             ?1,
+             ?1 || '.safetensors',
+             ?1 || '.ckpt',
+             ?1 || '.pt',
+             ?1 || '.bin',
+             ?1 || '.pth'
+         )",
+        config.junction_table, clean_ref
     );
     conn.execute(&matches_sql, [name])
         .map_err(|e| e.to_string())?;
@@ -1161,18 +1208,21 @@ fn refresh_resource_facet(
         .map_err(|e| e.to_string())?;
 
     if has_images {
-        conn.execute(
-            "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                format!("{}{}", config.hash_prefix, name),
-                name,
-                config.harvest_source,
-                now as i64,
-                config.resource_type
-            ],
-        )
-        .map_err(|e| e.to_string())?;
+        with_active_scope_model_invalidation_suppressed(conn, || {
+            conn.execute(
+                "INSERT OR IGNORE INTO models (hash, name, lookup_source, scanned_at, resource_type)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    format!("{}{}", config.hash_prefix, name),
+                    name,
+                    config.harvest_source,
+                    now as i64,
+                    config.resource_type
+                ],
+            )
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+        })?;
     }
 
     let model = select_model_source(conn, config.resource_type, name)?;
@@ -1694,19 +1744,19 @@ fn get_valid_facet_names_for_query(
     let ipadapter_cache_join = resource_facet_cache_join_sql("ip_adapters", "ip.ipadapter_name");
 
     let combined_query = format!(
-        "SELECT 'checkpoints' as facet_type, fc.resource_name as name FROM images i {coll} {lora} {checkpoint_cache} {where}
+        "SELECT 'checkpoints' as facet_type, fc.resource_name as name FROM scoped_images i {coll} {lora} {checkpoint_cache} {where}
          UNION ALL
-         SELECT 'loras', fc.resource_name FROM image_loras il JOIN images i ON i.id = il.image_id {coll} {lora} {lora_cache} {where}
+         SELECT 'loras', fc.resource_name FROM image_loras il JOIN scoped_images i ON i.id = il.image_id {coll} {lora} {lora_cache} {where}
          UNION ALL
-         SELECT 'embeddings', fc.resource_name FROM image_embeddings ie JOIN images i ON i.id = ie.image_id {coll} {lora} {embedding_cache} {where}
+         SELECT 'embeddings', fc.resource_name FROM image_embeddings ie JOIN scoped_images i ON i.id = ie.image_id {coll} {lora} {embedding_cache} {where}
          UNION ALL
-         SELECT 'hypernetworks', fc.resource_name FROM image_hypernetworks ih JOIN images i ON i.id = ih.image_id {coll} {lora} {hypernetwork_cache} {where}
+         SELECT 'hypernetworks', fc.resource_name FROM image_hypernetworks ih JOIN scoped_images i ON i.id = ih.image_id {coll} {lora} {hypernetwork_cache} {where}
          UNION ALL
-         SELECT 'tools', fc.resource_name FROM images i {coll} {lora} JOIN facet_cache fc ON fc.facet_type = 'tools' AND fc.resource_name = COALESCE(i.tool, 'Unknown') {where}
+         SELECT 'tools', fc.resource_name FROM scoped_images i {coll} {lora} JOIN facet_cache fc ON fc.facet_type = 'tools' AND fc.resource_name = COALESCE(i.tool, 'Unknown') {where}
          UNION ALL
-         SELECT 'control_nets', fc.resource_name FROM image_controlnets cn JOIN images i ON i.id = cn.image_id {coll} {lora} {controlnet_cache} {where}
+         SELECT 'control_nets', fc.resource_name FROM image_controlnets cn JOIN scoped_images i ON i.id = cn.image_id {coll} {lora} {controlnet_cache} {where}
          UNION ALL
-         SELECT 'ip_adapters', fc.resource_name FROM image_ipadapters ip JOIN images i ON i.id = ip.image_id {coll} {lora} {ipadapter_cache} {where}",
+         SELECT 'ip_adapters', fc.resource_name FROM image_ipadapters ip JOIN scoped_images i ON i.id = ip.image_id {coll} {lora} {ipadapter_cache} {where}",
         coll = collection_join,
         lora = lora_join.as_str(),
         checkpoint_cache = checkpoint_cache_join,
@@ -1810,6 +1860,10 @@ fn get_valid_facet_names_for_query(
 }
 
 fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
+    with_active_scope_model_invalidation_suppressed(conn, || harvest_models_inner(conn))
+}
+
+fn harvest_models_inner(conn: &rusqlite::Connection) -> Result<(), String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1826,7 +1880,7 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
             'harvest_checkpoint',
             ?1,
             'checkpoint'
-            FROM images
+            FROM scoped_images
             WHERE invoke_scope_hidden = 0
             AND model_hash IS NOT NULL
             AND resolved_model_name IS NOT NULL",
@@ -1891,7 +1945,7 @@ fn harvest_models(conn: &rusqlite::Connection) -> Result<(), String> {
                 ?1,
                 '{}'
                 FROM {} jt
-                INNER JOIN images i ON i.id = jt.image_id
+                INNER JOIN scoped_images i ON i.id = jt.image_id
                 WHERE i.invoke_scope_hidden = 0
                 AND jt.{} IS NOT NULL AND jt.{} != ''",
                 prefix, col,
@@ -1922,7 +1976,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 COUNT(DISTINCT id) as cnt,
                 MAX(timestamp) as last_used,
                 MIN(timestamp) as first_used
-            FROM images
+            FROM scoped_images
             WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             AND IFNULL(is_invoke_asset_gen, 0) = 0
             GROUP BY mh, lmn",
@@ -1948,7 +2002,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown'))
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
-                FROM images i
+                FROM scoped_images i
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
@@ -1972,7 +2026,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         PARTITION BY LOWER(COALESCE(NULLIF(resolved_model_name, ''), model_name, json_extract(metadata_json, '$.model'), 'Unknown'))
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
-                FROM images i
+                FROM scoped_images i
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 0
                 AND privacy_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ''
@@ -2014,9 +2068,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 st.thumbnail_path,
                 CASE
                     WHEN m.thumbnail_path IS NOT NULL THEN COALESCE(
-                        (SELECT ui.id FROM images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
-                        (SELECT ui.id FROM images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
-                        (SELECT ui.id FROM images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1)
+                        (SELECT ui.id FROM scoped_images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
+                        (SELECT ui.id FROM scoped_images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
+                        (SELECT ui.id FROM scoped_images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1)
                     )
                     ELSE ct.image_id
                 END,
@@ -2028,9 +2082,9 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                         WHERE LOWER(m.name) LIKE '%' || k.keyword || '%'
                     ) THEN 1
                     WHEN m.thumbnail_path IS NOT NULL THEN COALESCE(
-                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
-                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
-                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1),
+                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
+                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
+                        (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1),
                         1
                     )
                     WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(ct.privacy_hidden, 0)
@@ -2098,7 +2152,7 @@ fn build_checkpoint_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                     MIN(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS mn,
                     LOWER(COALESCE(NULLIF(resolved_model_name, ''), 'Unknown')) AS lmn,
                     MIN(NULLIF(model_hash, '')) AS mh
-                FROM images
+                FROM scoped_images
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
                 AND IFNULL(is_invoke_asset_gen, 0) = 1
                 GROUP BY lmn
@@ -2166,13 +2220,18 @@ fn build_resource_facets(
                         WHEN instr(jt.{1}, ':') > 0 THEN substr(jt.{1}, 1, instr(jt.{1}, ':') - 1)
                         ELSE jt.{1}
                     END, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')) AS lclean_ref,
-                    COUNT(DISTINCT i.id) AS cnt,
-                    MAX(i.timestamp) as last_used,
-                    MIN(i.timestamp) as first_used
+                    COUNT(DISTINCT CASE
+                        WHEN IFNULL(i.is_invoke_asset_gen, 0) = 0 THEN i.id
+                    END) AS cnt,
+                    MAX(CASE
+                        WHEN IFNULL(i.is_invoke_asset_gen, 0) = 0 THEN i.timestamp
+                    END) as last_used,
+                    MIN(CASE
+                        WHEN IFNULL(i.is_invoke_asset_gen, 0) = 0 THEN i.timestamp
+                    END) as first_used
                 FROM {2} jt
-                JOIN images i ON i.id = jt.{3}
+                JOIN scoped_images i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
-                AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 GROUP BY lclean_ref",
             temp_table,
             name_col,
@@ -2213,7 +2272,7 @@ fn build_resource_facets(
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM {2} jt
-                JOIN images i ON i.id = jt.{3}
+                JOIN scoped_images i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
@@ -2253,7 +2312,7 @@ fn build_resource_facets(
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as rn
                 FROM {2} jt
-                JOIN images i ON i.id = jt.{3}
+                JOIN scoped_images i ON i.id = jt.{3}
                 WHERE i.invoke_scope_hidden = 0 AND i.is_deleted = 0
                 AND IFNULL(i.is_invoke_asset_gen, 0) = 0
                 AND i.privacy_hidden = 0 AND i.thumbnail_path IS NOT NULL AND i.thumbnail_path != ''
@@ -2298,9 +2357,9 @@ fn build_resource_facets(
                     rst.thumbnail_path,
                     CASE
                         WHEN m.thumbnail_path IS NOT NULL THEN COALESCE(
-                            (SELECT ui.id FROM images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
-                            (SELECT ui.id FROM images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
-                            (SELECT ui.id FROM images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1)
+                            (SELECT ui.id FROM scoped_images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
+                            (SELECT ui.id FROM scoped_images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
+                            (SELECT ui.id FROM scoped_images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1)
                         )
                         ELSE rt.image_id
                     END,
@@ -2312,9 +2371,9 @@ fn build_resource_facets(
                             WHERE LOWER(m.name) LIKE '%' || k.keyword || '%'
                         ) THEN 1
                         WHEN m.thumbnail_path IS NOT NULL THEN COALESCE(
-                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
-                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
-                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1),
+                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.id = m.thumbnail_path LIMIT 1),
+                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.path = m.thumbnail_path LIMIT 1),
+                            (SELECT COALESCE(ui.privacy_hidden, 0) FROM scoped_images ui WHERE ui.thumbnail_path = m.thumbnail_path AND ui.thumbnail_path IS NOT NULL AND ui.thumbnail_path != '' LIMIT 1),
                             1
                         )
                         WHEN m.thumbnail_mode = 'dynamic' THEN COALESCE(rt.privacy_hidden, 0)
@@ -2339,14 +2398,7 @@ fn build_resource_facets(
                 LEFT JOIN {} rst ON rst.lclean_ref = LOWER(m.name)
                 WHERE COALESCE(rc.cnt, 0) > 0
                    OR m.has_local_inventory = 1
-                   OR EXISTS (
-                        SELECT 1
-                        FROM {junction_table} visible_jt
-                        INNER JOIN images visible_image ON visible_image.id = visible_jt.{image_id_col}
-                        WHERE visible_image.invoke_scope_hidden = 0
-                          AND visible_image.is_deleted = 0
-                          AND LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(visible_jt.{name_col}, '.safetensors', ''), '.ckpt', ''), '.pt', ''), '.bin', ''), '.pth', '')) = LOWER(m.name)
-                   )
+                   OR rc.lclean_ref IS NOT NULL
                 GROUP BY LOWER(m.name)",
             facet_type, facet_type, temp_table, temp_thumbs, temp_safe_thumbs
         ),
@@ -2413,10 +2465,10 @@ fn build_tool_facets(conn: &rusqlite::Connection) -> Result<(), String> {
                 MIN(visible.timestamp)
             FROM (
                 SELECT DISTINCT COALESCE(tool, 'Unknown') AS tool
-                FROM images
+                FROM scoped_images
                 WHERE invoke_scope_hidden = 0 AND is_deleted = 0
             ) all_tools
-            LEFT JOIN images visible
+            LEFT JOIN scoped_images visible
               ON COALESCE(visible.tool, 'Unknown') = all_tools.tool
              AND visible.invoke_scope_hidden = 0
              AND visible.is_deleted = 0
@@ -3393,6 +3445,155 @@ mod tests {
     }
 
     #[test]
+    fn live_resource_refresh_matches_legacy_weighted_resource_names() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, thumbnail_path)
+             VALUES ('legacy-weighted', 'legacy.png', 100, 'legacy.webp')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES ('legacy-weighted', 'Matched.safetensors:0.75')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO models (hash, name, lookup_source, scanned_at, resource_type)
+             VALUES ('matched', 'Matched', 'civitai', 1, 'loras')",
+            [],
+        )
+        .unwrap();
+
+        let canonical_name = resource_clean_ref_sql("lora_name");
+        let lookup_plan: Vec<String> = conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN
+                 SELECT image_id FROM image_loras
+                 WHERE ({canonical_name}) COLLATE NOCASE IN (
+                     ?1,
+                     ?1 || '.safetensors',
+                     ?1 || '.ckpt',
+                     ?1 || '.pt',
+                     ?1 || '.bin',
+                     ?1 || '.pth'
+                 )"
+            ))
+            .unwrap()
+            .query_map(["Matched"], |row| row.get(3))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert!(
+            lookup_plan
+                .iter()
+                .any(|detail| detail.contains("idx_lora_canonical_name_image_v1")),
+            "selective repair must use the canonical resource index: {lookup_plan:?}"
+        );
+
+        let touches = FacetResourceTouches {
+            loras: vec!["Matched.safetensors:0.75".to_string()],
+            ..FacetResourceTouches::default()
+        };
+        let refreshed = refresh_live_facet_resources(&mut conn, &touches).unwrap();
+        assert_eq!(refreshed, 1);
+
+        let (resource_name, count): (String, i64) = conn
+            .query_row(
+                "SELECT resource_name, count
+                 FROM facet_cache
+                 WHERE facet_type = 'loras'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(resource_name, "Matched");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn internal_model_harvest_suppresses_only_the_active_build() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO invoke_scope_cache_state (
+                scope_key, db_path, images_root, scope_mode, owner_id,
+                status, generation, built_generation, updated_at
+             ) VALUES
+                ('active', 'C:/Invoke/invokeai.db', 'C:/Invoke', 'owner', 'a', 'building', 1, NULL, 1),
+                ('inactive', 'C:/Invoke/invokeai.db', 'C:/Invoke', 'owner', 'b', 'ready', 0, 0, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE invoke_scope_cache_control SET active_scope_key = 'active'
+             WHERE state_key = 'current'",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO images (
+                id, path, timestamp, model_hash, resolved_model_name,
+                invoke_scope_hidden
+             ) VALUES ('harvested', 'harvested.png', 1, 'model-a', 'Model A', 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "UPDATE invoke_scope_cache_state
+             SET status = CASE scope_key WHEN 'active' THEN 'building' ELSE 'ready' END,
+                 generation = CASE scope_key WHEN 'active' THEN 1 ELSE 0 END,
+                 built_generation = CASE scope_key WHEN 'active' THEN NULL ELSE 0 END
+             WHERE scope_key IN ('active', 'inactive')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "DELETE FROM invoke_scope_cache_dirty_items
+             WHERE scope_key IN ('active', 'inactive')",
+            [],
+        )
+        .unwrap();
+
+        harvest_models(&conn).unwrap();
+
+        let active_status: String = conn
+            .query_row(
+                "SELECT status FROM invoke_scope_cache_state WHERE scope_key = 'active'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let inactive_status: String = conn
+            .query_row(
+                "SELECT status FROM invoke_scope_cache_state WHERE scope_key = 'inactive'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let suppression: i64 = conn
+            .query_row(
+                "SELECT suppress_active_model_invalidation
+                 FROM invoke_scope_cache_control WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(active_status, "building");
+        assert_eq!(inactive_status, "dirty");
+        assert_eq!(suppression, 0);
+    }
+
+    #[test]
     fn resource_index_progress_message_uses_specific_or_mixed_copy() {
         let lora_touches = FacetResourceTouches {
             loras: vec!["ExampleLora".to_string()],
@@ -3526,6 +3727,65 @@ mod tests {
 
         assert_eq!(hidden_facet_count, 0);
         assert_eq!(local_facet_count, 2);
+    }
+
+    #[test]
+    fn bulk_resource_facets_use_preaggregated_visible_matches_and_preserve_orphans() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in init_db() {
+            conn.execute_batch(&migration.sql).unwrap();
+        }
+
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, invoke_scope_hidden)
+             VALUES
+                ('visible', 'visible.png', 10, 0),
+                ('hidden', 'hidden.png', 20, 1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO image_loras (image_id, lora_name)
+             VALUES
+                ('visible', 'Matched.safetensors:0.75'),
+                ('visible', 'VisibleOrphan (Strong)'),
+                ('hidden', 'HiddenRemote')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO models (hash, name, filename, lookup_source, scanned_at, resource_type)
+             VALUES
+                ('matched', 'Matched', NULL, 'civitai', 1, 'loras'),
+                ('hidden', 'HiddenRemote', NULL, 'civitai', 1, 'loras'),
+                ('local', 'UnusedLocal', 'unused.safetensors', 'disk_scan', 1, 'loras')",
+            [],
+        )
+        .unwrap();
+
+        build_resource_facets(&conn, "loras", "loras").unwrap();
+
+        let facets: Vec<(String, i64)> = conn
+            .prepare(
+                "SELECT resource_name, count
+                 FROM facet_cache
+                 WHERE facet_type = 'loras'
+                 ORDER BY resource_name",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+
+        assert_eq!(
+            facets,
+            vec![
+                ("Matched".to_string(), 1),
+                ("UnusedLocal".to_string(), 0),
+                ("VisibleOrphan".to_string(), 1),
+            ]
+        );
     }
 
     #[test]

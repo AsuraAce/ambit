@@ -227,6 +227,29 @@ describe('ViewControls', () => {
         expect(screen.queryByText('...')).toBeNull();
     });
 
+    it('does not retain an All Users count while a different owner is loading', () => {
+        vi.useFakeTimers();
+        const { rerender, props } = setup({
+            displayedCount: 150_000,
+            totalCount: 150_000,
+            scopeName: 'Library',
+            ownerPresentationKey: 'all',
+            isFiltering: false,
+        });
+
+        rerender(<ViewControls
+            {...props}
+            displayedCount={0}
+            totalCount={0}
+            scopeName="Library"
+            ownerPresentationKey="owner:jupiter"
+            isFiltering
+        />);
+
+        expect(screen.queryByText('150,000')).toBeNull();
+        expect(screen.queryByText('0')).toBeNull();
+    });
+
     it('shows a stable loading state only for a sustained board query', () => {
         vi.useFakeTimers();
         const { rerender, props } = setup({

@@ -118,10 +118,10 @@ export const getInvokeReferenceGraph = async (imageId: string): Promise<InvokeRe
                 r.target_invoke_image_name,
                 target.id AS active_target_id
              FROM invoke_image_references r
-             INNER JOIN images visible_source
+             INNER JOIN scoped_images visible_source
                 ON visible_source.id = r.source_image_id
                AND visible_source.invoke_scope_hidden = 0
-             LEFT JOIN images target
+             LEFT JOIN scoped_images target
                 ON target.id = r.target_image_id
                AND target.invoke_scope_hidden = 0
              WHERE r.source_image_id = ?`,
@@ -135,13 +135,13 @@ export const getInvokeReferenceGraph = async (imageId: string): Promise<InvokeRe
                 active_source.id AS active_source_id,
                 removed_source.id AS removed_source_id
              FROM invoke_image_references r
-             INNER JOIN images visible_target
+             INNER JOIN scoped_images visible_target
                 ON visible_target.id = r.target_image_id
                AND visible_target.invoke_scope_hidden = 0
-             LEFT JOIN images active_source
+             LEFT JOIN scoped_images active_source
                 ON active_source.id = r.source_image_id
                AND active_source.invoke_scope_hidden = 0
-             LEFT JOIN removed_images removed_source
+             LEFT JOIN scoped_removed_images removed_source
                 ON removed_source.id = r.source_image_id
                AND removed_source.invoke_scope_hidden = 0
              WHERE r.target_image_id = ?

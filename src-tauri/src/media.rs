@@ -284,11 +284,11 @@ pub async fn refresh_video_metadata(
     });
     let paths = run_blocking(app.clone(), move |conn| {
         let sql = if force_reparse {
-            "SELECT path, parser_version, original_metadata_json FROM images WHERE media_type = 'video' AND is_deleted = 0 AND is_missing = 0"
+            "SELECT path, parser_version, original_metadata_json FROM scoped_images WHERE media_type = 'video' AND is_deleted = 0 AND is_missing = 0"
                 .to_string()
         } else {
             format!(
-                "SELECT path, parser_version, original_metadata_json FROM images WHERE media_type = 'video' AND is_deleted = 0 AND is_missing = 0 AND (parser_version IS NULL OR parser_version < {VIDEO_PARSER_VERSION})"
+                "SELECT path, parser_version, original_metadata_json FROM scoped_images WHERE media_type = 'video' AND is_deleted = 0 AND is_missing = 0 AND (parser_version IS NULL OR parser_version < {VIDEO_PARSER_VERSION})"
             )
         };
         let mut stmt = conn.prepare(&sql).map_err(|error| error.to_string())?;
@@ -524,7 +524,7 @@ pub async fn store_video_poster(
         let asset_id = asset_id.clone();
         move |conn| {
             conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM images WHERE id = ?1 AND media_type = 'video' AND is_deleted = 0)",
+                "SELECT EXISTS(SELECT 1 FROM scoped_images WHERE id = ?1 AND media_type = 'video' AND is_deleted = 0)",
                 [&asset_id],
                 |row| row.get::<_, i64>(0),
             )
@@ -572,7 +572,7 @@ pub async fn store_video_poster(
                      thumbnail_version = 1,
                      thumbnail_failure_count = 0,
                      thumbnail_last_error = NULL
-                 WHERE id = ?3 AND media_type = 'video' AND is_deleted = 0",
+                 WHERE id = ?3 AND media_type = 'video' AND is_deleted = 0 AND id IN (SELECT id FROM scoped_images)",
                 params![normalized_thumbnail, POSTER_SOURCE, asset_id],
             )
             .map_err(|error| error.to_string())?;
@@ -618,10 +618,10 @@ fn load_video_playback_path(
     asset_id: &str,
 ) -> Result<Option<String>, String> {
     conn.query_row(
-        "SELECT path FROM images
+        "SELECT path FROM scoped_images
          WHERE id = ?1 AND media_type = 'video' AND is_deleted = 0
          UNION ALL
-         SELECT path FROM removed_images
+         SELECT path FROM scoped_removed_images
          WHERE id = ?1 AND media_type = 'video'
          LIMIT 1",
         [asset_id],
@@ -647,9 +647,9 @@ pub async fn export_asset_original(
         let asset_id = asset_id.clone();
         move |conn| {
             conn.query_row(
-                "SELECT path FROM images WHERE id = ?1
+                "SELECT path FROM scoped_images WHERE id = ?1
                  UNION ALL
-                 SELECT path FROM removed_images WHERE id = ?1
+                 SELECT path FROM scoped_removed_images WHERE id = ?1
                  LIMIT 1",
                 [&asset_id],
                 |row| row.get::<_, String>(0),
@@ -738,6 +738,25 @@ fn normalize_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
+fn has_hidden_removed_video_collision(
+    conn: &rusqlite::Connection,
+    asset_id: &str,
+    asset_path: &str,
+) -> Result<bool, String> {
+    conn.query_row(
+        "SELECT EXISTS(
+            SELECT 1 FROM removed_images removed
+            WHERE (removed.id = ?1 OR removed.path = ?2)
+              AND NOT EXISTS (
+                  SELECT 1 FROM scoped_removed_images visible WHERE visible.id = removed.id
+              )
+        )",
+        params![asset_id, asset_path],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|value| value != 0)
+    .map_err(|error| error.to_string())
+}
 async fn persist_video_asset(
     app: tauri::AppHandle<Wry>,
     mut asset: VideoAssetRecord,
@@ -745,7 +764,7 @@ async fn persist_video_asset(
     run_blocking(app, move |conn| {
         let removed: bool = conn
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM removed_images WHERE id = ?1 OR path = ?2)",
+                "SELECT EXISTS(SELECT 1 FROM scoped_removed_images WHERE id = ?1 OR path = ?2)",
                 params![asset.id, asset.path],
                 |row| row.get::<_, i64>(0),
             )
@@ -759,9 +778,27 @@ async fn persist_video_asset(
             });
         }
 
+        if has_hidden_removed_video_collision(conn, &asset.id, &asset.path)? {
+            return Err("Video asset is outside the active library scope".to_string());
+        }
+        let hidden_collision: bool = conn
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM images i
+                    WHERE (i.id = ?1 OR i.path = ?2)
+                      AND NOT EXISTS (SELECT 1 FROM scoped_images visible WHERE visible.id = i.id)
+                )",
+                params![asset.id, asset.path],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|value| value != 0)
+            .map_err(|error| error.to_string())?;
+        if hidden_collision {
+            return Err("Video asset is outside the active library scope".to_string());
+        }
         let existing: Option<(String, i64, i64)> = conn
             .query_row(
-                "SELECT media_type, timestamp, file_size FROM images WHERE id = ?1 OR path = ?2 LIMIT 1",
+                "SELECT media_type, timestamp, file_size FROM scoped_images WHERE id = ?1 OR path = ?2 LIMIT 1",
                 params![asset.id, asset.path],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
@@ -960,7 +997,7 @@ fn update_video_metadata_record(
         .map_err(|error| error.to_string())?;
     let current_json: String = tx
         .query_row(
-            "SELECT metadata_json FROM images WHERE id = ?1 AND media_type = 'video'",
+            "SELECT metadata_json FROM scoped_images WHERE id = ?1 AND media_type = 'video'",
             [asset_id],
             |row| row.get(0),
         )
@@ -986,7 +1023,7 @@ fn update_video_metadata_record(
             generation_type = ?11,
             positive_prompt = ?12,
             negative_prompt = ?13
-         WHERE id = ?14 AND media_type = 'video'",
+         WHERE id = ?14 AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
         params![
             metadata_json,
             original_parsed_json,
@@ -1020,7 +1057,7 @@ async fn mark_known_video_probe_invalid(
              SET probe_status = 'invalid',
                  playback_status = 'external_required',
                  is_corrupt = 1
-             WHERE media_type = 'video' AND (id = ?1 OR path = ?1)",
+             WHERE media_type = 'video' AND (id = ?1 OR path = ?1) AND id IN (SELECT id FROM scoped_images)",
             [&normalized_path],
         )
         .map_err(|error| error.to_string())?;
@@ -1379,9 +1416,9 @@ fn copy_without_overwrite(source: &Path, destination: &Path) -> Result<(PathBuf,
 #[cfg(test)]
 mod tests {
     use super::{
-        collision_safe_output_path, copy_without_overwrite, load_video_playback_path,
-        normalize_rotation, parse_mediainfo_json, preserve_video_user_overrides,
-        upsert_video_asset, VideoAssetRecord,
+        collision_safe_output_path, copy_without_overwrite, has_hidden_removed_video_collision,
+        load_video_playback_path, normalize_rotation, parse_mediainfo_json,
+        preserve_video_user_overrides, upsert_video_asset, VideoAssetRecord,
     };
     use crate::metadata::video::{
         MetadataEvidenceSource, VideoGenerationMetadata, VideoGenerationMode,
@@ -1467,6 +1504,31 @@ mod tests {
     }
 
     #[test]
+    fn hidden_removed_tombstone_blocks_video_reimport_admission() {
+        let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "
+            CREATE TABLE removed_images (id TEXT PRIMARY KEY, path TEXT NOT NULL);
+            CREATE VIEW scoped_removed_images AS SELECT * FROM removed_images WHERE id != 'hidden';
+            INSERT INTO removed_images (id, path) VALUES
+                ('visible', 'C:/videos/visible.mp4'),
+                ('hidden', 'C:/videos/hidden.mp4');
+            ",
+        )
+        .expect("setup tombstones");
+
+        assert!(
+            !has_hidden_removed_video_collision(&conn, "visible", "C:/videos/visible.mp4").unwrap()
+        );
+        assert!(
+            has_hidden_removed_video_collision(&conn, "hidden", "C:/videos/hidden.mp4").unwrap()
+        );
+        assert!(
+            has_hidden_removed_video_collision(&conn, "different-id", "C:/videos/hidden.mp4")
+                .unwrap()
+        );
+    }
+    #[test]
     fn playback_path_can_be_loaded_from_removed_video_records() {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
         conn.execute_batch(
@@ -1477,8 +1539,13 @@ mod tests {
              CREATE TABLE removed_images (
                 id TEXT PRIMARY KEY, path TEXT NOT NULL, media_type TEXT NOT NULL
              );
-             INSERT INTO removed_images (id, path, media_type)
-             VALUES ('removed-video', 'C:/videos/removed.webm', 'video');",
+             CREATE VIEW scoped_images AS SELECT * FROM images WHERE id != 'hidden-active';
+             CREATE VIEW scoped_removed_images AS SELECT * FROM removed_images WHERE id != 'hidden-removed';
+             INSERT INTO removed_images (id, path, media_type) VALUES
+                ('removed-video', 'C:/videos/removed.webm', 'video'),
+                ('hidden-removed', 'C:/videos/hidden-removed.webm', 'video');
+             INSERT INTO images (id, path, media_type) VALUES
+                ('hidden-active', 'C:/videos/hidden-active.webm', 'video');",
         )
         .expect("setup playback lookup schema");
 
@@ -1487,6 +1554,16 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("C:/videos/removed.webm")
+        );
+        assert_eq!(
+            load_video_playback_path(&conn, "hidden-active").unwrap(),
+            None,
+            "out-of-scope active videos must not be resolved for playback"
+        );
+        assert_eq!(
+            load_video_playback_path(&conn, "hidden-removed").unwrap(),
+            None,
+            "out-of-scope removed videos must not be resolved for playback"
         );
     }
 

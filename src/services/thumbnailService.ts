@@ -266,7 +266,7 @@ export const syncExistingThumbnailsToDB = async (
     // Get all images that don't have a thumbnail_path set
     const db = await getDb();
     const rows = await db.select<{ id: string }[]>(
-        `SELECT id FROM images
+        `SELECT id FROM scoped_images
          WHERE media_type = 'image'
            AND invoke_scope_hidden = 0
            AND (thumbnail_path IS NULL OR thumbnail_path = '')`
@@ -343,7 +343,7 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
     // Get all images with thumbnails
     const db = await getDb();
     const rows = await db.select<{ id: string; thumbnail_path: string }[]>(
-        'SELECT id, thumbnail_path FROM images WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+        'SELECT id, thumbnail_path FROM scoped_images WHERE invoke_scope_hidden = 0 AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
     );
 
     let brokenCount = 0;
@@ -394,7 +394,7 @@ export const pruneBrokenThumbnails = async (): Promise<number> => {
             const batch = brokenIds.slice(i, i + BATCH_SIZE);
             const placeholders = batch.map(() => '?').join(',');
             await db.execute(
-                `UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (${placeholders})`,
+                `UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (${placeholders}) AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)`,
                 batch
             );
         }

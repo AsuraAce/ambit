@@ -59,6 +59,29 @@ describe('readTrustedInvokeOwnerScope', () => {
         });
     });
 
+    it('accepts trusted Windows state when persisted path casing differs', async () => {
+        mocks.select.mockResolvedValue([{
+            db_path: dbPath.toLowerCase(),
+            images_root: imagesRoot.toLowerCase(),
+            scope_mode: 'owner',
+            owner_id: 'owner-a',
+        }]);
+
+        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings({
+            invokeDbSnapshot: snapshot({ dbPath: dbPath.toLowerCase() }),
+            invokeOwnerSelection: {
+                dbPath: dbPath.toLowerCase(),
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+        }))).resolves.toEqual({
+            dbPath,
+            imagesRoot,
+            mode: 'owner',
+            ownerId: 'owner-a',
+        });
+    });
+
     it.each([
         ['configured database path', { invokeDbSnapshot: snapshot({ dbPath: 'D:/Other/invokeai.db' }) }],
         ['import schema version', { invokeDbSnapshot: snapshot({ importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION - 1 }) }],
@@ -78,6 +101,14 @@ describe('readTrustedInvokeOwnerScope', () => {
         }]);
 
         await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings())).resolves.toBeNull();
+    });
+
+    it('requires a coherent ready cache before trusting an offline projection', async () => {
+        mocks.select.mockResolvedValue([]);
+
+        await expect(readTrustedInvokeOwnerScope('D:/Invoke', settings())).resolves.toBeNull();
+        expect(mocks.select.mock.calls[0][0]).toContain("cache.status = 'ready'");
+        expect(mocks.select.mock.calls[0][0]).toContain('cache.built_generation = cache.generation');
     });
 
     it('requires an explicit matching selection for all-user scope', async () => {

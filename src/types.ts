@@ -264,7 +264,8 @@ export interface Collection {
   filters?: FilterState; // Added for Smart/Hybrid logic
   manualExclusions?: string[]; // Added for Hybrid override logic
   source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
-  invokeOwnerId?: string; // Owner of an InvokeAI board; omitted for Ambit collections and legacy schemas
+  invokeOwnerId?: string; // Owner-specific visibility for InvokeAI boards and Ambit collections
+  invokeSourceId?: string; // InvokeAI database whose owner namespace scopes this collection
 }
 
 export interface SmartCollection extends Collection {
@@ -323,6 +324,16 @@ export interface InvokeDbSnapshotFile {
   modifiedMs: number | null;
 }
 
+export interface InvokeSourceFingerprint {
+  schemaVersion: 1;
+  imageCount: number;
+  imageUpdatedAt: string | null;
+  boardCount: number;
+  boardUpdatedAt: string | null;
+  membershipCount: number;
+  membershipMaxRowId: string | null;
+}
+
 export interface InvokeDbSnapshotState {
   dbPath: string;
   lastSyncedAt: number | null;
@@ -333,6 +344,8 @@ export interface InvokeDbSnapshotState {
   scopeOwnerId: string | null;
   pathRepairVersion: number;
   importSchemaVersion: number;
+  boardOwnerSchemaVersion?: number;
+  sourceFingerprint?: InvokeSourceFingerprint;
   files: InvokeDbSnapshotFile[];
 }
 
@@ -344,6 +357,8 @@ export interface InvokeOwnerSummary {
   ownerId: string;
   displayName?: string;
   imageCount: number;
+  intermediateImageCount?: number;
+  boardCount?: number;
   isStale?: boolean;
 }
 
@@ -353,6 +368,7 @@ export interface InvokeOwnerDiscovery {
   imagesRoot: string;
   owners: InvokeOwnerSummary[];
   unassignedImageCount: number;
+  unassignedBoardCount?: number;
 }
 
 export interface AppSettings {
@@ -383,6 +399,7 @@ export interface AppSettings {
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
   invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
+  invokeDbSnapshots?: InvokeDbSnapshotState[]; // Internal: per-owner-scope InvokeAI startup snapshots
   invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference

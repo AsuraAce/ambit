@@ -7,13 +7,19 @@ import { useCollectionStore } from '../stores/collectionStore';
 import { useSearchStore } from '../stores/searchStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSettingsStore } from '../stores/settingsStore';
-import { AppSettings, FacetType, InvokeOwnerDiscovery, InvokeOwnerSelection, MetadataRefreshScope } from '../types';
+import { AppSettings, FacetType, InvokeDbSnapshotState, InvokeOwnerDiscovery, InvokeOwnerSelection, MetadataRefreshScope } from '../types';
 import {
+    getInvokeDbSnapshotForScope,
+    INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+    isInvokeBoardOwnerSnapshotCurrent,
     isInvokeDbSnapshotCurrent,
     isInvokeDbSnapshotScopeCurrent,
     isInvokeImportSchemaCurrent,
+    isInvokeSourceFingerprintCurrent,
     readInvokeDbSnapshotState,
+    upsertInvokeDbSnapshot,
 } from '../services/invoke/dbSnapshot';
+import { isSameInvokePath } from '../services/invoke/pathIdentity';
 import {
     debugLiveWatchPerf,
     elapsedMs,
@@ -39,7 +45,7 @@ import { watcherService } from '../services/WatcherService';
 import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
-import { discoverInvokeOwners } from '../services/invoke/connection';
+import { discoverInvokeOwners, readInvokeSourceFingerprint } from '../services/invoke/connection';
 import { applyInvokeOwnerScope, refreshInvokeOwnerVisibility } from '../services/invoke/ownerScope';
 import { clearCollectionOwnerScopeCaches } from '../services/db/collectionRepo';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
@@ -57,8 +63,45 @@ import {
     useInvokeOwnerScopeStore,
     type InvokeOwnerScopeState,
 } from '../stores/invokeOwnerScopeStore';
+import { commands } from '../bindings';
+import type { InvokeScopeCacheBuildClaim, InvokeScopeCacheRepairPlan } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
 
 export type { InvokeOwnerScopeState } from '../stores/invokeOwnerScopeStore';
+
+const FULL_INVOKE_SCOPE_CACHE_REPAIR: InvokeScopeCacheRepairPlan = {
+    action: 'full',
+    resources: {
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: [],
+    },
+    facetTypes: [],
+    collectionsDirty: true,
+};
+
+const resolveInvokeScopeCacheRepair = (
+    repair: InvokeScopeCacheRepairPlan | undefined
+): InvokeScopeCacheRepairPlan => repair ?? FULL_INVOKE_SCOPE_CACHE_REPAIR;
+
+const abortInvokeScopeCacheClaim = async (
+    claim: InvokeScopeCacheBuildClaim,
+    context: string
+): Promise<void> => {
+    if (claim.cacheRepair.action === 'restored') return;
+    try {
+        await unwrap(commands.abortActiveInvokeScopeCacheBuild({
+            scopeKey: claim.scopeKey,
+            generation: claim.generation,
+        }));
+    } catch (abortError) {
+        console.warn(`[InvokeAI] Failed to release an abandoned cache build claim (${context}).`, abortError);
+    }
+};
 
 interface StartInvokeSyncOptions {
     syncFavorites?: boolean;
@@ -69,6 +112,26 @@ interface StartInvokeSyncOptions {
     importIntermediates?: boolean;
     importOrphans?: boolean;
     perfContext?: InvokeLiveWatchPerfContext;
+}
+
+interface RunInvokeSyncOptions extends StartInvokeSyncOptions {
+    ownerTransitionToken?: symbol;
+}
+
+type InvokeSyncOutcome =
+    | { status: 'completed' }
+    | { status: 'queued' }
+    | { status: 'blocked' | 'busy' | 'source_unavailable' | 'aborted' | 'failed'; message?: string };
+
+interface ActiveInvokeSyncRun {
+    scope: InvokeSyncScope;
+    mode: NonNullable<StartInvokeSyncOptions['mode']>;
+    promise: Promise<InvokeSyncOutcome>;
+}
+
+interface InvokeOwnerTransition {
+    rootPath: string;
+    token: symbol;
 }
 
 const mergePendingInvokePerfContext = (
@@ -130,6 +193,9 @@ interface InvokeOwnerAdmission {
     scope?: InvokeSyncScope;
     reason?: string;
     sourceFactsReconciled?: boolean;
+    boardOwnersReconciled?: boolean;
+    boardScopeWarning?: string;
+    cacheRepair?: InvokeScopeCacheRepairPlan;
     offline?: boolean;
 }
 
@@ -170,6 +236,7 @@ export const SyncProvider: React.FC<{
     const setCollections = useCollectionStore(s => s.setCollections);
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
+    const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
 
     // Zustand State
     const syncStatus = useLibraryStore(s => s.syncStatus);
@@ -199,9 +266,33 @@ export const SyncProvider: React.FC<{
         rootPath: string;
         promise: Promise<InvokeOwnerAdmission>;
     } | null>(null);
+    const ownerTransitionRef = useRef<InvokeOwnerTransition | null>(null);
     const ownerScopeAdmissionRef = useRef<InvokeOwnerAdmission | null>(null);
     const activeInvokeSyncScopeRef = useRef<InvokeSyncScope | null>(null);
     const pendingInvokeViewReadyAnnouncementRootRef = useRef<string | null>(null);
+    const runInvokeSyncRef = useRef<(options?: RunInvokeSyncOptions) => Promise<InvokeSyncOutcome>>(
+        async () => ({ status: 'failed', message: 'InvokeAI synchronization is not ready.' })
+    );
+    const activeInvokeSyncRunRef = useRef<ActiveInvokeSyncRun | null>(null);
+    const startPendingInvokeLiveRerun = useCallback(() => {
+        if (!pendingInvokeLiveSyncRef.current
+            || ownerScopePromiseRef.current
+            || ownerTransitionRef.current
+            || activeInvokeSyncRunRef.current) {
+            return;
+        }
+
+        const pendingPerfContext = pendingInvokeLivePerfRef.current;
+        pendingInvokeLiveSyncRef.current = false;
+        pendingInvokeLivePerfRef.current = null;
+        debugLiveWatchPerf('Invoke live rerun starting', {
+            cycleId: pendingPerfContext?.cycleId,
+            eventCount: pendingPerfContext?.eventCount,
+            pathCount: pendingPerfContext?.pathCount,
+            mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
+        });
+        void runInvokeSyncRef.current({ mode: 'live', perfContext: pendingPerfContext || undefined });
+    }, []);
     const incrementFacetCacheVersion = useCallback(() => {
         useLibraryStore.getState().incrementFacetCacheVersion();
     }, []);
@@ -230,45 +321,131 @@ export const SyncProvider: React.FC<{
         return liveFacetRefreshQueueRef.current.queue(facetTypes, meta, resources);
     }, []);
 
-    const refreshAfterOwnerScopeChange = useCallback(async () => {
-        const refreshStartedAt = performance.now();
-        clearLibraryStatsCache();
-        await clearCollectionOwnerScopeCaches();
-        await rebuildFacetCacheStrict();
-        incrementFacetCacheVersion();
-        const [, , , , , maintenanceCounts] = await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ['images'] }),
-            queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
-            queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
-            invalidateInvokeReferenceQueries(queryClient),
-            refreshCollections(true),
-            getMaintenanceCounts(),
-        ]);
-        useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
-        await refreshCollectionThumbnails(true);
-        console.info(`[InvokeAI] Library cache refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms.`);
-    }, [incrementFacetCacheVersion, queryClient, refreshCollectionThumbnails, refreshCollections]);
+    const refreshAfterOwnerScopeChange = useCallback(async (
+        maxAttempts: 1 | 2 = 2
+    ): Promise<InvokeScopeCacheRepairPlan> => {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const refreshStartedAt = performance.now();
+            const claim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+            const cacheRepair = claim.cacheRepair;
+            const requiresCacheBuild = cacheRepair.action !== 'restored';
+            try {
+            clearLibraryStatsCache();
+            const resourceCount = Object.values(cacheRepair.resources)
+                .reduce((total, names) => total + names.length, 0);
+            const resourceFacetTypes = Object.entries(cacheRepair.resources)
+                .filter(([, names]) => names.length > 0)
+                .map(([facetType]) => facetType);
+            const facetTypes = Array.from(new Set([
+                ...cacheRepair.facetTypes,
+                ...(resourceCount > 64 ? resourceFacetTypes : []),
+            ]));
+            if (requiresCacheBuild) {
+                if (cacheRepair.action === 'full') {
+                    await clearCollectionOwnerScopeCaches();
+                    await rebuildFacetCacheStrict();
+                } else {
+                    if (resourceCount > 0 && resourceCount <= 64) {
+                        await refreshFacetCacheForResourcesStrict(cacheRepair.resources);
+                    }
+                    if (facetTypes.length > 0) {
+                        await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
+                    }
+                    if (cacheRepair.collectionsDirty) {
+                        await clearCollectionOwnerScopeCaches();
+                    }
+                }
+            }
+            incrementFacetCacheVersion();
+            const [, , , , , maintenanceCounts] = await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+                invalidateInvokeReferenceQueries(queryClient),
+                refreshCollections(false, {
+                    includeThumbnails: false,
+                    scheduleSmartRefresh: false,
+                    consistency: 'authoritative',
+                }),
+                getMaintenanceCounts(),
+            ]);
+            useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
+            if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
+                await Promise.all([
+                    refreshSmartCounts({
+                        includeArchived: true,
+                        includePromptSearch: true,
+                        consistency: 'authoritative',
+                    }),
+                    refreshCollectionThumbnails(false, true, {
+                        consistency: 'authoritative',
+                    }),
+                ]);
+            }
+            if (requiresCacheBuild) {
+                await unwrap(commands.commitActiveInvokeScopeCache({
+                    scopeKey: claim.scopeKey,
+                    generation: claim.generation,
+                }));
+            }
+            console.info('[InvokeAI] Library cache refresh completed.', {
+                action: cacheRepair.action,
+                resourceCount,
+                facetTypes,
+                collectionsDirty: cacheRepair.collectionsDirty,
+                elapsedMs: Math.round(performance.now() - refreshStartedAt),
+            });
+            return cacheRepair;
+            } catch (error) {
+                if (requiresCacheBuild) {
+                    await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');
+                }
+                const message = error instanceof Error ? error.message : String(error);
+                if (attempt + 1 < maxAttempts && message.includes('changed while it was being prepared')) {
+                    continue;
+                }
+                throw error;
+            }
+        }
+        throw new Error('Invoke owner cache changed repeatedly while it was being prepared.');
+    }, [incrementFacetCacheVersion, queryClient, refreshCollectionThumbnails, refreshCollections, refreshSmartCounts]);
 
     const persistOwnerSelection = useCallback(async (
         selection: InvokeOwnerSelection | undefined,
-        expectedRootPath: string
+        expectedRootPath: string,
+        scope: InvokeSyncScope | null,
+        repairedSnapshot?: AppSettings['invokeDbSnapshot']
     ) => {
         await settingsPersistenceCoordinator.run(async (permit) => {
             const current = useSettingsStore.getState().settings;
             if (current.invokeAiPath?.trim() !== expectedRootPath) {
                 throw new Error('InvokeAI path changed before owner selection could be saved.');
             }
+            let invokeDbSnapshots = current.invokeDbSnapshots;
+            if (current.invokeDbSnapshot) {
+                invokeDbSnapshots = upsertInvokeDbSnapshot(invokeDbSnapshots, current.invokeDbSnapshot);
+            }
+            if (repairedSnapshot) {
+                invokeDbSnapshots = upsertInvokeDbSnapshot(invokeDbSnapshots, repairedSnapshot);
+            }
+            const targetSnapshot = repairedSnapshot
+                ?? getInvokeDbSnapshotForScope({
+                    invokeDbSnapshot: current.invokeDbSnapshot,
+                    invokeDbSnapshots,
+                }, scope);
             const nextSettings: AppSettings = {
                 ...current,
                 invokeOwnerSelection: selection,
-                lastSyncedAt: null,
-                invokeDbSnapshot: undefined,
+                lastSyncedAt: targetSnapshot?.lastSyncedAt ?? null,
+                invokeDbSnapshot: targetSnapshot,
+                invokeDbSnapshots,
             };
             await useSettingsStore.getState().flushSettings(nextSettings);
             const committed = useSettingsStore.getState().rollbackSettings(permit, {
                 invokeOwnerSelection: selection,
-                lastSyncedAt: null,
-                invokeDbSnapshot: undefined,
+                lastSyncedAt: targetSnapshot?.lastSyncedAt ?? null,
+                invokeDbSnapshot: targetSnapshot,
+                invokeDbSnapshots,
             });
             if (!committed) {
                 throw new Error('Owner selection persistence permit expired before commit.');
@@ -285,9 +462,10 @@ export const SyncProvider: React.FC<{
         requestedSelection?: InvokeOwnerSelection,
         persistSelection: boolean = false,
         rootPath: string = discovery.imagesRoot,
-        forceRefresh: boolean = false
+        forceRefresh: boolean = false,
+        deferReady: boolean = false
     ): Promise<InvokeOwnerAdmission> => {
-        const selection = requestedSelection?.dbPath === discovery.dbPath
+        const selection = requestedSelection && isSameInvokePath(requestedSelection.dbPath, discovery.dbPath)
             ? requestedSelection
             : undefined;
         const discoveryWithStaleOwner = selection?.mode === 'owner'
@@ -303,12 +481,24 @@ export const SyncProvider: React.FC<{
 
         ownerScopeAdmissionRef.current = null;
         const scope = resolveInvokeSyncScope(discovery, selection);
+        const targetSnapshot = getInvokeDbSnapshotForScope(settingsRef.current, scope);
+        const sourceFingerprint = scope === null
+            ? undefined
+            : await readInvokeSourceFingerprint(rootPath, scope);
         const reconcileSourceFacts = scope !== null
-            && !isInvokeDbSnapshotScopeCurrent(settingsRef.current.invokeDbSnapshot, scope);
+            && (
+                !isInvokeDbSnapshotScopeCurrent(targetSnapshot, scope)
+                || !sourceFingerprint
+                || !isInvokeSourceFingerprintCurrent(targetSnapshot?.sourceFingerprint, sourceFingerprint)
+            );
+        const reconcileBoardOwners = scope !== null
+            && settingsRef.current.syncBoardsToCollections === true
+            && settingsRef.current.invokeSyncBoards !== false;
         const reportProgress = (current: number, total: number, message?: string) => {
             setInvokeOwnerScopeState({
                 status: 'applying',
                 rootPath,
+                scope: scope ?? undefined,
                 discovery: discoveryWithStaleOwner,
                 progress: { current, total, message },
             });
@@ -316,40 +506,64 @@ export const SyncProvider: React.FC<{
         reportProgress(0, 0, reconcileSourceFacts
             ? 'Preparing InvokeAI library upgrade...'
             : 'Checking your saved InvokeAI view...');
-        const previousSelection = settingsRef.current.invokeOwnerSelection?.dbPath === discovery.dbPath
+        const previousSelection = settingsRef.current.invokeOwnerSelection
+            && isSameInvokePath(settingsRef.current.invokeOwnerSelection.dbPath, discovery.dbPath)
             ? settingsRef.current.invokeOwnerSelection
             : undefined;
         const result = await applyInvokeOwnerScope({
             discovery,
             selection,
             reconcileSourceFacts,
+            reconcileBoardOwners,
             forceVisibilityRefresh: forceRefresh,
             onProgress: reportProgress,
         });
+        let cacheRepair = resolveInvokeScopeCacheRepair(result.cacheRepair);
         if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
-            await refreshInvokeOwnerVisibility(discovery, previousSelection);
+            const rollback = await refreshInvokeOwnerVisibility(discovery, previousSelection);
             await refreshAfterOwnerScopeChange();
             throw new Error('InvokeAI path changed while owner scope was loading.');
         }
-        if (persistSelection) {
-            try {
-                await persistOwnerSelection(selection, rootPath);
-            } catch (persistError) {
-                try {
-                    await refreshInvokeOwnerVisibility(discovery, previousSelection);
-                    await refreshAfterOwnerScopeChange();
-                } catch (rollbackError) {
-                    throw new AggregateError(
-                        [persistError, rollbackError],
-                        'Owner selection could not be saved and visibility rollback failed.'
-                    );
-                }
-                throw persistError;
+        const repairedSnapshot = targetSnapshot
+            && (reconcileSourceFacts || (reconcileBoardOwners && !result.boardScopeWarning))
+            ? {
+                ...targetSnapshot,
+                ...(reconcileSourceFacts && sourceFingerprint ? { sourceFingerprint } : {}),
+                ...(reconcileBoardOwners && !result.boardScopeWarning ? {
+                    syncBoardsToCollections: settingsRef.current.syncBoardsToCollections === true,
+                    boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+                } : {}),
             }
-        }
-        if (result.changed || forceRefresh || reconcileSourceFacts) {
-            reportProgress(0, 0, 'Refreshing library filters and collections...');
-            await refreshAfterOwnerScopeChange();
+            : undefined;
+        const needsCachePreparation = scope !== null;
+        try {
+            if (result.changed
+                || result.boardCollectionsUpdated > 0
+                || forceRefresh
+                || reconcileSourceFacts
+                || needsCachePreparation) {
+                const repairMessage = cacheRepair.action === 'restored'
+                    ? 'Restoring cached InvokeAI view...'
+                    : cacheRepair.action === 'selective'
+                        ? 'Updating changed InvokeAI filters and collections...'
+                        : 'Rebuilding InvokeAI filters and collections...';
+                reportProgress(0, 0, repairMessage);
+                cacheRepair = await refreshAfterOwnerScopeChange();
+            }
+            if (persistSelection || repairedSnapshot) {
+                await persistOwnerSelection(selection, rootPath, scope, repairedSnapshot);
+            }
+        } catch (preparationError) {
+            try {
+                const rollback = await refreshInvokeOwnerVisibility(discovery, previousSelection);
+                await refreshAfterOwnerScopeChange();
+            } catch (rollbackError) {
+                throw new AggregateError(
+                    [preparationError, rollbackError],
+                    'Owner scope preparation failed and the previous view could not be restored.'
+                );
+            }
+            throw preparationError;
         }
 
         if (settingsRef.current.invokeAiPath?.trim() !== rootPath) {
@@ -361,10 +575,16 @@ export const SyncProvider: React.FC<{
             ? 'Choose an InvokeAI owner or All users before syncing.'
             : undefined;
         setInvokeOwnerScopeState({
-            status: result.mode === 'unselected' ? 'selection_required' : 'ready',
+            status: result.mode === 'unselected'
+                ? 'selection_required'
+                : deferReady ? 'applying' : 'ready',
             rootPath,
             scope: scope ?? undefined,
             discovery: discoveryWithStaleOwner,
+            progress: deferReady
+                ? { current: 0, total: 0, message: 'Catching up this InvokeAI view...' }
+                : undefined,
+            warning: result.boardScopeWarning,
         });
         const admission = {
             rootPath,
@@ -372,6 +592,9 @@ export const SyncProvider: React.FC<{
             scope: scope ?? undefined,
             reason,
             sourceFactsReconciled: reconcileSourceFacts,
+            boardOwnersReconciled: reconcileBoardOwners && !result.boardScopeWarning,
+            boardScopeWarning: result.boardScopeWarning,
+            cacheRepair,
         };
         ownerScopeAdmissionRef.current = admission;
         return admission;
@@ -494,13 +717,16 @@ export const SyncProvider: React.FC<{
 
             try {
                 const saved = settingsRef.current.invokeOwnerSelection;
-                let selection = saved?.dbPath === discovery.dbPath ? saved : undefined;
+                let selection = saved && isSameInvokePath(saved.dbPath, discovery.dbPath) ? saved : undefined;
                 let shouldPersistSelection = !!saved && !selection;
 
                 if (discovery.schemaMode === 'legacy') {
                     shouldPersistSelection = shouldPersistSelection || !!selection;
                     selection = undefined;
-                } else if (!selection && discovery.owners.length === 1) {
+                } else if (!selection
+                    && discovery.owners.length === 1
+                    && discovery.unassignedImageCount === 0
+                    && (discovery.unassignedBoardCount ?? 0) === 0) {
                     selection = {
                         dbPath: discovery.dbPath,
                         mode: 'owner',
@@ -510,11 +736,16 @@ export const SyncProvider: React.FC<{
                 }
 
                 const resolvedScope = resolveInvokeSyncScope(discovery, selection);
+                const resolvedSnapshot = getInvokeDbSnapshotForScope(
+                    settingsRef.current,
+                    resolvedScope
+                );
                 const hasPersistedSyncState = settingsRef.current.lastSyncedAt != null
-                    || settingsRef.current.invokeDbSnapshot !== undefined;
+                    || settingsRef.current.invokeDbSnapshot !== undefined
+                    || (settingsRef.current.invokeDbSnapshots?.length ?? 0) > 0;
                 if (hasPersistedSyncState
                     && !isInvokeDbSnapshotScopeCurrent(
-                        settingsRef.current.invokeDbSnapshot,
+                        resolvedSnapshot,
                         resolvedScope
                     )) {
                     shouldPersistSelection = true;
@@ -523,7 +754,7 @@ export const SyncProvider: React.FC<{
                 if (trustedOfflineScope
                     && !shouldPersistSelection
                     && isSameInvokeSyncScope(trustedOfflineScope, resolvedScope)
-                    && isInvokeDbSnapshotScopeCurrent(settingsRef.current.invokeDbSnapshot, resolvedScope)) {
+                    && isInvokeDbSnapshotScopeCurrent(resolvedSnapshot, resolvedScope)) {
                     const admission: InvokeOwnerAdmission = {
                         rootPath,
                         allowed: true,
@@ -576,50 +807,120 @@ export const SyncProvider: React.FC<{
         } finally {
             if (ownerScopePromiseRef.current?.promise === promise) {
                 ownerScopePromiseRef.current = null;
+                startPendingInvokeLiveRerun();
             }
         }
-    }, [applyDiscoveredOwnerScope, settingsRef]);
+    }, [applyDiscoveredOwnerScope, settingsRef, startPendingInvokeLiveRerun]);
 
     const selectInvokeOwnerScope = useCallback(async (selection: InvokeOwnerSelection): Promise<boolean> => {
-        if (activeInvokeSyncScopeRef.current) {
+        if (activeInvokeSyncScopeRef.current || syncStatus === 'syncing') {
             addToast('Wait for the active InvokeAI sync before changing owner scope.', 'warning');
             return false;
         }
         const discovery = invokeOwnerScopeState.discovery;
         const currentRoot = settingsRef.current.invokeAiPath?.trim();
         if (!discovery
-            || discovery.dbPath !== selection.dbPath
+            || !isSameInvokePath(discovery.dbPath, selection.dbPath)
             || !currentRoot
             || ownerScopeAdmissionRef.current?.rootPath !== currentRoot) {
             addToast('Refresh the InvokeAI owner list before changing scope.', 'warning');
             return false;
         }
-        if (ownerScopePromiseRef.current) return false;
+        if (ownerScopePromiseRef.current || ownerTransitionRef.current) return false;
         const currentSelection = settingsRef.current.invokeOwnerSelection;
         if (invokeOwnerScopeState.status === 'ready'
             && ownerScopeAdmissionRef.current?.rootPath === currentRoot
-            && currentSelection?.dbPath === selection.dbPath
+            && currentSelection
+            && isSameInvokePath(currentSelection.dbPath, selection.dbPath)
             && currentSelection.mode === selection.mode
             && (selection.mode === 'all'
                 || (currentSelection.mode === 'owner' && currentSelection.ownerId === selection.ownerId))) {
             return true;
         }
+        const transitionToken = Symbol('invoke-owner-transition');
+        ownerTransitionRef.current = { rootPath: currentRoot, token: transitionToken };
         const promise = applyDiscoveredOwnerScope(
             discovery,
             selection,
             true,
-            currentRoot
+            currentRoot,
+            false,
+            true
         );
         ownerScopePromiseRef.current = { rootPath: currentRoot, promise };
         try {
-            await promise;
+            const admission = await promise;
             if (settingsRef.current.invokeAiPath?.trim() !== currentRoot) {
                 return false;
             }
-            pendingInvokeViewReadyAnnouncementRootRef.current = currentRoot;
+            if (!admission.allowed || !admission.scope) {
+                return false;
+            }
+            pendingInvokeViewReadyAnnouncementRootRef.current = null;
+            const syncOutcome = await runInvokeSyncRef.current({
+                mode: 'startup',
+                ownerTransitionToken: transitionToken,
+            });
+            if (syncOutcome.status !== 'completed') {
+                pendingInvokeViewReadyAnnouncementRootRef.current = null;
+                await applyDiscoveredOwnerScope(
+                    discovery,
+                    currentSelection && isSameInvokePath(currentSelection.dbPath, discovery.dbPath)
+                        ? currentSelection
+                        : undefined,
+                    true,
+                    currentRoot,
+                    true
+                );
+                const failureMessage = 'message' in syncOutcome
+                    ? syncOutcome.message?.trim()
+                    : undefined;
+                addToast(
+                    failureMessage
+                        ? `Could not change InvokeAI owner scope: ${failureMessage.replace(/[.!?]+$/, '')}. The previous view was restored.`
+                        : 'Could not change InvokeAI owner scope. The previous view was restored.',
+                    'error'
+                );
+                return false;
+            }
+            setInvokeOwnerScopeState({
+                status: 'ready',
+                rootPath: currentRoot,
+                scope: admission.scope,
+                discovery,
+                warning: admission.boardScopeWarning,
+            });
+            addToast('Your InvokeAI view is ready.', 'success');
             return true;
         } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
+            let failure = error;
+            if (currentSelection
+                && isSameInvokePath(currentSelection.dbPath, discovery.dbPath)
+                && settingsRef.current.invokeAiPath?.trim() === currentRoot) {
+                try {
+                    const rollbackAdmission = await applyDiscoveredOwnerScope(
+                        discovery,
+                        currentSelection,
+                        true,
+                        currentRoot,
+                        true
+                    );
+                    if (rollbackAdmission.allowed) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        addToast(
+                            `Could not change InvokeAI owner scope: ${message.replace(/[.!?]+$/, '')}. The previous view was restored.`,
+                            'error'
+                        );
+                        return false;
+                    }
+                } catch (rollbackError) {
+                    failure = new AggregateError(
+                        [error, rollbackError],
+                        'Owner scope preparation failed and the previous view could not be restored.'
+                    );
+                }
+            }
+            const message = failure instanceof Error ? failure.message : String(failure);
             setInvokeOwnerScopeState({
                 status: 'error',
                 rootPath: currentRoot,
@@ -633,8 +934,12 @@ export const SyncProvider: React.FC<{
             if (ownerScopePromiseRef.current?.promise === promise) {
                 ownerScopePromiseRef.current = null;
             }
+            if (ownerTransitionRef.current?.token === transitionToken) {
+                ownerTransitionRef.current = null;
+            }
+            startPendingInvokeLiveRerun();
         }
-    }, [addToast, applyDiscoveredOwnerScope, invokeOwnerScopeState.discovery, invokeOwnerScopeState.status, settingsRef]);
+    }, [addToast, applyDiscoveredOwnerScope, invokeOwnerScopeState.discovery, invokeOwnerScopeState.status, settingsRef, startPendingInvokeLiveRerun, syncStatus]);
 
     const retryInvokeOwnerScope = useCallback(async (): Promise<boolean> => {
         const admission = await ensureInvokeOwnerScope(true);
@@ -656,21 +961,63 @@ export const SyncProvider: React.FC<{
         void ensureInvokeOwnerScope().catch(() => {
             // The initiating selection flow owns reporting a concurrently shared rejection.
         });
-    }, [ensureInvokeOwnerScope, settings.invokeAiPath, settings.invokeOwnerSelection, settingsLoaded]);
+    }, [
+        ensureInvokeOwnerScope,
+        settings.invokeAiPath,
+        settings.invokeOwnerSelection,
+        settings.invokeSyncBoards,
+        settings.syncBoardsToCollections,
+        settingsLoaded,
+    ]);
 
-    const startInvokeSync = useCallback(async (optionsInput?: StartInvokeSyncOptions) => {
+    const runInvokeSync = useCallback(async (optionsInput?: RunInvokeSyncOptions): Promise<InvokeSyncOutcome> => {
         if (isBrowserMockMode()) {
             addToast('Unavailable in browser mock mode.', 'info');
-            return;
+            return { status: 'blocked', message: 'Unavailable in browser mock mode.' };
         }
 
-        const options: StartInvokeSyncOptions = {
+        const options = {
             syncFavorites: settingsRef.current.invokeSyncFavorites !== false,
             syncBoards: settingsRef.current.invokeSyncBoards !== false,
             starredAs: settingsRef.current.starredAs || 'favorite',
-            mode: 'manual' as const,
-            ...optionsInput
+            ...optionsInput,
+            mode: optionsInput?.mode ?? 'manual',
         };
+        const queueLiveRerun = () => {
+            pendingInvokeLiveSyncRef.current = true;
+            pendingInvokeLivePerfRef.current = mergePendingInvokePerfContext(
+                pendingInvokeLivePerfRef.current,
+                options.perfContext
+            );
+            debugLiveWatchPerf('Invoke live rerun queued', {
+                cycleId: pendingInvokeLivePerfRef.current?.cycleId ?? options.perfContext?.cycleId,
+                eventCount: pendingInvokeLivePerfRef.current?.eventCount,
+                pathCount: pendingInvokeLivePerfRef.current?.pathCount,
+                mergedCycleCount: pendingInvokeLivePerfRef.current?.mergedCycleCount ?? 1
+            });
+        };
+        const gateOwnerTransition = (expectedRootPath?: string): InvokeSyncOutcome | null => {
+            const activeTransition = ownerTransitionRef.current;
+            const ownsTransition = !!options.ownerTransitionToken
+                && activeTransition?.token === options.ownerTransitionToken
+                && (!expectedRootPath || activeTransition.rootPath === expectedRootPath);
+            if (options.ownerTransitionToken && !ownsTransition) {
+                return { status: 'blocked', message: 'InvokeAI owner transition is no longer current.' };
+            }
+            if (!activeTransition || ownsTransition) return null;
+            if (options.mode === 'live') {
+                queueLiveRerun();
+                return { status: 'queued' };
+            }
+            if (options.mode === 'startup') {
+                console.info('[InvokeAI Sync] Startup request was coalesced into the active owner transition.');
+                return { status: 'queued' };
+            }
+            return { status: 'busy', message: 'InvokeAI owner scope is changing.' };
+        };
+
+        const transitionOutcomeBeforeAdmission = gateOwnerTransition();
+        if (transitionOutcomeBeforeAdmission) return transitionOutcomeBeforeAdmission;
         const ownerAdmission = await ensureInvokeOwnerScope();
         if (!ownerAdmission.allowed || !ownerAdmission.scope) {
             if (options.mode === 'manual') {
@@ -678,7 +1025,7 @@ export const SyncProvider: React.FC<{
             } else {
                 console.info('[InvokeAI Sync] Skipped by owner scope.', { reason: ownerAdmission.reason });
             }
-            return;
+            return { status: 'blocked', message: ownerAdmission.reason };
         }
         const capturedScope = ownerAdmission.scope;
         const capturedRootPath = ownerAdmission.rootPath;
@@ -689,6 +1036,11 @@ export const SyncProvider: React.FC<{
                 settingsRef.current.invokeOwnerSelection
             );
         };
+        const transitionOutcomeAfterAdmission = gateOwnerTransition(capturedRootPath);
+        if (transitionOutcomeAfterAdmission) return transitionOutcomeAfterAdmission;
+        if (!isCapturedScopeCurrent()) {
+            return { status: 'busy', message: 'InvokeAI owner scope changed before synchronization could start.' };
+        }
         const isStartupMode = options.mode === 'startup';
         const announcePreparedInvokeView = (outcome: 'catchup' | 'current' | 'unavailable') => {
             if (!isStartupMode || pendingInvokeViewReadyAnnouncementRootRef.current !== capturedRootPath) return;
@@ -713,26 +1065,18 @@ export const SyncProvider: React.FC<{
                 setSyncStatus('syncing');
             }
             setSyncProgress(progress);
+            if (useInvokeOwnerScopeStore.getState().ownerScopeState.status === 'applying') {
+                setInvokeOwnerScopeState(previous => ({
+                    ...previous,
+                    progress,
+                }));
+            }
         };
         const syncStartedAt = liveWatchNow();
         const livePerfContext = options.mode === 'live' ? options.perfContext : undefined;
         let liveTotalProcessed = 0;
         let liveHadChanges = false;
         let liveOutcome: 'completed' | 'errored' | 'aborted' = 'completed';
-        const startPendingInvokeLiveRerun = () => {
-            if (!pendingInvokeLiveSyncRef.current) return;
-
-            const pendingPerfContext = pendingInvokeLivePerfRef.current;
-            pendingInvokeLiveSyncRef.current = false;
-            pendingInvokeLivePerfRef.current = null;
-            debugLiveWatchPerf('Invoke live rerun starting', {
-                cycleId: pendingPerfContext?.cycleId,
-                eventCount: pendingPerfContext?.eventCount,
-                pathCount: pendingPerfContext?.pathCount,
-                mergedCycleCount: pendingPerfContext?.mergedCycleCount ?? 1
-            });
-            void startInvokeSync({ mode: 'live', perfContext: pendingPerfContext || undefined });
-        };
         const effectiveTimestamp = options.afterTimestamp !== undefined ? options.afterTimestamp : settingsRef.current.lastSyncedAt;
         const effectiveImportIntermediates = options.importIntermediates !== undefined
             ? options.importIntermediates
@@ -741,6 +1085,11 @@ export const SyncProvider: React.FC<{
             ? options.importOrphans === true
             : options.mode === 'manual' && settingsRef.current.importOrphans === true;
         const shouldImportOrphans = capturedScope.mode === 'owner' ? false : requestedImportOrphans;
+        const savedScopeSnapshot = getInvokeDbSnapshotForScope(settingsRef.current, capturedScope);
+        const boardOwnerSchemaVersion = ownerAdmission.boardOwnersReconciled
+            || isInvokeBoardOwnerSnapshotCurrent(savedScopeSnapshot)
+            ? INVOKE_BOARD_OWNER_SCHEMA_VERSION
+            : 0;
         const effectiveSnapshotConfig = {
             lastSyncedAt: effectiveTimestamp,
             importIntermediates: effectiveImportIntermediates,
@@ -748,6 +1097,7 @@ export const SyncProvider: React.FC<{
             syncBoardsToCollections: settingsRef.current.syncBoardsToCollections,
             scopeMode: capturedScope.mode,
             scopeOwnerId: capturedScope.mode === 'owner' ? capturedScope.ownerId : null,
+            boardOwnerSchemaVersion,
         };
         const shouldUseStartupSnapshot =
             options.mode === 'startup'
@@ -755,24 +1105,77 @@ export const SyncProvider: React.FC<{
             && shouldImportOrphans === false;
         const shouldReconcileSourceFacts =
             options.mode !== 'live'
-            && !isInvokeImportSchemaCurrent(settingsRef.current.invokeDbSnapshot)
+            && !isInvokeImportSchemaCurrent(savedScopeSnapshot)
             && !ownerAdmission.sourceFactsReconciled;
 
         if (options.mode === 'live'
-            && (activeInvokeSyncScopeRef.current || syncStatus === 'syncing' || isLiveSyncingRef.current)) {
-            pendingInvokeLiveSyncRef.current = true;
-            pendingInvokeLivePerfRef.current = mergePendingInvokePerfContext(pendingInvokeLivePerfRef.current, livePerfContext);
-            debugLiveWatchPerf('Invoke live rerun queued', {
-                cycleId: pendingInvokeLivePerfRef.current?.cycleId ?? livePerfContext?.cycleId,
-                eventCount: pendingInvokeLivePerfRef.current?.eventCount,
-                pathCount: pendingInvokeLivePerfRef.current?.pathCount,
-                mergedCycleCount: pendingInvokeLivePerfRef.current?.mergedCycleCount ?? 1
-            });
-            return;
+            && (ownerScopePromiseRef.current
+                || ownerTransitionRef.current
+                || activeInvokeSyncRunRef.current
+                || syncStatus === 'syncing'
+                || isLiveSyncingRef.current)) {
+            queueLiveRerun();
+            return { status: 'queued' };
         }
-        if (activeInvokeSyncScopeRef.current || syncStatus === 'syncing') return;
+
+        const activeRun = activeInvokeSyncRunRef.current;
+        if (activeRun) {
+            if (options.mode === 'startup'
+                && activeRun.mode === 'startup'
+                && isSameInvokeSyncScope(activeRun.scope, capturedScope)) {
+                console.info('[InvokeAI Sync] Joined active startup sync for the selected owner scope.');
+                return activeRun.promise;
+            }
+            return { status: 'busy', message: 'Another InvokeAI synchronization is active.' };
+        }
+        if (activeInvokeSyncScopeRef.current || syncStatus === 'syncing') {
+            return { status: 'busy', message: 'Another library synchronization is active.' };
+        }
+
+        let resolveActiveRun!: (outcome: InvokeSyncOutcome) => void;
+        const activeRunPromise = new Promise<InvokeSyncOutcome>((resolve) => {
+            resolveActiveRun = resolve;
+        });
+        activeInvokeSyncRunRef.current = {
+            scope: capturedScope,
+            mode: options.mode,
+            promise: activeRunPromise,
+        };
+        let syncOutcome: InvokeSyncOutcome = {
+            status: 'failed',
+            message: 'InvokeAI synchronization ended without a result.',
+        };
+        let activeRunFinished = false;
+        const finishActiveRun = (outcome: InvokeSyncOutcome) => {
+            syncOutcome = outcome;
+            if (activeRunFinished) return;
+            activeRunFinished = true;
+            resolveActiveRun(outcome);
+            if (activeInvokeSyncRunRef.current?.promise === activeRunPromise) {
+                activeInvokeSyncRunRef.current = null;
+            }
+            startPendingInvokeLiveRerun();
+        };
         activeInvokeSyncScopeRef.current = capturedScope;
         setIsInvokeSyncActive(true);
+
+        const persistSnapshotState = async (snapshot: InvokeDbSnapshotState) => {
+            await settingsPersistenceCoordinator.run(async () => {
+                if (!isCapturedScopeCurrent()) {
+                    throw new Error('InvokeAI owner scope changed before the sync snapshot could be saved.');
+                }
+                const nextSettings = {
+                    ...useSettingsStore.getState().settings,
+                    invokeDbSnapshot: snapshot,
+                    invokeDbSnapshots: upsertInvokeDbSnapshot(
+                        useSettingsStore.getState().settings.invokeDbSnapshots,
+                        snapshot
+                    ),
+                };
+                setSettings(nextSettings);
+                await useSettingsStore.getState().flushSettings(nextSettings);
+            });
+        };
 
         if (shouldUseStartupSnapshot) {
             const snapshotStartedAt = liveWatchNow();
@@ -791,11 +1194,15 @@ export const SyncProvider: React.FC<{
                     });
                     if (activeInvokeSyncScopeRef.current === capturedScope) activeInvokeSyncScopeRef.current = null;
                     setIsInvokeSyncActive(false);
-                    startPendingInvokeLiveRerun();
-                    return;
+                    const outcome: InvokeSyncOutcome = {
+                        status: 'source_unavailable',
+                        message: 'The InvokeAI database file is unavailable.',
+                    };
+                    finishActiveRun(outcome);
+                    return outcome;
                 }
 
-                if (isInvokeDbSnapshotCurrent(settingsRef.current.invokeDbSnapshot, currentSnapshot)) {
+                if (isInvokeDbSnapshotCurrent(savedScopeSnapshot, currentSnapshot)) {
                     announcePreparedInvokeView('current');
                     console.info('[Startup Catch-up] Invoke DB snapshot unchanged; skipped SQLite sync.', {
                         dbPath: currentSnapshot.dbPath,
@@ -803,9 +1210,11 @@ export const SyncProvider: React.FC<{
                     });
                     if (activeInvokeSyncScopeRef.current === capturedScope) activeInvokeSyncScopeRef.current = null;
                     setIsInvokeSyncActive(false);
-                    startPendingInvokeLiveRerun();
-                    return;
+                    const outcome: InvokeSyncOutcome = { status: 'completed' };
+                    finishActiveRun(outcome);
+                    return outcome;
                 }
+
 
                 console.info('[Startup Catch-up] Invoke DB snapshot changed; running SQLite sync.', {
                     dbPath: currentSnapshot.dbPath,
@@ -860,24 +1269,19 @@ export const SyncProvider: React.FC<{
                         lastSyncedAt,
                         // Orphan recovery is manual-only and does not change whether the Invoke DB was synced.
                         importOrphans: false,
+                        sourceFingerprint: await readInvokeSourceFingerprint(
+                            capturedRootPath,
+                            capturedScope
+                        ),
                     }
                 );
-                await settingsPersistenceCoordinator.run(async () => {
-                    if (!isCapturedScopeCurrent()) {
-                        throw new Error('InvokeAI owner scope changed before the sync snapshot could be saved.');
-                    }
-                    const nextSettings = {
-                        ...useSettingsStore.getState().settings,
-                        invokeDbSnapshot: snapshot
-                    };
-                    setSettings(nextSettings);
-                    await useSettingsStore.getState().flushSettings(nextSettings);
-                });
+                await persistSnapshotState(snapshot);
             } catch (snapshotError) {
                 console.warn('[Startup Catch-up] Failed to persist Invoke DB snapshot.', snapshotError);
             }
         };
 
+        let syncCacheClaim: InvokeScopeCacheBuildClaim | null = null;
         try {
             const { syncImages } = await import('../services/invoke/syncService');
             const syncResultPromise = syncImages(
@@ -918,7 +1322,7 @@ export const SyncProvider: React.FC<{
                     reconcileSourceFacts: shouldReconcileSourceFacts
                 }
             );
-            const { imported, updated, maxTimestamp: newTs, boardMapping, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncResultPromise;
+            const { imported, updated, maxTimestamp: newTs, boardMapping, boardsChanged, syncedIds, touchedFacetTypes, touchedFacetResources } = await syncResultPromise;
             if (!isCapturedScopeCurrent()) {
                 throw new Error('InvokeAI path or owner scope changed while synchronization was running.');
             }
@@ -965,7 +1369,10 @@ export const SyncProvider: React.FC<{
                     return changed ? next : prev;
                 });
             }
-            const shouldRefreshBoardCollectionThumbnails = !!boardMapping && boardMapping.size > 0;
+            const hasBoardMapping = !!boardMapping && boardMapping.size > 0;
+            const shouldRefreshBoardCollections = settingsRef.current.syncBoardsToCollections
+                && options.syncBoards !== false
+                && (isStartupMode || hasBoardMapping || boardsChanged);
 
             // Orphan scanning
             let orphansImported = 0;
@@ -987,7 +1394,10 @@ export const SyncProvider: React.FC<{
             const totalProcessed = (imported || 0) + (updated || 0) + orphansImported;
             liveTotalProcessed = totalProcessed;
             // Conditional Facet Rebuild
-            const hasChanges = (imported || 0) > 0 || (updated || 0) > 0 || orphansImported > 0;
+            const hasChanges = (imported || 0) > 0
+                || (updated || 0) > 0
+                || orphansImported > 0
+                || boardsChanged;
             liveHadChanges = hasChanges;
 
             if (hasChanges) {
@@ -1000,7 +1410,9 @@ export const SyncProvider: React.FC<{
                     // SILENT, LENIENT ADDITION (Matches native OS logic)
                     // Advance the Live Watch Session Idle Timer and gently refresh grid
                     const reportStartedAt = liveWatchNow();
-                    reportLiveImagesReceived(totalProcessed, { source: 'invoke' });
+                    if (totalProcessed > 0) {
+                        reportLiveImagesReceived(totalProcessed, { source: 'invoke' });
+                    }
                     debugLiveWatchPerf('Live images reported to session', {
                         cycleId: livePerfContext?.cycleId,
                         totalProcessed,
@@ -1026,18 +1438,48 @@ export const SyncProvider: React.FC<{
                             console.error('[Sync] Live image refresh invalidation failed', invalidateError);
                         });
 
-                    void queueLiveFacetRefresh(touchedFacetTypes, {
+                    const liveCacheClaim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
+                    const facetRefreshPromise = queueLiveFacetRefresh(touchedFacetTypes, {
                         source: 'invoke',
                         cycleId: livePerfContext?.cycleId,
                         changedImageCount: totalProcessed
                     }, touchedFacetResources);
 
-                    if (shouldRefreshBoardCollectionThumbnails) {
-                        void refreshCollections()
-                            .then(() => refreshCollectionThumbnails(true))
-                            .catch((error) => {
-                                console.error('[Sync] Failed to refresh collection thumbnails after live Invoke sync', error);
-                            });
+                    const collectionRefreshPromise = shouldRefreshBoardCollections
+                        ? refreshCollections(false, {
+                            scheduleSmartRefresh: false,
+                            consistency: 'authoritative',
+                        }).then(() => (hasBoardMapping || boardsChanged)
+                            ? Promise.all([
+                                refreshCollectionThumbnails(true),
+                                refreshSmartCounts({ includeArchived: false, markPending: false }),
+                            ])
+                            : undefined)
+                        : Promise.resolve();
+                    try {
+                        await Promise.all([facetRefreshPromise, collectionRefreshPromise]);
+                        if (isCapturedScopeCurrent()) {
+                            if (liveCacheClaim.cacheRepair.action !== 'restored') {
+                                await unwrap(commands.commitActiveInvokeScopeCache({
+                                    scopeKey: liveCacheClaim.scopeKey,
+                                    generation: liveCacheClaim.generation,
+                                }));
+                            }
+                        } else {
+                            await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync scope drift');
+                        }
+                    } catch (error) {
+                        await abortInvokeScopeCacheClaim(liveCacheClaim, 'live sync refresh');
+                        const message = error instanceof Error ? error.message : String(error);
+                        if (message.includes('changed while it was being prepared')) {
+                            try {
+                                await refreshAfterOwnerScopeChange(1);
+                            } catch (retryError) {
+                                console.error('[Sync] Active Invoke scope cache was superseded twice after live sync', retryError);
+                            }
+                        } else {
+                            console.error('[Sync] Failed to preserve the active Invoke scope cache after live sync', error);
+                        }
                     }
                 } else {
                     // MANUAL HEAVY REBUILD
@@ -1048,7 +1490,7 @@ export const SyncProvider: React.FC<{
                     }
 
                     // IMMEDIATE UI REFRESH (Block here until data hits RAM)
-                    await queryClient.refetchQueries({ queryKey: ['images'] });
+                    await queryClient.invalidateQueries({ queryKey: ['images'] });
 
                     // Advance cursor IMMEDIATELY so we don't scan the same files if something crashes
                     if (typeof newTs === 'number') {
@@ -1068,6 +1510,7 @@ export const SyncProvider: React.FC<{
                     }
 
                     try {
+                        syncCacheClaim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
                         if (options.mode === 'startup') {
                             await refreshStartupFacetCache({
                                 source: 'invoke',
@@ -1082,9 +1525,17 @@ export const SyncProvider: React.FC<{
                             useLibraryStore.getState().incrementFacetCacheVersion();
                         }
                     } catch (e) {
+                        if (syncCacheClaim) {
+                            await abortInvokeScopeCacheClaim(syncCacheClaim, 'sync facet refresh');
+                            syncCacheClaim = null;
+                        }
                         console.error('[Sync] Failed to rebuild facet cache after sync', e);
                         setSyncStatus('error');
-                        return; // Halt completion if critical DB error
+                        syncOutcome = {
+                            status: 'failed',
+                            message: e instanceof Error ? e.message : String(e),
+                        };
+                        return syncOutcome; // Halt completion if critical DB error
                     }
 
                     const clearedMessageProgress = { ...useLibraryStore.getState().syncProgress, message: undefined };
@@ -1096,18 +1547,35 @@ export const SyncProvider: React.FC<{
                     if (options.mode !== 'startup') {
                         await onSyncComplete?.('full');
                     } else {
-                        if (shouldRefreshBoardCollectionThumbnails) {
-                            await refreshCollections();
+                        if (shouldRefreshBoardCollections) {
+                            await refreshCollections(false, {
+                                consistency: 'authoritative',
+                            });
                         }
                         setSyncStatus('complete');
                     }
 
-                    if (shouldRefreshBoardCollectionThumbnails) {
+                    if (hasBoardMapping || boardsChanged) {
                         await refreshCollectionThumbnails(true);
                     }
 
+                    if (syncCacheClaim && syncCacheClaim.cacheRepair.action !== 'restored') {
+                        try {
+                            await unwrap(commands.commitActiveInvokeScopeCache({
+                                scopeKey: syncCacheClaim.scopeKey,
+                                generation: syncCacheClaim.generation,
+                            }));
+                        } catch (error) {
+                            const message = error instanceof Error ? error.message : String(error);
+                            if (!message.includes('changed while it was being prepared')) throw error;
+                            await refreshAfterOwnerScopeChange(1);
+                        }
+                    }
+                    syncCacheClaim = null;
+
                     await persistInvokeSnapshot(snapshotCursor);
-                    return;
+                    syncOutcome = { status: 'completed' };
+                    return syncOutcome;
                 }
             } else {
                 console.log('[Sync] No changes detected, skipping facet cache rebuild.');
@@ -1136,6 +1604,17 @@ export const SyncProvider: React.FC<{
                         syncMs: elapsedMs(syncStartedAt)
                     });
                 }
+                if (shouldRefreshBoardCollections) {
+                    await refreshCollections(false, {
+                        consistency: 'authoritative',
+                    });
+                    if (hasBoardMapping || boardsChanged) {
+                        await Promise.all([
+                            refreshCollectionThumbnails(true),
+                            refreshSmartCounts({ includeArchived: false, markPending: false }),
+                        ]);
+                    }
+                }
             }
 
             // Fallback for NO CHANGES scenario (hasChanges === false)
@@ -1149,19 +1628,30 @@ export const SyncProvider: React.FC<{
                 addToast('Synchronization complete: No new changes.', 'info');
             }
 
+            syncOutcome = { status: 'completed' };
+
         } catch (e: unknown) {
             const message = e instanceof Error ? e.message : String(e);
             if (message === 'Aborted') {
                 liveOutcome = 'aborted';
+                syncOutcome = { status: 'aborted', message };
                 setSyncStatus('idle');
             }
             else {
                 liveOutcome = 'errored';
+                syncOutcome = { status: 'failed', message };
                 console.error('Sync failed', e);
                 setSyncStatus('error');
-                if (options.mode === 'manual' || options.mode === 'startup') addToast('Sync failed: ' + message, 'error');
+                const isOwnerTransitionStartup = options.mode === 'startup' && !!options.ownerTransitionToken;
+                if (options.mode === 'manual' || (options.mode === 'startup' && !isOwnerTransitionStartup)) {
+                    addToast('Sync failed: ' + message, 'error');
+                }
             }
         } finally {
+            if (syncCacheClaim) {
+                await abortInvokeScopeCacheClaim(syncCacheClaim, 'sync completion');
+                syncCacheClaim = null;
+            }
             if (activeInvokeSyncScopeRef.current === capturedScope) {
                 activeInvokeSyncScopeRef.current = null;
             }
@@ -1187,11 +1677,22 @@ export const SyncProvider: React.FC<{
             }
             if (!isCapturedScopeCurrent()) {
                 ownerScopeAdmissionRef.current = null;
-                await ensureInvokeOwnerScope(true);
+                try {
+                    await ensureInvokeOwnerScope(true);
+                } catch (scopeError) {
+                    console.error('[InvokeAI Sync] Failed to restore owner admission after scope drift.', scopeError);
+                }
             }
-            startPendingInvokeLiveRerun();
+            finishActiveRun(syncOutcome);
         }
-    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, setSyncStatus, setSyncProgress, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, updateLiveWatchSession, reportLiveImagesReceived]);
+        return syncOutcome;
+    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, refreshAfterOwnerScopeChange, setSettings, setCollections, refreshCollections, refreshCollectionThumbnails, refreshSmartCounts, setSyncStatus, setSyncProgress, setInvokeOwnerScopeState, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, startPendingInvokeLiveRerun, updateLiveWatchSession, reportLiveImagesReceived]);
+
+    runInvokeSyncRef.current = runInvokeSync;
+
+    const startInvokeSync = useCallback(async (options?: StartInvokeSyncOptions): Promise<void> => {
+        await runInvokeSync(options);
+    }, [runInvokeSync]);
 
     const startTargetedLiveSync = useCallback(async (paths: string[], perfContext?: TargetedLiveSyncPerfContext) => {
         if (isBrowserMockMode()) {
@@ -1401,6 +1902,8 @@ export const SyncProvider: React.FC<{
                             lastSyncedAt: null,
                             monitoredFolders: [],
                             invokeAiPath: undefined,
+                            invokeDbSnapshot: undefined,
+                            invokeDbSnapshots: undefined,
                             invokeOwnerSelection: undefined,
                             a1111Path: undefined,
                             comfyUiPath: undefined,

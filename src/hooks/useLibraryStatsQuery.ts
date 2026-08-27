@@ -8,6 +8,8 @@ import { isBrowserMockMode } from '../services/runtime';
 import { getBrowserMockFacets, getBrowserMockKeywordStats, getBrowserMockStatsSummary, getBrowserMockValidFacetNames } from '../services/browserMockData';
 import { useDebouncedSideQueryFilters } from './useDebouncedSideQueryFilters';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
+import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { getInvokeOwnerQueryScopeKey, previousQueryMatchesInvokeScope } from '../utils/invokeOwnerQueryScope';
 
 interface UseLibraryStatsQueryProps {
     filters: FilterState;
@@ -103,6 +105,15 @@ export const useLibraryStatsQuery = ({
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
+    const invokeOwnerScopeKey = useInvokeOwnerScopeStore(state => (
+        getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
+    ));
+    const retainWithinOwnerScope = <T,>(
+        previousData: T | undefined,
+        previousQuery: { queryKey: readonly unknown[] } | undefined
+    ): T | undefined => previousQueryMatchesInvokeScope(previousQuery?.queryKey, invokeOwnerScopeKey)
+        ? previousData
+        : undefined;
 
     // Stable reference: track the active collection scope that affects generated SQL.
     const activeCollectionId = sideQueryFilters.collectionId;
@@ -193,7 +204,7 @@ export const useLibraryStatsQuery = ({
     ]);
 
     const facetsQuery = useQuery({
-        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'facets', facetCacheVersion, assetScope, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, invokeOwnerScopeKey],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockFacets(sideQueryFilters);
@@ -206,13 +217,13 @@ export const useLibraryStatsQuery = ({
                 scopedCountOverrides
             });
         },
-        placeholderData: (previousData) => previousData,
+        placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded
     });
 
     const statsSummaryQuery = useQuery({
-        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash],
+        queryKey: ['libraryStats', 'summary', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, invokeOwnerScopeKey],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return getBrowserMockStatsSummary(sideQueryFilters);
@@ -221,7 +232,7 @@ export const useLibraryStatsQuery = ({
             const { where, params, collectionId, loraName } = queryInput!;
             return getLibraryStatsSummary(where, params, collectionId, loraName);
         },
-        placeholderData: (previousData) => previousData,
+        placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded
     });
@@ -240,7 +251,7 @@ export const useLibraryStatsQuery = ({
         statsSummaryQuery.status
     ]);
     const validNamesQuery = useQuery({
-        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, validFacetsEnabled],
+        queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, validFacetsEnabled, invokeOwnerScopeKey],
         queryFn: async () => {
             if (useBrowserMocks) {
                 return fetchValidFacets ? getBrowserMockValidFacetNames(sideQueryFilters) : null;
@@ -290,7 +301,7 @@ export const useLibraryStatsQuery = ({
 
             return finalValidNames;
         },
-        placeholderData: (previousData) => previousData,
+        placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded
     });
@@ -298,7 +309,7 @@ export const useLibraryStatsQuery = ({
     const keywordQuery = useQuery({
         // Keep keywords on a separate root key so broad library-stats invalidations
         // refresh the cheap summary first before restarting the prompt scan.
-        queryKey: ['libraryKeywordStats', activeSummaryVersion],
+        queryKey: ['libraryKeywordStats', activeSummaryVersion, invokeOwnerScopeKey],
         queryFn: async ({ signal }) => {
             if (useBrowserMocks) {
                 return {
@@ -313,7 +324,7 @@ export const useLibraryStatsQuery = ({
                 keywordStats: await getKeywordStats(where, params, collectionId, loraName, signal)
             };
         },
-        placeholderData: (previousData) => previousData,
+        placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
         enabled: settingsLoaded && activeSummaryVersion > 0 && statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData
     });

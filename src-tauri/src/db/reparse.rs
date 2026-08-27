@@ -135,7 +135,7 @@ pub async fn start_reparse_job(
 
         // Count total work upfront
         let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
-        let count_query = format!("SELECT COUNT(*) FROM images WHERE {}", where_sql);
+        let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
 
         let total: usize = conn.query_row(
             &count_query,
@@ -366,7 +366,7 @@ pub async fn start_reparse_job(
             // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
             let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
 
-             let query = format!("SELECT id FROM images WHERE {}", where_sql);
+             let query = format!("SELECT id FROM scoped_images WHERE {}", where_sql);
 
              let ids: Vec<String> = {
                  let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
@@ -389,7 +389,7 @@ pub async fn start_reparse_job(
                  let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
                  let batch_query = format!(
                     "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                     FROM images
+                     FROM scoped_images
                      WHERE id IN ({})",
                     placeholders
                  );
@@ -430,7 +430,7 @@ pub async fn start_reparse_job(
 
                     let query = format!(
                         "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                         FROM images
+                         FROM scoped_images
                          WHERE {} AND id > ?
                          ORDER BY id ASC
                          LIMIT {}",
