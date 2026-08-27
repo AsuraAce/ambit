@@ -68,8 +68,8 @@ jobs:
         if: steps.audit-scope.outputs.run_rust == 'true'
         run: cargo install cargo-audit --version 0.22.1 --locked
 
-      # RUSTSEC-2023-0071 is ignored by the audit wrapper because it is pulled
-      # through optional sqlx-mysql while Ambit only enables the SQLite beta path.
+      # The audit wrapper ignores advisories only after verifying the affected
+      # optional packages are absent from Ambit's compiled Windows graph.
       - name: run rust dependency advisory audit
         if: steps.audit-scope.outputs.run_rust == 'true'
         run: node ./scripts/audit-rust.mjs
