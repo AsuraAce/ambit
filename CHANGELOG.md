@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/AsuraAce/ambit/compare/v0.11.0...v0.11.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **invokeai:** harden owner-scoped library switching ([#288](https://github.com/AsuraAce/ambit/issues/288)) ([07b0c30](https://github.com/AsuraAce/ambit/commit/07b0c3074150246711518a74879a1fb0ec206685))
+
 ## [0.11.0](https://github.com/AsuraAce/ambit/compare/v0.10.0...v0.11.0) (2026-08-20)
 
 
