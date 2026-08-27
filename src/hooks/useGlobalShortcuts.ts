@@ -5,6 +5,7 @@ import { AIImage, ViewMode } from '../types';
 import type { VirtualGridHandle } from '../features/library/components/VirtualGrid';
 
 interface GlobalShortcutsProps {
+    disabled?: boolean;
     viewMode: ViewMode;
     selectedIds: Set<string>;
     filteredImages: AIImage[];
@@ -35,6 +36,7 @@ interface GlobalShortcutsProps {
 }
 
 export const useGlobalShortcuts = ({
+    disabled = false,
     viewMode,
     selectedIds,
     filteredImages,
@@ -61,6 +63,8 @@ export const useGlobalShortcuts = ({
 }: GlobalShortcutsProps) => {
 
     useEffect(() => {
+        if (disabled) return;
+
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
             // 1. Input Guard: Don't trigger shortcuts when typing
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -229,6 +233,7 @@ export const useGlobalShortcuts = ({
         window.addEventListener('keydown', handleGlobalKeyDown);
         return () => window.removeEventListener('keydown', handleGlobalKeyDown);
     }, [
+        disabled,
         filteredImages,
         selectedIds,
         viewMode,
