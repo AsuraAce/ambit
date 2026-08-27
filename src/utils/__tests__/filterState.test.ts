@@ -4,6 +4,7 @@ import {
     createCollectionSelectionFilters,
     createDefaultFilters,
     hasActiveResultFilters,
+    hasNonCollectionResultFilters,
     shouldPrefetchResultPages
 } from '../filterState';
 
@@ -102,6 +103,21 @@ describe('filterState', () => {
         expect(hasActiveResultFilters(createDefaultFilters({ dateRange: 'today' }))).toBe(true);
         expect(hasActiveResultFilters(createDefaultFilters({ showGrids: true }))).toBe(true);
         expect(hasActiveResultFilters(createDefaultFilters({ showInvokeImageAssets: true }))).toBe(true);
+    });
+
+    it.each([
+        { mediaType: 'video' as const },
+        { samplers: ['Euler'] },
+        { generationTypes: ['txt2img'] },
+        { minSteps: 0 },
+        { maxCfg: 0 },
+    ])('identifies non-collection result criteria for filter controls: $mediaType$samplers$generationTypes$minSteps$maxCfg', overrides => {
+        expect(hasNonCollectionResultFilters(createDefaultFilters(overrides))).toBe(true);
+    });
+
+    it('excludes collection navigation scope from non-collection result criteria', () => {
+        expect(hasNonCollectionResultFilters(createDefaultFilters({ collectionId: 'collection-1' }))).toBe(false);
+        expect(hasActiveResultFilters(createDefaultFilters({ collectionId: 'collection-1' }))).toBe(true);
     });
 
     it('prefetches only for unfiltered result browsing', () => {

@@ -427,11 +427,11 @@ export const MetadataInfoTab = ({
             <div className="shrink-0 p-4 border-t border-gray-200 dark:border-white/5 bg-white dark:bg-zinc-900 z-10 shadow-[0_-10px_40px_rgba(0,0,0,0.1)]">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-amethyst-500" />
-                        <h3 className="text-xs font-bold uppercase text-amethyst-600 dark:text-amethyst-400 tracking-wider">Creative Assistant</h3>
+                        <Sparkles className="w-4 h-4 text-amethyst-600 dark:text-amethyst-300" />
+                        <h3 className="text-xs font-bold uppercase text-amethyst-600 dark:text-amethyst-300 tracking-wider">Creative Assistant</h3>
                     </div>
                     {onOpenAIResult && (
-                        <button onClick={onOpenAIResult} className="text-xs text-amethyst-500 hover:text-amethyst-600 hover:underline flex items-center gap-1">
+                        <button onClick={onOpenAIResult} className="flex items-center gap-1 text-xs text-amethyst-600 hover:text-amethyst-600 hover:underline dark:text-amethyst-300 dark:hover:text-amethyst-300">
                             View last result <Eye className="w-3 h-3" />
                         </button>
                     )}
@@ -444,10 +444,10 @@ export const MetadataInfoTab = ({
                     >
                         <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Prompt Analysis</span>
                         <div className="flex items-center justify-between w-full">
-                            <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">
+                            <span className="text-[10px] text-gray-500 group-hover:text-amethyst-600 dark:text-zinc-400 dark:group-hover:text-amethyst-300">
                                 {isAnalyzing ? "Analyzing..." : "Get insights"}
                             </span>
-                            {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-500 border-t-transparent" /> : <Wand2 className="w-4 h-4 text-amethyst-500" />}
+                            {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-600 border-t-transparent dark:border-amethyst-300" /> : <Wand2 className="w-4 h-4 text-amethyst-600 dark:text-amethyst-300" />}
                         </div>
                     </button>
 
@@ -457,10 +457,10 @@ export const MetadataInfoTab = ({
                     >
                         <span className="text-xs font-bold text-gray-700 dark:text-gray-300">Variations</span>
                         <div className="flex items-center justify-between w-full">
-                            <span className="text-[10px] text-gray-500 dark:text-zinc-400 group-hover:text-amethyst-500">
+                            <span className="text-[10px] text-gray-500 group-hover:text-amethyst-600 dark:text-zinc-400 dark:group-hover:text-amethyst-300">
                                 {isAnalyzing ? "Creating..." : "Create twists"}
                             </span>
-                            {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-500 border-t-transparent" /> : <Shuffle className="w-4 h-4 text-amethyst-500" />}
+                            {isAnalyzing ? <div className="animate-spin rounded-full h-4 w-4 border-2 border-amethyst-600 border-t-transparent dark:border-amethyst-300" /> : <Shuffle className="w-4 h-4 text-amethyst-600 dark:text-amethyst-300" />}
                         </div>
                     </button>
                 </div>

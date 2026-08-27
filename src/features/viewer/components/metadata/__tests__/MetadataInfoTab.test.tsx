@@ -392,6 +392,9 @@ describe('MetadataInfoTab', () => {
 
     it('wires creative assistant controls and busy state', () => {
         const { props, rerender } = renderTab(image(metadata(), metadata()), { onOpenAIResult: vi.fn() });
+        const assistantHeading = screen.getByText('Creative Assistant');
+        expect(assistantHeading.className).toContain('text-amethyst-600');
+        expect(assistantHeading.className).toContain('dark:text-amethyst-300');
         fireEvent.click(screen.getByRole('button', { name: /prompt analysis/i }));
         fireEvent.click(screen.getByRole('button', { name: /variations/i }));
         fireEvent.click(screen.getByRole('button', { name: /view last result/i }));

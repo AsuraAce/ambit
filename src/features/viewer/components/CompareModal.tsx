@@ -456,8 +456,8 @@ export const CompareModal: React.FC<CompareModalProps> = ({
             <div className={`grid grid-cols-1 gap-1 py-3 border-b border-white/5 text-sm hover:bg-white/5 transition-colors ${isDiff ? 'bg-ember-900/10' : ''}`}>
                 <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider px-4 mb-1">{label}</div>
                 <div className="grid grid-cols-2 gap-4 px-4">
-                    <div className={`truncate ${isDiff ? 'text-ember-600 font-medium' : 'text-gray-400'}`} title={String(valA)}>{valA}</div>
-                    <div className={`truncate ${isDiff ? 'text-ember-600 font-medium' : 'text-gray-400'}`} title={String(valB)}>{valB}</div>
+                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valA)}>{valA}</div>
+                    <div className={`truncate ${isDiff ? 'text-ember-300 font-medium' : 'text-gray-400'}`} title={String(valB)}>{valB}</div>
                 </div>
             </div>
         );

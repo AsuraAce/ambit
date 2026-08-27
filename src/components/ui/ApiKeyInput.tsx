@@ -76,11 +76,11 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                         aria-labelledby={showLabel ? labelId : undefined}
                         className="flex items-center gap-3 rounded-xl border border-amethyst-200 bg-amethyst-50 p-4 text-sm text-amethyst-600 dark:border-amethyst-500/20 dark:bg-amethyst-500/10 dark:text-amethyst-300"
                     >
-                        <Key className="w-5 h-5 text-amethyst-500" />
+                        <Key className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300" />
                         <span className="font-medium">Environment API key detected</span>
                         <div className="flex-1" />
                         {hasPositiveStatus ? (
-                            <Check className="w-4 h-4 text-sage-500 animate-in fade-in zoom-in" />
+                            <Check className="w-4 h-4 text-sage-600 dark:text-sage-300 animate-in fade-in zoom-in" />
                         ) : null}
                         {status === 'error' && (
                             <XCircle className="w-4 h-4 text-red-500 animate-in fade-in zoom-in" />
@@ -110,16 +110,16 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                                 if (!isVerifying) onChange(e.target.value);
                             }}
                             className={cn(
-                                "w-full bg-gray-50 dark:bg-white/5 border rounded-xl px-4 py-4 pr-32 text-sm outline-none transition-all",
+                                "w-full bg-gray-50 dark:bg-white/5 border rounded-xl px-4 py-4 pr-32 text-sm text-gray-900 outline-none transition-all focus:border-amethyst-500/50 focus:ring-4 focus:ring-amethyst-500/5 dark:text-white",
                                 isVerifying && 'cursor-wait opacity-70',
-                                hasPositiveStatus ? 'border-sage-500/50 dark:text-sage-500' :
+                                hasPositiveStatus ? 'border-sage-500/50' :
                                     status === 'error' ? 'border-red-500/50' :
-                                        'border-gray-200 dark:border-white/10 focus:border-amethyst-500/50 focus:ring-4 focus:ring-amethyst-500/5 dark:text-white'
+                                        'border-gray-200 dark:border-white/10'
                             )}
                         />
                         <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
                             {hasPositiveStatus ? (
-                                <Check className="w-5 h-5 text-sage-500 animate-in fade-in zoom-in" />
+                                <Check className="w-5 h-5 text-sage-600 dark:text-sage-300 animate-in fade-in zoom-in" />
                             ) : null}
                             {status === 'error' && (
                                 <XCircle className="w-5 h-5 text-red-500 animate-in fade-in zoom-in" />
@@ -144,7 +144,7 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
             )}
 
             {statusMessage ? (
-                <div role="status" className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-500 animate-in slide-in-from-top-1">
+                <div role="status" className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-600 dark:text-sage-300 animate-in slide-in-from-top-1">
                     <Check className="w-3 h-3" />
                     <span>{statusMessage}</span>
                 </div>

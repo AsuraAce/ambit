@@ -160,7 +160,7 @@ describe('ActiveFilters', () => {
         const { container } = render(<ActiveFiltersUnderTest />);
 
         const scroller = container.querySelector('.overflow-x-auto');
-        const clearAll = screen.getByRole('button', { name: /clear all/i });
+        const clearAll = screen.getByRole('button', { name: /clear filters/i });
         const modelLabel = screen.getByText(modelName);
 
         expect(scroller).toBeTruthy();
@@ -360,7 +360,7 @@ describe('ActiveFilters', () => {
         clickChipButton(screen.getByText('CFG: 2-8').parentElement as HTMLElement);
         expect(applyLatestFilterUpdate(filters)).toMatchObject({ minCfg: undefined, maxCfg: undefined });
 
-        fireEvent.click(screen.getByRole('button', { name: /clear all/i }));
+        fireEvent.click(screen.getByRole('button', { name: /clear filters/i }));
         expect(searchMocks.clearAllFilters).toHaveBeenCalledOnce();
     });
 

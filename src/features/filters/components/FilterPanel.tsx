@@ -18,6 +18,7 @@ import { REPOSITORY_URL } from '../../../constants/support';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import { openExternalUrl } from '../../../utils/externalLinks';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { hasNonCollectionResultFilters } from '../../../utils/filterState';
 
 interface FilterPanelProps {
     isInvokeCollectionCatchupPending?: boolean;
@@ -129,27 +130,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             : null,
         [filters.collectionId, allCols]
     );
-    const dateFilterLabel = getDateFilterLabel(filters);
-
     // Check for Manual Edits (ignoring the collection ID itself)
-    const hasManualEdits = !!(
-        filters.searchQuery ||
-        (filters.mediaType !== undefined && filters.mediaType !== 'all') ||
-        filters.models.length > 0 ||
-        filters.tools.length > 0 ||
-        filters.loras.length > 0 ||
-        filters.embeddings.length > 0 ||
-        filters.hypernetworks.length > 0 ||
-        filters.favoritesOnly ||
-        filters.pinnedOnly ||
-        !!dateFilterLabel ||
-        filters.minSteps ||
-        filters.maxSteps ||
-        filters.minCfg ||
-        filters.maxCfg ||
-        filters.controlNets.length > 0 ||
-        filters.ipAdapters.length > 0
-    );
+    const hasManualEdits = hasNonCollectionResultFilters(filters);
 
     // The Update Button should show if we are in a smart collection AND have added manual edits.
     const showUpdateButton = activeSmartCol && hasManualEdits;
@@ -232,8 +214,8 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
         }
     };
 
-    // Global Dirty Check (includes collectionId so "Reset All" works to clear selection)
-    const isDirty = !!(filters.collectionId || hasManualEdits);
+    // Collection membership is navigation scope; this action clears only result filters.
+    const isDirty = hasManualEdits;
 
     // Tab-Specific Dirty Checks (for dot indicators)
     // Note: dateRange is NOT included in isOrganizeDirty because Date Range is a global section in the footer, not part of Organize tab
@@ -304,7 +286,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                             onClick={clearAllFilters}
                             className="text-[10px] font-bold text-sage-600 dark:text-sage-300 hover:text-sage-600 dark:hover:text-sage-300 transition-colors uppercase tracking-wider bg-sage-100 dark:bg-sage-900/30 px-2 py-1 rounded-md"
                         >
-                            Reset All
+                            Clear filters
                         </button>
                     )}
                 </div>

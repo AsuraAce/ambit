@@ -91,9 +91,9 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
 
             {error ? (
                 <main className="fixed inset-0 z-[10000] flex min-h-screen items-center justify-center bg-gray-50 p-4 text-gray-900 dark:bg-zinc-950 dark:text-white sm:p-8">
-                    <section className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white/85 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl dark:border-rose-500/20 dark:bg-zinc-900/85 sm:p-8">
+                    <section className="w-full max-w-lg rounded-3xl border border-red-200 bg-white/85 p-6 shadow-2xl shadow-black/10 backdrop-blur-xl dark:border-red-500/20 dark:bg-zinc-900/85 sm:p-8">
                         <div className="flex items-center gap-4">
-                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-600 dark:text-rose-300">
+                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/10 text-red-600 dark:text-red-300">
                                 <AlertCircle className="h-6 w-6" />
                             </div>
                             <div className="min-w-0">

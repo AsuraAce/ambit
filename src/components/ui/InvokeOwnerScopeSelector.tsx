@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Check } from 'lucide-react';
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -65,16 +66,19 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                                 </span>
                                 <span className="block break-all font-mono text-[10px] text-gray-500">{owner.ownerId}</span>
                             </span>
-                            <span className="shrink-0 text-right text-[10px] font-bold text-gray-500">
-                                <span className="block">
-                                    {standardImageCount.toLocaleString()} {intermediateImageCount > 0 ? 'standard images' : 'images'}
+                            <span className="flex shrink-0 items-center gap-2">
+                                <span className="text-right text-[10px] font-bold text-gray-500">
+                                    <span className="block">
+                                        {standardImageCount.toLocaleString()} {intermediateImageCount > 0 ? 'standard images' : 'images'}
+                                    </span>
+                                    {intermediateImageCount > 0 && (
+                                        <span className="block">{intermediateImageCount.toLocaleString()} intermediates</span>
+                                    )}
+                                    {owner.boardCount !== undefined && (
+                                        <span className="block">{owner.boardCount.toLocaleString()} boards</span>
+                                    )}
                                 </span>
-                                {intermediateImageCount > 0 && (
-                                    <span className="block">{intermediateImageCount.toLocaleString()} intermediates</span>
-                                )}
-                                {owner.boardCount !== undefined && (
-                                    <span className="block">{owner.boardCount.toLocaleString()} boards</span>
-                                )}
+                                {selected ? <Check className="h-4 w-4 text-sage-600 dark:text-sage-300" aria-hidden="true" /> : null}
                             </span>
                         </span>
                     </button>
@@ -105,7 +109,10 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                     ? 'border-ember-500 bg-ember-500/10'
                     : 'border-gray-200 hover:border-ember-500/50 dark:border-white/10'}`}
             >
-                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
+                <span className="flex items-center justify-between gap-3">
+                    <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
+                    {selection?.mode === 'all' ? <Check className="h-4 w-4 shrink-0 text-ember-600 dark:text-ember-300" aria-hidden="true" /> : null}
+                </span>
                 <span className="block text-[10px] leading-4 text-gray-500">
                     Show every owner's images and boards, including unassigned rows.
                 </span>

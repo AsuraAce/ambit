@@ -294,7 +294,7 @@ const ComfyDiagnosticsPanel: React.FC<{
             ) : isLoading ? (
                 <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Loading diagnostics...</div>
             ) : error ? (
-                <div className="mt-2 text-rose-700 dark:text-rose-300">Diagnostics unavailable: {error}</div>
+                <div className="mt-2 text-red-600 dark:text-red-300">Diagnostics unavailable: {error}</div>
             ) : diagnostics ? (
                 <div className="mt-3 space-y-3 text-ember-600 dark:text-ember-300">
                     <div className="grid grid-cols-2 gap-2">
@@ -317,7 +317,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                             {diagnostics.outputAmbiguous && (
                                 <span
                                     title="Multiple saved-output roots were found, so no branch received strong traversal authority."
-                                    className="rounded-md border border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 px-1.5 py-0.5 text-rose-900 dark:text-rose-100"
+                                    className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
                                 >
                                     Ambiguous
                                 </span>
@@ -509,7 +509,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                 </div>
             ) : null}
             {exportError && (
-                <div className="mt-2 text-rose-700 dark:text-rose-300">
+                <div className="mt-2 text-red-600 dark:text-red-300">
                     Support bundle export failed: {exportError}
                 </div>
             )}

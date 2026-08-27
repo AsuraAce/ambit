@@ -155,7 +155,7 @@ export const AppHeader = React.memo(({
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-1">
+                    <div className="ml-1 flex items-center gap-1">
                         <TooltipButton
                             label="Import Images"
                             content="Import images. For automatic sync with favorites and boards, set up an Integration in Settings."

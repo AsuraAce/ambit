@@ -125,7 +125,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
 
         if (draftFilters.mediaType && draftFilters.mediaType !== 'all') {
             chips.push(
-                <div key="media-type" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-600 dark:text-sage-300 text-xs border border-sage-200">
+                <div key="media-type" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>Media: {draftFilters.mediaType === 'video' ? 'Videos' : 'Images'}</span>
                     <button type="button" aria-label="Remove Media Type Rule" onClick={() => removeFilter('mediaType', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                 </div>
@@ -146,7 +146,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         const dateFilterLabel = getDateFilterLabel(draftFilters);
         if (dateFilterLabel) {
             chips.push(
-                <div key="date" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-600 dark:text-sage-300 text-xs border border-sage-200">
+                <div key="date" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>{dateFilterLabel}</span>
                     <button type="button" aria-label="Remove Date Rule" onClick={() => removeFilter('dateRange', null)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
                 </div>
@@ -156,8 +156,8 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         // Favorites
         if (draftFilters.favoritesOnly) {
             chips.push(
-                <div key="fav" className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-100 text-red-600 text-xs border border-red-200">
-                    <div className="w-3 h-3 text-red-500">❤️</div>
+                <div key="fav" className="flex items-center gap-1 rounded-md border border-red-200 bg-red-100 px-2 py-1 text-xs text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
+                    <div className="w-3 h-3 text-red-500 dark:text-red-300">❤️</div>
                     <span>Favorites</span>
                     <button type="button" aria-label="Remove Favorites Rule" onClick={() => removeFilter('favoritesOnly', null)} className="hover:text-red-600"><X className="w-3 h-3" /></button>
                 </div>

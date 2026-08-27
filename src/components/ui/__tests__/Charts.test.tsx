@@ -147,6 +147,9 @@ describe('StatsDashboard', () => {
         const { container } = render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
         const tip = screen.getByText('Tip of the Day').closest('.relative');
 
+        expect(tip?.className).toContain('bg-harbor-50');
+        expect(tip?.className).not.toContain('bg-sage');
+
         fireEvent.click(tip?.querySelector('button') as HTMLButtonElement);
 
         expect(container.textContent).not.toContain('Tip of the Day');

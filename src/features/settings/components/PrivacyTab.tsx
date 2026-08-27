@@ -203,14 +203,14 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             {privacyEnabled && privacyMaskIndexStatus !== 'ready' && (
                 <section
                     className={`border rounded-xl p-4 ${privacyMaskIndexStatus === 'failed'
-                        ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20'
+                        ? 'bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20'
                         : 'bg-sage-50 border-sage-200 dark:bg-sage-500/10 dark:border-sage-500/20'}`}
                     role={privacyMaskIndexStatus === 'failed' ? 'alert' : 'status'}
                     aria-live="polite"
                 >
                     <div className="flex items-start gap-3">
                         {privacyMaskIndexStatus === 'failed'
-                            ? <ShieldAlert className="w-5 h-5 mt-0.5 text-rose-500 shrink-0" />
+                            ? <ShieldAlert className="w-5 h-5 mt-0.5 text-red-600 dark:text-red-300 shrink-0" />
                             : <Loader2 className="w-5 h-5 mt-0.5 text-sage-600 animate-spin shrink-0" />}
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-gray-900 dark:text-white">
@@ -224,7 +224,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     : 'Your library will be available when the latest masking rules are ready.'}
                             </p>
                             {privacyMaskIndexStatus === 'failed' && privacyMaskIndexError && (
-                                <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 break-words">{privacyMaskIndexError}</p>
+                                <p className="mt-2 text-xs text-red-600 dark:text-red-300 break-words">{privacyMaskIndexError}</p>
                             )}
                         </div>
                         {privacyMaskIndexStatus === 'failed' && (
@@ -378,7 +378,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 settings.maskedKeywords.map((keyword) => (
                                     <span
                                         key={keyword}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium group ${settings.promptMaskingEnabled ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium group ${settings.promptMaskingEnabled ? 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300' : 'bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}
                                     >
                                         {keyword}
                                         <button
@@ -386,7 +386,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                             aria-label={`Remove Masked Keyword ${keyword}`}
                                             onClick={() => { void handleRemoveKeyword(keyword); }}
                                             disabled={isSavingPrivacy}
-                                            className="p-0.5 hover:bg-rose-200 dark:hover:bg-rose-500/30 rounded-full transition-colors"
+                                            className="p-0.5 hover:bg-red-200 dark:hover:bg-red-500/30 rounded-full transition-colors"
                                         >
                                             <X className="w-3 h-3" />
                                         </button>

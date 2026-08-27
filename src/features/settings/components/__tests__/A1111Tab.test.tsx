@@ -102,6 +102,15 @@ describe('A1111Tab discovery warnings', () => {
         mocks.getUnlinkedPriorityCandidatePaths.mockReturnValue([]);
     });
 
+    it('uses the lightweight integration section-label treatment', () => {
+        render(<A1111Tab settings={createSettings()} setSettings={vi.fn()} />);
+
+        const header = screen.getByText(/core configuration/i);
+        expect(header.className).toContain('text-sage-600');
+        expect(header.className).toContain('dark:text-sage-300');
+        expect(header.className).not.toContain('bg-sage-600');
+    });
+
     it('surfaces warning-only discovery results and keeps the debug log visible', async () => {
         mocks.discoverA1111Candidates.mockResolvedValue({
             detectedVariant: WebUIVariant.A1111,

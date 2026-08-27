@@ -371,7 +371,7 @@ export const SearchBar = React.memo(({
                 aria-pressed={searchProps.isAiSearchEnabled}
                 disabled={searchProps.isSearchingAi}
                 onClick={searchProps.toggleAiSearch}
-                className={`p-2 rounded-xl transition-all border disabled:cursor-wait disabled:opacity-60 ${searchProps.isAiSearchEnabled ? 'bg-amethyst-100 dark:bg-amethyst-600/20 border-amethyst-500/50 text-amethyst-600 dark:text-amethyst-300 shadow-[0_0_15px_rgba(130,130,196,0.2)]' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 dark:text-zinc-500 hover:text-sage-600 dark:hover:text-sage-300 hover:border-gray-300 dark:hover:border-white/10'}`}
+                className={`p-2 rounded-xl transition-all border disabled:cursor-wait disabled:opacity-60 ${searchProps.isAiSearchEnabled ? 'bg-amethyst-100 dark:bg-amethyst-600/20 border-amethyst-500/50 text-amethyst-600 dark:text-amethyst-300 shadow-[0_0_15px_rgba(130,130,196,0.2)]' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 dark:text-zinc-500 hover:text-amethyst-600 dark:hover:text-amethyst-300 hover:border-amethyst-300 dark:hover:border-amethyst-500/30'}`}
             >
                 <Sparkles aria-hidden="true" className="w-4 h-4" />
             </TooltipButton>

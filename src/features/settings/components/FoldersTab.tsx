@@ -64,7 +64,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
             {/* 1. Image Monitoring Section */}
             <div className="space-y-4">
-                <div className="p-4 bg-sage-50 dark:bg-sage-500/10 border border-sage-200 dark:border-sage-500/20 rounded-xl text-sm text-sage-800 dark:text-sage-200 flex items-start gap-3">
+                <div className="flex items-start gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 text-sm text-harbor-600 dark:border-harbor-400/30 dark:bg-harbor-500/15 dark:text-harbor-300">
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Image Folders</strong>

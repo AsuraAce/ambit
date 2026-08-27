@@ -268,7 +268,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                     ) : (
                         <button
                             onClick={cancelSync}
-                            className="px-6 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 rounded-xl text-sm font-black transition-all flex items-center gap-3 active:scale-95"
+                            className="px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-300 rounded-xl text-sm font-black transition-all flex items-center gap-3 active:scale-95"
                             title="Abort the current synchronization"
                         >
                             <XCircle className="w-5 h-5" /> Terminate Sync

@@ -165,7 +165,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                   {errorMessage}
                 </div>
               )}

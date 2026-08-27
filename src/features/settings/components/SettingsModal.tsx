@@ -67,7 +67,7 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon, isActive, onClic
       : 'text-gray-400 hover:bg-white/5 hover:text-white'
       }`}
   >
-    <div className={`${isActive ? 'text-sage-300' : 'text-gray-500 group-hover:text-gray-300'}`}>
+    <div className={`${isActive ? (id === 'intelligence' ? 'text-amethyst-300' : 'text-sage-300') : 'text-gray-500 group-hover:text-gray-300'}`}>
       {icon}
     </div>
     {label}

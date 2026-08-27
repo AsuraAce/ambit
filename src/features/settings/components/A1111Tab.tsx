@@ -233,7 +233,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-sage-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-sage-500/20">
+                <h4 className="mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
                     <Palette className="w-4 h-4" /> Core Configuration
                 </h4>
 
@@ -354,7 +354,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                         <span className="text-[9px] text-gray-500 font-medium">Showing standard output folders ({displayedCandidates.length} of {candidates.length})</span>
                                     )}
                                     {candidates.some(c => c.variant && c.variant !== 'Unknown') ? (
-                                        <span className="text-[10px] bg-harbor-500/10 text-harbor-600 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
+                                        <span className="text-[10px] bg-harbor-500/10 text-harbor-600 dark:text-harbor-300 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
                                             Detected: {candidates.find(c => c.variant && c.variant !== 'Unknown')?.variant}
                                         </span>
                                     ) : (
@@ -386,7 +386,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                             </div>
                                         </label>
                                     ) : null}
-                                    <span className="text-[10px] font-bold text-sage-600 bg-sage-500/10 px-2 py-0.5 rounded-full">{displayedCandidates.length} found</span>
+                                    <span className="text-[10px] font-bold text-sage-600 dark:text-sage-300 bg-sage-500/10 px-2 py-0.5 rounded-full">{displayedCandidates.length} found</span>
                                 </div>
                             </div>
 

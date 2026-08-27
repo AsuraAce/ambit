@@ -24,6 +24,9 @@ describe('ResourcesTab', () => {
     it('routes discovery, resolve, and confirmation actions', () => {
         const logic = mocks.logic as ReturnType<typeof baseLogic>;
         render(<ResourcesTab settings={{} as AppSettings} setSettings={vi.fn()} />);
+        const resolveButton = screen.getByText('Resolve Online');
+        expect(resolveButton.className).toContain('min-h-10');
+        expect(resolveButton.className).toContain('text-sm');
         for (const label of ['browse', 'add-folder', 'remove-folder', 'scan', 'Resolve Online', 'cancel-confirm', 'confirm-resolve']) fireEvent.click(screen.getByText(label));
         expect(logic.handleBrowseResource).toHaveBeenCalled();
         expect(logic.handleAddResourceFolder).toHaveBeenCalled();

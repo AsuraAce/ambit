@@ -114,7 +114,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
             onKeyDown={handleDialogKeyDown}
           >
             {/* Header / Accent Bar */}
-            <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-rose-600' : 'bg-gradient-to-r from-sage-500 to-sage-600'}`} />
+            <div className={`h-1.5 w-full ${isDangerous ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-sage-500 to-sage-600'}`} />
 
             <div className="p-8">
               <div className="flex flex-col items-center text-center">
@@ -139,7 +139,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
                   disabled={isLoading}
                   aria-label={isLoading ? 'Processing...' : undefined}
                   className={`w-full py-3.5 px-6 text-sm font-bold text-white rounded-2xl shadow-lg transition-all active:scale-[0.98] ${isDangerous
-                    ? 'bg-gradient-to-br from-red-500 to-rose-600 hover:shadow-red-500/40'
+                    ? 'bg-gradient-to-br from-red-500 to-red-600 hover:shadow-red-500/40'
                     : 'bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-sage-500/40'
                     } ${isLoading ? 'opacity-70 cursor-wait' : ''}`}
                 >

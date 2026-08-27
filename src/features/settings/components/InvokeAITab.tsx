@@ -212,7 +212,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         {testResult && (
                             <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
                                 ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
-                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                : 'bg-red-500/10 text-red-600 dark:text-red-300'
                                 }`}>
                                 {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                                 {testResult.message}
@@ -248,7 +248,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     )}
 
                     {invokeOwnerScopeState.status === 'error' && (
-                        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300">
+                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300">
                             <p className="text-xs font-bold">
                                 {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
                                     ? 'InvokeAI connection unavailable'
@@ -265,7 +265,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
                                 </details>
                             )}
-                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
+                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-red-500/15 text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-300">
                                 Retry
                             </button>
                         </div>

@@ -179,7 +179,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                         className={cn(
                                             "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all",
                                             isActive
-                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm"
+                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-300 shadow-sm"
                                                 : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
                                         )}
                                     >
@@ -199,10 +199,10 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                     {activeTab === 'prompts' && (
                         <section className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
                             <div className="flex items-start gap-3 p-4 bg-amethyst-50 dark:bg-amethyst-500/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl">
-                                <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-400 mt-0.5 shrink-0" />
+                                <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300 mt-0.5 shrink-0" />
                                 <div>
-                                    <h4 className="text-sm font-bold text-amethyst-900 dark:text-amethyst-400">System Prompt Overrides</h4>
-                                    <p className="text-xs text-amethyst-800/70 dark:text-amethyst-400/70 mt-1 leading-relaxed">
+                                    <h4 className="text-sm font-bold text-amethyst-600 dark:text-amethyst-300">System Prompt Overrides</h4>
+                                    <p className="text-xs text-amethyst-600/70 dark:text-amethyst-300/70 mt-1 leading-relaxed">
                                         Customize the internal instructions sent to the AI models.
                                         Changes here apply immediately. "Reset to Default" removes your override.
                                     </p>
@@ -236,7 +236,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                             label="Reset Prompt to Default"
                                                             content="Reset Prompt to Default"
                                                             onClick={() => handleResetPrompt(key)}
-                                                            className="p-1.5 text-gray-400 hover:text-rose-500 transition-colors rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-500/20 dark:hover:text-red-300"
                                                         >
                                                             <Undo2 className="w-3.5 h-3.5" />
                                                         </TooltipButton>
@@ -244,7 +244,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                     {!isEditing && (
                                                         <button
                                                             onClick={() => handleEditPrompt(key)}
-                                                            className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-400 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                                                            className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                                                         >
                                                             Edit
                                                         </button>
@@ -293,12 +293,12 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                     {/* Tools Section */}
                     {activeTab === 'tools' && (
                         <section className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
-                            <div className="p-6 bg-sage-500/10 border border-sage-500/20 rounded-2xl mb-6">
+                            <div className="mb-6 rounded-2xl border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/30 dark:bg-ember-500/10">
                                 <div className="flex gap-4">
-                                    <Database className="w-6 h-6 text-sage-500 shrink-0" />
+                                    <Database className="w-6 h-6 text-ember-600 dark:text-ember-300 shrink-0" />
                                     <div>
-                                        <h5 className="text-sm font-bold text-sage-600 dark:text-sage-400 mb-1">Database Stress Testing</h5>
-                                        <p className="text-xs text-sage-900/70 dark:text-sage-500/70 leading-relaxed">
+                                        <h5 className="mb-1 text-sm font-bold text-ember-600 dark:text-ember-300">Database Stress Testing</h5>
+                                        <p className="text-xs leading-relaxed text-ember-600 dark:text-ember-300">
                                             Generate dummy data to benchmark application performance.
                                             <br />
                                             <strong>Note:</strong> This increases database size significantly.

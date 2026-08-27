@@ -93,7 +93,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                             onClick={requestResolveOnline}
                             disabled={isHashResolutionBlocked}
                             title={isHashResolutionBlocked ? 'Wait for the current library task to finish' : undefined}
-                            className="rounded-lg bg-sage-600 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-sage-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-white/10"
+                            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-sage-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-sage-500 disabled:cursor-not-allowed disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-white/10"
                         >
                             {isHashResolutionBlocked ? 'Library Busy' : 'Resolve Online'}
                         </button>

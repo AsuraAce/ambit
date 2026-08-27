@@ -41,7 +41,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
 
     return (
         <div className="space-y-4 pt-4 border-t border-gray-200 dark:border-white/5">
-            <div className="flex items-center justify-between gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 text-sm text-harbor-600 dark:border-harbor-500/20 dark:bg-harbor-500/10 dark:text-harbor-300">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 text-sm text-harbor-600 dark:border-harbor-400/30 dark:bg-harbor-500/15 dark:text-harbor-300">
                 <div className="flex items-start gap-3">
                     <FolderSearch className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
@@ -61,7 +61,7 @@ export const ResourceDiscoverySection: React.FC<ResourceDiscoverySectionProps> =
                                 type="button"
                                 onClick={onScanNow}
                                 disabled={isDiscoveryBusy}
-                                className={`flex items-center gap-2 rounded-lg bg-sage-100 px-3 py-1.5 text-xs font-medium text-sage-600 transition-colors hover:bg-sage-200 dark:bg-sage-500/15 dark:text-sage-300 dark:hover:bg-sage-500/25 ${isDiscoveryBusy ? 'opacity-70 cursor-wait' : ''}`}
+                                className={`flex items-center gap-2 rounded-lg bg-sage-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sage-500 disabled:bg-gray-300 disabled:text-gray-500 dark:disabled:bg-white/10 ${isDiscoveryBusy ? 'cursor-wait opacity-70' : ''}`}
                             >
                                 <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
                                 {isScanning ? 'Scanning...' : 'Scan Now'}

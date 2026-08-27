@@ -125,8 +125,8 @@ export const InvokeOwnerScopeGate: React.FC<InvokeOwnerScopeGateProps> = ({
             role="alert"
             data-testid="invoke-owner-scope-gate"
         >
-            <div className="w-full max-w-lg rounded-3xl border border-rose-200 bg-white/90 p-5 shadow-2xl shadow-black/10 dark:border-rose-500/20 dark:bg-zinc-900/90 sm:p-8">
-                <AlertTriangle className="mb-4 h-8 w-8 text-rose-600 dark:text-rose-400" />
+            <div className="w-full max-w-lg rounded-3xl border border-red-200 bg-white/90 p-5 shadow-2xl shadow-black/10 dark:border-red-500/20 dark:bg-zinc-900/90 sm:p-8">
+                <AlertTriangle className="mb-4 h-8 w-8 text-red-600 dark:text-red-300" />
                 <h1 ref={headingRef} tabIndex={-1} className="text-xl font-black text-gray-900 outline-none dark:text-white">
                     {title}
                 </h1>

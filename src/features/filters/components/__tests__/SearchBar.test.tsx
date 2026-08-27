@@ -351,6 +351,15 @@ describe('SearchBar query readiness and trigger behavior', () => {
         expect(harness.searchProps.toggleAiSearch).not.toHaveBeenCalled();
     });
 
+    it('uses the AI semantic color when standard search offers AI search', () => {
+        renderSearchBar();
+
+        const aiButton = screen.getByRole('button', { name: 'Enable AI Search' });
+        expect(aiButton.className).toContain('hover:text-amethyst-600');
+        expect(aiButton.className).toContain('dark:hover:text-amethyst-300');
+        expect(aiButton.className).not.toContain('hover:text-sage');
+    });
+
     it('keeps dashboard drafts local until Enter routes the submitted query', async () => {
         const harness = renderSearchBar(createDefaultFilters(), {
             scopeName: 'Statistics',
