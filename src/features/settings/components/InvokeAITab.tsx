@@ -299,7 +299,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         && invokeOwnerScopeState.status !== 'error'
                         && invokeOwnerScopeState.status !== 'offline_ready'
                         && invokeOwnerScopeState.warning && (
-                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200">
+                        <div className="mb-4 rounded-xl border border-ember-500/20 bg-ember-500/10 p-4 text-xs text-ember-600 dark:text-ember-300">
                             {invokeOwnerScopeState.warning}
                         </div>
                     )}

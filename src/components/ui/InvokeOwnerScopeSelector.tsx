@@ -92,7 +92,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             )}
 
             {unassignedBoards > 0 && (
-                <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <p className="text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     {unassignedBoards.toLocaleString()} boards have no owner and remain hidden in single-owner scope.
                 </p>
             )}
