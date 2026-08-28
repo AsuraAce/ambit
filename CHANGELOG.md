@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/AsuraAce/ambit/compare/v0.11.1...v0.12.0) (2026-08-28)
+
+
+### Features
+
+* **ui:** align light theme and semantic colors ([#291](https://github.com/AsuraAce/ambit/issues/291)) ([b4de9a8](https://github.com/AsuraAce/ambit/commit/b4de9a8e0a93b7b75d4c1e413d5fc27a15303d0a))
+
 ## [0.11.1](https://github.com/AsuraAce/ambit/compare/v0.11.0...v0.11.1) (2026-08-27)
 
 
