@@ -25,8 +25,10 @@ describe('ResourcesTab', () => {
         const logic = mocks.logic as ReturnType<typeof baseLogic>;
         render(<ResourcesTab settings={{} as AppSettings} setSettings={vi.fn()} />);
         const resolveButton = screen.getByText('Resolve Online');
+        const resolutionHeader = screen.getByText('Online Model Hash Resolution').parentElement?.parentElement?.parentElement;
         expect(resolveButton.className).toContain('min-h-10');
         expect(resolveButton.className).toContain('text-sm');
+        expect(resolutionHeader?.className).not.toContain('mb-6');
         for (const label of ['browse', 'add-folder', 'remove-folder', 'scan', 'Resolve Online', 'cancel-confirm', 'confirm-resolve']) fireEvent.click(screen.getByText(label));
         expect(logic.handleBrowseResource).toHaveBeenCalled();
         expect(logic.handleAddResourceFolder).toHaveBeenCalled();
@@ -41,6 +43,7 @@ describe('ResourcesTab', () => {
         const cancelResolveOnline = vi.fn();
         mocks.logic = { ...baseLogic(), isResolving: true, resolutionProgress: { message: 'Hash 2 of 4' }, resolutionProgressPercent: 50, resolutionResult: { success: true, message: 'Resolved' }, cancelResolveOnline };
         const { container, rerender } = render(<ResourcesTab settings={{} as AppSettings} setSettings={vi.fn()} />);
+        expect(screen.getByText('Online Model Hash Resolution').parentElement?.parentElement?.parentElement?.className).toContain('mb-6');
         expect(screen.getByText('Hash 2 of 4')).toBeTruthy();
         expect(screen.getByText('50 %')).toBeTruthy();
         expect(screen.getByText('Success')).toBeTruthy();

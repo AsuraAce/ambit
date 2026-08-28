@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { X, FilterX } from 'lucide-react';
+import { FilterX, Heart, Pin, X } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { useSearch } from '../../../contexts/SearchContext';
@@ -212,7 +212,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
 
             {showFavoritesFilter && (
                 <div className="flex items-center gap-1 rounded-full border border-red-200 bg-red-100 px-2 py-0.5 text-xs text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
-                    <div className="w-3 h-3 text-red-500 dark:text-red-300">❤️</div>
+                    <Heart aria-hidden="true" className="h-3 w-3 shrink-0 fill-current" />
                     <span>Favorites</span>
                     <button type="button" aria-label="Clear Favorites Filter" onClick={() => setFilters(f => ({ ...f, favoritesOnly: false }))}><X className="w-3 h-3" /></button>
                 </div>
@@ -220,6 +220,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
 
             {showPinnedFilter && (
                 <div className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
+                    <Pin aria-hidden="true" className="h-3 w-3 shrink-0 fill-current" />
                     <span>Pinned</span>
                     <button type="button" aria-label="Clear Pinned Filter" onClick={() => setFilters(f => ({ ...f, pinnedOnly: false }))}><X className="w-3 h-3" /></button>
                 </div>

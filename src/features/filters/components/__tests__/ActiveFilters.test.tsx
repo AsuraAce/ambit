@@ -148,6 +148,22 @@ describe('ActiveFilters', () => {
         });
     });
 
+    it('uses matching hidden icons for the favorite and pinned filter chips', () => {
+        searchMocks.state.filters = createFilters({ favoritesOnly: true, pinnedOnly: true });
+        render(<ActiveFiltersUnderTest />);
+
+        const favoritesChip = screen.getByText('Favorites').parentElement;
+        const pinnedChip = screen.getByText('Pinned').parentElement;
+        const heart = favoritesChip?.querySelector('.lucide-heart');
+        const pin = pinnedChip?.querySelector('.lucide-pin');
+
+        expect(heart).toBeTruthy();
+        expect(heart?.getAttribute('aria-hidden')).toBe('true');
+        expect(pin).toBeTruthy();
+        expect(pin?.getAttribute('aria-hidden')).toBe('true');
+        expect(favoritesChip?.textContent).not.toContain('❤️');
+    });
+
     it('keeps clear all reachable while long chip labels use the filter strip width', () => {
         const collectionName = 'Portrait Reference Collection With A Deliberately Long Name';
         const modelName = 'checkpoint-with-a-deliberately-long-display-name.safetensors';

@@ -149,8 +149,8 @@ describe('MetadataEditTab', () => {
         render(<EditorHarness />);
 
         await waitFor(() => expect(screen.getByRole('button', { name: 'Archived Ideas' }).getAttribute('aria-pressed')).toBe('true'));
-        expect(screen.getByText('In this image (1)')).toBeTruthy();
-        expect(screen.getByText('Other collections')).toBeTruthy();
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.getByText('Add to another collection')).toBeTruthy();
 
         const selected = screen.getByRole('button', { name: 'Archived Ideas' });
         const firstOther = screen.getByRole('button', { name: 'Portraits' });
@@ -159,13 +159,13 @@ describe('MetadataEditTab', () => {
         expect(selected.querySelector('[data-membership-indicator="selected"]')).toBeTruthy();
     });
 
-    it('explains an empty membership while still offering other collections', async () => {
+    it('offers available collections without an orphaned empty-membership message', async () => {
         collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce([]);
         render(<EditorHarness />);
 
         await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
-        expect(screen.getByText('Not in any collection')).toBeTruthy();
-        expect(screen.getByText('Other collections')).toBeTruthy();
+        expect(screen.queryByText('Not in any collection')).toBeNull();
+        expect(screen.getByText('Add to a collection')).toBeTruthy();
     });
 
     it('filters both membership groups and resets the result list scroll position', async () => {
@@ -181,8 +181,8 @@ describe('MetadataEditTab', () => {
         list.scrollTop = 60;
         fireEvent.change(screen.getByRole('searchbox', { name: 'Find collection' }), { target: { value: 'port' } });
         expect(list.scrollTop).toBe(0);
-        expect(screen.getByText('In this image (1)')).toBeTruthy();
-        expect(screen.queryByText('Other collections')).toBeNull();
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.queryByText('Add to another collection')).toBeNull();
     });
 
     it('clears a collapsed collection search and keeps its open state across asset navigation', async () => {

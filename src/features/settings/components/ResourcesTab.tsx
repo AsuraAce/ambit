@@ -61,7 +61,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
             />
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
-                <div className="flex items-center justify-between mb-6">
+                <div className={isResolving || resolutionResult ? "mb-6 flex items-center justify-between gap-6" : "flex items-center justify-between gap-6"}>
                     <div className="flex items-center gap-3">
                         <div className="rounded-lg bg-harbor-100 p-2 dark:bg-harbor-500/10">
                             <FolderSearch className="w-5 h-5 text-harbor-600 dark:text-harbor-300" />

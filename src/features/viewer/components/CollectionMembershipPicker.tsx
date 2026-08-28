@@ -298,9 +298,6 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                         <button type="button" onClick={() => setRetryToken(token => token + 1)} className="text-xs font-medium text-sage-700 hover:underline dark:text-sage-300">Retry</button>
                     </div>
                 )}
-                {!isLoading && !hasError && manualCollections.length > 0 && memberCollections.length === 0 && !normalizedQuery && (
-                    <p className="px-3 pt-1 text-xs text-gray-500 dark:text-gray-400">Not in any collection</p>
-                )}
                 {!isLoading && !hasError && !hasVisibleCollections && (
                     <p className="px-3 py-4 text-center text-xs text-gray-500">
                         {manualCollections.length === 0 ? 'No collections available.' : 'No collections found.'}
@@ -309,14 +306,14 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                 {visibleMemberCollections.length > 0 && (
                     <div className="space-y-2">
                         <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                            In this image ({memberCollections.length})
+                            Member of ({memberCollections.length})
                         </p>
                         {visibleMemberCollections.map(renderCollection)}
                     </div>
                 )}
                 {visibleOtherCollections.length > 0 && (
                     <div className="space-y-2">
-                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Other collections</p>
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{memberCollections.length > 0 ? 'Add to another collection' : 'Add to a collection'}</p>
                         {visibleOtherCollections.map(renderCollection)}
                     </div>
                 )}

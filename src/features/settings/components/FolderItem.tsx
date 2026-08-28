@@ -36,8 +36,8 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
     const path = folder.isManaged ? (folder.pathRaw ?? folder.path) : folder.path;
 
     return (
-        <div className="flex items-center justify-between p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 group transition-colors">
-            <div className="flex items-center gap-3 overflow-hidden">
+        <div className="grid grid-cols-1 items-center gap-3 rounded-lg p-3 transition-colors hover:bg-gray-50 dark:hover:bg-white/5 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="flex min-w-0 items-center gap-3 overflow-hidden">
                 <div className="flex-shrink-0 w-16 flex justify-center">
                     {(!folder.variant || folder.variant === GeneratorTool.UNKNOWN) ? (
                         <div className="p-2 bg-gray-100 dark:bg-white/10 rounded-lg text-gray-500 dark:text-gray-400">
@@ -47,7 +47,7 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                 </div>
 
                 <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-sm text-gray-700 dark:text-gray-300 font-mono truncate">
+                    <span className="truncate font-mono text-sm text-gray-700 dark:text-gray-300" title={path}>
                         {path}
                     </span>
                     <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
@@ -62,9 +62,9 @@ export const FolderItem: React.FC<FolderItemProps> = ({ folder, scanningIds, onR
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex shrink-0 items-center justify-end gap-4 sm:col-start-2">
                 {!folder.isManaged && (
-                    <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{folder.imageCount} images</span>
+                    <span className="min-w-[4.5rem] whitespace-nowrap text-right text-xs font-medium tabular-nums text-gray-400 dark:text-gray-500">{folder.imageCount} images</span>
                 )}
 
                 <TooltipButton
