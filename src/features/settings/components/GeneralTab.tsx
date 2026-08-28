@@ -236,7 +236,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <div className="text-sm font-medium text-gray-800 dark:text-gray-300 group-hover:text-sage-500 transition-colors">Upgrade Existing Thumbnails</div>
-                                        <span className="text-[10px] font-bold bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-300 px-1.5 py-0.5 rounded">Slow</span>
+                                        <span className="rounded bg-ember-100 px-1.5 py-0.5 text-[10px] font-bold text-ember-600 dark:bg-ember-500/15 dark:text-ember-300">Slow</span>
                                     </div>
                                     <div className="text-xs text-gray-400 mt-0.5">Re-generate "fast" or external thumbnails with high-quality versions</div>
                                 </div>
@@ -245,7 +245,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     role="switch"
                                     aria-checked={settings.enforceHighQualityThumbnails}
                                     aria-label="Upgrade Existing Thumbnails"
-                                    className={`w-10 h-6 rounded-full relative transition-colors ${settings.enforceHighQualityThumbnails ? 'bg-violet-500' : 'bg-gray-200 dark:bg-white/10'}`}
+                                    className={`relative h-6 w-10 rounded-full transition-colors ${settings.enforceHighQualityThumbnails ? 'bg-sage-600' : 'bg-gray-200 dark:bg-white/10'}`}
                                 >
                                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transition-all ${settings.enforceHighQualityThumbnails ? 'left-5' : 'left-1'}`} />
                                 </button>
@@ -305,7 +305,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                         type="button"
                                         onClick={handleToggleFailures}
                                         className={`inline-flex items-center gap-1.5 text-xs font-bold transition-colors ${hasKnownThumbnailFailures
-                                            ? 'text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200'
+                                            ? 'text-ember-600 hover:text-ember-600 dark:text-ember-300 dark:hover:text-ember-300'
                                             : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                                             }`}
                                     >
@@ -315,7 +315,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     </button>
 
                                     {failurePanelOpen && (
-                                        <div className="mt-3 space-y-3 border-l border-amber-200 dark:border-amber-400/20 pl-3">
+                                        <div className="mt-3 space-y-3 border-l border-ember-200 dark:border-ember-400/20 pl-3">
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="text-xs font-medium text-gray-700 dark:text-gray-300">Recent thumbnail failures</div>
                                                 <button
@@ -341,7 +341,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                             )}
 
                                             {failureLoadState === 'error' && (
-                                                <div className="text-xs text-amber-600 dark:text-amber-300">
+                                                <div className="text-xs text-ember-600 dark:text-ember-300">
                                                     Failed to load thumbnail failures: {failureLoadError}
                                                 </div>
                                             )}
@@ -361,7 +361,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                                             <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-gray-400">
                                                                 <span>Attempts {formatNumber(failure.failureCount)}</span>
                                                                 <span>{formatAttemptTime(failure.lastAttemptAt)}</span>
-                                                                <span className="text-amber-600 dark:text-amber-300">{failure.lastError ?? 'Unknown error'}</span>
+                                                                <span className="text-ember-600 dark:text-ember-300">{failure.lastError ?? 'Unknown error'}</span>
                                                             </div>
                                                         </div>
                                                     ))}

@@ -135,12 +135,12 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
         <MetadataField label="Model" icon={Box} source={source} modified={modified}>
             <div ref={editorRef} className="group relative">
                 {onSave && !isEditing ? (
-                    <button type="button" aria-label="Edit Model" onClick={startEditing} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-zinc-500 opacity-0 transition-opacity hover:text-white focus-visible:opacity-100 group-hover:opacity-100">
+                    <button type="button" aria-label="Edit Model" onClick={startEditing} className="absolute right-3 top-1/2 z-10 -translate-y-1/2 text-gray-400 opacity-0 transition-opacity hover:text-gray-700 focus-visible:opacity-100 group-hover:opacity-100 dark:text-zinc-500 dark:hover:text-white">
                         <Pencil className="h-3.5 w-3.5" />
                     </button>
                 ) : null}
                 {isEditing ? (
-                    <div className="relative flex flex-col gap-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                    <div className="relative flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-white/10 dark:bg-black/20">
                         {isCustom ? (
                             <input
                                 ref={inputRef}
@@ -154,7 +154,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                     }
                                 }}
                                 placeholder="Enter model name…"
-                                className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500"
+                                className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
                             />
                         ) : (
                             <div className="relative">
@@ -172,10 +172,10 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                     onKeyDown={handleSearchKeyDown}
                                     placeholder="Search library models…"
                                     autoFocus
-                                    className="w-full rounded border border-white/10 bg-zinc-900 p-2 text-xs text-white outline-none focus:border-sage-500"
+                                    className="w-full rounded border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
                                 />
                                 {isOpen ? (
-                                    <ul id={listboxId} role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-zinc-900 p-1 shadow-2xl">
+                                    <ul id={listboxId} role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-2xl dark:border-white/10 dark:bg-zinc-900">
                                         {filteredOptions.map((option, index) => (
                                             <li
                                                 id={`${listboxId}-option-${index}`}
@@ -183,7 +183,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                                 role="option"
                                                 aria-selected={activeIndex === index}
                                                 onClick={() => chooseOption(option)}
-                                                className={`cursor-pointer rounded px-2 py-1.5 text-xs ${activeIndex === index ? 'bg-sage-500/20 text-sage-200' : 'text-zinc-300 hover:bg-white/5'}`}
+                                                className={`cursor-pointer rounded px-2 py-1.5 text-xs ${activeIndex === index ? 'bg-sage-100 text-sage-600 dark:bg-sage-500/20 dark:text-sage-300' : 'text-gray-700 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}
                                             >
                                                 {formatModelName(option)}
                                             </li>
@@ -193,7 +193,7 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                                             role="option"
                                             aria-selected={activeIndex === filteredOptions.length}
                                             onClick={chooseCustom}
-                                            className={`cursor-pointer rounded border-t border-white/5 px-2 py-1.5 text-xs ${activeIndex === filteredOptions.length ? 'bg-sage-500/20 text-sage-200' : 'text-zinc-400 hover:bg-white/5'}`}
+                                            className={`cursor-pointer rounded border-t border-gray-200 px-2 py-1.5 text-xs dark:border-white/5 ${activeIndex === filteredOptions.length ? 'bg-sage-100 text-sage-600 dark:bg-sage-500/20 dark:text-sage-300' : 'text-gray-500 hover:bg-gray-100 dark:text-zinc-400 dark:hover:bg-white/5'}`}
                                         >
                                             Custom model…
                                         </li>
@@ -202,20 +202,20 @@ export const MetadataModelField: React.FC<MetadataModelFieldProps> = ({
                             </div>
                         )}
                         <div className="flex justify-end gap-2">
-                            <button type="button" onClick={cancel} className="px-2 py-1 text-xs text-zinc-500 hover:text-white">Cancel</button>
+                            <button type="button" onClick={cancel} className="px-2 py-1 text-xs text-gray-500 hover:text-gray-900 dark:text-zinc-500 dark:hover:text-white">Cancel</button>
                             <button type="button" disabled={!draft.trim()} onClick={save} className="flex items-center gap-1 rounded bg-sage-600 px-2 py-1 text-xs text-white hover:bg-sage-500 disabled:cursor-not-allowed disabled:opacity-40"><Check className="h-3 w-3" /> Save</button>
                         </div>
                     </div>
                 ) : (
-                    <div className="flex w-full items-center gap-2 rounded-lg border border-white/10 bg-black p-2.5 pr-9">
-                        <div className={`truncate text-sm font-medium text-sage-200 ${presentation.isHashFallback ? 'font-mono' : 'font-sans'}`} title={presentation.value}>
+                    <div className="flex w-full items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2.5 pr-9 dark:border-white/10 dark:bg-black">
+                        <div className={`truncate text-sm font-medium text-gray-900 dark:text-gray-100 ${presentation.isHashFallback ? 'font-mono' : 'font-sans'}`} title={presentation.value}>
                             {presentation.isHashFallback ? presentation.value : formatModelName(presentation.value)}
                         </div>
                         {presentation.isHashFallback ? <TooltipButton
                             label="About unresolved model hash"
                             content="Model name unresolved. Use Settings → Connections → Resources → Resolve Online to look it up through CivitAI. Only the hash is sent."
                             persistOnClick
-                            className="shrink-0 rounded border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[10px] text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/70"
+                            className="shrink-0 rounded border border-harbor-200 bg-harbor-50 px-1.5 py-0.5 text-[10px] text-harbor-600 hover:border-harbor-300 hover:text-harbor-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/70 dark:border-harbor-800 dark:bg-harbor-900/30 dark:text-harbor-300 dark:hover:border-harbor-600 dark:hover:text-harbor-300"
                         >
                             Unresolved hash
                         </TooltipButton> : null}

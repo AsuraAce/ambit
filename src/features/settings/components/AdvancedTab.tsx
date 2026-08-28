@@ -217,20 +217,20 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         <BackupSettings />
 
                         <div className="flex items-center gap-2 px-1 pt-2">
-                            <AlertTriangle className="w-4 h-4 text-rose-500" />
-                            <h4 className="text-xs font-bold text-rose-500 uppercase tracking-wider">Danger Zone</h4>
+                            <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-300" />
+                            <h4 className="text-xs font-bold text-red-600 dark:text-red-300 uppercase tracking-wider">Danger Zone</h4>
                         </div>
 
                         {/* Purge Database - Moved here but kept red */}
-                        <div className="bg-rose-50/50 dark:bg-rose-900/5 border border-rose-100 dark:border-rose-500/10 rounded-xl overflow-hidden p-6 flex items-center justify-between">
+                        <div className="bg-red-50/50 dark:bg-red-500/5 border border-red-100 dark:border-red-500/10 rounded-xl overflow-hidden p-6 flex items-center justify-between">
                             <div>
-                                <div className="text-sm font-bold text-rose-700 dark:text-rose-400">Purge Database</div>
-                                <div className="text-xs text-rose-800/60 dark:text-rose-400/60 mt-1">Remove all imported metadata and reset application state.</div>
+                                <div className="text-sm font-bold text-red-600 dark:text-red-300">Purge Database</div>
+                                <div className="text-xs text-red-600/70 dark:text-red-300/70 mt-1">Remove all imported metadata and reset application state.</div>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setConfirmAction({ type: 'purge', isOpen: true })}
-                                className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm whitespace-nowrap"
+                                className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-2 shadow-sm whitespace-nowrap"
                             >
                                 <Trash2 className="w-3.5 h-3.5" /> Purge Database
                             </button>
@@ -242,7 +242,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
             {activeTab === 'interface' && (
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 px-1">
-                        <Monitor className="w-4 h-4 text-blue-500" />
+                        <Monitor className="w-4 h-4 text-harbor-600 dark:text-harbor-300" />
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Interface Settings</h4>
                     </div>
 
@@ -272,7 +272,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             </div>
 
                             <div className={`rounded-2xl border p-4 text-xs leading-relaxed ${updateStatus === 'error'
-                                ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100'
+                                ? 'border-red-200 bg-red-50 text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300'
                                 : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-black/20 dark:text-gray-300'
                                 }`}>
                                 {updaterStatusLabel}
@@ -305,7 +305,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
             {activeTab === 'support' && (
                 <div className="space-y-4">
                     <div className="flex items-center gap-2 px-1">
-                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        <AlertTriangle className="w-4 h-4 text-ember-600" />
                         <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Support Diagnostics</h4>
                     </div>
 
@@ -329,7 +329,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                         </div>
 
                         {settings.logLevel === 'debug' && (
-                            <div className="p-4 bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-medium leading-relaxed">
+                            <div className="p-4 bg-ember-50 dark:bg-ember-500/10 text-ember-600 dark:text-ember-300 text-xs font-medium leading-relaxed">
                                 Debug logging can be noisy. Use it when collecting information for an issue, then switch back to Info or Warn.
                             </div>
                         )}
@@ -345,7 +345,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                             {dbDiagnostics ? (
                                 <div className="space-y-2 text-xs">
                                     {dbDiagnostics.isUsingRoamingFallback && (
-                                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 font-medium text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+                                        <div className="rounded-lg border border-ember-200 bg-ember-50 p-3 font-medium text-ember-600 dark:border-ember-400/20 dark:bg-ember-500/10 dark:text-ember-300">
                                             Ambit is using the legacy Roaming AppData database because no Local AppData database is available.
                                         </div>
                                     )}
@@ -369,7 +369,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                     </div>
                                 </div>
                             ) : dbDiagnosticsError ? (
-                                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                                     Could not load database location: {dbDiagnosticsError}
                                 </div>
                             ) : (
@@ -415,7 +415,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                                     </div>
                                 </div>
                             ) : dbDiagnosticsError ? (
-                                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs font-medium text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-200">
+                                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                                     Could not load app log location: {dbDiagnosticsError}
                                 </div>
                             ) : (

@@ -233,7 +233,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
         <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-white px-4 py-2 bg-sage-600 rounded-lg inline-flex items-center gap-3 mb-6 uppercase tracking-widest shadow-lg shadow-sage-500/20">
+                <h4 className="mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
                     <Palette className="w-4 h-4" /> Core Configuration
                 </h4>
 
@@ -333,8 +333,8 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
 
                     {localTestResult && (
                         <div className={`flex items-center gap-2 rounded-xl border px-4 py-3 text-xs font-bold ${localTestResult.success
-                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                            : 'border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400'
+                            ? 'border-sage-500/20 bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                            : 'border-ember-500/20 bg-ember-500/10 text-ember-600 dark:text-ember-300'
                             }`}>
                             {localTestResult.success ? (
                                 <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -354,12 +354,12 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                         <span className="text-[9px] text-gray-500 font-medium">Showing standard output folders ({displayedCandidates.length} of {candidates.length})</span>
                                     )}
                                     {candidates.some(c => c.variant && c.variant !== 'Unknown') ? (
-                                        <span className="text-[10px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
+                                        <span className="text-[10px] bg-harbor-500/10 text-harbor-600 dark:text-harbor-300 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit">
                                             Detected: {candidates.find(c => c.variant && c.variant !== 'Unknown')?.variant}
                                         </span>
                                     ) : (
                                         forceVariant === 'Auto' && (
-                                            <span className="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-500 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit flex items-center gap-1">
+                                            <span className="text-[10px] bg-ember-500/10 text-ember-600 dark:text-ember-300 px-2 py-0.5 rounded-md font-bold mt-1 inline-block w-fit flex items-center gap-1">
                                                 <Info className="w-3 h-3" />
                                                 Generic WebUI detected. Select specific Installation Type above for correct image tagging.
                                             </span>
@@ -386,7 +386,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                             </div>
                                         </label>
                                     ) : null}
-                                    <span className="text-[10px] font-bold text-sage-600 bg-sage-500/10 px-2 py-0.5 rounded-full">{displayedCandidates.length} found</span>
+                                    <span className="text-[10px] font-bold text-sage-600 dark:text-sage-300 bg-sage-500/10 px-2 py-0.5 rounded-full">{displayedCandidates.length} found</span>
                                 </div>
                             </div>
 
@@ -488,7 +488,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                                     <span className="group-open:rotate-90 transition-transform">â–¸</span>
                                     View Scan Debug Log ({scanLogs.length} entries)
                                 </summary>
-                                <div className="mt-2 p-3 bg-black/90 text-green-400 font-mono text-[10px] rounded-lg max-h-60 overflow-y-auto whitespace-pre-wrap border border-white/10 shadow-inner">
+                                <div className="mt-2 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-black/90 p-3 font-mono text-[10px] text-sage-300 shadow-inner">
                                     {scanLogs.join('\n')}
                                 </div>
                             </details>

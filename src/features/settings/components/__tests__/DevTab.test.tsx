@@ -115,6 +115,17 @@ describe('DevTab', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /tools/i }));
 
+        const stressBanner = screen.getByText('Database Stress Testing').parentElement?.parentElement?.parentElement;
+        expect(stressBanner?.className).toContain('bg-ember-50');
+        expect(stressBanner?.className).not.toContain('bg-sage');
+        const runCheck = screen.getByRole('button', { name: 'Run Check' });
+        const optimize = screen.getByRole('button', { name: 'Optimize Now' });
+        expect(runCheck.className).toContain('bg-gray-100');
+        expect(runCheck.className).toContain('dark:bg-white/10');
+        expect(runCheck.className).not.toContain('bg-gray-600');
+        expect(runCheck.className).not.toContain('shadow-lg');
+        expect(optimize.className).toContain('bg-gray-100');
+
         expect(screen.getByText('Optimize Database')).not.toBeNull();
         expect(screen.getByText('Rebuild Facet Cache')).not.toBeNull();
     });

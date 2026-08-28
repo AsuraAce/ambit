@@ -17,13 +17,13 @@ export const MetadataSectionHeader: React.FC<MetadataSectionHeaderProps> = ({
     icon: Icon,
     trailing,
     modified = false,
-    iconClassName = 'text-zinc-500',
+    iconClassName = 'text-gray-500 dark:text-zinc-500',
     headingId,
     labelFor,
     className = '',
 }) => {
-    const textClassName = `text-xs font-bold uppercase tracking-wider ${modified ? 'text-amber-400/80' : 'text-zinc-400'}`;
-    const resolvedIconClassName = modified ? 'text-amber-400/80' : iconClassName;
+    const textClassName = `text-xs font-bold uppercase tracking-wider ${modified ? 'text-ember-600 dark:text-ember-300' : 'text-gray-500 dark:text-zinc-400'}`;
+    const resolvedIconClassName = modified ? 'text-ember-600 dark:text-ember-300' : iconClassName;
     const content = (
         <>
             <Icon aria-hidden="true" className={`h-3.5 w-3.5 shrink-0 ${resolvedIconClassName}`} />

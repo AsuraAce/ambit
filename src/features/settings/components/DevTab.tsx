@@ -179,7 +179,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                         className={cn(
                                             "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all",
                                             isActive
-                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-400 shadow-sm"
+                                                ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-300 shadow-sm"
                                                 : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
                                         )}
                                     >
@@ -199,10 +199,10 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                     {activeTab === 'prompts' && (
                         <section className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
                             <div className="flex items-start gap-3 p-4 bg-amethyst-50 dark:bg-amethyst-500/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl">
-                                <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-400 mt-0.5 shrink-0" />
+                                <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300 mt-0.5 shrink-0" />
                                 <div>
-                                    <h4 className="text-sm font-bold text-amethyst-900 dark:text-amethyst-400">System Prompt Overrides</h4>
-                                    <p className="text-xs text-amethyst-800/70 dark:text-amethyst-400/70 mt-1 leading-relaxed">
+                                    <h4 className="text-sm font-bold text-amethyst-600 dark:text-amethyst-300">System Prompt Overrides</h4>
+                                    <p className="text-xs text-amethyst-600/70 dark:text-amethyst-300/70 mt-1 leading-relaxed">
                                         Customize the internal instructions sent to the AI models.
                                         Changes here apply immediately. "Reset to Default" removes your override.
                                     </p>
@@ -217,7 +217,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                     return (
                                         <div key={key} className={cn(
                                             "bg-white dark:bg-zinc-900 border rounded-xl overflow-hidden transition-all",
-                                            isOverridden ? 'border-amber-500/30 ring-1 ring-amber-500/20 shadow-sm' : 'border-gray-200 dark:border-white/5'
+                                            isOverridden ? 'border-ember-500/30 ring-1 ring-ember-500/20 shadow-sm' : 'border-gray-200 dark:border-white/5'
                                         )}>
                                             <div className="px-4 py-3 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02] border-b border-gray-100 dark:border-white/5">
                                                 <div className="flex items-center gap-2">
@@ -225,7 +225,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                         {key}
                                                     </div>
                                                     {isOverridden && (
-                                                        <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                        <span className="text-[10px] font-bold text-ember-600 dark:text-ember-300 bg-ember-100 dark:bg-ember-900/30 px-2 py-0.5 rounded-full flex items-center gap-1">
                                                             <Wrench className="w-3 h-3" /> Modified
                                                         </span>
                                                     )}
@@ -236,7 +236,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                             label="Reset Prompt to Default"
                                                             content="Reset Prompt to Default"
                                                             onClick={() => handleResetPrompt(key)}
-                                                            className="p-1.5 text-gray-400 hover:text-rose-500 transition-colors rounded hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                                                            className="p-1.5 text-gray-400 hover:text-red-600 transition-colors rounded hover:bg-red-50 dark:hover:bg-red-500/20 dark:hover:text-red-300"
                                                         >
                                                             <Undo2 className="w-3.5 h-3.5" />
                                                         </TooltipButton>
@@ -244,7 +244,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                     {!isEditing && (
                                                         <button
                                                             onClick={() => handleEditPrompt(key)}
-                                                            className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-400 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
+                                                            className="text-xs font-bold text-gray-600 dark:text-gray-300 hover:text-amethyst-600 dark:hover:text-amethyst-300 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
                                                         >
                                                             Edit
                                                         </button>
@@ -293,12 +293,12 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                     {/* Tools Section */}
                     {activeTab === 'tools' && (
                         <section className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
-                            <div className="p-6 bg-sage-500/10 border border-sage-500/20 rounded-2xl mb-6">
+                            <div className="mb-6 rounded-2xl border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/30 dark:bg-ember-500/10">
                                 <div className="flex gap-4">
-                                    <Database className="w-6 h-6 text-sage-500 shrink-0" />
+                                    <Database className="w-6 h-6 text-ember-600 dark:text-ember-300 shrink-0" />
                                     <div>
-                                        <h5 className="text-sm font-bold text-sage-600 dark:text-sage-400 mb-1">Database Stress Testing</h5>
-                                        <p className="text-xs text-sage-900/70 dark:text-sage-500/70 leading-relaxed">
+                                        <h5 className="mb-1 text-sm font-bold text-ember-600 dark:text-ember-300">Database Stress Testing</h5>
+                                        <p className="text-xs leading-relaxed text-ember-600 dark:text-ember-300">
                                             Generate dummy data to benchmark application performance.
                                             <br />
                                             <strong>Note:</strong> This increases database size significantly.
@@ -379,7 +379,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                                 addToast(`Error: ${message}`, 'error');
                                             }
                                         }}
-                                        className="flex items-center gap-2 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg text-xs font-bold transition-all shadow-lg shadow-gray-500/20"
+                                        className="flex items-center gap-2 whitespace-nowrap rounded-lg bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 transition-all hover:bg-gray-200 dark:bg-white/10 dark:text-gray-200 dark:hover:bg-white/20"
                                     >
                                         Run Check
                                     </button>

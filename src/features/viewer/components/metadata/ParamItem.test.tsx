@@ -27,7 +27,7 @@ describe('ParamItem', () => {
         );
 
         expect(container.firstElementChild?.className).toContain('col-span-2');
-        expect(container.firstElementChild?.className).toContain('border-amber-500');
+        expect(container.firstElementChild?.className).toContain('border-ember-300');
         expect(screen.getByTitle('Modified from original')).toBeTruthy();
 
         rerender(<ParamItem label="Sampler" value="Euler" />);

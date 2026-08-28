@@ -537,7 +537,7 @@ describe('AppLayout', () => {
         searchState.value.clearAllFilters = clearAllFilters;
         render(<AppLayout {...defaultProps} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Clear All Filters' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
         expect(clearAllFilters).toHaveBeenCalled();
     });
 

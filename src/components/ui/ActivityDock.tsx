@@ -328,26 +328,26 @@ export const ActivityDock: React.FC = () => {
     const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
     const accentClasses = isLiveWatchTone
         ? {
-            iconText: 'text-sage-600 dark:text-sage-400',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            iconText: 'text-sage-600 dark:text-sage-300',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
             fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.32)]',
             pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.2)]',
-            percentText: 'text-sage-600 dark:text-sage-400'
+            percentText: 'text-sage-600 dark:text-sage-300'
         }
         : isLowPriority
         ? {
-            iconText: 'text-violet-600 dark:text-violet-400',
-            iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-            fill: 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]',
-            pillHover: 'hover:shadow-[0_0_15px_rgba(139,92,246,0.2)]',
-            percentText: 'text-violet-600 dark:text-violet-400'
+            iconText: 'text-harbor-600 dark:text-harbor-300',
+            iconBg: 'bg-harbor-500/10 text-harbor-600 dark:text-harbor-300',
+            fill: 'bg-harbor-400 shadow-[0_0_12px_rgba(104,127,140,0.3)]',
+            pillHover: 'hover:shadow-[0_0_15px_rgba(104,127,140,0.2)]',
+            percentText: 'text-harbor-600 dark:text-harbor-300'
         }
         : {
-            iconText: 'text-sage-600 dark:text-sage-400',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            iconText: 'text-sage-600 dark:text-sage-300',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
             fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]',
             pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]',
-            percentText: 'text-sage-600 dark:text-sage-400'
+            percentText: 'text-sage-600 dark:text-sage-300'
         };
 
     const dismissDock = React.useCallback(() => {
@@ -385,7 +385,7 @@ export const ActivityDock: React.FC = () => {
                                 </motion.div>
                                 <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
                                     <div
-                                        className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-violet-500'}`}
+                                        className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-harbor-500'}`}
                                         style={{ width: `${percent}%` }}
                                     />
                                 </motion.div>

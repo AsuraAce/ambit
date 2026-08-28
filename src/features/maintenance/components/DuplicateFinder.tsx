@@ -146,7 +146,7 @@ const DuplicateGroupCard: React.FC<{
                             Exact Duplicate Group
                         </span>
                     </div>
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${group.images.length > 2 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50' : 'text-gray-400'}`}>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${group.images.length > 2 ? 'border border-ember-200 bg-ember-100 text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/15 dark:text-ember-300' : 'text-gray-400'}`}>
                         {group.images.length} copies
                     </span>
                 </div>
@@ -288,7 +288,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     {isScanning ? (
                         <Fingerprint className="w-16 h-16 text-sage-500" />
                     ) : scanIncomplete ? (
-                        <AlertTriangle className="w-16 h-16 text-amber-500" />
+                        <AlertTriangle className="h-16 w-16 text-ember-600 dark:text-ember-300" />
                     ) : (
                         <Check className="w-16 h-16 text-sage-500" />
                     )}

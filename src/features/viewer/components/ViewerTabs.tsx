@@ -43,7 +43,7 @@ export function ViewerTabs<T extends string>({
         <div
             role="tablist"
             aria-label={ariaLabel}
-            className={`flex gap-1 rounded-lg bg-black p-1 ${className}`}
+            className={`flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-black ${className}`}
         >
             {tabs.map((tab, index) => {
                 const isActive = activeTab === tab.id;
@@ -61,7 +61,7 @@ export function ViewerTabs<T extends string>({
                         onKeyDown={event => handleKeyDown(event, index)}
                         className={`flex-1 rounded-md px-2 py-2 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 ${isActive
                             ? 'bg-sage-600 text-white shadow-lg shadow-sage-500/20'
-                            : 'text-zinc-400 hover:bg-white/10 hover:text-zinc-200'
+                            : 'text-gray-500 hover:bg-white hover:text-gray-800 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200'
                             }`}
                     >
                         {tab.label}

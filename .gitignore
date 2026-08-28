@@ -46,6 +46,7 @@ docs/*
 !docs/WORKFLOW_SETUP.md
 !docs/architecture.md
 !docs/comfyui-support-workflow.md
+!docs/design-system.md
 !docs/experimental-unix-builds.md
 !docs/progress.md
 !docs/refactor.md

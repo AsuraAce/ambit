@@ -50,7 +50,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                     >
 
                         {/* Decorative Background */}
-                        <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-sage-500/20 to-amethyst-500/20 pointer-events-none" />
+                        <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-sage-500/20 to-sage-500/20 pointer-events-none" />
 
                         <button
                             ref={closeButtonRef}

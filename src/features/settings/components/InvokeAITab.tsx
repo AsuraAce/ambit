@@ -139,7 +139,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
+                <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-300 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
                     <DatabaseZap className="w-4 h-4" /> InvokeAI Configuration
                 </h4>
 
@@ -181,7 +181,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             <Info className="w-3 h-3" /> Select the folder containing <code>databases/invokeai.db</code>.
                         </p>
                         {foregroundInvokeSyncActive && (
-                            <p className="text-[10px] text-amber-700 dark:text-amber-300 mt-2">
+                            <p className="text-[10px] text-ember-600 dark:text-ember-300 mt-2">
                                 The InvokeAI path and owner scope are locked until synchronization finishes.
                             </p>
                         )}
@@ -211,8 +211,8 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
                         {testResult && (
                             <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
-                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                                ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
+                                : 'bg-red-500/10 text-red-600 dark:text-red-300'
                                 }`}>
                                 {testResult.success ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
                                 {testResult.message}
@@ -224,7 +224,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
             {settings.invokeAiPath && (
                 <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden">
-                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-5 flex items-center gap-3">
+                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-300 uppercase tracking-[0.2em] mb-5 flex items-center gap-3">
                         <Users className="w-4 h-4" /> InvokeAI Owner Scope
                     </h4>
 
@@ -248,7 +248,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                     )}
 
                     {invokeOwnerScopeState.status === 'error' && (
-                        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300">
+                        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-300">
                             <p className="text-xs font-bold">
                                 {invokeOwnerScopeState.failure?.kind === 'source_unavailable'
                                     ? 'InvokeAI connection unavailable'
@@ -265,14 +265,14 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                     <p className="mt-1 break-words font-mono">{invokeOwnerScopeState.error}</p>
                                 </details>
                             )}
-                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-rose-500/15 text-[10px] font-black uppercase tracking-wider">
+                            <button type="button" onClick={() => void handleOwnerRetry()} className="mt-3 px-3 py-2 rounded-lg bg-red-500/15 text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-300">
                                 Retry
                             </button>
                         </div>
                     )}
 
                     {invokeOwnerScopeState.status === 'offline_ready' && (
-                        <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-amber-800 dark:text-amber-200">
+                        <div className="rounded-xl border border-ember-500/20 bg-ember-500/10 p-4 text-ember-600 dark:text-ember-300">
                             <p className="text-xs font-bold">Using the last verified local view</p>
                             <p className="mt-1 text-[10px] leading-4">
                                 InvokeAI is unavailable. Your verified library remains visible, but Sync and Live Watch are paused.
@@ -287,7 +287,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                                 type="button"
                                 disabled={invokeOwnerScopeState.isRetrying}
                                 onClick={() => void handleOwnerRetry()}
-                                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
+                                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-ember-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
                             >
                                 {invokeOwnerScopeState.isRetrying && <Loader2 className="h-3 w-3 animate-spin" />}
                                 {invokeOwnerScopeState.isRetrying ? 'Retrying…' : 'Retry connection'}
@@ -299,7 +299,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         && invokeOwnerScopeState.status !== 'error'
                         && invokeOwnerScopeState.status !== 'offline_ready'
                         && invokeOwnerScopeState.warning && (
-                        <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200">
+                        <div className="mb-4 rounded-xl border border-ember-500/20 bg-ember-500/10 p-4 text-xs text-ember-600 dark:text-ember-300">
                             {invokeOwnerScopeState.warning}
                         </div>
                     )}
@@ -354,7 +354,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
 
             {developerFeaturesEnabled && (
                 <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
-                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-400 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
+                    <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-300 uppercase tracking-[0.2em] mb-6 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Activity className="w-4 h-4" /> System Audit
                         </div>
@@ -399,7 +399,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             </div>
 
                             {diagData.totalInDb !== diagData.folder.imageFiles && (
-                                <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[11px] text-amber-700 dark:text-amber-400 shadow-lg shadow-amber-500/5">
+                                <div className="p-4 bg-ember-500/10 border border-ember-500/20 rounded-2xl text-[11px] text-ember-600 dark:text-ember-300 shadow-lg shadow-ember-500/5">
                                     <div className="font-black uppercase tracking-widest flex items-center gap-2 mb-2">
                                         <AlertTriangle className="w-4 h-4" />
                                         Count Discrepancy Found

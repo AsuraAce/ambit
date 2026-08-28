@@ -63,7 +63,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg">
                     <div>
                         <div className="flex items-center gap-3 mb-1">
-                            <div className="p-2 bg-sage-100 dark:bg-sage-900/30 rounded-lg text-sage-600 dark:text-sage-400">
+                            <div className="p-2 bg-sage-100 dark:bg-sage-900/30 rounded-lg text-sage-600 dark:text-sage-300">
                                 <BarChart3 className="w-5 h-5" />
                             </div>
                             <h2 className="text-xl font-bold text-gray-900 dark:text-white">Gallery Statistics</h2>
@@ -77,15 +77,15 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                 <div className="w-full space-y-6 pb-24">
 
                     {showTip && (
-                        <div className="bg-sage-50 dark:bg-sage-900/10 border border-sage-200 dark:border-sage-500/20 rounded-xl p-4 flex items-start gap-3 relative animate-in fade-in slide-in-from-top-2">
-                            <div className="p-2 bg-sage-100 dark:bg-sage-800 rounded-lg text-sage-600 dark:text-sage-400">
+                        <div className="relative flex items-start gap-3 rounded-xl border border-harbor-200 bg-harbor-50 p-4 animate-in fade-in slide-in-from-top-2 dark:border-harbor-400/30 dark:bg-harbor-500/15">
+                            <div className="rounded-lg bg-harbor-100 p-2 text-harbor-600 dark:bg-harbor-500/20 dark:text-harbor-300">
                                 <Lightbulb className="w-5 h-5" />
                             </div>
                             <div className="flex-1 pr-8">
-                                <h4 className="text-sm font-bold text-sage-800 dark:text-sage-200 mb-1">Tip of the Day</h4>
-                                <p className="text-sm text-sage-600 dark:text-sage-300">{randomTip}</p>
+                                <h4 className="mb-1 text-sm font-bold text-harbor-600 dark:text-harbor-300">Tip of the Day</h4>
+                                <p className="text-sm text-harbor-600 dark:text-harbor-300">{randomTip}</p>
                             </div>
-                            <button type="button" aria-label="Dismiss Tip" onClick={() => setShowTip(false)} className="absolute top-2 right-2 p-1 text-sage-400 hover:text-sage-600 dark:hover:text-sage-200">
+                            <button type="button" aria-label="Dismiss Tip" onClick={() => setShowTip(false)} className="absolute right-2 top-2 p-1 text-harbor-600 hover:text-harbor-600 dark:text-harbor-300 dark:hover:text-harbor-300">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
@@ -187,7 +187,7 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
                         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-xl p-6 h-80 shadow-sm flex flex-col relative overflow-hidden group">
                             <h3 className="text-sm font-bold text-gray-400 mb-4 uppercase tracking-wider flex items-center justify-between">
                                 <span>Top Prompt Keywords</span>
-                                {isFiltering && <div className="w-4 h-4 rounded-full border-2 border-indigo-500/20 border-t-indigo-500 animate-spin" />}
+                                {isFiltering && <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500/20 border-t-sage-500" />}
                             </h3>
                             <div className="flex-1 min-h-0">
                                 <WordCloud

@@ -90,7 +90,7 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                         <div className="px-6 py-4 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gray-50/50 dark:bg-white/[0.02]">
                             <div className="flex items-center gap-3">
                                 <div className="w-9 h-9 rounded-lg bg-amethyst-500/10 border border-amethyst-500/20 flex items-center justify-center">
-                                    <Wand2 className="w-4 h-4 text-amethyst-500" />
+                                    <Wand2 className="w-4 h-4 text-amethyst-600 dark:text-amethyst-300" />
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-gray-900 dark:text-white text-sm">
@@ -147,14 +147,16 @@ export const MetadataRecoveryModal: React.FC<MetadataRecoveryModalProps> = ({
                                             >
                                                 <div className={cn(
                                                     "mt-0.5 transition-colors",
-                                                    selectedStyle === opt.id ? 'text-amethyst-600 dark:text-amethyst-400' : 'text-gray-400 group-hover:text-amethyst-500'
+                                                    selectedStyle === opt.id
+                                                        ? 'text-amethyst-600 dark:text-amethyst-300'
+                                                        : 'text-gray-400 group-hover:text-amethyst-600 dark:group-hover:text-amethyst-300'
                                                 )}>
                                                     {opt.icon}
                                                 </div>
                                                 <div>
                                                     <div className={cn(
                                                         "text-sm font-semibold transition-colors",
-                                                        selectedStyle === opt.id ? 'text-amethyst-700 dark:text-amethyst-300' : 'text-gray-700 dark:text-gray-300'
+                                                        selectedStyle === opt.id ? 'text-amethyst-600 dark:text-amethyst-300' : 'text-gray-700 dark:text-gray-300'
                                                     )}>
                                                         {opt.label}
                                                     </div>

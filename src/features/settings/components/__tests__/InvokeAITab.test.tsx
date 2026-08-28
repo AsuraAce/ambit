@@ -296,6 +296,36 @@ describe('InvokeAITab', () => {
         expect(screen.queryByText(/selected it automatically/i)).toBeNull();
     });
 
+    it('shows a non-color marker for the selected All users scope', () => {
+        mocks.ownerScopeState = {
+            status: 'ready',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [
+                    { ownerId: 'owner-a', imageCount: 1 },
+                    { ownerId: 'owner-b', imageCount: 1 },
+                ],
+                unassignedImageCount: 0,
+            },
+        };
+
+        render(<InvokeAITab settings={{
+            ...settings('D:/Invoke'),
+            invokeOwnerSelection: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                mode: 'all',
+            },
+        }} setSettings={vi.fn()} />);
+
+        const allUsers = screen.getByRole('button', { name: /All users/i });
+        expect(allUsers.querySelector('.lucide-check')).toBeTruthy();
+        fireEvent.click(allUsers);
+        expect(screen.queryByText('Show images from all InvokeAI users?')).toBeNull();
+        expect(mocks.selectInvokeOwnerScope).not.toHaveBeenCalled();
+    });
+
     it('updates typed and browsed paths while ignoring cancelled selections', async () => {
         const harness = applySettings(settings('old'));
         mocks.open.mockResolvedValueOnce('C:/InvokeAI').mockResolvedValueOnce(null).mockResolvedValueOnce(['invalid']);

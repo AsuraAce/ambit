@@ -554,7 +554,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onClick={clearAllFilters}
                                         className="px-8 py-3.5 bg-zinc-800 dark:bg-white/10 hover:bg-zinc-700 dark:hover:bg-white/20 text-white rounded-2xl font-bold transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                                     >
-                                        Clear All Filters
+                                        Clear filters
                                     </button>
                                 </div>
                             )}

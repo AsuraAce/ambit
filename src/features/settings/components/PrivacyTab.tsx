@@ -189,7 +189,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     <div>
                         <div id="privacy-mode-label" className="text-base font-medium text-gray-900 dark:text-gray-200 group-hover:text-sage-500 transition-colors">Privacy Mode</div>
                         <div id="privacy-mode-description" className="text-sm text-gray-500">Applies your saved masking rules for this session. Privacy Mode starts on whenever Ambit launches; turning it off temporarily reveals both manually masked and keyword-matched images.</div>
-                        <div className={`mt-2 text-xs font-medium ${privacyEnabled ? 'text-sage-600 dark:text-sage-400' : 'text-gray-500'}`}>{privacySummary}</div>
+                        <div className={`mt-2 text-xs font-medium ${privacyEnabled ? 'text-sage-600 dark:text-sage-300' : 'text-gray-500'}`}>{privacySummary}</div>
                     </div>
                     <span
                         aria-hidden="true"
@@ -203,14 +203,14 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
             {privacyEnabled && privacyMaskIndexStatus !== 'ready' && (
                 <section
                     className={`border rounded-xl p-4 ${privacyMaskIndexStatus === 'failed'
-                        ? 'bg-rose-50 border-rose-200 dark:bg-rose-500/10 dark:border-rose-500/20'
+                        ? 'bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/20'
                         : 'bg-sage-50 border-sage-200 dark:bg-sage-500/10 dark:border-sage-500/20'}`}
                     role={privacyMaskIndexStatus === 'failed' ? 'alert' : 'status'}
                     aria-live="polite"
                 >
                     <div className="flex items-start gap-3">
                         {privacyMaskIndexStatus === 'failed'
-                            ? <ShieldAlert className="w-5 h-5 mt-0.5 text-rose-500 shrink-0" />
+                            ? <ShieldAlert className="w-5 h-5 mt-0.5 text-red-600 dark:text-red-300 shrink-0" />
                             : <Loader2 className="w-5 h-5 mt-0.5 text-sage-600 animate-spin shrink-0" />}
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-bold text-gray-900 dark:text-white">
@@ -224,7 +224,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     : 'Your library will be available when the latest masking rules are ready.'}
                             </p>
                             {privacyMaskIndexStatus === 'failed' && privacyMaskIndexError && (
-                                <p className="mt-2 text-xs text-rose-600 dark:text-rose-400 break-words">{privacyMaskIndexError}</p>
+                                <p className="mt-2 text-xs text-red-600 dark:text-red-300 break-words">{privacyMaskIndexError}</p>
                             )}
                         </div>
                         {privacyMaskIndexStatus === 'failed' && (
@@ -245,7 +245,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                 <div className="space-y-6">
                     <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
-                        <div className="rounded-lg bg-sage-50 p-2 text-sage-600 dark:bg-white/10 dark:text-sage-400">
+                        <div className="rounded-lg bg-sage-50 p-2 text-sage-600 dark:bg-white/10 dark:text-sage-300">
                             <Shield className="h-5 w-5" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -264,7 +264,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
 
                     <div className="flex items-start gap-4 border-b border-gray-200 pb-6 dark:border-white/10">
-                        <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-400">
+                        <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-300">
                             <Shield className="w-5 h-5" />
                         </div>
                         <div className="min-w-0 flex-1">
@@ -291,7 +291,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                     />
                                 </button>
                             </div>
-                            <p className={`mt-3 text-xs font-medium ${settings.promptMaskingEnabled ? 'text-sage-600 dark:text-sage-400' : 'text-gray-500'}`}>
+                            <p className={`mt-3 text-xs font-medium ${settings.promptMaskingEnabled ? 'text-sage-600 dark:text-sage-300' : 'text-gray-500'}`}>
                                 {settings.promptMaskingEnabled
                                     ? `Enabled · ${promptKeywordCount} ${promptKeywordCount === 1 ? 'keyword' : 'keywords'}`
                                     : `Disabled · ${promptKeywordCount} ${promptKeywordCount === 1 ? 'keyword' : 'keywords'} saved`}
@@ -300,7 +300,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                     </div>
 
                     <div className="flex items-start gap-4">
-                        <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-400">
+                        <div className="p-2 bg-sage-50 dark:bg-white/10 rounded-lg text-sage-600 dark:text-sage-300">
                             <Shield className="w-5 h-5" />
                         </div>
                         <div className="flex-1">
@@ -344,7 +344,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                         </div>
                         <p className="text-xs text-gray-500 mb-3">Positive prompts containing these words use your selected masking behavior while Privacy Mode and prompt keywords are enabled.</p>
                         {settings.promptMaskingEnabled && settings.maskedKeywords.length === 0 ? (
-                            <p role="status" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                            <p role="status" className="mb-3 rounded-lg border border-ember-200 bg-ember-50 px-3 py-2 text-xs text-ember-600 dark:border-ember-500/20 dark:bg-ember-500/10 dark:text-ember-300">
                                 Prompt keywords are enabled, but none are configured. Privacy Mode is protecting manual masks only.
                             </p>
                         ) : null}
@@ -378,7 +378,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                 settings.maskedKeywords.map((keyword) => (
                                     <span
                                         key={keyword}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium group ${settings.promptMaskingEnabled ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300' : 'bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium group ${settings.promptMaskingEnabled ? 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300' : 'bg-gray-200 text-gray-600 dark:bg-white/10 dark:text-gray-300'}`}
                                     >
                                         {keyword}
                                         <button
@@ -386,7 +386,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
                                             aria-label={`Remove Masked Keyword ${keyword}`}
                                             onClick={() => { void handleRemoveKeyword(keyword); }}
                                             disabled={isSavingPrivacy}
-                                            className="p-0.5 hover:bg-rose-200 dark:hover:bg-rose-500/30 rounded-full transition-colors"
+                                            className="p-0.5 hover:bg-red-200 dark:hover:bg-red-500/30 rounded-full transition-colors"
                                         >
                                             <X className="w-3 h-3" />
                                         </button>

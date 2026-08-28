@@ -546,8 +546,11 @@ describe('VideoViewer', () => {
         setup();
         fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
 
-        const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
-        await waitFor(() => expect(membership.getAttribute('aria-pressed')).toBe('true'));
+        await waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed'),
+            ).toBe('true'),
+        );
         expect(mocks.getCollectionsForImage).toHaveBeenCalledWith(video.id);
     });
 
@@ -561,8 +564,11 @@ describe('VideoViewer', () => {
 
         expect((await screen.findByRole('alert')).textContent).toContain('Could not load collection membership.');
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        const membership = screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement;
-        await waitFor(() => expect(membership.getAttribute('aria-pressed')).toBe('true'));
+        await waitFor(() =>
+            expect(
+                screen.getByRole('button', { name: 'Favorites set' }).getAttribute('aria-pressed'),
+            ).toBe('true'),
+        );
         expect(mocks.getCollectionsForImage).toHaveBeenCalledTimes(2);
         expect(error).toHaveBeenCalled();
     });

@@ -92,7 +92,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
             aria-labelledby="update-dialog-title"
             aria-describedby="update-dialog-description"
           >
-            <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-sage-500 via-emerald-500 to-teal-500" />
+            <div className="h-1.5 w-full shrink-0 bg-gradient-to-r from-sage-500 via-sage-500 to-sage-500" />
 
             <div className="overflow-y-auto p-8">
               <div className="flex items-start justify-between gap-4">
@@ -134,7 +134,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                 </div>
               </div>
 
-              <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-100">
+              <div className="mt-6 rounded-2xl border border-ember-200 bg-ember-50/80 p-4 text-sm text-ember-600 dark:border-ember-400/20 dark:bg-ember-500/10 dark:text-ember-300">
                 <div className="flex items-start gap-3">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <p>
@@ -165,7 +165,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
               </div>
 
               {errorMessage && (
-                <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-800 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100">
+                <div className="mt-6 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-sm text-red-600 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
                   {errorMessage}
                 </div>
               )}
@@ -175,7 +175,7 @@ export const UpdateDialog: React.FC<UpdateDialogProps> = ({
                   type="button"
                   onClick={() => void onInstall()}
                   disabled={isBusy}
-                  className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-lg transition-all sm:w-auto ${isBusy ? 'cursor-wait bg-slate-500' : 'bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-sage-500/30'}`}
+                  className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-sm font-bold text-white shadow-lg transition-all sm:w-auto ${isBusy ? 'cursor-wait bg-slate-500' : 'bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-sage-500/30'}`}
                 >
                   {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   {installLabel}

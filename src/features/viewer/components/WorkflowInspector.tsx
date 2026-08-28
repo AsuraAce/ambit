@@ -51,22 +51,8 @@ const formatResourceFieldLabel = (field: string) => {
     }
 };
 
-const getDiagnosticLayerBadgeClass = (layer: string | null | undefined) => {
-    switch (layer) {
-        case 'sampler_traversal':
-            return 'border-emerald-300/70 dark:border-emerald-400/30 bg-emerald-50/80 dark:bg-emerald-500/10 text-emerald-900 dark:text-emerald-200';
-        case 'sampler_fallback':
-            return 'border-orange-300/80 dark:border-orange-400/40 bg-orange-50/90 dark:bg-orange-500/15 text-orange-900 dark:text-orange-100';
-        case 'global_scan':
-            return 'border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 text-rose-900 dark:text-rose-100';
-        case 'explicit_node':
-            return 'border-sky-300/70 dark:border-sky-400/30 bg-sky-50/80 dark:bg-sky-500/10 text-sky-900 dark:text-sky-100';
-        case 'flat_parameters':
-            return 'border-violet-300/70 dark:border-violet-400/30 bg-violet-50/80 dark:bg-violet-500/10 text-violet-900 dark:text-violet-100';
-        default:
-            return 'border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 text-amber-950 dark:text-amber-100';
-    }
-};
+const getDiagnosticLayerBadgeClass = (_layer: string | null | undefined) =>
+    'border-gray-200 bg-gray-50 text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-300';
 
 const getDiagnosticLayerTitle = (layer: string | null | undefined) => {
     if (layer === 'sampler_fallback') {
@@ -130,7 +116,7 @@ const WorkflowOutputAnchors: React.FC<{
                 title={`Open ${label.toLowerCase()} node ${nodeId}`}
                 className="flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 text-left text-[10px] transition-colors hover:border-sage-300 hover:bg-sage-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
             >
-                <Icon className={`h-3 w-3 shrink-0 ${isRoot ? 'text-sky-600 dark:text-sky-400' : 'text-sage-600 dark:text-sage-400'}`} />
+                <Icon className={`h-3 w-3 shrink-0 ${isRoot ? 'text-harbor-600 dark:text-harbor-300' : 'text-sage-600 dark:text-sage-300'}`} />
                 <span className="min-w-0">
                     <span className="block font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</span>
                     <span className="block max-w-44 truncate font-mono text-gray-700 dark:text-gray-200" title={`${node.title} / #${nodeId}`}>
@@ -148,7 +134,7 @@ const WorkflowOutputAnchors: React.FC<{
                 {rootSamplerNodeIds.map((nodeId) => renderAnchor(nodeId, 'root'))}
             </div>
             {outputAmbiguous ? (
-                <div className="flex items-start gap-1.5 text-[10px] text-amber-700 dark:text-amber-300">
+                <div className="flex items-start gap-1.5 text-[10px] text-ember-600 dark:text-ember-300">
                     <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                     Multiple root samplers were found. Ambit does not treat any candidate as authoritative.
                 </div>
@@ -267,9 +253,9 @@ const ComfyDiagnosticsPanel: React.FC<{
 
     return (
         <>
-        <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50/70 dark:bg-amber-500/10 p-3 text-xs">
+        <div className="rounded-xl border border-ember-200 dark:border-ember-500/20 bg-ember-50/70 dark:bg-ember-500/10 p-3 text-xs">
             <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-300">
+                <div className="flex items-center gap-2 font-bold text-ember-600 dark:text-ember-300">
                     <Activity className="w-3.5 h-3.5" />
                     Parser Diagnostics
                 </div>
@@ -279,7 +265,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                             <button
                                 onClick={handleCopyDiagnostics}
                                 title="Copy parser diagnostics summary"
-                                className="flex items-center gap-1 rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-amber-900 dark:text-amber-200 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                                className="flex items-center gap-1 rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
                             >
                                 {copiedDiagnostics ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 {copiedDiagnostics ? 'Copied' : 'Copy Diagnostics'}
@@ -290,12 +276,12 @@ const ComfyDiagnosticsPanel: React.FC<{
                                     setIsExportConfirmOpen(true);
                                 }}
                                 title="Export parser support bundle"
-                                className="flex items-center gap-1 rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-amber-900 dark:text-amber-200 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                                className="flex items-center gap-1 rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
                             >
                                 <Download className="w-3 h-3" />
                                 Export Bundle
                             </button>
-                            <span className="font-mono text-[10px] text-amber-800/70 dark:text-amber-300/70">
+                            <span className="font-mono text-[10px] text-ember-600/70 dark:text-ember-300/70">
                                 {diagnostics.graphNodeCount} nodes
                             </span>
                         </>
@@ -304,34 +290,34 @@ const ComfyDiagnosticsPanel: React.FC<{
             </div>
 
             {!chunks || chunkCount === 0 ? (
-                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Raw chunks unavailable.</div>
+                <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Raw chunks unavailable.</div>
             ) : isLoading ? (
-                <div className="mt-2 text-amber-800/70 dark:text-amber-200/70">Loading diagnostics...</div>
+                <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Loading diagnostics...</div>
             ) : error ? (
-                <div className="mt-2 text-rose-700 dark:text-rose-300">Diagnostics unavailable: {error}</div>
+                <div className="mt-2 text-red-600 dark:text-red-300">Diagnostics unavailable: {error}</div>
             ) : diagnostics ? (
-                <div className="mt-3 space-y-3 text-amber-950 dark:text-amber-100">
+                <div className="mt-3 space-y-3 text-ember-600 dark:text-ember-300">
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Chunks</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Chunks</div>
                             <div className="font-mono break-all">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Layers</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Layers</div>
                             <div className="font-mono break-all">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
                         </div>
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Output Selection</div>
+                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Output Selection</div>
                         <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
-                            <span className="rounded-md border border-amber-300/70 dark:border-amber-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5">
+                            <span className="rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5">
                                 {diagnostics.selectedOutputCandidateCount} output{diagnostics.selectedOutputCandidateCount === 1 ? '' : 's'} / {diagnostics.uniqueOutputRootSamplerCount} root{diagnostics.uniqueOutputRootSamplerCount === 1 ? '' : 's'}
                             </span>
                             {diagnostics.outputAmbiguous && (
                                 <span
                                     title="Multiple saved-output roots were found, so no branch received strong traversal authority."
-                                    className="rounded-md border border-rose-300/70 dark:border-rose-400/30 bg-rose-50/80 dark:bg-rose-500/10 px-1.5 py-0.5 text-rose-900 dark:text-rose-100"
+                                    className="rounded-md border border-red-300/70 bg-red-50/80 px-1.5 py-0.5 text-red-600 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
                                 >
                                     Ambiguous
                                 </span>
@@ -341,30 +327,30 @@ const ComfyDiagnosticsPanel: React.FC<{
 
                     <div className="grid grid-cols-2 gap-2">
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Model</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Model</div>
                             <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.model)}</div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Sampler</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Sampler</div>
                             <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.sampler)}</div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Seed</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Seed</div>
                             <div className="font-mono break-all">{formatDiagnosticValue(diagnostics.metadata.seed)}</div>
                         </div>
                         <div>
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Steps / CFG</div>
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Steps / CFG</div>
                             <div className="font-mono break-all">{diagnostics.metadata.steps} / {diagnostics.metadata.cfg}</div>
                         </div>
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Positive Prompt</div>
+                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Positive Prompt</div>
                         <div className="font-mono line-clamp-3 break-words">{formatDiagnosticValue(diagnostics.metadata.positivePrompt)}</div>
                     </div>
 
                     <div>
-                        <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Field Sources</div>
+                        <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Field Sources</div>
                         <div className="mt-1 flex flex-wrap gap-1.5">
                             {fieldSources.length > 0 ? fieldSources.map(([field, layer]) => {
                                 const sourceNodeIds = diagnostics.fieldSourceNodeIds?.[field] ?? [];
@@ -384,7 +370,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                                     type="button"
                                                     onClick={() => onFocusNode(nodeId)}
                                                     title={`Jump to source node ${nodeId}: ${node.title}`}
-                                                    className="rounded-md border border-amber-300/70 bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-amber-950 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-amber-400/20 dark:bg-black/20 dark:text-amber-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                    className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 font-mono text-[10px] text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
                                                 >
                                                     #{nodeId}
                                                 </button>
@@ -392,7 +378,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                                 <span
                                                     key={nodeId}
                                                     title={`Source node ${nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded-md border border-dashed border-amber-300/50 px-1.5 py-0.5 font-mono text-[10px] text-amber-800/60 dark:border-amber-400/20 dark:text-amber-200/50"
+                                                    className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 font-mono text-[10px] text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
                                                 >
                                                     #{nodeId}
                                                 </span>
@@ -401,24 +387,24 @@ const ComfyDiagnosticsPanel: React.FC<{
                                     </div>
                                 );
                             }) : (
-                                <span className="text-amber-800/70 dark:text-amber-200/70">None</span>
+                                <span className="text-ember-600/70 dark:text-ember-300/70">None</span>
                             )}
                         </div>
                     </div>
 
                     {resourceSources.length > 0 && (
-                        <div className="border-t border-amber-300/40 pt-3 dark:border-amber-400/15">
-                            <div className="text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">Resource Sources</div>
+                        <div className="border-t border-ember-300/40 pt-3 dark:border-ember-400/15">
+                            <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Resource Sources</div>
                             <div className="mt-1.5 space-y-1.5">
                                 {resourceSources.map((source) => (
                                     <div
                                         key={`${source.field}:${source.value}`}
                                         className="flex flex-wrap items-center gap-1.5 font-mono text-[10px]"
                                     >
-                                        <span className="font-bold text-amber-900 dark:text-amber-100">
+                                        <span className="font-bold text-ember-600 dark:text-ember-300">
                                             {formatResourceFieldLabel(source.field)}:
                                         </span>
-                                        <span className="break-all text-amber-950 dark:text-amber-50">{source.value}</span>
+                                        <span className="break-all text-ember-600 dark:text-ember-300">{source.value}</span>
                                         <span
                                             title={getDiagnosticLayerTitle(source.layer)}
                                             className={`rounded-md border px-1.5 py-0.5 ${getDiagnosticLayerBadgeClass(source.layer)}`}
@@ -434,7 +420,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                                     onClick={() => onFocusNode(nodeId)}
                                                     aria-label={`Jump to ${formatResourceFieldLabel(source.field)} resource source node ${node.title} (${nodeId})`}
                                                     title={`Jump to resource source node ${nodeId}: ${node.title}`}
-                                                    className="rounded-md border border-amber-300/70 bg-white/80 px-1.5 py-0.5 text-amber-950 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-amber-400/20 dark:bg-black/20 dark:text-amber-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                    className="rounded-md border border-ember-300/70 bg-white/80 px-1.5 py-0.5 text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-400/20 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
                                                 >
                                                     #{nodeId}
                                                 </button>
@@ -442,7 +428,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                                 <span
                                                     key={nodeId}
                                                     title={`Resource source node ${nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded-md border border-dashed border-amber-300/50 px-1.5 py-0.5 text-amber-800/60 dark:border-amber-400/20 dark:text-amber-200/50"
+                                                    className="rounded-md border border-dashed border-ember-300/50 px-1.5 py-0.5 text-ember-600/60 dark:border-ember-400/20 dark:text-ember-300/50"
                                                 >
                                                     #{nodeId}
                                                 </span>
@@ -457,7 +443,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                     {visibleTraversalIssues.length > 0 && (
                         <div>
                             <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-amber-800/60 dark:text-amber-200/60">
+                                <div className="flex items-center gap-1 text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">
                                     <AlertTriangle className="w-3 h-3" />
                                     Traversal Blockers
                                 </div>
@@ -466,7 +452,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                         type="button"
                                         aria-expanded={showAllTraversalIssues}
                                         onClick={() => setShowAllTraversalIssues((current) => !current)}
-                                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-amber-800 transition-colors hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-500/10"
+                                        className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold text-ember-600 transition-colors hover:bg-ember-100 dark:text-ember-300 dark:hover:bg-ember-500/10"
                                     >
                                         {showAllTraversalIssues ? (
                                             <ChevronDown className="h-3 w-3" />
@@ -484,7 +470,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                         <div
                                             key={`${issue.field}-${issue.nodeId}-${issue.inputName ?? ''}-${issue.reason}-${index}`}
                                             title={getTraversalIssueTitle(issue.reason)}
-                                            className="rounded-md border border-orange-300/70 bg-orange-50/70 px-2 py-1 font-mono text-[10px] text-orange-950 dark:border-orange-400/30 dark:bg-orange-500/10 dark:text-orange-100"
+                                            className="rounded-md border border-ember-300/70 bg-ember-50/70 px-2 py-1 font-mono text-[10px] text-ember-600 dark:border-ember-400/30 dark:bg-ember-500/10 dark:text-ember-300"
                                         >
                                             <span className="font-bold">{formatDiagnosticLabel(issue.field)}</span>
                                             {' at '}
@@ -494,14 +480,14 @@ const ComfyDiagnosticsPanel: React.FC<{
                                                     onClick={() => onFocusNode(issue.nodeId)}
                                                     aria-label={`Jump to traversal blocker node ${node.title} (${issue.nodeId})`}
                                                     title={`Jump to traversal blocker node ${issue.nodeId}: ${node.title}`}
-                                                    className="rounded border border-orange-400/50 bg-white/70 px-1 py-0.5 font-mono text-[10px] font-bold text-orange-900 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-800 dark:border-orange-300/30 dark:bg-black/20 dark:text-orange-100 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-200"
+                                                    className="rounded border border-ember-400/50 bg-white/70 px-1 py-0.5 font-mono text-[10px] font-bold text-ember-600 transition-colors hover:border-sage-400 hover:bg-sage-50 hover:text-sage-600 dark:border-ember-300/30 dark:bg-black/20 dark:text-ember-300 dark:hover:border-sage-500/50 dark:hover:bg-sage-500/10 dark:hover:text-sage-300"
                                                 >
                                                     #{issue.nodeId}
                                                 </button>
                                             ) : (
                                                 <span
                                                     title={`Traversal blocker node ${issue.nodeId} is not available in the normalized workflow graph.`}
-                                                    className="rounded border border-dashed border-orange-400/40 px-1 py-0.5 font-mono text-[10px] text-orange-800/70 dark:border-orange-300/20 dark:text-orange-200/60"
+                                                    className="rounded border border-dashed border-ember-400/40 px-1 py-0.5 font-mono text-[10px] text-ember-600/70 dark:border-ember-300/20 dark:text-ember-300/60"
                                                 >
                                                     #{issue.nodeId}
                                                 </span>
@@ -513,7 +499,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                     );
                                 })}
                                 {diagnostics.traversalIssuesTruncated && (
-                                    <div className="text-[10px] text-amber-800/70 dark:text-amber-200/70">
+                                    <div className="text-[10px] text-ember-600/70 dark:text-ember-300/70">
                                         Additional traversal blockers were omitted after the diagnostics limit.
                                     </div>
                                 )}
@@ -523,7 +509,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                 </div>
             ) : null}
             {exportError && (
-                <div className="mt-2 text-rose-700 dark:text-rose-300">
+                <div className="mt-2 text-red-600 dark:text-red-300">
                     Support bundle export failed: {exportError}
                 </div>
             )}
@@ -583,7 +569,7 @@ const WorkflowNode: React.FC<{
                 onClick={() => onFollowConnection(connectedNodeId)}
                 className="flex w-full items-start gap-2 rounded-md border border-gray-200 dark:border-white/10 bg-gray-50/70 dark:bg-white/5 px-2 py-1.5 text-left transition-colors hover:border-sage-300 hover:bg-sage-50 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
             >
-                <Icon className="mt-0.5 h-3 w-3 shrink-0 text-sage-600 dark:text-sage-400" />
+                <Icon className="mt-0.5 h-3 w-3 shrink-0 text-sage-600 dark:text-sage-300" />
                 <span className="min-w-0 flex-1">
                     <span className="block truncate text-[11px] font-semibold text-gray-700 dark:text-gray-200">
                         {connectedTitle}
@@ -625,12 +611,12 @@ const WorkflowNode: React.FC<{
                     {(isSelectedOutput || isRootSampler) && (
                         <div className="mt-1 flex flex-wrap gap-1">
                             {isSelectedOutput && (
-                                <span className="rounded border border-sage-300 bg-sage-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sage-700 dark:border-sage-700 dark:bg-sage-900/20 dark:text-sage-300">
+                                <span className="rounded border border-sage-300 bg-sage-50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-sage-600 dark:border-sage-700 dark:bg-sage-900/20 dark:text-sage-300">
                                     Selected Output
                                 </span>
                             )}
                             {isRootSampler && (
-                                <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${outputAmbiguous ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-300' : 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300'}`}>
+                                <span className={`rounded border px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide ${outputAmbiguous ? 'border-ember-300 bg-ember-50 text-ember-600 dark:border-ember-700 dark:bg-ember-900/20 dark:text-ember-300' : 'border-harbor-300 bg-harbor-50 text-harbor-600 dark:border-harbor-700 dark:bg-harbor-900/20 dark:text-harbor-300'}`}>
                                     {outputAmbiguous ? 'Root Candidate' : 'Root Sampler'}
                                 </span>
                             )}
@@ -730,7 +716,7 @@ const WorkflowNodeSection: React.FC<{
             className="border-l-2 border-sage-200 dark:border-sage-800/70 pl-3"
             style={{ marginLeft: Math.min(path.length - 1, 3) * 12 }}
         >
-            <div className="mb-2 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:text-sage-400">
+            <div className="mb-2 flex min-w-0 items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-sage-600 dark:text-sage-300">
                 <Workflow className="h-3 w-3 shrink-0" />
                 <span className="truncate" title={`Subgraph ${path.join(' / ')}`}>
                     Subgraph {path.join(' / ')}
@@ -1011,7 +997,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             {nodeMode === 'selected' ? `${modeNodes.length}/${workflowNodes.length}` : workflowNodes.length}
                         </div>
                         {graphSourceLabel && (
-                            <div className="rounded-full border border-sage-200 bg-sage-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-700 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-400">
+                            <div className="rounded-full border border-sage-200 bg-sage-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sage-600 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300">
                                 {graphSourceLabel}
                             </div>
                         )}
@@ -1022,7 +1008,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                 label={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
                                 content={copied ? 'Copied workflow JSON' : 'Copy workflow JSON'}
                                 title="Copy to clipboard"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sage-200 bg-sage-50 text-sage-600 transition-colors hover:bg-sage-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-400 dark:hover:bg-sage-900/40"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sage-200 bg-sage-50 text-sage-600 transition-colors hover:bg-sage-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-sage-800 dark:bg-sage-900/20 dark:text-sage-300 dark:hover:bg-sage-900/40"
                             >
                                 {copied ? <Check aria-hidden="true" className="h-4 w-4" /> : <Copy aria-hidden="true" className="h-4 w-4" />}
                             </TooltipButton>
@@ -1068,7 +1054,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                             className={`min-h-8 rounded px-3 text-[10px] font-bold uppercase tracking-wide transition-colors ${nodeMode === 'selected'
                                 ? 'bg-sage-600 text-white shadow-sm dark:bg-sage-500 dark:text-zinc-950'
                                 : selectedBranchAvailable
-                                    ? 'text-gray-500 hover:text-sage-700 dark:text-gray-400 dark:hover:text-sage-300'
+                                    ? 'text-gray-500 hover:text-sage-600 dark:text-gray-400 dark:hover:text-sage-300'
                                     : 'cursor-not-allowed text-gray-300 dark:text-gray-600'}`}
                         >
                             Selected Branch

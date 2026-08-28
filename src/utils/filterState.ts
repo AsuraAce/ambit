@@ -37,8 +37,9 @@ export const createDefaultFilters = (
 const hasRangeFilter = (value: number | null | undefined): boolean =>
     value !== undefined && value !== null;
 
-export const hasActiveResultFilters = (filters: FilterState): boolean => (
+export const hasNonCollectionResultFilters = (filters: FilterState): boolean => (
     filters.searchQuery.trim().length > 0 ||
+    (!!filters.mediaType && filters.mediaType !== 'all') ||
     filters.models.length > 0 ||
     filters.tools.length > 0 ||
     filters.loras.length > 0 ||
@@ -53,7 +54,6 @@ export const hasActiveResultFilters = (filters: FilterState): boolean => (
     !!filters.dateTo ||
     filters.favoritesOnly ||
     !!filters.pinnedOnly ||
-    !!filters.collectionId ||
     !!filters.showIntermediates ||
     !!filters.showGrids ||
     !!filters.showInvokeImageAssets ||
@@ -61,6 +61,11 @@ export const hasActiveResultFilters = (filters: FilterState): boolean => (
     hasRangeFilter(filters.maxSteps) ||
     hasRangeFilter(filters.minCfg) ||
     hasRangeFilter(filters.maxCfg)
+);
+
+export const hasActiveResultFilters = (filters: FilterState): boolean => (
+    hasNonCollectionResultFilters(filters) ||
+    !!filters.collectionId
 );
 
 export const shouldPrefetchResultPages = (

@@ -13,7 +13,7 @@ export const AssetTechnicalDetails: React.FC<{ rows: readonly TechnicalDetail[] 
         <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             {rows.map(row => (
                 <React.Fragment key={row.label}>
-                    <dt className="text-zinc-500">{row.label}</dt>
+                    <dt className="text-gray-500 dark:text-zinc-500">{row.label}</dt>
                     <dd>{row.value}</dd>
                 </React.Fragment>
             ))}

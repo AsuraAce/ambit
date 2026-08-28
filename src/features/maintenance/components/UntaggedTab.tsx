@@ -77,8 +77,8 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     if (images.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="p-6 bg-orange-500/10 rounded-full mb-6 border border-orange-500/20">
-                    <Tag className="w-16 h-16 text-orange-500" />
+                <div className="mb-6 rounded-full border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/20 dark:bg-ember-500/10">
+                    <Tag className="h-16 w-16 text-ember-600 dark:text-ember-300" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">No Untagged Images</h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
@@ -86,7 +86,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 </p>
                 <button
                     onClick={() => onScopeChange(untaggedScope === 'global' ? 'filtered' : 'global')}
-                    className="mt-6 text-xs font-bold text-orange-600 hover:underline"
+                    className="mt-6 text-xs font-bold text-ember-600 hover:underline dark:text-ember-300"
                 >
                     Switch to {untaggedScope === 'global' ? 'Filtered' : 'Global'} scope
                 </button>
@@ -95,7 +95,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     }
 
     const actions = (
-        <div className="flex items-center gap-2 p-1 bg-white/50 dark:bg-black/20 border border-orange-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-2 rounded-2xl border border-gray-200 bg-white/50 p-1 shadow-sm dark:border-white/5 dark:bg-black/20">
             {selectedIds.size > 0 ? (
                     <button
                     onClick={onRemoveFromLibrary}
@@ -113,16 +113,16 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
     );
 
     const scopeSwitcher = (
-        <div className="flex items-center gap-1 p-1 bg-white/50 dark:bg-black/20 border border-orange-200/50 dark:border-white/5 rounded-2xl shadow-sm">
+        <div className="flex items-center gap-1 rounded-2xl border border-gray-200 bg-white/50 p-1 shadow-sm dark:border-white/5 dark:bg-black/20">
             <button
                 onClick={() => onScopeChange('filtered')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 ${untaggedScope === 'filtered' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition-colors ${untaggedScope === 'filtered' ? 'bg-sage-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}
             >
                 <Filter className="w-3 h-3" /> Filtered
             </button>
             <button
                 onClick={() => onScopeChange('global')}
-                className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-2 ${untaggedScope === 'global' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-gray-600'}`}
+                className={`flex items-center gap-2 rounded-xl px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition-colors ${untaggedScope === 'global' ? 'bg-sage-600 text-white' : 'text-gray-400 hover:text-gray-600'}`}
             >
                 <Globe className="w-3 h-3" /> Global
             </button>
@@ -141,7 +141,7 @@ export const UntaggedTab: React.FC<UntaggedTabProps> = ({
                 selectedCount={selectedIds.size}
                 actions={actions}
                 extraControls={scopeSwitcher}
-                variant="orange"
+                variant="ember"
             />
 
             <VirtualGrid

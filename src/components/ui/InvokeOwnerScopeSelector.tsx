@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Check } from 'lucide-react';
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -65,16 +66,19 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                                 </span>
                                 <span className="block break-all font-mono text-[10px] text-gray-500">{owner.ownerId}</span>
                             </span>
-                            <span className="shrink-0 text-right text-[10px] font-bold text-gray-500">
-                                <span className="block">
-                                    {standardImageCount.toLocaleString()} {intermediateImageCount > 0 ? 'standard images' : 'images'}
+                            <span className="flex shrink-0 items-center gap-2">
+                                <span className="text-right text-[10px] font-bold text-gray-500">
+                                    <span className="block">
+                                        {standardImageCount.toLocaleString()} {intermediateImageCount > 0 ? 'standard images' : 'images'}
+                                    </span>
+                                    {intermediateImageCount > 0 && (
+                                        <span className="block">{intermediateImageCount.toLocaleString()} intermediates</span>
+                                    )}
+                                    {owner.boardCount !== undefined && (
+                                        <span className="block">{owner.boardCount.toLocaleString()} boards</span>
+                                    )}
                                 </span>
-                                {intermediateImageCount > 0 && (
-                                    <span className="block">{intermediateImageCount.toLocaleString()} intermediates</span>
-                                )}
-                                {owner.boardCount !== undefined && (
-                                    <span className="block">{owner.boardCount.toLocaleString()} boards</span>
-                                )}
+                                {selected ? <Check className="h-4 w-4 text-sage-600 dark:text-sage-300" aria-hidden="true" /> : null}
                             </span>
                         </span>
                     </button>
@@ -82,13 +86,13 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
             })}
 
             {discovery.unassignedImageCount > 0 && (
-                <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <p className="text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     {discovery.unassignedImageCount.toLocaleString()} image rows have no owner and remain hidden in single-owner scope.
                 </p>
             )}
 
             {unassignedBoards > 0 && (
-                <p className="text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <p className="text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     {unassignedBoards.toLocaleString()} boards have no owner and remain hidden in single-owner scope.
                 </p>
             )}
@@ -102,17 +106,20 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                     setIsAllUsersConfirmOpen(true);
                 }}
                 className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selection?.mode === 'all'
-                    ? 'border-amber-500 bg-amber-500/10'
-                    : 'border-gray-200 hover:border-amber-500/50 dark:border-white/10'}`}
+                    ? 'border-ember-500 bg-ember-500/10'
+                    : 'border-gray-200 hover:border-ember-500/50 dark:border-white/10'}`}
             >
-                <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
+                <span className="flex items-center justify-between gap-3">
+                    <span className="block text-sm font-bold text-gray-800 dark:text-gray-100">All users</span>
+                    {selection?.mode === 'all' ? <Check className="h-4 w-4 shrink-0 text-ember-600 dark:text-ember-300" aria-hidden="true" /> : null}
+                </span>
                 <span className="block text-[10px] leading-4 text-gray-500">
                     Show every owner's images and boards, including unassigned rows.
                 </span>
             </button>
 
             {selectionRequired && (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-[10px] leading-4 text-amber-700 dark:text-amber-300">
+                <div className="rounded-xl border border-ember-500/20 bg-ember-500/10 p-3 text-[10px] leading-4 text-ember-600 dark:text-ember-300">
                     Select an owner or explicitly choose All users. InvokeAI rows remain hidden until then.
                 </div>
             )}

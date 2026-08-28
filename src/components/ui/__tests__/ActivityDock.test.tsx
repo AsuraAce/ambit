@@ -901,7 +901,7 @@ describe('ActivityDock', () => {
             isActivityDockMinimized: true
         });
         const { container } = render(<ActivityDock />);
-        expect(container.querySelector('.bg-violet-500')).toBeTruthy();
+        expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
     });
 
     it('dismisses ordinary activity until the store reopens it', () => {

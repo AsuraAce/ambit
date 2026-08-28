@@ -170,7 +170,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {/* Collection Thumbnail Indicator */}
       {isThumbnail && !isMissing && (
-        <div className="absolute bottom-2 left-2 z-20 p-1.5 bg-amethyst-500/80 backdrop-blur-md text-white rounded-full shadow-lg border border-white/20 animate-in zoom-in duration-300 transition-opacity group-hover:opacity-0" title="Collection Thumbnail">
+        <div className="absolute bottom-2 left-2 z-20 p-1.5 bg-sage-500/80 backdrop-blur-md text-white rounded-full shadow-lg border border-white/20 animate-in zoom-in duration-300 transition-opacity group-hover:opacity-0" title="Collection Thumbnail">
           <ImageIcon className="w-3 h-3" />
         </div>
       )}

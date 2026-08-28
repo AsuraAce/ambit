@@ -60,6 +60,16 @@ describe('FolderItem', () => {
         expect(container.querySelector('.animate-spin')).toBeTruthy();
     });
 
+    it('protects counts and actions from long monitored-folder paths', () => {
+        const longPath = 'D:/AI/art/archive/images/a1111/outputs/img2img-images';
+        const { container } = setup(folder({ path: longPath, imageCount: 0 }));
+
+        expect(container.firstElementChild?.className).toContain('grid');
+        expect(screen.getByText(longPath).className).toContain('truncate');
+        expect(screen.getByText('0 images').className).toContain('tabular-nums');
+        expect(screen.getByText('0 images').parentElement?.className).toContain('shrink-0');
+    });
+
     it.each([
         [GeneratorTool.AUTOMATIC1111, 'A1111'],
         [GeneratorTool.SDNEXT, 'SD.NEXT'],

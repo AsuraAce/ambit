@@ -49,7 +49,11 @@ describe('ApiKeyInput', () => {
     it('announces a stored key as configured and offers re-verification', () => {
         const props = renderInput('configured');
 
-        expect(screen.getByRole('status').textContent).toContain('API key configured');
+        const status = screen.getByRole('status');
+        expect(status.textContent).toContain('API key configured');
+        expect(status.className).toContain('text-sage-600');
+        expect(status.className).toContain('dark:text-sage-300');
+        expect(screen.getByLabelText('Gemini API key').className).toContain('text-gray-900');
         fireEvent.click(screen.getByRole('button', { name: 'Re-verify' }));
         expect(props.onVerify).toHaveBeenCalledOnce();
     });

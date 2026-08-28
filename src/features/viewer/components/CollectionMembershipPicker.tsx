@@ -53,6 +53,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
     const [query, setQuery] = React.useState('');
     const [isSearchOpen, setIsSearchOpen] = React.useState(false);
     const searchInputRef = React.useRef<HTMLInputElement>(null);
+    const listRef = React.useRef<HTMLDivElement>(null);
     const searchRegionId = React.useId();
     const [membershipsByAsset, setMembershipsByAsset] = React.useState<Map<string, string[]>>(
         () => new Map([[assetId, []]])
@@ -74,13 +75,23 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
         [collections]
     );
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    const filteredCollections = normalizedQuery
-        ? manualCollections.filter(collection => collection.name.toLocaleLowerCase().includes(normalizedQuery))
-        : manualCollections;
+    const membershipIds = React.useMemo(() => new Set(memberships), [memberships]);
+    const memberCollections = manualCollections.filter(collection => membershipIds.has(collection.id));
+    const otherCollections = manualCollections.filter(collection => !membershipIds.has(collection.id));
+    const matchesQuery = (collection: Collection) => (
+        !normalizedQuery || collection.name.toLocaleLowerCase().includes(normalizedQuery)
+    );
+    const visibleMemberCollections = memberCollections.filter(matchesQuery);
+    const visibleOtherCollections = otherCollections.filter(matchesQuery);
+    const hasVisibleCollections = visibleMemberCollections.length > 0 || visibleOtherCollections.length > 0;
 
     React.useEffect(() => {
         if (isSearchOpen) searchInputRef.current?.focus();
     }, [isSearchOpen]);
+
+    React.useEffect(() => {
+        if (listRef.current) listRef.current.scrollTop = 0;
+    }, [isSearchOpen, query]);
 
     const closeSearch = () => {
         setIsSearchOpen(false);
@@ -192,6 +203,47 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
         });
     };
 
+    const renderCollection = (collection: Collection) => {
+        const isMember = membershipIds.has(collection.id);
+        const membershipKey = `${assetId}${membershipKeySeparator}${collection.id}`;
+        const isPending = pendingKeys.has(membershipKey);
+        const showThumbnailSkeleton = !!thumbnailHydrationPendingIds[collection.id] && !collection.thumbnail;
+
+        return (
+            <button
+                type="button"
+                key={collection.id}
+                aria-pressed={isMember}
+                aria-busy={isPending}
+                disabled={!isReady || isPending}
+                onClick={() => void toggleMembership(collection.id, isMember)}
+                className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-wait disabled:opacity-70 ${isMember ? 'border-sage-300 bg-sage-100 dark:border-sage-400/50 dark:bg-sage-500/15' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/5 dark:bg-zinc-800/50 dark:hover:bg-white/5'}`}
+            >
+                {collection.thumbnail ? (
+                    <PrivacyAwareThumbnail
+                        src={collection.thumbnail}
+                        safeSrc={collection.safeThumbnail}
+                        alt=""
+                        isSensitive={collection.thumbnailIsSensitive}
+                        wrapperClassName="h-10 w-10 shrink-0 rounded-lg"
+                        imgClassName="h-full w-full rounded-lg border border-gray-200 object-cover shadow-sm dark:border-white/5"
+                        fallback={<Folder className="h-5 w-5 text-gray-400" />}
+                    />
+                ) : showThumbnailSkeleton ? (
+                    <CollectionThumbnailSkeleton className="h-10 w-10 shrink-0 rounded-lg" />
+                ) : (
+                    <span data-testid="collection-thumbnail-fallback" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100 dark:border-white/5 dark:bg-zinc-800" aria-hidden="true">
+                        <Folder className="h-5 w-5 text-gray-400 dark:text-zinc-500" />
+                    </span>
+                )}
+                <span className="min-w-0 flex-1 truncate font-medium text-gray-900 group-hover:text-sage-700 dark:text-gray-100 dark:group-hover:text-sage-300">{collection.name}</span>
+                {isMember
+                    ? <Check data-membership-indicator="selected" className="h-4 w-4 shrink-0 text-sage-600 dark:text-sage-300" aria-hidden="true" />
+                    : <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />}
+            </button>
+        );
+    };
+
     return (
         <section className="mb-6">
             <MetadataSectionHeader
@@ -204,7 +256,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                         aria-expanded={isSearchOpen}
                         aria-controls={searchRegionId}
                         onClick={toggleSearch}
-                        className={`rounded-lg border p-1.5 transition-colors ${isSearchOpen ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/30 dark:bg-sage-900/40 dark:text-sage-400' : 'border-gray-200 bg-gray-50 text-gray-400 hover:text-gray-600 dark:border-white/5 dark:bg-white/5 dark:hover:text-gray-300'}`}
+                        className={`rounded-lg border p-1.5 transition-colors ${isSearchOpen ? 'border-sage-200 bg-sage-50 text-sage-600 dark:border-sage-500/30 dark:bg-sage-900/40 dark:text-sage-300' : 'border-gray-200 bg-gray-50 text-gray-400 hover:text-gray-600 dark:border-white/5 dark:bg-white/5 dark:hover:text-gray-300'}`}
                     >
                         <Search className="h-3.5 w-3.5" aria-hidden="true" />
                     </TooltipButton>
@@ -234,7 +286,7 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                     </label>
                 </div>
             ) : null}
-            <div className="custom-scrollbar relative max-h-60 min-h-12 space-y-2 overflow-y-auto pr-1">
+            <div ref={listRef} data-testid="collection-membership-list" className="custom-scrollbar relative max-h-60 min-h-12 space-y-3 overflow-y-auto pr-1">
                 {isLoading && (
                     <div role="status" aria-label="Loading collection membership" className="absolute inset-0 z-10 flex items-center justify-center bg-white/50 backdrop-blur-[1px] dark:bg-zinc-900/50">
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-sage-500 border-t-transparent" />
@@ -246,51 +298,25 @@ export const CollectionMembershipPicker: React.FC<CollectionMembershipPickerProp
                         <button type="button" onClick={() => setRetryToken(token => token + 1)} className="text-xs font-medium text-sage-700 hover:underline dark:text-sage-300">Retry</button>
                     </div>
                 )}
-                {!isLoading && !hasError && filteredCollections.length === 0 && (
+                {!isLoading && !hasError && !hasVisibleCollections && (
                     <p className="px-3 py-4 text-center text-xs text-gray-500">
                         {manualCollections.length === 0 ? 'No collections available.' : 'No collections found.'}
                     </p>
                 )}
-                {filteredCollections.map(collection => {
-                    const isMember = memberships.includes(collection.id);
-                    const membershipKey = `${assetId}${membershipKeySeparator}${collection.id}`;
-                    const isPending = pendingKeys.has(membershipKey);
-                    const showThumbnailSkeleton = !!thumbnailHydrationPendingIds[collection.id] && !collection.thumbnail;
-
-                    return (
-                        <button
-                            type="button"
-                            key={collection.id}
-                            aria-pressed={isMember}
-                            aria-busy={isPending}
-                            disabled={!isReady || isPending}
-                            onClick={() => void toggleMembership(collection.id, isMember)}
-                            className={`group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-wait disabled:opacity-70 ${isMember ? 'border-sage-300 bg-sage-100 text-sage-700 dark:border-sage-500/40 dark:bg-sage-900/20 dark:text-sage-300' : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-50 dark:border-white/5 dark:bg-zinc-800/50 dark:hover:bg-white/5'}`}
-                        >
-                            {collection.thumbnail ? (
-                                <PrivacyAwareThumbnail
-                                    src={collection.thumbnail}
-                                    safeSrc={collection.safeThumbnail}
-                                    alt=""
-                                    isSensitive={collection.thumbnailIsSensitive}
-                                    wrapperClassName="h-10 w-10 shrink-0 rounded-lg"
-                                    imgClassName="h-full w-full rounded-lg border border-gray-200 object-cover shadow-sm dark:border-white/5"
-                                    fallback={<Folder className="h-5 w-5 text-gray-400" />}
-                                />
-                            ) : showThumbnailSkeleton ? (
-                                <CollectionThumbnailSkeleton className="h-10 w-10 shrink-0 rounded-lg" />
-                            ) : (
-                                <span data-testid="collection-thumbnail-fallback" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100 dark:border-white/5 dark:bg-zinc-800" aria-hidden="true">
-                                    <Folder className="h-5 w-5 text-gray-400 dark:text-zinc-500" />
-                                </span>
-                            )}
-                            <span className="min-w-0 flex-1 truncate font-medium text-gray-900 group-hover:text-sage-700 dark:text-gray-100 dark:group-hover:text-sage-300">{collection.name}</span>
-                            {isMember
-                                ? <Check className="h-4 w-4 shrink-0 text-sage-500" aria-hidden="true" />
-                                : <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                        </button>
-                    );
-                })}
+                {visibleMemberCollections.length > 0 && (
+                    <div className="space-y-2">
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                            Member of ({memberCollections.length})
+                        </p>
+                        {visibleMemberCollections.map(renderCollection)}
+                    </div>
+                )}
+                {visibleOtherCollections.length > 0 && (
+                    <div className="space-y-2">
+                        <p className="px-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">{memberCollections.length > 0 ? 'Add to another collection' : 'Add to a collection'}</p>
+                        {visibleOtherCollections.map(renderCollection)}
+                    </div>
+                )}
             </div>
         </section>
     );

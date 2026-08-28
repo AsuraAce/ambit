@@ -108,7 +108,7 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
             pressed={Boolean(isPinned)}
           />
           <ActionButton
-            icon={isArchived ? <ArchiveRestore className="w-4 h-4 text-yellow-400" /> : <Archive className="w-4 h-4 text-gray-400" />}
+            icon={isArchived ? <ArchiveRestore className="h-4 w-4 text-gray-500 dark:text-gray-300" /> : <Archive className="w-4 h-4 text-gray-400" />}
             onClick={onToggleArchive}
             label={isArchived ? "Unarchive" : "Archive"}
             pressed={Boolean(isArchived)}

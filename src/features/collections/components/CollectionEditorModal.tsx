@@ -125,7 +125,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
 
         if (draftFilters.mediaType && draftFilters.mediaType !== 'all') {
             chips.push(
-                <div key="media-type" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
+                <div key="media-type" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>Media: {draftFilters.mediaType === 'video' ? 'Videos' : 'Images'}</span>
                     <button type="button" aria-label="Remove Media Type Rule" onClick={() => removeFilter('mediaType', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                 </div>
@@ -146,7 +146,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         const dateFilterLabel = getDateFilterLabel(draftFilters);
         if (dateFilterLabel) {
             chips.push(
-                <div key="date" className="flex items-center gap-1 px-2 py-1 rounded-md bg-sage-100 dark:bg-sage-500/20 text-sage-700 dark:text-sage-200 text-xs border border-sage-200">
+                <div key="date" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>{dateFilterLabel}</span>
                     <button type="button" aria-label="Remove Date Rule" onClick={() => removeFilter('dateRange', null)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
                 </div>
@@ -156,10 +156,10 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         // Favorites
         if (draftFilters.favoritesOnly) {
             chips.push(
-                <div key="fav" className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-100 text-red-700 text-xs border border-red-200">
-                    <div className="w-3 h-3 text-red-500">❤️</div>
+                <div key="fav" className="flex items-center gap-1 rounded-md border border-red-200 bg-red-100 px-2 py-1 text-xs text-red-600 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-300">
+                    <div className="w-3 h-3 text-red-500 dark:text-red-300">❤️</div>
                     <span>Favorites</span>
-                    <button type="button" aria-label="Remove Favorites Rule" onClick={() => removeFilter('favoritesOnly', null)} className="hover:text-red-700"><X className="w-3 h-3" /></button>
+                    <button type="button" aria-label="Remove Favorites Rule" onClick={() => removeFilter('favoritesOnly', null)} className="hover:text-red-600"><X className="w-3 h-3" /></button>
                 </div>
             );
         }
@@ -167,7 +167,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         // Numeric Ranges
         if (draftFilters.minSteps !== undefined || draftFilters.maxSteps !== undefined) {
             chips.push(
-                <div key="steps" className="flex items-center gap-1 px-2 py-1 rounded-md bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-200 text-xs border border-orange-200 dark:border-orange-500/30">
+                <div key="steps" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>Steps: {draftFilters.minSteps ?? 0}-{draftFilters.maxSteps ?? '∞'}</span>
                     <button type="button" aria-label="Remove Steps Rule" onClick={() => removeFilter('minSteps', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                 </div>
@@ -176,7 +176,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
 
         if (draftFilters.minCfg !== undefined || draftFilters.maxCfg !== undefined) {
             chips.push(
-                <div key="cfg" className="flex items-center gap-1 px-2 py-1 rounded-md bg-yellow-100 dark:bg-yellow-500/20 text-yellow-700 dark:text-yellow-200 text-xs border border-yellow-200 dark:border-yellow-500/30">
+                <div key="cfg" className="flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300">
                     <span>CFG: {draftFilters.minCfg ?? 0}-{draftFilters.maxCfg ?? '∞'}</span>
                     <button type="button" aria-label="Remove CFG Rule" onClick={() => removeFilter('minCfg', null)} className="hover:opacity-70"><X className="w-3 h-3" /></button>
                 </div>
@@ -185,45 +185,20 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
 
         // Arrays (Models, Tools, etc)
         const categories = [
-            { key: 'models', label: 'Model', color: 'blue' },
-            { key: 'tools', label: 'Tool', color: 'amber' },
-            { key: 'loras', label: 'LoRA', color: 'purple' },
-            { key: 'embeddings', label: 'Embedding', color: 'emerald' },
-            { key: 'hypernetworks', label: 'Hypernet', color: 'rose' },
-            { key: 'samplers', label: 'Sampler', color: 'indigo' },
-            { key: 'generationTypes', label: 'GenType', color: 'cyan' },
+            { key: 'models', label: 'Model' },
+            { key: 'tools', label: 'Tool' },
+            { key: 'loras', label: 'LoRA' },
+            { key: 'embeddings', label: 'Embedding' },
+            { key: 'hypernetworks', label: 'Hypernet' },
+            { key: 'samplers', label: 'Sampler' },
+            { key: 'generationTypes', label: 'GenType' },
         ];
 
-        categories.forEach(({ key, color }) => {
+        categories.forEach(({ key }) => {
             const values = draftFilters[key as keyof FilterState] as string[];
             if (Array.isArray(values)) {
                 values.forEach(val => {
-                    // Explicit Tailwind Classes for JIT detection
-                    let className = "flex items-center gap-1 px-2 py-1 rounded-md text-xs border ";
-
-                    switch (color) {
-                        case 'blue':
-                            className += "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-200 border-blue-200 dark:border-blue-500/30";
-                            break;
-                        case 'amber':
-                            className += "bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-200 border-amber-200 dark:border-amber-500/30";
-                            break;
-                        case 'purple':
-                            className += "bg-purple-100 dark:bg-purple-500/20 text-purple-700 dark:text-purple-200 border-purple-200 dark:border-purple-500/30";
-                            break;
-                        case 'emerald':
-                            className += "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-200 border-emerald-200 dark:border-emerald-500/30";
-                            break;
-                        case 'rose':
-                            className += "bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-200 border-rose-200 dark:border-rose-500/30";
-                            break;
-                        case 'indigo':
-                            className += "bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-200 border-indigo-200 dark:border-indigo-500/30";
-                            break;
-                        case 'cyan':
-                            className += "bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-200 border-cyan-200 dark:border-cyan-500/30";
-                            break;
-                    }
+                    const className = "flex items-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-2 py-1 text-xs text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300";
 
                     chips.push(
                         <div key={`${key}-${val}`} className={className}>
@@ -340,7 +315,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                             Collection Rules
                                         </div>
                                         {hasFilters ? (
-                                            <div className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800">
+                                            <div className="rounded-full border border-sage-200 bg-sage-100 px-2 py-0.5 text-[10px] text-sage-600 dark:border-sage-500/30 dark:bg-sage-500/15 dark:text-sage-300">
                                                 Dynamic
                                             </div>
                                         ) : (
@@ -376,19 +351,19 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                 <div className="grid grid-cols-1 gap-3">
                                     <button
                                         onClick={handleUpdateFromGlobal}
-                                        className="flex items-center justify-center gap-2 p-3 rounded-xl border border-sage-200 dark:border-sage-500/30 bg-sage-50 dark:bg-sage-900/20 text-sage-700 dark:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/40 transition-colors text-sm font-medium group"
+                                        className="flex items-center justify-center gap-2 p-3 rounded-xl border border-sage-200 dark:border-sage-500/30 bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/40 transition-colors text-sm font-medium group"
                                     >
                                         <Save className="w-4 h-4" />
                                         <div className="flex flex-col items-start text-xs">
                                             <span className="font-bold text-sm">Update with Current View</span>
-                                            <span className="text-sage-600/70 dark:text-sage-400/70 group-hover:text-sage-700 dark:group-hover:text-sage-300">Overwrites rules with your active filters</span>
+                                            <span className="text-sage-600/70 dark:text-sage-300/70 group-hover:text-sage-600 dark:group-hover:text-sage-300">Overwrites rules with your active filters</span>
                                         </div>
                                     </button>
 
                                     {hasFilters && (
                                         <button
                                             onClick={handleClearAll}
-                                            className="flex items-center justify-center gap-2 p-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-sm font-medium"
+                                            className="flex items-center justify-center gap-2 p-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-sm font-medium"
                                         >
                                             <Trash2 className="w-4 h-4" />
                                             Remove All Rules (Make Static)

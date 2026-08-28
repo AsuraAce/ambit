@@ -144,6 +144,47 @@ describe('MetadataEditTab', () => {
         expect(onSetCollectionMembership).toHaveBeenCalledWith('image-1', 'two', true);
     });
 
+    it('puts current memberships first and keeps the selected state visible without color alone', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['three']);
+        render(<EditorHarness />);
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Archived Ideas' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.getByText('Add to another collection')).toBeTruthy();
+
+        const selected = screen.getByRole('button', { name: 'Archived Ideas' });
+        const firstOther = screen.getByRole('button', { name: 'Portraits' });
+        expect(selected.compareDocumentPosition(firstOther) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(selected.className).toContain('dark:bg-sage-500/15');
+        expect(selected.querySelector('[data-membership-indicator="selected"]')).toBeTruthy();
+    });
+
+    it('offers available collections without an orphaned empty-membership message', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce([]);
+        render(<EditorHarness />);
+
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(screen.queryByText('Not in any collection')).toBeNull();
+        expect(screen.getByText('Add to a collection')).toBeTruthy();
+    });
+
+    it('filters both membership groups and resets the result list scroll position', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['one']);
+        render(<EditorHarness />);
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+
+        const list = screen.getByTestId('collection-membership-list');
+        list.scrollTop = 80;
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
+        expect(list.scrollTop).toBe(0);
+
+        list.scrollTop = 60;
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Find collection' }), { target: { value: 'port' } });
+        expect(list.scrollTop).toBe(0);
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.queryByText('Add to another collection')).toBeNull();
+    });
+
     it('clears a collapsed collection search and keeps its open state across asset navigation', async () => {
         collectionRepoMocks.getCollectionsForImage
             .mockResolvedValueOnce(['one'])
@@ -226,15 +267,15 @@ describe('MetadataEditTab', () => {
         render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
         await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
 
-        const landscapes = screen.getByRole('button', { name: 'Landscapes' });
-        fireEvent.click(landscapes);
-        expect((landscapes as HTMLButtonElement).disabled).toBe(true);
-        expect(landscapes.getAttribute('aria-busy')).toBe('true');
-        fireEvent.click(landscapes);
+        fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
+        const pendingLandscapes = screen.getByRole('button', { name: 'Landscapes' });
+        expect((pendingLandscapes as HTMLButtonElement).disabled).toBe(true);
+        expect(pendingLandscapes.getAttribute('aria-busy')).toBe('true');
+        fireEvent.click(pendingLandscapes);
         expect(onSetCollectionMembership).toHaveBeenCalledTimes(1);
 
         await act(async () => pending.resolve(true));
-        await waitFor(() => expect((landscapes as HTMLButtonElement).disabled).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
     });
 
     it('does not apply a late rollback to a different image', async () => {

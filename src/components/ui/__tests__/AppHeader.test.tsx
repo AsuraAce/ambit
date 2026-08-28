@@ -234,6 +234,14 @@ describe('AppHeader', () => {
         expect(onImport).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps a four-pixel boundary between AI search and the import controls', () => {
+        render(<AppHeader {...defaultProps} />);
+
+        const importGroup = screen.getByRole('button', { name: 'Import Images' }).parentElement;
+        expect(importGroup?.className).toContain('ml-1');
+        expect(importGroup?.className).toContain('gap-1');
+    });
+
     it('toggles Live Watch and forwards view-control commands', () => {
         const setLayoutMode = vi.fn();
         const setSortOption = vi.fn();
@@ -303,7 +311,7 @@ describe('AppHeader', () => {
         });
         rerender(<AppHeader {...defaultProps} />);
 
-        expect(container.querySelector('.bg-violet-500')).toBeTruthy();
+        expect(container.querySelector('.bg-harbor-500')).toBeTruthy();
         expect(screen.getByTestId('app-header-progress-rail').firstElementChild?.getAttribute('style'))
             .toContain('width: 100%');
     });
