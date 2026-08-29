@@ -18,6 +18,7 @@ const REQUIRED_WINDOWS_PLATFORMS = [
 ];
 const DEFAULT_RETRY_DELAYS_MS = [1_000, 3_000, 6_000, 10_000];
 const MINISIGN_PUBLIC_KEY_LENGTH = 42;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const MINISIGN_SIGNATURE_LENGTH = 74;
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 
@@ -67,7 +68,8 @@ const readResponseBody = async (response, method, label) => {
   }
 };
 
-const readJson = (response, label) => readResponseBody(response, 'json', label);
+const readJson = async (response, label) =>
+  JSON.parse(await readResponseBody(response, 'text', label));
 const readBytes = (response, label) => readResponseBody(response, 'arrayBuffer', label);
 
 const decodeOuterBase64Text = (value, label) => {
@@ -84,6 +86,13 @@ const parsePublicKey = (encodedPublicKey) => {
 
   if (bytes.length !== MINISIGN_PUBLIC_KEY_LENGTH) {
     throw new Error('Updater public key is not a valid Minisign public key.');
+  }
+
+  const algorithm = bytes.subarray(0, 2).toString('ascii');
+  if (algorithm !== 'Ed' && algorithm !== 'ED') {
+    throw new Error(
+      `Updater public key uses unsupported Minisign algorithm marker ${algorithm}.`,
+    );
   }
 
   return {
@@ -161,7 +170,7 @@ const verifyInstallerFormat = (name, bytes) => {
 const parseExpectedVersion = (expectedVersion) => {
   const normalized = expectedVersion?.startsWith('v') ? expectedVersion.slice(1) : expectedVersion;
 
-  if (!/^\d+\.\d+\.\d+$/.test(normalized ?? '')) {
+  if (!VERSION_PATTERN.test(normalized ?? '')) {
     throw new Error(`Expected version must use X.Y.Z or vX.Y.Z format. Received: ${expectedVersion ?? '<unset>'}`);
   }
 
@@ -171,6 +180,10 @@ const parseExpectedVersion = (expectedVersion) => {
 const readManifest = async ({ expectedVersion, fetchImpl, manifestUrl }) => {
   const response = await fetchOk(fetchImpl, manifestUrl, undefined, 'Updater manifest');
   const manifest = await readJson(response, 'Updater manifest');
+
+  if (typeof manifest.version !== 'string' || !VERSION_PATTERN.test(manifest.version)) {
+    throw new Error('Updater manifest does not contain a valid version.');
+  }
 
   if (manifest.version !== expectedVersion) {
     throw new RetryableUpdaterVerificationError(
@@ -224,7 +237,40 @@ const collectWindowsArtifacts = (platforms) => {
   return [...artifacts.values()];
 };
 
-const verifyArtifact = async ({ artifact, fetchImpl, publicKey }) => {
+const getGitHubRepository = (manifestUrl) => {
+  const url = new URL(manifestUrl);
+  const [, owner, repository, releases] = url.pathname.split('/');
+
+  if (url.hostname !== 'github.com' || !owner || !repository || releases !== 'releases') {
+    throw new Error(`Updater manifest URL is not a GitHub release URL: ${manifestUrl}`);
+  }
+
+  return `${owner}/${repository}`;
+};
+
+const assertArtifactRepository = (artifactUrl, repository) => {
+  const url = new URL(artifactUrl);
+  const expectedPrefix = `/repos/${repository}/releases/assets/`;
+  const assetId = url.pathname.slice(expectedPrefix.length);
+
+  if (
+    url.protocol !== 'https:' ||
+    url.hostname !== 'api.github.com' ||
+    !url.pathname.startsWith(expectedPrefix) ||
+    !/^\d+$/.test(assetId)
+  ) {
+    throw new Error(
+      `Updater artifact ${artifactUrl} must belong to GitHub repository ${repository}.`,
+    );
+  }
+};
+
+const expectedWindowsAssetName = (platform, version) =>
+  platform === 'windows-x86_64-msi'
+    ? `Ambit_${version}_x64_en-US.msi`
+    : `Ambit_${version}_x64-setup.exe`;
+
+const verifyArtifact = async ({ artifact, expectedVersion, fetchImpl, publicKey }) => {
   const metadataResponse = await fetchOk(fetchImpl, artifact.url, undefined, 'Updater asset metadata');
   const metadata = await readJson(metadataResponse, 'Updater asset metadata');
 
@@ -236,6 +282,15 @@ const verifyArtifact = async ({ artifact, fetchImpl, publicKey }) => {
     !metadata.digest.startsWith('sha256:')
   ) {
     throw new Error(`Updater asset metadata for ${artifact.url} is incomplete.`);
+  }
+
+  for (const platform of artifact.platforms) {
+    const expectedName = expectedWindowsAssetName(platform, expectedVersion);
+    if (metadata.name !== expectedName) {
+      throw new Error(
+        `Updater manifest platform ${platform} must reference ${expectedName}, received ${metadata.name}.`,
+      );
+    }
   }
 
   const binaryResponse = await fetchOk(
@@ -283,9 +338,14 @@ const verifyPublishedUpdaterOnce = async ({
   const manifest = await readManifest({ expectedVersion: version, fetchImpl, manifestUrl });
   const publicKey = parsePublicKey(encodedPublicKey);
   const artifacts = [];
+  const repository = getGitHubRepository(manifestUrl);
+  const windowsArtifacts = collectWindowsArtifacts(manifest.platforms);
 
-  for (const artifact of collectWindowsArtifacts(manifest.platforms)) {
-    artifacts.push(await verifyArtifact({ artifact, fetchImpl, publicKey }));
+  for (const artifact of windowsArtifacts) {
+    assertArtifactRepository(artifact.url, repository);
+    artifacts.push(
+      await verifyArtifact({ artifact, expectedVersion: version, fetchImpl, publicKey }),
+    );
   }
 
   return { version, artifacts };
