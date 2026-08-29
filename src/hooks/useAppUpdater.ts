@@ -31,8 +31,17 @@ const isLikelyReleaseFeedAccessError = (message: string) => {
   );
 };
 
-const getRawUpdaterErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : 'Unexpected updater error';
+const getRawUpdaterErrorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const { message } = error;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+
+  if (typeof error === 'string' && error.trim()) return error;
+
+  return 'Unexpected updater error';
+};
 
 const getCheckForUpdatesErrorMessage = (error: unknown) => {
   const rawMessage = getRawUpdaterErrorMessage(error);
