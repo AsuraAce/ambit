@@ -35,7 +35,7 @@ jobs:
         run: pnpm check:versions
 
       - name: test release automation scripts
-        run: node --test scripts/check-release-tag.node-test.mjs scripts/check-version-consistency.node-test.mjs scripts/extract-release-notes.node-test.mjs
+        run: node --test scripts/check-release-tag.node-test.mjs scripts/check-version-consistency.node-test.mjs scripts/extract-release-notes.node-test.mjs scripts/verify-published-updater.node-test.mjs
 
       - name: install frontend dependencies
         run: pnpm install --frozen-lockfile

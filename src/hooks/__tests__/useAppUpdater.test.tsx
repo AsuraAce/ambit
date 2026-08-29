@@ -139,7 +139,7 @@ describe('useAppUpdater', () => {
 
     it('preserves raw install errors when package download or installation fails', async () => {
         const mockUpdate = createMockUpdate();
-        vi.mocked(mockUpdate.downloadAndInstall).mockRejectedValue(new Error('404 Not Found'));
+        vi.mocked(mockUpdate.downloadAndInstall).mockRejectedValue('Download request timed out');
         vi.mocked(check).mockResolvedValue(mockUpdate);
 
         const { result } = renderHook(() => useAppUpdater({
@@ -158,8 +158,8 @@ describe('useAppUpdater', () => {
         });
 
         expect(result.current.status).toBe('error');
-        expect(result.current.errorMessage).toBe('404 Not Found');
-        expect(mockAddToast).toHaveBeenCalledWith('Failed to install update: 404 Not Found', 'error');
+        expect(result.current.errorMessage).toBe('Download request timed out');
+        expect(mockAddToast).toHaveBeenCalledWith('Failed to install update: Download request timed out', 'error');
     });
 
     it('disables checks in development builds and only explains manual attempts', async () => {
@@ -222,8 +222,37 @@ describe('useAppUpdater', () => {
         }
     );
 
-    it('uses a generic message for non-Error check failures', async () => {
-        vi.mocked(check).mockRejectedValueOnce('opaque failure');
+    it('preserves serialized Tauri check failures', async () => {
+        vi.mocked(check).mockRejectedValueOnce('Network request timed out');
+        const { result } = renderHook(() => useAppUpdater({
+            addToast: mockAddToast,
+            autoCheckEnabled: false,
+            isSettingsLoaded: true,
+            isDevBuild: false,
+        }));
+
+        await act(async () => result.current.checkForUpdates({ manual: true }));
+
+        expect(result.current.errorMessage).toBe('Network request timed out');
+    });
+
+    it('preserves message-bearing updater failures', async () => {
+        vi.mocked(check).mockRejectedValueOnce({ message: 'Proxy authentication required' });
+        const { result } = renderHook(() => useAppUpdater({
+            addToast: mockAddToast,
+            autoCheckEnabled: false,
+            isSettingsLoaded: true,
+            isDevBuild: false,
+        }));
+
+        await act(async () => result.current.checkForUpdates({ manual: true }));
+
+        expect(result.current.errorMessage).toBe('Proxy authentication required');
+    });
+
+
+    it('uses a generic message for opaque updater failures', async () => {
+        vi.mocked(check).mockRejectedValueOnce({ code: 'opaque' });
         const { result } = renderHook(() => useAppUpdater({
             addToast: mockAddToast,
             autoCheckEnabled: false,
@@ -235,7 +264,6 @@ describe('useAppUpdater', () => {
 
         expect(result.current.errorMessage).toBe('Unexpected updater error');
     });
-
     it('does nothing when installation is requested without an update', async () => {
         const { result } = renderHook(() => useAppUpdater({
             addToast: mockAddToast,
