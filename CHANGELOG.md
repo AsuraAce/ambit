@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/AsuraAce/ambit/compare/v0.12.1...v0.12.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* **release:** forward updater verification tag ([#295](https://github.com/AsuraAce/ambit/issues/295)) ([37f23bd](https://github.com/AsuraAce/ambit/commit/37f23bdef7e61399b7e530adb24903055a69c533))
+
 ## [0.12.1](https://github.com/AsuraAce/ambit/compare/v0.12.0...v0.12.1) (2026-08-29)
 
 
