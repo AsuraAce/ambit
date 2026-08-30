@@ -26,4 +26,3 @@ Close the interaction defects deliberately deferred from the light-theme and sem
 - Workflow controls wrap without collapsing the Node Graph label; diagnostics do not obscure node content or load before expansion.
 - Switching Settings categories and connection subtabs does not slide or zoom newly mounted pages; reduced-motion users receive no modal scale animation.
 - Focused regressions, lint, typecheck, the complete frontend suite, build, and a changed-color audit pass before commit.
-

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/AsuraAce/ambit/compare/v0.12.0...v0.12.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **updater:** improve diagnostics and published release verification ([#293](https://github.com/AsuraAce/ambit/issues/293)) ([a80cd5a](https://github.com/AsuraAce/ambit/commit/a80cd5a922651cc62cf5aa13aa6e7b6d9f101b4c))
+
 ## [0.12.0](https://github.com/AsuraAce/ambit/compare/v0.11.1...v0.12.0) (2026-08-28)
 
 

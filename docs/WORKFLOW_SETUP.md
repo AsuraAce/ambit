@@ -116,8 +116,12 @@ Use **Actions > updater-signing-preflight > Run workflow** before publishing. Th
 7. Confirm the generated `vX.Y.Z` tag starts `release.yml`.
 
 The release workflow currently publishes Windows NSIS and MSI artifacts, updater signatures, and `latest.json`. It copies the matching version section from `CHANGELOG.md` into the updater metadata so installed apps can show the same release notes. When `CURRENT_PARSER_VERSION` increases from the previous stable release, the extraction step prepends a metadata-refresh notice to the published GitHub and updater notes without modifying `CHANGELOG.md`. Release tags must use the exact `vX.Y.Z` format, match `package.json`, both Tauri configuration files, `src-tauri/Cargo.toml`, the local `app` package in `src-tauri/Cargo.lock`, and `.github/.release-please-manifest.json`, and point to a commit reachable from `main`.
+After publishing, `release.yml` runs `pnpm run verify:published-updater -- <tag>` without GitHub authentication. The check downloads every unique Windows artifact referenced by `latest.json` using Tauri's updater headers, matches its size and SHA-256 digest to GitHub's public asset metadata, validates the installer format, and verifies its Minisign signature against the public key embedded in `tauri.conf.json`. A failure blocks the release workflow even if artifact upload succeeded.
+
 
 Release Please remains the normal and preferred tag creator. Do not create manual release tags except for recovery work after confirming the tag target is already on `main` and all version files match.
+For updater incident triage, run the same command locally with the affected tag, for example `pnpm run verify:published-updater -- v0.12.0`. A passing result proves the public feed and signed artifacts are currently valid; it does not rule out a transient client network, proxy, or security-software failure.
+
 
 ## Experimental Unix Builds
 
