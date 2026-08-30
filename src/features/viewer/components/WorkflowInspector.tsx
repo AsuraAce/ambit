@@ -152,9 +152,8 @@ const ComfyDiagnosticsPanel: React.FC<{
     chunks?: Record<string, string>;
     nodeById: Map<string, WorkflowDisplayNode>;
     onFocusNode: (nodeId: string) => void;
-    expanded: boolean;
-    onExpandedChange: (expanded: boolean) => void;
-}> = ({ image, chunks, nodeById, onFocusNode, expanded, onExpandedChange }) => {
+}> = ({ image, chunks, nodeById, onFocusNode }) => {
+    const [expanded, setExpanded] = useState(false);
     const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -264,7 +263,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                 <button
                     type="button"
                     aria-expanded={expanded}
-                    onClick={() => onExpandedChange(!expanded)}
+                    onClick={() => setExpanded((current) => !current)}
                     className="flex min-w-0 items-center gap-2 rounded-md font-bold text-ember-600 outline-none transition-colors hover:text-ember-700 focus-visible:ring-2 focus-visible:ring-ember-500/50 dark:text-ember-300 dark:hover:text-ember-200"
                 >
                     <Activity className="h-3.5 w-3.5 shrink-0" />
@@ -747,7 +746,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [searchQuery, setSearchQuery] = useState('');
     const [nodeMode, setNodeMode] = useState<'all' | 'selected'>('all');
     const [copied, setCopied] = useState(false);
-    const [isParserDiagnosticsOpen, setIsParserDiagnosticsOpen] = useState(false);
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [backendWorkflowGraph, setBackendWorkflowGraph] = useState<{
         chunks: Record<string, string>;
@@ -855,10 +853,6 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         setFocusedConnection(null);
         setNodeMode('all');
     }, [image.id, workflowGraphSource?.json, workflowGraphSource?.normalizedByBackend, workflowGraphSource?.source]);
-
-    React.useEffect(() => {
-        setIsParserDiagnosticsOpen(false);
-    }, [image.id]);
 
     React.useEffect(() => {
         if (nodeMode === 'selected' && !selectedBranchAvailable) {
@@ -1111,12 +1105,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                 {showParserDiagnostics && (
                     <div className="mb-4">
                         <ComfyDiagnosticsPanel
+                            key={image.id}
                             image={image}
                             chunks={image.originalChunks}
                             nodeById={nodeById}
                             onFocusNode={handleFollowConnection}
-                            expanded={isParserDiagnosticsOpen}
-                            onExpandedChange={setIsParserDiagnosticsOpen}
                         />
                     </div>
                 )}

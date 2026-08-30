@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AppSettings, AppSettingsUpdate } from '../../../../types';
 import { SettingsModal } from '../SettingsModal';
@@ -8,6 +8,43 @@ vi.mock('../../../../hooks/useAppVersion', () => ({
     useAppVersion: () => 'test'
 }));
 
+const motionTestState = vi.hoisted(() => ({
+    reduced: false,
+    divProps: [] as Array<{
+        initial?: unknown;
+        animate?: unknown;
+        exit?: unknown;
+        transition?: unknown;
+    }>,
+}));
+
+vi.mock('framer-motion', () => {
+    type MotionDivProps = React.HTMLAttributes<HTMLDivElement> & {
+        initial?: unknown;
+        animate?: unknown;
+        exit?: unknown;
+        transition?: unknown;
+    };
+
+    const MotionDiv = React.forwardRef<HTMLDivElement, MotionDivProps>(({
+        initial,
+        animate,
+        exit,
+        transition,
+        children,
+        ...props
+    }, ref) => {
+        motionTestState.divProps.push({ initial, animate, exit, transition });
+        return <div ref={ref} {...props}>{children}</div>;
+    });
+    MotionDiv.displayName = 'MotionDiv';
+
+    return {
+        AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+        motion: { div: MotionDiv },
+        useReducedMotion: () => motionTestState.reduced,
+    };
+});
 vi.mock('../DevTab', () => ({
     DevTab: () => <div>Dev panel</div>
 }));
@@ -72,6 +109,10 @@ const createSettings = (): AppSettings => ({
 });
 
 describe('SettingsModal', () => {
+    beforeEach(() => {
+        motionTestState.reduced = false;
+        motionTestState.divProps.length = 0;
+    });
     afterEach(() => {
         vi.unstubAllEnvs();
     });
@@ -160,6 +201,34 @@ describe('SettingsModal', () => {
         const intelligence = screen.getByRole('button', { name: 'Intelligence' });
         fireEvent.click(intelligence);
         expect(intelligence.querySelector('svg')?.parentElement?.className).toContain('text-amethyst-300');
+    });
+    it('removes modal scale motion when reduced motion is requested', () => {
+        motionTestState.reduced = true;
+
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        expect(motionTestState.divProps).toHaveLength(2);
+        for (const props of motionTestState.divProps) {
+            expect(props.initial).toEqual({ opacity: 0 });
+            expect(props.animate).toEqual({ opacity: 1 });
+            expect(props.exit).toEqual({ opacity: 0 });
+            expect(props.transition).toEqual({ duration: 0 });
+        }
     });
     it('limits category navigation transitions to color changes', () => {
         render(

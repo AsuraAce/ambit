@@ -112,4 +112,21 @@ describe('MetadataTextAreaField', () => {
         expect(onBlur).toHaveBeenCalledOnce();
         expect(screen.getByRole('textbox', { name: 'Positive prompt' }).tagName).toBe('DIV');
     });
+    it('makes the formatted read surface keyboard-focusable and multiline', () => {
+        render(
+            <MetadataTextAreaField
+                kind="positivePrompt"
+                value={'Line one\nLine two'}
+                onChange={vi.fn()}
+                readOnly
+                readContent={<span>{'Line one\nLine two'}</span>}
+            />,
+        );
+
+        const readSurface = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(readSurface.getAttribute('tabindex')).toBe('0');
+        expect(readSurface.getAttribute('aria-multiline')).toBe('true');
+        readSurface.focus();
+        expect(document.activeElement).toBe(readSurface);
+    });
 });

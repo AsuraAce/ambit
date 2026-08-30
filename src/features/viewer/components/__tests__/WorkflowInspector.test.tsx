@@ -951,6 +951,21 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.queryByText('#104')).toBeNull();
     });
 
+    it('does not inspect a newly navigated image until diagnostics are expanded again', async () => {
+        const view = renderWithOpenParserDiagnostics();
+        await waitFor(() => expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1));
+        await screen.findByText('diagnostic_model');
+
+        view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
+
+        await waitFor(() => expect(
+            screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')
+        ).toBe('false'));
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1);
+        view.rerender(<WorkflowInspector image={makeImage()} />);
+        expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false');
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1);
+    });
     it('resets expanded blockers when diagnostics change to another image', async () => {
         const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
             field: 'positive_prompt',
@@ -1013,6 +1028,21 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByText('Additional traversal blockers were omitted after the diagnostics limit.')).toBeTruthy();
     });
 
+    it('requires a fresh expansion after developer diagnostics are hidden and shown again', async () => {
+        const workflowImage = makeImage();
+        const view = renderWithOpenParserDiagnostics(workflowImage);
+        await waitFor(() => expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1));
+
+        mockSettings.devMode = false;
+        view.rerender(<WorkflowInspector image={workflowImage} />);
+        expect(screen.queryByText('Parser Diagnostics')).toBeNull();
+
+        mockSettings.devMode = true;
+        view.rerender(<WorkflowInspector image={workflowImage} />);
+
+        expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false');
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1);
+    });
     it('hides parser diagnostics outside developer mode', () => {
         mockSettings.devMode = false;
 

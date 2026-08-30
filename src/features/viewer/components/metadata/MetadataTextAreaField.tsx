@@ -114,9 +114,11 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
                 {showsReadSurface ? (
                     <div
                         role="textbox"
+                        tabIndex={0}
                         aria-readonly="true"
+                        aria-multiline="true"
                         aria-labelledby={textareaId + '-heading'}
-                        className={'w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 font-sans text-sm text-gray-800 dark:text-zinc-200 ' + field.heightClassName + ' ' + field.textareaClassName + ' ' + dirtyClassName + (readOnly ? ' cursor-default opacity-80' : '')}
+                        className={'w-full overflow-y-auto whitespace-pre-wrap break-words rounded-xl border p-3 font-sans text-sm text-gray-800 outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-200 ' + field.heightClassName + ' ' + field.textareaClassName + ' ' + dirtyClassName + (readOnly ? ' cursor-default opacity-80' : '')}
                     >
                         {value ? readContent : <span className="text-gray-400">{field.placeholder}</span>}
                     </div>
