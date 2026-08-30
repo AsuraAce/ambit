@@ -1,6 +1,7 @@
 export interface ThumbnailQueueProgressCounts {
     checked: number;
     optimized: number;
+    missing?: number;
     failed: number;
 }
 
@@ -17,9 +18,14 @@ const formatAttention = (count: number) => (
     count === 1 ? '1 needs attention' : `${count.toLocaleString()} need attention`
 );
 
+const formatMissing = (count: number) => (
+    `marked ${formatUnit(count, 'file')} missing`
+);
+
 export const formatThumbnailQueueRunningMessage = ({
     checked,
     optimized,
+    missing = 0,
     failed
 }: ThumbnailQueueProgressCounts): string => {
     if (checked <= 0) {
@@ -29,7 +35,12 @@ export const formatThumbnailQueueRunningMessage = ({
     const optimizedText = formatUnit(optimized, 'thumbnail');
 
     if (failed > 0) {
-        return `Optimized ${formatUnit(optimized, 'thumbnail')}; ${formatAttention(failed)}`;
+        const missingText = missing > 0 ? `; ${formatMissing(missing)}` : '';
+        return `Optimized ${formatUnit(optimized, 'thumbnail')}${missingText}; ${formatAttention(failed)}`;
+    }
+
+    if (missing > 0) {
+        return `Optimized ${formatUnit(optimized, 'thumbnail')}; ${formatMissing(missing)}`;
     }
 
     if (checked !== optimized) {
@@ -41,10 +52,20 @@ export const formatThumbnailQueueRunningMessage = ({
 
 export const formatThumbnailQueueCompleteMessage = ({
     optimized,
+    missing = 0,
     failed
 }: ThumbnailQueueProgressCounts): string => {
     if (failed > 0) {
-        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized; ${formatAttention(failed)}`;
+        const missingText = missing > 0 ? `; ${formatMissing(missing)}` : '';
+        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized${missingText}; ${formatAttention(failed)}`;
+    }
+
+    if (optimized === 0 && missing > 0) {
+        return `Finished: ${formatMissing(missing)}`;
+    }
+
+    if (missing > 0) {
+        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized; ${formatMissing(missing)}`;
     }
 
     if (optimized === 0) {

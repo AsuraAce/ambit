@@ -1584,6 +1584,70 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
+    it('synchronizes missing and recovered Invoke sources without treating probe failures as deletion', async () => {
+        const imagePath = 'D:/AmbitFixtures/InvokeAI/outputs/images/missing.png';
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) return [{ name: 'images' }];
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('SELECT i.image_name') && query.includes('OFFSET 0')) return [{
+                image_name: 'missing.png',
+                metadata_blob: {},
+                created_at: '2026-04-18 12:00:00',
+                width: 512,
+                height: 512,
+            }];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [0] } as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
+
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ id: imagePath, isMissing: true }),
+        ]);
+
+        vi.mocked(insertImagesBatch).mockClear();
+        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [123] } as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', { isMissing: true })]);
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ id: imagePath, isMissing: false }),
+        ]);
+
+        vi.mocked(insertImagesBatch).mockClear();
+        vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+
+        vi.mocked(insertImagesBatch).mockClear();
+        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [0] } as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
+        let rootChecks = 0;
+        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => {
+            if (paths.length === 1 && paths[0] === 'D:/AmbitFixtures/InvokeAI/outputs/images') {
+                rootChecks++;
+                return {
+                    status: 'ok',
+                    data: rootChecks === 1 ? [] : paths,
+                } as never;
+            }
+            return { status: 'ok', data: [] } as never;
+        });
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+    });
+
     it('repairs an existing stale flat InvokeAI row when the real file resolves to a subfolder', async () => {
         const staleFlatPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/date.png';
         const resolvedPath = 'D:/AmbitFixtures/InvokeAI/outputs/images/2026/04/18/date.png';

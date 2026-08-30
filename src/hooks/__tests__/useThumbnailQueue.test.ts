@@ -130,6 +130,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             backgroundHealingPaused: false,
             lastBackgroundHealingRun: null,
             thumbnailOptimizationRetrySignal: 0,
+            thumbnailOptimizationCancelSignal: 0,
             facetCacheVersion: 0,
         });
         useSettingsStore.setState({
@@ -953,7 +954,41 @@ describe('useThumbnailQueue behavioral contract', () => {
         act(() => useSettingsStore.setState(state => ({ settings: { ...state.settings, enableAutoThumbnailHealing: true } })));
         await act(async () => Promise.resolve());
         expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
         cancel.resolve();
+    });
+
+    it('owns ActivityDock cancellation and clears queue presentation state', async () => {
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        renderHook(() => useThumbnailQueue());
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 10, message: 'Working' },
+        });
+
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
+        await act(async () => Promise.resolve());
+
+        expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
+        expect(useLibraryStore.getState().backgroundHealingProgress).toBeNull();
+    });
+
+    it('does not overlap a new run while ActivityDock cancellation is still settling', async () => {
+        vi.useFakeTimers();
+        const job = deferred<never>();
+        mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        renderHook(() => useThumbnailQueue());
+        await advanceStartup();
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
+        await act(async () => Promise.resolve());
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
     });
 
     it('should export a void function hook', async () => {

@@ -246,6 +246,14 @@ export const syncImages = async (
     const pathResolver = createInvokeImagePathResolver(imagesRoot, async () =>
         unwrap(commands.listInvokeaiImages(imagesRoot))
     );
+    const outputImagesRoot = `${imagesRoot.replace(/[\\/]+$/, '')}/outputs/images`;
+    let outputImagesRootAvailable = false;
+    try {
+        const missingRoots = await unwrap(commands.verifyImagePaths([outputImagesRoot]));
+        outputImagesRootAvailable = missingRoots.length === 0;
+    } catch (error) {
+        console.warn('[InvokeAI Sync] Failed to verify the InvokeAI image root; preserving existing missing-file state.', error);
+    }
     const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
         ? await reconcileInvokeSourceFacts({
             db: invokeDb,
@@ -622,12 +630,23 @@ export const syncImages = async (
         ]));
 
         let sizes: number[] = [];
+        let fileSizeProbeSucceeded = true;
         const fileSizeProbeStartedAt = liveWatchNow();
         if (batchPaths.length > 0) {
             try {
                 sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
             } catch (e) {
+                fileSizeProbeSucceeded = false;
                 sizes = new Array(batchPaths.length).fill(0);
+            }
+        }
+        let batchRootAvailable = outputImagesRootAvailable;
+        if (fileSizeProbeSucceeded && sizes.some(size => size === 0)) {
+            try {
+                const missingRoots = await unwrap(commands.verifyImagePaths([outputImagesRoot]));
+                batchRootAvailable = missingRoots.length === 0;
+            } catch {
+                batchRootAvailable = false;
             }
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
@@ -693,7 +712,7 @@ export const syncImages = async (
                                 thumbnailUrl: repairedThumbnailPath,
                                 thumbnailSource: repairedThumbnailPath === fullPath ? undefined : 'invokeai',
                                 filename: row.image_name.split(/[\\/]/).pop() as string,
-                                isMissing: false
+                                isMissing: legacyExisting.isMissing
                             };
                             existingMap.set(fullPath, existing);
                         }
@@ -775,6 +794,9 @@ export const syncImages = async (
                 }
 
                 let needsUpdate = false;
+                const isMissing = batchRootAvailable && fileSizeProbeSucceeded
+                    ? fileSize === 0
+                    : existing?.isMissing || false;
                 if (!existing) {
                     needsUpdate = true;
                 } else {
@@ -813,6 +835,7 @@ export const syncImages = async (
                     if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
                     if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
                     if ((existing.invokeOwnerId ?? null) !== (row.user_id?.trim() || null)) needsUpdate = true;
+                    if ((existing.isMissing || false) !== isMissing) needsUpdate = true;
                 }
 
                 const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
@@ -872,7 +895,7 @@ export const syncImages = async (
                     isFavorite,
                     isPinned,
                     isDeleted: existing?.isDeleted || false,
-                    isMissing: false,
+                    isMissing,
                     boardId: boardId,
                     notes: existing?.notes, // Preserve user notes
                     metadata: finalMetadata,
