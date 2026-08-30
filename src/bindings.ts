@@ -466,6 +466,14 @@ async getFileSizesBulk(paths: string[]) : Promise<Result<number[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async probeFileMetadataBulk(paths: string[]) : Promise<Result<FileMetadataProbe[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("probe_file_metadata_bulk", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async verifyImagePaths(paths: string[]) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("verify_image_paths", { paths }) };
@@ -800,6 +808,7 @@ export type FacetScopeCacheState = "missing" | "dirty" | "building" | "ready"
 export type FacetScopeCacheStatus = { state: FacetScopeCacheState; generation: number; builtGeneration: number | null; facetCount: number; collectionCount: number }
 export type FileEntry = { path: string; modified: number; size: number; mediaType: MediaCandidateKind }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
+export type FileMetadataProbe = { status: "present"; size: number; isFile: boolean } | { status: "missing" } | { status: "error"; message: string }
 export type FolderChange = { kind: FolderChangeKind; paths: string[] }
 export type FolderChangeEvent = FolderChange[]
 export type FolderChangeKind = "create" | "modify" | "rename" | "remove"

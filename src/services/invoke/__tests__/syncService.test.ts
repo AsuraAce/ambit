@@ -55,6 +55,7 @@ vi.mock('../../../bindings', () => ({
     commands: {
         getFileSizesBulk: vi.fn(),
         listInvokeaiImages: vi.fn(),
+        probeFileMetadataBulk: vi.fn(),
         replaceInvokeImageReferences: vi.fn(),
         verifyImagePaths: vi.fn()
     }
@@ -234,6 +235,10 @@ describe('syncImages live mode', () => {
         vi.mocked(commands.getFileSizesBulk).mockImplementation(async (paths: string[]) => ({
             status: 'ok',
             data: paths.map(() => 123)
+        }) as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(() => ({ status: 'present', size: 123, isFile: true }))
         }) as never);
         vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: [] } as never);
         vi.mocked(commands.replaceInvokeImageReferences).mockResolvedValue({
@@ -1042,7 +1047,7 @@ describe('syncImages live mode', () => {
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
         vi.mocked(commands.verifyImagePaths).mockRejectedValue(new Error('verify failed'));
-        vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
+        vi.mocked(commands.probeFileMetadataBulk).mockRejectedValue(new Error('probe failed'));
 
         const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'live', syncBoards: false, syncFavorites: false
@@ -1584,7 +1589,7 @@ describe('syncImages live mode', () => {
         expect(insertImagesBatch).not.toHaveBeenCalled();
     });
 
-    it('synchronizes missing and recovered Invoke sources without treating probe failures as deletion', async () => {
+    it('changes missing state only from typed filesystem evidence', async () => {
         const imagePath = 'D:/AmbitFixtures/InvokeAI/outputs/images/missing.png';
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) return [{ name: 'metadata_json' }];
@@ -1600,7 +1605,12 @@ describe('syncImages live mode', () => {
             return [];
         });
         vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
-        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [0] } as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: false }
+                : { status: 'missing' })
+        }) as never);
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
 
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
@@ -1612,7 +1622,12 @@ describe('syncImages live mode', () => {
         ]);
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [123] } as never);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: false }
+                : { status: 'present', size: 0, isFile: true })
+        }) as never);
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', { isMissing: true })]);
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'manual', syncBoards: false, syncFavorites: false,
@@ -1622,25 +1637,79 @@ describe('syncImages live mode', () => {
         ]);
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: false }
+                : { status: 'error', message: 'access denied' })
+        }) as never);
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', {
+            fileSize: 4096,
+            isMissing: true,
+            originalMetadata: undefined,
+            originalChunks: undefined,
+        })]);
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ id: imagePath, fileSize: 4096, isMissing: true }),
+        ]);
+
+        vi.mocked(insertImagesBatch).mockClear();
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: true }
+                : { status: 'missing' })
+        }) as never);
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'manual', syncBoards: false, syncFavorites: false,
         });
         expect(insertImagesBatch).not.toHaveBeenCalled();
 
         vi.mocked(insertImagesBatch).mockClear();
-        vi.mocked(commands.getFileSizesBulk).mockResolvedValue({ status: 'ok', data: [0] } as never);
+        vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png', { isMissing: true })]);
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: false }
+                : { status: 'present', size: 0, isFile: false })
+        }) as never);
+        await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false, syncFavorites: false,
+        });
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+
+        vi.mocked(insertImagesBatch).mockClear();
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => ({
+            status: 'ok',
+            data: paths.map(path => path.endsWith('/outputs/images')
+                ? { status: 'present', size: 0, isFile: false }
+                : { status: 'missing' })
+        }) as never);
         vi.mocked(getImagesByIds).mockResolvedValue([makeExistingInvokeImage('missing.png')]);
         let rootChecks = 0;
-        vi.mocked(commands.verifyImagePaths).mockImplementation(async (paths: string[]) => {
+        vi.mocked(commands.probeFileMetadataBulk).mockImplementation(async (paths: string[]) => {
             if (paths.length === 1 && paths[0] === 'D:/AmbitFixtures/InvokeAI/outputs/images') {
                 rootChecks++;
                 return {
                     status: 'ok',
-                    data: rootChecks === 1 ? [] : paths,
+                    data: [rootChecks === 1
+                        ? { status: 'present', size: 0, isFile: false }
+                        : { status: 'missing' }],
                 } as never;
             }
-            return { status: 'ok', data: [] } as never;
+            return {
+                status: 'ok',
+                data: paths.map(() => ({ status: 'missing' })),
+            } as never;
         });
         await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'manual', syncBoards: false, syncFavorites: false,

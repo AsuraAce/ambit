@@ -28,6 +28,20 @@ pub enum MediaCandidateKind {
     Video,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum FileMetadataProbe {
+    Present {
+        size: u64,
+        #[serde(rename = "isFile")]
+        is_file: bool,
+    },
+    Missing,
+    Error {
+        message: String,
+    },
+}
+
 #[derive(Serialize, Type)]
 pub struct ScanResult {
     pub width: u32,

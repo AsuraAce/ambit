@@ -5,7 +5,7 @@ pub mod traversal;
 pub mod utils;
 
 use crate::metadata;
-use models::{FolderStats, ScanResult};
+use models::{FileMetadataProbe, FolderStats, ScanResult};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use std::path::Path;
@@ -145,6 +145,16 @@ pub async fn read_image_metadata(
 #[specta::specta]
 pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
     tauri::async_runtime::spawn_blocking(move || Ok(utils::get_file_sizes_bulk_impl(paths)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn probe_file_metadata_bulk(
+    paths: Vec<String>,
+) -> Result<Vec<FileMetadataProbe>, String> {
+    tauri::async_runtime::spawn_blocking(move || Ok(utils::probe_file_metadata_bulk_impl(paths)))
         .await
         .map_err(|e| e.to_string())?
 }

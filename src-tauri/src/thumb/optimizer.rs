@@ -142,6 +142,7 @@ struct ThumbnailCandidate {
     id: String,
     path: String,
     timestamp: i64,
+    invoke_images_root: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -570,17 +571,18 @@ fn thumbnail_cache_is_missing_or_empty(thumbnail_dir: &str) -> bool {
 fn ensure_thumbnail_queue_index(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
-        CREATE INDEX IF NOT EXISTS idx_images_thumbnail_optimization_queue_v1
+        DROP INDEX IF EXISTS idx_images_thumbnail_optimization_queue_v1;
+        CREATE INDEX IF NOT EXISTS idx_images_thumbnail_optimization_queue_v2
             ON images(
+                media_type,
                 is_deleted,
                 is_missing,
-                is_corrupt,
-                is_intermediate_gen,
-                thumbnail_version,
+                timestamp DESC,
+                id DESC,
                 thumbnail_failure_count,
                 thumbnail_last_attempt_at,
-                timestamp DESC,
-                id DESC
+                thumbnail_source,
+                thumbnail_version
             );
         ",
     )
@@ -758,7 +760,11 @@ fn optimize_thumbnail_candidate(
 
     match fs::metadata(&candidate.path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            if invoke_output_directory(&candidate.path).is_some_and(|root| !root.is_dir()) {
+            if candidate
+                .invoke_images_root
+                .as_deref()
+                .is_some_and(|root| !Path::new(root).join("outputs").join("images").is_dir())
+            {
                 return ThumbnailItemResult::Skipped;
             }
 
@@ -794,16 +800,6 @@ fn optimize_thumbnail_candidate(
             error,
         },
     }
-}
-
-fn invoke_output_directory(path: &str) -> Option<std::path::PathBuf> {
-    let normalized = path.replace('\\', "/");
-    let lowercase = normalized.to_ascii_lowercase();
-    let marker = "/outputs/images/";
-    let marker_start = lowercase.find(marker)?;
-    let directory_end = marker_start + marker.len() - 1;
-
-    Some(Path::new(&normalized[..directory_end]).to_path_buf())
 }
 
 fn persist_missing_sources(
@@ -996,8 +992,16 @@ fn fetch_thumbnail_candidates(
     now_ms: i64,
 ) -> Result<Vec<ThumbnailCandidate>, String> {
     let mut query = format!(
-        "SELECT id, path, COALESCE(timestamp, 0) AS timestamp
-         FROM scoped_images
+        "SELECT i.id, i.path, COALESCE(i.timestamp, 0) AS timestamp,
+                (
+                    SELECT scope.images_root
+                    FROM invoke_owner_scope_state scope
+                    WHERE i.invoke_source_id IS NOT NULL
+                      AND LOWER(RTRIM(REPLACE(scope.db_path, '\\', '/'), '/')) =
+                          LOWER(RTRIM(REPLACE(i.invoke_source_id, '\\', '/'), '/'))
+                    LIMIT 1
+                ) AS invoke_images_root
+         FROM scoped_images i
          WHERE {}",
         thumbnail_queue_condition(include_upgradeable, now_ms)
     );
@@ -1017,6 +1021,7 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                invoke_images_root: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1028,6 +1033,7 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                invoke_images_root: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1122,10 +1128,16 @@ mod tests {
                 is_missing INTEGER NOT NULL DEFAULT 0,
                 is_intermediate_gen INTEGER NOT NULL DEFAULT 0,
                 is_corrupt INTEGER DEFAULT 0,
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                invoke_source_id TEXT
             );
             CREATE VIEW scoped_images AS
                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
+            CREATE TABLE invoke_owner_scope_state (
+                state_key TEXT PRIMARY KEY,
+                db_path TEXT NOT NULL,
+                images_root TEXT NOT NULL
+            );
             ",
         )
         .expect("schema");
@@ -1411,7 +1423,7 @@ mod tests {
                 "SELECT COUNT(*)
                  FROM sqlite_master
                  WHERE type = 'index'
-                   AND name = 'idx_images_thumbnail_optimization_queue_v1'",
+                   AND name = 'idx_images_thumbnail_optimization_queue_v2'",
                 [],
                 |row| row.get(0),
             )
@@ -1667,6 +1679,26 @@ mod tests {
     }
 
     #[test]
+    fn queue_carries_registered_invoke_root_from_source_identity() {
+        let conn = setup_queue_db();
+        insert_image(&conn, "invoke-owned", None, None, 0, 40);
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root)
+             VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke');
+             UPDATE images
+             SET invoke_source_id = 'd:/invoke/databases/invokeai.db'
+             WHERE id = 'invoke-owned';",
+        )
+        .expect("invoke source state");
+
+        let rows =
+            fetch_thumbnail_candidates(&conn, false, None, 10, 10_000).expect("fetch candidates");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].invoke_images_root.as_deref(), Some("D:/Invoke"));
+    }
+
+    #[test]
     fn queue_never_selects_video_posters_for_image_optimization() {
         let conn = setup_queue_db();
         insert_image(&conn, "video", None, None, 0, 40);
@@ -1904,6 +1936,136 @@ mod tests {
     }
 
     #[test]
+    fn migrated_schema_scales_missing_reconciliation_per_scope_and_uses_queue_index() {
+        const IMAGE_COUNT: usize = 2_000;
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(&migration.sql)
+                .expect("apply production migration");
+        }
+        ensure_thumbnail_queue_index(&conn).expect("queue index");
+
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'legacy', NULL, 1);
+             INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES ('scope-a', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'legacy', NULL, 'ready', 7, 7, 1);
+             UPDATE invoke_scope_cache_control
+             SET active_scope_key = 'scope-a'
+             WHERE state_key = 'current';",
+        )
+        .expect("scope state");
+
+        {
+            let tx = conn.transaction().expect("seed transaction");
+            {
+                let mut insert = tx
+                    .prepare(
+                        "INSERT INTO images (id, path, timestamp)
+                         VALUES (?1, ?2, ?3)",
+                    )
+                    .expect("seed statement");
+                for index in 0..IMAGE_COUNT {
+                    let id = format!("missing-{index:04}");
+                    insert
+                        .execute(params![
+                            id,
+                            format!("D:/library/{index:04}.png"),
+                            index as i64
+                        ])
+                        .expect("seed image");
+                }
+            }
+            tx.commit().expect("seed commit");
+        }
+
+        conn.execute_batch(
+            "UPDATE invoke_scope_cache_state
+             SET status = 'ready', generation = 7, built_generation = 7
+             WHERE scope_key = 'scope-a';
+             DELETE FROM invoke_scope_cache_dirty_items;",
+        )
+        .expect("reset scope state");
+
+        let plan_sql = format!(
+            "EXPLAIN QUERY PLAN
+             SELECT i.id, i.path, COALESCE(i.timestamp, 0)
+             FROM scoped_images i
+             WHERE {}
+             ORDER BY timestamp DESC, id DESC
+             LIMIT 100",
+            thumbnail_queue_condition(false, 10_000)
+        );
+        let plan_details = conn
+            .prepare(&plan_sql)
+            .expect("plan statement")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan details");
+        assert!(
+            plan_details
+                .iter()
+                .any(|detail| detail.contains("idx_images_thumbnail_optimization_queue_v2")),
+            "candidate query must use its queue index: {plan_details:?}"
+        );
+
+        let results = (0..IMAGE_COUNT)
+            .map(|index| ThumbnailItemResult::MissingSource {
+                id: format!("missing-{index:04}"),
+            })
+            .collect::<Vec<_>>();
+        let stats =
+            persist_thumbnail_results(&mut conn, &results, 100).expect("persist missing batch");
+
+        let scope_state: (String, i64) = conn
+            .query_row(
+                "SELECT status, generation
+                 FROM invoke_scope_cache_state
+                 WHERE scope_key = 'scope-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("scope result");
+        let full_dirty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'scope-a' AND domain = 'full'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dirty count");
+        let missing_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE is_missing = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("missing count");
+        let suppression: i64 = conn
+            .query_row(
+                "SELECT suppress_invalidation
+                 FROM invoke_scope_cache_control
+                 WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("suppression state");
+
+        assert_eq!(stats.missing, IMAGE_COUNT);
+        assert_eq!(missing_count, IMAGE_COUNT as i64);
+        assert_eq!(scope_state, ("dirty".to_string(), 8));
+        assert_eq!(full_dirty_count, 1);
+        assert_eq!(suppression, 0);
+    }
+
+    #[test]
     fn unavailable_invoke_root_is_skipped_instead_of_marking_every_image_missing() {
         let invoke_root = temp_thumbnail_dir("offline-invoke-root");
         let _ = fs::remove_dir_all(&invoke_root);
@@ -1916,6 +2078,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
             timestamp: 1,
+            invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
         };
 
         let item = optimize_thumbnail_candidate(
@@ -1925,6 +2088,30 @@ mod tests {
         );
 
         assert!(matches!(item, ThumbnailItemResult::Skipped));
+    }
+
+    #[test]
+    fn non_invoke_lookalike_path_is_marked_missing() {
+        let library_root = temp_thumbnail_dir("non-invoke-lookalike");
+        let candidate = ThumbnailCandidate {
+            id: "ordinary-library-image".to_string(),
+            path: library_root
+                .join("outputs")
+                .join("images")
+                .join("missing.png")
+                .to_string_lossy()
+                .to_string(),
+            timestamp: 1,
+            invoke_images_root: None,
+        };
+
+        let item = optimize_thumbnail_candidate(
+            &candidate,
+            &temp_thumbnail_dir("unused-thumb-output").to_string_lossy(),
+            &AtomicBool::new(false),
+        );
+
+        assert!(matches!(item, ThumbnailItemResult::MissingSource { .. }));
     }
 
     #[test]

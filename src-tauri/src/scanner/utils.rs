@@ -4,6 +4,8 @@ use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::models::FileMetadataProbe;
+
 pub fn verify_image_paths_impl(paths: Vec<String>) -> Vec<String> {
     paths
         .par_iter()
@@ -19,6 +21,24 @@ pub fn get_file_sizes_bulk_impl(paths: Vec<String>) -> Vec<u64> {
         sizes.push(size);
     }
     sizes
+}
+
+pub fn probe_file_metadata_bulk_impl(paths: Vec<String>) -> Vec<FileMetadataProbe> {
+    paths
+        .into_par_iter()
+        .map(|path| match fs::metadata(&path) {
+            Ok(metadata) => FileMetadataProbe::Present {
+                size: metadata.len(),
+                is_file: metadata.is_file(),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                FileMetadataProbe::Missing
+            }
+            Err(error) => FileMetadataProbe::Error {
+                message: error.to_string(),
+            },
+        })
+        .collect()
 }
 
 pub fn open_file_impl(app: &tauri::AppHandle, path: String) -> Result<(), String> {
@@ -236,13 +256,48 @@ fn normalize_path_string(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_existing_regular_file, resolve_existing_show_target,
+        probe_file_metadata_bulk_impl, resolve_existing_regular_file, resolve_existing_show_target,
         resolve_known_media_file_target, resolve_show_in_folder_target,
     };
+    use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn bulk_metadata_probe_distinguishes_present_paths_from_missing_paths() {
+        let temp_root = temp_dir("metadata_probe");
+        fs::create_dir_all(&temp_root).unwrap();
+        let zero_byte = temp_root.join("zero-byte.png");
+        let missing = temp_root.join("missing.png");
+        let directory = temp_root.join("directory");
+        fs::write(&zero_byte, []).unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        let probes = probe_file_metadata_bulk_impl(vec![
+            zero_byte.to_string_lossy().to_string(),
+            missing.to_string_lossy().to_string(),
+            directory.to_string_lossy().to_string(),
+        ]);
+
+        assert_eq!(
+            probes,
+            vec![
+                FileMetadataProbe::Present {
+                    size: 0,
+                    is_file: true,
+                },
+                FileMetadataProbe::Missing,
+                FileMetadataProbe::Present {
+                    size: fs::metadata(&directory).unwrap().len(),
+                    is_file: false,
+                },
+            ]
+        );
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
 
     #[test]
     fn os_open_media_targets_require_known_regular_files() {

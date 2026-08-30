@@ -1,6 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands, type InvokeImageReferenceSet } from '../../bindings';
+import { commands, type FileMetadataProbe, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings, type InvokeBoardInfo } from './connection';
@@ -247,13 +247,19 @@ export const syncImages = async (
         unwrap(commands.listInvokeaiImages(imagesRoot))
     );
     const outputImagesRoot = `${imagesRoot.replace(/[\\/]+$/, '')}/outputs/images`;
-    let outputImagesRootAvailable = false;
-    try {
-        const missingRoots = await unwrap(commands.verifyImagePaths([outputImagesRoot]));
-        outputImagesRootAvailable = missingRoots.length === 0;
-    } catch (error) {
-        console.warn('[InvokeAI Sync] Failed to verify the InvokeAI image root; preserving existing missing-file state.', error);
-    }
+    const probeOutputImagesRoot = async (): Promise<boolean | null> => {
+        try {
+            const [probe] = await unwrap(commands.probeFileMetadataBulk([outputImagesRoot]));
+            if (probe?.status === 'present' && !probe.isFile) return true;
+            if (probe?.status === 'present') return null;
+            if (probe?.status === 'missing') return false;
+            return null;
+        } catch (error) {
+            console.warn('[InvokeAI Sync] Failed to verify the InvokeAI image root; preserving existing missing-file state.', error);
+            return null;
+        }
+    };
+    const outputImagesRootAvailable = await probeOutputImagesRoot();
     const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
         ? await reconcileInvokeSourceFacts({
             db: invokeDb,
@@ -629,32 +635,26 @@ export const syncImages = async (
             ...legacyFlatPaths.filter((path): path is string => !!path)
         ]));
 
-        let sizes: number[] = [];
-        let fileSizeProbeSucceeded = true;
+        let pathProbes: FileMetadataProbe[] = [];
+        let pathProbeSucceeded = true;
         const fileSizeProbeStartedAt = liveWatchNow();
         if (batchPaths.length > 0) {
             try {
-                sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
-            } catch (e) {
-                fileSizeProbeSucceeded = false;
-                sizes = new Array(batchPaths.length).fill(0);
+                pathProbes = await unwrap(commands.probeFileMetadataBulk(batchPaths));
+            } catch {
+                pathProbeSucceeded = false;
             }
         }
         let batchRootAvailable = outputImagesRootAvailable;
-        if (fileSizeProbeSucceeded && sizes.some(size => size === 0)) {
-            try {
-                const missingRoots = await unwrap(commands.verifyImagePaths([outputImagesRoot]));
-                batchRootAvailable = missingRoots.length === 0;
-            } catch {
-                batchRootAvailable = false;
-            }
+        if (pathProbeSucceeded && pathProbes.some(probe => probe.status === 'missing')) {
+            batchRootAvailable = await probeOutputImagesRoot();
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
         const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
-        const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
+        const probeByPath = new Map(batchPaths.map((path, index) => [path, pathProbes[index]]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
@@ -669,7 +669,7 @@ export const syncImages = async (
             }
 
             const fullPath = resolvedPath.absolutePath;
-            const fileSize = sizeByPath.get(fullPath) || 0;
+            const pathProbe = probeByPath.get(fullPath);
             const legacyFlatPath = legacyFlatPaths[i];
             let pathRepaired = false;
 
@@ -718,6 +718,9 @@ export const syncImages = async (
                         }
                     }
                 }
+                const fileSize = pathProbe?.status === 'present' && pathProbe.isFile
+                    ? pathProbe.size
+                    : existing?.fileSize ?? 0;
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
                     const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
@@ -794,9 +797,11 @@ export const syncImages = async (
                 }
 
                 let needsUpdate = false;
-                const isMissing = batchRootAvailable && fileSizeProbeSucceeded
-                    ? fileSize === 0
-                    : existing?.isMissing || false;
+                const isMissing = pathProbe?.status === 'present' && pathProbe.isFile
+                    ? false
+                    : pathProbe?.status === 'missing' && batchRootAvailable === true
+                        ? true
+                        : existing?.isMissing || false;
                 if (!existing) {
                     needsUpdate = true;
                 } else {
