@@ -121,4 +121,4 @@ jobs:
           args: --bundles nsis msi
 
       - name: verify published updater release
-        run: pnpm run verify:published-updater -- ${{ github.ref_name }}
+        run: pnpm run verify:published-updater ${{ github.ref_name }}
