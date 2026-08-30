@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { X, Monitor, Shield, Terminal, Link, Sparkles } from 'lucide-react';
 import { AppSettings, AppSettingsUpdate } from '../../../types';
 import { GeneralTab, PrivacyTab, IntelligenceTab, AdvancedTab, ConnectionsTab } from './';
@@ -62,7 +62,7 @@ const TabButton: React.FC<TabButtonProps> = ({ id, label, icon, isActive, onClic
   <button
     type="button"
     onClick={() => onClick(id)}
-    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer mb-1 ${isActive
+    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-xl transition-colors duration-150 cursor-pointer mb-1 ${isActive
       ? 'bg-white/10 text-white shadow-inner border border-white/10'
       : 'text-gray-400 hover:bg-white/5 hover:text-white'
       }`}
@@ -95,6 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
 }) => {
   const appVersion = useAppVersion();
   const showDevTools = isDevelopmentBuild();
+  const prefersReducedMotion = useReducedMotion();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -150,6 +151,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.15 }}
           className={`fixed inset-0 z-[200] flex items-center justify-center ${hasExternalBackdrop
             ? 'bg-transparent'
             : 'bg-black/60 dark:bg-black/80 backdrop-blur-sm'
@@ -157,13 +159,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
           onClick={onClose}
         >
           <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{
-              opacity: { duration: 0.15, delay: 0.05 },
-              scale: { type: "spring", stiffness: 400, damping: 30, delay: 0.05 }
-            }}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, scale: 1 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+            transition={prefersReducedMotion
+              ? { duration: 0 }
+              : {
+                opacity: { duration: 0.15, delay: 0.05 },
+                scale: { type: "spring", stiffness: 400, damping: 30, delay: 0.05 }
+              }}
             className="w-full max-w-5xl bg-card border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl flex h-[680px] max-h-[85vh] overflow-hidden"
             onClick={e => e.stopPropagation()}
           >

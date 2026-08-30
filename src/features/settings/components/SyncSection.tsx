@@ -150,7 +150,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         </label>
 
                         {syncFavorites && (
-                            <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
+                            <div className="pl-8 animate-in fade-in duration-150 motion-reduce:animate-none">
                                 <div className="flex items-center gap-3 p-2 bg-white/50 dark:bg-black/20 rounded-xl border border-black/5 dark:border-white/5">
                                     <span className="text-[10px] uppercase font-black text-gray-400 tracking-tighter">Map to</span>
                                     <select
@@ -179,7 +179,7 @@ export const SyncSection: React.FC<SyncSectionProps> = React.memo(({ settings, s
                         </label>
 
                         {syncBoards && (
-                            <div className="pl-8 animate-in fade-in slide-in-from-left-2 duration-300">
+                            <div className="pl-8 animate-in fade-in duration-150 motion-reduce:animate-none">
                                 <label className="flex items-center gap-2 cursor-pointer group/sub">
                                     <input type="checkbox" role="switch" aria-label="Persist Synced Boards as Collections" aria-checked={settings.syncBoardsToCollections || false} className="peer sr-only" checked={settings.syncBoardsToCollections || false} onChange={e => handleSyncBoardsToggle(e.target.checked)} />
                                     <div className={`w-8 h-4 rounded-full relative transition-colors peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-sage-500/50 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-white dark:peer-focus-visible:ring-offset-slate-950 ${settings.syncBoardsToCollections ? 'bg-sage-600' : 'bg-gray-300 dark:bg-white/10'}`}>

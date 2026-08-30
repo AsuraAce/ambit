@@ -161,6 +161,34 @@ describe('SettingsModal', () => {
         fireEvent.click(intelligence);
         expect(intelligence.querySelector('svg')?.parentElement?.className).toContain('text-amethyst-300');
     });
+    it('limits category navigation transitions to color changes', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        for (const name of ['General', 'Connections', 'Intelligence', 'Privacy', 'Advanced']) {
+            const category = screen.getByRole('button', { name });
+            expect(category.className).toContain('transition-colors');
+            expect(category.className).not.toContain('transition-all');
+        }
+
+        fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
+        expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
+    });
+
 
     it('renders its normal dark blurred backdrop by default', () => {
         render(

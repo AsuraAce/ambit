@@ -112,7 +112,14 @@ describe('ImageCard', () => {
     it('reveals masked content and automatically hides it after leaving', () => {
         const { container, props } = setup({ isMasked: true, isSelected: true });
         const root = container.firstElementChild as HTMLElement;
+        const mediaClip = container.querySelector('[data-media-clip]') as HTMLElement;
+        const renderedImage = screen.getByAltText('image.png');
         expect(screen.getByText('Hidden Content')).toBeTruthy();
+        expect(mediaClip.contains(renderedImage)).toBe(true);
+        expect(mediaClip.contains(screen.getByText('Hidden Content'))).toBe(true);
+        expect(mediaClip.className).toContain('overflow-hidden');
+        expect(mediaClip.className).toContain('rounded-2xl');
+        expect(mediaClip.className).toContain('[clip-path:inset(0_round_1rem)]');
         expect(screen.queryByRole('button', { name: 'Hide Content' })).toBeNull();
         fireEvent.mouseLeave(root);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
@@ -134,9 +141,12 @@ describe('ImageCard', () => {
 
     it('never assigns a posterless video to an image element and requires a revealed card before opening', () => {
         const { container, props } = setup({ image: video(), isMasked: true });
+        const mediaClip = container.querySelector('[data-media-clip]') as HTMLElement;
 
         expect(smartImageMocks.props).toHaveLength(0);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
+        expect(mediaClip.contains(screen.getByText('Hidden Content'))).toBe(true);
+        expect(mediaClip.className).toContain('[clip-path:inset(0_round_1rem)]');
         fireEvent.mouseEnter(container.firstElementChild as HTMLElement);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
         fireEvent.click(screen.getByRole('button', { name: 'Reveal' }));

@@ -173,7 +173,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     };
 
     return (
-        <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-8 max-w-2xl">
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
                 <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-6">Appearance</h4>
                 <div
@@ -224,7 +224,7 @@ export const GeneralTab: React.FC<TabProps> = React.memo(({ settings, setSetting
 
                 {
                     settings.enableAutoThumbnailHealing && (
-                        <div className="mb-6 ml-4 pl-4 border-l-2 border-gray-100 dark:border-white/10 animate-in slide-in-from-left-2 fade-in duration-300 space-y-5">
+                        <div className="mb-6 ml-4 space-y-5 border-l-2 border-gray-100 pl-4 animate-in fade-in duration-150 motion-reduce:animate-none dark:border-white/10">
                             <div
                                 onClick={() => {
                                     const newValue = !settings.enforceHighQualityThumbnails;

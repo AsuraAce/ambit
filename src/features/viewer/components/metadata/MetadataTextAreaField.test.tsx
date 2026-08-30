@@ -78,4 +78,38 @@ describe('MetadataTextAreaField', () => {
         expect(textarea.className).toContain('text-gray-800');
         expect(textarea.className).toContain('dark:text-zinc-200');
     });
+
+    it('uses one formatted read surface and swaps to the textarea only while editing', () => {
+        const onBlur = vi.fn();
+        const onCancelEdit = vi.fn();
+        render(
+            <MetadataTextAreaField
+                kind="positivePrompt"
+                value={'Line one\nLine two'}
+                onChange={vi.fn()}
+                onBlur={onBlur}
+                onCancelEdit={onCancelEdit}
+                readContent={<span>{'Line one\nLine two'}</span>}
+            />,
+        );
+
+        const readSurface = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(readSurface.tagName).toBe('DIV');
+        expect(readSurface.getAttribute('aria-readonly')).toBe('true');
+        expect(readSurface.className).toContain('whitespace-pre-wrap');
+        expect(readSurface.textContent).toBe('Line one\nLine two');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        const textarea = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(textarea.tagName).toBe('TEXTAREA');
+
+        fireEvent.keyDown(textarea, { key: 'Escape' });
+        expect(onCancelEdit).toHaveBeenCalledOnce();
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).tagName).toBe('DIV');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        fireEvent.blur(screen.getByRole('textbox', { name: 'Positive prompt' }));
+        expect(onBlur).toHaveBeenCalledOnce();
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).tagName).toBe('DIV');
+    });
 });

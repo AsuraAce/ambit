@@ -175,7 +175,7 @@ export const PrivacyTab: React.FC<TabProps> = React.memo(({ settings, setSetting
     };
 
     return (
-        <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-6 max-w-2xl">
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
                 <button
                     type="button"

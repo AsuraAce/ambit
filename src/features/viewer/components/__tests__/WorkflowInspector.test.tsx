@@ -158,6 +158,16 @@ const makeImage = (tool: GeneratorTool = GeneratorTool.COMFYUI): AIImage => ({
         prompt: promptJson
     }
 });
+const openParserDiagnostics = () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Parser Diagnostics' }));
+};
+
+const renderWithOpenParserDiagnostics = (image: AIImage = makeImage()) => {
+    const view = render(<WorkflowInspector image={image} />);
+    openParserDiagnostics();
+    return view;
+};
+
 
 describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     beforeEach(() => {
@@ -192,21 +202,23 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         vi.useRealTimers();
     });
 
-    it('renders parser diagnostics for ComfyUI images in developer mode', async () => {
+    it('keeps parser diagnostics collapsed in the scroll flow and loads them on demand', async () => {
         render(<WorkflowInspector image={makeImage()} />);
 
-        expect(await screen.findByText('Parser Diagnostics')).toBeTruthy();
-        expect(screen.getByText('diagnostic_model')).toBeTruthy();
+        const toggle = screen.getByRole('button', { name: 'Parser Diagnostics' });
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        expect(toggle.closest('.overflow-y-auto')).toBeTruthy();
+        expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();
+        expect(screen.getByRole('heading', { name: 'Node Graph' }).className).toContain('whitespace-nowrap');
+
+        openParserDiagnostics();
+
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        expect(await screen.findByText('diagnostic_model')).toBeTruthy();
         expect(screen.getByText('1 output / 1 root')).toBeTruthy();
         expect(screen.getAllByText(/Sampler Traversal/i).length).toBeGreaterThan(0);
-        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledWith({
-            workflow: workflowJson,
-            prompt: promptJson
-        });
-        expect(mockInspectComfyuiWorkflowGraph).toHaveBeenCalledWith({
-            workflow: workflowJson,
-            prompt: promptJson
-        });
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledWith({ workflow: workflowJson, prompt: promptJson });
+        expect(mockInspectComfyuiWorkflowGraph).toHaveBeenCalledWith({ workflow: workflowJson, prompt: promptJson });
         expect(await screen.findByText('API Prompt')).toBeTruthy();
     });
 
@@ -224,7 +236,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('Expanded Workflow')).toBeTruthy();
         expect(screen.getByText('Subgraph 30')).toBeTruthy();
@@ -239,7 +251,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('follows normalized connections across the filtered node list', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('API Prompt')).toBeTruthy();
         const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
@@ -284,7 +296,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         const allNodes = await screen.findByRole('button', { name: 'All Nodes' });
         await waitFor(() => expect(
@@ -343,7 +355,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await waitFor(() => expect(
             (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
@@ -360,12 +372,15 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('renders parser-selected output and root anchors and focuses either node', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         const outputAnchor = await screen.findByLabelText('Open selected output node SaveImage (9)');
         expect(screen.getByLabelText('Open root sampler node KSampler (3)')).toBeTruthy();
         expect(screen.getAllByText('Selected Output')).toHaveLength(2);
         expect(screen.getAllByText('Root Sampler')).toHaveLength(2);
+        expect(outputAnchor.className).toContain('w-full');
+        expect(outputAnchor.parentElement?.className).toContain('grid-cols-1');
+        expect(outputAnchor.parentElement?.className).toContain('sm:grid-cols-2');
 
         const search = screen.getByPlaceholderText("Search nodes (e.g. 'ControlNet', 'Seed')...") as HTMLInputElement;
         fireEvent.change(search, { target: { value: 'KSampler' } });
@@ -411,7 +426,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await waitFor(() => expect(
             (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
@@ -452,7 +467,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText(/Multiple root samplers were found/)).toBeTruthy();
         expect(screen.getAllByText('Root Candidate')).toHaveLength(4);
@@ -473,7 +488,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('No sampler root was found for the selected output.')).toBeTruthy();
         expect(screen.getByLabelText('Open selected output node SaveImage (9)')).toBeTruthy();
@@ -487,7 +502,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             error: 'normalizer unavailable'
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await waitFor(() => expect(mockInspectComfyuiWorkflowGraph).toHaveBeenCalledTimes(1));
         expect(screen.getByTitle('KSampler')).toBeTruthy();
@@ -498,7 +513,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('keeps copy pointed at the preserved workflow after displaying the API prompt', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('API Prompt')).toBeTruthy();
         fireEvent.click(screen.getByTitle('Copy to clipboard'));
@@ -508,7 +523,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('copies compact parser diagnostics without raw chunk bodies', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByTitle('Copy parser diagnostics summary'));
 
@@ -566,7 +581,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('confirms and saves a local support bundle with raw chunks', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByTitle('Export parser support bundle'));
         expect(screen.getByText('Export ComfyUI support bundle?')).toBeTruthy();
@@ -594,7 +609,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('treats support bundle save cancellation as a no-op', async () => {
         mockSave.mockResolvedValueOnce(null);
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByTitle('Export parser support bundle'));
         fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
@@ -606,7 +621,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('shows support bundle write failures without breaking diagnostics', async () => {
         mockWriteTextFile.mockRejectedValueOnce(new Error('disk full'));
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByTitle('Export parser support bundle'));
         fireEvent.click(screen.getAllByRole('button', { name: 'Export Bundle' })[1]);
@@ -616,7 +631,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
     });
 
     it('resets copied diagnostics feedback after its display interval', async () => {
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
         const copyButton = await screen.findByTitle('Copy parser diagnostics summary');
         vi.useFakeTimers();
         await act(async () => {
@@ -649,7 +664,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 },
             },
         });
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByTitle('Global Scan')).toBeTruthy();
         expect(screen.getByTitle('Explicit Node')).toBeTruthy();
@@ -658,6 +673,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('shows that raw chunks are unavailable without invoking diagnostics', () => {
         render(<WorkflowInspector image={{ ...makeImage(), originalChunks: undefined }} />);
+        openParserDiagnostics();
 
         expect(screen.getByText('Raw chunks unavailable.')).toBeTruthy();
         expect(mockInspectComfyuiMetadataChunks).not.toHaveBeenCalled();
@@ -668,7 +684,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise(resolve => {
             resolveInspection = resolve;
         }));
-        const view = render(<WorkflowInspector image={makeImage()} />);
+        const view = renderWithOpenParserDiagnostics();
         view.unmount();
 
         resolveInspection({ status: 'ok', data: diagnosticsReport });
@@ -680,7 +696,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise((_resolve, reject) => {
             rejectInspection = reject;
         }));
-        const view = render(<WorkflowInspector image={makeImage()} />);
+        const view = renderWithOpenParserDiagnostics();
         view.unmount();
 
         rejectInspection('late failure');
@@ -689,14 +705,14 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
 
     it('formats non-Error diagnostics failures', async () => {
         mockInspectComfyuiMetadataChunks.mockRejectedValueOnce('bridge unavailable');
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText(/Diagnostics unavailable: bridge unavailable/i)).toBeTruthy();
     });
 
     it('formats Error diagnostics failures', async () => {
         mockInspectComfyuiMetadataChunks.mockRejectedValueOnce(new Error('bridge crashed'));
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText(/Diagnostics unavailable: bridge crashed/i)).toBeTruthy();
     });
@@ -706,7 +722,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: { ...diagnosticsReport, fieldSources: {} },
         });
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await screen.findByText('Parser Diagnostics');
         expect(screen.getAllByText('None').length).toBeGreaterThan(0);
@@ -724,7 +740,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(
             await screen.findByTitle('Sampler fallback: found by scanning samplers, weaker than saved-output traversal.')
@@ -743,7 +759,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(
             await screen.findByTitle('Flat parameters: embedded saver metadata, stronger than fallback scans but weaker than saved-output traversal.')
@@ -781,7 +797,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await waitFor(() => expect(
             (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
@@ -822,7 +838,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('Resource Sources')).toBeTruthy();
         expect(screen.getByText('flat_detail')).toBeTruthy();
@@ -850,7 +866,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('2 outputs / 2 roots')).toBeTruthy();
         expect(screen.getByTitle('Multiple saved-output roots were found, so no branch received strong traversal authority.')).toBeTruthy();
@@ -893,7 +909,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         await waitFor(() => expect(
             (screen.getByRole('button', { name: 'Selected Branch' }) as HTMLButtonElement).disabled
@@ -925,7 +941,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             data: { ...diagnosticsReport, traversalIssues }
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(await screen.findByText('#103')).toBeTruthy();
         expect(screen.queryByText('#104')).toBeNull();
@@ -947,7 +963,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             status: 'ok',
             data: { ...diagnosticsReport, traversalIssues }
         });
-        const view = render(<WorkflowInspector image={makeImage()} />);
+        const view = renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByRole('button', { name: 'Show all (6)' }));
         expect(screen.getByText('#205')).toBeTruthy();
@@ -955,7 +971,11 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         view.rerender(<WorkflowInspector image={{ ...makeImage(), id: 'C:/library/other.png', filename: 'other.png' }} />);
 
         await waitFor(() => expect(screen.queryByText('#205')).toBeNull());
-        expect(screen.getByRole('button', { name: 'Show all (6)' }).getAttribute('aria-expanded')).toBe('false');
+        await waitFor(() => expect(
+            screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')
+        ).toBe('false'));
+        openParserDiagnostics();
+        expect((await screen.findByRole('button', { name: 'Show all (6)' })).getAttribute('aria-expanded')).toBe('false');
     });
 
     it('copies the complete capped blocker list without raw metadata bodies', async () => {
@@ -974,7 +994,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
                 traversalIssuesTruncated: true
             }
         });
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         fireEvent.click(await screen.findByTitle('Copy parser diagnostics summary'));
         await waitFor(() => expect(mockClipboardWriteText).toHaveBeenCalledTimes(1));
@@ -1035,7 +1055,7 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
             error: 'parse failed'
         });
 
-        render(<WorkflowInspector image={makeImage()} />);
+        renderWithOpenParserDiagnostics();
 
         expect(screen.getAllByText('SaveImage').length).toBeGreaterThan(0);
         await waitFor(() => {

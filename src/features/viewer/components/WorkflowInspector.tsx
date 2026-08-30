@@ -114,7 +114,7 @@ const WorkflowOutputAnchors: React.FC<{
                 onClick={() => onFocusNode(nodeId)}
                 aria-label={`Open ${label.toLowerCase()} node ${node.title} (${nodeId})`}
                 title={`Open ${label.toLowerCase()} node ${nodeId}`}
-                className="flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 text-left text-[10px] transition-colors hover:border-sage-300 hover:bg-sage-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
+                className="flex w-full min-w-0 items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 py-1 text-left text-[10px] transition-colors hover:border-sage-300 hover:bg-sage-50 dark:border-white/10 dark:bg-white/5 dark:hover:border-sage-700 dark:hover:bg-sage-900/20"
             >
                 <Icon className={`h-3 w-3 shrink-0 ${isRoot ? 'text-harbor-600 dark:text-harbor-300' : 'text-sage-600 dark:text-sage-300'}`} />
                 <span className="min-w-0">
@@ -129,7 +129,7 @@ const WorkflowOutputAnchors: React.FC<{
 
     return (
         <section aria-label="Parser-selected workflow anchors" className="space-y-2 border-y border-gray-200 py-2 dark:border-white/10">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {selectedOutputNodeIds.map((nodeId) => renderAnchor(nodeId, 'output'))}
                 {rootSamplerNodeIds.map((nodeId) => renderAnchor(nodeId, 'root'))}
             </div>
@@ -152,7 +152,9 @@ const ComfyDiagnosticsPanel: React.FC<{
     chunks?: Record<string, string>;
     nodeById: Map<string, WorkflowDisplayNode>;
     onFocusNode: (nodeId: string) => void;
-}> = ({ image, chunks, nodeById, onFocusNode }) => {
+    expanded: boolean;
+    onExpandedChange: (expanded: boolean) => void;
+}> = ({ image, chunks, nodeById, onFocusNode, expanded, onExpandedChange }) => {
     const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -165,6 +167,10 @@ const ComfyDiagnosticsPanel: React.FC<{
 
     React.useEffect(() => {
         setShowAllTraversalIssues(false);
+
+        if (!expanded) {
+            return;
+        }
 
         if (!chunks || chunkCount === 0) {
             setDiagnostics(null);
@@ -199,7 +205,7 @@ const ComfyDiagnosticsPanel: React.FC<{
         return () => {
             cancelled = true;
         };
-    }, [chunks, chunkCount, image.id]);
+    }, [chunks, chunkCount, expanded, image.id]);
 
     const fieldSources = diagnostics
         ? Object.entries(diagnostics.fieldSources).sort(([a], [b]) => a.localeCompare(b))
@@ -255,12 +261,18 @@ const ComfyDiagnosticsPanel: React.FC<{
         <>
         <div className="rounded-xl border border-ember-200 dark:border-ember-500/20 bg-ember-50/70 dark:bg-ember-500/10 p-3 text-xs">
             <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 font-bold text-ember-600 dark:text-ember-300">
-                    <Activity className="w-3.5 h-3.5" />
-                    Parser Diagnostics
-                </div>
+                <button
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => onExpandedChange(!expanded)}
+                    className="flex min-w-0 items-center gap-2 rounded-md font-bold text-ember-600 outline-none transition-colors hover:text-ember-700 focus-visible:ring-2 focus-visible:ring-ember-500/50 dark:text-ember-300 dark:hover:text-ember-200"
+                >
+                    <Activity className="h-3.5 w-3.5 shrink-0" />
+                    <span className="whitespace-nowrap">Parser Diagnostics</span>
+                    {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+                </button>
                 <div className="flex items-center gap-2">
-                    {diagnostics && (
+                    {expanded && diagnostics && (
                         <>
                             <button
                                 onClick={handleCopyDiagnostics}
@@ -289,6 +301,8 @@ const ComfyDiagnosticsPanel: React.FC<{
                 </div>
             </div>
 
+            {expanded ? (
+            <>
             {!chunks || chunkCount === 0 ? (
                 <div className="mt-2 text-ember-600/70 dark:text-ember-300/70">Raw chunks unavailable.</div>
             ) : isLoading ? (
@@ -513,6 +527,8 @@ const ComfyDiagnosticsPanel: React.FC<{
                     Support bundle export failed: {exportError}
                 </div>
             )}
+            </>
+            ) : null}
         </div>
         <ConfirmDialog
             isOpen={isExportConfirmOpen}
@@ -731,6 +747,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const [searchQuery, setSearchQuery] = useState('');
     const [nodeMode, setNodeMode] = useState<'all' | 'selected'>('all');
     const [copied, setCopied] = useState(false);
+    const [isParserDiagnosticsOpen, setIsParserDiagnosticsOpen] = useState(false);
     const [localWorkflow, setLocalWorkflow] = useState<string | undefined>(image.metadata.workflowJson);
     const [backendWorkflowGraph, setBackendWorkflowGraph] = useState<{
         chunks: Record<string, string>;
@@ -838,6 +855,10 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         setFocusedConnection(null);
         setNodeMode('all');
     }, [image.id, workflowGraphSource?.json, workflowGraphSource?.normalizedByBackend, workflowGraphSource?.source]);
+
+    React.useEffect(() => {
+        setIsParserDiagnosticsOpen(false);
+    }, [image.id]);
 
     React.useEffect(() => {
         if (nodeMode === 'selected' && !selectedBranchAvailable) {
@@ -1083,18 +1104,22 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     onFocusNode={handleFollowConnection}
                 />
 
-                {showParserDiagnostics && (
-                    <ComfyDiagnosticsPanel
-                        image={image}
-                        chunks={image.originalChunks}
-                        nodeById={nodeById}
-                        onFocusNode={handleFollowConnection}
-                    />
-                )}
             </div>
 
             {/* Node List */}
             <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-6">
+                {showParserDiagnostics && (
+                    <div className="mb-4">
+                        <ComfyDiagnosticsPanel
+                            image={image}
+                            chunks={image.originalChunks}
+                            nodeById={nodeById}
+                            onFocusNode={handleFollowConnection}
+                            expanded={isParserDiagnosticsOpen}
+                            onExpandedChange={setIsParserDiagnosticsOpen}
+                        />
+                    </div>
+                )}
                 {filteredNodes.length > 0 ? (
                     <div className="space-y-4">
                         {filteredNodeGroups.map((group) => (

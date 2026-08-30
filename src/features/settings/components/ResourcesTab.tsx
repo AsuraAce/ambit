@@ -37,7 +37,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
     } = useResourcesTabLogic({ settings, setSettings });
 
     return (
-        <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-8 max-w-3xl">
             <ResourceDiscoverySection
                 resourceFolders={resourceFolders}
                 isScanning={isScanningDiscovery}

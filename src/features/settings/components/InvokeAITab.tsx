@@ -136,7 +136,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     };
 
     return (
-        <div className="space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-8 max-w-2xl">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="text-[10px] font-black text-sage-600 dark:text-sage-300 uppercase tracking-[0.2em] mb-6 flex items-center gap-3">
@@ -210,7 +210,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                         </button>
 
                         {testResult && (
-                            <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in slide-in-from-right-2 duration-300 ${testResult.success
+                            <div className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2.5 animate-in fade-in duration-150 motion-reduce:animate-none ${testResult.success
                                 ? 'bg-sage-500/10 text-sage-600 dark:text-sage-300'
                                 : 'bg-red-500/10 text-red-600 dark:text-red-300'
                                 }`}>
@@ -380,7 +380,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             </div>
                         </div>
                     ) : (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-top-2 relative z-10">
+                        <div className="space-y-6 animate-in fade-in duration-150 motion-reduce:animate-none relative z-10">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-white/10 rounded-lg shadow-sm group/stat">
                                     <div className="text-[9px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest mb-1 flex items-center gap-2">

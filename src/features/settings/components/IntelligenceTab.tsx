@@ -123,7 +123,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
     };
 
     return (
-        <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-6 max-w-2xl">
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/5 rounded-xl p-6 shadow-sm">
                 <h4 className="mb-6 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-amethyst-600 dark:text-amethyst-300">
                     <FlaskConical className="w-4 h-4" /> Ambit Intelligence
@@ -150,7 +150,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                     </div>
 
                     {settings.enableAI && (
-                        <div className="animate-in fade-in slide-in-from-top-2 space-y-4">
+                        <div className="animate-in fade-in duration-150 motion-reduce:animate-none space-y-4">
                             <ApiKeyInput
                                 value={localApiKey}
                                 onChange={handleApiKeyChange}
@@ -187,7 +187,7 @@ export const IntelligenceTab: React.FC<TabProps> = React.memo(({ settings, setSe
                             />
 
                             {developerFeaturesEnabled && (
-                                <div className="pt-2 space-y-4 animate-in fade-in slide-in-from-top-2">
+                                <div className="pt-2 space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
                                     <div>
                                         <label className="text-sm font-bold text-gray-900 dark:text-white block mb-2 flex items-center gap-2">
                                             <Cpu className="w-4 h-4 text-gray-400" /> AI Model (Dev Mode)

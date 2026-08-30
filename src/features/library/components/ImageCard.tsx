@@ -81,63 +81,65 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       onDrag={onDrag}
       onDragEnd={onDragEnd}
     >
-      {isVideo && !hasVideoPoster ? (
-        <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black ${shouldBlur ? 'blur-xl scale-110 opacity-50' : ''}`}>
-          <Video className="h-12 w-12 text-white/30" />
-        </div>
-      ) : (
-        <SmartImage
-          src={image.thumbnailUrl}
-          fallbackSrc={isVideo ? undefined : image.url}
-          microSrc={image.microThumbnail}
-          alt={image.filename}
-          onImageError={onImageError}
-          loading="lazy"
-          className={`w-full h-full transition-all duration-700 ease-spring
-              ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'}
-              ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
-          `}
-        />
-      )}
-
-      {isVideo && !shouldBlur && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <div className="rounded-full border border-white/20 bg-black/60 p-3 shadow-xl backdrop-blur-md">
-            <Play className="h-6 w-6 fill-white text-white" />
+      <div data-media-clip className="absolute inset-0 overflow-hidden rounded-2xl [clip-path:inset(0_round_1rem)]">
+        {isVideo && !hasVideoPoster ? (
+          <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black ${shouldBlur ? 'blur-xl scale-110 opacity-50' : ''}`}>
+            <Video className="h-12 w-12 text-white/30" />
           </div>
-        </div>
-      )}
+        ) : (
+          <SmartImage
+            src={image.thumbnailUrl}
+            fallbackSrc={isVideo ? undefined : image.url}
+            microSrc={image.microThumbnail}
+            alt={image.filename}
+            onImageError={onImageError}
+            loading="lazy"
+            className={`w-full h-full transition-all duration-700 ease-spring
+                ${shouldBlur ? 'blur-xl scale-110 opacity-50' : 'group-hover:scale-110'}
+                ${isMissing || image.isDeleted ? 'grayscale opacity-50' : 'opacity-90 group-hover:opacity-100'}
+            `}
+          />
+        )}
 
-
-
-      {/* Deleted (Trash) Overlay */}
-      {image.isDeleted && !isMissing && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gray-100/10 dark:bg-black/40 backdrop-grayscale">
-          <div className="p-3 bg-sage-100 dark:bg-sage-900/50 rounded-full mb-2 backdrop-blur-sm border border-sage-200 dark:border-sage-500/30">
-            <Trash2 className="w-6 h-6 text-sage-600 dark:text-sage-400" />
+        {isVideo && !shouldBlur && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+            <div className="rounded-full border border-white/20 bg-black/60 p-3 shadow-xl backdrop-blur-md">
+              <Play className="h-6 w-6 fill-white text-white" />
+            </div>
           </div>
-          <span className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded">Trash</span>
-        </div>
-      )}
+        )}
 
-      {/* Content Masking Overlay */}
-      {shouldBlur && !isMissing && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm animate-in fade-in duration-300 p-2 text-center overflow-hidden [container-type:size]">
-          <EyeOff className="w-8 h-8 text-sage-500 dark:text-sage-400 mb-2 drop-shadow-md shrink-0" />
-          <span className="text-[10px] sm:text-xs font-bold text-sage-600 dark:text-sage-200 uppercase tracking-widest drop-shadow-md whitespace-nowrap px-1 w-full truncate hide-on-narrow">
-            Hidden Content
-          </span>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsRevealed(true);
-            }}
-            className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
-          >
-            Reveal
-          </button>
-        </div>
-      )}
+
+
+        {/* Deleted (Trash) Overlay */}
+        {image.isDeleted && !isMissing && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-gray-100/10 dark:bg-black/40 backdrop-grayscale">
+            <div className="p-3 bg-sage-100 dark:bg-sage-900/50 rounded-full mb-2 backdrop-blur-sm border border-sage-200 dark:border-sage-500/30">
+              <Trash2 className="w-6 h-6 text-sage-600 dark:text-sage-400" />
+            </div>
+            <span className="text-[10px] font-bold text-white bg-black/50 px-2 py-1 rounded">Trash</span>
+          </div>
+        )}
+
+        {/* Content Masking Overlay */}
+        {shouldBlur && !isMissing && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm animate-in fade-in duration-300 p-2 text-center overflow-hidden [container-type:size]">
+            <EyeOff className="w-8 h-8 text-sage-500 dark:text-sage-400 mb-2 drop-shadow-md shrink-0" />
+            <span className="text-[10px] sm:text-xs font-bold text-sage-600 dark:text-sage-200 uppercase tracking-widest drop-shadow-md whitespace-nowrap px-1 w-full truncate hide-on-narrow">
+              Hidden Content
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRevealed(true);
+              }}
+              className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
+            >
+              Reveal
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Status Indicators (Top Right) */}
       <div className="absolute top-2 right-2 z-20 flex flex-row gap-1.5 items-start justify-end pointer-events-none">

@@ -230,7 +230,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
     const hiddenCount = candidates.length - displayedCandidates.length;
 
     return (
-        <div className="space-y-8 max-w-3xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-8 max-w-3xl">
 
             <section className="bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-xl p-6 shadow-sm relative overflow-hidden group">
                 <h4 className="mb-6 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
@@ -346,7 +346,7 @@ export const A1111Tab: React.FC<TabProps> = React.memo(({ settings, setSettings,
                     )}
 
                     {candidates.length > 0 && (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                        <div className="space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
                             <div className="flex items-center justify-between px-1">
                                 <div className="flex flex-col gap-1">
                                     <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-widest leading-none">Discovery Results</h5>

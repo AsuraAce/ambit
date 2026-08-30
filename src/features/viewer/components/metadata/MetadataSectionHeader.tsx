@@ -22,7 +22,7 @@ export const MetadataSectionHeader: React.FC<MetadataSectionHeaderProps> = ({
     labelFor,
     className = '',
 }) => {
-    const textClassName = `text-xs font-bold uppercase tracking-wider ${modified ? 'text-ember-600 dark:text-ember-300' : 'text-gray-500 dark:text-zinc-400'}`;
+    const textClassName = `whitespace-nowrap text-xs font-bold uppercase tracking-wider ${modified ? 'text-ember-600 dark:text-ember-300' : 'text-gray-500 dark:text-zinc-400'}`;
     const resolvedIconClassName = modified ? 'text-ember-600 dark:text-ember-300' : iconClassName;
     const content = (
         <>
@@ -37,8 +37,8 @@ export const MetadataSectionHeader: React.FC<MetadataSectionHeaderProps> = ({
 
     return (
         <div className={`flex items-center justify-between gap-2 ${className}`}>
-            <div className="flex min-w-0 items-center gap-2">{content}</div>
-            {trailing ? <div className="flex shrink-0 items-center gap-2">{trailing}</div> : null}
+            <div className="flex shrink-0 items-center gap-2">{content}</div>
+            {trailing ? <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">{trailing}</div> : null}
         </div>
     );
 };

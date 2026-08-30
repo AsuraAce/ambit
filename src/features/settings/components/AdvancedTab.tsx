@@ -186,7 +186,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
     }, [activeTab, dbDiagnostics, dbDiagnosticsError]);
 
     return (
-        <div className="space-y-6 max-w-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-6 max-w-2xl">
 
             {/* Sub Tabs Navigation */}
             <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-xl">
@@ -194,7 +194,7 @@ export const AdvancedTab: React.FC<TabProps> = ({
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all capitalize ${activeTab === tab
+                        className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-colors capitalize ${activeTab === tab
                             ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
                             : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                             }`}
