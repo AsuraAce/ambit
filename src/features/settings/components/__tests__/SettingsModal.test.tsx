@@ -259,6 +259,33 @@ describe('SettingsModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
         expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
     });
+    it('does not move focus to a category button during pointer activation', () => {
+        render(
+            <SettingsModal
+                isOpen={true}
+                onClose={vi.fn()}
+                settings={createSettings()}
+                onSave={vi.fn()}
+                canCheckForUpdates={false}
+                hasPendingUpdate={false}
+                pendingUpdateVersion={null}
+                updateErrorMessage={null}
+                updateStatus="idle"
+                onCheckForUpdates={vi.fn()}
+                onOpenUpdatePrompt={vi.fn()}
+                onNavigateToMaintenance={vi.fn()}
+            />
+        );
+
+        const connections = screen.getByRole('button', { name: 'Connections' });
+        const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+
+        fireEvent(connections, mouseDown);
+        expect(mouseDown.defaultPrevented).toBe(true);
+
+        fireEvent.click(connections);
+        expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
+    });
 
 
     it('renders its normal dark blurred backdrop by default', () => {
