@@ -13,6 +13,7 @@ import {
     restoreInvokeCollection,
     type SuppressedInvokeCollection,
 } from '../../../services/db/collectionRepo';
+import { useCollectionStore } from '../../../stores/collectionStore';
 
 interface TabProps {
     settings: AppSettings;
@@ -59,6 +60,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const [isDiagLoading, setIsDiagLoading] = useState(false);
     const [hiddenCollections, setHiddenCollections] = useState<SuppressedInvokeCollection[]>([]);
     const [restoringCollectionId, setRestoringCollectionId] = useState<string | null>(null);
+    const refreshCollections = useCollectionStore(state => state.refreshCollections);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const ownerDiscovery = invokeOwnerScopeState.discovery;
     const ownerSelection = settings.invokeOwnerSelection && ownerDiscovery
@@ -97,6 +99,7 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         setRestoringCollectionId(collection.id);
         try {
             await restoreInvokeCollection(collection.id);
+            await refreshCollections(false, { consistency: 'authoritative' });
             setHiddenCollections(current => current.filter(item => item.id !== collection.id));
         } catch (error) {
             console.error('[InvokeAI] Failed to restore hidden collection', error);

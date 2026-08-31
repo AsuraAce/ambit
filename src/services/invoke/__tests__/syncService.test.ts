@@ -1067,7 +1067,7 @@ describe('syncImages live mode', () => {
         })).rejects.toThrow('Aborted');
     });
 
-    it('falls back safely when thumbnail verification and file-size probes fail', async () => {
+    it('aborts without importing when source-path verification fails', async () => {
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const selectMock = vi.fn(async (query: string) => {
             if (query.includes('PRAGMA table_info(images)')) {
@@ -1088,18 +1088,12 @@ describe('syncImages live mode', () => {
         vi.mocked(commands.verifyImagePaths).mockRejectedValue(new Error('verify failed'));
         vi.mocked(commands.getFileSizesBulk).mockRejectedValue(new Error('probe failed'));
 
-        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+        await expect(syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
             mode: 'live', syncBoards: false, syncFavorites: false
-        });
+        })).rejects.toThrow('Failed to verify InvokeAI source image paths');
 
-        expect(result.imported).toBe(1);
-        expect(insertImagesBatch).toHaveBeenCalledWith([
-            expect.objectContaining({
-                filename: 'unreadable.png',
-                fileSize: 0,
-                thumbnailUrl: 'D:/AmbitFixtures/InvokeAI/outputs/images/unreadable.png'
-            })
-        ]);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+        expect(syncCollectionImages).not.toHaveBeenCalled();
         expect(warnSpy).toHaveBeenCalledWith(
             '[InvokeAI Sync] Failed to verify InvokeAI thumbnail paths; using source image fallback.',
             expect.any(Error)

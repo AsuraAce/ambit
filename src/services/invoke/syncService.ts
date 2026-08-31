@@ -629,6 +629,7 @@ export const syncImages = async (
                 missingSourcePaths = new Set(missingPaths.map(path => normalizePath(path)));
             } catch (error) {
                 console.warn('[InvokeAI Sync] Failed to verify InvokeAI source image paths.', error);
+                throw new Error('Failed to verify InvokeAI source image paths', { cause: error });
             }
         }
 

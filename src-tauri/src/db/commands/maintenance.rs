@@ -1316,10 +1316,17 @@ fn update_invoke_collection_ownership_inner(
                  SELECT snapshot.collection_id, images.id
                  FROM invoke_board_membership_snapshot snapshot
                  JOIN collections c ON c.id = snapshot.collection_id
+                 JOIN invoke_owner_scope_state s ON s.state_key = 'current'
                  JOIN images
                    ON images.invoke_image_name = snapshot.invoke_image_name
-                  AND images.invoke_source_id IS c.invoke_source_id
-                  AND images.invoke_owner_id IS c.invoke_owner_id
+                   AND images.invoke_source_id IS c.invoke_source_id
+                   AND (
+                       s.scope_mode IN ('legacy', 'all')
+                       OR (
+                           s.scope_mode = 'owner'
+                           AND images.invoke_owner_id IS s.owner_id
+                       )
+                   )
                  WHERE snapshot.collection_id = ?1",
                 [collection_id],
             )
@@ -2978,6 +2985,60 @@ mod tests {
             )
             .expect("restored visibility");
         assert_eq!(visible_after_restore, 1);
+    }
+
+    #[test]
+    fn invoke_collection_reset_restores_owned_images_in_unowned_boards_for_all_users() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owned-image",
+            "source",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'owned.png', board_id = 'unowned-board'
+             WHERE id = 'owned-image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES (
+                 'unowned-board', 'Local label', 1, 'invoke', 'invoke.db', NULL,
+                 'Source label'
+             );
+             INSERT INTO invoke_board_membership_snapshot
+             VALUES ('unowned-board', 'owned.png');",
+        )
+        .expect("seed unowned source board");
+
+        update_invoke_collection_ownership_inner(
+            &conn,
+            "unowned-board",
+            InvokeCollectionOwnershipAction::Reset,
+        )
+        .expect("reset unowned source board");
+
+        let memberships: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images
+                 WHERE collection_id = 'unowned-board' AND image_id = 'owned-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("reset membership count");
+        assert_eq!(
+            memberships, 1,
+            "All Users must materialize the authoritative relationship even when the board has no owner"
+        );
     }
 
     #[test]

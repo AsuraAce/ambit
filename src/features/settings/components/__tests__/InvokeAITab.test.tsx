@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
     startInvokeSync: vi.fn(),
     getSuppressedInvokeCollections: vi.fn(),
     restoreInvokeCollection: vi.fn(),
+    refreshCollections: vi.fn(),
     isInvokeSyncActive: false,
     isLiveSyncing: false,
     ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
@@ -28,6 +29,10 @@ vi.mock('../../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled:
 vi.mock('../../../../services/db/collectionRepo', () => ({
     getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections,
     restoreInvokeCollection: mocks.restoreInvokeCollection,
+}));
+vi.mock('../../../../stores/collectionStore', () => ({
+    useCollectionStore: (selector: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) =>
+        selector({ refreshCollections: mocks.refreshCollections }),
 }));
 vi.mock('../SyncSection', () => ({ SyncSection: () => <div>sync-section</div> }));
 vi.mock('../../../../contexts/LibraryContext', () => ({
@@ -63,6 +68,7 @@ describe('InvokeAITab', () => {
         mocks.invoke.mockResolvedValue({ imageFiles: 2, thumbnailFiles: 1, subfolders: {} });
         mocks.getSuppressedInvokeCollections.mockResolvedValue([]);
         mocks.restoreInvokeCollection.mockResolvedValue(undefined);
+        mocks.refreshCollections.mockResolvedValue(undefined);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
 
@@ -90,6 +96,9 @@ describe('InvokeAITab', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Restore Local label' }));
 
         await waitFor(() => expect(mocks.restoreInvokeCollection).toHaveBeenCalledWith('hidden-board'));
+        await waitFor(() => expect(mocks.refreshCollections).toHaveBeenCalledWith(false, {
+            consistency: 'authoritative',
+        }));
         await waitFor(() => expect(screen.queryByText('Local label')).toBeNull());
     });
 

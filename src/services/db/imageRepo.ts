@@ -463,7 +463,6 @@ export const syncCollectionImages = async (ids?: string[]) => {
             JOIN scoped_collections collection
               ON collection.id = snapshot.collection_id
              AND collection.invoke_source_id IS images.invoke_source_id
-             AND collection.invoke_owner_id IS images.invoke_owner_id
             LEFT JOIN invoke_board_membership_exclusions exclusion
               ON exclusion.collection_id = snapshot.collection_id
              AND exclusion.invoke_image_name = snapshot.invoke_image_name
