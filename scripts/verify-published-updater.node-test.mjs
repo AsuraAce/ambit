@@ -1,8 +1,21 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { verifyPublishedUpdater } from './verify-published-updater.mjs';
+
+test('release workflow forwards the tag directly to the published updater verifier', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/release.yml', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    workflow,
+    /run: pnpm run verify:published-updater \$\{\{ github\.ref_name \}\}/,
+  );
+});
 
 const MANIFEST_URL = 'https://github.com/example/ambit/releases/latest/download/latest.json';
 const NSIS_ASSET_URL = 'https://api.github.com/repos/example/ambit/releases/assets/42';
