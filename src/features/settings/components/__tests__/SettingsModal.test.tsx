@@ -252,6 +252,8 @@ describe('SettingsModal', () => {
             const category = screen.getByRole('button', { name });
             expect(category.className).toContain('transition-colors');
             expect(category.className).not.toContain('transition-all');
+            expect(category.className).toContain('focus:outline-none');
+            expect(category.className).toContain('focus-visible:ring-2');
         }
 
         fireEvent.click(screen.getByRole('button', { name: 'Connections' }));

@@ -728,6 +728,26 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getAllByText('None').length).toBeGreaterThan(0);
     });
 
+    it('does not reserve toolbar space while parser diagnostics are collapsed', () => {
+        render(<WorkflowInspector image={makeImage()} />);
+
+        expect(screen.queryByLabelText('Parser diagnostics actions')).toBeNull();
+    });
+
+    it('keeps diagnostic actions and long values readable in the narrow viewer sidebar', async () => {
+        renderWithOpenParserDiagnostics();
+
+        await screen.findByText('diagnostic_model');
+        const actions = screen.getByRole('group', { name: 'Parser diagnostics actions' });
+        expect(actions.className).toContain('flex-wrap');
+        expect(actions.parentElement?.className).toContain('flex-col');
+
+        const layers = screen.getByText('Layers').parentElement;
+        expect(layers?.parentElement?.className).toContain('grid-cols-1');
+        expect(layers?.querySelector('.font-mono')?.className).toContain('break-words');
+        expect(layers?.querySelector('.font-mono')?.className).not.toContain('break-all');
+    });
+
     it('marks sampler fallback diagnostics as weaker evidence', async () => {
         mockInspectComfyuiMetadataChunks.mockResolvedValue({
             status: 'ok',

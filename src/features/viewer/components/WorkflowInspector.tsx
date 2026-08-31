@@ -259,7 +259,7 @@ const ComfyDiagnosticsPanel: React.FC<{
     return (
         <>
         <div className="rounded-xl border border-ember-200 dark:border-ember-500/20 bg-ember-50/70 dark:bg-ember-500/10 p-3 text-xs">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-stretch gap-2">
                 <button
                     type="button"
                     aria-expanded={expanded}
@@ -270,13 +270,12 @@ const ComfyDiagnosticsPanel: React.FC<{
                     <span className="whitespace-nowrap">Parser Diagnostics</span>
                     {expanded ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
                 </button>
-                <div className="flex items-center gap-2">
-                    {expanded && diagnostics && (
-                        <>
+                {expanded && diagnostics && (
+                    <div role="group" aria-label="Parser diagnostics actions" className="flex flex-wrap items-center justify-end gap-2">
                             <button
                                 onClick={handleCopyDiagnostics}
                                 title="Copy parser diagnostics summary"
-                                className="flex items-center gap-1 rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                                className="flex items-center gap-1 whitespace-nowrap rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
                             >
                                 {copiedDiagnostics ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                                 {copiedDiagnostics ? 'Copied' : 'Copy Diagnostics'}
@@ -287,7 +286,7 @@ const ComfyDiagnosticsPanel: React.FC<{
                                     setIsExportConfirmOpen(true);
                                 }}
                                 title="Export parser support bundle"
-                                className="flex items-center gap-1 rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
+                                className="flex items-center gap-1 whitespace-nowrap rounded-md border border-ember-300/70 dark:border-ember-400/20 bg-white/70 dark:bg-black/20 px-1.5 py-0.5 font-bold uppercase tracking-wide text-[10px] text-ember-600 dark:text-ember-300 hover:bg-white dark:hover:bg-black/30 transition-colors"
                             >
                                 <Download className="w-3 h-3" />
                                 Export Bundle
@@ -295,9 +294,8 @@ const ComfyDiagnosticsPanel: React.FC<{
                             <span className="font-mono text-[10px] text-ember-600/70 dark:text-ember-300/70">
                                 {diagnostics.graphNodeCount} nodes
                             </span>
-                        </>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {expanded ? (
@@ -310,14 +308,14 @@ const ComfyDiagnosticsPanel: React.FC<{
                 <div className="mt-2 text-red-600 dark:text-red-300">Diagnostics unavailable: {error}</div>
             ) : diagnostics ? (
                 <div className="mt-3 space-y-3 text-ember-600 dark:text-ember-300">
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-3">
                         <div>
                             <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Chunks</div>
-                            <div className="font-mono break-all">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
+                            <div className="font-mono break-words">{diagnostics.chunkKeys.join(', ') || 'None'}</div>
                         </div>
                         <div>
                             <div className="text-[10px] uppercase font-bold text-ember-600/60 dark:text-ember-300/60">Layers</div>
-                            <div className="font-mono break-all">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
+                            <div className="font-mono break-words">{diagnostics.attemptedLayers.join(' -> ') || 'None'}</div>
                         </div>
                     </div>
 
