@@ -130,6 +130,51 @@ describe('CollectionEditorModal', () => {
         expect(container.innerHTML).toBe('');
     });
 
+    it('shows InvokeAI source state and resets local organization only when the source is available', async () => {
+        const onResetInvokeCollection = vi.fn().mockResolvedValue(true);
+        const { rerender } = render(
+            <CollectionEditorModal
+                isOpen
+                onClose={onClose}
+                collection={{
+                    ...createCollection(),
+                    source: 'invoke',
+                    name: 'Local label',
+                    invokeSourceName: 'Upstream label',
+                    invokeSourcePresent: false,
+                }}
+                filters={currentFilters}
+                onSave={onSave}
+                onResetInvokeCollection={onResetInvokeCollection}
+            />,
+        );
+
+        expect(screen.getByText('Source unavailable')).toBeTruthy();
+        expect(screen.getByText(/Local name override/)).toBeTruthy();
+        expect((screen.getByRole('button', { name: /reset to invokeai/i }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.queryByText('Collection Rules')).toBeNull();
+
+        rerender(
+            <CollectionEditorModal
+                isOpen
+                onClose={onClose}
+                collection={{
+                    ...createCollection(),
+                    source: 'invoke',
+                    name: 'Local label',
+                    invokeSourceName: 'Upstream label',
+                    invokeSourcePresent: true,
+                }}
+                filters={currentFilters}
+                onSave={onSave}
+                onResetInvokeCollection={onResetInvokeCollection}
+            />,
+        );
+        fireEvent.click(screen.getByRole('button', { name: /reset to invokeai/i }));
+        await waitFor(() => expect(onResetInvokeCollection).toHaveBeenCalledWith('collection-1'));
+        expect(onClose).toHaveBeenCalled();
+    });
+
     it('saves static drafts and can replace them with the current view', async () => {
         render(
             <CollectionEditorModal

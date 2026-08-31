@@ -892,6 +892,10 @@ describe('imageRepo batch removal', () => {
             ['C:/images/a.png', 'C:/images/b.png']
         );
         expect(db.execute.mock.calls[0][0]).toContain('invoke_scope_hidden = 0');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_snapshot');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_exclusions');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_additions');
+        expect(db.execute.mock.calls[0][0]).not.toContain('SELECT board_id, id');
         expect(db.select).toHaveBeenCalledWith(
             expect.stringContaining('FROM collection_images'),
             ['C:/images/a.png', 'C:/images/b.png']

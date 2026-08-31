@@ -1,13 +1,18 @@
 import * as React from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen, Users } from 'lucide-react';
+import { DatabaseZap, Folder, Info, Globe, Loader2, CheckCircle2, XCircle, Activity, BarChart3, Search, Database, Files, AlertTriangle, FolderOpen, Users, RotateCcw } from 'lucide-react';
 import { AppSettings } from '../../../types';
 import { SyncSection } from './SyncSection';
 import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
 import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
+import {
+    getSuppressedInvokeCollections,
+    restoreInvokeCollection,
+    type SuppressedInvokeCollection,
+} from '../../../services/db/collectionRepo';
 
 interface TabProps {
     settings: AppSettings;
@@ -52,6 +57,8 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
     const [isTesting, setIsTesting] = useState(false);
     const [diagData, setDiagData] = useState<InvokeDiagnostics | null>(null);
     const [isDiagLoading, setIsDiagLoading] = useState(false);
+    const [hiddenCollections, setHiddenCollections] = useState<SuppressedInvokeCollection[]>([]);
+    const [restoringCollectionId, setRestoringCollectionId] = useState<string | null>(null);
     const developerFeaturesEnabled = areDeveloperFeaturesEnabled(settings);
     const ownerDiscovery = invokeOwnerScopeState.discovery;
     const ownerSelection = settings.invokeOwnerSelection && ownerDiscovery
@@ -71,6 +78,32 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         && (ownerDiscovery.unassignedBoardCount ?? 0) === 0
         ? ownerDiscovery.owners[0]
         : undefined;
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!settings.invokeAiPath) {
+            setHiddenCollections([]);
+            return () => { cancelled = true; };
+        }
+        void getSuppressedInvokeCollections()
+            .then(collections => {
+                if (!cancelled) setHiddenCollections(collections);
+            })
+            .catch(error => console.error('[InvokeAI] Failed to load hidden collections', error));
+        return () => { cancelled = true; };
+    }, [settings.invokeAiPath, invokeOwnerScopeState.status]);
+
+    const handleRestoreCollection = async (collection: SuppressedInvokeCollection) => {
+        setRestoringCollectionId(collection.id);
+        try {
+            await restoreInvokeCollection(collection.id);
+            setHiddenCollections(current => current.filter(item => item.id !== collection.id));
+        } catch (error) {
+            console.error('[InvokeAI] Failed to restore hidden collection', error);
+        } finally {
+            setRestoringCollectionId(null);
+        }
+    };
 
     const handleOwnerSelection = async (selection: Parameters<typeof selectInvokeOwnerScope>[0]) => {
         await selectInvokeOwnerScope(selection);
@@ -349,6 +382,40 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
                             onSelect={handleOwnerSelection}
                         />
                     )}
+                </section>
+            )}
+
+            {settings.invokeAiPath && hiddenCollections.length > 0 && (
+                <section className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-white/5">
+                    <h4 className="mb-2 flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.2em] text-sage-600 dark:text-sage-300">
+                        <RotateCcw className="h-4 w-4" /> Hidden InvokeAI collections
+                    </h4>
+                    <p className="mb-4 text-xs text-gray-500 dark:text-gray-400">
+                        Restore collections hidden from Ambit. Source ownership and local organization are retained.
+                    </p>
+                    <div className="space-y-2">
+                        {hiddenCollections.map(collection => (
+                            <div key={collection.id} className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/5 dark:bg-black/20">
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-gray-900 dark:text-white">{collection.name}</p>
+                                    {collection.invokeSourcePresent === false && (
+                                        <p className="mt-1 flex items-center gap-1 text-[10px] font-medium text-ember-600 dark:text-ember-300">
+                                            <AlertTriangle className="h-3 w-3" /> Source unavailable
+                                        </p>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    aria-label={`Restore ${collection.name}`}
+                                    disabled={restoringCollectionId === collection.id}
+                                    onClick={() => void handleRestoreCollection(collection)}
+                                    className="rounded-lg bg-sage-600 px-3 py-2 text-xs font-bold text-white hover:bg-sage-500 disabled:cursor-wait disabled:opacity-60"
+                                >
+                                    {restoringCollectionId === collection.id ? 'Restoring…' : 'Restore'}
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </section>
             )}
 

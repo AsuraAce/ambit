@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Collection, FilterState } from '../../../types';
-import { X, Save, Trash2, Filter, Users } from 'lucide-react';
+import { X, Save, Trash2, Filter, Users, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
 import { useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
@@ -14,6 +14,7 @@ interface CollectionEditorModalProps {
     filters: FilterState; // Current active filters in global state
     onSave: (id: string, newFilters: FilterState | undefined) => void;
     onUpdateScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
+    onResetInvokeCollection?: (id: string) => Promise<boolean>;
 }
 
 export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
@@ -22,12 +23,14 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     collection,
     filters,
     onSave,
-    onUpdateScope = async () => false
+    onUpdateScope = async () => false,
+    onResetInvokeCollection = async () => false
 }) => {
     // Local state for editing the saved filters
     const [draftFilters, setDraftFilters] = useState<FilterState | null>(null);
     const [scopeSelection, setScopeSelection] = useState('global');
     const [isSavingScope, setIsSavingScope] = useState(false);
+    const [isResettingInvoke, setIsResettingInvoke] = useState(false);
     const discovery = useInvokeOwnerScopeStore(state => state.ownerScopeState.discovery);
 
     // Initialize draft filters when collection opens
@@ -68,6 +71,15 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         });
         setIsSavingScope(false);
         if (succeeded) onClose();
+    };
+
+    const handleResetInvoke = async () => {
+        setIsResettingInvoke(true);
+        try {
+            if (await onResetInvokeCollection(collection.id)) onClose();
+        } finally {
+            setIsResettingInvoke(false);
+        }
     };
 
     const handleSaveDraft = () => {
@@ -261,9 +273,21 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                     Visibility
                                 </div>
                                 {collection.source === 'invoke' ? (
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        Managed by InvokeAI · {discovery?.owners.find(owner => owner.ownerId === collection.invokeOwnerId)?.displayName || collection.invokeOwnerId || 'System'}
-                                    </p>
+                                    <div className="space-y-2 text-xs text-gray-500 dark:text-gray-400">
+                                        <p>
+                                            Managed by InvokeAI · {discovery?.owners.find(owner => owner.ownerId === collection.invokeOwnerId)?.displayName || collection.invokeOwnerId || 'System'}
+                                        </p>
+                                        {collection.invokeSourcePresent === false && (
+                                            <p className="flex items-center gap-1.5 font-medium text-ember-600 dark:text-ember-300">
+                                                <AlertTriangle className="h-3.5 w-3.5" /> Source unavailable
+                                            </p>
+                                        )}
+                                        {collection.invokeSourceName && collection.name !== collection.invokeSourceName && (
+                                            <p>
+                                                Local name override · InvokeAI: <span className="font-medium text-gray-700 dark:text-gray-200">{collection.invokeSourceName}</span>
+                                            </p>
+                                        )}
+                                    </div>
                                 ) : canEditScope ? (
                                     <div className="space-y-3">
                                         <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -308,6 +332,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                             </div>
                             <div className="space-y-4">
                                 {/* Current Rules Editor */}
+                                {collection.source !== 'invoke' && (
                                 <div className="p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl border border-gray-200 dark:border-white/5">
                                     <div className="flex items-center justify-between mb-3">
                                         <div className="font-medium text-gray-900 dark:text-white flex items-center gap-2">
@@ -337,6 +362,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                         </button>
                                     </div>
                                 </div>
+                                )}
 
                                 <div className="relative">
                                     <div className="absolute inset-0 flex items-center" aria-hidden="true">
@@ -349,6 +375,20 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
 
                                 {/* Actions */}
                                 <div className="grid grid-cols-1 gap-3">
+                                    {collection.source === 'invoke' ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleResetInvoke()}
+                                        disabled={collection.invokeSourcePresent === false || isResettingInvoke}
+                                        className="flex items-center justify-center gap-2 p-3 rounded-xl border border-sage-200 dark:border-sage-500/30 bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/40 transition-colors text-sm font-medium group disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        <RotateCcw className={`w-4 h-4 ${isResettingInvoke ? 'animate-spin' : ''}`} />
+                                        <div className="flex flex-col items-start text-xs">
+                                            <span className="font-bold text-sm">Reset to InvokeAI</span>
+                                            <span className="text-sage-600/70 dark:text-sage-300/70">Restore the source name and membership</span>
+                                        </div>
+                                    </button>
+                                    ) : (
                                     <button
                                         onClick={handleUpdateFromGlobal}
                                         className="flex items-center justify-center gap-2 p-3 rounded-xl border border-sage-200 dark:border-sage-500/30 bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/40 transition-colors text-sm font-medium group"
@@ -359,8 +399,9 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                             <span className="text-sage-600/70 dark:text-sage-300/70 group-hover:text-sage-600 dark:group-hover:text-sage-300">Overwrites rules with your active filters</span>
                                         </div>
                                     </button>
+                                    )}
 
-                                    {hasFilters && (
+                                    {collection.source !== 'invoke' && hasFilters && (
                                         <button
                                             onClick={handleClearAll}
                                             className="flex items-center justify-center gap-2 p-3 rounded-xl border border-red-200 dark:border-red-500/30 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors text-sm font-medium"

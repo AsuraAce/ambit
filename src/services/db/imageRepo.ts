@@ -438,12 +438,10 @@ export const syncCollectionImages = async (ids?: string[]) => {
         const db = await getDb();
         console.log(`[DB] Performing bulk collection sync${ids ? ` for ${ids.length} images` : ''}...`);
 
-        let query = `
-            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-            SELECT board_id, id 
+        let requestedImages = `
+            SELECT *
             FROM scoped_images AS images
-            WHERE board_id IS NOT NULL
-              AND invoke_scope_hidden = 0
+            WHERE invoke_scope_hidden = 0
         `;
 
         const params: unknown[] = [];
@@ -451,9 +449,33 @@ export const syncCollectionImages = async (ids?: string[]) => {
             // SQLite has a limit on parameters, so we chunk if necessary, 
             // but for typical batch sizes (500) it's fine.
             const placeholders = ids.map(() => '?').join(',');
-            query += ` AND id IN (${placeholders})`;
+            requestedImages += ` AND id IN (${placeholders})`;
             params.push(...ids);
         }
+
+        const query = `
+            WITH requested_images AS (${requestedImages})
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT snapshot.collection_id, images.id
+            FROM requested_images images
+            JOIN invoke_board_membership_snapshot snapshot
+              ON snapshot.invoke_image_name = images.invoke_image_name
+            JOIN scoped_collections collection
+              ON collection.id = snapshot.collection_id
+             AND collection.invoke_source_id IS images.invoke_source_id
+             AND collection.invoke_owner_id IS images.invoke_owner_id
+            LEFT JOIN invoke_board_membership_exclusions exclusion
+              ON exclusion.collection_id = snapshot.collection_id
+             AND exclusion.invoke_image_name = snapshot.invoke_image_name
+            WHERE exclusion.collection_id IS NULL
+            UNION
+            SELECT addition.collection_id, images.id
+            FROM requested_images images
+            JOIN invoke_board_membership_additions addition
+              ON addition.image_id = images.id
+            JOIN scoped_collections collection
+              ON collection.id = addition.collection_id
+        `;
 
         await db.execute(query, params);
         if (ids && ids.length > 0) {

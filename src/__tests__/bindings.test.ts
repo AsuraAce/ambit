@@ -161,6 +161,13 @@ const commandCases: CommandCase[] = [
         returnsResult: true,
     },
     {
+        name: 'updateInvokeCollectionOwnership',
+        invokeName: 'update_invoke_collection_ownership',
+        args: ['collection', 'reset'],
+        payload: { collectionId: 'collection', action: 'reset' },
+        returnsResult: true,
+    },
+    {
         name: 'migrateLegacyCollections',
         invokeName: 'migrate_legacy_collections',
         args: [{ importKey: 'library-json-collections-v1', collections: [] }],

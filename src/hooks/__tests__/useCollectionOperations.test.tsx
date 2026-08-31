@@ -40,6 +40,7 @@ vi.mock('../../services/db/collectionRepo', () => ({
     removeImagesFromCollection: vi.fn(),
     moveImagesBetweenCollections: vi.fn(),
     setCollectionCustomThumbnail: vi.fn(),
+    resetInvokeCollection: vi.fn(),
 }));
 
 const deferred = <T,>() => {
@@ -126,6 +127,7 @@ describe('useCollectionOperations', () => {
         (collectionRepo.removeImagesFromCollection as any).mockResolvedValue(undefined);
         (collectionRepo.moveImagesBetweenCollections as any).mockResolvedValue(undefined);
         (collectionRepo.setCollectionCustomThumbnail as any).mockResolvedValue(undefined);
+        (collectionRepo.resetInvokeCollection as any).mockResolvedValue(undefined);
         mockRefreshCollections.mockResolvedValue(undefined);
         mockRefreshCollectionThumbnails.mockResolvedValue(undefined);
         mockRefreshSmartCounts.mockResolvedValue(undefined);
@@ -247,6 +249,35 @@ describe('useCollectionOperations', () => {
                 expect.any(Error)
             );
             errorSpy.mockRestore();
+        });
+    });
+
+    describe('resetInvokeCollection', () => {
+        it('resets source organization and refreshes collection and image data', async () => {
+            const invokeCollection: Collection = {
+                id: 'board-1',
+                name: 'Local label',
+                createdAt: 1,
+                imageIds: [],
+                source: 'invoke',
+                invokeSourceName: 'Upstream label',
+                invokeSourcePresent: true,
+            };
+            const { resetInvokeCollection } = await import('../../services/db/collectionRepo');
+            const { result } = renderHook(() => useCollectionOperations({
+                ...props,
+                collections: [invokeCollection],
+            }));
+
+            let reset = false;
+            await act(async () => {
+                reset = await result.current.resetInvokeCollection('board-1');
+            });
+
+            expect(reset).toBe(true);
+            expect(resetInvokeCollection).toHaveBeenCalledWith('board-1');
+            expect(mockRefreshCollections).toHaveBeenCalled();
+            expect(mockAddToast).toHaveBeenCalledWith('InvokeAI collection reset', 'success');
         });
     });
 

@@ -26,6 +26,7 @@ import { insertImagesBatch } from '../db';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
+    getRemovedImagesByIds,
     ImagePathIdentityMove,
     moveImagePathIdentities,
     moveImagePathIdentity,
@@ -621,6 +622,16 @@ export const syncImages = async (
             ...legacyFlatPaths.filter((path): path is string => !!path)
         ]));
 
+        let missingSourcePaths = new Set<string>();
+        if (batchPaths.length > 0) {
+            try {
+                const missingPaths = await unwrap(commands.verifyImagePaths(batchPaths));
+                missingSourcePaths = new Set(missingPaths.map(path => normalizePath(path)));
+            } catch (error) {
+                console.warn('[InvokeAI Sync] Failed to verify InvokeAI source image paths.', error);
+            }
+        }
+
         let sizes: number[] = [];
         const fileSizeProbeStartedAt = liveWatchNow();
         if (batchPaths.length > 0) {
@@ -633,8 +644,12 @@ export const syncImages = async (
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
+        const [existingImagesInBatch, removedImagesInBatch] = await Promise.all([
+            getImagesByIds(lookupPaths, { includeOwnerHidden: true }),
+            getRemovedImagesByIds(lookupPaths),
+        ]);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
+        const tombstonedIds = new Set(removedImagesInBatch.map(img => normalizePath(img.id)));
         const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
@@ -652,6 +667,14 @@ export const syncImages = async (
             const fullPath = resolvedPath.absolutePath;
             const fileSize = sizeByPath.get(fullPath) || 0;
             const legacyFlatPath = legacyFlatPaths[i];
+            const normalizedFullPath = normalizePath(fullPath);
+            const normalizedLegacyFlatPath = legacyFlatPath ? normalizePath(legacyFlatPath) : undefined;
+            if (tombstonedIds.has(normalizedFullPath)
+                || (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))) {
+                processed++;
+                continue;
+            }
+            const sourceMissing = missingSourcePaths.has(normalizedFullPath);
             let pathRepaired = false;
 
             try {
@@ -698,6 +721,11 @@ export const syncImages = async (
                             existingMap.set(fullPath, existing);
                         }
                     }
+                }
+
+                if (sourceMissing && !existing) {
+                    processed++;
+                    continue;
                 }
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
@@ -813,6 +841,7 @@ export const syncImages = async (
                     if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
                     if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
                     if ((existing.invokeOwnerId ?? null) !== (row.user_id?.trim() || null)) needsUpdate = true;
+                    if (sourceMissing !== (existing.isMissing === true)) needsUpdate = true;
                 }
 
                 const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
@@ -872,7 +901,7 @@ export const syncImages = async (
                     isFavorite,
                     isPinned,
                     isDeleted: existing?.isDeleted || false,
-                    isMissing: false,
+                    isMissing: sourceMissing,
                     boardId: boardId,
                     notes: existing?.notes, // Preserve user notes
                     metadata: finalMetadata,
