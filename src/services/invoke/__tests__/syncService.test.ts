@@ -8,6 +8,7 @@ import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
     getRemovedImagesByIds,
+    getRemovedInvokeImageNames,
     moveImagePathIdentities,
     moveImagePathIdentity,
     syncCollectionImages
@@ -105,6 +106,7 @@ vi.mock('../../db/imageRepo', () => ({
     getFlatInvokeImageIdsForRoot: vi.fn(),
     getImagesByIds: vi.fn(),
     getRemovedImagesByIds: vi.fn(),
+    getRemovedInvokeImageNames: vi.fn(),
     moveImagePathIdentities: vi.fn(),
     moveImagePathIdentity: vi.fn(),
     syncCollectionImages: vi.fn()
@@ -247,6 +249,7 @@ describe('syncImages live mode', () => {
         vi.mocked(getFlatInvokeImageIdsForRoot).mockResolvedValue([]);
         vi.mocked(getImagesByIds).mockResolvedValue([]);
         vi.mocked(getRemovedImagesByIds).mockResolvedValue([]);
+        vi.mocked(getRemovedInvokeImageNames).mockResolvedValue([]);
         vi.mocked(moveImagePathIdentities).mockResolvedValue({
             moved: 0,
             skippedTargetExists: 0,
@@ -829,6 +832,45 @@ describe('syncImages live mode', () => {
             syncFavorites: false,
         });
 
+        expect(result.imported).toBe(0);
+        expect(insertImagesBatch).not.toHaveBeenCalled();
+        expect(syncCollectionImages).not.toHaveBeenCalled();
+    });
+
+    it('keeps an Invoke image Removed when its resolved source path changes', async () => {
+        const selectMock = vi.fn(async (query: string) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'image_subfolder' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                return [{
+                    image_name: 'relocated.png',
+                    image_subfolder: 'new/location',
+                    metadata_blob: JSON.stringify({ positive_prompt: 'test' }),
+                    created_at: '2026-04-18 12:00:00',
+                    width: 512,
+                    height: 512,
+                }];
+            }
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+        vi.mocked(getRemovedInvokeImageNames).mockResolvedValue(['relocated.png']);
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual',
+            syncBoards: false,
+            syncFavorites: false,
+        });
+
+        expect(getRemovedInvokeImageNames).toHaveBeenCalledWith(
+            legacyScope.dbPath,
+            ['relocated.png']
+        );
         expect(result.imported).toBe(0);
         expect(insertImagesBatch).not.toHaveBeenCalled();
         expect(syncCollectionImages).not.toHaveBeenCalled();

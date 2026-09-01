@@ -23,6 +23,7 @@ import {
     clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
+import { isSameInvokePath } from '../invoke/pathIdentity';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 type PersistableImageRecord = {
@@ -808,6 +809,52 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     }
 
     return allImages;
+};
+
+export const getRemovedInvokeImageNames = async (
+    invokeSourceId: string,
+    invokeImageNames: string[]
+): Promise<string[]> => {
+    if (invokeImageNames.length === 0) return [];
+    const db = await getDb();
+
+    const CHUNK_SIZE = 899;
+    const removedNames: string[] = [];
+    for (let i = 0; i < invokeImageNames.length; i += CHUNK_SIZE) {
+        const chunk = invokeImageNames.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = await db.select<Array<{
+            invoke_source_id: string;
+            scope_db_path: string;
+            invoke_image_name: string;
+        }>>(
+            `SELECT DISTINCT removed_images.invoke_source_id,
+                             scope.db_path AS scope_db_path,
+                             removed_images.invoke_image_name
+             FROM removed_images AS removed_images
+             JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+             WHERE removed_images.invoke_source_id IS NOT NULL
+               AND removed_images.invoke_image_name IN (${placeholders})
+               AND removed_images.invoke_scope_hidden = 0
+               AND (
+                   scope.scope_mode IN ('legacy', 'all')
+                   OR (
+                       scope.scope_mode = 'owner'
+                       AND (
+                           removed_images.invoke_owner_id IS NULL
+                           OR removed_images.invoke_owner_id = scope.owner_id
+                       )
+                   )
+               )`,
+            chunk
+        );
+        removedNames.push(...rows
+            .filter(row => isSameInvokePath(row.scope_db_path, invokeSourceId)
+                && isSameInvokePath(row.invoke_source_id, invokeSourceId))
+            .map(row => row.invoke_image_name));
+    }
+
+    return removedNames;
 };
 
 export const getImageWithFullMetadata = async (id: string): Promise<AIImage | null> => {

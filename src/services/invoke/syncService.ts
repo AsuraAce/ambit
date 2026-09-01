@@ -27,6 +27,7 @@ import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
     getRemovedImagesByIds,
+    getRemovedInvokeImageNames,
     ImagePathIdentityMove,
     moveImagePathIdentities,
     moveImagePathIdentity,
@@ -645,12 +646,14 @@ export const syncImages = async (
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const [existingImagesInBatch, removedImagesInBatch] = await Promise.all([
+        const [existingImagesInBatch, removedImagesInBatch, removedInvokeImageNames] = await Promise.all([
             getImagesByIds(lookupPaths, { includeOwnerHidden: true }),
             getRemovedImagesByIds(lookupPaths),
+            getRemovedInvokeImageNames(scope.dbPath, rows.map(row => row.image_name)),
         ]);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
         const tombstonedIds = new Set(removedImagesInBatch.map(img => normalizePath(img.id)));
+        const tombstonedInvokeImageNames = new Set(removedInvokeImageNames);
         const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
@@ -670,7 +673,8 @@ export const syncImages = async (
             const legacyFlatPath = legacyFlatPaths[i];
             const normalizedFullPath = normalizePath(fullPath);
             const normalizedLegacyFlatPath = legacyFlatPath ? normalizePath(legacyFlatPath) : undefined;
-            if (tombstonedIds.has(normalizedFullPath)
+            if (tombstonedInvokeImageNames.has(row.image_name)
+                || tombstonedIds.has(normalizedFullPath)
                 || (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))) {
                 processed++;
                 continue;

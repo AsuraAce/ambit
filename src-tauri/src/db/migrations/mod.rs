@@ -43,6 +43,7 @@ pub mod m73_ambit_collection_scope;
 pub mod m74_invoke_scope_literal_prefix;
 pub mod m75_owner_scope_review;
 pub mod m76_invoke_collection_ownership;
+pub mod m77_removed_invoke_identity_index;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -95,6 +96,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m74_invoke_scope_literal_prefix::migration74());
     migrations.push(m75_owner_scope_review::migration75());
     migrations.push(m76_invoke_collection_ownership::migration76());
+    migrations.push(m77_removed_invoke_identity_index::migration77());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -104,9 +106,10 @@ pub fn get_migrations() -> Vec<Migration> {
 #[cfg(test)]
 mod tests {
     use super::get_migrations;
+    use rusqlite::Connection;
 
     #[test]
-    fn migrations_include_mainline_through_invoke_collection_ownership_76() {
+    fn migrations_include_mainline_through_removed_invoke_identity_index_77() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -140,6 +143,7 @@ mod tests {
         assert!(versions.contains(&74));
         assert!(versions.contains(&75));
         assert!(versions.contains(&76));
+        assert!(versions.contains(&77));
     }
 
     #[test]
@@ -172,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_invoke_collection_ownership_76_pending() {
+    fn database_at_mainline_49_has_migrations_through_removed_invoke_identity_index_77_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -186,8 +190,52 @@ mod tests {
             pending_after_49,
             vec![
                 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
-                71, 72, 73, 74, 75, 76
+                71, 72, 73, 74, 75, 76, 77
             ]
+        );
+    }
+
+    #[test]
+    fn removed_invoke_identity_lookup_uses_image_name_index() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in get_migrations() {
+            conn.execute_batch(&migration.sql)
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+        }
+
+        let plan = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT DISTINCT removed_images.invoke_source_id,
+                                 scope.db_path,
+                                 removed_images.invoke_image_name
+                 FROM removed_images AS removed_images
+                 JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+                 WHERE removed_images.invoke_source_id IS NOT NULL
+                   AND removed_images.invoke_image_name IN ('one.png', 'two.png')
+                   AND removed_images.invoke_scope_hidden = 0
+                   AND (
+                       scope.scope_mode IN ('legacy', 'all')
+                       OR (
+                           scope.scope_mode = 'owner'
+                           AND (
+                               removed_images.invoke_owner_id IS NULL
+                               OR removed_images.invoke_owner_id = scope.owner_id
+                           )
+                       )
+                   )",
+            )
+            .expect("prepare identity lookup plan")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("read identity lookup plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect identity lookup plan");
+
+        assert!(
+            plan.iter().any(|detail| {
+                detail.contains("idx_removed_images_invoke_name_scope_source_owner")
+            }),
+            "Removed Invoke identity lookup should use its image-name index: {plan:?}"
         );
     }
 }

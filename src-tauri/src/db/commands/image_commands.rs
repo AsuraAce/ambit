@@ -3399,9 +3399,13 @@ mod tests {
                  ('active-moved', 'C:/Invoke/outputs/images/moved.png', 1, 'invoke.db', 'owner-a'),
                  ('other-source', 'C:/Other/outputs/images/other.png', 2, 'other.db', 'owner-a');
              INSERT INTO removed_images (
-                 id, path, timestamp, removed_at, invoke_source_id, invoke_owner_id
+                 id, path, timestamp, removed_at, invoke_image_name,
+                 invoke_source_id, invoke_owner_id
              ) VALUES
-                 ('removed-missing', 'C:/Invoke/outputs/images/missing.png', 3, 4, 'invoke.db', 'owner-a');",
+                 (
+                     'removed-missing', 'C:/Invoke/outputs/images/missing.png', 3, 4,
+                     'missing.png', 'invoke.db', 'owner-a'
+                 );",
         )
         .expect("seed ownership rows");
 
@@ -3443,6 +3447,43 @@ mod tests {
         assert_eq!(active_owner.as_deref(), Some("owner-b"));
         assert_eq!(removed_owner, None);
         assert_eq!(other_owner.as_deref(), Some("owner-a"));
+
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'invoke.db', 'C:/Invoke', 'owner', 'owner-b', 1)
+             ON CONFLICT(state_key) DO UPDATE SET
+                 db_path = excluded.db_path,
+                 images_root = excluded.images_root,
+                 scope_mode = excluded.scope_mode,
+                 owner_id = excluded.owner_id,
+                 updated_at = excluded.updated_at",
+            [],
+        )
+        .expect("activate owner scope");
+        let relocated_removed_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM removed_images
+                 JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+                 WHERE removed_images.invoke_source_id = scope.db_path
+                   AND removed_images.invoke_image_name = 'missing.png'
+                   AND removed_images.invoke_scope_hidden = 0
+                   AND (
+                       scope.scope_mode IN ('legacy', 'all')
+                       OR (
+                           scope.scope_mode = 'owner'
+                           AND (
+                               removed_images.invoke_owner_id IS NULL
+                               OR removed_images.invoke_owner_id = scope.owner_id
+                           )
+                       )
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stable removed identity lookup");
+        assert_eq!(relocated_removed_count, 1);
 
         let repeated = super::reconcile_invoke_owner_inventory_inner(
             &conn,
