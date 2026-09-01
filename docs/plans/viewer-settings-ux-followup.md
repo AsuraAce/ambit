@@ -1,7 +1,7 @@
 # Viewer and Settings UX Follow-up
 
-Status: Implementation Complete — Owner Acceptance Pending
-Last reviewed: 2026-08-31
+Status: Complete
+Last reviewed: 2026-09-01
 
 ## Outcome
 

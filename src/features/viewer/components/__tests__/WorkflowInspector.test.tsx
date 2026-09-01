@@ -986,6 +986,46 @@ describe('WorkflowInspector ComfyUI parser diagnostics', () => {
         expect(screen.getByRole('button', { name: 'Parser Diagnostics' }).getAttribute('aria-expanded')).toBe('false');
         expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(1);
     });
+    it('withholds diagnostic actions until changed chunks receive a matching report', async () => {
+        const initialImage = makeImage();
+        const updatedChunks = {
+            ...initialImage.originalChunks!,
+            prompt: `${promptJson} updated`
+        };
+        let resolveUpdatedInspection!: (value: { status: 'ok'; data: typeof diagnosticsReport }) => void;
+        mockInspectComfyuiMetadataChunks.mockResolvedValueOnce({
+            status: 'ok',
+            data: diagnosticsReport
+        });
+        mockInspectComfyuiMetadataChunks.mockReturnValueOnce(new Promise((resolve) => {
+            resolveUpdatedInspection = resolve;
+        }));
+
+        const view = renderWithOpenParserDiagnostics(initialImage);
+        await screen.findByText('diagnostic_model');
+        fireEvent.click(screen.getByRole('button', { name: 'Parser Diagnostics' }));
+        view.rerender(
+            <WorkflowInspector image={{ ...initialImage, originalChunks: updatedChunks }} />
+        );
+        openParserDiagnostics();
+
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenCalledTimes(2);
+        expect(mockInspectComfyuiMetadataChunks).toHaveBeenLastCalledWith(updatedChunks);
+        expect(screen.getByText('Loading diagnostics...')).toBeTruthy();
+        expect(screen.queryByLabelText('Parser diagnostics actions')).toBeNull();
+
+        act(() => resolveUpdatedInspection({
+            status: 'ok',
+            data: {
+                ...diagnosticsReport,
+                graphNodeCount: 3,
+                metadata: { ...diagnosticsReport.metadata, model: 'updated_model' }
+            }
+        }));
+
+        expect(await screen.findByText('updated_model')).toBeTruthy();
+        expect(screen.getByLabelText('Parser diagnostics actions')).toBeTruthy();
+    });
     it('resets expanded blockers when diagnostics change to another image', async () => {
         const traversalIssues = Array.from({ length: 6 }, (_, index) => ({
             field: 'positive_prompt',

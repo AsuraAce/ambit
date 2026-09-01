@@ -154,7 +154,11 @@ const ComfyDiagnosticsPanel: React.FC<{
     onFocusNode: (nodeId: string) => void;
 }> = ({ image, chunks, nodeById, onFocusNode }) => {
     const [expanded, setExpanded] = useState(false);
-    const [diagnostics, setDiagnostics] = useState<ComfyParserDiagnosticsReport | null>(null);
+    const [diagnosticsResult, setDiagnosticsResult] = useState<{
+        chunks: Record<string, string>;
+        report: ComfyParserDiagnosticsReport;
+    } | null>(null);
+    const diagnostics = diagnosticsResult?.chunks === chunks ? diagnosticsResult?.report ?? null : null;
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [copiedDiagnostics, setCopiedDiagnostics] = useState(false);
@@ -172,7 +176,7 @@ const ComfyDiagnosticsPanel: React.FC<{
         }
 
         if (!chunks || chunkCount === 0) {
-            setDiagnostics(null);
+            setDiagnosticsResult(null);
             setError(null);
             setIsLoading(false);
             return;
@@ -186,15 +190,15 @@ const ComfyDiagnosticsPanel: React.FC<{
             .then((result) => {
                 if (cancelled) return;
                 if (result.status === 'ok') {
-                    setDiagnostics(result.data);
+                    setDiagnosticsResult({ chunks, report: result.data });
                 } else {
-                    setDiagnostics(null);
+                    setDiagnosticsResult(null);
                     setError(result.error);
                 }
             })
             .catch((err) => {
                 if (cancelled) return;
-                setDiagnostics(null);
+                setDiagnosticsResult(null);
                 setError(err instanceof Error ? err.message : String(err));
             })
             .finally(() => {
