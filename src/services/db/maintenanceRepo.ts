@@ -346,13 +346,22 @@ export const getUnoptimizedImagesCount = async (whereClause: string = '', params
  * Paginated ID and Path fetcher for regeneration processing.
  * Returns IDs and Paths to allow scanning by path and updating by ID.
  */
+export interface UnoptimizedImageCursor {
+    timestamp: number;
+    id: string;
+}
+
+export interface UnoptimizedImageEntry extends UnoptimizedImageCursor {
+    path: string;
+}
+
 export const getUnoptimizedImageEntries = async (
-    offset: number,
+    cursor: UnoptimizedImageCursor | null,
     limit: number,
     whereClause: string = '',
     params: unknown[] = [],
     includeUpgradeable: boolean = false
-): Promise<{ id: string; path: string }[]> => {
+): Promise<UnoptimizedImageEntry[]> => {
     if (isBrowserMockMode()) return [];
 
     const db = await getDb();
@@ -360,7 +369,7 @@ export const getUnoptimizedImageEntries = async (
     const unoptimizedCondition = buildUnoptimizedCondition(includeUpgradeable);
 
     let query = `
-        SELECT id, path FROM scoped_images AS images
+        SELECT id, path, COALESCE(timestamp, 0) AS timestamp FROM scoped_images AS images
         WHERE ${unoptimizedCondition}
         AND media_type = 'image'
         AND path NOT LIKE 'blob:%' 
@@ -383,8 +392,16 @@ export const getUnoptimizedImageEntries = async (
         params = [];
     }
 
-    query += ` ORDER BY timestamp DESC LIMIT ${limit} OFFSET ${offset}`;
-    const rows = await db.select<{ id: string; path: string }[]>(query, params);
+    if (cursor) {
+        query += ` AND (
+            COALESCE(timestamp, 0) < ?
+            OR (COALESCE(timestamp, 0) = ? AND id < ?)
+        )`;
+        params = [...params, cursor.timestamp, cursor.timestamp, cursor.id];
+    }
+
+    query += ` ORDER BY COALESCE(timestamp, 0) DESC, id DESC LIMIT ${limit}`;
+    const rows = await db.select<UnoptimizedImageEntry[]>(query, params);
     return rows;
 };
 

@@ -60,6 +60,7 @@ export interface ThumbnailOptimizationDetails {
     batchMs: number;
     dbMs: number;
     encodeMs: number;
+    candidateFetchMs?: number;
     profile: ThumbnailOptimizationDetailProfile;
     phase: string;
     isThrottled: boolean;

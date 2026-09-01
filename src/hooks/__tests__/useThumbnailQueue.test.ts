@@ -649,19 +649,25 @@ describe('useThumbnailQueue behavioral contract', () => {
         warnSpy.mockRestore();
     });
 
-    it('shows visible zero-total progress without emitting debug output for zero checked', async () => {
+    it('shows the zero-count discovery event immediately without inventing a total', async () => {
         const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
         renderHook(() => useThumbnailQueue());
         const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
 
         act(() => progressHandler?.({ payload: {
-            checked: 0, total: 0, optimized: 1, reused: 0, failed: 0, skipped: 0,
+            checked: 0, total: null, optimized: 0, missing: 0, reused: 0, failed: 0, skipped: 0,
             imagesPerSecond: 1, batchMs: 1, dbMs: 1, encodeMs: 1,
-            profile: 'balanced', phase: 'running', message: 'Working', isThrottled: false,
+            candidateFetchMs: 0,
+            profile: 'balanced', phase: 'discovering', message: 'Checking library thumbnails...', isThrottled: false,
         } }));
 
-        expect(useLibraryStore.getState().backgroundHealingProgress).toEqual(expect.objectContaining({ current: 0, total: 0 }));
+        expect(useLibraryStore.getState().backgroundHealingProgress).toEqual(expect.objectContaining({
+            current: 0,
+            total: 0,
+            mode: 'indeterminate',
+            message: 'Checking library thumbnails...',
+        }));
         expect(debugSpy).not.toHaveBeenCalled();
         debugSpy.mockRestore();
     });

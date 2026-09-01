@@ -45,6 +45,7 @@ pub mod m75_owner_scope_review;
 pub mod m76_invoke_collection_ownership;
 pub mod m77_removed_invoke_identity_index;
 pub mod m78_thumbnail_retry_invalidation;
+pub mod m79_thumbnail_repair_candidates;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -99,6 +100,7 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m76_invoke_collection_ownership::migration76());
     migrations.push(m77_removed_invoke_identity_index::migration77());
     migrations.push(m78_thumbnail_retry_invalidation::migration78());
+    migrations.push(m79_thumbnail_repair_candidates::migration79());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -111,7 +113,7 @@ mod tests {
     use rusqlite::Connection;
 
     #[test]
-    fn migrations_include_mainline_through_thumbnail_retry_invalidation_fix_78() {
+    fn migrations_include_mainline_through_thumbnail_candidate_indexes_79() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -147,6 +149,7 @@ mod tests {
         assert!(versions.contains(&76));
         assert!(versions.contains(&77));
         assert!(versions.contains(&78));
+        assert!(versions.contains(&79));
     }
 
     #[test]

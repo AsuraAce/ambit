@@ -5,6 +5,7 @@ import { scanImageNative, scanImagesBulk } from './metadataParser';
 import { AIImage } from '../types';
 import { getDb } from './db/connection';
 import { getUnoptimizedImagesCount, getUnoptimizedImageEntries } from './db/maintenanceRepo';
+import type { UnoptimizedImageCursor } from './db/maintenanceRepo';
 import { updateThumbnailPathsBatch } from './db/imageRepo';
 import { normalizePath } from '../utils/pathUtils';
 
@@ -148,16 +149,20 @@ export const regenerateAllUnoptimized = async (
     const PAGE_SIZE = 500; // Fetch 500 IDs at a time from DB
     const BATCH_SIZE = 150; // Process 150 at a time for thumbnail generation
 
-    // Process in pages
-    for (let offset = 0; offset < total; offset += PAGE_SIZE) {
+    let cursor: UnoptimizedImageCursor | null = null;
+
+    // Keyset pagination remains stable as successful rows leave the candidate set.
+    while (processed < total) {
         if (signal?.aborted) {
             console.log('[Thumb] Regeneration cancelled by user');
             break;
         }
 
         // Fetch next page of IDs
-        const entries = await getUnoptimizedImageEntries(offset, PAGE_SIZE, whereClause, params, includeUpgradeable);
+        const entries = await getUnoptimizedImageEntries(cursor, PAGE_SIZE, whereClause, params, includeUpgradeable);
         if (entries.length === 0) break;
+        const lastEntry = entries[entries.length - 1];
+        cursor = { timestamp: lastEntry.timestamp, id: lastEntry.id };
 
         // Process this page in batches
         for (let i = 0; i < entries.length; i += BATCH_SIZE) {
@@ -177,7 +182,7 @@ export const regenerateAllUnoptimized = async (
                     }
                 });
             } catch (e) {
-                console.error(`[Thumb] Batch failed at offset ${offset + i}`, e);
+                console.error(`[Thumb] Batch failed after ${processed} checked images`, e);
             }
 
             // Persist batch to DB immediately (don't accumulate all in memory)

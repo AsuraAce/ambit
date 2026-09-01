@@ -143,7 +143,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             fs_commands::register_library_path,
             fs_commands::get_invoke_db_snapshot,
         ])
-        .events(tauri_specta::collect_events![watcher::FolderChangeEvent])
+        .events(tauri_specta::collect_events![
+            watcher::FolderChangeEvent,
+            thumb::optimizer::ThumbnailOptimizationProgress,
+            thumb::optimizer::ThumbnailOptimizationComplete
+        ])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

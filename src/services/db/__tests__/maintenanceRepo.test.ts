@@ -162,7 +162,7 @@ describe('maintenanceRepo', () => {
         await expect(getUntaggedImages()).resolves.toEqual([browserImages[4], browserImages[7]]);
         await expect(getUnoptimizedImages()).resolves.toEqual([]);
         await expect(getUnoptimizedImagesCount()).resolves.toBe(0);
-        await expect(getUnoptimizedImageEntries(0, 10)).resolves.toEqual([]);
+        await expect(getUnoptimizedImageEntries(null, 10)).resolves.toEqual([]);
         await expect(backfillImageFileHashes()).resolves.toEqual({
             scanned: 0,
             updated: 0,
@@ -491,20 +491,27 @@ describe('maintenanceRepo', () => {
 
     it('fetches unoptimized entries with stable pagination and caller filters', async () => {
         const db = {
-            select: vi.fn().mockResolvedValue([{ id: 'id-a', path: 'C:/library/a.png' }]),
+            select: vi.fn().mockResolvedValue([{ id: 'id-a', path: 'C:/library/a.png', timestamp: 400 }]),
             execute: vi.fn(),
         };
         mocks.getDb.mockResolvedValue(db);
 
         const { getUnoptimizedImageEntries } = await import('../maintenanceRepo');
-        await expect(getUnoptimizedImageEntries(500, 150, 'model_name = ?', ['model-a'])).resolves.toEqual([
-            { id: 'id-a', path: 'C:/library/a.png' },
+        await expect(getUnoptimizedImageEntries(
+            { timestamp: 500, id: 'id-before' },
+            150,
+            'model_name = ?',
+            ['model-a']
+        )).resolves.toEqual([
+            { id: 'id-a', path: 'C:/library/a.png', timestamp: 400 },
         ]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
         expect(query).toContain('AND model_name = ?');
-        expect(query).toContain('LIMIT 150 OFFSET 500');
-        expect(params).toEqual(['model-a']);
+        expect(query).toContain('COALESCE(timestamp, 0) < ?');
+        expect(query).toContain('ORDER BY COALESCE(timestamp, 0) DESC, id DESC LIMIT 150');
+        expect(query).not.toContain('OFFSET');
+        expect(params).toEqual(['model-a', 500, 500, 'id-before']);
     });
 
     it('clears stale filter params for global unoptimized entry pagination', async () => {
@@ -515,11 +522,12 @@ describe('maintenanceRepo', () => {
         mocks.getDb.mockResolvedValue(db);
 
         const { getUnoptimizedImageEntries } = await import('../maintenanceRepo');
-        await expect(getUnoptimizedImageEntries(0, 25, '', ['stale-param'], true)).resolves.toEqual([]);
+        await expect(getUnoptimizedImageEntries(null, 25, '', ['stale-param'], true)).resolves.toEqual([]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
         expect(query).toContain("thumbnail_source IS NULL OR thumbnail_source != 'ambit'");
-        expect(query).toContain('LIMIT 25 OFFSET 0');
+        expect(query).toContain('LIMIT 25');
+        expect(query).not.toContain('OFFSET');
         expect(params).toEqual([]);
     });
 
@@ -546,7 +554,7 @@ describe('maintenanceRepo', () => {
         await getUnoptimizedImages('rating >= ?', [3]);
         await getUnoptimizedImages('', ['stale']);
         await getUnoptimizedImagesCount('rating >= ?', [4]);
-        await getUnoptimizedImageEntries(0, 10, 'WHERE rating >= ?', [5]);
+        await getUnoptimizedImageEntries(null, 10, 'WHERE rating >= ?', [5]);
 
         const queries = db.select.mock.calls.map(([query]) => query as string);
         expect(queries[0]).not.toContain('AND    ');

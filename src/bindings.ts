@@ -780,9 +780,13 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 
 
 export const events = __makeEvents__<{
-folderChangeEvent: FolderChangeEvent
+folderChangeEvent: FolderChangeEvent,
+thumbnailOptimizationComplete: ThumbnailOptimizationComplete,
+thumbnailOptimizationProgress: ThumbnailOptimizationProgress
 }>({
-folderChangeEvent: "folder-change-event"
+folderChangeEvent: "folder-change-event",
+thumbnailOptimizationComplete: "thumbnail-optimization-complete",
+thumbnailOptimizationProgress: "thumbnail-optimization-progress"
 })
 
 /** user-defined constants **/
@@ -888,10 +892,13 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
+export type ThumbnailOptimizationComplete = ThumbnailOptimizationResult
 export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }
 export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
+export type ThumbnailOptimizationPhase = "discovering" | "processing" | "persisting" | "throttled" | "complete"
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
+export type ThumbnailOptimizationProgress = { checked: number; total: number | null; optimized: number; reused: number; missing: number; failed: number; skipped: number; imagesPerSecond: number; batchMs: number; dbMs: number; encodeMs: number; candidateFetchMs: number; profile: ThumbnailOptimizationProfile; phase: ThumbnailOptimizationPhase; message: string; isThrottled: boolean }
 export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; missing: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
 export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
 export type UpdateAmbitCollectionScopeInput = { collectionId: string; mode: AmbitCollectionScopeMode; dbPath: string | null; ownerId: string | null }

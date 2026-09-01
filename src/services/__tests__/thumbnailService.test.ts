@@ -155,9 +155,9 @@ describe('thumbnailService', () => {
     it('regenerates all unoptimized thumbnails from DB pages without loading every image row', async () => {
         mocks.getUnoptimizedImagesCount.mockResolvedValue(3);
         mocks.getUnoptimizedImageEntries.mockResolvedValueOnce([
-            { id: 'id-a', path: 'C:/library/a.png' },
-            { id: 'id-b', path: 'C:/library/b.png' },
-            { id: 'id-c', path: 'C:/library/c.png' },
+            { id: 'id-a', path: 'C:/library/a.png', timestamp: 30 },
+            { id: 'id-b', path: 'C:/library/b.png', timestamp: 20 },
+            { id: 'id-c', path: 'C:/library/c.png', timestamp: 10 },
         ]);
         mocks.scanImagesBulk.mockResolvedValue([{ thumbnail: 'a.webp' }, {}, { thumbnail: 'c.webp' }]);
 
@@ -173,7 +173,7 @@ describe('thumbnailService', () => {
         )).resolves.toBe(2);
 
         expect(mocks.getUnoptimizedImagesCount).toHaveBeenCalledWith('WHERE model_name = ?', ['model-a'], true);
-        expect(mocks.getUnoptimizedImageEntries).toHaveBeenCalledWith(0, 500, 'WHERE model_name = ?', ['model-a'], true);
+        expect(mocks.getUnoptimizedImageEntries).toHaveBeenCalledWith(null, 500, 'WHERE model_name = ?', ['model-a'], true);
         expect(mocks.scanImagesBulk).toHaveBeenCalledWith(
             ['C:/library/a.png', 'C:/library/b.png', 'C:/library/c.png'],
             'C:/AppData/Ambit/.thumbnails',
@@ -185,6 +185,45 @@ describe('thumbnailService', () => {
             { id: 'id-c', thumbnailPath: 'c.webp', thumbnailSource: 'ambit' },
         ]);
         expect(progress).toEqual([[3, 3]]);
+    });
+
+    it('continues from the last candidate instead of skipping rows removed by earlier repairs', async () => {
+        mocks.getUnoptimizedImagesCount.mockResolvedValue(501);
+        mocks.getUnoptimizedImageEntries
+            .mockResolvedValueOnce([
+                { id: 'id-newer', path: 'C:/library/newer.png', timestamp: 20 },
+                { id: 'id-older', path: 'C:/library/older.png', timestamp: 10 },
+            ])
+            .mockResolvedValueOnce([
+                { id: 'id-last', path: 'C:/library/last.png', timestamp: 5 },
+            ])
+            .mockResolvedValueOnce([]);
+        mocks.scanImagesBulk
+            .mockResolvedValueOnce([{ thumbnail: 'newer.webp' }, { thumbnail: 'older.webp' }])
+            .mockResolvedValueOnce([{ thumbnail: 'last.webp' }]);
+
+        const { regenerateAllUnoptimized } = await import('../thumbnailService');
+
+        await expect(regenerateAllUnoptimized()).resolves.toBe(3);
+
+        expect(mocks.getUnoptimizedImageEntries).toHaveBeenNthCalledWith(1, null, 500, '', [], false);
+        expect(mocks.getUnoptimizedImageEntries).toHaveBeenNthCalledWith(
+            2,
+            { timestamp: 10, id: 'id-older' },
+            500,
+            '',
+            [],
+            false
+        );
+        expect(mocks.getUnoptimizedImageEntries).toHaveBeenNthCalledWith(
+            3,
+            { timestamp: 5, id: 'id-last' },
+            500,
+            '',
+            [],
+            false
+        );
+        expect(mocks.scanImagesBulk).toHaveBeenCalledTimes(2);
     });
 
     it('cleans only thumbnail files that are not referenced by the database', async () => {

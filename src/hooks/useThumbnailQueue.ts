@@ -3,6 +3,7 @@ import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import {
     commands,
     type ThumbnailOptimizationProfile,
+    type ThumbnailOptimizationProgress,
     type ThumbnailOptimizationResult
 } from '../bindings';
 import { useLibraryStore } from '../stores/libraryStore';
@@ -22,24 +23,6 @@ const STARTUP_DELAY_MS = 30000;
 const RESUME_DELAY_MS = 5000;
 const COMPLETE_VISIBLE_MS = 1500;
 
-interface ThumbnailOptimizationProgress {
-    checked: number;
-    total: number;
-    optimized: number;
-    missing: number;
-    reused: number;
-    failed: number;
-    skipped: number;
-    imagesPerSecond: number;
-    batchMs: number;
-    dbMs: number;
-    encodeMs: number;
-    profile: ThumbnailOptimizationProfile;
-    phase: string;
-    message: string;
-    isThrottled: boolean;
-}
-
 type ToastFn = (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 type RunningThumbnailConfig = {
     includeUpgradeable: boolean;
@@ -48,7 +31,11 @@ type RunningThumbnailConfig = {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const hasVisibleThumbnailProgress = (progress: ThumbnailOptimizationProgress): boolean => (
-    progress.total > 0
+    progress.phase === 'discovering'
+    || progress.phase === 'persisting'
+    || progress.phase === 'throttled'
+    || progress.phase === 'complete'
+    || (progress.total ?? 0) > 0
     || progress.checked > 0
     || progress.optimized > 0
     || progress.missing > 0
@@ -237,7 +224,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         if (details) {
             setBackgroundHealingDetails({
                 ...details,
-                phase: throttled ? 'throttled' : 'running',
+                phase: throttled ? 'throttled' : 'processing',
                 isThrottled: throttled
             });
         }
@@ -376,6 +363,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                     failed: event.payload.failed,
                     skipped: event.payload.skipped,
                     phase: event.payload.phase,
+                    candidateFetchMs: event.payload.candidateFetchMs,
                     isThrottled: event.payload.isThrottled
                 });
                 if (!shouldShowProgress) return;
@@ -384,7 +372,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 setBackgroundHealingPaused(false);
                 setBackgroundHealingProgress({
                     current: event.payload.checked,
-                    total: event.payload.total > 0 ? event.payload.total : 0,
+                    total: event.payload.total ?? 0,
+                    mode: event.payload.total === null ? 'indeterminate' : undefined,
                     message: formatThumbnailQueueRunningMessage({
                         checked: event.payload.checked,
                         optimized: event.payload.optimized,
@@ -404,6 +393,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                     batchMs: event.payload.batchMs,
                     dbMs: event.payload.dbMs,
                     encodeMs: event.payload.encodeMs,
+                    candidateFetchMs: event.payload.candidateFetchMs,
                     profile: event.payload.profile,
                     phase: event.payload.phase,
                     isThrottled: event.payload.isThrottled
