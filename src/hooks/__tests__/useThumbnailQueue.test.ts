@@ -251,6 +251,17 @@ describe('useThumbnailQueue behavioral contract', () => {
         }));
     });
 
+    it('starts the backend optimizer once after React Strict Mode replays mount effects', async () => {
+        vi.useFakeTimers();
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+
+        renderHook(() => useThumbnailQueue(), { reactStrictMode: true });
+
+        await advanceStartup();
+
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+    });
+
     it('ignores invisible backend progress instead of showing empty thumbnail work', async () => {
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 

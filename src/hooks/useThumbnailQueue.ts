@@ -725,6 +725,8 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     ]);
 
     useEffect(() => {
+        mountedRef.current = true;
+
         return () => {
             mountedRef.current = false;
             cancelScheduledIdleCallback();
