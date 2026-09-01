@@ -1425,6 +1425,12 @@ describe('collectionRepo membership helpers', () => {
         expect(sql).toContain('collections.name IS collections.invoke_source_name');
         expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
+        expect(sql).toMatch(
+            /updated_at = CASE\s+WHEN collections\.invoke_source_name IS NULL\s+AND collections\.source IS 'invoke'\s+AND collections\.invoke_owner_id IS excluded\.invoke_owner_id\s+AND collections\.invoke_source_id IS excluded\.invoke_source_id\s+AND collections\.invoke_source_present = 1\s+THEN collections\.updated_at[\s\S]*ELSE MAX/
+        );
+        expect(sql).toMatch(
+            /WHEN collections\.invoke_source_name IS excluded\.invoke_source_name\s+AND collections\.source IS 'invoke'\s+AND collections\.invoke_owner_id IS excluded\.invoke_owner_id\s+AND collections\.invoke_source_id IS excluded\.invoke_source_id\s+AND collections\.invoke_source_present = 1\s+THEN collections\.updated_at/
+        );
         expect(sql).not.toContain('color = excluded.color');
         expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
         expect(sql).not.toContain('is_archived = excluded.is_archived');
@@ -1449,6 +1455,9 @@ describe('collectionRepo membership helpers', () => {
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
         expect(sql).toContain('invoke_source_name');
         expect(sql).toContain('collections.name IS collections.invoke_source_name');
+        expect(sql).toMatch(
+            /updated_at = CASE\s+WHEN collections\.invoke_source_name IS NULL\s+AND collections\.source IS 'invoke'\s+AND collections\.invoke_owner_id IS excluded\.invoke_owner_id\s+AND collections\.invoke_source_id IS excluded\.invoke_source_id\s+AND collections\.invoke_source_present = 1\s+THEN collections\.updated_at[\s\S]*ELSE MAX/
+        );
         expect(sql).not.toContain('color = excluded.color');
         expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
         expect(params.slice(0, 5)).toEqual(['board-a', 'Board A', 10, 'owner-a', 'db-a']);
