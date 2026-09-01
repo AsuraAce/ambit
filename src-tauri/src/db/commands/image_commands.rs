@@ -2439,7 +2439,16 @@ fn reconcile_invoke_board_snapshot_inner(
              invoke_board_verified = 1,
              invoke_source_name = excluded.invoke_source_name,
              invoke_source_present = 1,
-             updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+             updated_at = CASE
+                 WHEN collections.invoke_source_name IS NULL
+                  AND collections.source IS 'invoke'
+                  AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                  AND collections.invoke_source_id IS excluded.invoke_source_id
+                  AND collections.invoke_board_verified IS 1
+                  AND collections.invoke_source_present IS 1
+                 THEN collections.updated_at
+                 ELSE MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+             END
          WHERE (
                 collections.invoke_source_name IS NOT NULL
                 AND collections.name = collections.invoke_source_name
@@ -5522,6 +5531,68 @@ mod tests {
             )
             .expect("unknown seed");
         assert_eq!(unknown_seed, None);
+    }
+
+    #[test]
+    fn authoritative_board_snapshot_preserves_revision_for_source_name_backfill() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .expect("production collection revision schema");
+        conn.execute(
+            "INSERT INTO collections (
+                 id, name, created_at, updated_at, source, invoke_source_id, invoke_owner_id
+             ) VALUES ('board-a', 'Board A', 1, 123, 'invoke', 'invoke.db', 'owner-a')",
+            [],
+        )
+        .expect("seed pre-ownership board");
+
+        let mut snapshot = super::InvokeBoardSnapshotInput {
+            db_path: "invoke.db".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("owner-a".to_string()),
+            boards: vec![super::InvokeBoardSnapshotBoard {
+                id: "board-a".to_string(),
+                name: "Board A".to_string(),
+                created_at: 1,
+                owner_id: Some("owner-a".to_string()),
+            }],
+            memberships: Vec::new(),
+            reconcile_memberships: false,
+            delete_missing_collections: false,
+        };
+
+        super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+            .expect("initialize source name");
+        let initialized: (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT name, invoke_source_name, updated_at
+                 FROM collections WHERE id = 'board-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("initialized board");
+        assert_eq!(
+            initialized,
+            ("Board A".to_string(), Some("Board A".to_string()), 123),
+            "backfilling source bookkeeping must not change Recently Updated order"
+        );
+
+        snapshot.boards[0].name = "Renamed upstream".to_string();
+        super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+            .expect("apply upstream rename");
+        let renamed: (String, i64) = conn
+            .query_row(
+                "SELECT name, updated_at FROM collections WHERE id = 'board-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("renamed board");
+        assert_eq!(renamed.0, "Renamed upstream");
+        assert!(
+            renamed.1 > 123,
+            "a genuine upstream rename must advance Recently Updated order"
+        );
     }
 
     #[test]
