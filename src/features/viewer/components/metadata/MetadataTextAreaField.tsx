@@ -18,7 +18,7 @@ interface MetadataTextAreaFieldProps {
     className?: string;
     readOnly?: boolean;
     readContent?: React.ReactNode;
-    onCancelEdit?: () => void;
+    onCancelEdit?: (editStartValue: string) => void;
 }
 
 const FIELD_PRESENTATION = {
@@ -70,8 +70,17 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
         ? 'border-ember-300 bg-ember-50/70 dark:border-ember-500/50 dark:bg-ember-500/10'
         : 'border-gray-200 dark:border-white/10';
     const [isEditing, setIsEditing] = React.useState(readContent === undefined);
+    const editButtonRef = React.useRef<HTMLButtonElement>(null);
+    const editStartValueRef = React.useRef(value);
+    const restoreEditFocusRef = React.useRef(false);
     const showsReadSurface = readContent !== undefined && !isEditing;
     const canEdit = readContent !== undefined && !readOnly;
+
+    React.useLayoutEffect(() => {
+        if (!showsReadSurface || !restoreEditFocusRef.current) return;
+        restoreEditFocusRef.current = false;
+        editButtonRef.current?.focus();
+    }, [showsReadSurface]);
 
     const handleBlur: React.FocusEventHandler<HTMLTextAreaElement> = (event) => {
         onBlur?.(event);
@@ -81,16 +90,23 @@ export const MetadataTextAreaField: React.FC<MetadataTextAreaFieldProps> = ({
     const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
         if (event.key !== 'Escape' || readContent === undefined) return;
         event.preventDefault();
-        onCancelEdit?.();
+        onCancelEdit?.(editStartValueRef.current);
+        restoreEditFocusRef.current = true;
         setIsEditing(false);
+    };
+
+    const handleStartEditing = () => {
+        editStartValueRef.current = value;
+        setIsEditing(true);
     };
 
     const editAction = canEdit && showsReadSurface ? (
         <button
+            ref={editButtonRef}
             type="button"
             aria-label={'Edit ' + field.label}
             title={'Edit ' + field.label}
-            onClick={() => setIsEditing(true)}
+            onClick={handleStartEditing}
             className="rounded p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-zinc-500 dark:hover:bg-white/5 dark:hover:text-sage-300"
         >
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />

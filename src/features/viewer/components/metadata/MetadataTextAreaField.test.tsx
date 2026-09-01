@@ -102,10 +102,13 @@ describe('MetadataTextAreaField', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
         const textarea = screen.getByRole('textbox', { name: 'Positive prompt' });
         expect(textarea.tagName).toBe('TEXTAREA');
+        expect(document.activeElement).toBe(textarea);
 
         fireEvent.keyDown(textarea, { key: 'Escape' });
         expect(onCancelEdit).toHaveBeenCalledOnce();
         expect(screen.getByRole('textbox', { name: 'Positive prompt' }).tagName).toBe('DIV');
+        const editButton = screen.getByRole('button', { name: 'Edit Positive prompt' });
+        expect(document.activeElement).toBe(editButton);
 
         fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
         fireEvent.blur(screen.getByRole('textbox', { name: 'Positive prompt' }));

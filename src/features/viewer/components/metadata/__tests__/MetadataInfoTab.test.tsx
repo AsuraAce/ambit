@@ -414,6 +414,32 @@ describe('MetadataInfoTab', () => {
         expect(screen.getByRole('textbox', { name: 'Positive prompt' }).textContent).toBe('Original prompt');
     });
 
+    it('restores the displayed prompt values when Escape follows an immediate re-edit', () => {
+        const staleImage = image(
+            metadata({ positivePrompt: 'Stale positive', negativePrompt: 'Stale negative' }),
+            metadata(),
+        );
+        const { props } = renderTab(staleImage, {
+            promptValue: 'Saved positive',
+            negativePromptValue: 'Saved negative',
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        const positivePrompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        fireEvent.change(positivePrompt, { target: { value: 'Unsaved positive' } });
+        fireEvent.keyDown(positivePrompt, { key: 'Escape' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Negative prompt' }));
+        const negativePrompt = screen.getByRole('textbox', { name: 'Negative prompt' });
+        fireEvent.change(negativePrompt, { target: { value: 'Unsaved negative' } });
+        fireEvent.keyDown(negativePrompt, { key: 'Escape' });
+
+        expect(props.setPromptValue).toHaveBeenLastCalledWith('Saved positive');
+        expect(props.setNegativePromptValue).toHaveBeenLastCalledWith('Saved negative');
+        expect(props.onUpdatePrompt).not.toHaveBeenCalled();
+        expect(props.onUpdateNegativePrompt).not.toHaveBeenCalled();
+    });
+
     it('wires creative assistant controls and busy state', () => {
         const { props, rerender } = renderTab(image(metadata(), metadata()), { onOpenAIResult: vi.fn() });
         const assistantHeading = screen.getByText('Creative Assistant');

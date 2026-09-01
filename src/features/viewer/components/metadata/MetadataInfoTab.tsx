@@ -190,11 +190,10 @@ export const MetadataInfoTab = ({
         setTimeout(() => setPromptSuggestions([]), 200);
     };
 
-    const cancelPromptEdit = () => {
-        const originalValue = image.metadata.positivePrompt ?? '';
-        promptDraftRef.current = originalValue;
+    const cancelPromptEdit = (editStartValue: string) => {
+        promptDraftRef.current = editStartValue;
         promptDirtyRef.current = false;
-        setPromptValue(originalValue);
+        setPromptValue(editStartValue);
         setIsPromptDirty(false);
         setPromptSuggestions([]);
     };
@@ -218,10 +217,9 @@ export const MetadataInfoTab = ({
         }
     };
 
-    const cancelNegativePromptEdit = () => {
-        const originalValue = image.metadata.negativePrompt ?? '';
-        negativePromptDraftRef.current = originalValue;
-        setNegativePromptValue(originalValue);
+    const cancelNegativePromptEdit = (editStartValue: string) => {
+        negativePromptDraftRef.current = editStartValue;
+        setNegativePromptValue(editStartValue);
         setIsNegativePromptDirty(false);
     };
 
