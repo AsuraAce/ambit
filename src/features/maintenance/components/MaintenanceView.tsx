@@ -27,6 +27,7 @@ import { useSettingsStore } from '../../../stores/settingsStore';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { refreshThumbnailConsumers } from '../../../services/thumbnailConsumerRefresh';
+import { useToast } from '../../../hooks/useToast';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -100,6 +101,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const { activeSqlWhere, activeSqlParams } = useLibraryContext();
     const queryClient = useQueryClient();
     const refreshCollectionThumbnails = useCollectionStore(state => state.refreshCollectionThumbnails);
+    const { addToast } = useToast();
 
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
@@ -490,6 +492,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     refreshCollectionThumbnails,
                     logPrefix: '[Maintenance]',
                 });
+            } catch (error) {
+                console.error('[Maintenance] Thumbnail regeneration failed', error);
+                addToast('Thumbnail optimization failed partway through', 'error');
             } finally {
                 setIsRegeneratingThumbnails(false);
                 setThumbnailProgress(null);

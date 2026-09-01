@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
     getUnoptimizedImageEntries: vi.fn(),
     updateThumbnailPathsBatch: vi.fn(),
     repairThumbnailBatch: vi.fn(),
+    beginThumbnailRepairOperation: vi.fn(),
+    finishThumbnailRepairOperation: vi.fn(),
     cancelThumbnailOptimizationJob: vi.fn(),
     getSettingsState: vi.fn(),
 }));
@@ -55,6 +57,8 @@ vi.mock('../db/imageRepo', () => ({
 vi.mock('../../bindings', () => ({
     commands: {
         repairThumbnailBatch: mocks.repairThumbnailBatch,
+        beginThumbnailRepairOperation: mocks.beginThumbnailRepairOperation,
+        finishThumbnailRepairOperation: mocks.finishThumbnailRepairOperation,
         cancelThumbnailOptimizationJob: mocks.cancelThumbnailOptimizationJob,
     },
 }));
@@ -123,6 +127,8 @@ describe('thumbnailService', () => {
         mocks.getUnoptimizedImageEntries.mockResolvedValue([]);
         mocks.updateThumbnailPathsBatch.mockResolvedValue(undefined);
         mocks.repairThumbnailBatch.mockResolvedValue(nativeRepairResult());
+        mocks.beginThumbnailRepairOperation.mockResolvedValue({ status: 'ok', data: 7 });
+        mocks.finishThumbnailRepairOperation.mockResolvedValue({ status: 'ok', data: null });
         mocks.cancelThumbnailOptimizationJob.mockResolvedValue(undefined);
         mocks.getSettingsState.mockReturnValue({
             settings: {
@@ -190,6 +196,7 @@ describe('thumbnailService', () => {
         );
 
         expect(mocks.repairThumbnailBatch).toHaveBeenCalledWith({
+            operationId: 7,
             ids: ['C:/library/a.png', 'C:/library/b.png', 'C:/library/c.png'],
             thumbnailDir: 'C:/AppData/Ambit/.thumbnails',
             sourceRoots: ['C:/library'],
@@ -198,6 +205,8 @@ describe('thumbnailService', () => {
         });
         expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
         expect(mocks.updateThumbnailPathsBatch).not.toHaveBeenCalled();
+        expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledOnce();
+        expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
         expect(updates.map(image => image.thumbnailUrl)).toEqual(['thumb-a.webp', 'thumb-c.webp']);
         expect(progress).toEqual([[3, 3]]);
     });
@@ -228,6 +237,7 @@ describe('thumbnailService', () => {
         expect(mocks.getUnoptimizedImagesCount).toHaveBeenCalledWith('WHERE model_name = ?', ['model-a'], true);
         expect(mocks.getUnoptimizedImageEntries).toHaveBeenCalledWith(null, 500, 'WHERE model_name = ?', ['model-a'], true);
         expect(mocks.repairThumbnailBatch).toHaveBeenCalledWith({
+            operationId: 7,
             ids: ['id-a', 'id-b', 'id-c'],
             thumbnailDir: 'C:/AppData/Ambit/.thumbnails',
             sourceRoots: ['C:/library'],
@@ -236,6 +246,8 @@ describe('thumbnailService', () => {
         });
         expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
         expect(mocks.updateThumbnailPathsBatch).not.toHaveBeenCalled();
+        expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledOnce();
+        expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
         expect(progress).toEqual([[3, 3]]);
     });
 
@@ -370,7 +382,7 @@ describe('thumbnailService', () => {
         await Promise.all(active);
     });
 
-    it('handles empty, cancelled, and failed selected native regeneration batches', async () => {
+    it('does not report a rejected selected batch as completed work', async () => {
         const { regenerateThumbnailsForImages } = await import('../thumbnailService');
         await expect(regenerateThumbnailsForImages([])).resolves.toEqual([]);
 
@@ -380,8 +392,9 @@ describe('thumbnailService', () => {
 
         mocks.repairThumbnailBatch.mockRejectedValueOnce(new Error('native repair failed'));
         const progress = vi.fn();
-        await expect(regenerateThumbnailsForImages([imageFixture('failed')], progress)).resolves.toEqual([]);
-        expect(progress).toHaveBeenCalledWith(1, 1);
+        await expect(regenerateThumbnailsForImages([imageFixture('failed')], progress)).rejects.toThrow('native repair failed');
+        expect(progress).not.toHaveBeenCalled();
+        expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
 
         mocks.repairThumbnailBatch.mockResolvedValueOnce(nativeRepairResult([
             { id: 'generated', thumbnailPath: 'generated.webp' },
@@ -404,7 +417,7 @@ describe('thumbnailService', () => {
         );
         await vi.waitFor(() => expect(mocks.repairThumbnailBatch).toHaveBeenCalledOnce());
         controller.abort();
-        await vi.waitFor(() => expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledWith(7));
         finishRepair(nativeRepairResult([], { requested: 1, checked: 0 }));
 
         await expect(regeneration).resolves.toEqual([]);
@@ -436,7 +449,7 @@ describe('thumbnailService', () => {
         expect(mocks.repairThumbnailBatch).not.toHaveBeenCalled();
     });
 
-    it('contains regenerate-all native batch failures and continues the next batch', async () => {
+    it('stops regenerate-all without advancing past a rejected native batch', async () => {
         const entries = Array.from({ length: 151 }, (_, index) => ({
             id: `id-${index}`,
             path: `C:/${index}.png`
@@ -450,7 +463,10 @@ describe('thumbnailService', () => {
             ]));
         const { regenerateAllUnoptimized } = await import('../thumbnailService');
 
-        await expect(regenerateAllUnoptimized()).resolves.toBe(1);
+        const progress = vi.fn();
+        await expect(regenerateAllUnoptimized(progress)).rejects.toThrow('native repair failed');
+        expect(progress).not.toHaveBeenCalled();
+        expect(mocks.repairThumbnailBatch).toHaveBeenCalledTimes(1);
     });
 
     it('returns safely when orphan cleanup cannot read or remove files', async () => {

@@ -429,7 +429,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         cancelRequestedRef.current = true;
 
         try {
-            await commands.cancelThumbnailOptimizationJob();
+            await commands.cancelThumbnailOptimizationJob(null);
         } catch (error) {
             console.error('[ThumbnailQueue] Failed to cancel backend job', error);
         }
@@ -723,7 +723,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             mountedRef.current = false;
             cancelScheduledIdleCallback();
             if (isRunningRef.current) {
-                void commands.cancelThumbnailOptimizationJob().catch(console.error);
+                void commands.cancelThumbnailOptimizationJob(null).catch(console.error);
             }
             jobDiagnosticRef.current?.finish('cancelled', { reason: 'unmount' });
             jobDiagnosticRef.current = null;

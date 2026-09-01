@@ -452,8 +452,8 @@ describe('maintenanceRepo', () => {
         }]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
-        expect(query).toContain("(path = thumbnail_path OR thumbnail_path IS NULL OR thumbnail_path = '')");
-        expect(query).not.toContain("thumbnail_source IS NULL OR thumbnail_source != 'ambit'");
+        expect(query).toContain('FROM thumbnail_repair_required AS images');
+        expect(query).not.toContain('thumbnail_repair_upgradeable');
         expect(query).toMatch(/AND\s+model_name = \?/);
         expect(query).toContain('LIMIT 500');
         expect(params).toEqual(['model-a']);
@@ -470,7 +470,8 @@ describe('maintenanceRepo', () => {
         await expect(getUnoptimizedImagesCount('', ['stale-param'], true)).resolves.toBe(7);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
-        expect(query).toContain("thumbnail_source IS NULL OR thumbnail_source != 'ambit'");
+        expect(query).toContain('thumbnail_repair_required');
+        expect(query).toContain('thumbnail_repair_upgradeable');
         expect(params).toEqual([]);
     });
 
@@ -525,7 +526,8 @@ describe('maintenanceRepo', () => {
         await expect(getUnoptimizedImageEntries(null, 25, '', ['stale-param'], true)).resolves.toEqual([]);
 
         const [query, params] = db.select.mock.calls[0] as [string, unknown[]];
-        expect(query).toContain("thumbnail_source IS NULL OR thumbnail_source != 'ambit'");
+        expect(query).toContain('thumbnail_repair_required');
+        expect(query).toContain('thumbnail_repair_upgradeable');
         expect(query).toContain('LIMIT 25');
         expect(query).not.toContain('OFFSET');
         expect(params).toEqual([]);

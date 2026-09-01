@@ -42,6 +42,10 @@ const thumbnailConsumerRefreshMock = vi.hoisted(() => ({
     refreshThumbnailConsumers: vi.fn().mockResolvedValue(undefined)
 }));
 
+const toastMock = vi.hoisted(() => ({
+    addToast: vi.fn()
+}));
+
 const libraryContextMock = vi.hoisted(() => ({
     activeSqlWhere: 'WHERE model_name = ?',
     activeSqlParams: ['model-a'] as unknown[]
@@ -107,6 +111,10 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
         setLocalIntermediateImages: maintenanceDataMock.setLocalIntermediateImages,
     })
+}));
+
+vi.mock('../../../hooks/useToast', () => ({
+    useToast: () => toastMock
 }));
 
 vi.mock('../../../contexts/LibraryContext', () => ({
@@ -832,6 +840,31 @@ describe('MaintenanceView', () => {
             scope: 'filtered',
             includeUpgradeable: true
         });
+    });
+
+    it('reports regenerate-all failures without refreshing completed thumbnail consumers', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails']);
+        maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
+        maintenanceDataMock.unoptimizedTotalCount = 1;
+        thumbnailServiceMock.regenerateAllUnoptimized.mockRejectedValueOnce(new Error('native repair failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        renderView();
+
+        try {
+            fireEvent.click(screen.getByText('Tab thumbnails'));
+            fireEvent.click(await screen.findByText('Regenerate All'));
+
+            await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith(
+                'Thumbnail optimization failed partway through',
+                'error'
+            ));
+            expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).not.toHaveBeenCalled();
+            expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
+            expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
+            expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('starts deferred scans and handles duplicate resolution and comparison callbacks', async () => {
