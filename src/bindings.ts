@@ -562,6 +562,14 @@ async startThumbnailOptimizationJob(config: ThumbnailOptimizationConfig) : Promi
     else return { status: "error", error: e  as any };
 }
 },
+async repairThumbnailBatch(input: ThumbnailRepairBatchInput) : Promise<Result<ThumbnailRepairBatchResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("repair_thumbnail_batch", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async cancelThumbnailOptimizationJob() : Promise<void> {
     await TAURI_INVOKE("cancel_thumbnail_optimization_job");
 },
@@ -900,6 +908,9 @@ export type ThumbnailOptimizationPhase = "discovering" | "processing" | "persist
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
 export type ThumbnailOptimizationProgress = { checked: number; total: number | null; optimized: number; reused: number; missing: number; failed: number; skipped: number; imagesPerSecond: number; batchMs: number; dbMs: number; encodeMs: number; candidateFetchMs: number; profile: ThumbnailOptimizationProfile; phase: ThumbnailOptimizationPhase; message: string; isThrottled: boolean }
 export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; missing: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
+export type ThumbnailRepairBatchInput = { ids: string[]; thumbnailDir: string; sourceRoots?: string[]; force: boolean; respectBackoff: boolean }
+export type ThumbnailRepairBatchResult = { requested: number; checked: number; optimized: number; reused: number; missing: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number; candidateFetchMs: number; dbMs: number; encodeMs: number; updates: ThumbnailRepairUpdate[] }
+export type ThumbnailRepairUpdate = { id: string; thumbnailPath: string }
 export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
 export type UpdateAmbitCollectionScopeInput = { collectionId: string; mode: AmbitCollectionScopeMode; dbPath: string | null; ownerId: string | null }
 export type UpdateAmbitCollectionScopeResult = { collectionId: string; invokeSourceId: string | null; invokeOwnerId: string | null }

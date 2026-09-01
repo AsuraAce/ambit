@@ -14,8 +14,9 @@ import {
     formatThumbnailQueueCompleteMessage,
     formatThumbnailQueueRunningMessage
 } from './thumbnailQueueProgress';
-import { rebuildThumbnailFacetCache } from '../services/db/imageRepo';
 import { getThumbnailDir } from '../services/thumbnailService';
+import { refreshThumbnailConsumers as refreshCommittedThumbnailConsumers } from '../services/thumbnailConsumerRefresh';
+import { useCollectionStore } from '../stores/collectionStore';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
 import { listenWithCleanup } from '../utils/tauriListener';
 
@@ -101,6 +102,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const enableAutoThumbnailHealing = useSettingsStore(s => s.settings.enableAutoThumbnailHealing);
     const enforceHighQualityThumbnails = useSettingsStore(s => s.settings.enforceHighQualityThumbnails);
     const thumbnailOptimizationProfile = useSettingsStore(s => s.settings.thumbnailOptimizationProfile ?? 'balanced');
+    const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
 
     const isImageQueryFetching = activeImageQueryCount > 0;
@@ -232,17 +234,12 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
     const refreshThumbnailConsumers = useCallback(async (optimized: number, missing: number) => {
         if (optimized <= 0 && missing <= 0) return;
-
-        await queryClient.invalidateQueries({ queryKey: ['images'] });
-        await queryClient.invalidateQueries({ queryKey: ['libraryStats'] });
-
-        try {
-            await rebuildThumbnailFacetCache();
-            useLibraryStore.getState().incrementFacetCacheVersion();
-        } catch (error) {
-            console.warn('[ThumbnailQueue] Thumbnail facet cache refresh failed', error);
-        }
-    }, [queryClient]);
+        await refreshCommittedThumbnailConsumers({
+            queryClient,
+            refreshCollectionThumbnails,
+            logPrefix: '[ThumbnailQueue]',
+        });
+    }, [queryClient, refreshCollectionThumbnails]);
 
     const handleCompletion = useCallback(async (result: ThumbnailOptimizationResult) => {
         if (completionHandledRef.current) return;

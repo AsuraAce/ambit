@@ -24,6 +24,9 @@ import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution } from '../../../bindings';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCollectionStore } from '../../../stores/collectionStore';
+import { refreshThumbnailConsumers } from '../../../services/thumbnailConsumerRefresh';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -95,6 +98,8 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const cancelDuplicateScan = useLibraryStore(s => s.cancelDuplicateScan);
     const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
     const { activeSqlWhere, activeSqlParams } = useLibraryContext();
+    const queryClient = useQueryClient();
+    const refreshCollectionThumbnails = useCollectionStore(state => state.refreshCollectionThumbnails);
 
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
@@ -480,6 +485,11 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     params,
                     includeUpgradeable
                 );
+                await refreshThumbnailConsumers({
+                    queryClient,
+                    refreshCollectionThumbnails,
+                    logPrefix: '[Maintenance]',
+                });
             } finally {
                 setIsRegeneratingThumbnails(false);
                 setThumbnailProgress(null);

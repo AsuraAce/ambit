@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     getImagesByIds: vi.fn(),
     regenerate: vi.fn(),
+    rebuildThumbnailFacetCache: vi.fn(),
 }));
 
 vi.mock('../../services/runtime', () => ({
@@ -21,6 +22,7 @@ vi.mock('../useToast', () => ({
 
 vi.mock('../../services/db/imageRepo', () => ({
     getImagesByIds: (...args: unknown[]) => mocks.getImagesByIds(...args),
+    rebuildThumbnailFacetCache: (...args: unknown[]) => mocks.rebuildThumbnailFacetCache(...args),
 }));
 
 vi.mock('../../services/thumbnailService', () => ({
@@ -57,6 +59,7 @@ describe('useThumbnailOps', () => {
         mocks.browserMode = false;
         mocks.getImagesByIds.mockResolvedValue([]);
         mocks.regenerate.mockResolvedValue([]);
+        mocks.rebuildThumbnailFacetCache.mockResolvedValue(undefined);
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
     });
 
@@ -177,13 +180,14 @@ describe('useThumbnailOps', () => {
         error.mockRestore();
     });
 
-    it('cleans up without refreshing when regeneration produces no updates', async () => {
+    it('refreshes consumers once even when a native batch only records missing or failed outcomes', async () => {
         const { result, refreshCollectionThumbnails } = setup([image('one')]);
 
         await act(async () => result.current.regenerateThumbnails());
 
         expect(mocks.regenerate).toHaveBeenCalled();
-        expect(refreshCollectionThumbnails).not.toHaveBeenCalled();
+        expect(refreshCollectionThumbnails).toHaveBeenCalledOnce();
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
         expect(mocks.addToast).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
     });

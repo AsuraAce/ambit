@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from '../../constants/defaultSettings';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useCollectionStore } from '../../stores/collectionStore';
 
 const mocks = vi.hoisted(() => ({
     startThumbnailOptimizationJob: vi.fn(),
@@ -10,6 +11,7 @@ const mocks = vi.hoisted(() => ({
     setThumbnailOptimizationThrottled: vi.fn(),
     getThumbnailDir: vi.fn(),
     rebuildThumbnailFacetCache: vi.fn(),
+    refreshCollectionThumbnails: vi.fn(),
     browserMockMode: false,
     activeImageQueryCount: 0,
     listenerCleanups: new Map<string, () => void>(),
@@ -96,6 +98,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         mocks.activeImageQueryCount = 0;
         mocks.getThumbnailDir.mockResolvedValue('C:/AppData/Ambit/.thumbnails');
         mocks.rebuildThumbnailFacetCache.mockResolvedValue(undefined);
+        mocks.refreshCollectionThumbnails.mockResolvedValue(undefined);
         mocks.setThumbnailOptimizationThrottled.mockResolvedValue(undefined);
         mocks.cancelThumbnailOptimizationJob.mockResolvedValue(undefined);
         mocks.startThumbnailOptimizationJob.mockResolvedValue({
@@ -132,6 +135,9 @@ describe('useThumbnailQueue behavioral contract', () => {
             thumbnailOptimizationRetrySignal: 0,
             thumbnailOptimizationCancelSignal: 0,
             facetCacheVersion: 0,
+        });
+        useCollectionStore.setState({
+            refreshCollectionThumbnails: mocks.refreshCollectionThumbnails,
         });
         useSettingsStore.setState({
             isLoaded: true,
@@ -646,6 +652,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         await advanceStartup();
         await act(async () => Promise.resolve());
         expect(warnSpy).toHaveBeenCalledWith('[ThumbnailQueue] Thumbnail facet cache refresh failed', expect.any(Error));
+        expect(mocks.refreshCollectionThumbnails).toHaveBeenCalledWith(false, true);
         warnSpy.mockRestore();
     });
 
@@ -689,6 +696,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         await act(async () => vi.advanceTimersByTimeAsync(1500));
 
         expect(mocks.rebuildThumbnailFacetCache).not.toHaveBeenCalled();
+        expect(mocks.refreshCollectionThumbnails).not.toHaveBeenCalled();
         expect(useLibraryStore.getState().lastBackgroundHealingRun).toEqual(expect.objectContaining({ checked: 1, optimized: 0 }));
     });
 
@@ -1194,13 +1202,16 @@ describe('useThumbnailQueue behavioral contract', () => {
         const path = await import('path');
         const hookPath = path.join(__dirname, '..', 'useThumbnailQueue.ts');
         const content = await fs.readFile(hookPath, 'utf-8');
+        const refreshPath = path.join(__dirname, '..', '..', 'services', 'thumbnailConsumerRefresh.ts');
+        const refreshContent = await fs.readFile(refreshPath, 'utf-8');
 
         expect(content).toContain('[ThumbnailQueue] Starting backend thumbnail optimization');
         expect(content).toContain('[ThumbnailQueue] Pausing backend job for blocking activity');
         expect(content).toContain('[ThumbnailQueue] Resuming after blocking activity...');
         expect(content).toContain('[ThumbnailQueue] Failed to cancel backend job');
         expect(content).toContain('[ThumbnailQueue] Backend thumbnail optimization failed');
-        expect(content).toContain('[ThumbnailQueue] Thumbnail facet cache refresh failed');
+        expect(content).toContain("logPrefix: '[ThumbnailQueue]'");
+        expect(refreshContent).toContain('Thumbnail facet cache refresh failed');
         expect(content).toContain('[ThumbnailQueue] Failed to update backend throttle state');
     });
 });

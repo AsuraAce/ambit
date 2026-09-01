@@ -6,6 +6,8 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 import { getImagesByIds } from '../services/db/imageRepo';
 import { regenerateThumbnailsForImages } from '../services/thumbnailService';
+import { useQueryClient } from '@tanstack/react-query';
+import { refreshThumbnailConsumers } from '../services/thumbnailConsumerRefresh';
 
 interface UseThumbnailOpsProps {
     images: AIImage[];
@@ -19,6 +21,7 @@ export const useThumbnailOps = ({
     refreshCollectionThumbnails
 }: UseThumbnailOpsProps) => {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const {
         setIsRegeneratingThumbnails,
         setThumbnailProgress,
@@ -72,8 +75,12 @@ export const useThumbnailOps = ({
                     ? `Cancelled after optimizing ${updates.length} thumbnails.`
                     : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
                 addToast(msg, "success");
-                await refreshCollectionThumbnails(false, true);
             }
+            await refreshThumbnailConsumers({
+                queryClient,
+                refreshCollectionThumbnails,
+                logPrefix: '[Thumb]',
+            });
         } catch (e) {
             console.error("Regeneration error", e);
             addToast("Thumbnail optimization failed partway through", "error");
@@ -82,7 +89,7 @@ export const useThumbnailOps = ({
             setThumbnailProgress(null);
             setThumbnailAbortController(null);
         }
-    }, [images, setImages, addToast, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController]);
+    }, [images, setImages, addToast, queryClient, refreshCollectionThumbnails, setIsRegeneratingThumbnails, setThumbnailProgress, setThumbnailAbortController]);
 
     return {
         regenerateThumbnails

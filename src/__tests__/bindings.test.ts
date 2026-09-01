@@ -226,6 +226,7 @@ const commandCases: CommandCase[] = [
     { name: 'scanDirectorySince', invokeName: 'scan_directory_since', args: ['C:/library', 123], payload: { path: 'C:/library', since: 123 }, returnsResult: true },
     { name: 'discoverA1111Folders', invokeName: 'discover_a1111_folders', args: ['C:/a1111'], payload: { rootPath: 'C:/a1111' }, returnsResult: true },
     { name: 'startThumbnailOptimizationJob', invokeName: 'start_thumbnail_optimization_job', args: [{ thumbnailDir: 'C:/thumbs', includeUpgradeable: true, profile: 'fast' }], payload: { config: { thumbnailDir: 'C:/thumbs', includeUpgradeable: true, profile: 'fast' } }, returnsResult: true },
+    { name: 'repairThumbnailBatch', invokeName: 'repair_thumbnail_batch', args: [{ ids: ['image-a'], thumbnailDir: 'C:/thumbs', sourceRoots: ['C:/library'], force: true, respectBackoff: false }], payload: { input: { ids: ['image-a'], thumbnailDir: 'C:/thumbs', sourceRoots: ['C:/library'], force: true, respectBackoff: false } }, returnsResult: true },
     { name: 'cancelThumbnailOptimizationJob', invokeName: 'cancel_thumbnail_optimization_job', args: [], returnsResult: false },
     { name: 'setThumbnailOptimizationThrottled', invokeName: 'set_thumbnail_optimization_throttled', args: [true], payload: { throttled: true }, returnsResult: false },
     { name: 'getThumbnailOptimizationFailures', invokeName: 'get_thumbnail_optimization_failures', args: [50], payload: { limit: 50 }, returnsResult: true },
