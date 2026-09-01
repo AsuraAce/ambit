@@ -1,11 +1,11 @@
 use rayon::prelude::*;
 use rusqlite::{params, Connection};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
@@ -16,7 +16,8 @@ const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
 const SOURCE_ROOT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const SOURCE_ROOT_CANCEL_POLL: Duration = Duration::from_millis(50);
-static SOURCE_ROOT_PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+const MAX_SOURCE_ROOT_PROBE_WORKERS: usize = 4;
+static SOURCE_ROOT_PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 const THROTTLED_WORKER_CHUNK_SIZE: usize = 4;
 const THROTTLED_CHUNK_SLEEP: Duration = Duration::from_millis(250);
 const MAX_FAILURE_DIAGNOSTIC_LIMIT: usize = 50;
@@ -190,7 +191,10 @@ struct BatchStats {
     encode_ms: u128,
 }
 
-struct SourceRootProbeGuard(&'static AtomicBool);
+struct SourceRootProbeGuard {
+    registry: &'static OnceLock<Mutex<HashSet<String>>>,
+    key: String,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SourceRootProbeResult {
@@ -202,7 +206,13 @@ enum SourceRootProbeResult {
 
 impl Drop for SourceRootProbeGuard {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        if let Ok(mut in_flight) = self
+            .registry
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+        {
+            in_flight.remove(&self.key);
+        }
     }
 }
 
@@ -886,7 +896,7 @@ where
                     SourceRootProbeResult::Available => true,
                     SourceRootProbeResult::Unavailable => false,
                     SourceRootProbeResult::Busy => {
-                        candidate.source_root_available = None;
+                        candidate.source_root_available = Some(false);
                         continue;
                     }
                     SourceRootProbeResult::Cancelled => return false,
@@ -902,8 +912,10 @@ where
 
 fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> SourceRootProbeResult {
     let path = path.to_path_buf();
+    let key = normalize_source_root_identity(&path.to_string_lossy());
     run_cancellable_probe(
-        &SOURCE_ROOT_PROBE_IN_FLIGHT,
+        &SOURCE_ROOT_PROBE_REGISTRY,
+        key,
         is_cancelled,
         SOURCE_ROOT_PROBE_TIMEOUT,
         move || path.is_dir(),
@@ -911,7 +923,8 @@ fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> Sou
 }
 
 fn run_cancellable_probe<F>(
-    probe_in_flight: &'static AtomicBool,
+    registry: &'static OnceLock<Mutex<HashSet<String>>>,
+    key: String,
     is_cancelled: &AtomicBool,
     timeout: Duration,
     probe: F,
@@ -922,22 +935,25 @@ where
     if is_cancelled.load(Ordering::SeqCst) {
         return SourceRootProbeResult::Cancelled;
     }
-    if probe_in_flight
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
     {
-        return SourceRootProbeResult::Busy;
+        let Ok(mut in_flight) = registry.get_or_init(|| Mutex::new(HashSet::new())).lock() else {
+            return SourceRootProbeResult::Busy;
+        };
+        if in_flight.contains(&key) || in_flight.len() >= MAX_SOURCE_ROOT_PROBE_WORKERS {
+            return SourceRootProbeResult::Busy;
+        }
+        in_flight.insert(key.clone());
     }
+    let guard = SourceRootProbeGuard { registry, key };
     let (sender, receiver) = mpsc::sync_channel(1);
     if std::thread::Builder::new()
         .name("thumbnail-source-root-probe".to_string())
         .spawn(move || {
-            let _guard = SourceRootProbeGuard(probe_in_flight);
+            let _guard = guard;
             let _ = sender.send(probe());
         })
         .is_err()
     {
-        probe_in_flight.store(false, Ordering::SeqCst);
         return SourceRootProbeResult::Unavailable;
     }
     let started_at = Instant::now();
@@ -2415,7 +2431,7 @@ mod tests {
     }
 
     #[test]
-    fn busy_probe_does_not_mark_an_unrelated_root_unavailable() {
+    fn busy_probe_defers_a_root_without_caching_it_unavailable() {
         let roots = vec!["Z:/Stalled".to_string(), "D:/Healthy".to_string()];
         let mut candidates = vec![
             ThumbnailCandidate {
@@ -2454,7 +2470,8 @@ mod tests {
         ));
 
         assert_eq!(candidates[0].source_root_available, Some(false));
-        assert_eq!(candidates[1].source_root_available, None);
+        assert_eq!(candidates[1].source_root_available, Some(false));
+        assert!(!availability.contains_key(&normalize_source_root_identity(&roots[1])));
     }
 
     #[test]
@@ -2474,7 +2491,7 @@ mod tests {
 
     #[test]
     fn cancellation_stops_waiting_for_a_blocked_root_probe() {
-        static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+        static PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
         let is_cancelled = Arc::new(AtomicBool::new(false));
         let cancellation = is_cancelled.clone();
         std::thread::spawn(move || {
@@ -2484,7 +2501,8 @@ mod tests {
         let started_at = Instant::now();
 
         let result = run_cancellable_probe(
-            &PROBE_IN_FLIGHT,
+            &PROBE_REGISTRY,
+            "blocked".to_string(),
             is_cancelled.as_ref(),
             Duration::from_secs(1),
             || {
@@ -2499,12 +2517,13 @@ mod tests {
 
     #[test]
     fn repeated_timeouts_do_not_spawn_additional_root_probe_workers() {
-        static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+        static PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
         let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let first_starts = starts.clone();
 
         let first = run_cancellable_probe(
-            &PROBE_IN_FLIGHT,
+            &PROBE_REGISTRY,
+            "stalled".to_string(),
             &AtomicBool::new(false),
             Duration::from_millis(20),
             move || {
@@ -2515,7 +2534,8 @@ mod tests {
         );
         let second_starts = starts.clone();
         let second = run_cancellable_probe(
-            &PROBE_IN_FLIGHT,
+            &PROBE_REGISTRY,
+            "stalled".to_string(),
             &AtomicBool::new(false),
             Duration::from_millis(20),
             move || {
@@ -2527,6 +2547,15 @@ mod tests {
         assert_eq!(first, SourceRootProbeResult::Unavailable);
         assert_eq!(second, SourceRootProbeResult::Busy);
         assert_eq!(starts.load(Ordering::SeqCst), 1);
+
+        let healthy = run_cancellable_probe(
+            &PROBE_REGISTRY,
+            "healthy".to_string(),
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            || true,
+        );
+        assert_eq!(healthy, SourceRootProbeResult::Available);
     }
 
     #[test]
