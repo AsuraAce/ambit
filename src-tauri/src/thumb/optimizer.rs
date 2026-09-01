@@ -16,6 +16,7 @@ const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
 const SOURCE_ROOT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const SOURCE_ROOT_CANCEL_POLL: Duration = Duration::from_millis(50);
+static SOURCE_ROOT_PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 const THROTTLED_WORKER_CHUNK_SIZE: usize = 4;
 const THROTTLED_CHUNK_SLEEP: Duration = Duration::from_millis(250);
 const MAX_FAILURE_DIAGNOSTIC_LIMIT: usize = 50;
@@ -187,6 +188,14 @@ struct BatchStats {
     failed: usize,
     skipped: usize,
     encode_ms: u128,
+}
+
+struct SourceRootProbeGuard(&'static AtomicBool);
+
+impl Drop for SourceRootProbeGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -879,26 +888,42 @@ where
 
 fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> Option<bool> {
     let path = path.to_path_buf();
-    run_cancellable_probe(is_cancelled, SOURCE_ROOT_PROBE_TIMEOUT, move || {
-        path.is_dir()
-    })
+    run_cancellable_probe(
+        &SOURCE_ROOT_PROBE_IN_FLIGHT,
+        is_cancelled,
+        SOURCE_ROOT_PROBE_TIMEOUT,
+        move || path.is_dir(),
+    )
 }
 
-fn run_cancellable_probe<F>(is_cancelled: &AtomicBool, timeout: Duration, probe: F) -> Option<bool>
+fn run_cancellable_probe<F>(
+    probe_in_flight: &'static AtomicBool,
+    is_cancelled: &AtomicBool,
+    timeout: Duration,
+    probe: F,
+) -> Option<bool>
 where
     F: FnOnce() -> bool + Send + 'static,
 {
     if is_cancelled.load(Ordering::SeqCst) {
         return None;
     }
+    if probe_in_flight
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Some(false);
+    }
     let (sender, receiver) = mpsc::sync_channel(1);
     if std::thread::Builder::new()
         .name("thumbnail-source-root-probe".to_string())
         .spawn(move || {
+            let _guard = SourceRootProbeGuard(probe_in_flight);
             let _ = sender.send(probe());
         })
         .is_err()
     {
+        probe_in_flight.store(false, Ordering::SeqCst);
         return Some(false);
     }
     let started_at = Instant::now();
@@ -2375,6 +2400,7 @@ mod tests {
 
     #[test]
     fn cancellation_stops_waiting_for_a_blocked_root_probe() {
+        static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
         let is_cancelled = Arc::new(AtomicBool::new(false));
         let cancellation = is_cancelled.clone();
         std::thread::spawn(move || {
@@ -2383,13 +2409,50 @@ mod tests {
         });
         let started_at = Instant::now();
 
-        let result = run_cancellable_probe(is_cancelled.as_ref(), Duration::from_secs(1), || {
-            std::thread::sleep(Duration::from_secs(1));
-            true
-        });
+        let result = run_cancellable_probe(
+            &PROBE_IN_FLIGHT,
+            is_cancelled.as_ref(),
+            Duration::from_secs(1),
+            || {
+                std::thread::sleep(Duration::from_secs(1));
+                true
+            },
+        );
 
         assert_eq!(result, None);
         assert!(started_at.elapsed() < Duration::from_millis(250));
+    }
+
+    #[test]
+    fn repeated_timeouts_do_not_spawn_additional_root_probe_workers() {
+        static PROBE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+        let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let first_starts = starts.clone();
+
+        let first = run_cancellable_probe(
+            &PROBE_IN_FLIGHT,
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            move || {
+                first_starts.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(200));
+                true
+            },
+        );
+        let second_starts = starts.clone();
+        let second = run_cancellable_probe(
+            &PROBE_IN_FLIGHT,
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            move || {
+                second_starts.fetch_add(1, Ordering::SeqCst);
+                true
+            },
+        );
+
+        assert_eq!(first, Some(false));
+        assert_eq!(second, Some(false));
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
     }
 
     #[test]
