@@ -14,6 +14,8 @@ const FAILURE_BACKOFF_MS: i64 = 60 * 60 * 1000;
 const DB_FLUSH_LIMIT: usize = 100;
 const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
+const SOURCE_ROOT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const SOURCE_ROOT_CANCEL_POLL: Duration = Duration::from_millis(50);
 const THROTTLED_WORKER_CHUNK_SIZE: usize = 4;
 const THROTTLED_CHUNK_SLEEP: Duration = Duration::from_millis(250);
 const MAX_FAILURE_DIAGNOSTIC_LIMIT: usize = 50;
@@ -146,6 +148,7 @@ struct ThumbnailCandidate {
     path: String,
     timestamp: i64,
     invoke_images_root: Option<String>,
+    source_root: Option<String>,
     source_root_available: Option<bool>,
 }
 
@@ -170,6 +173,7 @@ enum ThumbnailItemResult {
     },
     MissingSource {
         id: String,
+        source_root: Option<String>,
     },
     Skipped,
 }
@@ -338,12 +342,15 @@ fn run_thumbnail_optimization_job(
             break;
         }
 
-        resolve_candidate_source_roots(
+        if !resolve_candidate_source_roots(
             &mut candidates,
             &config.source_roots,
             &mut source_root_availability,
-            Path::is_dir,
-        );
+            is_cancelled.as_ref(),
+            probe_source_root_availability,
+        ) {
+            break;
+        }
 
         if let Some(last) = candidates.last() {
             cursor = Some(ThumbnailCursor {
@@ -363,49 +370,59 @@ fn run_thumbnail_optimization_job(
             let end = std::cmp::min(index + chunk_size, candidates.len());
             let chunk_started_at = Instant::now();
 
+            let mut chunk_results = Vec::with_capacity(end - index);
             process_candidate_chunk(
                 &pool,
                 &candidates[index..end],
                 &config.thumbnail_dir,
                 is_cancelled.as_ref(),
                 |item| {
-                    encode_ms_since_progress += accumulate_thumbnail_result(&mut result, &item);
-
-                    if !matches!(item, ThumbnailItemResult::Skipped) {
-                        pending_results.push(item);
-                    }
-
-                    if pending_results.len() >= DB_FLUSH_LIMIT
-                        || last_flush_at.elapsed() >= DB_FLUSH_INTERVAL
-                    {
-                        last_db_ms = flush_pending_thumbnail_results(
-                            &mut conn,
-                            &mut pending_results,
-                            unix_time_ms(),
-                        )?;
-                        last_flush_at = Instant::now();
-                    }
-
-                    if last_progress_at.elapsed() >= PROGRESS_EMIT_INTERVAL {
-                        emit_progress(
-                            &app,
-                            &build_progress_payload(
-                                &result,
-                                started_at,
-                                config.profile,
-                                last_batch_ms,
-                                last_db_ms,
-                                millis_to_u64(encode_ms_since_progress),
-                                is_throttled.load(Ordering::SeqCst),
-                            ),
-                        );
-                        encode_ms_since_progress = 0;
-                        last_progress_at = Instant::now();
-                    }
-
+                    chunk_results.push(item);
                     Ok(())
                 },
             )?;
+            revalidate_missing_source_roots(
+                &mut chunk_results,
+                &mut source_root_availability,
+                is_cancelled.as_ref(),
+                probe_source_root_availability,
+            );
+
+            for item in chunk_results {
+                encode_ms_since_progress += accumulate_thumbnail_result(&mut result, &item);
+
+                if !matches!(item, ThumbnailItemResult::Skipped) {
+                    pending_results.push(item);
+                }
+
+                if pending_results.len() >= DB_FLUSH_LIMIT
+                    || last_flush_at.elapsed() >= DB_FLUSH_INTERVAL
+                {
+                    last_db_ms = flush_pending_thumbnail_results(
+                        &mut conn,
+                        &mut pending_results,
+                        unix_time_ms(),
+                    )?;
+                    last_flush_at = Instant::now();
+                }
+
+                if last_progress_at.elapsed() >= PROGRESS_EMIT_INTERVAL {
+                    emit_progress(
+                        &app,
+                        &build_progress_payload(
+                            &result,
+                            started_at,
+                            config.profile,
+                            last_batch_ms,
+                            last_db_ms,
+                            millis_to_u64(encode_ms_since_progress),
+                            is_throttled.load(Ordering::SeqCst),
+                        ),
+                    );
+                    encode_ms_since_progress = 0;
+                    last_progress_at = Instant::now();
+                }
+            }
 
             last_batch_ms = elapsed_ms(chunk_started_at);
             index = end;
@@ -779,6 +796,7 @@ fn optimize_thumbnail_candidate(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return ThumbnailItemResult::MissingSource {
                 id: candidate.id.clone(),
+                source_root: candidate.source_root.clone(),
             };
         }
         Err(error) => {
@@ -815,11 +833,16 @@ fn resolve_candidate_source_roots<F>(
     candidates: &mut [ThumbnailCandidate],
     source_roots: &[String],
     availability: &mut HashMap<String, bool>,
-    mut is_available: F,
-) where
-    F: FnMut(&Path) -> bool,
+    is_cancelled: &AtomicBool,
+    mut probe: F,
+) -> bool
+where
+    F: FnMut(&Path, &AtomicBool) -> Option<bool>,
 {
     for candidate in candidates {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return false;
+        }
         let source_root = candidate
             .invoke_images_root
             .as_deref()
@@ -833,19 +856,115 @@ fn resolve_candidate_source_roots<F>(
             .or_else(|| most_specific_source_root(&candidate.path, source_roots).cloned());
 
         let Some(source_root) = source_root else {
+            candidate.source_root = None;
             candidate.source_root_available = None;
             continue;
         };
+        candidate.source_root = Some(source_root.clone());
         let key = normalize_source_root_identity(&source_root);
         let is_root_available = match availability.get(&key) {
             Some(is_available) => *is_available,
             None => {
-                let is_root_available = is_available(Path::new(&source_root));
+                let Some(is_root_available) = probe(Path::new(&source_root), is_cancelled) else {
+                    return false;
+                };
                 availability.insert(key, is_root_available);
                 is_root_available
             }
         };
         candidate.source_root_available = Some(is_root_available);
+    }
+    true
+}
+
+fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> Option<bool> {
+    let path = path.to_path_buf();
+    run_cancellable_probe(is_cancelled, SOURCE_ROOT_PROBE_TIMEOUT, move || {
+        path.is_dir()
+    })
+}
+
+fn run_cancellable_probe<F>(is_cancelled: &AtomicBool, timeout: Duration, probe: F) -> Option<bool>
+where
+    F: FnOnce() -> bool + Send + 'static,
+{
+    if is_cancelled.load(Ordering::SeqCst) {
+        return None;
+    }
+    let (sender, receiver) = mpsc::sync_channel(1);
+    if std::thread::Builder::new()
+        .name("thumbnail-source-root-probe".to_string())
+        .spawn(move || {
+            let _ = sender.send(probe());
+        })
+        .is_err()
+    {
+        return Some(false);
+    }
+    let started_at = Instant::now();
+    loop {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return None;
+        }
+        let remaining = timeout.saturating_sub(started_at.elapsed());
+        if remaining.is_zero() {
+            return Some(false);
+        }
+        match receiver.recv_timeout(std::cmp::min(SOURCE_ROOT_CANCEL_POLL, remaining)) {
+            Ok(is_available) => return Some(is_available),
+            Err(mpsc::RecvTimeoutError::Disconnected) => return Some(false),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+    }
+}
+
+fn revalidate_missing_source_roots<F>(
+    results: &mut [ThumbnailItemResult],
+    availability: &mut HashMap<String, bool>,
+    is_cancelled: &AtomicBool,
+    mut probe: F,
+) where
+    F: FnMut(&Path, &AtomicBool) -> Option<bool>,
+{
+    let mut roots = HashMap::new();
+    for result in results.iter() {
+        if let ThumbnailItemResult::MissingSource {
+            source_root: Some(root),
+            ..
+        } = result
+        {
+            roots
+                .entry(normalize_source_root_identity(root))
+                .or_insert_with(|| root.clone());
+        }
+    }
+
+    for (key, root) in roots {
+        if availability.get(&key) == Some(&false) {
+            continue;
+        }
+        let Some(is_available) = probe(Path::new(&root), is_cancelled) else {
+            for result in results.iter_mut() {
+                if matches!(result, ThumbnailItemResult::MissingSource { .. }) {
+                    *result = ThumbnailItemResult::Skipped;
+                }
+            }
+            return;
+        };
+        availability.insert(key, is_available);
+    }
+
+    for result in results.iter_mut() {
+        let should_defer = match result {
+            ThumbnailItemResult::MissingSource {
+                source_root: Some(root),
+                ..
+            } => availability.get(&normalize_source_root_identity(root)) == Some(&false),
+            _ => false,
+        };
+        if should_defer {
+            *result = ThumbnailItemResult::Skipped;
+        }
     }
 }
 
@@ -938,7 +1057,7 @@ fn persist_missing_sources(
     };
 
     for item in results {
-        if let ThumbnailItemResult::MissingSource { id } = item {
+        if let ThumbnailItemResult::MissingSource { id, .. } = item {
             let updated = missing_stmt.execute([id]).map_err(|e| e.to_string())?;
             if updated > 0 {
                 if let Some(statement) = remember_missing.as_mut() {
@@ -1103,6 +1222,7 @@ fn fetch_thumbnail_candidates(
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
                 invoke_images_root: row.get(3)?,
+                source_root: None,
                 source_root_available: None,
             })
         })
@@ -1116,6 +1236,7 @@ fn fetch_thumbnail_candidates(
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
                 invoke_images_root: row.get(3)?,
+                source_root: None,
                 source_root_available: None,
             })
         })
@@ -1995,9 +2116,11 @@ mod tests {
             &[
                 ThumbnailItemResult::MissingSource {
                     id: "gone-a".to_string(),
+                    source_root: None,
                 },
                 ThumbnailItemResult::MissingSource {
                     id: "gone-b".to_string(),
+                    source_root: None,
                 },
             ],
             100,
@@ -2111,6 +2234,7 @@ mod tests {
         let results = (0..IMAGE_COUNT)
             .map(|index| ThumbnailItemResult::MissingSource {
                 id: format!("missing-{index:04}"),
+                source_root: None,
             })
             .collect::<Vec<_>>();
         let stats =
@@ -2172,6 +2296,7 @@ mod tests {
                 .to_string(),
             timestamp: 1,
             invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
+            source_root: None,
             source_root_available: Some(false),
         };
 
@@ -2193,6 +2318,7 @@ mod tests {
                 path: "D:/Offline Library/a.png".to_string(),
                 timestamp: 2,
                 invoke_images_root: None,
+                source_root: None,
                 source_root_available: None,
             },
             ThumbnailCandidate {
@@ -2200,16 +2326,23 @@ mod tests {
                 path: "D:/Offline Library/nested/b.png".to_string(),
                 timestamp: 1,
                 invoke_images_root: None,
+                source_root: None,
                 source_root_available: None,
             },
         ];
         let mut availability = HashMap::new();
         let mut probe_count = 0;
 
-        resolve_candidate_source_roots(&mut candidates, &[root], &mut availability, |_| {
-            probe_count += 1;
-            false
-        });
+        assert!(resolve_candidate_source_roots(
+            &mut candidates,
+            &[root],
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                Some(false)
+            },
+        ));
 
         assert_eq!(probe_count, 1);
         assert!(candidates
@@ -2241,6 +2374,57 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_stops_waiting_for_a_blocked_root_probe() {
+        let is_cancelled = Arc::new(AtomicBool::new(false));
+        let cancellation = is_cancelled.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            cancellation.store(true, Ordering::SeqCst);
+        });
+        let started_at = Instant::now();
+
+        let result = run_cancellable_probe(is_cancelled.as_ref(), Duration::from_secs(1), || {
+            std::thread::sleep(Duration::from_secs(1));
+            true
+        });
+
+        assert_eq!(result, None);
+        assert!(started_at.elapsed() < Duration::from_millis(250));
+    }
+
+    #[test]
+    fn missing_results_are_deferred_when_a_root_disconnects_after_preflight() {
+        let root = "D:/Library".to_string();
+        let mut results = vec![
+            ThumbnailItemResult::MissingSource {
+                id: "missing-a".to_string(),
+                source_root: Some(root.clone()),
+            },
+            ThumbnailItemResult::MissingSource {
+                id: "missing-b".to_string(),
+                source_root: Some(root.clone()),
+            },
+        ];
+        let mut availability = HashMap::from([(normalize_source_root_identity(&root), true)]);
+        let mut probe_count = 0;
+
+        revalidate_missing_source_roots(
+            &mut results,
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                Some(false)
+            },
+        );
+
+        assert_eq!(probe_count, 1);
+        assert!(results
+            .iter()
+            .all(|result| matches!(result, ThumbnailItemResult::Skipped)));
+    }
+
+    #[test]
     fn non_invoke_lookalike_path_is_marked_missing() {
         let library_root = temp_thumbnail_dir("non-invoke-lookalike");
         let candidate = ThumbnailCandidate {
@@ -2253,6 +2437,7 @@ mod tests {
                 .to_string(),
             timestamp: 1,
             invoke_images_root: None,
+            source_root: None,
             source_root_available: None,
         };
 
