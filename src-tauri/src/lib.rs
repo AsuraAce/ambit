@@ -98,6 +98,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::scan_image_workflow,
             scanner::read_image_metadata,
             scanner::get_file_sizes_bulk,
+            scanner::probe_file_metadata_bulk,
             scanner::verify_image_paths,
             scanner::audit_invokeai_folder,
             scanner::list_invokeai_images,

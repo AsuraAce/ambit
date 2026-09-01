@@ -474,6 +474,14 @@ async getFileSizesBulk(paths: string[]) : Promise<Result<number[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async probeFileMetadataBulk(paths: string[]) : Promise<Result<FileMetadataProbe[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("probe_file_metadata_bulk", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async verifyImagePaths(paths: string[]) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("verify_image_paths", { paths }) };
@@ -808,6 +816,7 @@ export type FacetScopeCacheState = "missing" | "dirty" | "building" | "ready"
 export type FacetScopeCacheStatus = { state: FacetScopeCacheState; generation: number; builtGeneration: number | null; facetCount: number; collectionCount: number }
 export type FileEntry = { path: string; modified: number; size: number; mediaType: MediaCandidateKind }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
+export type FileMetadataProbe = { status: "present"; size: number; isFile: boolean } | { status: "missing" } | { status: "error"; message: string }
 export type FolderChange = { kind: FolderChangeKind; paths: string[] }
 export type FolderChangeEvent = FolderChange[]
 export type FolderChangeKind = "create" | "modify" | "rename" | "remove"
@@ -879,11 +888,11 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
-export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile }
+export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }
 export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
-export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
+export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; missing: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
 export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
 export type UpdateAmbitCollectionScopeInput = { collectionId: string; mode: AmbitCollectionScopeMode; dbPath: string | null; ownerId: string | null }
 export type UpdateAmbitCollectionScopeResult = { collectionId: string; invokeSourceId: string | null; invokeOwnerId: string | null }

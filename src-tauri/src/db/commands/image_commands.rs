@@ -447,6 +447,7 @@ fn save_images_batch_inner(
                     END,
                     is_favorite=excluded.is_favorite,
                     is_pinned=excluded.is_pinned,
+                    is_missing=excluded.is_missing,
                     group_id=COALESCE(images.group_id, excluded.group_id),
                     board_id=excluded.board_id,
                     notes=COALESCE(images.notes, excluded.notes),
@@ -492,6 +493,7 @@ fn save_images_batch_inner(
                     OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path)
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
+                    OR images.is_missing IS NOT excluded.is_missing
                     OR images.board_id IS NOT excluded.board_id
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
@@ -4770,6 +4772,37 @@ mod tests {
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn save_images_batch_synchronizes_missing_and_recovered_sources() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut image = create_image_record("img-missing", 100, 200, "{}");
+        super::save_images_batch_inner(&conn, &[image.clone()]).expect("initial save");
+
+        image.is_missing = true;
+        super::save_images_batch_inner(&conn, &[image.clone()]).expect("mark missing");
+        let missing: i64 = conn
+            .query_row(
+                "SELECT is_missing FROM images WHERE id = 'img-missing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("missing state");
+        assert_eq!(missing, 1);
+
+        image.is_missing = false;
+        super::save_images_batch_inner(&conn, &[image]).expect("mark recovered");
+        let recovered: i64 = conn
+            .query_row(
+                "SELECT is_missing FROM images WHERE id = 'img-missing'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("recovered state");
+        assert_eq!(recovered, 0);
     }
 
     #[test]

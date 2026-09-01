@@ -927,14 +927,14 @@ describe('ActivityDock', () => {
     });
 
     it('cancels background thumbnail optimization', () => {
-        vi.mocked(invoke).mockResolvedValue(undefined);
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
             backgroundHealingProgress: { current: 1, total: 0, message: 'Healing' }
         });
         render(<ActivityDock />);
         fireEvent.click(screen.getByText('Cancel'));
-        expect(invoke).toHaveBeenCalled();
+        expect(useLibraryStore.getState().thumbnailOptimizationCancelSignal).toBe(1);
+        expect(invoke).not.toHaveBeenCalled();
     });
 
     it('formats long elapsed times and updates them on the interval', () => {

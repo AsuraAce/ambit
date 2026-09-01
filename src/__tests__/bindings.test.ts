@@ -215,6 +215,7 @@ const commandCases: CommandCase[] = [
     { name: 'inspectComfyuiMetadataChunks', invokeName: 'inspect_comfyui_metadata_chunks', args: [{ prompt: '{}' }], payload: { chunks: { prompt: '{}' } }, returnsResult: true },
     { name: 'inspectComfyuiWorkflowGraph', invokeName: 'inspect_comfyui_workflow_graph', args: [{ prompt: '{}' }], payload: { chunks: { prompt: '{}' } }, returnsResult: true },
     { name: 'getFileSizesBulk', invokeName: 'get_file_sizes_bulk', args: [['C:/image.png']], payload: { paths: ['C:/image.png'] }, returnsResult: true },
+    { name: 'probeFileMetadataBulk', invokeName: 'probe_file_metadata_bulk', args: [['C:/image.png']], payload: { paths: ['C:/image.png'] }, returnsResult: true },
     { name: 'verifyImagePaths', invokeName: 'verify_image_paths', args: [['C:/image.png']], payload: { paths: ['C:/image.png'] }, returnsResult: true },
     { name: 'auditInvokeaiFolder', invokeName: 'audit_invokeai_folder', args: ['C:/invoke'], payload: { path: 'C:/invoke' }, returnsResult: true },
     { name: 'listInvokeaiImages', invokeName: 'list_invokeai_images', args: ['C:/invoke'], payload: { path: 'C:/invoke' }, returnsResult: true },
