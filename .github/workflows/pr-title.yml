@@ -10,7 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-title-${{ github.event.pull_request.number }}
+  # Release Please can emit synchronize and edited events for one update.
+  group: pr-title-${{ github.event.pull_request.number }}-${{ github.event.action }}
   cancel-in-progress: true
 
 jobs:
