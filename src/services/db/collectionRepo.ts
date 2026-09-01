@@ -37,6 +37,9 @@ export interface DbCollection {
     source: 'ambit' | 'invoke';
     invoke_owner_id?: string | null;
     invoke_source_id?: string | null;
+    invoke_source_name?: string | null;
+    invoke_source_present?: number;
+    invoke_suppressed?: number;
     updated_at?: number;
     dynamic_thumbnail_path?: string | null;
     dynamic_safe_thumbnail_path?: string | null;
@@ -696,12 +699,26 @@ export interface InvokeBoardCollectionInput {
     invokeSourceId: string;
 }
 
+export interface SuppressedInvokeCollection {
+    id: string;
+    name: string;
+    invokeSourceName?: string;
+    invokeSourcePresent: boolean;
+    invokeOwnerId?: string;
+}
+
 export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionInput) => {
     if (isBrowserMockMode()) {
+        const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
+        const followsSource = !!existing?.invokeSourceName && existing.name === existing.invokeSourceName;
         upsertBrowserMockCollection({
+            ...existing,
             ...board,
+            name: existing && !followsSource ? existing.name : board.name,
             imageIds: [],
             source: 'invoke',
+            invokeSourceName: board.name,
+            invokeSourcePresent: true,
         });
         return;
     }
@@ -712,21 +729,38 @@ export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionIn
         await db.execute(
             `INSERT INTO collections (
                 id, name, is_archived, is_pinned, created_at, source, invoke_owner_id,
-                invoke_source_id, updated_at
-             ) VALUES (?, ?, 0, 0, ?, 'invoke', ?, ?, ?)
+                invoke_source_id, invoke_source_name, invoke_source_present, updated_at
+             ) VALUES (?, ?, 0, 0, ?, 'invoke', ?, ?, ?, 1, ?)
              ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
+                name = CASE
+                    WHEN collections.invoke_source_name IS NOT NULL
+                     AND collections.name IS collections.invoke_source_name
+                    THEN excluded.name
+                    ELSE collections.name
+                END,
                 source = 'invoke',
                 invoke_owner_id = excluded.invoke_owner_id,
                 invoke_source_id = excluded.invoke_source_id,
+                invoke_source_name = excluded.invoke_source_name,
+                invoke_source_present = 1,
                 updated_at = CASE
-                    WHEN collections.name IS excluded.name
+                    WHEN collections.invoke_source_name IS excluded.invoke_source_name
                      AND collections.invoke_owner_id IS excluded.invoke_owner_id
                      AND collections.invoke_source_id IS excluded.invoke_source_id
+                     AND collections.invoke_source_present = 1
                     THEN collections.updated_at
                     ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
                 END`,
-            [board.id, board.name, board.createdAt, board.invokeOwnerId || null, board.invokeSourceId, now, now]
+            [
+                board.id,
+                board.name,
+                board.createdAt,
+                board.invokeOwnerId || null,
+                board.invokeSourceId,
+                board.name,
+                now,
+                now,
+            ]
         );
     });
 };
@@ -736,11 +770,19 @@ export const upsertInvokeBoardCollections = async (
 ): Promise<number> => {
     if (boards.length === 0) return 0;
     if (isBrowserMockMode()) {
-        boards.forEach(board => upsertBrowserMockCollection({
-            ...board,
-            imageIds: [],
-            source: 'invoke',
-        }));
+        boards.forEach(board => {
+            const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
+            const followsSource = !!existing?.invokeSourceName && existing.name === existing.invokeSourceName;
+            upsertBrowserMockCollection({
+                ...existing,
+                ...board,
+                name: existing && !followsSource ? existing.name : board.name,
+                imageIds: [],
+                source: 'invoke',
+                invokeSourceName: board.name,
+                invokeSourcePresent: true,
+            });
+        });
         return boards.length;
     }
 
@@ -751,30 +793,39 @@ export const upsertInvokeBoardCollections = async (
 
         for (let offset = 0; offset < boards.length; offset += 100) {
             const batch = boards.slice(offset, offset + 100);
-            const values = batch.map(() => "(?, ?, 0, 0, ?, 'invoke', ?, ?, ?)").join(', ');
+            const values = batch.map(() => "(?, ?, 0, 0, ?, 'invoke', ?, ?, ?, 1, ?)").join(', ');
             const params = batch.flatMap(board => [
                 board.id,
                 board.name,
                 board.createdAt,
                 board.invokeOwnerId || null,
                 board.invokeSourceId,
+                board.name,
                 now,
             ]);
             const result = await db.execute(
                 `INSERT INTO collections (
                     id, name, is_archived, is_pinned, created_at, source, invoke_owner_id,
-                    invoke_source_id, updated_at
+                    invoke_source_id, invoke_source_name, invoke_source_present, updated_at
                  ) VALUES ${values}
                  ON CONFLICT(id) DO UPDATE SET
-                    name = excluded.name,
+                    name = CASE
+                        WHEN collections.invoke_source_name IS NOT NULL
+                         AND collections.name IS collections.invoke_source_name
+                        THEN excluded.name
+                        ELSE collections.name
+                    END,
                     source = 'invoke',
                     invoke_owner_id = excluded.invoke_owner_id,
                     invoke_source_id = excluded.invoke_source_id,
+                    invoke_source_name = excluded.invoke_source_name,
+                    invoke_source_present = 1,
                     updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
-                 WHERE collections.name IS NOT excluded.name
-                    OR collections.source IS NOT 'invoke'
+                 WHERE collections.source IS NOT 'invoke'
                     OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
-                    OR collections.invoke_source_id IS NOT excluded.invoke_source_id`,
+                    OR collections.invoke_source_id IS NOT excluded.invoke_source_id
+                    OR collections.invoke_source_name IS NOT excluded.invoke_source_name
+                    OR collections.invoke_source_present != 1`,
                 params
             );
             updated += result.rowsAffected;
@@ -824,16 +875,102 @@ export const setCollectionCustomThumbnail = async (collectionId: string, imageId
 
 export const deleteCollectionFromDb = async (id: string) => {
     if (isBrowserMockMode()) {
-        deleteBrowserMockCollection(id);
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke') {
+            upsertBrowserMockCollection({ ...collection, invokeSuppressed: true });
+        } else {
+            deleteBrowserMockCollection(id);
+        }
         return;
     }
 
     const db = await getDb();
+    const [collection] = await db.select<Array<{ source: 'ambit' | 'invoke' }>>(
+        'SELECT source FROM scoped_collections WHERE id = ?',
+        [id]
+    );
+    if (!collection) {
+        throw new Error(`Deleting collection failed: collection was not found (${id})`);
+    }
+    if (collection.source === 'invoke') {
+        await unwrap(commands.updateInvokeCollectionOwnership(id, 'suppress'));
+        return;
+    }
     const result = await db.execute(
         'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
         [id]
     );
     assertMutationMatched(result, id, 'Deleting collection', 'collection');
+};
+
+export const resetInvokeCollection = async (id: string): Promise<void> => {
+    if (isBrowserMockMode()) {
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke' && collection.invokeSourceName) {
+            upsertBrowserMockCollection({ ...collection, name: collection.invokeSourceName });
+        }
+        return;
+    }
+    await unwrap(commands.updateInvokeCollectionOwnership(id, 'reset'));
+};
+
+export const restoreInvokeCollection = async (id: string): Promise<void> => {
+    if (isBrowserMockMode()) {
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke') {
+            upsertBrowserMockCollection({ ...collection, invokeSuppressed: false });
+        }
+        return;
+    }
+    await unwrap(commands.updateInvokeCollectionOwnership(id, 'restore'));
+};
+
+export const getSuppressedInvokeCollections = async (): Promise<SuppressedInvokeCollection[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections()
+            .filter(collection => collection.source === 'invoke' && collection.invokeSuppressed)
+            .map(collection => ({
+                id: collection.id,
+                name: collection.name,
+                invokeSourceName: collection.invokeSourceName,
+                invokeSourcePresent: collection.invokeSourcePresent !== false,
+                invokeOwnerId: collection.invokeOwnerId,
+            }));
+    }
+
+    const db = await getDb();
+    const rows = await db.select<Array<{
+        id: string;
+        name: string;
+        invoke_source_name?: string | null;
+        invoke_source_present: number;
+        invoke_owner_id?: string | null;
+    }>>(
+        `SELECT c.id, c.name, c.invoke_source_name, c.invoke_source_present, c.invoke_owner_id
+         FROM collections c
+         JOIN invoke_owner_scope_state s ON s.state_key = 'current'
+         WHERE COALESCE(c.source, 'ambit') = 'invoke'
+           AND c.invoke_suppressed = 1
+           AND c.invoke_source_id = s.db_path
+           AND (
+                s.scope_mode IN ('legacy', 'all')
+                OR (
+                    s.scope_mode = 'owner'
+                    AND c.invoke_owner_id IS NOT NULL
+                    AND c.invoke_owner_id = s.owner_id
+                    AND s.boards_verified = 1
+                    AND c.invoke_board_verified = 1
+                )
+           )
+         ORDER BY LOWER(c.name), c.id`
+    );
+    return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        invokeSourceName: row.invoke_source_name || undefined,
+        invokeSourcePresent: row.invoke_source_present !== 0,
+        invokeOwnerId: row.invoke_owner_id || undefined,
+    }));
 };
 
 const browserMembershipResult = (
@@ -938,6 +1075,9 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             source: c.source,
             invokeOwnerId: c.invoke_owner_id || undefined,
             invokeSourceId: c.invoke_source_id || undefined,
+            invokeSourceName: c.invoke_source_name || undefined,
+            invokeSourcePresent: c.invoke_source_present !== 0,
+            invokeSuppressed: c.invoke_suppressed === 1,
         };
         const cachedThumbnail = getCachedDynamicThumbnailSummary(c);
         return cachedThumbnail ? { ...collection, ...cachedThumbnail } : collection;

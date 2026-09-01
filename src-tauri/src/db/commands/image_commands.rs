@@ -2419,42 +2419,72 @@ fn reconcile_invoke_board_snapshot_inner(
     let upsert_boards_sql = if has_collection_updated_at {
         "INSERT INTO collections (
              id, name, is_archived, is_pinned, created_at, source,
-             invoke_owner_id, invoke_source_id, invoke_board_verified, updated_at
+             invoke_owner_id, invoke_source_id, invoke_board_verified,
+             invoke_source_name, invoke_source_present, updated_at
          )
-         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1, ?2
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1,
+                board_name, 1, ?2
          FROM temp_invoke_board_snapshot
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
-             name = excluded.name,
+             name = CASE
+                 WHEN collections.invoke_source_name IS NOT NULL
+                  AND collections.name = collections.invoke_source_name
+                 THEN excluded.name
+                 ELSE collections.name
+             END,
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
              invoke_source_id = excluded.invoke_source_id,
              invoke_board_verified = 1,
+             invoke_source_name = excluded.invoke_source_name,
+             invoke_source_present = 1,
              updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
-         WHERE collections.name IS NOT excluded.name
+         WHERE (
+                collections.invoke_source_name IS NOT NULL
+                AND collections.name = collections.invoke_source_name
+                AND collections.name IS NOT excluded.name
+             )
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
             OR collections.invoke_source_id IS NOT excluded.invoke_source_id
-            OR collections.invoke_board_verified IS NOT 1"
+            OR collections.invoke_board_verified IS NOT 1
+            OR collections.invoke_source_name IS NOT excluded.invoke_source_name
+            OR collections.invoke_source_present IS NOT 1"
     } else {
         "INSERT INTO collections (
              id, name, is_archived, is_pinned, created_at, source,
-             invoke_owner_id, invoke_source_id, invoke_board_verified
+             invoke_owner_id, invoke_source_id, invoke_board_verified,
+             invoke_source_name, invoke_source_present
          )
-         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1
+         SELECT board_id, board_name, 0, 0, created_at, 'invoke', owner_id, ?1, 1,
+                board_name, 1
          FROM temp_invoke_board_snapshot
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
-             name = excluded.name,
+             name = CASE
+                 WHEN collections.invoke_source_name IS NOT NULL
+                  AND collections.name = collections.invoke_source_name
+                 THEN excluded.name
+                 ELSE collections.name
+             END,
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
              invoke_source_id = excluded.invoke_source_id,
-             invoke_board_verified = 1
-         WHERE collections.name IS NOT excluded.name
+             invoke_board_verified = 1,
+             invoke_source_name = excluded.invoke_source_name,
+             invoke_source_present = 1
+         WHERE (
+                collections.invoke_source_name IS NOT NULL
+                AND collections.name = collections.invoke_source_name
+                AND collections.name IS NOT excluded.name
+             )
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
             OR collections.invoke_source_id IS NOT excluded.invoke_source_id
-            OR collections.invoke_board_verified IS NOT 1"
+            OR collections.invoke_board_verified IS NOT 1
+            OR collections.invoke_source_name IS NOT excluded.invoke_source_name
+            OR collections.invoke_source_present IS NOT 1"
     };
     let mut collections_updated = if has_collection_updated_at {
         tx.execute(upsert_boards_sql, params![db_path, now])
@@ -2479,13 +2509,15 @@ fn reconcile_invoke_board_snapshot_inner(
         InvokeOwnerScopeMode::Unselected => unreachable!(),
     };
 
-    let collections_deleted = if input.delete_missing_collections {
+    let missing_collections_updated = if input.delete_missing_collections {
         tx.execute(
             &format!(
-                "DELETE FROM collections
+                "UPDATE collections
+                 SET invoke_source_present = 0
                  WHERE source = 'invoke'
                    AND {source_match}
                    AND {owner_match}
+                   AND invoke_source_present IS NOT 0
                    AND NOT EXISTS (
                        SELECT 1 FROM temp_invoke_board_snapshot snapshot
                        WHERE snapshot.board_id = collections.id
@@ -2504,14 +2536,18 @@ fn reconcile_invoke_board_snapshot_inner(
             InvokeOwnerScopeMode::All | InvokeOwnerScopeMode::Legacy
         )
     {
+        // An authoritative catalog can prove that a previously synchronized board
+        // is currently absent, but absence alone does not invalidate its last
+        // verified owner. Preserve that verification so the retained local
+        // collection remains recoverable and visible as source-unavailable.
         collections_updated += tx
             .execute(
                 &format!(
                     "UPDATE collections
-                     SET invoke_board_verified = 0
+                     SET invoke_source_present = 0
                      WHERE source = 'invoke'
                        AND {source_match}
-                       AND invoke_board_verified IS NOT 0
+                       AND invoke_source_present IS NOT 0
                        AND NOT EXISTS (
                            SELECT 1 FROM temp_invoke_board_snapshot snapshot
                            WHERE snapshot.board_id = collections.id
@@ -2523,8 +2559,8 @@ fn reconcile_invoke_board_snapshot_inner(
     }
 
     let mut result = InvokeBoardSnapshotResult {
-        collections_updated,
-        collections_deleted,
+        collections_updated: collections_updated + missing_collections_updated,
+        collections_deleted: 0,
         ..Default::default()
     };
 
@@ -2532,6 +2568,10 @@ fn reconcile_invoke_board_snapshot_inner(
         let image_source_match =
             source_match.replace("invoke_source_id", "images.invoke_source_id");
         let image_owner_match = owner_match.replace("invoke_owner_id", "images.invoke_owner_id");
+        let removed_source_match =
+            source_match.replace("invoke_source_id", "removed_images.invoke_source_id");
+        let removed_owner_match =
+            owner_match.replace("invoke_owner_id", "removed_images.invoke_owner_id");
         result.images_updated = tx
             .execute(
                 &format!(
@@ -2553,52 +2593,118 @@ fn reconcile_invoke_board_snapshot_inner(
             )
             .map_err(|error| error.to_string())?;
 
-        result.memberships_deleted = tx
+        result.images_updated += tx
             .execute(
                 &format!(
-                    "DELETE FROM collection_images AS membership
-                     WHERE membership.collection_id IN (
-                         SELECT id FROM collections
-                         WHERE source = 'invoke' AND {source_match} AND {owner_match}
+                    "UPDATE removed_images
+                     SET board_id = (
+                         SELECT snapshot.board_id
+                         FROM temp_invoke_board_membership_snapshot snapshot
+                         WHERE snapshot.image_name = removed_images.invoke_image_name
                      )
-                       AND NOT EXISTS (
-                         SELECT 1
-                         FROM images
-                         INNER JOIN temp_invoke_board_membership_snapshot snapshot
-                            ON snapshot.image_name = images.invoke_image_name
-                         WHERE images.id = membership.image_id
-                           AND snapshot.board_id = membership.collection_id
-                     )"
+                     WHERE {removed_source_match}
+                       AND {removed_owner_match}
+                       AND board_id IS NOT (
+                           SELECT snapshot.board_id
+                           FROM temp_invoke_board_membership_snapshot snapshot
+                           WHERE snapshot.image_name = removed_images.invoke_image_name
+                       )"
                 ),
                 params![db_path, owner_param],
+            )
+            .map_err(|error| error.to_string())?;
+
+        tx.execute(
+            "DELETE FROM invoke_board_membership_snapshot
+             WHERE collection_id IN (
+                 SELECT board_id FROM temp_invoke_board_snapshot
+             )",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+        tx.execute(
+            "INSERT INTO invoke_board_membership_snapshot (
+                 collection_id, invoke_image_name
+             )
+             SELECT membership.board_id, membership.image_name
+             FROM temp_invoke_board_membership_snapshot membership
+             INNER JOIN temp_invoke_board_snapshot board
+                ON board.board_id = membership.board_id",
+            [],
+        )
+        .map_err(|error| error.to_string())?;
+
+        result.memberships_deleted = tx
+            .execute(
+                "DELETE FROM collection_images AS membership
+                 WHERE membership.collection_id IN (
+                     SELECT board_id FROM temp_invoke_board_snapshot
+                 )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM invoke_board_membership_additions additions
+                       WHERE additions.collection_id = membership.collection_id
+                         AND additions.image_id = membership.image_id
+                   )
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM images
+                       INNER JOIN invoke_board_membership_snapshot snapshot
+                          ON snapshot.invoke_image_name = images.invoke_image_name
+                         AND snapshot.collection_id = membership.collection_id
+                       WHERE images.id = membership.image_id
+                         AND NOT EXISTS (
+                             SELECT 1
+                             FROM invoke_board_membership_exclusions exclusions
+                             WHERE exclusions.collection_id = snapshot.collection_id
+                               AND exclusions.invoke_image_name = snapshot.invoke_image_name
+                         )
+                   )",
+                [],
             )
             .map_err(|error| error.to_string())?;
         result.memberships_inserted = tx
             .execute(
                 &format!(
                     "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-                     SELECT images.board_id, images.id
-                     FROM images
-                     INNER JOIN collections ON collections.id = images.board_id
-                     WHERE images.board_id IS NOT NULL
-                       AND {image_source_match}
+                     SELECT snapshot.collection_id, images.id
+                     FROM invoke_board_membership_snapshot snapshot
+                     INNER JOIN temp_invoke_board_snapshot board
+                        ON board.board_id = snapshot.collection_id
+                     INNER JOIN images
+                        ON images.invoke_image_name = snapshot.invoke_image_name
+                     WHERE {image_source_match}
                        AND {image_owner_match}
-                       AND collections.source = 'invoke'"
+                       AND NOT EXISTS (
+                           SELECT 1
+                           FROM invoke_board_membership_exclusions exclusions
+                           WHERE exclusions.collection_id = snapshot.collection_id
+                             AND exclusions.invoke_image_name = snapshot.invoke_image_name
+                       )"
                 ),
                 params![db_path, owner_param],
             )
             .map_err(|error| error.to_string())?;
+        result.memberships_inserted += tx
+            .execute(
+                "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                 SELECT additions.collection_id, additions.image_id
+                 FROM invoke_board_membership_additions additions
+                 INNER JOIN temp_invoke_board_snapshot board
+                    ON board.board_id = additions.collection_id
+                 INNER JOIN images ON images.id = additions.image_id",
+                [],
+            )
+            .map_err(|error| error.to_string())?;
         tx.execute(
-            &format!(
-                "UPDATE collections
-                 SET dynamic_thumbnail_path = NULL,
-                     dynamic_safe_thumbnail_path = NULL,
-                     dynamic_thumbnail_is_sensitive = NULL,
-                     dynamic_thumbnail_cached_at = NULL,
-                     dynamic_count = NULL
-                 WHERE source = 'invoke' AND {source_match} AND {owner_match}"
-            ),
-            params![db_path, owner_param],
+            "UPDATE collections
+             SET dynamic_thumbnail_path = NULL,
+                 dynamic_safe_thumbnail_path = NULL,
+                 dynamic_thumbnail_is_sensitive = NULL,
+                 dynamic_thumbnail_cached_at = NULL,
+                 dynamic_count = NULL
+             WHERE id IN (SELECT board_id FROM temp_invoke_board_snapshot)",
+            [],
         )
         .map_err(|error| error.to_string())?;
     }
@@ -3295,9 +3401,13 @@ mod tests {
                  ('active-moved', 'C:/Invoke/outputs/images/moved.png', 1, 'invoke.db', 'owner-a'),
                  ('other-source', 'C:/Other/outputs/images/other.png', 2, 'other.db', 'owner-a');
              INSERT INTO removed_images (
-                 id, path, timestamp, removed_at, invoke_source_id, invoke_owner_id
+                 id, path, timestamp, removed_at, invoke_image_name,
+                 invoke_source_id, invoke_owner_id
              ) VALUES
-                 ('removed-missing', 'C:/Invoke/outputs/images/missing.png', 3, 4, 'invoke.db', 'owner-a');",
+                 (
+                     'removed-missing', 'C:/Invoke/outputs/images/missing.png', 3, 4,
+                     'missing.png', 'invoke.db', 'owner-a'
+                 );",
         )
         .expect("seed ownership rows");
 
@@ -3339,6 +3449,43 @@ mod tests {
         assert_eq!(active_owner.as_deref(), Some("owner-b"));
         assert_eq!(removed_owner, None);
         assert_eq!(other_owner.as_deref(), Some("owner-a"));
+
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'invoke.db', 'C:/Invoke', 'owner', 'owner-b', 1)
+             ON CONFLICT(state_key) DO UPDATE SET
+                 db_path = excluded.db_path,
+                 images_root = excluded.images_root,
+                 scope_mode = excluded.scope_mode,
+                 owner_id = excluded.owner_id,
+                 updated_at = excluded.updated_at",
+            [],
+        )
+        .expect("activate owner scope");
+        let relocated_removed_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM removed_images
+                 JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+                 WHERE removed_images.invoke_source_id = scope.db_path
+                   AND removed_images.invoke_image_name = 'missing.png'
+                   AND removed_images.invoke_scope_hidden = 0
+                   AND (
+                       scope.scope_mode IN ('legacy', 'all')
+                       OR (
+                           scope.scope_mode = 'owner'
+                           AND (
+                               removed_images.invoke_owner_id IS NULL
+                               OR removed_images.invoke_owner_id = scope.owner_id
+                           )
+                       )
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stable removed identity lookup");
+        assert_eq!(relocated_removed_count, 1);
 
         let repeated = super::reconcile_invoke_owner_inventory_inner(
             &conn,
@@ -5378,7 +5525,128 @@ mod tests {
     }
 
     #[test]
-    fn authoritative_owner_board_snapshot_replaces_stale_boards_and_memberships() {
+    fn authoritative_board_snapshot_preserves_local_collection_organization() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        super::save_images_batch_inner(
+            &conn,
+            &[
+                create_image_record("source-kept", 100, 10, "{}"),
+                create_image_record("source-excluded", 101, 11, "{}"),
+                create_image_record("local-added", 102, 12, "{}"),
+                create_image_record("absent-source", 103, 13, "{}"),
+            ],
+        )
+        .expect("seed images");
+        conn.execute_batch(
+            "UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'kept.png', board_id = 'board-a'
+             WHERE id = 'source-kept';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'excluded.png', board_id = 'board-a'
+             WHERE id = 'source-excluded';
+             UPDATE images SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'absent.png', board_id = 'board-absent'
+             WHERE id = 'absent-source';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES
+                 (
+                     'board-a', 'Local label', 1, 'invoke', 'invoke.db', 'owner-a',
+                     'Old upstream label'
+                 ),
+                 (
+                     'board-absent', 'Offline board', 1, 'invoke', 'invoke.db', 'owner-a',
+                     'Offline board'
+                 );
+             INSERT INTO invoke_board_membership_snapshot VALUES
+                 ('board-a', 'kept.png'),
+                 ('board-a', 'excluded.png'),
+                 ('board-absent', 'absent.png');
+             INSERT INTO invoke_board_membership_exclusions VALUES
+                 ('board-a', 'excluded.png');
+             INSERT INTO invoke_board_membership_additions VALUES
+                 ('board-a', 'local-added');
+             INSERT INTO collection_images VALUES
+                 ('board-a', 'source-kept'),
+                 ('board-a', 'local-added'),
+                 ('board-absent', 'absent-source');",
+        )
+        .expect("seed local organization");
+
+        let snapshot = super::InvokeBoardSnapshotInput {
+            db_path: "invoke.db".to_string(),
+            mode: super::InvokeOwnerScopeMode::Owner,
+            owner_id: Some("owner-a".to_string()),
+            boards: vec![super::InvokeBoardSnapshotBoard {
+                id: "board-a".to_string(),
+                name: "New upstream label".to_string(),
+                created_at: 2,
+                owner_id: Some("owner-a".to_string()),
+            }],
+            memberships: vec![
+                super::InvokeBoardSnapshotMembership {
+                    image_name: "kept.png".to_string(),
+                    board_id: "board-a".to_string(),
+                },
+                super::InvokeBoardSnapshotMembership {
+                    image_name: "excluded.png".to_string(),
+                    board_id: "board-a".to_string(),
+                },
+            ],
+            reconcile_memberships: true,
+            delete_missing_collections: true,
+        };
+
+        super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+            .expect("apply authoritative snapshot");
+
+        let board_state: (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT name, invoke_source_name, invoke_source_present
+                 FROM collections WHERE id = 'board-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("current board");
+        assert_eq!(
+            board_state,
+            (
+                "Local label".to_string(),
+                Some("New upstream label".to_string()),
+                1
+            )
+        );
+
+        let absent_state: (i64, i64) = conn
+            .query_row(
+                "SELECT invoke_source_present, COUNT(*)
+                 FROM collections WHERE id = 'board-absent'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("absent board remains recoverable");
+        assert_eq!(absent_state, (0, 1));
+
+        let memberships: Vec<String> = conn
+            .prepare(
+                "SELECT image_id FROM collection_images
+                 WHERE collection_id = 'board-a' ORDER BY image_id",
+            )
+            .expect("prepare effective membership")
+            .query_map([], |row| row.get(0))
+            .expect("query effective membership")
+            .collect::<Result<_, _>>()
+            .expect("collect effective membership");
+        assert_eq!(
+            memberships,
+            vec!["local-added".to_string(), "source-kept".to_string()]
+        );
+    }
+
+    #[test]
+    fn authoritative_owner_board_snapshot_reconciles_source_facts_without_deleting_boards() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
         super::save_images_batch_inner(
@@ -5401,15 +5669,28 @@ mod tests {
                  invoke_image_name = 'owner-b.png', board_id = 'owner-b-board'
              WHERE id = 'owner-b-image';
              INSERT INTO collections (
-                 id, name, created_at, source, invoke_source_id, invoke_owner_id
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
              ) VALUES
-                 ('old-board', 'Transferred away', 1, 'invoke', 'invoke.db', 'owner-a'),
-                 ('kept-board', 'Old name', 1, 'invoke', 'invoke.db', 'owner-a'),
-                 ('owner-b-board', 'Owner B', 1, 'invoke', 'invoke.db', 'owner-b');
+                 (
+                     'old-board', 'Transferred away', 1, 'invoke', 'invoke.db', 'owner-a',
+                     'Transferred away'
+                 ),
+                 (
+                     'kept-board', 'Old name', 1, 'invoke', 'invoke.db', 'owner-a',
+                     'Old name'
+                 ),
+                 (
+                     'owner-b-board', 'Owner B', 1, 'invoke', 'invoke.db', 'owner-b',
+                     'Owner B'
+                 );
              INSERT INTO collection_images VALUES
                  ('old-board', 'owner-a-moved'),
                  ('kept-board', 'owner-a-removed'),
-                 ('owner-b-board', 'owner-b-image');",
+                 ('owner-b-board', 'owner-b-image');
+             INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, boards_verified, updated_at
+             ) VALUES ('current', 'invoke.db', 'images', 'owner', 'owner-a', 1, 1);",
         )
         .expect("seed stale boards");
 
@@ -5446,15 +5727,23 @@ mod tests {
         let catalog_result = super::reconcile_invoke_board_snapshot_inner(&conn, &catalog_snapshot)
             .expect("apply non-destructive owner catalog");
         assert_eq!(catalog_result.collections_deleted, 0);
-        let transferred_board: (Option<String>, i64) = conn
+        let transferred_board: (Option<String>, i64, i64) = conn
             .query_row(
-                "SELECT invoke_owner_id, invoke_board_verified
+                "SELECT invoke_owner_id, invoke_board_verified, invoke_source_present
                  FROM collections WHERE id = 'old-board'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("old board remains");
-        assert_eq!(transferred_board, (Some("owner-a".to_string()), 0));
+        assert_eq!(transferred_board, (Some("owner-a".to_string()), 1, 0));
+        let scoped_unavailable_board: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scoped_collections WHERE id = 'old-board'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source-unavailable board remains visible in its verified owner scope");
+        assert_eq!(scoped_unavailable_board, 1);
         let retained_membership: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM collection_images WHERE collection_id = 'old-board'",
@@ -5468,19 +5757,22 @@ mod tests {
             .expect("replace owner A board snapshot");
 
         assert!(result.changed_count() > 0);
-        let owner_a_boards: Vec<(String, String)> = conn
+        let owner_a_boards: Vec<(String, String, i64)> = conn
             .prepare(
-                "SELECT id, name FROM collections
+                "SELECT id, name, invoke_source_present FROM collections
                  WHERE source = 'invoke' AND invoke_owner_id = 'owner-a' ORDER BY id",
             )
             .expect("owner A boards query")
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .expect("owner A boards")
             .collect::<Result<Vec<_>, _>>()
             .expect("collect owner A boards");
         assert_eq!(
             owner_a_boards,
-            vec![("kept-board".to_string(), "Current name".to_string())]
+            vec![
+                ("kept-board".to_string(), "Current name".to_string(), 1),
+                ("old-board".to_string(), "Transferred away".to_string(), 0),
+            ]
         );
         let board_ids: Vec<(String, Option<String>)> = conn
             .prepare("SELECT id, board_id FROM images ORDER BY id")
@@ -5501,7 +5793,10 @@ mod tests {
             ]
         );
         let memberships: Vec<(String, String)> = conn
-            .prepare("SELECT collection_id, image_id FROM collection_images ORDER BY image_id")
+            .prepare(
+                "SELECT collection_id, image_id FROM collection_images
+                 ORDER BY image_id, collection_id",
+            )
             .expect("memberships query")
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .expect("memberships")
@@ -5511,6 +5806,7 @@ mod tests {
             memberships,
             vec![
                 ("kept-board".to_string(), "owner-a-moved".to_string()),
+                ("old-board".to_string(), "owner-a-moved".to_string()),
                 ("owner-b-board".to_string(), "owner-b-image".to_string()),
             ]
         );
@@ -5589,21 +5885,23 @@ mod tests {
                 .expect("replace unscoped board snapshot");
             assert!(result.changed_count() > 0);
 
-            let boards: Vec<(String, Option<String>)> = conn
+            let boards: Vec<(String, Option<String>, i64)> = conn
                 .prepare(
-                    "SELECT id, invoke_owner_id FROM collections
+                    "SELECT id, invoke_owner_id, invoke_source_present FROM collections
                      WHERE source = 'invoke' ORDER BY id",
                 )
                 .expect("board query")
-                .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+                .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
                 .expect("boards")
                 .collect::<Result<_, _>>()
                 .expect("collect boards");
             assert_eq!(
                 boards,
                 vec![
-                    ("current-a".to_string(), Some("owner-a".to_string())),
-                    ("current-b".to_string(), Some("owner-b".to_string())),
+                    ("current-a".to_string(), Some("owner-a".to_string()), 1),
+                    ("current-b".to_string(), Some("owner-b".to_string()), 1),
+                    ("stale-a".to_string(), Some("owner-a".to_string()), 0),
+                    ("stale-b".to_string(), Some("owner-b".to_string()), 0),
                 ]
             );
             let image_boards: Vec<(String, Option<String>)> = conn

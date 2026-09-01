@@ -266,6 +266,9 @@ export interface Collection {
   source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
   invokeOwnerId?: string; // Owner-specific visibility for InvokeAI boards and Ambit collections
   invokeSourceId?: string; // InvokeAI database whose owner namespace scopes this collection
+  invokeSourceName?: string; // Last authoritative InvokeAI board name
+  invokeSourcePresent?: boolean; // False when the source board was absent from the latest snapshot
+  invokeSuppressed?: boolean; // Locally hidden without deleting source ownership state
 }
 
 export interface SmartCollection extends Collection {

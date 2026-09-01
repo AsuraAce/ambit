@@ -448,6 +448,11 @@ where
                 params![id, source_path],
             )
             .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_board_membership_additions WHERE image_id = ?1",
+                [&id],
+            )
+            .map_err(|error| error.to_string())?;
             let deleted = tx
                 .execute(
                     "DELETE FROM removed_images
@@ -696,6 +701,12 @@ mod tests {
             false,
         );
         conn.execute(
+            "INSERT INTO invoke_board_membership_additions (collection_id, image_id)
+             VALUES ('invoke-board', 'C:/normalized/source.png')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
             "INSERT INTO collections (
                 id, custom_thumbnail, dynamic_thumbnail_path,
                 dynamic_safe_thumbnail_path, dynamic_thumbnail_is_sensitive,
@@ -719,6 +730,15 @@ mod tests {
         assert!(!source.exists());
         assert!(!thumbnail.exists());
         assert_eq!(removed_image_count(&conn), 0);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_additions",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
         let collection_thumbnail = conn
             .query_row(
                 "SELECT custom_thumbnail, dynamic_thumbnail_path
@@ -764,6 +784,12 @@ mod tests {
         fs::write(&source, b"source").unwrap();
         let mut conn = removed_images_connection();
         insert_removed_image(&conn, "source", &source, None, false);
+        conn.execute(
+            "INSERT INTO invoke_board_membership_additions (collection_id, image_id)
+             VALUES ('invoke-board', 'source')",
+            [],
+        )
+        .unwrap();
 
         let result = delete_removed_images_with(
             &mut conn,
@@ -776,6 +802,15 @@ mod tests {
         assert_eq!(result.failed_ids, ["source"]);
         assert!(result.cleared_ids.is_empty());
         assert_eq!(removed_image_count(&conn), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_additions",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
         assert!(source.exists());
         let _ = fs::remove_dir_all(root);
     }
@@ -788,6 +823,12 @@ mod tests {
         fs::write(&source, b"source").unwrap();
         let mut conn = removed_images_connection();
         insert_removed_image(&conn, "source", &source, None, false);
+        conn.execute(
+            "INSERT INTO invoke_board_membership_additions (collection_id, image_id)
+             VALUES ('invoke-board', 'source')",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO collections (id, custom_thumbnail) VALUES ('custom', 'source')",
             [],
@@ -808,6 +849,15 @@ mod tests {
         .unwrap();
         assert_eq!(first.cleanup_pending_ids, ["source"]);
         assert_eq!(removed_image_count(&conn), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_additions",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            1
+        );
         assert_eq!(
             conn.query_row(
                 "SELECT custom_thumbnail FROM collections WHERE id = 'custom'",
@@ -831,6 +881,15 @@ mod tests {
         assert_eq!(retry.already_missing_ids, ["source"]);
         assert_eq!(retry.cleared_ids, ["source"]);
         assert_eq!(removed_image_count(&conn), 0);
+        assert_eq!(
+            conn.query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_additions",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+            0
+        );
         assert_eq!(
             conn.query_row(
                 "SELECT custom_thumbnail FROM collections WHERE id = 'custom'",
@@ -881,6 +940,15 @@ mod tests {
                 dynamic_safe_thumbnail_path TEXT,
                 dynamic_thumbnail_is_sensitive INTEGER,
                 dynamic_thumbnail_cached_at INTEGER
+            )",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE invoke_board_membership_additions (
+                collection_id TEXT NOT NULL,
+                image_id TEXT NOT NULL,
+                PRIMARY KEY (collection_id, image_id)
             )",
             [],
         )

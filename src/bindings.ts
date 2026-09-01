@@ -133,6 +133,14 @@ async mutateCollectionMembership(input: CollectionMembershipMutationInput) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async updateInvokeCollectionOwnership(collectionId: string, action: InvokeCollectionOwnershipAction) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_invoke_collection_ownership", { collectionId, action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async migrateLegacyCollections(input: LegacyCollectionMigrationInput) : Promise<Result<LegacyCollectionMigrationResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("migrate_legacy_collections", { input }) };
@@ -832,6 +840,7 @@ export type InvokeBoardSnapshotBoard = { id: string; name: string; createdAt: nu
 export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean; deleteMissingCollections: boolean }
 export type InvokeBoardSnapshotMembership = { imageName: string; boardId: string }
 export type InvokeBoardSnapshotResult = { collectionsUpdated: number; collectionsDeleted: number; imagesUpdated: number; membershipsDeleted: number; membershipsInserted: number }
+export type InvokeCollectionOwnershipAction = "suppress" | "restore" | "reset"
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
 export type InvokeImageOwnerInventoryInput = { dbPath: string; images: InvokeImageOwnerInventoryItem[] }

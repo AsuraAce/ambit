@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 76: Thumbnail retry diagnostics are operational metadata. Updating
+/// Migration 78: Thumbnail retry diagnostics are operational metadata. Updating
 /// them must not invalidate Invoke owner-scope facets or collection projections.
-pub fn migration76() -> Migration {
+pub fn migration78() -> Migration {
     Migration {
-        version: 76,
+        version: 78,
         description: "exclude_thumbnail_retry_diagnostics_from_scope_invalidation",
         sql: r#"
             DROP TRIGGER IF EXISTS invoke_scope_cache_images_update_dirty;
@@ -176,11 +176,11 @@ pub fn migration76() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration76;
+    use super::migration78;
 
     #[test]
     fn retry_diagnostics_do_not_participate_in_scope_invalidation() {
-        let sql = migration76().sql;
+        let sql = migration78().sql;
 
         for trigger in [
             "CREATE TRIGGER invoke_scope_cache_images_update_dirty",

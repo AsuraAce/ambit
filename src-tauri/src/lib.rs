@@ -54,6 +54,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::commands::maintenance::remove_images_from_library,
             db::commands::maintenance::restore_removed_images,
             db::commands::maintenance::mutate_collection_membership,
+            db::commands::maintenance::update_invoke_collection_ownership,
             db::commands::maintenance::migrate_legacy_collections,
             db::commands::maintenance::update_ambit_collection_scope,
             db::commands::maintenance::set_collection_custom_thumbnail,

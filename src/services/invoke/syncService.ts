@@ -26,6 +26,8 @@ import { insertImagesBatch } from '../db';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
+    getRemovedImagesByIds,
+    getRemovedInvokeImageNames,
     ImagePathIdentityMove,
     moveImagePathIdentities,
     moveImagePathIdentity,
@@ -636,25 +638,31 @@ export const syncImages = async (
         ]));
 
         let pathProbes: FileMetadataProbe[] = [];
-        let pathProbeSucceeded = true;
         const fileSizeProbeStartedAt = liveWatchNow();
         if (batchPaths.length > 0) {
             try {
                 pathProbes = await unwrap(commands.probeFileMetadataBulk(batchPaths));
-            } catch {
-                pathProbeSucceeded = false;
+            } catch (error) {
+                console.warn('[InvokeAI Sync] Failed to verify InvokeAI source image paths.', error);
+                throw new Error('Failed to verify InvokeAI source image paths', { cause: error });
             }
         }
         let batchRootAvailable = outputImagesRootAvailable;
-        if (pathProbeSucceeded && pathProbes.some(probe => probe.status === 'missing')) {
+        if (pathProbes.some(probe => probe.status === 'missing')) {
             batchRootAvailable = await probeOutputImagesRoot();
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
+        const [existingImagesInBatch, removedImagesInBatch, removedInvokeImageNames] = await Promise.all([
+            getImagesByIds(lookupPaths, { includeOwnerHidden: true }),
+            getRemovedImagesByIds(lookupPaths),
+            getRemovedInvokeImageNames(scope.dbPath, rows.map(row => row.image_name)),
+        ]);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
         const probeByPath = new Map(batchPaths.map((path, index) => [path, pathProbes[index]]));
+        const tombstonedIds = new Set(removedImagesInBatch.map(img => normalizePath(img.id)));
+        const tombstonedInvokeImageNames = new Set(removedInvokeImageNames);
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
@@ -671,6 +679,15 @@ export const syncImages = async (
             const fullPath = resolvedPath.absolutePath;
             const pathProbe = probeByPath.get(fullPath);
             const legacyFlatPath = legacyFlatPaths[i];
+            const normalizedFullPath = normalizePath(fullPath);
+            const normalizedLegacyFlatPath = legacyFlatPath ? normalizePath(legacyFlatPath) : undefined;
+            if (tombstonedInvokeImageNames.has(row.image_name)
+                || tombstonedIds.has(normalizedFullPath)
+                || (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))) {
+                processed++;
+                continue;
+            }
+            const sourceMissing = pathProbe?.status === 'missing' && batchRootAvailable === true;
             let pathRepaired = false;
 
             try {
@@ -721,6 +738,11 @@ export const syncImages = async (
                 const fileSize = pathProbe?.status === 'present' && pathProbe.isFile
                     ? pathProbe.size
                     : existing?.fileSize ?? 0;
+
+                if (sourceMissing && !existing) {
+                    processed++;
+                    continue;
+                }
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
                     const isStarredInInvoke = (hasStarred && (row.starred === 1 || row.starred === true)) ||
