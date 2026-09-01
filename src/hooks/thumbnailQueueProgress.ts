@@ -2,6 +2,7 @@ export interface ThumbnailQueueProgressCounts {
     checked: number;
     optimized: number;
     missing?: number;
+    skipped?: number;
     failed: number;
 }
 
@@ -22,10 +23,15 @@ const formatMissing = (count: number) => (
     `marked ${formatUnit(count, 'file')} missing`
 );
 
+const formatDeferred = (count: number) => (
+    `deferred ${formatUnit(count, 'file')} from unavailable folders`
+);
+
 export const formatThumbnailQueueRunningMessage = ({
     checked,
     optimized,
     missing = 0,
+    skipped = 0,
     failed
 }: ThumbnailQueueProgressCounts): string => {
     if (checked <= 0) {
@@ -36,11 +42,20 @@ export const formatThumbnailQueueRunningMessage = ({
 
     if (failed > 0) {
         const missingText = missing > 0 ? `; ${formatMissing(missing)}` : '';
-        return `Optimized ${formatUnit(optimized, 'thumbnail')}${missingText}; ${formatAttention(failed)}`;
+        const deferredText = skipped > 0 ? `; ${formatDeferred(skipped)}` : '';
+        return `Optimized ${formatUnit(optimized, 'thumbnail')}${missingText}${deferredText}; ${formatAttention(failed)}`;
     }
 
     if (missing > 0) {
-        return `Optimized ${formatUnit(optimized, 'thumbnail')}; ${formatMissing(missing)}`;
+        const deferredText = skipped > 0 ? `; ${formatDeferred(skipped)}` : '';
+        return `Optimized ${formatUnit(optimized, 'thumbnail')}; ${formatMissing(missing)}${deferredText}`;
+    }
+
+    if (skipped > 0) {
+        if (optimized === 0) {
+            return `Checked ${formatUnit(checked, 'image')}; ${formatDeferred(skipped)}`;
+        }
+        return `Optimized ${formatUnit(optimized, 'thumbnail')}; ${formatDeferred(skipped)}`;
     }
 
     if (checked !== optimized) {
@@ -53,19 +68,27 @@ export const formatThumbnailQueueRunningMessage = ({
 export const formatThumbnailQueueCompleteMessage = ({
     optimized,
     missing = 0,
+    skipped = 0,
     failed
 }: ThumbnailQueueProgressCounts): string => {
     if (failed > 0) {
         const missingText = missing > 0 ? `; ${formatMissing(missing)}` : '';
-        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized${missingText}; ${formatAttention(failed)}`;
+        const deferredText = skipped > 0 ? `; ${formatDeferred(skipped)}` : '';
+        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized${missingText}${deferredText}; ${formatAttention(failed)}`;
     }
 
     if (optimized === 0 && missing > 0) {
-        return `Finished: ${formatMissing(missing)}`;
+        const deferredText = skipped > 0 ? `; ${formatDeferred(skipped)}` : '';
+        return `Finished: ${formatMissing(missing)}${deferredText}`;
     }
 
     if (missing > 0) {
-        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized; ${formatMissing(missing)}`;
+        const deferredText = skipped > 0 ? `; ${formatDeferred(skipped)}` : '';
+        return `Finished: ${formatUnit(optimized, 'thumbnail')} optimized; ${formatMissing(missing)}${deferredText}`;
+    }
+
+    if (skipped > 0) {
+        return `Finished: ${formatDeferred(skipped)}`;
     }
 
     if (optimized === 0) {

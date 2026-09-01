@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -69,6 +70,8 @@ pub struct ThumbnailOptimizationConfig {
     pub thumbnail_dir: String,
     pub include_upgradeable: bool,
     pub profile: ThumbnailOptimizationProfile,
+    #[serde(default)]
+    pub source_roots: Vec<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, specta::Type)]
@@ -143,6 +146,7 @@ struct ThumbnailCandidate {
     path: String,
     timestamp: i64,
     invoke_images_root: Option<String>,
+    source_root_available: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -319,9 +323,10 @@ fn run_thumbnail_optimization_job(
     let mut last_batch_ms = 0;
     let mut last_db_ms = 0;
     let mut encode_ms_since_progress = 0_u128;
+    let mut source_root_availability = HashMap::new();
 
     while !is_cancelled.load(Ordering::SeqCst) {
-        let candidates = fetch_thumbnail_candidates(
+        let mut candidates = fetch_thumbnail_candidates(
             &conn,
             config.include_upgradeable,
             cursor.as_ref(),
@@ -332,6 +337,13 @@ fn run_thumbnail_optimization_job(
         if candidates.is_empty() {
             break;
         }
+
+        resolve_candidate_source_roots(
+            &mut candidates,
+            &config.source_roots,
+            &mut source_root_availability,
+            Path::is_dir,
+        );
 
         if let Some(last) = candidates.last() {
             cursor = Some(ThumbnailCursor {
@@ -667,6 +679,7 @@ fn accumulate_thumbnail_result(
             0
         }
         ThumbnailItemResult::Skipped => {
+            result.checked += 1;
             result.skipped += 1;
             0
         }
@@ -758,16 +771,12 @@ fn optimize_thumbnail_candidate(
         return ThumbnailItemResult::Skipped;
     }
 
+    if candidate.source_root_available == Some(false) {
+        return ThumbnailItemResult::Skipped;
+    }
+
     match fs::metadata(&candidate.path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            if candidate
-                .invoke_images_root
-                .as_deref()
-                .is_some_and(|root| !Path::new(root).join("outputs").join("images").is_dir())
-            {
-                return ThumbnailItemResult::Skipped;
-            }
-
             return ThumbnailItemResult::MissingSource {
                 id: candidate.id.clone(),
             };
@@ -800,6 +809,78 @@ fn optimize_thumbnail_candidate(
             error,
         },
     }
+}
+
+fn resolve_candidate_source_roots<F>(
+    candidates: &mut [ThumbnailCandidate],
+    source_roots: &[String],
+    availability: &mut HashMap<String, bool>,
+    mut is_available: F,
+) where
+    F: FnMut(&Path) -> bool,
+{
+    for candidate in candidates {
+        let source_root = candidate
+            .invoke_images_root
+            .as_deref()
+            .map(|root| {
+                Path::new(root)
+                    .join("outputs")
+                    .join("images")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .or_else(|| most_specific_source_root(&candidate.path, source_roots).cloned());
+
+        let Some(source_root) = source_root else {
+            candidate.source_root_available = None;
+            continue;
+        };
+        let key = normalize_source_root_identity(&source_root);
+        let is_root_available = match availability.get(&key) {
+            Some(is_available) => *is_available,
+            None => {
+                let is_root_available = is_available(Path::new(&source_root));
+                availability.insert(key, is_root_available);
+                is_root_available
+            }
+        };
+        candidate.source_root_available = Some(is_root_available);
+    }
+}
+
+fn most_specific_source_root<'a>(path: &str, source_roots: &'a [String]) -> Option<&'a String> {
+    let path = normalize_source_root_identity(path);
+    source_roots
+        .iter()
+        .filter(|root| {
+            let root = normalize_source_root_identity(root);
+            !root.is_empty() && path_is_within_root(&path, &root)
+        })
+        .max_by_key(|root| normalize_source_root_identity(root).len())
+}
+
+fn normalize_source_root_identity(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let normalized = normalized.trim_end_matches('/');
+    if normalized.is_empty() && path.trim().starts_with('/') {
+        return "/".to_string();
+    }
+    if normalized.as_bytes().get(1) == Some(&b':') || normalized.starts_with("//") {
+        normalized.to_lowercase()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn path_is_within_root(path: &str, root: &str) -> bool {
+    if root == "/" {
+        return path.starts_with('/');
+    }
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|remainder| remainder.starts_with('/'))
 }
 
 fn persist_missing_sources(
@@ -1022,6 +1103,7 @@ fn fetch_thumbnail_candidates(
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
                 invoke_images_root: row.get(3)?,
+                source_root_available: None,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1034,6 +1116,7 @@ fn fetch_thumbnail_candidates(
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
                 invoke_images_root: row.get(3)?,
+                source_root_available: None,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1220,6 +1303,16 @@ mod tests {
         assert_eq!(progress.encode_ms, 15);
         assert!(progress.is_throttled);
         assert_eq!(progress.phase, "throttled");
+    }
+
+    #[test]
+    fn skipped_candidates_advance_visited_progress() {
+        let mut result = ThumbnailOptimizationResult::default();
+
+        accumulate_thumbnail_result(&mut result, &ThumbnailItemResult::Skipped);
+
+        assert_eq!(result.checked, 1);
+        assert_eq!(result.skipped, 1);
     }
 
     #[test]
@@ -2079,6 +2172,7 @@ mod tests {
                 .to_string(),
             timestamp: 1,
             invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
+            source_root_available: Some(false),
         };
 
         let item = optimize_thumbnail_candidate(
@@ -2088,6 +2182,62 @@ mod tests {
         );
 
         assert!(matches!(item, ThumbnailItemResult::Skipped));
+    }
+
+    #[test]
+    fn shared_unavailable_managed_root_is_probed_once_for_all_candidates() {
+        let root = "D:/Offline Library".to_string();
+        let mut candidates = vec![
+            ThumbnailCandidate {
+                id: "offline-a".to_string(),
+                path: "D:/Offline Library/a.png".to_string(),
+                timestamp: 2,
+                invoke_images_root: None,
+                source_root_available: None,
+            },
+            ThumbnailCandidate {
+                id: "offline-b".to_string(),
+                path: "D:/Offline Library/nested/b.png".to_string(),
+                timestamp: 1,
+                invoke_images_root: None,
+                source_root_available: None,
+            },
+        ];
+        let mut availability = HashMap::new();
+        let mut probe_count = 0;
+
+        resolve_candidate_source_roots(&mut candidates, &[root], &mut availability, |_| {
+            probe_count += 1;
+            false
+        });
+
+        assert_eq!(probe_count, 1);
+        assert!(candidates
+            .iter()
+            .all(|candidate| candidate.source_root_available == Some(false)));
+        assert!(candidates.iter().all(|candidate| matches!(
+            optimize_thumbnail_candidate(
+                candidate,
+                &temp_thumbnail_dir("offline-managed-thumbs").to_string_lossy(),
+                &AtomicBool::new(false),
+            ),
+            ThumbnailItemResult::Skipped
+        )));
+    }
+
+    #[test]
+    fn managed_root_matching_uses_path_boundaries_and_the_most_specific_root() {
+        let roots = vec!["D:/Library".to_string(), "D:/Library/Nested".to_string()];
+
+        assert_eq!(
+            most_specific_source_root("d:\\library\\nested\\image.png", &roots),
+            Some(&roots[1])
+        );
+        assert_eq!(
+            most_specific_source_root("D:/Library-Archive/image.png", &roots),
+            None
+        );
+        assert!(path_is_within_root("/library/image.png", "/"));
     }
 
     #[test]
@@ -2103,6 +2253,7 @@ mod tests {
                 .to_string(),
             timestamp: 1,
             invoke_images_root: None,
+            source_root_available: None,
         };
 
         let item = optimize_thumbnail_candidate(

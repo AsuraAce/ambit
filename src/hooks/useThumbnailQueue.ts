@@ -327,6 +327,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 checked: result.checked,
                 optimized: result.optimized,
                 missing,
+                skipped: result.skipped,
                 failed: result.failed
             })
         });
@@ -388,6 +389,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                         checked: event.payload.checked,
                         optimized: event.payload.optimized,
                         missing: event.payload.missing ?? 0,
+                        skipped: event.payload.skipped,
                         failed: event.payload.failed
                     })
                 });
@@ -520,7 +522,10 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             const jobPromise = unwrap(commands.startThumbnailOptimizationJob({
                 thumbnailDir,
                 includeUpgradeable: optimizerConfig.includeUpgradeable,
-                profile: optimizerConfig.profile
+                profile: optimizerConfig.profile,
+                sourceRoots: settings.monitoredFolders
+                    .filter(folder => folder.isActive)
+                    .map(folder => folder.path),
             }));
             setBackendThrottled(shouldStartThrottled);
 

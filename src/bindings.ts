@@ -879,7 +879,7 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
-export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile }
+export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }
 export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"

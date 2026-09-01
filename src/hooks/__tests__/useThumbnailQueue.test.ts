@@ -139,6 +139,10 @@ describe('useThumbnailQueue behavioral contract', () => {
                 enableAutoThumbnailHealing: true,
                 enforceHighQualityThumbnails: false,
                 thumbnailOptimizationProfile: 'balanced',
+                monitoredFolders: [
+                    { id: 'active', path: 'D:/Library', isActive: true, imageCount: 10 },
+                    { id: 'inactive', path: 'E:/Archive', isActive: false, imageCount: 20 },
+                ],
             }),
         });
     });
@@ -180,6 +184,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             thumbnailDir: 'C:/AppData/Ambit/.thumbnails',
             includeUpgradeable: false,
             profile: 'balanced',
+            sourceRoots: ['D:/Library'],
         });
         expect(mocks.setThumbnailOptimizationThrottled).toHaveBeenCalledWith(false);
         expect(useLibraryStore.getState().lastBackgroundHealingRun).toEqual(expect.objectContaining({
@@ -217,7 +222,7 @@ describe('useThumbnailQueue behavioral contract', () => {
                     optimized: 2,
                     reused: 1,
                     failed: 0,
-                    skipped: 0,
+                    skipped: 1,
                     imagesPerSecond: 4,
                     batchMs: 12,
                     dbMs: 3,
@@ -235,7 +240,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().backgroundHealingProgress).toEqual({
             current: 3,
             total: 10,
-            message: 'Optimized 2 thumbnails after checking 3 images',
+            message: 'Optimized 2 thumbnails; deferred 1 file from unavailable folders',
         });
         expect(useLibraryStore.getState().backgroundHealingDetails).toEqual(expect.objectContaining({
             checked: 3,

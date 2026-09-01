@@ -41,6 +41,20 @@ pub fn probe_file_metadata_bulk_impl(paths: Vec<String>) -> Vec<FileMetadataProb
         .collect()
 }
 
+pub fn validate_metadata_probe_paths<F>(paths: &[String], mut is_allowed: F) -> Result<(), String>
+where
+    F: FnMut(&Path) -> bool,
+{
+    for path in paths {
+        if path.trim().is_empty() || !is_allowed(Path::new(path)) {
+            return Err(format!(
+                "File metadata probe path is outside the allowed filesystem scope: {path}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub fn open_file_impl(app: &tauri::AppHandle, path: String) -> Result<(), String> {
     let conn = open_configured_app_db(app)?;
     let target = resolve_known_media_file_target(&conn, &path)?;
@@ -258,6 +272,7 @@ mod tests {
     use super::{
         probe_file_metadata_bulk_impl, resolve_existing_regular_file, resolve_existing_show_target,
         resolve_known_media_file_target, resolve_show_in_folder_target,
+        validate_metadata_probe_paths,
     };
     use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
@@ -297,6 +312,23 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn bulk_metadata_probe_rejects_paths_outside_registered_scope() {
+        let paths = vec![
+            "D:/Library/allowed.png".to_string(),
+            "C:/private/outside.png".to_string(),
+        ];
+
+        let result = validate_metadata_probe_paths(&paths, |path| {
+            path.to_string_lossy().starts_with("D:/Library/")
+        });
+
+        assert_eq!(
+            result,
+            Err("File metadata probe path is outside the allowed filesystem scope: C:/private/outside.png".to_string())
+        );
     }
 
     #[test]
