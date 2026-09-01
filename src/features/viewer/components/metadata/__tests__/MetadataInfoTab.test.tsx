@@ -111,7 +111,9 @@ describe('MetadataInfoTab', () => {
     it('does not save prompts merely because they received and lost focus', () => {
         const { props } = renderTab(image(metadata(), metadata()));
 
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
         fireEvent.blur(screen.getByRole('textbox', { name: 'Positive prompt' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Negative prompt' }));
         fireEvent.blur(screen.getByRole('textbox', { name: 'Negative prompt' }));
 
         expect(props.onUpdatePrompt).not.toHaveBeenCalled();
@@ -120,11 +122,13 @@ describe('MetadataInfoTab', () => {
 
     it('saves changed positive and negative prompts on blur', () => {
         const { props } = renderTab(image(metadata(), metadata()));
-        const positive = screen.getByRole('textbox', { name: 'Positive prompt' });
-        const negative = screen.getByRole('textbox', { name: 'Negative prompt' });
 
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        const positive = screen.getByRole('textbox', { name: 'Positive prompt' });
         fireEvent.change(positive, { target: { value: 'Changed prompt' } });
         fireEvent.blur(positive);
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Negative prompt' }));
+        const negative = screen.getByRole('textbox', { name: 'Negative prompt' });
         fireEvent.change(negative, { target: { value: 'Changed negative' } });
         fireEvent.blur(negative);
 
@@ -139,6 +143,7 @@ describe('MetadataInfoTab', () => {
             promptValue: 'portrait, ca',
             availableTags: ['castle'],
         });
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
         const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
 
         fireEvent.change(prompt, { target: { value: 'portrait, cas' } });
@@ -158,9 +163,10 @@ describe('MetadataInfoTab', () => {
         ));
 
         fireEvent.click(screen.getByRole('button', { name: 'Original' }));
-        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' }) as HTMLTextAreaElement;
-        expect(prompt.value).toBe('Imported prompt');
-        expect(prompt.readOnly).toBe(true);
+        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        expect(prompt.textContent).toBe('Imported prompt');
+        expect(prompt.getAttribute('aria-readonly')).toBe('true');
+        expect(screen.queryByRole('button', { name: 'Edit Positive prompt' })).toBeNull();
         expect(props.setPromptValue).not.toHaveBeenCalled();
     });
 
@@ -376,18 +382,62 @@ describe('MetadataInfoTab', () => {
         expect(generatedSource.compareDocumentPosition(screen.getByText('raw inspector')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
-    it('routes smart tags and highlights both prompts', () => {
+    it('routes smart tags and highlights both prompts in their single formatted read surfaces', () => {
         const { props } = renderTab(image(metadata({
-            positivePrompt: 'portrait, dramatic lighting',
+            positivePrompt: 'portrait,\ndramatic lighting',
             negativePrompt: 'bad anatomy',
         }), metadata()), {
             searchHighlights: { positivePrompt: ['portrait'], negativePrompt: ['anatomy'] },
         });
 
-        expect(document.querySelector('[data-terms="portrait"]')?.textContent).toContain('portrait');
-        expect(document.querySelector('[data-terms="anatomy"]')?.textContent).toBe('bad anatomy');
+        const positiveHighlight = document.querySelectorAll('[data-terms="portrait"]');
+        const negativeHighlight = document.querySelectorAll('[data-terms="anatomy"]');
+        expect(positiveHighlight).toHaveLength(1);
+        expect(negativeHighlight).toHaveLength(1);
+        expect(positiveHighlight[0]?.textContent).toBe('portrait,\ndramatic lighting');
+        expect(negativeHighlight[0]?.textContent).toBe('bad anatomy');
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).className).toContain('whitespace-pre-wrap');
         fireEvent.click(screen.getByRole('button', { name: 'portrait' }));
         expect(props.onSearch).toHaveBeenCalledWith('portrait');
+    });
+
+    it('cancels a prompt draft with Escape without saving it', () => {
+        const { props } = renderTab(image(metadata(), metadata()));
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        const prompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        fireEvent.change(prompt, { target: { value: 'Unsaved prompt' } });
+        fireEvent.keyDown(prompt, { key: 'Escape' });
+
+        expect(props.setPromptValue).toHaveBeenLastCalledWith('Original prompt');
+        expect(props.onUpdatePrompt).not.toHaveBeenCalled();
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).textContent).toBe('Original prompt');
+    });
+
+    it('restores the displayed prompt values when Escape follows an immediate re-edit', () => {
+        const staleImage = image(
+            metadata({ positivePrompt: 'Stale positive', negativePrompt: 'Stale negative' }),
+            metadata(),
+        );
+        const { props } = renderTab(staleImage, {
+            promptValue: 'Saved positive',
+            negativePromptValue: 'Saved negative',
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Positive prompt' }));
+        const positivePrompt = screen.getByRole('textbox', { name: 'Positive prompt' });
+        fireEvent.change(positivePrompt, { target: { value: 'Unsaved positive' } });
+        fireEvent.keyDown(positivePrompt, { key: 'Escape' });
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Negative prompt' }));
+        const negativePrompt = screen.getByRole('textbox', { name: 'Negative prompt' });
+        fireEvent.change(negativePrompt, { target: { value: 'Unsaved negative' } });
+        fireEvent.keyDown(negativePrompt, { key: 'Escape' });
+
+        expect(props.setPromptValue).toHaveBeenLastCalledWith('Saved positive');
+        expect(props.setNegativePromptValue).toHaveBeenLastCalledWith('Saved negative');
+        expect(props.onUpdatePrompt).not.toHaveBeenCalled();
+        expect(props.onUpdateNegativePrompt).not.toHaveBeenCalled();
     });
 
     it('wires creative assistant controls and busy state', () => {
@@ -429,7 +479,9 @@ describe('MetadataInfoTab', () => {
         });
 
         expect(screen.queryByRole('button', { name: 'Parse Prompt from Clipboard' })).toBeNull();
-        expect((screen.getByRole('textbox', { name: 'Positive prompt' }) as HTMLTextAreaElement).readOnly).toBe(true);
-        expect((screen.getByRole('textbox', { name: 'Negative prompt' }) as HTMLTextAreaElement).readOnly).toBe(true);
+        expect(screen.getByRole('textbox', { name: 'Positive prompt' }).getAttribute('aria-readonly')).toBe('true');
+        expect(screen.getByRole('textbox', { name: 'Negative prompt' }).getAttribute('aria-readonly')).toBe('true');
+        expect(screen.queryByRole('button', { name: 'Edit Positive prompt' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Edit Negative prompt' })).toBeNull();
     });
 });

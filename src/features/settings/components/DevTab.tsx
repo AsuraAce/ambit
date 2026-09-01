@@ -142,7 +142,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
 
     return (
         <>
-            <div className="h-full flex flex-col pt-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <div className="h-full flex flex-col pt-2">
 
                 {/* Tab Navigation - Fixed Header */}
                 <div className="shrink-0 px-8 pb-4 space-y-4">
@@ -177,7 +177,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
                                         className={cn(
-                                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-all",
+                                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-md text-xs font-bold transition-colors",
                                             isActive
                                                 ? "bg-white dark:bg-zinc-700 text-amethyst-600 dark:text-amethyst-300 shadow-sm"
                                                 : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-200/50 dark:hover:bg-white/5"
@@ -197,7 +197,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8 space-y-6">
                     {/* System Prompts Section */}
                     {activeTab === 'prompts' && (
-                        <section className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                        <section className="space-y-4 animate-in fade-in duration-150 motion-reduce:animate-none">
                             <div className="flex items-start gap-3 p-4 bg-amethyst-50 dark:bg-amethyst-500/10 border border-amethyst-200 dark:border-amethyst-500/20 rounded-xl">
                                 <BrainCircuit className="w-5 h-5 text-amethyst-600 dark:text-amethyst-300 mt-0.5 shrink-0" />
                                 <div>
@@ -253,7 +253,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
                                             </div>
 
                                             {isEditing ? (
-                                                <div className="p-4 bg-gray-50 dark:bg-black/20 animate-in slide-in-from-top-2 duration-200">
+                                                <div className="p-4 bg-gray-50 dark:bg-black/20 animate-in fade-in duration-150 motion-reduce:animate-none">
                                                     <textarea
                                                         value={editValue}
                                                         onChange={(e) => setEditValue(e.target.value)}
@@ -292,7 +292,7 @@ export const DevTab: React.FC<DevTabProps> = ({ onResetFirstRunOnboarding }) => 
 
                     {/* Tools Section */}
                     {activeTab === 'tools' && (
-                        <section className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+                        <section className="space-y-6 animate-in fade-in duration-150 motion-reduce:animate-none">
                             <div className="mb-6 rounded-2xl border border-ember-200 bg-ember-50 p-6 dark:border-ember-500/30 dark:bg-ember-500/10">
                                 <div className="flex gap-4">
                                     <Database className="w-6 h-6 text-ember-600 dark:text-ember-300 shrink-0" />

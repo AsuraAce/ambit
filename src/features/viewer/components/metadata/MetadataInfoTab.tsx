@@ -182,9 +182,20 @@ export const MetadataInfoTab = ({
     };
 
     const savePrompt = (event: React.FocusEvent<HTMLTextAreaElement>) => {
-        if (event.relatedTarget instanceof Node && promptSuggestionsRef.current?.contains(event.relatedTarget)) return;
+        if (event.relatedTarget instanceof Node && promptSuggestionsRef.current?.contains(event.relatedTarget)) {
+            event.preventDefault();
+            return;
+        }
         commitPrompt();
         setTimeout(() => setPromptSuggestions([]), 200);
+    };
+
+    const cancelPromptEdit = (editStartValue: string) => {
+        promptDraftRef.current = editStartValue;
+        promptDirtyRef.current = false;
+        setPromptValue(editStartValue);
+        setIsPromptDirty(false);
+        setPromptSuggestions([]);
     };
 
     const selectPromptSuggestion = (suggestion: string) => {
@@ -204,6 +215,12 @@ export const MetadataInfoTab = ({
             onUpdateNegativePrompt?.(image.id, negativePromptDraftRef.current);
             setIsNegativePromptDirty(false);
         }
+    };
+
+    const cancelNegativePromptEdit = (editStartValue: string) => {
+        negativePromptDraftRef.current = editStartValue;
+        setNegativePromptValue(editStartValue);
+        setIsNegativePromptDirty(false);
     };
 
     const handleParseClipboard = async () => {
@@ -311,10 +328,13 @@ export const MetadataInfoTab = ({
                 <div className="space-y-6 flex-1">
 
                     <MetadataTextAreaField
+                        key={`positivePrompt:${image.id}:${showOriginalPrompt ? 'original' : 'current'}`}
                         kind="positivePrompt"
                         value={showOriginalPrompt ? (image.originalMetadata?.positivePrompt ?? '') : promptValue}
                         onChange={handlePromptChange}
                         onBlur={savePrompt}
+                        onCancelEdit={cancelPromptEdit}
+                        readContent={<HighlightedPromptText text={showOriginalPrompt ? (image.originalMetadata?.positivePrompt ?? '') : promptValue} terms={showOriginalPrompt ? [] : searchHighlights?.positivePrompt} />}
                         readOnly={showOriginalPrompt || !onUpdatePrompt}
                         isDirty={isPromptDirty}
                         source={isModified('positivePrompt') ? 'user_override' : undefined}
@@ -342,19 +362,18 @@ export const MetadataInfoTab = ({
                         </div> : null}
                     />
 
-                    {searchHighlights?.positivePrompt?.length && promptValue ? <div className="rounded-lg border border-sage-500/20 bg-sage-500/5 p-3 text-xs text-gray-700 dark:text-zinc-300"><HighlightedPromptText text={promptValue} terms={searchHighlights.positivePrompt} /></div> : null}
-
                     <MetadataTextAreaField
+                        key={`negativePrompt:${image.id}`}
                         kind="negativePrompt"
                         value={negativePromptValue}
                         onChange={event => { negativePromptDraftRef.current = event.target.value; setNegativePromptValue(event.target.value); setIsNegativePromptDirty(true); }}
                         onBlur={saveNegativePrompt}
+                        onCancelEdit={cancelNegativePromptEdit}
+                        readContent={<HighlightedPromptText text={negativePromptValue} terms={searchHighlights?.negativePrompt} />}
                         readOnly={!onUpdateNegativePrompt}
                         isDirty={isNegativePromptDirty}
                         source={isModified('negativePrompt') ? 'user_override' : undefined}
                     />
-
-                    {searchHighlights?.negativePrompt?.length && negativePromptValue ? <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-gray-700 dark:text-zinc-300"><HighlightedPromptText text={negativePromptValue} terms={searchHighlights.negativePrompt} /></div> : null}
 
                     {isInvokeImageAsset ? invokeProvenance : null}
 

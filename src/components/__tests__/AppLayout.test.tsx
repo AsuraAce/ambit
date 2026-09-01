@@ -229,6 +229,13 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
     });
+    it('suppresses the native focus outline on the programmatically focused workspace', () => {
+        render(<AppLayout {...defaultProps} />);
+
+        const workspace = screen.getByRole('main', { name: 'Library workspace' });
+        expect(workspace.getAttribute('tabindex')).toBe('-1');
+        expect(workspace.className.split(/\s+/)).toContain('outline-none');
+    });
 
     it('uses the authoritative scoped count supplied by App', () => {
         searchState.value.totalImages = 265804;

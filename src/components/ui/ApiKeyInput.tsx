@@ -80,10 +80,10 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                         <span className="font-medium">Environment API key detected</span>
                         <div className="flex-1" />
                         {hasPositiveStatus ? (
-                            <Check className="w-4 h-4 text-sage-600 dark:text-sage-300 animate-in fade-in zoom-in" />
+                            <Check className="w-4 h-4 text-sage-600 dark:text-sage-300 animate-in fade-in duration-150 motion-reduce:animate-none" />
                         ) : null}
                         {status === 'error' && (
-                            <XCircle className="w-4 h-4 text-red-500 animate-in fade-in zoom-in" />
+                            <XCircle className="w-4 h-4 text-red-500 animate-in fade-in duration-150 motion-reduce:animate-none" />
                         )}
                         <button
                             type="button"
@@ -119,10 +119,10 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
                         />
                         <div className="absolute right-2 top-2 bottom-2 flex items-center gap-2">
                             {hasPositiveStatus ? (
-                                <Check className="w-5 h-5 text-sage-600 dark:text-sage-300 animate-in fade-in zoom-in" />
+                                <Check className="w-5 h-5 text-sage-600 dark:text-sage-300 animate-in fade-in duration-150 motion-reduce:animate-none" />
                             ) : null}
                             {status === 'error' && (
-                                <XCircle className="w-5 h-5 text-red-500 animate-in fade-in zoom-in" />
+                                <XCircle className="w-5 h-5 text-red-500 animate-in fade-in duration-150 motion-reduce:animate-none" />
                             )}
                             <button
                                 type="button"
@@ -144,14 +144,14 @@ export const ApiKeyInput: React.FC<ApiKeyInputProps> = ({
             )}
 
             {statusMessage ? (
-                <div role="status" className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-600 dark:text-sage-300 animate-in slide-in-from-top-1">
+                <div role="status" className="flex items-center gap-2 px-1 text-[11px] font-bold text-sage-600 dark:text-sage-300 animate-in fade-in duration-150 motion-reduce:animate-none">
                     <Check className="w-3 h-3" />
                     <span>{statusMessage}</span>
                 </div>
             ) : null}
 
             {status === 'error' && error && (
-                <div role="alert" className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in slide-in-from-top-1">
+                <div role="alert" className="flex items-center gap-2 px-1 text-[11px] font-bold text-red-500/80 animate-in fade-in duration-150 motion-reduce:animate-none">
                     <XCircle className="w-3 h-3" />
                     <span>{error}</span>
                 </div>
