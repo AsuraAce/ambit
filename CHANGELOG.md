@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.13.0](https://github.com/AsuraAce/ambit/compare/v0.12.2...v0.13.0) (2026-09-01)
+
+
+### Features
+
+* **invoke:** preserve local sync ownership and overrides ([#299](https://github.com/AsuraAce/ambit/issues/299)) ([621fb74](https://github.com/AsuraAce/ambit/commit/621fb74e882d48db1d395514cdef95b9e1a4a74b))
+
+
+### Bug Fixes
+
+* **release:** isolate title-check event concurrency ([#303](https://github.com/AsuraAce/ambit/issues/303)) ([b43bc61](https://github.com/AsuraAce/ambit/commit/b43bc61cc3cb08290253f2c9c6f3d46b417e21a7))
+* **thumbnails:** make smart optimization fast and resilient ([#301](https://github.com/AsuraAce/ambit/issues/301)) ([14b017c](https://github.com/AsuraAce/ambit/commit/14b017cbb84405e854eda9e9f4128f9f57378f26))
+* **ui:** polish viewer and settings interactions ([#302](https://github.com/AsuraAce/ambit/issues/302)) ([90abfaa](https://github.com/AsuraAce/ambit/commit/90abfaa44aa17ed0aa0c1291663ab94d5679b31f))
+
 ## [0.12.2](https://github.com/AsuraAce/ambit/compare/v0.12.1...v0.12.2) (2026-08-30)
 
 
