@@ -892,6 +892,13 @@ describe('imageRepo batch removal', () => {
             ['C:/images/a.png', 'C:/images/b.png']
         );
         expect(db.execute.mock.calls[0][0]).toContain('invoke_scope_hidden = 0');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_snapshot');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_exclusions');
+        expect(db.execute.mock.calls[0][0]).toContain('invoke_board_membership_additions');
+        expect(db.execute.mock.calls[0][0]).not.toContain(
+            'collection.invoke_owner_id IS images.invoke_owner_id'
+        );
+        expect(db.execute.mock.calls[0][0]).not.toContain('SELECT board_id, id');
         expect(db.select).toHaveBeenCalledWith(
             expect.stringContaining('FROM collection_images'),
             ['C:/images/a.png', 'C:/images/b.png']
@@ -1398,6 +1405,63 @@ describe('imageRepo batch removal', () => {
         expect(db.select).toHaveBeenCalledTimes(3);
         expect((db.select.mock.calls[1][1] as string[])).toHaveLength(900);
         expect((db.select.mock.calls[2][1] as string[])).toHaveLength(1);
+    });
+
+    it('finds removed Invoke images by canonical Windows source identity', async () => {
+        const db = {
+            select: vi.fn(async () => [
+                {
+                    invoke_source_id: 'd:\\invoke\\databases\\invokeai.db\\',
+                    scope_db_path: 'D:/INVOKE/databases/invokeai.db',
+                    invoke_image_name: 'relocated.png',
+                },
+                {
+                    invoke_source_id: 'E:/Other/databases/invokeai.db',
+                    scope_db_path: 'D:/INVOKE/databases/invokeai.db',
+                    invoke_image_name: 'other-source.png',
+                },
+            ]),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+
+        const { getRemovedInvokeImageNames } = await import('../imageRepo');
+        const removedNames = await getRemovedInvokeImageNames(
+            'D:/Invoke/databases/invokeai.db',
+            ['relocated.png', 'other-source.png']
+        );
+
+        expect(removedNames).toEqual(['relocated.png']);
+        expect(db.select).toHaveBeenCalledWith(
+            expect.stringContaining('invoke_source_id IS NOT NULL'),
+            ['relocated.png', 'other-source.png']
+        );
+        const [sql] = db.select.mock.calls[0] as unknown as [string, unknown[]];
+        expect(sql).toContain('FROM removed_images AS removed_images');
+        expect(sql).toContain("JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'");
+        expect(sql).toContain("scope.scope_mode IN ('legacy', 'all')");
+        expect(sql).toContain('removed_images.invoke_owner_id IS NULL');
+        expect(sql).toContain('removed_images.invoke_owner_id = scope.owner_id');
+        expect(sql).toContain('invoke_image_name IN (?,?)');
+        expect(sql).toContain('invoke_scope_hidden = 0');
+    });
+
+    it('chunks removed Invoke identity lookups below the SQLite parameter limit', async () => {
+        const db = {
+            select: vi.fn(async () => []),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+        const names = Array.from({ length: 900 }, (_, index) => `image-${index}.png`);
+
+        const { getRemovedInvokeImageNames } = await import('../imageRepo');
+        await getRemovedInvokeImageNames('D:/Invoke/databases/invokeai.db', names);
+
+        expect(db.select).toHaveBeenCalledTimes(2);
+        const firstParams = (db.select.mock.calls[0] as unknown as [string, unknown[]])[1];
+        const secondParams = (db.select.mock.calls[1] as unknown as [string, unknown[]])[1];
+        expect(firstParams).toHaveLength(899);
+        expect(secondParams).toHaveLength(1);
     });
 
     it('restores removed images and valid collection memberships before removing tombstones', async () => {

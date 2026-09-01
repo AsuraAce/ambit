@@ -23,6 +23,7 @@ const bindingMocks = vi.hoisted(() => ({
     mutateCollectionMembership: vi.fn(),
     setCollectionCustomThumbnail: vi.fn(),
     updateAmbitCollectionScope: vi.fn(),
+    updateInvokeCollectionOwnership: vi.fn(),
     migrateLegacyCollections: vi.fn(),
 }));
 
@@ -31,6 +32,7 @@ vi.mock('../../../bindings', () => ({
         mutateCollectionMembership: bindingMocks.mutateCollectionMembership,
         setCollectionCustomThumbnail: bindingMocks.setCollectionCustomThumbnail,
         updateAmbitCollectionScope: bindingMocks.updateAmbitCollectionScope,
+        updateInvokeCollectionOwnership: bindingMocks.updateInvokeCollectionOwnership,
         migrateLegacyCollections: bindingMocks.migrateLegacyCollections,
     },
 }));
@@ -132,6 +134,7 @@ const resetRepoMocks = () => {
         status: 'ok',
         data: { collectionId: 'c1', invokeSourceId: null, invokeOwnerId: null },
     });
+    bindingMocks.updateInvokeCollectionOwnership.mockResolvedValue({ status: 'ok', data: null });
     bindingMocks.migrateLegacyCollections.mockResolvedValue({
         status: 'ok',
         data: { alreadyApplied: false, collectionsUpserted: 0, membershipsInserted: 0 },
@@ -955,6 +958,8 @@ describe('collectionRepo membership helpers', () => {
             createdAt: 1,
             invokeOwnerId: 'owner-a',
             invokeSourceId: 'D:/Invoke/databases/invokeai.db',
+            invokeSourceName: 'Invoke Board',
+            invokeSourcePresent: true,
             imageIds: [],
             source: 'invoke',
         });
@@ -1021,6 +1026,7 @@ describe('collectionRepo membership helpers', () => {
         expect(dbMocks.execute).not.toHaveBeenCalled();
         await clearCollectionThumbnailCacheForCollections(['c1', '', 'c1']);
         await clearAllCollectionThumbnailCaches();
+        dbMocks.select.mockResolvedValueOnce([{ source: 'ambit' }]);
         await deleteCollectionFromDb('c1');
 
         expect(dbMocks.execute).toHaveBeenCalledWith(
@@ -1314,12 +1320,20 @@ describe('collectionRepo membership helpers', () => {
                 id: 'owned-board',
                 source: 'invoke',
                 invoke_owner_id: 'owner-a',
+                invoke_source_name: 'Upstream board',
+                invoke_source_present: 0,
             })])
             .mockResolvedValueOnce([]);
 
         const { getAllCollectionsWithStats, upsertCollection } = await import('../collectionRepo');
         await expect(getAllCollectionsWithStats({ includeThumbnails: false })).resolves.toEqual([
-            expect.objectContaining({ id: 'owned-board', source: 'invoke', invokeOwnerId: 'owner-a' }),
+            expect.objectContaining({
+                id: 'owned-board',
+                source: 'invoke',
+                invokeOwnerId: 'owner-a',
+                invokeSourceName: 'Upstream board',
+                invokeSourcePresent: false,
+            }),
         ]);
 
         const visibilitySql = dbMocks.select.mock.calls[0][0] as string;
@@ -1335,8 +1349,50 @@ describe('collectionRepo membership helpers', () => {
         expect(params[10]).toBe('owner-a');
     });
 
+    it('hides InvokeAI collections and exposes scoped recovery and reset actions', async () => {
+        dbMocks.select
+            .mockResolvedValueOnce([{ source: 'invoke' }])
+            .mockResolvedValueOnce([{
+                id: 'hidden-board',
+                name: 'Local label',
+                invoke_source_name: 'Upstream label',
+                invoke_source_present: 0,
+                invoke_owner_id: 'owner-a',
+            }]);
+        const {
+            deleteCollectionFromDb,
+            getSuppressedInvokeCollections,
+            resetInvokeCollection,
+            restoreInvokeCollection,
+        } = await import('../collectionRepo');
+
+        await deleteCollectionFromDb('hidden-board');
+        await resetInvokeCollection('hidden-board');
+        await restoreInvokeCollection('hidden-board');
+        await expect(getSuppressedInvokeCollections()).resolves.toEqual([{
+            id: 'hidden-board',
+            name: 'Local label',
+            invokeSourceName: 'Upstream label',
+            invokeSourcePresent: false,
+            invokeOwnerId: 'owner-a',
+        }]);
+
+        expect(bindingMocks.updateInvokeCollectionOwnership.mock.calls).toEqual([
+            ['hidden-board', 'suppress'],
+            ['hidden-board', 'reset'],
+            ['hidden-board', 'restore'],
+        ]);
+        expect(dbMocks.execute).not.toHaveBeenCalledWith(
+            expect.stringContaining('DELETE FROM collections'),
+            expect.anything(),
+        );
+        expect(String(dbMocks.select.mock.calls.at(-1)?.[0])).toContain('invoke_suppressed = 1');
+        expect(String(dbMocks.select.mock.calls.at(-1)?.[0])).toContain('invoke_owner_scope_state');
+    });
+
     it('rejects stale collection IDs that are hidden by the active scope', async () => {
         dbMocks.execute.mockResolvedValue({ rowsAffected: 0 });
+        dbMocks.select.mockResolvedValueOnce([]);
         const { deleteCollectionFromDb, upsertCollection } = await import('../collectionRepo');
 
         await expect(deleteCollectionFromDb('hidden-board')).rejects.toThrow('collection was not found');
@@ -1345,7 +1401,8 @@ describe('collectionRepo membership helpers', () => {
             name: 'Must not overwrite',
         })).rejects.toThrow('collection was not found');
 
-        const [deleteSql, upsertSql] = dbMocks.execute.mock.calls.map(([sql]) => String(sql));
+        const deleteSql = String(dbMocks.select.mock.calls[0]?.[0]);
+        const upsertSql = String(dbMocks.execute.mock.calls[0]?.[0]);
         expect(deleteSql).toContain('scoped_collections');
         expect(upsertSql).toContain('scoped_collections');
     });
@@ -1364,6 +1421,8 @@ describe('collectionRepo membership helpers', () => {
         const sql = dbMocks.execute.mock.calls[0][0] as string;
         const params = dbMocks.execute.mock.calls[0][1] as unknown[];
         expect(sql).toContain("source = 'invoke'");
+        expect(sql).toContain('invoke_source_name');
+        expect(sql).toContain('collections.name IS collections.invoke_source_name');
         expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
         expect(sql).not.toContain('color = excluded.color');
@@ -1388,9 +1447,11 @@ describe('collectionRepo membership helpers', () => {
         const params = dbMocks.execute.mock.calls[0][1] as unknown[];
         expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
+        expect(sql).toContain('invoke_source_name');
+        expect(sql).toContain('collections.name IS collections.invoke_source_name');
         expect(sql).not.toContain('color = excluded.color');
         expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
         expect(params.slice(0, 5)).toEqual(['board-a', 'Board A', 10, 'owner-a', 'db-a']);
-        expect(params.slice(6, 11)).toEqual(['board-b', 'Board B', 20, 'owner-b', 'db-a']);
+        expect(params.slice(7, 12)).toEqual(['board-b', 'Board B', 20, 'owner-b', 'db-a']);
     });
 });

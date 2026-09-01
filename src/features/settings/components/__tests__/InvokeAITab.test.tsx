@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
     selectInvokeOwnerScope: vi.fn(),
     retryInvokeOwnerScope: vi.fn(),
     startInvokeSync: vi.fn(),
+    getSuppressedInvokeCollections: vi.fn(),
+    restoreInvokeCollection: vi.fn(),
+    refreshCollections: vi.fn(),
     isInvokeSyncActive: false,
     isLiveSyncing: false,
     ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
@@ -23,6 +26,14 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
 vi.mock('../../../../services/invoke/connection', () => ({ testConnection: mocks.testConnection, diagnoseInvokeAI: mocks.diagnoseInvokeAI }));
 vi.mock('../../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled: () => mocks.developerFeatures }));
+vi.mock('../../../../services/db/collectionRepo', () => ({
+    getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections,
+    restoreInvokeCollection: mocks.restoreInvokeCollection,
+}));
+vi.mock('../../../../stores/collectionStore', () => ({
+    useCollectionStore: (selector: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) =>
+        selector({ refreshCollections: mocks.refreshCollections }),
+}));
 vi.mock('../SyncSection', () => ({ SyncSection: () => <div>sync-section</div> }));
 vi.mock('../../../../contexts/LibraryContext', () => ({
     useLibrary: () => ({
@@ -55,6 +66,9 @@ describe('InvokeAITab', () => {
         mocks.testConnection.mockResolvedValue({ success: true, message: 'Connected' });
         mocks.diagnoseInvokeAI.mockResolvedValue({ totalInDb: 2, categories: [], origins: [] });
         mocks.invoke.mockResolvedValue({ imageFiles: 2, thumbnailFiles: 1, subfolders: {} });
+        mocks.getSuppressedInvokeCollections.mockResolvedValue([]);
+        mocks.restoreInvokeCollection.mockResolvedValue(undefined);
+        mocks.refreshCollections.mockResolvedValue(undefined);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
 
@@ -64,6 +78,28 @@ describe('InvokeAITab', () => {
         expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
         expect(screen.queryByText('System Audit')).toBeNull();
         expect(screen.getByText('sync-section')).toBeTruthy();
+    });
+
+    it('restores hidden InvokeAI collections and marks unavailable sources', async () => {
+        mocks.getSuppressedInvokeCollections.mockResolvedValueOnce([{
+            id: 'hidden-board',
+            name: 'Local label',
+            invokeSourceName: 'Upstream label',
+            invokeSourcePresent: false,
+            invokeOwnerId: 'owner-a',
+        }]);
+        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+
+        expect(await screen.findByText('Hidden InvokeAI collections')).toBeTruthy();
+        expect(screen.getByText('Local label')).toBeTruthy();
+        expect(screen.getByText('Source unavailable')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Restore Local label' }));
+
+        await waitFor(() => expect(mocks.restoreInvokeCollection).toHaveBeenCalledWith('hidden-board'));
+        await waitFor(() => expect(mocks.refreshCollections).toHaveBeenCalledWith(false, {
+            consistency: 'authoritative',
+        }));
+        await waitFor(() => expect(screen.queryByText('Local label')).toBeNull());
     });
 
     it('locks the configured root while owner visibility is changing', () => {
