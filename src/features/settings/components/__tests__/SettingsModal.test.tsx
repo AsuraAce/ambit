@@ -259,7 +259,7 @@ describe('SettingsModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
         expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
     });
-    it('does not move focus to a category button during pointer activation', () => {
+    it('reserves a transparent border so category selection cannot flash the theme default', () => {
         render(
             <SettingsModal
                 isOpen={true}
@@ -277,17 +277,17 @@ describe('SettingsModal', () => {
             />
         );
 
+        const general = screen.getByRole('button', { name: 'General' });
         const connections = screen.getByRole('button', { name: 'Connections' });
-        const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
 
-        fireEvent(connections, mouseDown);
-        expect(mouseDown.defaultPrevented).toBe(true);
+        expect(general.className.split(/\s+/)).toEqual(expect.arrayContaining(['border', 'border-white/10']));
+        expect(connections.className.split(/\s+/)).toEqual(expect.arrayContaining(['border', 'border-transparent']));
 
         fireEvent.click(connections);
-        expect(screen.getByRole('heading', { name: 'Connections' })).toBeTruthy();
+
+        expect(general.className.split(/\s+/)).toEqual(expect.arrayContaining(['border', 'border-transparent']));
+        expect(connections.className.split(/\s+/)).toEqual(expect.arrayContaining(['border', 'border-white/10']));
     });
-
-
     it('renders its normal dark blurred backdrop by default', () => {
         render(
             <SettingsModal
