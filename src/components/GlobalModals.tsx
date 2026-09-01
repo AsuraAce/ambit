@@ -60,6 +60,7 @@ interface GlobalModalsProps {
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: FilterState | undefined) => void | Promise<void>;
     onUpdateCollectionScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
+    onResetInvokeCollection?: (id: string) => Promise<boolean>;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
@@ -106,6 +107,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     collectionToEditId,
     onSaveCollectionFilters,
     onUpdateCollectionScope,
+    onResetInvokeCollection,
     onScanFolder, // Added
     onInvokeSync, // Added for managed InvokeAI sync
     hasPendingUpdate,
@@ -283,6 +285,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         filters={filters ?? createDefaultFilters()}
                         onSave={onSaveCollectionFilters || (() => { })}
                         onUpdateScope={onUpdateCollectionScope || (async () => false)}
+                        onResetInvokeCollection={onResetInvokeCollection || (async () => false)}
                     />
                 )}
             </React.Suspense>

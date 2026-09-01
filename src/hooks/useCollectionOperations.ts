@@ -15,6 +15,7 @@ import {
   removeImagesFromCollection as removeImgsFromCol,
   moveImagesBetweenCollections as moveImgsBetweenCols,
   setCollectionCustomThumbnail,
+  resetInvokeCollection as resetInvokeCollectionInDb,
   updateAmbitCollectionScope,
   type AmbitCollectionScopeTarget
 } from '../services/db/collectionRepo';
@@ -203,7 +204,7 @@ export const useCollectionOperations = ({
     try {
       await deleteCollectionFromDb(id);
     } catch (e) {
-      addToast("Failed to delete collection", "error");
+      addToast(original.source === 'invoke' ? "Failed to hide collection" : "Failed to delete collection", "error");
       return false;
     }
 
@@ -211,7 +212,7 @@ export const useCollectionOperations = ({
     if (activeCollectionId === id) {
       setFilters((prev) => ({ ...prev, collectionId: null }));
     }
-    addToast("Collection deleted", "success");
+    addToast(original.source === 'invoke' ? "Collection hidden" : "Collection deleted", "success");
     try {
       await refreshCollections();
     } catch (e) {
@@ -220,6 +221,26 @@ export const useCollectionOperations = ({
     }
     return true;
   }, [collections, smartCollections, activeCollectionId, setFilters, setAllCollections, refreshCollections, addToast]);
+
+  const resetInvokeCollection = useCallback(async (id: string): Promise<boolean> => {
+    const collection = [...collections, ...smartCollections].find(item => item.id === id);
+    if (!collection || collection.source !== 'invoke') return false;
+
+    try {
+      await resetInvokeCollectionInDb(id);
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+      ]);
+      addToast('InvokeAI collection reset', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(message || 'Failed to reset InvokeAI collection', 'error');
+      return false;
+    }
+  }, [addToast, collections, queryClient, refreshCollections, smartCollections]);
 
   const renameCollection = useCallback(async (id: string, newName: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
@@ -473,6 +494,7 @@ export const useCollectionOperations = ({
     createCollection,
     updateCollectionFilters,
     updateCollectionScope,
+    resetInvokeCollection,
     deleteCollection,
     renameCollection,
     setCollectionColor,

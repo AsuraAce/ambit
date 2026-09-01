@@ -92,6 +92,14 @@ pub enum CollectionMembershipOperation {
     Move,
 }
 
+#[derive(serde::Deserialize, specta::Type, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InvokeCollectionOwnershipAction {
+    Suppress,
+    Restore,
+    Reset,
+}
+
 #[derive(serde::Deserialize, specta::Type, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectionMembershipMutationInput {
@@ -744,6 +752,105 @@ fn restore_removed_record(
     restore_resource_junctions(tx, image_id)
 }
 
+fn reproject_restored_invoke_memberships(
+    tx: &Transaction<'_>,
+    image_id: &str,
+) -> Result<Vec<String>, String> {
+    let prior_collection_ids = {
+        let mut statement = tx
+            .prepare(
+                "SELECT collection_images.collection_id
+                 FROM collection_images
+                 INNER JOIN collections ON collections.id = collection_images.collection_id
+                 WHERE collection_images.image_id = ?1
+                   AND COALESCE(collections.source, 'ambit') = 'invoke'",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([image_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+
+    tx.execute(
+        "DELETE FROM collection_images
+         WHERE image_id = ?1
+           AND collection_id IN (
+               SELECT id FROM collections WHERE COALESCE(source, 'ambit') = 'invoke'
+           )",
+        [image_id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+         SELECT snapshot.collection_id, images.id
+         FROM images
+         INNER JOIN invoke_board_membership_snapshot snapshot
+            ON snapshot.invoke_image_name = images.invoke_image_name
+         INNER JOIN collections ON collections.id = snapshot.collection_id
+         WHERE images.id = ?1
+           AND COALESCE(collections.source, 'ambit') = 'invoke'
+           AND collections.invoke_source_id IS images.invoke_source_id
+           AND (
+               collections.invoke_owner_id IS NULL
+               OR collections.invoke_owner_id IS images.invoke_owner_id
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM invoke_board_membership_exclusions exclusions
+               WHERE exclusions.collection_id = snapshot.collection_id
+                 AND exclusions.invoke_image_name = snapshot.invoke_image_name
+           )",
+        [image_id],
+    )
+    .map_err(|error| error.to_string())?;
+    tx.execute(
+        "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+         SELECT additions.collection_id, additions.image_id
+         FROM invoke_board_membership_additions additions
+         INNER JOIN collections ON collections.id = additions.collection_id
+         INNER JOIN images ON images.id = additions.image_id
+         WHERE additions.image_id = ?1
+           AND COALESCE(collections.source, 'ambit') = 'invoke'
+           AND (
+               images.invoke_source_id IS NULL
+               OR (
+                   collections.invoke_source_id IS images.invoke_source_id
+                   AND (
+                       collections.invoke_owner_id IS NULL
+                       OR collections.invoke_owner_id IS images.invoke_owner_id
+                   )
+               )
+           )",
+        [image_id],
+    )
+    .map_err(|error| error.to_string())?;
+
+    let current_collection_ids = {
+        let mut statement = tx
+            .prepare(
+                "SELECT collection_images.collection_id
+                 FROM collection_images
+                 INNER JOIN collections ON collections.id = collection_images.collection_id
+                 WHERE collection_images.image_id = ?1
+                   AND COALESCE(collections.source, 'ambit') = 'invoke'",
+            )
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([image_id], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| error.to_string())?;
+        rows
+    };
+
+    Ok(prior_collection_ids
+        .into_iter()
+        .chain(current_collection_ids)
+        .collect())
+}
+
 fn restore_removed_images_inner(
     conn: &rusqlite::Connection,
     ids: &[String],
@@ -808,6 +915,7 @@ fn restore_removed_images_inner(
                 }
             }
         }
+        restored_collection_ids.extend(reproject_restored_invoke_memberships(&tx, &id)?);
 
         let deleted = tx
             .execute(
@@ -869,10 +977,6 @@ fn validate_image_for_collection_scope(
     collection: &MembershipCollectionState,
     image_id: &str,
 ) -> Result<(), String> {
-    if collection.source == "invoke" {
-        return Ok(());
-    }
-
     let image_scope = tx
         .query_row(
             "SELECT invoke_source_id, invoke_owner_id FROM images WHERE id = ?1",
@@ -912,6 +1016,107 @@ fn validate_image_for_collection_scope(
         }
     }
 
+    Ok(())
+}
+
+fn persist_invoke_membership_removals(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_ids: &[String],
+) -> Result<(), String> {
+    if collection.source != "invoke" {
+        return Ok(());
+    }
+
+    for image_id in image_ids {
+        let invoke_image_name = tx
+            .query_row(
+                "SELECT invoke_image_name FROM images WHERE id = ?1",
+                [image_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        tx.execute(
+            "DELETE FROM invoke_board_membership_additions
+             WHERE collection_id = ?1 AND image_id = ?2",
+            params![collection.id, image_id],
+        )
+        .map_err(|error| error.to_string())?;
+
+        if let Some(invoke_image_name) = invoke_image_name {
+            tx.execute(
+                "INSERT OR IGNORE INTO invoke_board_membership_exclusions (
+                     collection_id, invoke_image_name
+                 )
+                 SELECT ?1, ?2
+                 WHERE EXISTS (
+                     SELECT 1 FROM invoke_board_membership_snapshot
+                     WHERE collection_id = ?1 AND invoke_image_name = ?2
+                 )",
+                params![collection.id, invoke_image_name],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn persist_invoke_membership_additions(
+    tx: &Transaction<'_>,
+    collection: &MembershipCollectionState,
+    image_ids: &[String],
+) -> Result<(), String> {
+    if collection.source != "invoke" {
+        return Ok(());
+    }
+
+    for image_id in image_ids {
+        let invoke_image_name = tx
+            .query_row(
+                "SELECT invoke_image_name FROM images WHERE id = ?1",
+                [image_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .map_err(|error| error.to_string())?;
+        let is_source_member = if let Some(invoke_image_name) = invoke_image_name.as_deref() {
+            tx.query_row(
+                "SELECT EXISTS (
+                     SELECT 1 FROM invoke_board_membership_snapshot
+                     WHERE collection_id = ?1 AND invoke_image_name = ?2
+                 )",
+                params![collection.id, invoke_image_name],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|error| error.to_string())?
+        } else {
+            false
+        };
+
+        if let Some(invoke_image_name) = invoke_image_name {
+            tx.execute(
+                "DELETE FROM invoke_board_membership_exclusions
+                 WHERE collection_id = ?1 AND invoke_image_name = ?2",
+                params![collection.id, invoke_image_name],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        if is_source_member {
+            tx.execute(
+                "DELETE FROM invoke_board_membership_additions
+                 WHERE collection_id = ?1 AND image_id = ?2",
+                params![collection.id, image_id],
+            )
+            .map_err(|error| error.to_string())?;
+        } else {
+            tx.execute(
+                "INSERT OR IGNORE INTO invoke_board_membership_additions (
+                     collection_id, image_id
+                 ) VALUES (?1, ?2)",
+                params![collection.id, image_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
     Ok(())
 }
 
@@ -1020,6 +1225,123 @@ fn touch_membership_collection(
     Ok(())
 }
 
+fn update_invoke_collection_ownership_inner(
+    conn: &Connection,
+    collection_id: &str,
+    action: InvokeCollectionOwnershipAction,
+) -> Result<(), String> {
+    let collection_id = collection_id.trim();
+    if collection_id.is_empty() {
+        return Err("Collection ID is required".to_string());
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|error| error.to_string())?;
+    let source_state = tx
+        .query_row(
+            "SELECT c.invoke_source_present, c.invoke_source_name
+             FROM collections c
+             JOIN invoke_owner_scope_state s ON s.state_key = 'current'
+             WHERE c.id = ?1
+               AND COALESCE(c.source, 'ambit') = 'invoke'
+               AND c.invoke_source_id = s.db_path
+               AND (
+                    s.scope_mode IN ('legacy', 'all')
+                    OR (
+                        s.scope_mode = 'owner'
+                        AND c.invoke_owner_id IS NOT NULL
+                        AND c.invoke_owner_id = s.owner_id
+                        AND s.boards_verified = 1
+                        AND c.invoke_board_verified = 1
+                    )
+               )",
+            [collection_id],
+            |row| Ok((row.get::<_, i64>(0)? != 0, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| {
+            "InvokeAI collection is unavailable in the active owner scope".to_string()
+        })?;
+
+    match action {
+        InvokeCollectionOwnershipAction::Suppress => {
+            tx.execute(
+                "UPDATE collections SET invoke_suppressed = 1 WHERE id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        InvokeCollectionOwnershipAction::Restore => {
+            tx.execute(
+                "UPDATE collections SET invoke_suppressed = 0 WHERE id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        InvokeCollectionOwnershipAction::Reset => {
+            let source_name = source_state
+                .1
+                .filter(|name| !name.trim().is_empty())
+                .ok_or_else(|| "InvokeAI collection has no source name to restore".to_string())?;
+            if !source_state.0 {
+                return Err(
+                    "Cannot reset while the InvokeAI source collection is unavailable".to_string(),
+                );
+            }
+
+            tx.execute(
+                "UPDATE collections SET name = ?2 WHERE id = ?1",
+                params![collection_id, source_name],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_board_membership_exclusions WHERE collection_id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM invoke_board_membership_additions WHERE collection_id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "DELETE FROM collection_images WHERE collection_id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+            tx.execute(
+                "INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+                 SELECT snapshot.collection_id, images.id
+                 FROM invoke_board_membership_snapshot snapshot
+                 JOIN collections c ON c.id = snapshot.collection_id
+                 JOIN invoke_owner_scope_state s ON s.state_key = 'current'
+                 JOIN images
+                   ON images.invoke_image_name = snapshot.invoke_image_name
+                   AND images.invoke_source_id IS c.invoke_source_id
+                   AND (
+                       s.scope_mode IN ('legacy', 'all')
+                       OR (
+                           s.scope_mode = 'owner'
+                           AND images.invoke_owner_id IS s.owner_id
+                       )
+                   )
+                 WHERE snapshot.collection_id = ?1",
+                [collection_id],
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as i64)
+        .unwrap_or(0);
+    touch_membership_collection(&tx, collection_id, now)?;
+    tx.commit().map_err(|error| error.to_string())
+}
+
 fn mutate_collection_membership_inner(
     conn: &rusqlite::Connection,
     input: &CollectionMembershipMutationInput,
@@ -1084,6 +1406,7 @@ fn mutate_collection_membership_inner(
     ) {
         let source = source.as_ref().expect("source validated above");
         add_manual_exclusions(&tx, source, &image_ids)?;
+        persist_invoke_membership_removals(&tx, source, &image_ids)?;
         for image_id in &image_ids {
             tx.execute(
                 "DELETE FROM collection_images WHERE collection_id = ?1 AND image_id = ?2",
@@ -1102,6 +1425,7 @@ fn mutate_collection_membership_inner(
             validate_image_for_collection_scope(&tx, target, image_id)?;
         }
         remove_manual_exclusions(&tx, target, &image_ids)?;
+        persist_invoke_membership_additions(&tx, target, &image_ids)?;
         for image_id in &image_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?1, ?2)",
@@ -1678,6 +2002,19 @@ pub async fn mutate_collection_membership(
 
 #[tauri::command(rename_all = "camelCase")]
 #[specta::specta]
+pub async fn update_invoke_collection_ownership(
+    app: AppHandle,
+    collection_id: String,
+    action: InvokeCollectionOwnershipAction,
+) -> Result<(), String> {
+    run_blocking(app, move |conn| {
+        update_invoke_collection_ownership_inner(conn, &collection_id, action)
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
 pub async fn migrate_legacy_collections(
     app: AppHandle,
     input: LegacyCollectionMigrationInput,
@@ -1866,10 +2203,10 @@ mod tests {
         load_file_hash_candidates, migrate_legacy_collections_inner,
         mutate_collection_membership_inner, remove_images_from_library_inner, resolve_app_log_path,
         resolve_exact_duplicate_groups_inner, restore_removed_images_inner,
-        update_ambit_collection_scope_inner, AmbitCollectionScopeMode,
-        CollectionMembershipMutationInput, CollectionMembershipOperation, ExactDuplicateResolution,
-        LegacyCollectionMigrationInput, LegacyCollectionMigrationItem,
-        UpdateAmbitCollectionScopeInput,
+        update_ambit_collection_scope_inner, update_invoke_collection_ownership_inner,
+        AmbitCollectionScopeMode, CollectionMembershipMutationInput, CollectionMembershipOperation,
+        ExactDuplicateResolution, InvokeCollectionOwnershipAction, LegacyCollectionMigrationInput,
+        LegacyCollectionMigrationItem, UpdateAmbitCollectionScopeInput,
     };
     use crate::db::migrations::init_db;
     use rusqlite::{params, Connection};
@@ -2341,6 +2678,83 @@ mod tests {
     }
 
     #[test]
+    fn restore_reprojects_invoke_membership_from_current_source_and_local_overrides() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(
+            &conn,
+            "source-image",
+            "source-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "added-image",
+            "added-hash",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'source.png', board_id = 'board'
+             WHERE id = 'source-image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES ('board', 'Board', 1, 'invoke', 'invoke.db', 'owner-a', 'Board');
+             INSERT INTO invoke_board_membership_snapshot VALUES ('board', 'source.png');
+             INSERT INTO invoke_board_membership_additions VALUES ('board', 'added-image');
+             INSERT INTO collection_images VALUES
+                 ('board', 'source-image'),
+                 ('board', 'added-image');",
+        )
+        .expect("seed Invoke membership state");
+
+        remove_images_from_library_inner(
+            &conn,
+            &["source-image".to_string(), "added-image".to_string()],
+        )
+        .expect("remove images");
+        conn.execute_batch(
+            "INSERT INTO invoke_board_membership_exclusions VALUES ('board', 'source.png');
+             UPDATE removed_images SET collection_ids_json = '[]' WHERE id = 'added-image';",
+        )
+        .expect("change effective organization while removed");
+
+        restore_removed_images_inner(
+            &conn,
+            &["source-image".to_string(), "added-image".to_string()],
+        )
+        .expect("restore images");
+
+        let memberships: Vec<(String, String)> = conn
+            .prepare(
+                "SELECT collection_id, image_id FROM collection_images
+                 ORDER BY collection_id, image_id",
+            )
+            .expect("prepare memberships")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .expect("query memberships")
+            .collect::<Result<_, _>>()
+            .expect("collect memberships");
+        assert_eq!(
+            memberships,
+            vec![("board".to_string(), "added-image".to_string())]
+        );
+    }
+
+    #[test]
     fn collection_move_is_atomic_and_preserves_hybrid_exclusion_semantics() {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
@@ -2408,6 +2822,223 @@ mod tests {
                 .unwrap();
             assert_eq!(cached, None);
         }
+    }
+
+    #[test]
+    fn invoke_collection_move_persists_source_exclusion_and_target_addition() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(&conn, "image", "hash", false, false, None, "{}", None, None);
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'image.png', board_id = 'source'
+             WHERE id = 'image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES
+                 ('source', 'Source', 1, 'invoke', 'invoke.db', 'owner-a', 'Source'),
+                 ('target', 'Target', 1, 'invoke', 'invoke.db', 'owner-a', 'Target');
+             INSERT INTO invoke_board_membership_snapshot VALUES ('source', 'image.png');
+             INSERT INTO collection_images VALUES ('source', 'image');",
+        )
+        .expect("seed Invoke collections");
+
+        mutate_collection_membership_inner(
+            &conn,
+            &CollectionMembershipMutationInput {
+                operation: CollectionMembershipOperation::Move,
+                image_ids: vec!["image".to_string()],
+                source_collection_id: Some("source".to_string()),
+                target_collection_id: Some("target".to_string()),
+            },
+        )
+        .expect("move Invoke membership");
+
+        let exclusion: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_exclusions
+                 WHERE collection_id = 'source' AND invoke_image_name = 'image.png'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source exclusion");
+        let addition: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_board_membership_additions
+                 WHERE collection_id = 'target' AND image_id = 'image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("target addition");
+        assert_eq!(exclusion, 1);
+        assert_eq!(addition, 1);
+    }
+
+    #[test]
+    fn invoke_collection_lifecycle_suppresses_restores_and_resets_local_overrides() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "owner", Some("owner-a"));
+        seed_image(
+            &conn,
+            "source-image",
+            "source",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        seed_image(
+            &conn,
+            "local-image",
+            "local",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'source.png', board_id = 'board'
+             WHERE id = 'source-image';
+             UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'local.png', board_id = NULL
+             WHERE id = 'local-image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES (
+                 'board', 'Local label', 1, 'invoke', 'invoke.db', 'owner-a',
+                 'Upstream label'
+             );
+             INSERT INTO invoke_board_membership_snapshot VALUES ('board', 'source.png');
+             INSERT INTO invoke_board_membership_exclusions VALUES ('board', 'source.png');
+             INSERT INTO invoke_board_membership_additions VALUES ('board', 'local-image');
+             INSERT INTO collection_images VALUES ('board', 'local-image');",
+        )
+        .expect("seed local overrides");
+
+        update_invoke_collection_ownership_inner(
+            &conn,
+            "board",
+            InvokeCollectionOwnershipAction::Reset,
+        )
+        .expect("reset local overrides");
+        let reset_state: (String, i64, i64, String) = conn
+            .query_row(
+                "SELECT collections.name,
+                        (SELECT COUNT(*) FROM invoke_board_membership_exclusions),
+                        (SELECT COUNT(*) FROM invoke_board_membership_additions),
+                        collection_images.image_id
+                 FROM collections
+                 JOIN collection_images ON collection_images.collection_id = collections.id
+                 WHERE collections.id = 'board'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("reset state");
+        assert_eq!(
+            reset_state,
+            (
+                "Upstream label".to_string(),
+                0,
+                0,
+                "source-image".to_string()
+            )
+        );
+
+        update_invoke_collection_ownership_inner(
+            &conn,
+            "board",
+            InvokeCollectionOwnershipAction::Suppress,
+        )
+        .expect("suppress collection");
+        let visible_while_suppressed: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scoped_collections WHERE id = 'board'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("suppressed visibility");
+        assert_eq!(visible_while_suppressed, 0);
+
+        update_invoke_collection_ownership_inner(
+            &conn,
+            "board",
+            InvokeCollectionOwnershipAction::Restore,
+        )
+        .expect("restore collection");
+        let visible_after_restore: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM scoped_collections WHERE id = 'board'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("restored visibility");
+        assert_eq!(visible_after_restore, 1);
+    }
+
+    #[test]
+    fn invoke_collection_reset_restores_owned_images_in_unowned_boards_for_all_users() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        seed_image(
+            &conn,
+            "owned-image",
+            "source",
+            false,
+            false,
+            None,
+            "{}",
+            None,
+            None,
+        );
+        conn.execute_batch(
+            "UPDATE images
+             SET invoke_source_id = 'invoke.db', invoke_owner_id = 'owner-a',
+                 invoke_image_name = 'owned.png', board_id = 'unowned-board'
+             WHERE id = 'owned-image';
+             INSERT INTO collections (
+                 id, name, created_at, source, invoke_source_id, invoke_owner_id,
+                 invoke_source_name
+             ) VALUES (
+                 'unowned-board', 'Local label', 1, 'invoke', 'invoke.db', NULL,
+                 'Source label'
+             );
+             INSERT INTO invoke_board_membership_snapshot
+             VALUES ('unowned-board', 'owned.png');",
+        )
+        .expect("seed unowned source board");
+
+        update_invoke_collection_ownership_inner(
+            &conn,
+            "unowned-board",
+            InvokeCollectionOwnershipAction::Reset,
+        )
+        .expect("reset unowned source board");
+
+        let memberships: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM collection_images
+                 WHERE collection_id = 'unowned-board' AND image_id = 'owned-image'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("reset membership count");
+        assert_eq!(
+            memberships, 1,
+            "All Users must materialize the authoritative relationship even when the board has no owner"
+        );
     }
 
     #[test]

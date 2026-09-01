@@ -5,10 +5,11 @@ pub mod traversal;
 pub mod utils;
 
 use crate::metadata;
-use models::{FolderStats, ScanResult};
+use models::{FileMetadataProbe, FolderStats, ScanResult};
 use once_cell::sync::Lazy;
 use rayon::prelude::*;
 use std::path::Path;
+use tauri_plugin_fs::FsExt;
 
 // Custom Rayon pool with larger stack size (8MB) to prevent overflows in deep recursions
 // or deep JSON/PNG structures.
@@ -145,6 +146,18 @@ pub async fn read_image_metadata(
 #[specta::specta]
 pub async fn get_file_sizes_bulk(paths: Vec<String>) -> Result<Vec<u64>, String> {
     tauri::async_runtime::spawn_blocking(move || Ok(utils::get_file_sizes_bulk_impl(paths)))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn probe_file_metadata_bulk(
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<Vec<FileMetadataProbe>, String> {
+    utils::validate_metadata_probe_paths(&paths, |path| app.fs_scope().is_allowed(path))?;
+    tauri::async_runtime::spawn_blocking(move || Ok(utils::probe_file_metadata_bulk_impl(paths)))
         .await
         .map_err(|e| e.to_string())?
 }

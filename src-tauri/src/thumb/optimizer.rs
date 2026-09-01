@@ -1,10 +1,11 @@
 use rayon::prelude::*;
 use rusqlite::{params, Connection};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
@@ -13,6 +14,10 @@ const FAILURE_BACKOFF_MS: i64 = 60 * 60 * 1000;
 const DB_FLUSH_LIMIT: usize = 100;
 const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
+const SOURCE_ROOT_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const SOURCE_ROOT_CANCEL_POLL: Duration = Duration::from_millis(50);
+const MAX_SOURCE_ROOT_PROBE_WORKERS: usize = 4;
+static SOURCE_ROOT_PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 const THROTTLED_WORKER_CHUNK_SIZE: usize = 4;
 const THROTTLED_CHUNK_SLEEP: Duration = Duration::from_millis(250);
 const MAX_FAILURE_DIAGNOSTIC_LIMIT: usize = 50;
@@ -69,6 +74,8 @@ pub struct ThumbnailOptimizationConfig {
     pub thumbnail_dir: String,
     pub include_upgradeable: bool,
     pub profile: ThumbnailOptimizationProfile,
+    #[serde(default)]
+    pub source_roots: Vec<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize, specta::Type)]
@@ -78,6 +85,7 @@ pub struct ThumbnailOptimizationProgress {
     pub total: usize,
     pub optimized: usize,
     pub reused: usize,
+    pub missing: usize,
     pub failed: usize,
     pub skipped: usize,
     pub images_per_second: f64,
@@ -96,6 +104,7 @@ pub struct ThumbnailOptimizationResult {
     pub checked: usize,
     pub optimized: usize,
     pub reused: usize,
+    pub missing: usize,
     pub failed: usize,
     pub skipped: usize,
     pub was_cancelled: bool,
@@ -140,6 +149,9 @@ struct ThumbnailCandidate {
     id: String,
     path: String,
     timestamp: i64,
+    invoke_images_root: Option<String>,
+    source_root: Option<String>,
+    source_root_available: Option<bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -161,6 +173,10 @@ enum ThumbnailItemResult {
         id: String,
         error: String,
     },
+    MissingSource {
+        id: String,
+        source_root: Option<String>,
+    },
     Skipped,
 }
 
@@ -169,9 +185,35 @@ struct BatchStats {
     checked: usize,
     optimized: usize,
     reused: usize,
+    missing: usize,
     failed: usize,
     skipped: usize,
     encode_ms: u128,
+}
+
+struct SourceRootProbeGuard {
+    registry: &'static OnceLock<Mutex<HashSet<String>>>,
+    key: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceRootProbeResult {
+    Available,
+    Unavailable,
+    Busy,
+    Cancelled,
+}
+
+impl Drop for SourceRootProbeGuard {
+    fn drop(&mut self) {
+        if let Ok(mut in_flight) = self
+            .registry
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+        {
+            in_flight.remove(&self.key);
+        }
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -312,9 +354,10 @@ fn run_thumbnail_optimization_job(
     let mut last_batch_ms = 0;
     let mut last_db_ms = 0;
     let mut encode_ms_since_progress = 0_u128;
+    let mut source_root_availability = HashMap::new();
 
     while !is_cancelled.load(Ordering::SeqCst) {
-        let candidates = fetch_thumbnail_candidates(
+        let mut candidates = fetch_thumbnail_candidates(
             &conn,
             config.include_upgradeable,
             cursor.as_ref(),
@@ -323,6 +366,16 @@ fn run_thumbnail_optimization_job(
         )?;
 
         if candidates.is_empty() {
+            break;
+        }
+
+        if !resolve_candidate_source_roots(
+            &mut candidates,
+            &config.source_roots,
+            &mut source_root_availability,
+            is_cancelled.as_ref(),
+            probe_source_root_availability,
+        ) {
             break;
         }
 
@@ -344,49 +397,59 @@ fn run_thumbnail_optimization_job(
             let end = std::cmp::min(index + chunk_size, candidates.len());
             let chunk_started_at = Instant::now();
 
+            let mut chunk_results = Vec::with_capacity(end - index);
             process_candidate_chunk(
                 &pool,
                 &candidates[index..end],
                 &config.thumbnail_dir,
                 is_cancelled.as_ref(),
                 |item| {
-                    encode_ms_since_progress += accumulate_thumbnail_result(&mut result, &item);
-
-                    if !matches!(item, ThumbnailItemResult::Skipped) {
-                        pending_results.push(item);
-                    }
-
-                    if pending_results.len() >= DB_FLUSH_LIMIT
-                        || last_flush_at.elapsed() >= DB_FLUSH_INTERVAL
-                    {
-                        last_db_ms = flush_pending_thumbnail_results(
-                            &mut conn,
-                            &mut pending_results,
-                            unix_time_ms(),
-                        )?;
-                        last_flush_at = Instant::now();
-                    }
-
-                    if last_progress_at.elapsed() >= PROGRESS_EMIT_INTERVAL {
-                        emit_progress(
-                            &app,
-                            &build_progress_payload(
-                                &result,
-                                started_at,
-                                config.profile,
-                                last_batch_ms,
-                                last_db_ms,
-                                millis_to_u64(encode_ms_since_progress),
-                                is_throttled.load(Ordering::SeqCst),
-                            ),
-                        );
-                        encode_ms_since_progress = 0;
-                        last_progress_at = Instant::now();
-                    }
-
+                    chunk_results.push(item);
                     Ok(())
                 },
             )?;
+            revalidate_missing_source_roots(
+                &mut chunk_results,
+                &mut source_root_availability,
+                is_cancelled.as_ref(),
+                probe_source_root_availability,
+            );
+
+            for item in chunk_results {
+                encode_ms_since_progress += accumulate_thumbnail_result(&mut result, &item);
+
+                if !matches!(item, ThumbnailItemResult::Skipped) {
+                    pending_results.push(item);
+                }
+
+                if pending_results.len() >= DB_FLUSH_LIMIT
+                    || last_flush_at.elapsed() >= DB_FLUSH_INTERVAL
+                {
+                    last_db_ms = flush_pending_thumbnail_results(
+                        &mut conn,
+                        &mut pending_results,
+                        unix_time_ms(),
+                    )?;
+                    last_flush_at = Instant::now();
+                }
+
+                if last_progress_at.elapsed() >= PROGRESS_EMIT_INTERVAL {
+                    emit_progress(
+                        &app,
+                        &build_progress_payload(
+                            &result,
+                            started_at,
+                            config.profile,
+                            last_batch_ms,
+                            last_db_ms,
+                            millis_to_u64(encode_ms_since_progress),
+                            is_throttled.load(Ordering::SeqCst),
+                        ),
+                    );
+                    encode_ms_since_progress = 0;
+                    last_progress_at = Instant::now();
+                }
+            }
 
             last_batch_ms = elapsed_ms(chunk_started_at);
             index = end;
@@ -431,10 +494,11 @@ fn run_thumbnail_optimization_job(
     );
 
     log::info!(
-        "[ThumbnailOptimization] Complete. checked={}, optimized={}, reused={}, failed={}, skipped={}, cancelled={}, duration_ms={}, images_per_second={:.2}",
+        "[ThumbnailOptimization] Complete. checked={}, optimized={}, reused={}, missing={}, failed={}, skipped={}, cancelled={}, duration_ms={}, images_per_second={:.2}",
         result.checked,
         result.optimized,
         result.reused,
+        result.missing,
         result.failed,
         result.skipped,
         result.was_cancelled,
@@ -563,17 +627,18 @@ fn thumbnail_cache_is_missing_or_empty(thumbnail_dir: &str) -> bool {
 fn ensure_thumbnail_queue_index(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         "
-        CREATE INDEX IF NOT EXISTS idx_images_thumbnail_optimization_queue_v1
+        DROP INDEX IF EXISTS idx_images_thumbnail_optimization_queue_v1;
+        CREATE INDEX IF NOT EXISTS idx_images_thumbnail_optimization_queue_v2
             ON images(
+                media_type,
                 is_deleted,
                 is_missing,
-                is_corrupt,
-                is_intermediate_gen,
-                thumbnail_version,
+                timestamp DESC,
+                id DESC,
                 thumbnail_failure_count,
                 thumbnail_last_attempt_at,
-                timestamp DESC,
-                id DESC
+                thumbnail_source,
+                thumbnail_version
             );
         ",
     )
@@ -652,7 +717,13 @@ fn accumulate_thumbnail_result(
             result.failed += 1;
             0
         }
+        ThumbnailItemResult::MissingSource { .. } => {
+            result.checked += 1;
+            result.missing += 1;
+            0
+        }
         ThumbnailItemResult::Skipped => {
+            result.checked += 1;
             result.skipped += 1;
             0
         }
@@ -695,6 +766,7 @@ fn build_progress_payload(
         total: 0,
         optimized: result.optimized,
         reused: result.reused,
+        missing: result.missing,
         failed: result.failed,
         skipped: result.skipped,
         images_per_second,
@@ -724,6 +796,13 @@ fn format_thumbnail_progress_message(result: &ThumbnailOptimizationResult) -> St
         );
     }
 
+    if result.missing > 0 {
+        return format!(
+            "Optimized {} thumbnails; marked {} files missing",
+            result.optimized, result.missing
+        );
+    }
+
     format!("Optimized {} thumbnails", result.optimized)
 }
 
@@ -734,6 +813,32 @@ fn optimize_thumbnail_candidate(
 ) -> ThumbnailItemResult {
     if is_cancelled.load(Ordering::SeqCst) {
         return ThumbnailItemResult::Skipped;
+    }
+
+    if candidate.source_root_available == Some(false) {
+        return ThumbnailItemResult::Skipped;
+    }
+
+    match fs::metadata(&candidate.path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return ThumbnailItemResult::MissingSource {
+                id: candidate.id.clone(),
+                source_root: candidate.source_root.clone(),
+            };
+        }
+        Err(error) => {
+            return ThumbnailItemResult::Failed {
+                id: candidate.id.clone(),
+                error: format!("failed_to_inspect_source: {error}"),
+            };
+        }
+        Ok(metadata) if !metadata.is_file() => {
+            return ThumbnailItemResult::Failed {
+                id: candidate.id.clone(),
+                error: "source_is_not_a_regular_file".to_string(),
+            };
+        }
+        Ok(_) => {}
     }
 
     match super::generate_thumbnail(&candidate.path, thumbnail_dir) {
@@ -749,6 +854,326 @@ fn optimize_thumbnail_candidate(
             error,
         },
     }
+}
+
+fn resolve_candidate_source_roots<F>(
+    candidates: &mut [ThumbnailCandidate],
+    source_roots: &[String],
+    availability: &mut HashMap<String, bool>,
+    is_cancelled: &AtomicBool,
+    mut probe: F,
+) -> bool
+where
+    F: FnMut(&Path, &AtomicBool) -> SourceRootProbeResult,
+{
+    for candidate in candidates {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return false;
+        }
+        let source_root = candidate
+            .invoke_images_root
+            .as_deref()
+            .map(|root| {
+                Path::new(root)
+                    .join("outputs")
+                    .join("images")
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .or_else(|| most_specific_source_root(&candidate.path, source_roots).cloned());
+
+        let Some(source_root) = source_root else {
+            candidate.source_root = None;
+            candidate.source_root_available = None;
+            continue;
+        };
+        candidate.source_root = Some(source_root.clone());
+        let key = normalize_source_root_identity(&source_root);
+        let is_root_available = match availability.get(&key) {
+            Some(is_available) => *is_available,
+            None => {
+                let is_root_available = match probe(Path::new(&source_root), is_cancelled) {
+                    SourceRootProbeResult::Available => true,
+                    SourceRootProbeResult::Unavailable => false,
+                    SourceRootProbeResult::Busy => {
+                        candidate.source_root_available = Some(false);
+                        continue;
+                    }
+                    SourceRootProbeResult::Cancelled => return false,
+                };
+                availability.insert(key, is_root_available);
+                is_root_available
+            }
+        };
+        candidate.source_root_available = Some(is_root_available);
+    }
+    true
+}
+
+fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> SourceRootProbeResult {
+    let path = path.to_path_buf();
+    let key = normalize_source_root_identity(&path.to_string_lossy());
+    run_cancellable_probe(
+        &SOURCE_ROOT_PROBE_REGISTRY,
+        key,
+        is_cancelled,
+        SOURCE_ROOT_PROBE_TIMEOUT,
+        move || path.is_dir(),
+    )
+}
+
+fn run_cancellable_probe<F>(
+    registry: &'static OnceLock<Mutex<HashSet<String>>>,
+    key: String,
+    is_cancelled: &AtomicBool,
+    timeout: Duration,
+    probe: F,
+) -> SourceRootProbeResult
+where
+    F: FnOnce() -> bool + Send + 'static,
+{
+    if is_cancelled.load(Ordering::SeqCst) {
+        return SourceRootProbeResult::Cancelled;
+    }
+    {
+        let Ok(mut in_flight) = registry.get_or_init(|| Mutex::new(HashSet::new())).lock() else {
+            return SourceRootProbeResult::Busy;
+        };
+        if in_flight.contains(&key) || in_flight.len() >= MAX_SOURCE_ROOT_PROBE_WORKERS {
+            return SourceRootProbeResult::Busy;
+        }
+        in_flight.insert(key.clone());
+    }
+    let guard = SourceRootProbeGuard { registry, key };
+    let (sender, receiver) = mpsc::sync_channel(1);
+    if std::thread::Builder::new()
+        .name("thumbnail-source-root-probe".to_string())
+        .spawn(move || {
+            let _guard = guard;
+            let _ = sender.send(probe());
+        })
+        .is_err()
+    {
+        return SourceRootProbeResult::Unavailable;
+    }
+    let started_at = Instant::now();
+    loop {
+        if is_cancelled.load(Ordering::SeqCst) {
+            return SourceRootProbeResult::Cancelled;
+        }
+        let remaining = timeout.saturating_sub(started_at.elapsed());
+        if remaining.is_zero() {
+            return SourceRootProbeResult::Unavailable;
+        }
+        match receiver.recv_timeout(std::cmp::min(SOURCE_ROOT_CANCEL_POLL, remaining)) {
+            Ok(true) => return SourceRootProbeResult::Available,
+            Ok(false) => return SourceRootProbeResult::Unavailable,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return SourceRootProbeResult::Unavailable;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+    }
+}
+
+fn revalidate_missing_source_roots<F>(
+    results: &mut [ThumbnailItemResult],
+    availability: &mut HashMap<String, bool>,
+    is_cancelled: &AtomicBool,
+    mut probe: F,
+) where
+    F: FnMut(&Path, &AtomicBool) -> SourceRootProbeResult,
+{
+    let mut roots = HashMap::new();
+    let mut deferred_roots = HashMap::new();
+    for result in results.iter() {
+        if let ThumbnailItemResult::MissingSource {
+            source_root: Some(root),
+            ..
+        } = result
+        {
+            roots
+                .entry(normalize_source_root_identity(root))
+                .or_insert_with(|| root.clone());
+        }
+    }
+
+    for (key, root) in roots {
+        if availability.get(&key) == Some(&false) {
+            continue;
+        }
+        match probe(Path::new(&root), is_cancelled) {
+            SourceRootProbeResult::Available => {
+                availability.insert(key, true);
+            }
+            SourceRootProbeResult::Unavailable => {
+                availability.insert(key, false);
+            }
+            SourceRootProbeResult::Busy => {
+                deferred_roots.insert(key, ());
+            }
+            SourceRootProbeResult::Cancelled => {
+                for result in results.iter_mut() {
+                    if matches!(result, ThumbnailItemResult::MissingSource { .. }) {
+                        *result = ThumbnailItemResult::Skipped;
+                    }
+                }
+                return;
+            }
+        }
+    }
+
+    for result in results.iter_mut() {
+        let should_defer = match result {
+            ThumbnailItemResult::MissingSource {
+                source_root: Some(root),
+                ..
+            } => {
+                let key = normalize_source_root_identity(root);
+                availability.get(&key) == Some(&false) || deferred_roots.contains_key(&key)
+            }
+            _ => false,
+        };
+        if should_defer {
+            *result = ThumbnailItemResult::Skipped;
+        }
+    }
+}
+
+fn most_specific_source_root<'a>(path: &str, source_roots: &'a [String]) -> Option<&'a String> {
+    let path = normalize_source_root_identity(path);
+    source_roots
+        .iter()
+        .filter(|root| {
+            let root = normalize_source_root_identity(root);
+            !root.is_empty() && path_is_within_root(&path, &root)
+        })
+        .max_by_key(|root| normalize_source_root_identity(root).len())
+}
+
+fn normalize_source_root_identity(path: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    let normalized = normalized.trim_end_matches('/');
+    if normalized.is_empty() && path.trim().starts_with('/') {
+        return "/".to_string();
+    }
+    if normalized.as_bytes().get(1) == Some(&b':') || normalized.starts_with("//") {
+        normalized.to_lowercase()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn path_is_within_root(path: &str, root: &str) -> bool {
+    if root == "/" {
+        return path.starts_with('/');
+    }
+    path == root
+        || path
+            .strip_prefix(root)
+            .is_some_and(|remainder| remainder.starts_with('/'))
+}
+
+fn persist_missing_sources(
+    tx: &rusqlite::Transaction<'_>,
+    results: &[ThumbnailItemResult],
+    stats: &mut BatchStats,
+) -> Result<(), String> {
+    let has_scope_cache: i64 = tx
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master
+             WHERE name IN (
+                 'invoke_scope_cache_control',
+                 'invoke_scope_cache_state',
+                 'invoke_scope_cache_dirty_items',
+                 'invoke_scope_cache_visible_image_scopes'
+             )",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if has_scope_cache == 4 {
+        tx.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS thumbnail_optimizer_missing_ids (
+                 id TEXT PRIMARY KEY
+             ) WITHOUT ROWID;
+             DELETE FROM thumbnail_optimizer_missing_ids;
+             UPDATE invoke_scope_cache_control
+             SET suppress_invalidation = 1
+             WHERE state_key = 'current';",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    let mut missing_stmt = tx
+        .prepare_cached(
+            "UPDATE images
+             SET is_missing = 1,
+                 thumbnail_failure_count = 0,
+                 thumbnail_last_error = NULL,
+                 thumbnail_last_attempt_at = NULL
+             WHERE id = ?1
+               AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut remember_missing = if has_scope_cache == 4 {
+        Some(
+            tx.prepare_cached(
+                "INSERT OR IGNORE INTO thumbnail_optimizer_missing_ids (id) VALUES (?1)",
+            )
+            .map_err(|e| e.to_string())?,
+        )
+    } else {
+        None
+    };
+
+    for item in results {
+        if let ThumbnailItemResult::MissingSource { id, .. } = item {
+            let updated = missing_stmt.execute([id]).map_err(|e| e.to_string())?;
+            if updated > 0 {
+                if let Some(statement) = remember_missing.as_mut() {
+                    statement.execute([id]).map_err(|e| e.to_string())?;
+                }
+            }
+            stats.checked += 1;
+            stats.missing += 1;
+        }
+    }
+    drop(remember_missing);
+    drop(missing_stmt);
+
+    if has_scope_cache == 4 {
+        tx.execute_batch(
+            "INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+             SELECT DISTINCT visible.scope_key, 'full', '', ''
+             FROM invoke_scope_cache_visible_image_scopes visible
+             JOIN thumbnail_optimizer_missing_ids missing
+               ON missing.id = visible.image_id
+             ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
+
+             UPDATE invoke_scope_cache_state
+             SET status = 'dirty',
+                 generation = generation + 1,
+                 updated_at = CAST(strftime('%s', 'now') AS INTEGER) * 1000
+             WHERE status != 'dirty'
+               AND scope_key IN (
+                   SELECT visible.scope_key
+                   FROM invoke_scope_cache_visible_image_scopes visible
+                   JOIN thumbnail_optimizer_missing_ids missing
+                     ON missing.id = visible.image_id
+               );
+
+             DELETE FROM thumbnail_optimizer_missing_ids;
+             UPDATE invoke_scope_cache_control
+             SET suppress_invalidation = 0
+             WHERE state_key = 'current';",
+        )
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }
 
 fn persist_thumbnail_results(
@@ -786,6 +1211,8 @@ fn persist_thumbnail_results(
             )
             .map_err(|e| e.to_string())?;
 
+        persist_missing_sources(&tx, results, &mut stats)?;
+
         for item in results {
             match item {
                 ThumbnailItemResult::Success {
@@ -817,6 +1244,7 @@ fn persist_thumbnail_results(
                     stats.checked += 1;
                     stats.failed += 1;
                 }
+                ThumbnailItemResult::MissingSource { .. } => {}
                 ThumbnailItemResult::Skipped => {
                     stats.skipped += 1;
                 }
@@ -836,8 +1264,16 @@ fn fetch_thumbnail_candidates(
     now_ms: i64,
 ) -> Result<Vec<ThumbnailCandidate>, String> {
     let mut query = format!(
-        "SELECT id, path, COALESCE(timestamp, 0) AS timestamp
-         FROM scoped_images
+        "SELECT i.id, i.path, COALESCE(i.timestamp, 0) AS timestamp,
+                (
+                    SELECT scope.images_root
+                    FROM invoke_owner_scope_state scope
+                    WHERE i.invoke_source_id IS NOT NULL
+                      AND LOWER(RTRIM(REPLACE(scope.db_path, '\\', '/'), '/')) =
+                          LOWER(RTRIM(REPLACE(i.invoke_source_id, '\\', '/'), '/'))
+                    LIMIT 1
+                ) AS invoke_images_root
+         FROM scoped_images i
          WHERE {}",
         thumbnail_queue_condition(include_upgradeable, now_ms)
     );
@@ -857,6 +1293,9 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                invoke_images_root: row.get(3)?,
+                source_root: None,
+                source_root_available: None,
             })
         })
         .map_err(|e| e.to_string())?
@@ -868,6 +1307,9 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                invoke_images_root: row.get(3)?,
+                source_root: None,
+                source_root_available: None,
             })
         })
         .map_err(|e| e.to_string())?
@@ -962,10 +1404,16 @@ mod tests {
                 is_missing INTEGER NOT NULL DEFAULT 0,
                 is_intermediate_gen INTEGER NOT NULL DEFAULT 0,
                 is_corrupt INTEGER DEFAULT 0,
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                invoke_source_id TEXT
             );
             CREATE VIEW scoped_images AS
                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
+            CREATE TABLE invoke_owner_scope_state (
+                state_key TEXT PRIMARY KEY,
+                db_path TEXT NOT NULL,
+                images_root TEXT NOT NULL
+            );
             ",
         )
         .expect("schema");
@@ -1048,6 +1496,16 @@ mod tests {
         assert_eq!(progress.encode_ms, 15);
         assert!(progress.is_throttled);
         assert_eq!(progress.phase, "throttled");
+    }
+
+    #[test]
+    fn skipped_candidates_advance_visited_progress() {
+        let mut result = ThumbnailOptimizationResult::default();
+
+        accumulate_thumbnail_result(&mut result, &ThumbnailItemResult::Skipped);
+
+        assert_eq!(result.checked, 1);
+        assert_eq!(result.skipped, 1);
     }
 
     #[test]
@@ -1251,7 +1709,7 @@ mod tests {
                 "SELECT COUNT(*)
                  FROM sqlite_master
                  WHERE type = 'index'
-                   AND name = 'idx_images_thumbnail_optimization_queue_v1'",
+                   AND name = 'idx_images_thumbnail_optimization_queue_v2'",
                 [],
                 |row| row.get(0),
             )
@@ -1507,6 +1965,26 @@ mod tests {
     }
 
     #[test]
+    fn queue_carries_registered_invoke_root_from_source_identity() {
+        let conn = setup_queue_db();
+        insert_image(&conn, "invoke-owned", None, None, 0, 40);
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (state_key, db_path, images_root)
+             VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke');
+             UPDATE images
+             SET invoke_source_id = 'd:/invoke/databases/invokeai.db'
+             WHERE id = 'invoke-owned';",
+        )
+        .expect("invoke source state");
+
+        let rows =
+            fetch_thumbnail_candidates(&conn, false, None, 10, 10_000).expect("fetch candidates");
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].invoke_images_root.as_deref(), Some("D:/Invoke"));
+    }
+
+    #[test]
     fn queue_never_selects_video_posters_for_image_optimization() {
         let conn = setup_queue_db();
         insert_image(&conn, "video", None, None, 0, 40);
@@ -1619,6 +2097,523 @@ mod tests {
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn absent_source_becomes_missing_without_losing_its_cached_thumbnail() {
+        let mut conn = setup_queue_db();
+        insert_image(
+            &conn,
+            "gone",
+            Some("C:/invoke/thumbs/gone.webp"),
+            Some("invokeai"),
+            0,
+            20,
+        );
+        let candidate = fetch_thumbnail_candidates(&conn, true, None, 10, 10_000)
+            .expect("fetch candidate")
+            .into_iter()
+            .next()
+            .expect("candidate");
+
+        let item = optimize_thumbnail_candidate(
+            &candidate,
+            &temp_thumbnail_dir("missing-source").to_string_lossy(),
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(item, ThumbnailItemResult::MissingSource { .. }));
+
+        let stats =
+            persist_thumbnail_results(&mut conn, &[item], 100).expect("persist missing source");
+        assert_eq!(stats.checked, 1);
+        assert_eq!(stats.missing, 1);
+        assert_eq!(stats.failed, 0);
+
+        let row: (i64, String, i64, Option<String>) = conn
+            .query_row(
+                "SELECT is_missing, thumbnail_path, thumbnail_failure_count,
+                        thumbnail_last_error
+                 FROM images WHERE id = 'gone'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("missing row");
+        assert_eq!(row, (1, "C:/invoke/thumbs/gone.webp".to_string(), 0, None));
+    }
+
+    #[test]
+    fn missing_batch_invalidates_each_scope_once_without_row_trigger_work() {
+        let mut conn = setup_queue_db();
+        conn.execute_batch(
+            "
+            CREATE TABLE invoke_scope_cache_control (
+                state_key TEXT PRIMARY KEY,
+                suppress_invalidation INTEGER NOT NULL
+            );
+            INSERT INTO invoke_scope_cache_control VALUES ('current', 0);
+            CREATE TABLE invoke_scope_cache_state (
+                scope_key TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            INSERT INTO invoke_scope_cache_state VALUES ('scope-a', 'ready', 4, 0);
+            CREATE TABLE invoke_scope_cache_dirty_items (
+                scope_key TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                facet_type TEXT NOT NULL DEFAULT '',
+                resource_name TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (scope_key, domain, facet_type, resource_name)
+            ) WITHOUT ROWID;
+            CREATE VIEW invoke_scope_cache_visible_image_scopes AS
+                SELECT images.id AS image_id, invoke_scope_cache_state.scope_key
+                FROM images CROSS JOIN invoke_scope_cache_state;
+            CREATE TABLE row_trigger_audit (count INTEGER NOT NULL);
+            INSERT INTO row_trigger_audit VALUES (0);
+            CREATE TRIGGER audit_missing_row_update
+            AFTER UPDATE OF is_missing ON images
+            WHEN (SELECT suppress_invalidation FROM invoke_scope_cache_control
+                  WHERE state_key = 'current') = 0
+            BEGIN
+                UPDATE row_trigger_audit SET count = count + 1;
+            END;
+            ",
+        )
+        .expect("scope cache schema");
+        insert_image(&conn, "gone-a", None, None, 0, 20);
+        insert_image(&conn, "gone-b", None, None, 0, 10);
+
+        persist_thumbnail_results(
+            &mut conn,
+            &[
+                ThumbnailItemResult::MissingSource {
+                    id: "gone-a".to_string(),
+                    source_root: None,
+                },
+                ThumbnailItemResult::MissingSource {
+                    id: "gone-b".to_string(),
+                    source_root: None,
+                },
+            ],
+            100,
+        )
+        .expect("persist missing batch");
+
+        let row_trigger_count: i64 = conn
+            .query_row("SELECT count FROM row_trigger_audit", [], |row| row.get(0))
+            .expect("row trigger count");
+        let scope: (String, i64) = conn
+            .query_row(
+                "SELECT status, generation FROM invoke_scope_cache_state WHERE scope_key = 'scope-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("scope state");
+        let full_dirty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'scope-a' AND domain = 'full'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dirty count");
+
+        assert_eq!(row_trigger_count, 0);
+        assert_eq!(scope, ("dirty".to_string(), 5));
+        assert_eq!(full_dirty_count, 1);
+    }
+
+    #[test]
+    fn migrated_schema_scales_missing_reconciliation_per_scope_and_uses_queue_index() {
+        const IMAGE_COUNT: usize = 2_000;
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(&migration.sql)
+                .expect("apply production migration");
+        }
+        ensure_thumbnail_queue_index(&conn).expect("queue index");
+
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'legacy', NULL, 1);
+             INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES ('scope-a', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'legacy', NULL, 'ready', 7, 7, 1);
+             UPDATE invoke_scope_cache_control
+             SET active_scope_key = 'scope-a'
+             WHERE state_key = 'current';",
+        )
+        .expect("scope state");
+
+        {
+            let tx = conn.transaction().expect("seed transaction");
+            {
+                let mut insert = tx
+                    .prepare(
+                        "INSERT INTO images (id, path, timestamp)
+                         VALUES (?1, ?2, ?3)",
+                    )
+                    .expect("seed statement");
+                for index in 0..IMAGE_COUNT {
+                    let id = format!("missing-{index:04}");
+                    insert
+                        .execute(params![
+                            id,
+                            format!("D:/library/{index:04}.png"),
+                            index as i64
+                        ])
+                        .expect("seed image");
+                }
+            }
+            tx.commit().expect("seed commit");
+        }
+
+        conn.execute_batch(
+            "UPDATE invoke_scope_cache_state
+             SET status = 'ready', generation = 7, built_generation = 7
+             WHERE scope_key = 'scope-a';
+             DELETE FROM invoke_scope_cache_dirty_items;",
+        )
+        .expect("reset scope state");
+
+        let plan_sql = format!(
+            "EXPLAIN QUERY PLAN
+             SELECT i.id, i.path, COALESCE(i.timestamp, 0)
+             FROM scoped_images i
+             WHERE {}
+             ORDER BY timestamp DESC, id DESC
+             LIMIT 100",
+            thumbnail_queue_condition(false, 10_000)
+        );
+        let plan_details = conn
+            .prepare(&plan_sql)
+            .expect("plan statement")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("query plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("plan details");
+        assert!(
+            plan_details
+                .iter()
+                .any(|detail| detail.contains("idx_images_thumbnail_optimization_queue_v2")),
+            "candidate query must use its queue index: {plan_details:?}"
+        );
+
+        let results = (0..IMAGE_COUNT)
+            .map(|index| ThumbnailItemResult::MissingSource {
+                id: format!("missing-{index:04}"),
+                source_root: None,
+            })
+            .collect::<Vec<_>>();
+        let stats =
+            persist_thumbnail_results(&mut conn, &results, 100).expect("persist missing batch");
+
+        let scope_state: (String, i64) = conn
+            .query_row(
+                "SELECT status, generation
+                 FROM invoke_scope_cache_state
+                 WHERE scope_key = 'scope-a'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("scope result");
+        let full_dirty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'scope-a' AND domain = 'full'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("dirty count");
+        let missing_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images WHERE is_missing = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("missing count");
+        let suppression: i64 = conn
+            .query_row(
+                "SELECT suppress_invalidation
+                 FROM invoke_scope_cache_control
+                 WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("suppression state");
+
+        assert_eq!(stats.missing, IMAGE_COUNT);
+        assert_eq!(missing_count, IMAGE_COUNT as i64);
+        assert_eq!(scope_state, ("dirty".to_string(), 8));
+        assert_eq!(full_dirty_count, 1);
+        assert_eq!(suppression, 0);
+    }
+
+    #[test]
+    fn unavailable_invoke_root_is_skipped_instead_of_marking_every_image_missing() {
+        let invoke_root = temp_thumbnail_dir("offline-invoke-root");
+        let _ = fs::remove_dir_all(&invoke_root);
+        let candidate = ThumbnailCandidate {
+            id: "offline".to_string(),
+            path: invoke_root
+                .join("outputs")
+                .join("images")
+                .join("offline.png")
+                .to_string_lossy()
+                .to_string(),
+            timestamp: 1,
+            invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
+            source_root: None,
+            source_root_available: Some(false),
+        };
+
+        let item = optimize_thumbnail_candidate(
+            &candidate,
+            &temp_thumbnail_dir("offline-thumbs").to_string_lossy(),
+            &AtomicBool::new(false),
+        );
+
+        assert!(matches!(item, ThumbnailItemResult::Skipped));
+    }
+
+    #[test]
+    fn shared_unavailable_managed_root_is_probed_once_for_all_candidates() {
+        let root = "D:/Offline Library".to_string();
+        let mut candidates = vec![
+            ThumbnailCandidate {
+                id: "offline-a".to_string(),
+                path: "D:/Offline Library/a.png".to_string(),
+                timestamp: 2,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+            ThumbnailCandidate {
+                id: "offline-b".to_string(),
+                path: "D:/Offline Library/nested/b.png".to_string(),
+                timestamp: 1,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+        ];
+        let mut availability = HashMap::new();
+        let mut probe_count = 0;
+
+        assert!(resolve_candidate_source_roots(
+            &mut candidates,
+            &[root],
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                SourceRootProbeResult::Unavailable
+            },
+        ));
+
+        assert_eq!(probe_count, 1);
+        assert!(candidates
+            .iter()
+            .all(|candidate| candidate.source_root_available == Some(false)));
+        assert!(candidates.iter().all(|candidate| matches!(
+            optimize_thumbnail_candidate(
+                candidate,
+                &temp_thumbnail_dir("offline-managed-thumbs").to_string_lossy(),
+                &AtomicBool::new(false),
+            ),
+            ThumbnailItemResult::Skipped
+        )));
+    }
+
+    #[test]
+    fn busy_probe_defers_a_root_without_caching_it_unavailable() {
+        let roots = vec!["Z:/Stalled".to_string(), "D:/Healthy".to_string()];
+        let mut candidates = vec![
+            ThumbnailCandidate {
+                id: "stalled".to_string(),
+                path: "Z:/Stalled/a.png".to_string(),
+                timestamp: 2,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+            ThumbnailCandidate {
+                id: "healthy".to_string(),
+                path: "D:/Healthy/b.png".to_string(),
+                timestamp: 1,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+        ];
+        let mut availability = HashMap::new();
+        let mut probe_count = 0;
+
+        assert!(resolve_candidate_source_roots(
+            &mut candidates,
+            &roots,
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                if probe_count == 1 {
+                    SourceRootProbeResult::Unavailable
+                } else {
+                    SourceRootProbeResult::Busy
+                }
+            },
+        ));
+
+        assert_eq!(candidates[0].source_root_available, Some(false));
+        assert_eq!(candidates[1].source_root_available, Some(false));
+        assert!(!availability.contains_key(&normalize_source_root_identity(&roots[1])));
+    }
+
+    #[test]
+    fn managed_root_matching_uses_path_boundaries_and_the_most_specific_root() {
+        let roots = vec!["D:/Library".to_string(), "D:/Library/Nested".to_string()];
+
+        assert_eq!(
+            most_specific_source_root("d:\\library\\nested\\image.png", &roots),
+            Some(&roots[1])
+        );
+        assert_eq!(
+            most_specific_source_root("D:/Library-Archive/image.png", &roots),
+            None
+        );
+        assert!(path_is_within_root("/library/image.png", "/"));
+    }
+
+    #[test]
+    fn cancellation_stops_waiting_for_a_blocked_root_probe() {
+        static PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let is_cancelled = Arc::new(AtomicBool::new(false));
+        let cancellation = is_cancelled.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            cancellation.store(true, Ordering::SeqCst);
+        });
+        let started_at = Instant::now();
+
+        let result = run_cancellable_probe(
+            &PROBE_REGISTRY,
+            "blocked".to_string(),
+            is_cancelled.as_ref(),
+            Duration::from_secs(1),
+            || {
+                std::thread::sleep(Duration::from_secs(1));
+                true
+            },
+        );
+
+        assert_eq!(result, SourceRootProbeResult::Cancelled);
+        assert!(started_at.elapsed() < Duration::from_millis(250));
+    }
+
+    #[test]
+    fn repeated_timeouts_do_not_spawn_additional_root_probe_workers() {
+        static PROBE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let starts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let first_starts = starts.clone();
+
+        let first = run_cancellable_probe(
+            &PROBE_REGISTRY,
+            "stalled".to_string(),
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            move || {
+                first_starts.fetch_add(1, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(200));
+                true
+            },
+        );
+        let second_starts = starts.clone();
+        let second = run_cancellable_probe(
+            &PROBE_REGISTRY,
+            "stalled".to_string(),
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            move || {
+                second_starts.fetch_add(1, Ordering::SeqCst);
+                true
+            },
+        );
+
+        assert_eq!(first, SourceRootProbeResult::Unavailable);
+        assert_eq!(second, SourceRootProbeResult::Busy);
+        assert_eq!(starts.load(Ordering::SeqCst), 1);
+
+        let healthy = run_cancellable_probe(
+            &PROBE_REGISTRY,
+            "healthy".to_string(),
+            &AtomicBool::new(false),
+            Duration::from_millis(20),
+            || true,
+        );
+        assert_eq!(healthy, SourceRootProbeResult::Available);
+    }
+
+    #[test]
+    fn missing_results_are_deferred_when_a_root_disconnects_after_preflight() {
+        let root = "D:/Library".to_string();
+        let mut results = vec![
+            ThumbnailItemResult::MissingSource {
+                id: "missing-a".to_string(),
+                source_root: Some(root.clone()),
+            },
+            ThumbnailItemResult::MissingSource {
+                id: "missing-b".to_string(),
+                source_root: Some(root.clone()),
+            },
+        ];
+        let mut availability = HashMap::from([(normalize_source_root_identity(&root), true)]);
+        let mut probe_count = 0;
+
+        revalidate_missing_source_roots(
+            &mut results,
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                SourceRootProbeResult::Unavailable
+            },
+        );
+
+        assert_eq!(probe_count, 1);
+        assert!(results
+            .iter()
+            .all(|result| matches!(result, ThumbnailItemResult::Skipped)));
+    }
+
+    #[test]
+    fn non_invoke_lookalike_path_is_marked_missing() {
+        let library_root = temp_thumbnail_dir("non-invoke-lookalike");
+        let candidate = ThumbnailCandidate {
+            id: "ordinary-library-image".to_string(),
+            path: library_root
+                .join("outputs")
+                .join("images")
+                .join("missing.png")
+                .to_string_lossy()
+                .to_string(),
+            timestamp: 1,
+            invoke_images_root: None,
+            source_root: None,
+            source_root_available: None,
+        };
+
+        let item = optimize_thumbnail_candidate(
+            &candidate,
+            &temp_thumbnail_dir("unused-thumb-output").to_string_lossy(),
+            &AtomicBool::new(false),
+        );
+
+        assert!(matches!(item, ThumbnailItemResult::MissingSource { .. }));
     }
 
     #[test]

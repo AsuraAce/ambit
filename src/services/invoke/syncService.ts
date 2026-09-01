@@ -1,6 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { commands, type InvokeImageReferenceSet } from '../../bindings';
+import { commands, type FileMetadataProbe, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
 import { fetchBoardMappings, type InvokeBoardInfo } from './connection';
@@ -26,6 +26,8 @@ import { insertImagesBatch } from '../db';
 import {
     getFlatInvokeImageIdsForRoot,
     getImagesByIds,
+    getRemovedImagesByIds,
+    getRemovedInvokeImageNames,
     ImagePathIdentityMove,
     moveImagePathIdentities,
     moveImagePathIdentity,
@@ -246,6 +248,20 @@ export const syncImages = async (
     const pathResolver = createInvokeImagePathResolver(imagesRoot, async () =>
         unwrap(commands.listInvokeaiImages(imagesRoot))
     );
+    const outputImagesRoot = `${imagesRoot.replace(/[\\/]+$/, '')}/outputs/images`;
+    const probeOutputImagesRoot = async (): Promise<boolean | null> => {
+        try {
+            const [probe] = await unwrap(commands.probeFileMetadataBulk([outputImagesRoot]));
+            if (probe?.status === 'present' && !probe.isFile) return true;
+            if (probe?.status === 'present') return null;
+            if (probe?.status === 'missing') return false;
+            return null;
+        } catch (error) {
+            console.warn('[InvokeAI Sync] Failed to verify the InvokeAI image root; preserving existing missing-file state.', error);
+            return null;
+        }
+    };
+    const outputImagesRootAvailable = await probeOutputImagesRoot();
     const reconciledExistingCount = options.reconcileSourceFacts && options.mode !== 'live'
         ? await reconcileInvokeSourceFacts({
             db: invokeDb,
@@ -621,21 +637,32 @@ export const syncImages = async (
             ...legacyFlatPaths.filter((path): path is string => !!path)
         ]));
 
-        let sizes: number[] = [];
+        let pathProbes: FileMetadataProbe[] = [];
         const fileSizeProbeStartedAt = liveWatchNow();
         if (batchPaths.length > 0) {
             try {
-                sizes = await unwrap(commands.getFileSizesBulk(batchPaths));
-            } catch (e) {
-                sizes = new Array(batchPaths.length).fill(0);
+                pathProbes = await unwrap(commands.probeFileMetadataBulk(batchPaths));
+            } catch (error) {
+                console.warn('[InvokeAI Sync] Failed to verify InvokeAI source image paths.', error);
+                throw new Error('Failed to verify InvokeAI source image paths', { cause: error });
             }
+        }
+        let batchRootAvailable = outputImagesRootAvailable;
+        if (pathProbes.some(probe => probe.status === 'missing')) {
+            batchRootAvailable = await probeOutputImagesRoot();
         }
         const fileSizeProbeMs = elapsedMs(fileSizeProbeStartedAt);
 
         const existingLookupStartedAt = liveWatchNow();
-        const existingImagesInBatch = await getImagesByIds(lookupPaths, { includeOwnerHidden: true });
+        const [existingImagesInBatch, removedImagesInBatch, removedInvokeImageNames] = await Promise.all([
+            getImagesByIds(lookupPaths, { includeOwnerHidden: true }),
+            getRemovedImagesByIds(lookupPaths),
+            getRemovedInvokeImageNames(scope.dbPath, rows.map(row => row.image_name)),
+        ]);
         const existingMap = new Map(existingImagesInBatch.map(img => [img.id, img]));
-        const sizeByPath = new Map(batchPaths.map((path, index) => [path, sizes[index] || 0]));
+        const probeByPath = new Map(batchPaths.map((path, index) => [path, pathProbes[index]]));
+        const tombstonedIds = new Set(removedImagesInBatch.map(img => normalizePath(img.id)));
+        const tombstonedInvokeImageNames = new Set(removedInvokeImageNames);
         const existingLookupMs = elapsedMs(existingLookupStartedAt);
 
         const currentBatch: AIImage[] = [];
@@ -650,8 +677,17 @@ export const syncImages = async (
             }
 
             const fullPath = resolvedPath.absolutePath;
-            const fileSize = sizeByPath.get(fullPath) || 0;
+            const pathProbe = probeByPath.get(fullPath);
             const legacyFlatPath = legacyFlatPaths[i];
+            const normalizedFullPath = normalizePath(fullPath);
+            const normalizedLegacyFlatPath = legacyFlatPath ? normalizePath(legacyFlatPath) : undefined;
+            if (tombstonedInvokeImageNames.has(row.image_name)
+                || tombstonedIds.has(normalizedFullPath)
+                || (normalizedLegacyFlatPath && tombstonedIds.has(normalizedLegacyFlatPath))) {
+                processed++;
+                continue;
+            }
+            const sourceMissing = pathProbe?.status === 'missing' && batchRootAvailable === true;
             let pathRepaired = false;
 
             try {
@@ -693,11 +729,19 @@ export const syncImages = async (
                                 thumbnailUrl: repairedThumbnailPath,
                                 thumbnailSource: repairedThumbnailPath === fullPath ? undefined : 'invokeai',
                                 filename: row.image_name.split(/[\\/]/).pop() as string,
-                                isMissing: false
+                                isMissing: legacyExisting.isMissing
                             };
                             existingMap.set(fullPath, existing);
                         }
                     }
+                }
+                const fileSize = pathProbe?.status === 'present' && pathProbe.isFile
+                    ? pathProbe.size
+                    : existing?.fileSize ?? 0;
+
+                if (sourceMissing && !existing) {
+                    processed++;
+                    continue;
                 }
 
                 if (options.syncFavorites && options.starredAs && options.starredAs !== 'none') {
@@ -775,6 +819,11 @@ export const syncImages = async (
                 }
 
                 let needsUpdate = false;
+                const isMissing = pathProbe?.status === 'present' && pathProbe.isFile
+                    ? false
+                    : pathProbe?.status === 'missing' && batchRootAvailable === true
+                        ? true
+                        : existing?.isMissing || false;
                 if (!existing) {
                     needsUpdate = true;
                 } else {
@@ -813,6 +862,7 @@ export const syncImages = async (
                     if ((existing.invokeImageCategory ?? null) !== (row.image_category ?? null)) needsUpdate = true;
                     if ((existing.invokeImageOrigin ?? null) !== (row.image_origin ?? null)) needsUpdate = true;
                     if ((existing.invokeOwnerId ?? null) !== (row.user_id?.trim() || null)) needsUpdate = true;
+                    if ((existing.isMissing || false) !== isMissing) needsUpdate = true;
                 }
 
                 const referenceExtraction = extractInvokeImageReferences(row.metadata_blob);
@@ -872,7 +922,7 @@ export const syncImages = async (
                     isFavorite,
                     isPinned,
                     isDeleted: existing?.isDeleted || false,
-                    isMissing: false,
+                    isMissing,
                     boardId: boardId,
                     notes: existing?.notes, // Preserve user notes
                     metadata: finalMetadata,
