@@ -842,7 +842,7 @@ describe('MaintenanceView', () => {
         });
     });
 
-    it('reports regenerate-all failures without refreshing completed thumbnail consumers', async () => {
+    it('reports regenerate-all failures and refreshes any thumbnails committed by earlier batches', async () => {
         maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails']);
         maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
         maintenanceDataMock.unoptimizedTotalCount = 1;
@@ -858,7 +858,7 @@ describe('MaintenanceView', () => {
                 'Thumbnail optimization failed partway through',
                 'error'
             ));
-            expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).not.toHaveBeenCalled();
+            expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).toHaveBeenCalledOnce();
             expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
             expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
             expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();

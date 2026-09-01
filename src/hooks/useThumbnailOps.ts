@@ -76,15 +76,20 @@ export const useThumbnailOps = ({
                     : `Successfully optimized ${updates.length} of ${candidates.length} thumbnails.`;
                 addToast(msg, "success");
             }
-            await refreshThumbnailConsumers({
-                queryClient,
-                refreshCollectionThumbnails,
-                logPrefix: '[Thumb]',
-            });
         } catch (e) {
             console.error("Regeneration error", e);
             addToast("Thumbnail optimization failed partway through", "error");
         } finally {
+            try {
+                await refreshThumbnailConsumers({
+                    queryClient,
+                    refreshCollectionThumbnails,
+                    logPrefix: '[Thumb]',
+                });
+            } catch (error) {
+                console.error('[Thumb] Thumbnail changes were saved, but consumers failed to refresh', error);
+                addToast('Thumbnail changes were saved, but the library view failed to refresh', 'error');
+            }
             setIsRegeneratingThumbnails(false);
             setThumbnailProgress(null);
             setThumbnailAbortController(null);

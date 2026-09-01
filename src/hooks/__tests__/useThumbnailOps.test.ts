@@ -170,12 +170,14 @@ describe('useThumbnailOps', () => {
     it('reports service failures and always clears regeneration state', async () => {
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         mocks.regenerate.mockRejectedValue(new Error('generation failed'));
-        const { result } = setup([image('one')]);
+        const { result, refreshCollectionThumbnails } = setup([image('one')]);
 
         await act(async () => result.current.regenerateThumbnails());
 
         expect(error).toHaveBeenCalledWith('Regeneration error', expect.any(Error));
         expect(mocks.addToast).toHaveBeenCalledWith('Thumbnail optimization failed partway through', 'error');
+        expect(refreshCollectionThumbnails).toHaveBeenCalledOnce();
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
         expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
         error.mockRestore();
     });

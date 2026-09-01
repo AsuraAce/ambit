@@ -487,15 +487,20 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     params,
                     includeUpgradeable
                 );
-                await refreshThumbnailConsumers({
-                    queryClient,
-                    refreshCollectionThumbnails,
-                    logPrefix: '[Maintenance]',
-                });
             } catch (error) {
                 console.error('[Maintenance] Thumbnail regeneration failed', error);
                 addToast('Thumbnail optimization failed partway through', 'error');
             } finally {
+                try {
+                    await refreshThumbnailConsumers({
+                        queryClient,
+                        refreshCollectionThumbnails,
+                        logPrefix: '[Maintenance]',
+                    });
+                } catch (error) {
+                    console.error('[Maintenance] Thumbnail changes were saved, but consumers failed to refresh', error);
+                    addToast('Thumbnail changes were saved, but the library view failed to refresh', 'error');
+                }
                 setIsRegeneratingThumbnails(false);
                 setThumbnailProgress(null);
                 setThumbnailAbortController(null);
