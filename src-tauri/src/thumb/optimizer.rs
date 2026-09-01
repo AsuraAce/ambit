@@ -192,6 +192,14 @@ struct BatchStats {
 
 struct SourceRootProbeGuard(&'static AtomicBool);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SourceRootProbeResult {
+    Available,
+    Unavailable,
+    Busy,
+    Cancelled,
+}
+
 impl Drop for SourceRootProbeGuard {
     fn drop(&mut self) {
         self.0.store(false, Ordering::SeqCst);
@@ -846,7 +854,7 @@ fn resolve_candidate_source_roots<F>(
     mut probe: F,
 ) -> bool
 where
-    F: FnMut(&Path, &AtomicBool) -> Option<bool>,
+    F: FnMut(&Path, &AtomicBool) -> SourceRootProbeResult,
 {
     for candidate in candidates {
         if is_cancelled.load(Ordering::SeqCst) {
@@ -874,8 +882,14 @@ where
         let is_root_available = match availability.get(&key) {
             Some(is_available) => *is_available,
             None => {
-                let Some(is_root_available) = probe(Path::new(&source_root), is_cancelled) else {
-                    return false;
+                let is_root_available = match probe(Path::new(&source_root), is_cancelled) {
+                    SourceRootProbeResult::Available => true,
+                    SourceRootProbeResult::Unavailable => false,
+                    SourceRootProbeResult::Busy => {
+                        candidate.source_root_available = None;
+                        continue;
+                    }
+                    SourceRootProbeResult::Cancelled => return false,
                 };
                 availability.insert(key, is_root_available);
                 is_root_available
@@ -886,7 +900,7 @@ where
     true
 }
 
-fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> Option<bool> {
+fn probe_source_root_availability(path: &Path, is_cancelled: &AtomicBool) -> SourceRootProbeResult {
     let path = path.to_path_buf();
     run_cancellable_probe(
         &SOURCE_ROOT_PROBE_IN_FLIGHT,
@@ -901,18 +915,18 @@ fn run_cancellable_probe<F>(
     is_cancelled: &AtomicBool,
     timeout: Duration,
     probe: F,
-) -> Option<bool>
+) -> SourceRootProbeResult
 where
     F: FnOnce() -> bool + Send + 'static,
 {
     if is_cancelled.load(Ordering::SeqCst) {
-        return None;
+        return SourceRootProbeResult::Cancelled;
     }
     if probe_in_flight
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
-        return Some(false);
+        return SourceRootProbeResult::Busy;
     }
     let (sender, receiver) = mpsc::sync_channel(1);
     if std::thread::Builder::new()
@@ -924,20 +938,23 @@ where
         .is_err()
     {
         probe_in_flight.store(false, Ordering::SeqCst);
-        return Some(false);
+        return SourceRootProbeResult::Unavailable;
     }
     let started_at = Instant::now();
     loop {
         if is_cancelled.load(Ordering::SeqCst) {
-            return None;
+            return SourceRootProbeResult::Cancelled;
         }
         let remaining = timeout.saturating_sub(started_at.elapsed());
         if remaining.is_zero() {
-            return Some(false);
+            return SourceRootProbeResult::Unavailable;
         }
         match receiver.recv_timeout(std::cmp::min(SOURCE_ROOT_CANCEL_POLL, remaining)) {
-            Ok(is_available) => return Some(is_available),
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Some(false),
+            Ok(true) => return SourceRootProbeResult::Available,
+            Ok(false) => return SourceRootProbeResult::Unavailable,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return SourceRootProbeResult::Unavailable;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
     }
@@ -949,9 +966,10 @@ fn revalidate_missing_source_roots<F>(
     is_cancelled: &AtomicBool,
     mut probe: F,
 ) where
-    F: FnMut(&Path, &AtomicBool) -> Option<bool>,
+    F: FnMut(&Path, &AtomicBool) -> SourceRootProbeResult,
 {
     let mut roots = HashMap::new();
+    let mut deferred_roots = HashMap::new();
     for result in results.iter() {
         if let ThumbnailItemResult::MissingSource {
             source_root: Some(root),
@@ -968,15 +986,25 @@ fn revalidate_missing_source_roots<F>(
         if availability.get(&key) == Some(&false) {
             continue;
         }
-        let Some(is_available) = probe(Path::new(&root), is_cancelled) else {
-            for result in results.iter_mut() {
-                if matches!(result, ThumbnailItemResult::MissingSource { .. }) {
-                    *result = ThumbnailItemResult::Skipped;
-                }
+        match probe(Path::new(&root), is_cancelled) {
+            SourceRootProbeResult::Available => {
+                availability.insert(key, true);
             }
-            return;
-        };
-        availability.insert(key, is_available);
+            SourceRootProbeResult::Unavailable => {
+                availability.insert(key, false);
+            }
+            SourceRootProbeResult::Busy => {
+                deferred_roots.insert(key, ());
+            }
+            SourceRootProbeResult::Cancelled => {
+                for result in results.iter_mut() {
+                    if matches!(result, ThumbnailItemResult::MissingSource { .. }) {
+                        *result = ThumbnailItemResult::Skipped;
+                    }
+                }
+                return;
+            }
+        }
     }
 
     for result in results.iter_mut() {
@@ -984,7 +1012,10 @@ fn revalidate_missing_source_roots<F>(
             ThumbnailItemResult::MissingSource {
                 source_root: Some(root),
                 ..
-            } => availability.get(&normalize_source_root_identity(root)) == Some(&false),
+            } => {
+                let key = normalize_source_root_identity(root);
+                availability.get(&key) == Some(&false) || deferred_roots.contains_key(&key)
+            }
             _ => false,
         };
         if should_defer {
@@ -2365,7 +2396,7 @@ mod tests {
             &AtomicBool::new(false),
             |_, _| {
                 probe_count += 1;
-                Some(false)
+                SourceRootProbeResult::Unavailable
             },
         ));
 
@@ -2381,6 +2412,49 @@ mod tests {
             ),
             ThumbnailItemResult::Skipped
         )));
+    }
+
+    #[test]
+    fn busy_probe_does_not_mark_an_unrelated_root_unavailable() {
+        let roots = vec!["Z:/Stalled".to_string(), "D:/Healthy".to_string()];
+        let mut candidates = vec![
+            ThumbnailCandidate {
+                id: "stalled".to_string(),
+                path: "Z:/Stalled/a.png".to_string(),
+                timestamp: 2,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+            ThumbnailCandidate {
+                id: "healthy".to_string(),
+                path: "D:/Healthy/b.png".to_string(),
+                timestamp: 1,
+                invoke_images_root: None,
+                source_root: None,
+                source_root_available: None,
+            },
+        ];
+        let mut availability = HashMap::new();
+        let mut probe_count = 0;
+
+        assert!(resolve_candidate_source_roots(
+            &mut candidates,
+            &roots,
+            &mut availability,
+            &AtomicBool::new(false),
+            |_, _| {
+                probe_count += 1;
+                if probe_count == 1 {
+                    SourceRootProbeResult::Unavailable
+                } else {
+                    SourceRootProbeResult::Busy
+                }
+            },
+        ));
+
+        assert_eq!(candidates[0].source_root_available, Some(false));
+        assert_eq!(candidates[1].source_root_available, None);
     }
 
     #[test]
@@ -2419,7 +2493,7 @@ mod tests {
             },
         );
 
-        assert_eq!(result, None);
+        assert_eq!(result, SourceRootProbeResult::Cancelled);
         assert!(started_at.elapsed() < Duration::from_millis(250));
     }
 
@@ -2450,8 +2524,8 @@ mod tests {
             },
         );
 
-        assert_eq!(first, Some(false));
-        assert_eq!(second, Some(false));
+        assert_eq!(first, SourceRootProbeResult::Unavailable);
+        assert_eq!(second, SourceRootProbeResult::Busy);
         assert_eq!(starts.load(Ordering::SeqCst), 1);
     }
 
@@ -2477,7 +2551,7 @@ mod tests {
             &AtomicBool::new(false),
             |_, _| {
                 probe_count += 1;
-                Some(false)
+                SourceRootProbeResult::Unavailable
             },
         );
 
