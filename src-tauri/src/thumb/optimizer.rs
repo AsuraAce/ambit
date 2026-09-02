@@ -335,6 +335,7 @@ struct ThumbnailCandidate {
     id: String,
     path: String,
     timestamp: i64,
+    thumbnail_path: Option<String>,
     invoke_images_root: Option<String>,
     source_root: Option<String>,
     source_root_available: Option<bool>,
@@ -1226,7 +1227,12 @@ fn optimize_thumbnail_candidate(
         Ok(_) => {}
     }
 
-    match super::generate_thumbnail_with_force(&candidate.path, thumbnail_dir, force) {
+    match super::generate_thumbnail_for_repair(
+        &candidate.path,
+        thumbnail_dir,
+        force,
+        candidate.thumbnail_path.as_deref(),
+    ) {
         Ok(thumbnail) => ThumbnailItemResult::Success {
             id: candidate.id.clone(),
             thumbnail_path: thumbnail.thumbnail_path,
@@ -1715,6 +1721,7 @@ fn fetch_thumbnail_candidates(
     let retry_cutoff_ms = now_ms - FAILURE_BACKOFF_MS;
     let mut query = format!(
         "SELECT i.id, i.path, COALESCE(i.timestamp, 0) AS timestamp,
+                i.thumbnail_path,
                 (
                     SELECT scope.images_root
                     FROM invoke_owner_scope_state scope
@@ -1748,7 +1755,8 @@ fn fetch_thumbnail_candidates(
                     id: row.get(0)?,
                     path: row.get(1)?,
                     timestamp: row.get(2)?,
-                    invoke_images_root: row.get(3)?,
+                    thumbnail_path: row.get(3)?,
+                    invoke_images_root: row.get(4)?,
                     source_root: None,
                     source_root_available: None,
                 })
@@ -1763,7 +1771,8 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
-                invoke_images_root: row.get(3)?,
+                thumbnail_path: row.get(3)?,
+                invoke_images_root: row.get(4)?,
                 source_root: None,
                 source_root_available: None,
             })
@@ -1828,6 +1837,7 @@ fn load_thumbnail_candidates_for_ids(
     };
     let query = format!(
         "SELECT i.id, i.path, COALESCE(i.timestamp, 0) AS timestamp,
+                i.thumbnail_path,
                 (
                     SELECT scope.images_root
                     FROM invoke_owner_scope_state scope
@@ -1853,7 +1863,8 @@ fn load_thumbnail_candidates_for_ids(
             id: row.get(0)?,
             path: row.get(1)?,
             timestamp: row.get(2)?,
-            invoke_images_root: row.get(3)?,
+            thumbnail_path: row.get(3)?,
+            invoke_images_root: row.get(4)?,
             source_root: None,
             source_root_available: None,
         })
@@ -2137,6 +2148,10 @@ mod tests {
                 .map(|item| item.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["current"]
+        );
+        assert_eq!(
+            forced[0].thumbnail_path.as_deref(),
+            Some("C:/thumbs/current.webp")
         );
     }
 
@@ -2853,6 +2868,108 @@ mod tests {
     }
 
     #[test]
+    fn forced_repair_persistence_failure_preserves_active_thumbnail_and_bounded_slots() {
+        let temp_root = temp_thumbnail_dir("persistence-failure");
+        let _ = fs::remove_dir_all(&temp_root);
+        let thumbnail_dir = temp_root.join("thumbs");
+        fs::create_dir_all(&thumbnail_dir).expect("thumbnail directory");
+        let source_path = temp_root.join("source.png");
+        image::ImageBuffer::from_pixel(8, 8, image::Rgba([0_u8, 0, 255, 255]))
+            .save(&source_path)
+            .expect("source image");
+        let canonical_path = crate::thumb::get_thumbnail_path(
+            source_path.to_str().expect("source path"),
+            thumbnail_dir.to_str().expect("thumbnail directory"),
+        );
+        fs::write(&canonical_path, b"known-good-thumbnail").expect("active thumbnail fixture");
+
+        let mut conn = setup_queue_db();
+        insert_image(
+            &conn,
+            "persistence-failure",
+            canonical_path.to_str(),
+            Some("ambit"),
+            CURRENT_THUMBNAIL_VERSION,
+            20,
+        );
+        conn.execute(
+            "UPDATE images SET path = ?1 WHERE id = 'persistence-failure'",
+            [source_path.to_string_lossy().as_ref()],
+        )
+        .expect("set source path");
+        let candidate = load_thumbnail_candidates_for_ids(
+            &conn,
+            &["persistence-failure".to_string()],
+            true,
+            false,
+            0,
+        )
+        .expect("load forced candidate")
+        .pop()
+        .expect("forced candidate");
+
+        let outcome = optimize_thumbnail_candidate(
+            &candidate,
+            thumbnail_dir.to_str().expect("thumbnail directory"),
+            true,
+            &AtomicBool::new(false),
+        );
+        let replacement_path = match &outcome {
+            ThumbnailItemResult::Success { thumbnail_path, .. } => thumbnail_path.clone(),
+            other => panic!("expected successful generation, got {other:?}"),
+        };
+        assert_ne!(replacement_path, canonical_path.to_string_lossy());
+        assert_eq!(
+            fs::read(&canonical_path).expect("active thumbnail bytes"),
+            b"known-good-thumbnail"
+        );
+
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_thumbnail_path_update
+             BEFORE UPDATE OF thumbnail_path ON images
+             WHEN OLD.id = 'persistence-failure'
+             BEGIN
+                 SELECT RAISE(ABORT, 'forced persistence failure');
+             END;",
+        )
+        .expect("failure trigger");
+        let error = match persist_thumbnail_results(&mut conn, &[outcome], 100) {
+            Ok(_) => panic!("persistence must fail"),
+            Err(error) => error,
+        };
+        assert!(error.contains("forced persistence failure"));
+
+        let stored_path: String = conn
+            .query_row(
+                "SELECT thumbnail_path FROM images WHERE id = 'persistence-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("stored active path");
+        assert_eq!(stored_path, canonical_path.to_string_lossy());
+        assert_eq!(
+            fs::read(&canonical_path).expect("preserved active bytes"),
+            b"known-good-thumbnail"
+        );
+
+        let retry = optimize_thumbnail_candidate(
+            &candidate,
+            thumbnail_dir.to_str().expect("thumbnail directory"),
+            true,
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(retry, ThumbnailItemResult::Success { .. }));
+        let slot_count = fs::read_dir(&thumbnail_dir)
+            .expect("thumbnail slots")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "webp"))
+            .count();
+        assert_eq!(slot_count, 2);
+
+        fs::remove_dir_all(temp_root).expect("clean up test directory");
+    }
+
+    #[test]
     fn absent_source_becomes_missing_without_losing_its_cached_thumbnail() {
         let mut conn = setup_queue_db();
         insert_image(
@@ -3384,6 +3501,7 @@ mod tests {
                     id: row.get(0)?,
                     path: row.get(1)?,
                     timestamp: row.get(2)?,
+                    thumbnail_path: None,
                     invoke_images_root: None,
                     source_root: None,
                     source_root_available: None,
@@ -3401,6 +3519,10 @@ mod tests {
             candidates.len()
         );
         candidates.truncate(3_500);
+        for candidate in &mut candidates {
+            let active_path = crate::thumb::get_thumbnail_path(&candidate.path, &thumbnail_dir);
+            candidate.thumbnail_path = Some(active_path.to_string_lossy().to_string());
+        }
         let mut benchmark_conn = setup_queue_db();
         for candidate in &candidates {
             insert_image(
@@ -3455,6 +3577,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
             timestamp: 1,
+            thumbnail_path: None,
             invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
             source_root: None,
             source_root_available: Some(false),
@@ -3478,6 +3601,7 @@ mod tests {
                 id: "offline-a".to_string(),
                 path: "D:/Offline Library/a.png".to_string(),
                 timestamp: 2,
+                thumbnail_path: None,
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
@@ -3486,6 +3610,7 @@ mod tests {
                 id: "offline-b".to_string(),
                 path: "D:/Offline Library/nested/b.png".to_string(),
                 timestamp: 1,
+                thumbnail_path: None,
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
@@ -3528,6 +3653,7 @@ mod tests {
                 id: "stalled".to_string(),
                 path: "Z:/Stalled/a.png".to_string(),
                 timestamp: 2,
+                thumbnail_path: None,
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
@@ -3536,6 +3662,7 @@ mod tests {
                 id: "healthy".to_string(),
                 path: "D:/Healthy/b.png".to_string(),
                 timestamp: 1,
+                thumbnail_path: None,
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
@@ -3692,6 +3819,7 @@ mod tests {
                 .to_string_lossy()
                 .to_string(),
             timestamp: 1,
+            thumbnail_path: None,
             invoke_images_root: None,
             source_root: None,
             source_root_available: None,

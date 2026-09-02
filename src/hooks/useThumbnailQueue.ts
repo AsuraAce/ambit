@@ -74,6 +74,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const mountedRef = useRef(true);
     const scheduledIdleCancelRef = useRef<(() => void) | null>(null);
     const jobDiagnosticRef = useRef<BackgroundDiagnosticHandle | null>(null);
+    const consumerRefreshScheduledRef = useRef(false);
     const browserMockMode = isBrowserMockMode();
     const [resumeSignal, setResumeSignal] = useState(0);
     const [postRunRetrySignal, setPostRunRetrySignal] = useState(0);
@@ -232,14 +233,23 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         }
     }, [setBackgroundHealingDetails]);
 
-    const refreshThumbnailConsumers = useCallback(async (optimized: number, missing: number) => {
-        if (optimized <= 0 && missing <= 0) return;
+    const refreshThumbnailConsumers = useCallback(async (optimized: number, missing: number, force = false) => {
+        if (!force && optimized <= 0 && missing <= 0) return;
         await refreshCommittedThumbnailConsumers({
             queryClient,
             refreshCollectionThumbnails,
             logPrefix: '[ThumbnailQueue]',
         });
     }, [queryClient, refreshCollectionThumbnails]);
+
+    const scheduleThumbnailConsumerRefresh = useCallback((optimized: number, missing: number, force = false) => {
+        if (!force && optimized <= 0 && missing <= 0) return;
+        if (consumerRefreshScheduledRef.current) return;
+        consumerRefreshScheduledRef.current = true;
+        void refreshThumbnailConsumers(optimized, missing, force).catch(refreshError => {
+            console.error('[ThumbnailQueue] Smart thumbnail changes may have been saved, but consumers failed to refresh', refreshError);
+        });
+    }, [refreshThumbnailConsumers]);
 
     const handleCompletion = useCallback(async (result: ThumbnailOptimizationResult) => {
         if (completionHandledRef.current) return;
@@ -269,6 +279,9 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 retryAfterCurrentRunRef.current = false;
                 setResumeSignal(signal => signal + 1);
             }
+
+            scheduleThumbnailConsumerRefresh(result.optimized, missing);
+
             return;
         }
 
@@ -317,7 +330,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         });
         setBackgroundHealingDetails(null);
 
-        void refreshThumbnailConsumers(result.optimized, missing);
+        scheduleThumbnailConsumerRefresh(result.optimized, missing);
 
         await sleep(COMPLETE_VISIBLE_MS);
 
@@ -334,7 +347,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         }
     }, [
         enableAutoThumbnailHealing,
-        refreshThumbnailConsumers,
+        scheduleThumbnailConsumerRefresh,
         setBackgroundHealingActive,
         setBackgroundHealingDetails,
         setBackgroundHealingPaused,
@@ -489,6 +502,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
 
         isRunningRef.current = true;
         completionHandledRef.current = false;
+        consumerRefreshScheduledRef.current = false;
         cancelRequestedRef.current = false;
         restartRequestedRef.current = false;
         runningConfigRef.current = optimizerConfig;
@@ -529,6 +543,9 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                     error: error instanceof Error ? error.message : String(error)
                 });
                 jobDiagnosticRef.current = null;
+
+                scheduleThumbnailConsumerRefresh(0, 0, true);
+
                 return;
             }
 
@@ -546,10 +563,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             setBackgroundHealingPaused(false);
             setBackgroundHealingProgress(null);
             setBackgroundHealingDetails(null);
+
+            scheduleThumbnailConsumerRefresh(0, 0, true);
         }
     }, [
         addToast,
         handleCompletion,
+        scheduleThumbnailConsumerRefresh,
         setBackendThrottled,
         setBackgroundHealingActive,
         setBackgroundHealingDetails,

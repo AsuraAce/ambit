@@ -355,7 +355,9 @@ describe('useThumbnailQueue behavioral contract', () => {
         }));
     });
 
-    it('clears visible state when the backend reports a non-paused cancellation', async () => {
+    it('clears cancelled state before a committed-consumer refresh settles', async () => {
+        const refresh = deferred<void>();
+        mocks.rebuildThumbnailFacetCache.mockReturnValueOnce(refresh.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
@@ -384,7 +386,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             completeHandler?.({
                 payload: {
                     checked: 1,
-                    optimized: 0,
+                    optimized: 1,
                     reused: 0,
                     failed: 0,
                     skipped: 0,
@@ -397,6 +399,14 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
         expect(useLibraryStore.getState().backgroundHealingProgress).toBeNull();
         expect(useLibraryStore.getState().backgroundHealingDetails).toBeNull();
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+        expect(mocks.refreshCollectionThumbnails).not.toHaveBeenCalled();
+
+        await act(async () => {
+            refresh.resolve();
+            await refresh.promise;
+        });
+        expect(mocks.refreshCollectionThumbnails).toHaveBeenCalledOnce();
     });
 
     it('does not claim thumbnail work when the thumbnail directory is unavailable', async () => {
@@ -768,6 +778,42 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().backgroundHealingPaused).toBe(true);
     });
 
+    it('refreshes consumers when Smart rejects after reporting possible committed work', async () => {
+        vi.useFakeTimers();
+        const job = deferred<never>();
+        mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        renderHook(() => useThumbnailQueue());
+        await advanceStartup();
+
+        const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
+        act(() => progressHandler?.({ payload: {
+            checked: 100,
+            total: null,
+            optimized: 100,
+            missing: 0,
+            reused: 0,
+            failed: 0,
+            skipped: 0,
+            imagesPerSecond: 10,
+            batchMs: 100,
+            dbMs: 50,
+            encodeMs: 50,
+            candidateFetchMs: 5,
+            profile: 'balanced',
+            phase: 'processing',
+            message: 'Optimized 100 thumbnails',
+            isThrottled: false,
+        } }));
+        await act(async () => {
+            job.reject(new Error('later batch failed'));
+            await Promise.resolve();
+        });
+
+        expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+        expect(mocks.refreshCollectionThumbnails).toHaveBeenCalledOnce();
+    });
+
     it('updates backend throttling when image query activity changes', async () => {
         vi.useFakeTimers();
         const job = deferred<never>();
@@ -1003,6 +1049,57 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
         expect(useLibraryStore.getState().backgroundHealingProgress).toBeNull();
     });
+
+    it.each(['resolve', 'reject'] as const)(
+        'refreshes consumers once when ActivityDock cancellation is followed by job %s',
+        async (terminal) => {
+            vi.useFakeTimers();
+            const job = deferred<{
+                status: 'ok';
+                data: {
+                    checked: number;
+                    optimized: number;
+                    reused: number;
+                    failed: number;
+                    skipped: number;
+                    durationMs: number;
+                    wasCancelled: boolean;
+                };
+            }>();
+            mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
+            const { useThumbnailQueue } = await import('../useThumbnailQueue');
+            renderHook(() => useThumbnailQueue());
+            await advanceStartup();
+
+            act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
+            await act(async () => Promise.resolve());
+            expect(mocks.rebuildThumbnailFacetCache).not.toHaveBeenCalled();
+            expect(mocks.refreshCollectionThumbnails).not.toHaveBeenCalled();
+
+            await act(async () => {
+                if (terminal === 'resolve') {
+                    job.resolve({
+                        status: 'ok',
+                        data: {
+                            checked: 1,
+                            optimized: 1,
+                            reused: 0,
+                            failed: 0,
+                            skipped: 0,
+                            durationMs: 100,
+                            wasCancelled: true,
+                        },
+                    });
+                } else {
+                    job.reject(new Error('cancelled'));
+                }
+                await Promise.resolve();
+            });
+
+            expect(mocks.rebuildThumbnailFacetCache).toHaveBeenCalledOnce();
+            expect(mocks.refreshCollectionThumbnails).toHaveBeenCalledOnce();
+        }
+    );
 
     it('does not overlap a new run while ActivityDock cancellation is still settling', async () => {
         vi.useFakeTimers();

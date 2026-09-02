@@ -386,6 +386,14 @@ fn save_images_batch_inner(
 
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
+        let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
+            AND excluded.thumbnail_source = 'ambit'
+            AND LOWER(excluded.thumbnail_path) LIKE '%.webp'
+            AND LOWER(excluded.thumbnail_path) NOT LIKE '%.replacement.webp'
+            AND LOWER(images.thumbnail_path) = LOWER(
+                SUBSTR(excluded.thumbnail_path, 1, LENGTH(excluded.thumbnail_path) - 5)
+                || '.replacement.webp'
+            )";
         let save_sql =
             "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
@@ -415,34 +423,43 @@ fn save_images_batch_inner(
                     file_size=excluded.file_size,
                     file_hash=excluded.file_hash,
                     metadata_json=excluded.metadata_json,
-                    thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
+                    thumbnail_path=CASE
+                        WHEN (__PRESERVE_ACTIVE_REPLACEMENT__) THEN images.thumbnail_path
+                        ELSE COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path)
+                    END,
                     micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
                     thumbnail_source=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN excluded.thumbnail_source
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN excluded.thumbnail_source
                         ELSE images.thumbnail_source
                     END,
                     thumbnail_version=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
                              AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__)
                              AND excluded.thumbnail_source = 'ambit' THEN excluded.thumbnail_version
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN 0
                         ELSE images.thumbnail_version
                     END,
                     thumbnail_failure_count=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN 0
                         ELSE images.thumbnail_failure_count
                     END,
                     thumbnail_last_error=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN NULL
                         ELSE images.thumbnail_last_error
                     END,
                     thumbnail_last_attempt_at=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN NULL
                         ELSE images.thumbnail_last_attempt_at
                     END,
                     is_favorite=excluded.is_favorite,
@@ -490,7 +507,8 @@ fn save_images_batch_inner(
                     OR images.timestamp != excluded.timestamp
                     OR images.file_size != excluded.file_size
                     OR images.file_hash IS NOT excluded.file_hash
-                    OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path)
+                    OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__))
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.is_missing IS NOT excluded.is_missing
@@ -505,7 +523,11 @@ fn save_images_batch_inner(
                     OR (excluded.invoke_source_id IS NOT NULL AND images.invoke_source_id IS NOT excluded.invoke_source_id)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
-        .replace("__INVOKE_SOURCE_PATH_MATCHES_SCOPE__", &invoke_source_path_matches_scope);
+        .replace("__INVOKE_SOURCE_PATH_MATCHES_SCOPE__", &invoke_source_path_matches_scope)
+        .replace(
+            "__PRESERVE_ACTIVE_REPLACEMENT__",
+            preserve_active_replacement_sql,
+        );
         let mut stmt = tx.prepare_cached(&save_sql).map_err(|e| e.to_string())?;
 
         let mut delete_loras = tx
@@ -4736,6 +4758,34 @@ mod tests {
         let row = fetch_thumbnail_state(&conn, "img-same");
         assert_eq!(row.1.as_deref(), Some("ambit"));
         assert_eq!(row.2, 1);
+    }
+
+    #[test]
+    fn save_images_batch_preserves_active_replacement_slot_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+        repaired.thumbnail_path = "C:/thumbs/img-rescan.replacement.webp".to_string();
+        super::save_images_batch_inner(&conn, &[repaired]).expect("save repaired row");
+
+        let mut rescanned =
+            create_image_record("img-rescan", 101, 201, r#"{"positivePrompt":"rescanned"}"#);
+        rescanned.thumbnail_path = "C:/thumbs/img-rescan.webp".to_string();
+        super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-rescan");
+        assert_eq!(row.0, "C:/thumbs/img-rescan.replacement.webp");
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+        let metadata: String = conn
+            .query_row(
+                "SELECT metadata_json FROM images WHERE id = 'img-rescan'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rescanned metadata");
+        assert_eq!(metadata, r#"{"positivePrompt":"rescanned"}"#);
     }
 
     #[test]
