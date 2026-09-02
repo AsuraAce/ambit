@@ -310,6 +310,26 @@ describe('thumbnailService', () => {
         expect(select).not.toHaveBeenCalledWith(expect.stringContaining('FROM scoped_images'));
         expect(mocks.remove).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/orphan.webp');
         expect(mocks.remove).toHaveBeenCalledTimes(1);
+        expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledOnce();
+        expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
+    });
+
+    it('waits for native thumbnail publication to settle before enumerating orphan files', async () => {
+        let releaseOperation!: (value: { status: 'ok'; data: number }) => void;
+        mocks.beginThumbnailRepairOperation.mockReturnValueOnce(new Promise(resolve => {
+            releaseOperation = resolve;
+        }));
+        mocks.readDir.mockResolvedValue([]);
+        const { cleanupOrphanThumbnails } = await import('../thumbnailService');
+
+        const cleanup = cleanupOrphanThumbnails();
+        await vi.waitFor(() => expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledOnce());
+        expect(mocks.readDir).not.toHaveBeenCalled();
+
+        releaseOperation({ status: 'ok', data: 7 });
+        await expect(cleanup).resolves.toBe(0);
+        expect(mocks.readDir).toHaveBeenCalledOnce();
+        expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
     });
 
     it('syncs missing DB thumbnail paths by rescanning existing files and writing one batch update', async () => {

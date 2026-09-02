@@ -239,48 +239,50 @@ export const cleanupOrphanThumbnails = async (): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
-    // Get all thumbnail files on disk
-    let files: { name: string }[];
-    try {
-        files = await readDir(thumbDir);
-    } catch {
-        return 0; // Directory doesn't exist yet
-    }
+    return withThumbnailRepairOperation(undefined, async () => {
+        // Get all thumbnail files on disk only after native publication has settled.
+        let files: { name: string }[];
+        try {
+            files = await readDir(thumbDir);
+        } catch {
+            return 0; // Directory doesn't exist yet
+        }
 
-    // Get all valid thumbnail paths from DB
-    const db = await getDb();
-    const rows = await db.select<{ thumbnail_path: string }[]>(
-        'SELECT thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
-    );
+        // Get all valid thumbnail paths from DB
+        const db = await getDb();
+        const rows = await db.select<{ thumbnail_path: string }[]>(
+            'SELECT thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+        );
 
-    // Build set of valid thumbnail filenames (not full paths, just filenames for comparison)
-    const validFilenames = new Set<string>();
-    for (const row of rows) {
-        const fullPath = normalizePath(row.thumbnail_path);
-        const parts = fullPath.split(/[\\/]/);
-        const filename = parts[parts.length - 1];
-        if (filename) validFilenames.add(filename.toLowerCase());
-    }
+        // Build set of valid thumbnail filenames (not full paths, just filenames for comparison)
+        const validFilenames = new Set<string>();
+        for (const row of rows) {
+            const fullPath = normalizePath(row.thumbnail_path);
+            const parts = fullPath.split(/[\\/]/);
+            const filename = parts[parts.length - 1];
+            if (filename) validFilenames.add(filename.toLowerCase());
+        }
 
-    // Delete orphans
-    let cleaned = 0;
-    for (const file of files) {
-        if (!validFilenames.has(file.name.toLowerCase())) {
-            try {
-                const fullPath = await join(thumbDir, file.name);
-                await remove(fullPath);
-                cleaned++;
-            } catch (e) {
-                console.warn(`[Thumb] Failed to remove orphan: ${file.name}`, e);
+        // Delete orphans
+        let cleaned = 0;
+        for (const file of files) {
+            if (!validFilenames.has(file.name.toLowerCase())) {
+                try {
+                    const fullPath = await join(thumbDir, file.name);
+                    await remove(fullPath);
+                    cleaned++;
+                } catch (e) {
+                    console.warn(`[Thumb] Failed to remove orphan: ${file.name}`, e);
+                }
             }
         }
-    }
 
-    if (cleaned > 0) {
-        console.log(`[Thumb] Cleaned up ${cleaned} orphan thumbnails`);
-    }
+        if (cleaned > 0) {
+            console.log(`[Thumb] Cleaned up ${cleaned} orphan thumbnails`);
+        }
 
-    return cleaned;
+        return cleaned;
+    });
 };
 
 /**

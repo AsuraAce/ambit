@@ -375,6 +375,43 @@ pub fn refresh_privacy_mask_index_for_conn(
     })
 }
 
+fn readable_active_replacement_ids(
+    conn: &Connection,
+    images: &[ImageRecord],
+) -> Result<BTreeSet<String>, String> {
+    let mut readable_ids = BTreeSet::new();
+
+    for chunk in images.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let query = format!(
+            "SELECT id, thumbnail_path
+             FROM images
+             WHERE thumbnail_source = 'ambit'
+               AND LOWER(thumbnail_path) LIKE '%.replacement.webp'
+               AND id IN ({placeholders})"
+        );
+        let ids = chunk
+            .iter()
+            .map(|image| image.id.as_str())
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare(&query).map_err(|error| error.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(ids), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| error.to_string())?;
+
+        for row in rows {
+            let (id, path) = row.map_err(|error| error.to_string())?;
+            if std::fs::File::open(path).is_ok() {
+                readable_ids.insert(id);
+            }
+        }
+    }
+
+    Ok(readable_ids)
+}
+
 fn save_images_batch_inner(
     conn: &rusqlite::Connection,
     images: &[ImageRecord],
@@ -384,10 +421,12 @@ fn save_images_batch_inner(
     {
         use crate::metadata::CURRENT_PARSER_VERSION;
 
+        let readable_replacement_ids = readable_active_replacement_ids(&tx, images)?;
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
         let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
             AND excluded.thumbnail_source = 'ambit'
+            AND ?28 = 1
             AND LOWER(excluded.thumbnail_path) LIKE '%.webp'
             AND LOWER(excluded.thumbnail_path) NOT LIKE '%.replacement.webp'
             AND LOWER(images.thumbnail_path) = LOWER(
@@ -665,7 +704,8 @@ fn save_images_batch_inner(
                     img.invoke_image_category,
                     img.invoke_image_origin,
                     img.invoke_owner_id,
-                    CURRENT_PARSER_VERSION
+                    CURRENT_PARSER_VERSION,
+                    i64::from(readable_replacement_ids.contains(&img.id))
                 ])
                 .map_err(|e| e.to_string())?;
 
@@ -4765,17 +4805,31 @@ mod tests {
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
 
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        std::fs::write(&canonical_path, b"canonical").expect("write canonical thumbnail");
+        std::fs::write(&replacement_path, b"replacement").expect("write replacement thumbnail");
+
         let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
-        repaired.thumbnail_path = "C:/thumbs/img-rescan.replacement.webp".to_string();
+        repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
         super::save_images_batch_inner(&conn, &[repaired]).expect("save repaired row");
 
         let mut rescanned =
             create_image_record("img-rescan", 101, 201, r#"{"positivePrompt":"rescanned"}"#);
-        rescanned.thumbnail_path = "C:/thumbs/img-rescan.webp".to_string();
+        rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
         super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
 
         let row = fetch_thumbnail_state(&conn, "img-rescan");
-        assert_eq!(row.0, "C:/thumbs/img-rescan.replacement.webp");
+        assert_eq!(row.0, replacement_path.to_string_lossy());
         assert_eq!(row.1.as_deref(), Some("ambit"));
         assert_eq!(row.2, 1);
         let metadata: String = conn
@@ -4786,6 +4840,43 @@ mod tests {
             )
             .expect("rescanned metadata");
         assert_eq!(metadata, r#"{"positivePrompt":"rescanned"}"#);
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
+    }
+
+    #[test]
+    fn save_images_batch_replaces_a_missing_active_replacement_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-missing-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        std::fs::write(&canonical_path, b"canonical").expect("write canonical thumbnail");
+
+        let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+        repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[repaired]).expect("save broken replacement row");
+
+        let mut rescanned =
+            create_image_record("img-rescan", 101, 201, r#"{"positivePrompt":"rescanned"}"#);
+        rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-rescan");
+        assert_eq!(row.0, canonical_path.to_string_lossy());
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
     }
 
     #[test]
