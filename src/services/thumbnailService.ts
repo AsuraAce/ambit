@@ -13,6 +13,9 @@ import { unwrap } from '../utils/spectaUtils';
 import { useSettingsStore } from '../stores/settingsStore';
 
 let cachedThumbnailDir: string | null = null;
+const thumbnailRepairOwnerId = `thumbnail-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+export const getThumbnailRepairOwnerId = (): string => thumbnailRepairOwnerId;
 
 // Throttling: Track in-progress generation to prevent memory spikes
 const generationInProgress = new Set<string>();
@@ -43,7 +46,7 @@ const withThumbnailRepairOperation = async <T>(
     signal: AbortSignal | undefined,
     work: (operationId: number) => Promise<T>
 ): Promise<T> => {
-    const operationId = await unwrap(commands.beginThumbnailRepairOperation());
+    const operationId = await unwrap(commands.beginThumbnailRepairOperation(thumbnailRepairOwnerId));
     const requestCancellation = () => {
         void commands.cancelThumbnailOptimizationJob(operationId).catch(error => {
             console.error('[Thumb] Failed to request thumbnail repair cancellation', error);

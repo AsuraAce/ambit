@@ -205,7 +205,7 @@ describe('thumbnailService', () => {
         });
         expect(mocks.scanImagesBulk).not.toHaveBeenCalled();
         expect(mocks.updateThumbnailPathsBatch).not.toHaveBeenCalled();
-        expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledOnce();
+        expect(mocks.beginThumbnailRepairOperation).toHaveBeenCalledWith(expect.stringMatching(/^thumbnail-repair-/));
         expect(mocks.finishThumbnailRepairOperation).toHaveBeenCalledWith(7);
         expect(updates.map(image => image.thumbnailUrl)).toEqual(['thumb-a.webp', 'thumb-c.webp']);
         expect(progress).toEqual([[3, 3]]);

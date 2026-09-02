@@ -190,10 +190,11 @@ pub struct ThumbnailOptimizationState {
     next_operation_id: Arc<AtomicU64>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ManualThumbnailOperation {
     id: u64,
     batch_active: bool,
+    owner_id: String,
 }
 
 struct ThumbnailJobLease {
@@ -211,6 +212,48 @@ fn acquire_thumbnail_job(is_running: Arc<AtomicBool>) -> Result<ThumbnailJobLeas
         return Err("Another thumbnail repair job is already running".to_string());
     }
     Ok(ThumbnailJobLease { is_running })
+}
+
+fn acquire_smart_thumbnail_job(
+    is_cancelled: &AtomicBool,
+    is_running: Arc<AtomicBool>,
+    manual_operation: &Mutex<Option<ManualThumbnailOperation>>,
+    owner_id: &str,
+) -> Result<ThumbnailJobLease, String> {
+    if owner_id.trim().is_empty() {
+        return Err("Thumbnail repair owner id is required".to_string());
+    }
+    let started_at = Instant::now();
+    loop {
+        {
+            let mut active = manual_operation
+                .lock()
+                .map_err(|_| "Thumbnail operation state is unavailable".to_string())?;
+            if let Some(operation) = active.as_ref() {
+                if operation.owner_id == owner_id {
+                    return Err(
+                        "Another manual thumbnail repair operation is already running".to_string(),
+                    );
+                }
+                if operation.batch_active {
+                    is_cancelled.store(true, Ordering::SeqCst);
+                } else {
+                    *active = None;
+                    is_cancelled.store(false, Ordering::SeqCst);
+                    return Ok(ThumbnailJobLease { is_running });
+                }
+            } else {
+                let lease = acquire_thumbnail_job(is_running)?;
+                is_cancelled.store(false, Ordering::SeqCst);
+                return Ok(lease);
+            }
+        }
+
+        if started_at.elapsed() >= MANUAL_OPERATION_ACQUIRE_TIMEOUT {
+            return Err("Timed out waiting for thumbnail repair ownership".to_string());
+        }
+        std::thread::sleep(MANUAL_OPERATION_ACQUIRE_POLL);
+    }
 }
 
 impl Default for ThumbnailOptimizationState {
@@ -247,19 +290,36 @@ fn begin_manual_thumbnail_operation(
     is_running: &AtomicBool,
     manual_operation: &Mutex<Option<ManualThumbnailOperation>>,
     next_operation_id: &AtomicU64,
+    owner_id: &str,
 ) -> Result<u64, String> {
+    if owner_id.trim().is_empty() {
+        return Err("Thumbnail repair owner id is required".to_string());
+    }
     let started_at = Instant::now();
     loop {
         {
             let mut active = manual_operation
                 .lock()
                 .map_err(|_| "Thumbnail operation state is unavailable".to_string())?;
-            if active.is_some() {
-                return Err(
-                    "Another manual thumbnail repair operation is already running".to_string(),
-                );
-            }
-            if is_running
+            if let Some(operation) = active.as_ref() {
+                if operation.owner_id == owner_id {
+                    return Err(
+                        "Another manual thumbnail repair operation is already running".to_string(),
+                    );
+                }
+                if operation.batch_active {
+                    is_cancelled.store(true, Ordering::SeqCst);
+                } else {
+                    let operation_id = next_operation_id.fetch_add(1, Ordering::SeqCst);
+                    *active = Some(ManualThumbnailOperation {
+                        id: operation_id,
+                        batch_active: false,
+                        owner_id: owner_id.to_string(),
+                    });
+                    is_cancelled.store(false, Ordering::SeqCst);
+                    return Ok(operation_id);
+                }
+            } else if is_running
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
@@ -267,15 +327,17 @@ fn begin_manual_thumbnail_operation(
                 *active = Some(ManualThumbnailOperation {
                     id: operation_id,
                     batch_active: false,
+                    owner_id: owner_id.to_string(),
                 });
                 is_cancelled.store(false, Ordering::SeqCst);
                 return Ok(operation_id);
+            } else {
+                is_cancelled.store(true, Ordering::SeqCst);
             }
         }
 
-        is_cancelled.store(true, Ordering::SeqCst);
         if started_at.elapsed() >= MANUAL_OPERATION_ACQUIRE_TIMEOUT {
-            return Err("Timed out waiting for Smart Thumbnails to stop".to_string());
+            return Err("Timed out waiting for thumbnail repair ownership".to_string());
         }
         std::thread::sleep(MANUAL_OPERATION_ACQUIRE_POLL);
     }
@@ -339,6 +401,7 @@ struct ThumbnailCandidate {
     invoke_images_root: Option<String>,
     source_root: Option<String>,
     source_root_available: Option<bool>,
+    requires_reencode: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -409,8 +472,21 @@ pub async fn start_thumbnail_optimization_job(
     app: tauri::AppHandle,
     state: tauri::State<'_, ThumbnailOptimizationState>,
     config: ThumbnailOptimizationConfig,
+    owner_id: String,
 ) -> Result<ThumbnailOptimizationResult, String> {
-    let job_lease = acquire_thumbnail_job(state.is_running.clone())?;
+    let is_cancelled = state.is_cancelled.clone();
+    let is_running = state.is_running.clone();
+    let manual_operation = state.manual_operation.clone();
+    let job_lease = tauri::async_runtime::spawn_blocking(move || {
+        acquire_smart_thumbnail_job(
+            is_cancelled.as_ref(),
+            is_running,
+            manual_operation.as_ref(),
+            &owner_id,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())??;
 
     state.is_cancelled.store(false, Ordering::SeqCst);
     state.is_throttled.store(false, Ordering::SeqCst);
@@ -431,6 +507,7 @@ pub async fn start_thumbnail_optimization_job(
 #[specta::specta]
 pub async fn begin_thumbnail_repair_operation(
     state: tauri::State<'_, ThumbnailOptimizationState>,
+    owner_id: String,
 ) -> Result<u64, String> {
     let is_cancelled = state.is_cancelled.clone();
     let is_running = state.is_running.clone();
@@ -442,6 +519,7 @@ pub async fn begin_thumbnail_repair_operation(
             is_running.as_ref(),
             manual_operation.as_ref(),
             next_operation_id.as_ref(),
+            &owner_id,
         )
     })
     .await
@@ -1230,7 +1308,7 @@ fn optimize_thumbnail_candidate(
     match super::generate_thumbnail_for_repair(
         &candidate.path,
         thumbnail_dir,
-        force,
+        force || candidate.requires_reencode,
         candidate.thumbnail_path.as_deref(),
     ) {
         Ok(thumbnail) => ThumbnailItemResult::Success {
@@ -1729,7 +1807,8 @@ fn fetch_thumbnail_candidates(
                       AND LOWER(RTRIM(REPLACE(scope.db_path, '\\', '/'), '/')) =
                           LOWER(RTRIM(REPLACE(i.invoke_source_id, '\\', '/'), '/'))
                     LIMIT 1
-                ) AS invoke_images_root
+                ) AS invoke_images_root,
+                i.thumbnail_repair_reason IN ('outdated', 'upgradeable') AS requires_reencode
          FROM {candidate_source} i
          WHERE (
              COALESCE(i.thumbnail_failure_count, 0) = 0
@@ -1759,6 +1838,7 @@ fn fetch_thumbnail_candidates(
                     invoke_images_root: row.get(4)?,
                     source_root: None,
                     source_root_available: None,
+                    requires_reencode: row.get(5)?,
                 })
             },
         )
@@ -1775,6 +1855,7 @@ fn fetch_thumbnail_candidates(
                 invoke_images_root: row.get(4)?,
                 source_root: None,
                 source_root_available: None,
+                requires_reencode: row.get(5)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -1835,6 +1916,11 @@ fn load_thumbnail_candidates_for_ids(
     } else {
         ""
     };
+    let requires_reencode_expression = if force {
+        "1"
+    } else {
+        "i.thumbnail_repair_reason IN ('outdated', 'upgradeable')"
+    };
     let query = format!(
         "SELECT i.id, i.path, COALESCE(i.timestamp, 0) AS timestamp,
                 i.thumbnail_path,
@@ -1845,7 +1931,8 @@ fn load_thumbnail_candidates_for_ids(
                       AND LOWER(RTRIM(REPLACE(scope.db_path, '\\', '/'), '/')) =
                           LOWER(RTRIM(REPLACE(i.invoke_source_id, '\\', '/'), '/'))
                     LIMIT 1
-                ) AS invoke_images_root
+                ) AS invoke_images_root,
+                {requires_reencode_expression} AS requires_reencode
          FROM {candidate_source} i
          JOIN thumbnail_repair_requested_ids requested ON requested.id = i.id
          WHERE EXISTS (
@@ -1867,6 +1954,7 @@ fn load_thumbnail_candidates_for_ids(
             invoke_images_root: row.get(4)?,
             source_root: None,
             source_root_available: None,
+            requires_reencode: row.get(5)?,
         })
     };
     let candidates = if respect_backoff {
@@ -2058,6 +2146,7 @@ mod tests {
             state.is_running.as_ref(),
             state.manual_operation.as_ref(),
             state.next_operation_id.as_ref(),
+            "test-renderer",
         )
         .expect("begin manual operation");
 
@@ -2082,6 +2171,182 @@ mod tests {
         )
         .expect("finish manual operation");
         assert!(acquire_thumbnail_job(state.is_running).is_ok());
+    }
+
+    #[test]
+    fn replacement_renderer_reclaims_an_abandoned_manual_operation() {
+        let state = ThumbnailOptimizationState::default();
+        let abandoned_id = begin_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            state.next_operation_id.as_ref(),
+            "renderer-a",
+        )
+        .expect("begin abandoned operation");
+
+        let replacement_id = begin_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            state.next_operation_id.as_ref(),
+            "renderer-b",
+        )
+        .expect("replacement renderer reclaims operation");
+
+        assert_ne!(replacement_id, abandoned_id);
+        assert!(finish_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            abandoned_id,
+        )
+        .is_err());
+        finish_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            replacement_id,
+        )
+        .expect("finish replacement operation");
+    }
+
+    #[test]
+    fn replacement_renderer_smart_job_reclaims_an_abandoned_manual_operation() {
+        let state = ThumbnailOptimizationState::default();
+        let abandoned_id = begin_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            state.next_operation_id.as_ref(),
+            "renderer-a",
+        )
+        .expect("begin abandoned operation");
+
+        let smart_job = acquire_smart_thumbnail_job(
+            state.is_cancelled.as_ref(),
+            state.is_running.clone(),
+            state.manual_operation.as_ref(),
+            "renderer-b",
+        )
+        .expect("replacement renderer starts Smart");
+
+        assert!(finish_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            abandoned_id,
+        )
+        .is_err());
+        drop(smart_job);
+        assert!(acquire_thumbnail_job(state.is_running).is_ok());
+    }
+
+    #[test]
+    fn replacement_renderer_smart_job_waits_for_an_active_abandoned_batch() {
+        let state = ThumbnailOptimizationState::default();
+        let abandoned_id = begin_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            state.next_operation_id.as_ref(),
+            "renderer-a",
+        )
+        .expect("begin abandoned operation");
+        let batch = claim_manual_thumbnail_batch(state.manual_operation.clone(), abandoned_id)
+            .expect("claim abandoned batch");
+        let (sender, receiver) = mpsc::channel();
+        let is_cancelled = state.is_cancelled.clone();
+        let is_running = state.is_running.clone();
+        let manual_operation = state.manual_operation.clone();
+        let replacement = std::thread::spawn(move || {
+            let result = acquire_smart_thumbnail_job(
+                is_cancelled.as_ref(),
+                is_running,
+                manual_operation.as_ref(),
+                "renderer-b",
+            );
+            sender.send(result).expect("send Smart result");
+        });
+
+        let started_at = Instant::now();
+        while !state.is_cancelled.load(Ordering::SeqCst) {
+            assert!(
+                started_at.elapsed() < Duration::from_secs(1),
+                "replacement Smart job did not request cancellation"
+            );
+            std::thread::yield_now();
+        }
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        drop(batch);
+        let smart_job = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("Smart result")
+            .expect("replacement renderer starts Smart after batch");
+        replacement.join().expect("replacement thread");
+        drop(smart_job);
+        assert!(acquire_thumbnail_job(state.is_running).is_ok());
+    }
+
+    #[test]
+    fn replacement_renderer_waits_for_an_active_abandoned_batch() {
+        let state = ThumbnailOptimizationState::default();
+        let abandoned_id = begin_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            state.next_operation_id.as_ref(),
+            "renderer-a",
+        )
+        .expect("begin abandoned operation");
+        let batch = claim_manual_thumbnail_batch(state.manual_operation.clone(), abandoned_id)
+            .expect("claim abandoned batch");
+        let (sender, receiver) = mpsc::channel();
+        let is_cancelled = state.is_cancelled.clone();
+        let is_running = state.is_running.clone();
+        let manual_operation = state.manual_operation.clone();
+        let next_operation_id = state.next_operation_id.clone();
+        let replacement = std::thread::spawn(move || {
+            let result = begin_manual_thumbnail_operation(
+                is_cancelled.as_ref(),
+                is_running.as_ref(),
+                manual_operation.as_ref(),
+                next_operation_id.as_ref(),
+                "renderer-b",
+            );
+            sender.send(result).expect("send replacement result");
+        });
+
+        let started_at = Instant::now();
+        while !state.is_cancelled.load(Ordering::SeqCst) {
+            assert!(
+                started_at.elapsed() < Duration::from_secs(1),
+                "replacement renderer did not request cancellation"
+            );
+            std::thread::yield_now();
+        }
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        drop(batch);
+        let replacement_id = receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("replacement result")
+            .expect("replacement renderer reclaims after batch");
+        replacement.join().expect("replacement thread");
+        finish_manual_thumbnail_operation(
+            state.is_cancelled.as_ref(),
+            state.is_running.as_ref(),
+            state.manual_operation.as_ref(),
+            replacement_id,
+        )
+        .expect("finish replacement operation");
     }
 
     #[test]
@@ -2190,6 +2455,65 @@ mod tests {
                 .map(|item| item.id.as_str())
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn outdated_ambit_thumbnail_is_reencoded_before_its_version_advances() {
+        let mut conn = setup_queue_db();
+        let temp_dir = temp_thumbnail_dir("outdated-reencode");
+        let source_path = temp_dir.join("source.png");
+        fs::create_dir_all(&temp_dir).expect("thumbnail fixture directory");
+        image::RgbaImage::from_pixel(4, 4, image::Rgba([12, 34, 56, 255]))
+            .save(&source_path)
+            .expect("source image");
+        let thumbnail_path = super::super::get_thumbnail_path(
+            source_path.to_str().expect("source path"),
+            temp_dir.to_str().expect("thumbnail directory"),
+        );
+        fs::write(&thumbnail_path, b"stale-thumbnail").expect("stale thumbnail");
+        insert_image(
+            &conn,
+            "outdated",
+            thumbnail_path.to_str(),
+            Some("ambit"),
+            0,
+            10,
+        );
+        conn.execute(
+            "UPDATE images SET path = ?1 WHERE id = 'outdated'",
+            [source_path.to_string_lossy().as_ref()],
+        )
+        .expect("source path");
+
+        let candidate = fetch_thumbnail_candidates(&conn, false, None, 1, 0)
+            .expect("outdated candidate")
+            .pop()
+            .expect("candidate");
+        let outcome = optimize_thumbnail_candidate(
+            &candidate,
+            temp_dir.to_str().expect("thumbnail directory"),
+            false,
+            &AtomicBool::new(false),
+        );
+        assert!(matches!(
+            &outcome,
+            ThumbnailItemResult::Success { reused: false, .. }
+        ));
+        persist_thumbnail_results(&mut conn, &[outcome], 100).expect("persist re-encode");
+
+        let (active_thumbnail_path, version): (String, i64) = conn
+            .query_row(
+                "SELECT thumbnail_path, thumbnail_version FROM images WHERE id = 'outdated'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("active thumbnail");
+        assert_ne!(
+            fs::read(active_thumbnail_path).expect("rewritten thumbnail"),
+            b"stale-thumbnail"
+        );
+        assert_eq!(version, CURRENT_THUMBNAIL_VERSION);
+        fs::remove_dir_all(&temp_dir).expect("remove thumbnail fixture");
     }
 
     #[test]
@@ -3505,6 +3829,7 @@ mod tests {
                     invoke_images_root: None,
                     source_root: None,
                     source_root_available: None,
+                    requires_reencode: false,
                 })
             })
             .expect("production candidates")
@@ -3581,6 +3906,7 @@ mod tests {
             invoke_images_root: Some(invoke_root.to_string_lossy().to_string()),
             source_root: None,
             source_root_available: Some(false),
+            requires_reencode: false,
         };
 
         let item = optimize_thumbnail_candidate(
@@ -3605,6 +3931,7 @@ mod tests {
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
+                requires_reencode: false,
             },
             ThumbnailCandidate {
                 id: "offline-b".to_string(),
@@ -3614,6 +3941,7 @@ mod tests {
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
+                requires_reencode: false,
             },
         ];
         let mut availability = HashMap::new();
@@ -3657,6 +3985,7 @@ mod tests {
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
+                requires_reencode: false,
             },
             ThumbnailCandidate {
                 id: "healthy".to_string(),
@@ -3666,6 +3995,7 @@ mod tests {
                 invoke_images_root: None,
                 source_root: None,
                 source_root_available: None,
+                requires_reencode: false,
             },
         ];
         let mut availability = HashMap::new();
@@ -3823,6 +4153,7 @@ mod tests {
             invoke_images_root: None,
             source_root: None,
             source_root_available: None,
+            requires_reencode: false,
         };
 
         let item = optimize_thumbnail_candidate(

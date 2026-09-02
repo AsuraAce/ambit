@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     cancelThumbnailOptimizationJob: vi.fn(),
     setThumbnailOptimizationThrottled: vi.fn(),
     getThumbnailDir: vi.fn(),
+    getThumbnailRepairOwnerId: vi.fn(),
     rebuildThumbnailFacetCache: vi.fn(),
     refreshCollectionThumbnails: vi.fn(),
     browserMockMode: false,
@@ -46,6 +47,7 @@ vi.mock('../../services/runtime', () => ({
 
 vi.mock('../../services/thumbnailService', () => ({
     getThumbnailDir: mocks.getThumbnailDir,
+    getThumbnailRepairOwnerId: mocks.getThumbnailRepairOwnerId,
 }));
 
 vi.mock('../../services/db/imageRepo', () => ({
@@ -97,6 +99,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         mocks.browserMockMode = false;
         mocks.activeImageQueryCount = 0;
         mocks.getThumbnailDir.mockResolvedValue('C:/AppData/Ambit/.thumbnails');
+        mocks.getThumbnailRepairOwnerId.mockReturnValue('renderer-a');
         mocks.rebuildThumbnailFacetCache.mockResolvedValue(undefined);
         mocks.refreshCollectionThumbnails.mockResolvedValue(undefined);
         mocks.setThumbnailOptimizationThrottled.mockResolvedValue(undefined);
@@ -191,7 +194,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             includeUpgradeable: false,
             profile: 'balanced',
             sourceRoots: ['D:/Library'],
-        });
+        }, 'renderer-a');
         expect(mocks.setThumbnailOptimizationThrottled).toHaveBeenCalledWith(false);
         expect(useLibraryStore.getState().lastBackgroundHealingRun).toEqual(expect.objectContaining({
             checked: 2,
@@ -918,7 +921,10 @@ describe('useThumbnailQueue behavioral contract', () => {
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
         renderHook(() => useThumbnailQueue());
         await advanceStartup();
-        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledWith(expect.objectContaining({ profile: 'balanced' }));
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledWith(
+            expect.objectContaining({ profile: 'balanced' }),
+            'renderer-a'
+        );
     });
 
     it('records Error objects from cancelled and failed backend jobs', async () => {

@@ -554,17 +554,17 @@ async discoverA1111Folders(rootPath: string) : Promise<Result<A1111DiscoveryResu
     else return { status: "error", error: e  as any };
 }
 },
-async startThumbnailOptimizationJob(config: ThumbnailOptimizationConfig) : Promise<Result<ThumbnailOptimizationResult, string>> {
+async startThumbnailOptimizationJob(config: ThumbnailOptimizationConfig, ownerId: string) : Promise<Result<ThumbnailOptimizationResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_thumbnail_optimization_job", { config }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_thumbnail_optimization_job", { config, ownerId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
-async beginThumbnailRepairOperation() : Promise<Result<number, string>> {
+async beginThumbnailRepairOperation(ownerId: string) : Promise<Result<number, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("begin_thumbnail_repair_operation") };
+    return { status: "ok", data: await TAURI_INVOKE("begin_thumbnail_repair_operation", { ownerId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

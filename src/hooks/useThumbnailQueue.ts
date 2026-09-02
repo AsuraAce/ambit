@@ -14,7 +14,7 @@ import {
     formatThumbnailQueueCompleteMessage,
     formatThumbnailQueueRunningMessage
 } from './thumbnailQueueProgress';
-import { getThumbnailDir } from '../services/thumbnailService';
+import { getThumbnailDir, getThumbnailRepairOwnerId } from '../services/thumbnailService';
 import { refreshThumbnailConsumers as refreshCommittedThumbnailConsumers } from '../services/thumbnailConsumerRefresh';
 import { useCollectionStore } from '../stores/collectionStore';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
@@ -527,7 +527,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 sourceRoots: settings.monitoredFolders
                     .filter(folder => folder.isActive)
                     .map(folder => folder.path),
-            }));
+            }, getThumbnailRepairOwnerId()));
             setBackendThrottled(shouldStartThrottled);
 
             const result = await jobPromise;
