@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/AsuraAce/ambit/compare/v0.13.0...v0.13.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **collections:** preserve recently updated order ([#305](https://github.com/AsuraAce/ambit/issues/305)) ([cbbd3ff](https://github.com/AsuraAce/ambit/commit/cbbd3ffdd7aff32e70928ce97d53519cde56667e))
+* **thumbnails:** repair and consolidate thumbnail processing ([#307](https://github.com/AsuraAce/ambit/issues/307)) ([20cd239](https://github.com/AsuraAce/ambit/commit/20cd239018d290d3b72fa486701a884f61898bb0))
+
 ## [0.13.0](https://github.com/AsuraAce/ambit/compare/v0.12.2...v0.13.0) (2026-09-01)
 
 
