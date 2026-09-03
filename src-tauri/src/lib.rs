@@ -6,6 +6,7 @@ mod media;
 mod metadata;
 mod scanner;
 mod security;
+mod startup;
 mod thumb;
 mod watcher;
 
@@ -25,6 +26,8 @@ use db::reparse::ReparseState;
 use media::VideoImportState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
+#[cfg(not(test))]
+use startup::StartupState;
 #[cfg(not(test))]
 use tauri::Manager;
 #[cfg(not(test))]
@@ -92,6 +95,9 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::backup::get_backups,
             db::backup::backup_database,
             db::backup::check_and_run_autobackup,
+            // startup readiness commands
+            startup::record_startup_diagnostic,
+            startup::complete_startup,
             // scanner commands
             scanner::scan_image,
             scanner::scan_images_bulk,
@@ -156,6 +162,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    let process_started = std::time::Instant::now();
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
@@ -228,6 +235,7 @@ pub fn run() {
         .manage(FileHashBackfillState::default())
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
+        .manage(StartupState::new(process_started))
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
@@ -244,25 +252,6 @@ pub fn run() {
                 }
             });
 
-            // 2. Run auto-backup check in background for production builds only,
-            // after startup has settled. Large production libraries can spend
-            // the first minute catching up sync state and warming query caches;
-            // VACUUM INTO during that window competes for SQLite I/O.
-            if cfg!(debug_assertions) {
-                log::info!("[Backup] Auto-backup skipped in development build");
-            } else {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-                    match db::backup::check_and_run_autobackup(handle).await {
-                        Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                        Ok(None) => {
-                            log::info!("[Backup] Auto-backup skipped (recent backup exists)")
-                        }
-                        Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
-                    }
-                });
-            }
             Ok(())
         })
         .build(context)

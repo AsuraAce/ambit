@@ -14,6 +14,7 @@ import {
     migrateLegacyCollections,
 } from '../services/db/collectionRepo';
 import { useLibraryStore } from './libraryStore';
+import { startupDiagnostics } from '../utils/startupDiagnostics';
 
 let initPromise: Promise<void> | null = null;
 let collectionRefreshRunId = 0;
@@ -437,6 +438,7 @@ export const useCollectionStore = create<CollectionState>()(
 
                 initPromise = (async () => {
                     const startedAt = performance.now();
+                    const finishInitialization = startupDiagnostics.start('collections');
                     try {
                         // 0. Ensure schema is up to date (add updated_at if missing)
                         const schemaStartedAt = performance.now();
@@ -504,6 +506,7 @@ export const useCollectionStore = create<CollectionState>()(
                         }
 
                         set({ collections: dbCols, isLoaded: true });
+                        finishInitialization();
                         console.info(`[Startup] Collection initialization completed in ${Math.round(performance.now() - startedAt)}ms`);
 
                         void get().refreshCollectionThumbnails();
@@ -520,6 +523,7 @@ export const useCollectionStore = create<CollectionState>()(
                             markPending: true
                         }));
                     } catch (e) {
+                        finishInitialization('failed');
                         console.error('[CollectionStore] Failed to initialize', e);
                         set({ isLoaded: true });
                     }

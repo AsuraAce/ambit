@@ -18,6 +18,13 @@ type CommandCase = {
 const okResult = { value: 'ok' };
 
 const commandCases: CommandCase[] = [
+    { name: 'completeStartup', invokeName: 'complete_startup', args: [], returnsResult: false },
+    {
+        name: 'recordStartupDiagnostic', invokeName: 'record_startup_diagnostic',
+        args: [{ launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null }],
+        payload: { event: { launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null } },
+        returnsResult: true,
+    },
     { name: 'saveApiKey', invokeName: 'save_api_key', args: ['key'], payload: { key: 'key' }, returnsResult: true },
     { name: 'loadApiKey', invokeName: 'load_api_key', args: [], returnsResult: true },
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },

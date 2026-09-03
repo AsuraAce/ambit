@@ -5,6 +5,7 @@ import { Lightbulb, X, BarChart3 } from 'lucide-react';
 import { AIImage } from '../../types';
 // Note: useLibraryStats hook is deprecated for large library performance. Using DB stats.
 import { useLibraryContext } from '../../hooks/useLibraryContext';
+import { useLibraryStore } from '../../stores/libraryStore';
 import { WordCloud } from './stats/WordCloud';
 
 interface ChartsProps {
@@ -36,6 +37,7 @@ const formatAnalysisTarget = (globalTotal: number) =>
         : 'Analyzing library images';
 
 export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
+    const setKeywordStatsEnabled = useLibraryStore(state => state.setKeywordStatsEnabled);
     // Use DB-backed global stats
     const {
         stats,
@@ -55,6 +57,11 @@ export const StatsDashboard: React.FC<ChartsProps> = ({ images, onFilter }) => {
 
     // Fix: Initialize tip once on mount so it doesn't change when filtering
     const [randomTip] = useState(() => TIPS[Math.floor(Math.random() * TIPS.length)]);
+
+    React.useEffect(() => {
+        setKeywordStatsEnabled(true);
+        return () => setKeywordStatsEnabled(false);
+    }, [setKeywordStatsEnabled]);
 
     return (
         <div className="h-full flex flex-col overflow-hidden">

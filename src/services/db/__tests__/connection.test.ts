@@ -59,16 +59,19 @@ describe('database connection', () => {
         const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined);
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         let nowMs = 0;
-        vi.spyOn(performance, 'now').mockImplementation(() => {
+        vi.spyOn(performance, 'now').mockImplementation(() => nowMs);
+        const timedDatabase = createDatabaseMock();
+        timedDatabase.execute.mockImplementation(async () => { nowMs += 1; });
+        databaseLoadMock.mockImplementation(async () => {
             nowMs += 10;
-            return nowMs;
+            return timedDatabase;
         });
 
         await getDb();
 
         expect(infoSpy).toHaveBeenCalledWith('[Startup DB] Database.load completed in 10ms');
-        expect(infoSpy).toHaveBeenCalledWith('[Startup DB] Performance PRAGMAs completed in 10ms');
-        expect(infoSpy).toHaveBeenCalledWith('[Startup DB] Frontend covering indexes completed in 10ms');
+        expect(infoSpy).toHaveBeenCalledWith('[Startup DB] Performance PRAGMAs completed in 6ms');
+        expect(infoSpy).toHaveBeenCalledWith('[Startup DB] Frontend covering indexes completed in 6ms');
         expect(warnSpy).not.toHaveBeenCalled();
     });
 

@@ -1,6 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
+import { measureStartupPhase, startupDiagnostics } from '../../utils/startupDiagnostics';
 
 let db: Database | null = null;
 let dbInitialized = false;
@@ -68,8 +69,10 @@ export const getDb = async (options: GetDbOptions = {}) => {
         options.onPhase?.('Updating database schema');
         const loadStartedAt = performance.now();
         if (!dbLoadPromise) {
-            dbLoadPromise = getMainDatabaseUrl()
-                .then((databaseUrl) => Database.load(databaseUrl))
+            dbLoadPromise = measureStartupPhase('database-schema', async () => {
+                const databaseUrl = await getMainDatabaseUrl();
+                return Database.load(databaseUrl);
+            })
                 .catch((error) => {
                     dbLoadPromise = null;
                     throw error;
@@ -81,6 +84,7 @@ export const getDb = async (options: GetDbOptions = {}) => {
 
     if (!dbInitialized && db) {
         dbInitialized = true;
+        const finishOptimization = startupDiagnostics.start('database-optimization');
         // Enable WAL mode and busy timeout for better concurrency
         try {
             options.onPhase?.('Optimizing database');
@@ -102,7 +106,9 @@ export const getDb = async (options: GetDbOptions = {}) => {
             await db.execute('CREATE INDEX IF NOT EXISTS idx_images_name_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), path ASC, id ASC)');
             await db.execute('CREATE INDEX IF NOT EXISTS idx_images_size_sort_v1 ON images(is_deleted, IFNULL(is_intermediate_gen, 0), IFNULL(is_grid_gen, 0), file_size DESC, id DESC)');
             logStartupDbPhase('Frontend covering indexes', indexStartedAt);
+            finishOptimization();
         } catch (e) {
+            finishOptimization('failed');
             console.error('[DB] Failed to set PRAGMAs or Indexes', e);
         }
     }

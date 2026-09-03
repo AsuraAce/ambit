@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AssetScope, FilterState, AppSettings, Collection, FacetType } from '../types';
 import { getFacets, getKeywordStats, getLibraryStatsSummary, Facets, LibraryStats, LibraryStatsSummary, getValidFacetNames, ValidFacetNames, type ScopedFacetCountInput } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
@@ -19,6 +19,7 @@ interface UseLibraryStatsQueryProps {
     settingsLoaded?: boolean;
     assetScope?: AssetScope;
     validFacetsEnabled?: boolean;
+    keywordStatsEnabled?: boolean;
 }
 
 const INITIAL_STATS_SUMMARY: LibraryStatsSummary = {
@@ -100,8 +101,10 @@ export const useLibraryStatsQuery = ({
     allCollections,
     settingsLoaded = true,
     assetScope = 'used',
-    validFacetsEnabled = true
+    validFacetsEnabled = true,
+    keywordStatsEnabled = false
 }: UseLibraryStatsQueryProps) => {
+    const queryClient = useQueryClient();
     const useBrowserMocks = isBrowserMockMode();
     const sideQueryFilters = useDebouncedSideQueryFilters(filters);
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
@@ -141,6 +144,25 @@ export const useLibraryStatsQuery = ({
 
     // Subscribe to facet cache version - when cache is rebuilt, this changes and triggers refetch.
     const facetCacheVersion = useLibraryStore(s => s.facetCacheVersion);
+    const keywordStatsSemanticKey = useMemo(() => JSON.stringify({
+        dataRevision: facetCacheVersion,
+        filters: sideQueryFilters,
+        smartCollectionRules: smartFilterHash,
+        privacy: {
+            enabled: privacyEnabled,
+            maskingMode: settings.maskingMode,
+            maskedKeywords: effectiveMaskedKeywords
+        },
+        invokeOwnerScopeKey
+    }), [
+        effectiveMaskedKeywords,
+        facetCacheVersion,
+        invokeOwnerScopeKey,
+        privacyEnabled,
+        settings.maskingMode,
+        sideQueryFilters,
+        smartFilterHash
+    ]);
 
     const queryInput = useMemo(() => {
         if (useBrowserMocks || !settingsLoaded) return null;
@@ -237,19 +259,39 @@ export const useLibraryStatsQuery = ({
         enabled: settingsLoaded
     });
     const [activeSummaryVersion, setActiveSummaryVersion] = useState(0);
+    const [activeSummarySemanticKey, setActiveSummarySemanticKey] = useState<string | null>(null);
 
     useEffect(() => {
         if (statsSummaryQuery.status !== 'success' || statsSummaryQuery.isFetching || statsSummaryQuery.isPlaceholderData) {
             return;
         }
 
+        setActiveSummarySemanticKey(keywordStatsSemanticKey);
         setActiveSummaryVersion((version) => version + 1);
     }, [
         statsSummaryQuery.dataUpdatedAt,
         statsSummaryQuery.isFetching,
         statsSummaryQuery.isPlaceholderData,
-        statsSummaryQuery.status
+        statsSummaryQuery.status,
+        keywordStatsSemanticKey
     ]);
+    const keywordStatsQueryKey = useMemo(() => [
+        'libraryKeywordStats',
+        keywordStatsSemanticKey,
+        activeSummaryVersion
+    ] as const, [activeSummaryVersion, keywordStatsSemanticKey]);
+
+    useEffect(() => {
+        if (!keywordStatsEnabled) {
+            void queryClient.cancelQueries({ queryKey: ['libraryKeywordStats'] });
+            return;
+        }
+
+        return () => {
+            void queryClient.cancelQueries({ queryKey: keywordStatsQueryKey, exact: true });
+        };
+    }, [keywordStatsEnabled, keywordStatsQueryKey, queryClient]);
+
     const validNamesQuery = useQuery({
         queryKey: ['libraryStats', 'validNames', facetCacheVersion, sideQueryFilters, privacyEnabled, settings.maskingMode, effectiveMaskedKeywords, smartFilterHash, validFacetsEnabled, invokeOwnerScopeKey],
         queryFn: async () => {
@@ -309,11 +351,12 @@ export const useLibraryStatsQuery = ({
     const keywordQuery = useQuery({
         // Keep keywords on a separate root key so broad library-stats invalidations
         // refresh the cheap summary first before restarting the prompt scan.
-        queryKey: ['libraryKeywordStats', activeSummaryVersion, invokeOwnerScopeKey],
+        queryKey: keywordStatsQueryKey,
         queryFn: async ({ signal }) => {
             if (useBrowserMocks) {
                 return {
                     summaryVersion: activeSummaryVersion,
+                    semanticKey: keywordStatsSemanticKey,
                     keywordStats: getBrowserMockKeywordStats(sideQueryFilters)
                 };
             }
@@ -321,23 +364,27 @@ export const useLibraryStatsQuery = ({
             const { where, params, collectionId, loraName } = queryInput!;
             return {
                 summaryVersion: activeSummaryVersion,
+                semanticKey: keywordStatsSemanticKey,
                 keywordStats: await getKeywordStats(where, params, collectionId, loraName, signal)
             };
         },
         placeholderData: retainWithinOwnerScope,
         staleTime: 1000 * 60 * 5,
-        enabled: settingsLoaded && activeSummaryVersion > 0 && statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData
+        enabled: keywordStatsEnabled && settingsLoaded && activeSummaryVersion > 0 && activeSummarySemanticKey === keywordStatsSemanticKey && statsSummaryQuery.status === 'success' && !statsSummaryQuery.isFetching && !statsSummaryQuery.isPlaceholderData
     });
 
     const keywordStatsAreCurrent = useMemo(() => (
-        Boolean(keywordQuery.data) && keywordQuery.data?.summaryVersion === activeSummaryVersion
-    ), [activeSummaryVersion, keywordQuery.data]);
+        Boolean(keywordQuery.data)
+        && keywordQuery.data?.summaryVersion === activeSummaryVersion
+        && keywordQuery.data?.semanticKey === keywordStatsSemanticKey
+    ), [activeSummaryVersion, keywordQuery.data, keywordStatsSemanticKey]);
 
     const currentKeywordStats = keywordStatsAreCurrent
         ? (keywordQuery.data?.keywordStats ?? INITIAL_KEYWORD_STATS)
         : INITIAL_KEYWORD_STATS;
 
-    const isKeywordStatsLoading = statsSummaryQuery.status === 'success'
+    const isKeywordStatsLoading = keywordStatsEnabled
+        && statsSummaryQuery.status === 'success'
         && !statsSummaryQuery.isFetching
         && !statsSummaryQuery.isPlaceholderData
         && !keywordStatsAreCurrent;

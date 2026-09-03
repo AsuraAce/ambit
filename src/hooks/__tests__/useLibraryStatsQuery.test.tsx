@@ -88,7 +88,8 @@ const renderStatsHook = (
     filters = createDefaultFilters(),
     allCollections: Collection[] = [],
     assetScope: AssetScope = 'used',
-    validFacetsEnabled = true
+    validFacetsEnabled = true,
+    keywordStatsEnabled = true
 ) => {
     const queryClient = new QueryClient({
         defaultOptions: {
@@ -120,6 +121,7 @@ const renderStatsHook = (
             settingsLoaded: true,
             assetScope: currentAssetScope,
             validFacetsEnabled: drilldownEnabled,
+            keywordStatsEnabled,
         }),
         {
             wrapper,
@@ -162,6 +164,71 @@ describe('useLibraryStatsQuery valid facets', () => {
 
         await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledOnce());
         expect(searchRepoMocks.getKeywordStats.mock.calls[0][4]).toBeInstanceOf(AbortSignal);
+    });
+
+    it('waits for Statistics dashboard demand before starting keyword analysis', async () => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        const pendingKeywordScan = createDeferred<LibraryStats['keywordStats']>();
+        searchRepoMocks.getKeywordStats.mockReturnValue(pendingKeywordScan.promise);
+
+        const { rerender } = renderHook(
+            ({ keywordStatsEnabled }: { keywordStatsEnabled: boolean }) => useLibraryStatsQuery({
+                filters: createDefaultFilters(),
+                settings,
+                privacyEnabled: false,
+                allCollections: [],
+                keywordStatsEnabled,
+            }),
+            { wrapper, initialProps: { keywordStatsEnabled: false } }
+        );
+
+        await waitFor(() => expect(searchRepoMocks.getLibraryStatsSummary).toHaveBeenCalledOnce());
+        await act(async () => {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        });
+        expect(searchRepoMocks.getKeywordStats).not.toHaveBeenCalled();
+
+        rerender({ keywordStatsEnabled: true });
+
+        await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledOnce());
+    });
+
+    it('cancels an active keyword scan when Statistics dashboard demand closes', async () => {
+        const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+        const wrapper = ({ children }: PropsWithChildren) => (
+            <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        );
+        let keywordSignal: AbortSignal | undefined;
+        searchRepoMocks.getKeywordStats.mockImplementation((
+            _where: string,
+            _params: unknown[],
+            _collectionId: string | undefined,
+            _loraName: string | undefined,
+            signal: AbortSignal
+        ) => {
+            keywordSignal = signal;
+            return new Promise<LibraryStats['keywordStats']>(() => undefined);
+        });
+
+        const { rerender } = renderHook(
+            ({ keywordStatsEnabled }: { keywordStatsEnabled: boolean }) => useLibraryStatsQuery({
+                filters: createDefaultFilters(),
+                settings,
+                privacyEnabled: false,
+                allCollections: [],
+                keywordStatsEnabled,
+            }),
+            { wrapper, initialProps: { keywordStatsEnabled: true } }
+        );
+
+        await waitFor(() => expect(keywordSignal).toBeInstanceOf(AbortSignal));
+
+        rerender({ keywordStatsEnabled: false });
+
+        await waitFor(() => expect(keywordSignal?.aborted).toBe(true));
     });
 
     afterEach(() => {
@@ -277,6 +344,7 @@ describe('useLibraryStatsQuery valid facets', () => {
                 allCollections: [],
                 settingsLoaded: true,
                 assetScope,
+                keywordStatsEnabled: true,
             }),
             {
                 wrapper,
@@ -319,6 +387,7 @@ describe('useLibraryStatsQuery valid facets', () => {
                 allCollections: [],
                 settingsLoaded: true,
                 assetScope: 'used',
+                keywordStatsEnabled: true,
             }),
             { wrapper }
         );
@@ -404,7 +473,7 @@ describe('useLibraryStatsQuery valid facets', () => {
         });
     });
 
-    it('hides stale keyword results while refreshed keywords are still computing for a new summary snapshot', async () => {
+    it('hides stale keyword results while refreshed keywords are still computing for a new filter scope', async () => {
         const initialKeywords = [{ text: 'aurora', value: 4 }];
         const refreshedSummary = createDeferred<LibraryStatsSummary>();
         const refreshedKeywords = createDeferred<LibraryStats['keywordStats']>();
@@ -432,7 +501,7 @@ describe('useLibraryStatsQuery valid facets', () => {
             drilldownEnabled: true
         });
 
-        expect(result.current.data.stats.keywordStats).toEqual(initialKeywords);
+        expect(result.current.data.stats.keywordStats).toEqual([]);
         expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(1);
 
         act(() => {
@@ -494,6 +563,7 @@ describe('useLibraryStatsQuery valid facets', () => {
                 allCollections: [],
                 settingsLoaded: true,
                 assetScope: 'used',
+                keywordStatsEnabled: true,
             }),
             { wrapper }
         );
@@ -864,7 +934,8 @@ describe('useLibraryStatsQuery valid facets', () => {
             filters: createDefaultFilters(),
             settings,
             privacyEnabled: false,
-            allCollections: []
+            allCollections: [],
+            keywordStatsEnabled: true
         }), { wrapper });
         await waitFor(() => expect(searchRepoMocks.getKeywordStats).toHaveBeenCalledTimes(1));
 

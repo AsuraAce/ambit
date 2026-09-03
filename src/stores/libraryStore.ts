@@ -239,6 +239,7 @@ interface LibraryState {
 
     // Facet Cache Version (incremented after cache rebuild to trigger React Query refetch)
     facetCacheVersion: number;
+    keywordStatsEnabled: boolean;
 
     // Actions
     setSyncStatus: (status: SyncStatus) => void;
@@ -281,6 +282,7 @@ interface LibraryState {
     setLastMissingScanResult: (result: MissingFileAuditResult | null) => void;
     cancelMissingScan: () => void;
     incrementFacetCacheVersion: () => void;
+    setKeywordStatsEnabled: (enabled: boolean) => void;
 
     // Background Healing Actions
     setStartupCatchupPending: (val: boolean) => void;
@@ -348,6 +350,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     missingScanAbortController: null,
     lastMissingScanResult: null,
     facetCacheVersion: 0,
+    keywordStatsEnabled: false,
 
     // Background Healing State
     isStartupCatchupPending: false,
@@ -569,6 +572,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
         return { isScanningMissingFiles: false, missingScanProgress: null };
     }),
     incrementFacetCacheVersion: () => set((state) => ({ facetCacheVersion: state.facetCacheVersion + 1 })),
+    setKeywordStatsEnabled: (enabled) => set({ keywordStatsEnabled: enabled }),
 
     // Background Healing Actions
     setStartupCatchupPending: (val) => set({ isStartupCatchupPending: val }),

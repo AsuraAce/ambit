@@ -41,6 +41,16 @@ The engine distinguishes three source outcomes. A readable source can be optimiz
 
 Rescans preserve an active replacement thumbnail only after bounded WebP decoding validates it; missing or invalid replacements yield to the canonical thumbnail returned by the rescan.
 
+Thumbnail repair batches record existing selective resource and collection dirty domains instead of an unknown full-rebuild cause. Retry diagnostics and excluded-scope outcomes do not invalidate projections. Existing unrelated full markers, generation checks, and transaction rollback remain authoritative.
+
+### Startup Readiness and Diagnostics
+
+Owner admission and privacy preparation remain fail-closed. Optional startup maintenance waits until the existing startup presentation has settled and the current owner/privacy scope has presented a successful first page, including an empty result. Same-scope filtering retains this admission so foreground image queries throttle Smart repair rather than repeatedly cancelling it; an owner/privacy admission change requires a new safe page. Thumbnail optimization waits 30 seconds after readiness, automatic metadata checking waits 3 seconds, and an idempotent native notification schedules the production backup check 120 seconds after readiness. Automatic metadata attempts remain single-flight across readiness changes. Manual maintenance controls retain their existing behavior.
+
+The Statistics dashboard owns transient demand for keyword analysis. Closing it cancels further prompt batches, and keyword results are keyed by effective query/privacy/owner inputs and data revision. Browsing without Statistics does not launch the full prompt scan.
+
+Bounded startup diagnostics persist fixed phase names, timing, cache-repair action and a random renderer launch ID through native local logging; native records also include process elapsed time. They do not include prompts, library paths or owner identities, and diagnostic transport failures cannot block startup. The log covers database preparation, owner discovery/cache repair, facets/collections, privacy, the first page, splash dismissal/readiness and automatic maintenance. No diagnostics UI is added.
+
 ### Frontend App Shell and Feature Surfaces
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`

@@ -355,6 +355,7 @@ vi.mock('./contexts/SearchContext', () => ({
         globalTotal: mocks.images.length + 5,
         isFiltering: false,
         privacyExposureBlocked: mocks.privacyExposureBlocked,
+        isLibraryReady: !mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
         clearAllFilters: mocks.churnClearAllFiltersIdentity
             ? () => mocks.clearAllFilters()
@@ -584,8 +585,8 @@ describe('App orchestration', () => {
 
         expect(container.textContent).toBe('');
         expect(captured.appLayout).toBeNull();
-        expect(mocks.thumbnailQueue).toHaveBeenCalledWith(mocks.addToast);
-        expect(mocks.metadataRefresh).toHaveBeenCalled();
+        expect(mocks.thumbnailQueue).toHaveBeenCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenCalledWith(false);
     });
 
     it('wires loaded stores, background hooks, tags, and the static loader lifecycle', async () => {
@@ -628,6 +629,8 @@ describe('App orchestration', () => {
 
         const view = render(<App />);
         expect(staticLoader.style.opacity).toBe('');
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
 

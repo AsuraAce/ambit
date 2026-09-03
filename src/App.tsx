@@ -47,6 +47,9 @@ import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
 import { useLibraryModelOptions } from './features/viewer/hooks/useLibraryModelOptions';
+import { startupDiagnostics } from './utils/startupDiagnostics';
+import { commands } from './bindings';
+import { isTauriRuntime } from './services/runtime';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
@@ -69,6 +72,7 @@ const dismissStaticLoader = (immediate = false) => {
     if (!loader || loader.dataset.ambitDismissed === 'true') return;
 
     loader.dataset.ambitDismissed = 'true';
+    startupDiagnostics.mark('splash');
     loader.style.pointerEvents = 'none';
 
     if (immediate) {
@@ -134,7 +138,7 @@ export default function App() {
         filters, setFilters,
         sortOption, setSortOption,
         totalImages, globalTotal,
-        isFiltering, privacyExposureBlocked,
+        isFiltering, privacyExposureBlocked, isLibraryReady,
         toggleFavorite,
         clearAllFilters,
         recentSearches, setRecentSearches,
@@ -257,12 +261,6 @@ export default function App() {
         autoCheckEnabled: settings.autoCheckForUpdates !== false,
         isSettingsLoaded,
     });
-
-    // --- Background Processes ---
-    // Initialize background thumbnail auto-healing (runs after app startup delay)
-    useThumbnailQueue(addToast);
-    // Initialize background metadata refresh (runs after app startup delay)
-    useMetadataRefresh();
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
@@ -403,6 +401,21 @@ export default function App() {
     const shouldRenderInvokeOwnerScopeGate = isInvokeOwnerScopeBlocking
         && (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation)
         && (!isRuntimeOwnerScopeTransition || isRuntimeOwnerScopeGateVisible);
+    // Optional maintenance must never race owner/privacy preparation or its first safe page.
+    const backgroundStartupReady = isLoaded && isLibraryReady
+        && !isInitialStartupPresentation && !isInvokeOwnerScopeBlocking
+        && !isRuntimeOwnerScopeTransition && !privacyExposureBlocked;
+    useThumbnailQueue(addToast, backgroundStartupReady);
+    useMetadataRefresh(backgroundStartupReady);
+    useEffect(() => {
+        if (!backgroundStartupReady) return;
+        startupDiagnostics.mark('ready');
+        if (isTauriRuntime()) {
+            void commands.completeStartup().catch(() => {
+                console.warn('[Startup] Could not notify automatic backup that startup is ready.');
+            });
+        }
+    }, [backgroundStartupReady]);
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         await selectInvokeOwnerScope(selection);
     }, [selectInvokeOwnerScope]);

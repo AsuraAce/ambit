@@ -434,6 +434,17 @@ async checkAndRunAutobackup() : Promise<Result<BackupInfo | null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async recordStartupDiagnostic(event: StartupDiagnosticEvent) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_startup_diagnostic", { event }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async completeStartup() : Promise<void> {
+    await TAURI_INVOKE("complete_startup");
+},
 async scanImage(path: string, thumbnailDir: string | null, skipThumbnail: boolean, extractWorkflow: boolean, defaultTool: string | null) : Promise<Result<ScanResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("scan_image", { path, thumbnailDir, skipThumbnail, extractWorkflow, defaultTool }) };
@@ -916,6 +927,10 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  * Error message if scan failed or resulted in a partial result
  */
 error: string | null }
+export type StartupCacheAction = "restored" | "selective" | "full"
+export type StartupDiagnosticEvent = { launchId: string; phase: StartupPhase; status: StartupPhaseStatus; elapsedMs: number; durationMs: number | null; cacheAction: StartupCacheAction | null }
+export type StartupPhase = "database" | "database-schema" | "database-optimization" | "owner-discovery" | "owner-cache" | "facets" | "collections" | "privacy" | "first-page" | "splash" | "ready" | "thumbnail-maintenance" | "metadata-maintenance"
+export type StartupPhaseStatus = "started" | "completed" | "failed" | "cancelled"
 export type ThumbnailOptimizationComplete = ThumbnailOptimizationResult
 export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }

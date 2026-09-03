@@ -46,6 +46,7 @@ import { DEFAULT_APP_SETTINGS } from '../constants/defaultSettings';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { invalidateInvokeReferenceQueries } from '../services/db/invokeReferenceRepo';
 import { discoverInvokeOwners, readInvokeSourceFingerprint } from '../services/invoke/connection';
+import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
 import { applyInvokeOwnerScope, refreshInvokeOwnerVisibility } from '../services/invoke/ownerScope';
 import { clearCollectionOwnerScopeCaches } from '../services/db/collectionRepo';
 import { getMaintenanceCounts } from '../services/db/maintenanceRepo';
@@ -328,6 +329,7 @@ export const SyncProvider: React.FC<{
             const refreshStartedAt = performance.now();
             const claim = await unwrap(commands.beginActiveInvokeScopeCacheBuild());
             const cacheRepair = claim.cacheRepair;
+            const finishCache = startupDiagnostics.start('owner-cache', cacheRepair.action);
             const requiresCacheBuild = cacheRepair.action !== 'restored';
             try {
             clearLibraryStatsCache();
@@ -343,13 +345,13 @@ export const SyncProvider: React.FC<{
             if (requiresCacheBuild) {
                 if (cacheRepair.action === 'full') {
                     await clearCollectionOwnerScopeCaches();
-                    await rebuildFacetCacheStrict();
+                    await measureStartupPhase('facets', () => rebuildFacetCacheStrict());
                 } else {
                     if (resourceCount > 0 && resourceCount <= 64) {
-                        await refreshFacetCacheForResourcesStrict(cacheRepair.resources);
+                        await measureStartupPhase('facets', () => refreshFacetCacheForResourcesStrict(cacheRepair.resources));
                     }
                     if (facetTypes.length > 0) {
-                        await rebuildFacetCacheIncrementalBatchStrict(facetTypes);
+                        await measureStartupPhase('facets', () => rebuildFacetCacheIncrementalBatchStrict(facetTypes));
                     }
                     if (cacheRepair.collectionsDirty) {
                         await clearCollectionOwnerScopeCaches();
@@ -362,16 +364,16 @@ export const SyncProvider: React.FC<{
                 queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
                 queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
                 invalidateInvokeReferenceQueries(queryClient),
-                refreshCollections(false, {
+                measureStartupPhase('collections', () => refreshCollections(false, {
                     includeThumbnails: false,
                     scheduleSmartRefresh: false,
                     consistency: 'authoritative',
-                }),
+                })),
                 getMaintenanceCounts(),
             ]);
             useLibraryStore.getState().setMaintenanceCounts(maintenanceCounts);
             if (cacheRepair.action === 'full' || cacheRepair.collectionsDirty) {
-                await Promise.all([
+                await measureStartupPhase('collections', () => Promise.all([
                     refreshSmartCounts({
                         includeArchived: true,
                         includePromptSearch: true,
@@ -380,7 +382,7 @@ export const SyncProvider: React.FC<{
                     refreshCollectionThumbnails(false, true, {
                         consistency: 'authoritative',
                     }),
-                ]);
+                ]));
             }
             if (requiresCacheBuild) {
                 await unwrap(commands.commitActiveInvokeScopeCache({
@@ -395,8 +397,10 @@ export const SyncProvider: React.FC<{
                 collectionsDirty: cacheRepair.collectionsDirty,
                 elapsedMs: Math.round(performance.now() - refreshStartedAt),
             });
+            finishCache();
             return cacheRepair;
             } catch (error) {
+                finishCache('failed');
                 if (requiresCacheBuild) {
                     await abortInvokeScopeCacheClaim(claim, 'owner-scope refresh');
                 }
@@ -666,7 +670,7 @@ export const SyncProvider: React.FC<{
 
             let discovery: InvokeOwnerDiscovery;
             try {
-                discovery = await discoverInvokeOwners(rootPath);
+                discovery = await measureStartupPhase('owner-discovery', () => discoverInvokeOwners(rootPath));
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 let offlineScope = trustedOfflineScope ?? null;

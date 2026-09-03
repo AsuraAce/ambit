@@ -31,6 +31,7 @@ import { applyOptimisticPinOrder } from '../utils/imageOptimisticUpdates';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import { privacyMaskRefreshCoordinator } from '../utils/privacyMaskRefreshCoordinator';
+import { measureStartupPhase, startupDiagnostics } from '../utils/startupDiagnostics';
 import {
     isInvokeOwnerScopeAdmitted,
     useInvokeOwnerScopeStore,
@@ -52,6 +53,8 @@ interface SearchContextType {
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
     isFiltering: boolean;
+    /** This owner/privacy scope has presented a successful safe page, even when empty. */
+    isLibraryReady: boolean;
     privacyExposureBlocked: boolean;
     activeSqlWhere: string;
     activeSqlParams: unknown[];
@@ -103,6 +106,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const privacyMaskIndexRetryToken = useSettingsStore(state => state.privacyMaskIndexRetryToken);
     const setPrivacyMaskIndexState = useSettingsStore(state => state.setPrivacyMaskIndexState);
     const refreshSmartCounts = useCollectionStore(state => state.refreshSmartCounts);
+    const keywordStatsEnabled = useLibraryStore(state => state.keywordStatsEnabled);
 
 
 
@@ -165,14 +169,14 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
                 await getDb();
                 if (cancelled) return;
                 const refreshStartedAt = performance.now();
-                const result = await unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords));
+                const result = await measureStartupPhase('privacy', () => unwrap(commands.refreshPrivacyMaskIndex(privacyMaskKeywords)));
                 if (cancelled) return;
 
                 console.info(`[Startup] Privacy mask refresh completed in ${Math.round(performance.now() - refreshStartedAt)}ms (changed: ${result.changed}, updated: ${result.updated})`);
                 if (result.changed || result.updated > 0) {
                     const rebuildStartedAt = performance.now();
                     await clearAllCollectionThumbnailCaches();
-                    await rebuildThumbnailFacetCache();
+                    await measureStartupPhase('facets', () => rebuildThumbnailFacetCache());
                     if (cancelled) return;
                     console.info(`[Startup] Thumbnail facet privacy refresh completed in ${Math.round(performance.now() - rebuildStartedAt)}ms`);
                     useLibraryStore.getState().incrementFacetCacheVersion();
@@ -237,6 +241,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isFetchingNextPage,
         isLoading: isQueryLoading,
         isPlaceholderData,
+        status: imagesQueryStatus,
         queryKey: imagesQueryKey
     } = useImagesQuery({
         filters,
@@ -254,6 +259,27 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         || privacyIndexBlocked
         || privacyScopeTransitionBlocked;
     const isFirstPageFetching = isFetching && !isFetchingNextPage;
+    const librarySafetyScope = JSON.stringify([imagesQueryKey[imagesQueryKey.length - 1], privacyQueryScopeKey]);
+    const [preparedLibrarySafetyScope, setPreparedLibrarySafetyScope] = useState<string | null>(null);
+    const hasCurrentSafePage = databaseQueriesEnabled
+        && !privacyExposureBlocked
+        && imagesQueryStatus === 'success'
+        && Boolean(queryData?.pages.length)
+        && !isPlaceholderData
+        && !isFirstPageFetching;
+    React.useLayoutEffect(() => {
+        if (!databaseQueriesEnabled || privacyExposureBlocked) {
+            setPreparedLibrarySafetyScope(null);
+        } else if (hasCurrentSafePage) {
+            setPreparedLibrarySafetyScope(librarySafetyScope);
+        }
+    }, [databaseQueriesEnabled, hasCurrentSafePage, librarySafetyScope, privacyExposureBlocked]);
+    // Ordinary searches retain admission so image requests throttle, rather than cancel, Smart repair.
+    const isLibraryReady = databaseQueriesEnabled && !privacyExposureBlocked
+        && (hasCurrentSafePage || preparedLibrarySafetyScope === librarySafetyScope);
+    useEffect(() => {
+        if (isLibraryReady) startupDiagnostics.mark('first-page');
+    }, [isLibraryReady]);
 
     // Flatten pages into a single image array
     const queryImages = React.useMemo(() => {
@@ -308,7 +334,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         allCollections,
         settingsLoaded: databaseQueriesEnabled,
         assetScope,
-        validFacetsEnabled: facetDrilldownActive
+        validFacetsEnabled: facetDrilldownActive,
+        keywordStatsEnabled
     });
 
     const activeFacets = !privacyExposureBlocked && statsData?.facets || { checkpoints: [], loras: [], embeddings: [], hypernetworks: [], tools: [], controlNets: [], ipAdapters: [] };
@@ -642,6 +669,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             isFiltering: !privacyIndexBlocked
                 && (privacyScopeTransitionBlocked || isQueryLoading || isPlaceholderData || isFirstPageFetching),
             privacyExposureBlocked,
+            isLibraryReady,
             activeSqlWhere,
             activeSqlParams,
             refreshMetadata,
