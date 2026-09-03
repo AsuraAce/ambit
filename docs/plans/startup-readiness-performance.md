@@ -1,6 +1,6 @@
 # Startup readiness and performance
 
-Status: Active — implementation and automated verification complete; isolated debug test copy ready for owner acceptance
+Status: Active — implementation and automated verification complete; representative dev acceptance pending
 Baseline: `20cd2390` (latest main checked 2026-09-03)
 
 ## Outcome and invariants
@@ -35,8 +35,8 @@ No partially prepared opening, weaker privacy protection, persistent word-cloud 
 ## Evidence / remaining gates
 
 - Approved follow-up: isolate debug migration-history repair to its active database, preserving release compatibility. A regression reproduced an inactive production-fixture checksum update before the fix; the fixed debug path leaves its bytes and migration records unchanged. Debug and release migration suites, full frontend/Rust suites, lint and strict TypeScript pass. The additive debug test identifier is `com.ambit.startup-test`; normal dev and installed production remain separate.
-- The additive debug test copy is ready: 295,113 Ambit image records, a 156,021-image InvokeAI snapshot, and 290,584 copied Ambit thumbnail files. Both SQLite quick checks pass; table row counts are preserved; the copied catalog has zero foreign-key violations and zero original operational image/thumbnail paths. Path-based IDs, references and owner cache identities were repointed only in the copy; the production external-content FTS index keeps its unchanged image rowids. Existing cached states are preserved, including ready aggregate and dirty owner snapshots. Normal dev remains in place, with an additional database/settings backup.
-- The test build uses a frozen debug-native executable with bundled frontend, the additive `com.ambit.startup-test` identifier and a checksum-guarded local launcher. It was built but not launched by the agent. Full originals and externally sourced InvokeAI thumbnails are not copied; source-folder scans and automatic thumbnail repair are disabled. This is a catalog/owner/cache timing test, not full-media or optimized-release acceptance. First-launch copied-source reconciliation must be separated from repeat timing; exact startup times remain unmeasured.
+- The additive debug test copy contained 295,113 Ambit image records, a 156,021-image InvokeAI snapshot, and 290,584 copied Ambit thumbnail files. Its database and path-integrity checks passed, but owner evaluation found that missing source media and the separate launch/profile flow made the experience unrepresentative. The approach was withdrawn and its disposable profile was removed. The independently hash-verified dev database/settings backup is retained outside the test folder.
+- Native acceptance will continue in regular dev through the actual InvokeAI connection and owner-selection workflow. Measure initial synchronization separately from unchanged repeat launches and owner switches. The smaller regular-dev library can validate behavior and direction, but cannot establish the production-scale targets; exact large-library startup performance remains unmeasured.
 - Worktree updated from release `edc439a8` to `20cd2390` on `fix/startup-readiness`.
 - Latest-main frontend baseline: 278 files, 3,352 passing tests, one intentional skip.
 - Implemented readiness-gated maintenance, Statistics-only analysis, selective thumbnail invalidation and bounded local startup diagnostics. Owner/privacy and splash presentation behavior is unchanged.
