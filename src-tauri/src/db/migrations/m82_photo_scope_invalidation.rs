@@ -1,11 +1,11 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 81: Photo classification and refresh change the rows used by
+/// Migration 82: Photo classification and refresh change the rows used by
 /// owner-scoped collections. Keep their derived caches coherent without
 /// changing the historical migration 78 trigger checksum.
-pub fn migration81() -> Migration {
+pub fn migration82() -> Migration {
     Migration {
-        version: 81,
+        version: 82,
         description: "invalidate_owner_scope_cache_for_photo_updates",
         sql: r#"
             CREATE TRIGGER invoke_scope_cache_images_photo_update_dirty
@@ -43,7 +43,7 @@ pub fn migration81() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration81;
+    use super::migration82;
 
     fn setup() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -86,7 +86,7 @@ mod tests {
             ",
         )
         .expect("setup schema");
-        conn.execute_batch(migration81().sql)
+        conn.execute_batch(migration82().sql)
             .expect("apply migration");
         conn
     }

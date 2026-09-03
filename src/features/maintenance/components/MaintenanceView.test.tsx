@@ -38,6 +38,14 @@ const thumbnailServiceMock = vi.hoisted(() => ({
     regenerateAllUnoptimized: vi.fn().mockResolvedValue(0)
 }));
 
+const thumbnailConsumerRefreshMock = vi.hoisted(() => ({
+    refreshThumbnailConsumers: vi.fn().mockResolvedValue(undefined)
+}));
+
+const toastMock = vi.hoisted(() => ({
+    addToast: vi.fn()
+}));
+
 const libraryContextMock = vi.hoisted(() => ({
     activeSqlWhere: 'WHERE model_name = ?',
     activeSqlParams: ['model-a'] as unknown[]
@@ -103,6 +111,10 @@ vi.mock('../../../hooks/useMaintenanceData', () => ({
         setLocalDuplicateCandidates: maintenanceDataMock.setLocalDuplicateCandidates,
         setLocalIntermediateImages: maintenanceDataMock.setLocalIntermediateImages,
     })
+}));
+
+vi.mock('../../../hooks/useToast', () => ({
+    useToast: () => toastMock
 }));
 
 vi.mock('../../../contexts/LibraryContext', () => ({
@@ -345,6 +357,10 @@ vi.mock('../../../services/thumbnailService', () => ({
     regenerateAllUnoptimized: thumbnailServiceMock.regenerateAllUnoptimized
 }));
 
+vi.mock('../../../services/thumbnailConsumerRefresh', () => ({
+    refreshThumbnailConsumers: thumbnailConsumerRefreshMock.refreshThumbnailConsumers
+}));
+
 const createProps = (): React.ComponentProps<typeof MaintenanceView> => ({
     images: [],
     onResolveDuplicate: vi.fn().mockResolvedValue(undefined),
@@ -402,6 +418,7 @@ describe('MaintenanceView', () => {
         imageRepoMock.getImagesByIds.mockResolvedValue([]);
         imageRepoMock.toggleImageIntermediate.mockResolvedValue(undefined);
         thumbnailServiceMock.regenerateAllUnoptimized.mockResolvedValue(0);
+        thumbnailConsumerRefreshMock.refreshThumbnailConsumers.mockResolvedValue(undefined);
         useLibraryStore.setState(useLibraryStore.getInitialState(), true);
     });
 
@@ -816,12 +833,38 @@ describe('MaintenanceView', () => {
         expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
         expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
         expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();
+        expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).toHaveBeenCalledOnce();
 
         fireEvent.click(screen.getByText('Repair Complete'));
         expect(maintenanceDataMock.refreshData).toHaveBeenCalledWith('thumbnails', false, {
             scope: 'filtered',
             includeUpgradeable: true
         });
+    });
+
+    it('reports regenerate-all failures and refreshes any thumbnails committed by earlier batches', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'thumbnails']);
+        maintenanceDataMock.localUnoptimizedImages = [createImage({ id: 'thumb-a' })];
+        maintenanceDataMock.unoptimizedTotalCount = 1;
+        thumbnailServiceMock.regenerateAllUnoptimized.mockRejectedValueOnce(new Error('native repair failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        renderView();
+
+        try {
+            fireEvent.click(screen.getByText('Tab thumbnails'));
+            fireEvent.click(await screen.findByText('Regenerate All'));
+
+            await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith(
+                'Thumbnail optimization failed partway through',
+                'error'
+            ));
+            expect(thumbnailConsumerRefreshMock.refreshThumbnailConsumers).toHaveBeenCalledOnce();
+            expect(useLibraryStore.getState().isRegeneratingThumbnails).toBe(false);
+            expect(useLibraryStore.getState().thumbnailProgress).toBeNull();
+            expect(useLibraryStore.getState().thumbnailAbortController).toBeNull();
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 
     it('starts deferred scans and handles duplicate resolution and comparison callbacks', async () => {

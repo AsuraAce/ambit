@@ -1,11 +1,11 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 80: Add a durable per-row checkpoint for filesystem-backed photo
+/// Migration 81: Add a durable per-row checkpoint for filesystem-backed photo
 /// metadata adoption. Rows remain pending until a complete scan batch commits,
 /// so cancellation or process exit can safely resume later.
-pub fn migration80() -> Migration {
+pub fn migration81() -> Migration {
     Migration {
-        version: 80,
+        version: 81,
         description: "add_photo_metadata_refresh_checkpoint",
         sql: r#"
             ALTER TABLE images ADD COLUMN photo_refresh_version INTEGER NOT NULL DEFAULT 0;
@@ -21,7 +21,7 @@ pub fn migration80() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration80;
+    use super::migration81;
 
     #[test]
     fn migration_adds_restart_safe_refresh_checkpoint() {
@@ -39,8 +39,8 @@ mod tests {
         )
         .expect("base schema");
 
-        conn.execute_batch(&migration80().sql)
-            .expect("migration 64");
+        conn.execute_batch(&migration81().sql)
+            .expect("migration 81");
 
         let version: i64 = conn
             .query_row(

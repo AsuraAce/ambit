@@ -100,7 +100,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     }, []);
 
     return (
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-4">
             {showLayoutSwitcher && (
                 <div className="flex bg-gray-100 dark:bg-zinc-800/50 rounded-xl p-1 border border-gray-200 dark:border-white/5">
                     <TooltipButton

@@ -118,7 +118,7 @@ export const AppHeader = React.memo(({
 
     return (
         <header className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
-            <div className="h-16 flex items-center justify-between px-6 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative z-20">
+            <div className="min-h-16 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 py-3 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative z-20">
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (
@@ -135,7 +135,7 @@ export const AppHeader = React.memo(({
                     )}
                 </div>
 
-                <div className="flex items-center gap-4 flex-1">
+                <div className="flex min-w-0 basis-[26rem] flex-1 items-center gap-4">
                     <React.Suspense fallback={<SearchBarFallback />}>
                         <SearchBar
                             filters={filters}
@@ -164,7 +164,7 @@ export const AppHeader = React.memo(({
                     )}
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-4">
                     <div className="ml-1 flex items-center gap-1">
                         <TooltipButton
                             label="Import Images"

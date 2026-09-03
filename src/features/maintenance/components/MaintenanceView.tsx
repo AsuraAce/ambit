@@ -24,6 +24,10 @@ import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution } from '../../../bindings';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCollectionStore } from '../../../stores/collectionStore';
+import { refreshThumbnailConsumers } from '../../../services/thumbnailConsumerRefresh';
+import { useToast } from '../../../hooks/useToast';
 
 interface MaintenanceViewProps {
     images: AIImage[];
@@ -95,6 +99,9 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const cancelDuplicateScan = useLibraryStore(s => s.cancelDuplicateScan);
     const lastMissingScanResult = useLibraryStore(s => s.lastMissingScanResult);
     const { activeSqlWhere, activeSqlParams } = useLibraryContext();
+    const queryClient = useQueryClient();
+    const refreshCollectionThumbnails = useCollectionStore(state => state.refreshCollectionThumbnails);
+    const { addToast } = useToast();
 
     // Scopes
     const [thumbnailsScope, setThumbnailsScope] = useState<'global' | 'filtered'>('global');
@@ -480,7 +487,20 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                     params,
                     includeUpgradeable
                 );
+            } catch (error) {
+                console.error('[Maintenance] Thumbnail regeneration failed', error);
+                addToast('Thumbnail optimization failed partway through', 'error');
             } finally {
+                try {
+                    await refreshThumbnailConsumers({
+                        queryClient,
+                        refreshCollectionThumbnails,
+                        logPrefix: '[Maintenance]',
+                    });
+                } catch (error) {
+                    console.error('[Maintenance] Thumbnail changes were saved, but consumers failed to refresh', error);
+                    addToast('Thumbnail changes were saved, but the library view failed to refresh', 'error');
+                }
                 setIsRegeneratingThumbnails(false);
                 setThumbnailProgress(null);
                 setThumbnailAbortController(null);

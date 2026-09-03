@@ -1,7 +1,7 @@
 # Photography / main integration
 
 Status: In progress
-Baseline: origin/main cbbd3ffd (0.13.0), photography checkpoint 09fb319f.
+Baseline: origin/main 20cd2390 (0.13.0), photography checkpoint 09fb319f. The initial cbbd3ffd integration is preserved as 08dfb72d; main's thumbnail-repair follow-up arrived during verification and is included in this acceptance gate.
 
 ## Outcome
 
@@ -9,8 +9,9 @@ Bring the accepted photography slice onto current main without losing the curren
 
 ## Scope and invariants
 
-- Keep released migrations 63–78 unchanged. Recognize only the exact legacy photography migration checksums and relocate their history to 79–80 transactionally before applying main migrations; reject ambiguous histories without modifying them.
+- Keep released migrations 63–79 unchanged. Recognize only the exact legacy photography migration checksums and relocate their history to 80–81 transactionally before applying main migrations; reject ambiguous histories without modifying them. No real catalog was opened on the temporary 79–80 integration numbering.
 - Retain camera metadata, classification overrides, display dates, and orientation-aware thumbnails through scan, refresh, removal, and restoration.
+- Use main's shared native repair pipeline and canonical candidate views, with the photo thumbnail version-2 threshold supplied by a new migration rather than changing released migration 79.
 - Respect current owner-scoped reads and mutations. Photo refresh and manual photo classification apply to images, not videos.
 - Use the current viewer shell and editing conventions while retaining neutral photo details.
 - No production catalog launch, source-file writes, publishing, or new feature work in this integration.

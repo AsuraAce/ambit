@@ -60,12 +60,12 @@ The Thumbnails tab finds images that could benefit from thumbnail regeneration. 
 Use the thumbnail controls this way:
 
 - Include upgradeable: include thumbnails that already exist but can be replaced with higher-quality versions.
-- Regenerate Selected: rebuild thumbnails for selected records.
-- Regenerate All Unoptimized: rebuild all unoptimized thumbnails in the chosen scope in batches.
+- Regenerate Selected: force-rebuild thumbnails for selected valid image records, even when a cached thumbnail already exists.
+- Regenerate All Unoptimized: rebuild all eligible thumbnails in the chosen scope in fast native batches. Manual runs retry previous failures immediately.
 - Repair Broken Thumbnails: check thumbnail files on disk and reset missing thumbnail references.
 - Clean up unused thumbnails: remove unused thumbnail files when the selected scope is already optimized.
 
-Ambit can also heal thumbnails in the background during normal use. If Smart Thumbnail Optimization is running, manual thumbnail controls may be disabled until background work finishes.
+Ambit can also heal thumbnails in the background during normal use. Smart and Maintenance use the same repair and filesystem-safety rules, but Smart works incrementally at lower priority, waits before retrying recent failures, and throttles while you browse. Only one thumbnail repair job runs at a time, so manual controls may be disabled until background work finishes.
 
 ## Duplicates
 
