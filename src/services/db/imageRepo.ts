@@ -107,6 +107,7 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     detectedSourceKind: getDetectedSourceKind(image),
     sourceKindOverride: image.sourceKindOverride ?? null,
     photoMetadata: image.photoMetadata ?? null,
+    photoMetadataError: image.photoMetadataError ?? null,
     captureWallTimeMs: image.captureWallTimeMs ?? null,
     isFavorite: !!image.isFavorite,
     isPinned: !!image.isPinned,

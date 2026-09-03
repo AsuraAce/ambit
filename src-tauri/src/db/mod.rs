@@ -117,6 +117,8 @@ pub struct ImageRecord {
     pub source_kind_override: Option<crate::metadata::photo::SourceKind>,
     #[serde(rename = "photoMetadata")]
     pub photo_metadata: Option<crate::metadata::photo::PhotoMetadata>,
+    #[serde(rename = "photoMetadataError")]
+    pub photo_metadata_error: Option<String>,
     #[serde(rename = "captureWallTimeMs")]
     pub capture_wall_time_ms: Option<i64>,
     #[serde(rename = "isFavorite")]

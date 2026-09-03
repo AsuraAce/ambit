@@ -416,6 +416,7 @@ async function processImageFileEntries(
 
                     // Simple logic: if timestamp or size changed, update.
                     // For deeper metadata diff, we can enable it, but for speed we trust timestamp/size often.
+                    if (img.photoMetadataError) return true;
                     if (existing.timestamp !== img.timestamp || existing.fileSize !== img.fileSize) return true;
                     if (existing.detectedSourceKind !== img.detectedSourceKind) return true;
                     if (JSON.stringify(existing.photoMetadata) !== JSON.stringify(img.photoMetadata)) return true;

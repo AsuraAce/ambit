@@ -768,7 +768,11 @@ fn save_images_batch_inner(
                     photo_metadata_json,
                     img.capture_wall_time_ms,
                     img.thumbnail_version,
-                    CURRENT_PHOTO_REFRESH_VERSION,
+                    if img.photo_metadata_error.is_some() {
+                        0
+                    } else {
+                        CURRENT_PHOTO_REFRESH_VERSION
+                    },
                     i64::from(valid_replacement_ids.contains(&img.id))
                 ])
                 .map_err(|e| e.to_string())?;
@@ -3101,6 +3105,7 @@ mod tests {
             detected_source_kind: crate::metadata::photo::SourceKind::Generated,
             source_kind_override: None,
             photo_metadata: None,
+            photo_metadata_error: None,
             capture_wall_time_ms: None,
             is_favorite: false,
             is_pinned: false,
@@ -5286,43 +5291,90 @@ mod tests {
     }
 
     #[test]
-    fn save_images_batch_marks_current_photo_metadata_version() {
+    fn save_images_batch_keeps_failed_photo_metadata_probes_retryable() {
+        use crate::metadata::photo::{PhotoMetadata, SourceKind};
+
         let conn = Connection::open_in_memory().expect("in-memory db");
         apply_all_migrations(&conn);
 
-        let image = create_image_record("current-photo-metadata", 100, 200, "{}");
+        let mut fresh_failure = create_image_record("fresh-photo-failure", 50, 100, "{}");
+        fresh_failure.photo_metadata_error = Some("Malformed EXIF directory".to_string());
+        super::save_images_batch_inner(&conn, &[fresh_failure]).expect("save fresh failed probe");
+        let fresh_checkpoint: i64 = conn
+            .query_row(
+                "SELECT photo_refresh_version FROM images WHERE id = 'fresh-photo-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fresh failed photo checkpoint");
+        assert_eq!(fresh_checkpoint, 0, "fresh failed probes must be retryable");
+
+        let mut image = create_image_record("current-photo-metadata", 100, 200, "{}");
+        image.detected_source_kind = SourceKind::Photograph;
+        image.photo_metadata = Some(PhotoMetadata {
+            camera_model: Some("Camera One".to_string()),
+            ..PhotoMetadata::default()
+        });
         super::save_images_batch_inner(&conn, &[image.clone()]).expect("initial save");
 
-        let current_version: i64 = conn
-            .query_row(
-                "SELECT photo_refresh_version FROM images WHERE id = 'current-photo-metadata'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("current photo refresh version");
-        assert_eq!(
-            current_version,
-            crate::db::reparse::CURRENT_PHOTO_REFRESH_VERSION
-        );
-
         conn.execute(
-            "UPDATE images SET photo_refresh_version = 0 WHERE id = 'current-photo-metadata'",
+            "UPDATE images SET source_kind_override = 'other', source_kind = 'other' WHERE id = 'current-photo-metadata'",
             [],
         )
-        .expect("mark row stale");
+        .expect("set manual override");
 
-        super::save_images_batch_inner(&conn, &[image]).expect("rescan stale row");
-        let refreshed_version: i64 = conn
+        image.photo_metadata_error = Some("Malformed EXIF directory".to_string());
+        super::save_images_batch_inner(&conn, &[image.clone()]).expect("save failed probe");
+
+        let failed_state: (i64, String, String, String) = conn
             .query_row(
-                "SELECT photo_refresh_version FROM images WHERE id = 'current-photo-metadata'",
+                "SELECT photo_refresh_version, source_kind_override, source_kind, photo_metadata_json
+                 FROM images WHERE id = 'current-photo-metadata'",
                 [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("failed photo refresh state");
+        assert_eq!(failed_state.0, 0);
+        assert_eq!(
+            failed_state.1, "other",
+            "failed probe must preserve manual override"
+        );
+        assert_eq!(failed_state.2, "other");
+        assert!(
+            failed_state.3.contains("Camera One"),
+            "failed probe must retain known camera metadata"
+        );
+
+        let retryable_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images
+                 WHERE id = 'current-photo-metadata' AND photo_refresh_version < ?1",
+                [crate::db::reparse::CURRENT_PHOTO_REFRESH_VERSION],
                 |row| row.get(0),
             )
-            .expect("refreshed photo version");
+            .expect("retry eligibility");
         assert_eq!(
-            refreshed_version,
+            retryable_count, 1,
+            "failed probe must remain eligible for non-forced photo refreshes"
+        );
+
+        image.photo_metadata_error = None;
+        super::save_images_batch_inner(&conn, &[image]).expect("rescan stale row");
+        let refreshed_state: (i64, String, String, String) = conn
+            .query_row(
+                "SELECT photo_refresh_version, source_kind_override, source_kind, photo_metadata_json
+                 FROM images WHERE id = 'current-photo-metadata'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("successful photo refresh state");
+        assert_eq!(
+            refreshed_state.0,
             crate::db::reparse::CURRENT_PHOTO_REFRESH_VERSION
         );
+        assert_eq!(refreshed_state.1, "other");
+        assert_eq!(refreshed_state.2, "other");
+        assert!(refreshed_state.3.contains("Camera One"));
     }
 
     #[test]

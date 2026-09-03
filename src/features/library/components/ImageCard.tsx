@@ -69,7 +69,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             ? 'border-red-300 dark:border-red-900/50 opacity-80'
             : 'border-gray-200 dark:border-white/5 hover:border-sage-300 dark:hover:border-white/20 hover:shadow-2xl hover:-translate-y-1 hover:scale-[1.02]'
         }
-        ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
+        ${isMissing ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
       `}
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
@@ -85,9 +85,8 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       <button
         type="button"
         aria-label={`Open ${image.filename}, ${isVideo ? 'Video' : sourceKind === 'photograph' ? 'Photo' : sourceKind === 'generated' ? 'Generated image' : 'Other image'}`}
-        disabled={isMissing}
         onClick={(e) => onClick(e, isMasked && isRevealed)}
-        className="absolute inset-0 z-[1] cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-400 disabled:cursor-not-allowed"
+        className="absolute inset-0 z-[1] cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-400"
       />
       <div data-media-clip className="pointer-events-none absolute inset-0 z-[2] overflow-hidden rounded-2xl [clip-path:inset(0_round_1rem)]">
         {isVideo && !hasVideoPoster ? (

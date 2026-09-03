@@ -426,7 +426,7 @@ describe('processTargetedFiles', () => {
         expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
     });
 
-    it('preserves previously indexed photo metadata when a rescan cannot read EXIF', async () => {
+    it('persists unchanged files with failed EXIF probes while preserving indexed photo state', async () => {
         const existingPhotoMetadata = {
             capturedAt: { local: '2024-06-15T14:30:00', offset: '+02:00', subsecond: null },
             captureTimeRaw: '2024:06:15 14:30:00',
@@ -455,6 +455,7 @@ describe('processTargetedFiles', () => {
                     isFavorite: false,
                     isPinned: false,
                     detectedSourceKind: 'photograph',
+                    sourceKindOverride: 'other',
                     photoMetadata: existingPhotoMetadata,
                     captureWallTimeMs: 1718461800000
                 }
@@ -481,13 +482,23 @@ describe('processTargetedFiles', () => {
 
         expect(result.images[0]).toMatchObject({
             detectedSourceKind: 'photograph',
-            sourceKind: 'photograph',
+            sourceKind: 'other',
             photoMetadata: existingPhotoMetadata,
             captureWallTimeMs: 1718461800000,
-            displayTimestamp: 1718461800000,
+            displayTimestamp: 7000,
             photoMetadataError: 'Malformed EXIF directory'
         });
-        expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
+        expect(result.stats.imported).toBe(1);
+        expect(mocks.insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: 'C:/library/photo.jpg',
+                detectedSourceKind: 'photograph',
+                sourceKindOverride: 'other',
+                photoMetadata: existingPhotoMetadata,
+                captureWallTimeMs: 1718461800000,
+                photoMetadataError: 'Malformed EXIF directory'
+            })
+        ]);
     });
 
     it('accounts failed metadata batches as failed paths without pretending import succeeded', async () => {

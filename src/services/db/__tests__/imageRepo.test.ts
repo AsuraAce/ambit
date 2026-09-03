@@ -119,6 +119,35 @@ describe('imageRepo batch removal', () => {
         errorSpy.mockRestore();
     });
 
+    it('persists photo metadata probe failures so native retries remain eligible', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+
+        const { insertImagesBatch } = await import('../imageRepo');
+        await insertImagesBatch([{
+            id: 'C:/images/photo.jpg',
+            url: 'C:/images/photo.jpg',
+            thumbnailUrl: 'C:/thumbs/photo.webp',
+            filename: 'photo.jpg',
+            width: 6240,
+            height: 4160,
+            timestamp: 1700000000000,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+            detectedSourceKind: 'other',
+            photoMetadataError: 'Malformed EXIF directory',
+        }]);
+
+        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ photoMetadataError: 'Malformed EXIF directory' }),
+        ]);
+    });
+
     it('uses browser mock data for repository reads and writes without touching native storage', async () => {
         browserMockModeMock.mockReturnValue(true);
         const promptMetadata = { ...liveImportMetadata, positivePrompt: 'prompt' };

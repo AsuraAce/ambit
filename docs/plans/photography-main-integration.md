@@ -33,13 +33,15 @@ The branch and main reused migration numbers 63–64 for different schemas. A ve
 | R1: source-kind counts bypass owner-scoped views | Closed | All four count-query branches use scoped_images; 70 search-repository tests pass |
 | R2: photo-only changes omit the smart-collection dirty ledger | Closed | Already-dirty scopes gain collection invalidation; repeated UPSERT, owner boundaries, and suppression verified |
 | R3: Maintenance viewer omits Image Kind correction | Closed | Active viewer correction/Automatic restoration updates state after persistence; Removed stays read-only; 94 related tests pass |
+| R4: failed photo probes are checkpointed as complete | Closed | Probe errors cross the save contract, unchanged failed rescans still persist, failure resets the checkpoint, and success advances it; camera facts and manual kind survive |
+| R5: missing-file gallery cards cannot open | Closed | Missing originals remain keyboard-openable for cached inspection and support modifier selection; dragging remains disabled |
 
 Independent Standards and Spec closure reviews are clean. Product acceptance on the owner's desktop catalog remains separate from these engineering checks.
 
 ## Verification and handoff
 
 - Latest remote main confirmed as 20cd2390 at handoff; it is an ancestor of this branch.
-- Full frontend suite: 279 files, 3,377 passed, 1 intentional skip. Full native suite: 947 passed, 4 ignored.
+- Full frontend suite: 279 files, 3,379 passed, 1 intentional skip. Full native suite: 947 passed, 4 ignored.
 - Strict TypeScript, ESLint, Rust formatting, generated binding drift, version consistency, and guarded production frontend build pass.
 - Final QA-profile desktop debug/no-bundle build passes. The executable was not launched against an existing catalog.
 - Isolated browser smoke passes at 2048, 1600, and 1280 widths: usable search, dropdown right of search, All initial default, Photos selection surviving reload, photo capture facts, current generated Metadata tab, and working privacy reveal. No browser console/page errors.
@@ -48,3 +50,5 @@ Independent Standards and Spec closure reviews are clean. Product acceptance on 
 Owner acceptance: run `pnpm run app:qa` from this worktree to use the existing QA profile. Check the imported photos, camera details, Image Kind correction, and persisted dropdown selection after restart. Do not run the QA prepare/cleanup commands unless intentionally resetting that profile. Real-catalog desktop startup, native media playback, signed installers, and updater behavior were not exercised in this integration; this is not release certification.
 
 Deliberate follow-up: photo capture facts still appear in both Details and Library. Consolidating that presentation is a separate UX decision, not part of restoring compatibility with main.
+
+Follow-up finding closure (2026-09-03): R4 and R5 were reproduced with failing regressions before the fixes. Independent Standards and Spec closure reviews pass, including the unchanged-file import gate. Browser-only mock checks at 1600 and 1280 pixels verify missing-photo keyboard opening, capture details, and Ctrl-click selection without runtime errors. One unchanged native root-probe timeout test failed under load, passed in isolation, and passed with the full native suite at four test threads. No schema migration or global refresh-version bump was added. Historical rows incorrectly marked current by the old code cannot be distinguished safely; use a forced photo metadata refresh if such rows need recovery. Real catalogs and source files remain untouched.
