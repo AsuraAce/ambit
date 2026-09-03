@@ -45,6 +45,8 @@ Thumbnail repair batches record existing selective resource and collection dirty
 
 ### Startup Readiness and Diagnostics
 
+Debug startup reconciles migration history only in its active profile database; it does not enumerate or repair other development or production profiles. Release builds retain the existing compatible-profile migration repair behavior. This is a database-repair boundary, not a complete filesystem or keyring sandbox: copied catalogs must still have their operational source/cache paths redirected before testing.
+
 Owner admission and privacy preparation remain fail-closed. Optional startup maintenance waits until the existing startup presentation has settled and the current owner/privacy scope has presented a successful first page, including an empty result. Same-scope filtering retains this admission so foreground image queries throttle Smart repair rather than repeatedly cancelling it; an owner/privacy admission change requires a new safe page. Thumbnail optimization waits 30 seconds after readiness, automatic metadata checking waits 3 seconds, and an idempotent native notification schedules the production backup check 120 seconds after readiness. Automatic metadata attempts remain single-flight across readiness changes. Manual maintenance controls retain their existing behavior.
 
 The Statistics dashboard owns transient demand for keyword analysis. Closing it cancels further prompt batches, and keyword results are keyed by effective query/privacy/owner inputs and data revision. Browsing without Statistics does not launch the full prompt scan.

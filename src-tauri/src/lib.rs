@@ -601,6 +601,103 @@ mod migration_history_tests {
         (root, db_path)
     }
 
+    fn create_repairable_migration55_history(conn: &rusqlite::Connection) {
+        create_migration_table(conn);
+        conn.execute_batch(
+            "CREATE TABLE images (thumbnail_path TEXT);
+             CREATE INDEX idx_images_thumbnail_path_lookup_v1 ON images(thumbnail_path);",
+        )
+        .expect("manual thumbnail lookup index");
+        insert_row(conn, 55, "add_manual_thumbnail_lookup_index", 1, &[0; 48]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn development_repair_does_not_modify_repairable_inactive_production_history() {
+        let (active_root, active_path) = profile_db_path("active-development");
+        let (inactive_root, inactive_path) = profile_db_path("inactive-production");
+        let active = rusqlite::Connection::open(&active_path).expect("active database");
+        create_repairable_migration55_history(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("inactive database");
+        create_repairable_migration55_history(&inactive);
+        let inactive_rows_before = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_before = std::fs::read(&inactive_path).expect("inactive database bytes");
+
+        repair_known_migration_metadata_at_paths(
+            &[active_path.clone(), inactive_path.clone()],
+            &active_path,
+            true,
+        )
+        .expect("active development history should repair");
+
+        let active = rusqlite::Connection::open(&active_path).expect("reopen active");
+        let active_rows = migration_rows(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
+        let inactive_rows = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_after = std::fs::read(&inactive_path).expect("inactive database bytes");
+        std::fs::remove_dir_all(active_root).expect("remove active profile");
+        std::fs::remove_dir_all(inactive_root).expect("remove inactive profile");
+
+        let expected_checksum = Sha384::digest(
+            crate::db::migrations::m55_manual_thumbnail_lookup_index::migration55()
+                .sql
+                .as_bytes(),
+        )
+        .to_vec();
+        assert_eq!(
+            active_rows[0].3, expected_checksum,
+            "active checksum must repair"
+        );
+        assert_eq!(
+            inactive_rows, inactive_rows_before,
+            "inactive rows must not change"
+        );
+        assert_eq!(
+            inactive_bytes_after, inactive_bytes_before,
+            "inactive file must not change"
+        );
+    }
+
+    #[test]
+    fn release_repair_repairs_compatible_inactive_history() {
+        let (active_root, active_path) = profile_db_path("active-release");
+        let (inactive_root, inactive_path) = profile_db_path("inactive-compatible");
+        let active = rusqlite::Connection::open(&active_path).expect("active database");
+        create_repairable_migration55_history(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("inactive database");
+        create_repairable_migration55_history(&inactive);
+        drop(inactive);
+
+        repair_known_migration_metadata_at_paths(
+            &[active_path.clone(), inactive_path.clone()],
+            &active_path,
+            false,
+        )
+        .expect("release-compatible histories should repair");
+
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
+        let inactive_rows = migration_rows(&inactive);
+        drop(inactive);
+        std::fs::remove_dir_all(active_root).expect("remove active profile");
+        std::fs::remove_dir_all(inactive_root).expect("remove inactive profile");
+
+        let expected_checksum = Sha384::digest(
+            crate::db::migrations::m55_manual_thumbnail_lookup_index::migration55()
+                .sql
+                .as_bytes(),
+        )
+        .to_vec();
+        assert_eq!(
+            inactive_rows[0].3, expected_checksum,
+            "release repair must retain compatible-profile repair"
+        );
+    }
+
     #[test]
     fn invalid_inactive_profile_does_not_block_valid_active_profile() {
         let (active_root, active_path) = profile_db_path("active-valid");
@@ -616,6 +713,7 @@ mod migration_history_tests {
         let result = repair_known_migration_metadata_at_paths(
             &[active_path.clone(), inactive_path.clone()],
             &active_path,
+            false,
         );
         let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
         let rows = migration_rows(&inactive);
@@ -638,6 +736,7 @@ mod migration_history_tests {
         let result = repair_known_migration_metadata_at_paths(
             std::slice::from_ref(&active_path),
             &active_path,
+            true,
         );
         let active = rusqlite::Connection::open(&active_path).expect("reopen active");
         let rows = migration_rows(&active);
@@ -816,15 +915,21 @@ fn relocate_development_invoke_migration_history(
 #[cfg(not(test))]
 fn repair_known_migration_metadata(active_identifier: &str) -> Result<(), String> {
     let active_db_path = startup_active_database_path(active_identifier);
-    let mut db_paths: Vec<std::path::PathBuf> = app_data_migration::app_identifier_dirs_to_check()
-        .into_iter()
-        .map(|app_dir| app_dir.join(db::MAIN_DB_FILE_NAME))
-        .collect();
-    if !db_paths.iter().any(|path| path == &active_db_path) {
-        db_paths.push(active_db_path.clone());
-    }
+    let db_paths = if cfg!(debug_assertions) {
+        vec![active_db_path.clone()]
+    } else {
+        let mut db_paths: Vec<std::path::PathBuf> =
+            app_data_migration::app_identifier_dirs_to_check()
+                .into_iter()
+                .map(|app_dir| app_dir.join(db::MAIN_DB_FILE_NAME))
+                .collect();
+        if !db_paths.iter().any(|path| path == &active_db_path) {
+            db_paths.push(active_db_path.clone());
+        }
+        db_paths
+    };
 
-    repair_known_migration_metadata_at_paths(&db_paths, &active_db_path)
+    repair_known_migration_metadata_at_paths(&db_paths, &active_db_path, cfg!(debug_assertions))
 }
 
 /// Mirrors `db::resolve_db_path_info` while startup still has no `AppHandle`.
@@ -884,6 +989,7 @@ fn reconcile_invoke_history_for_profile(
 fn repair_known_migration_metadata_at_paths(
     db_paths: &[std::path::PathBuf],
     active_db_path: &std::path::Path,
+    is_debug_build: bool,
 ) -> Result<(), String> {
     use sha2::{Digest, Sha384};
 
@@ -892,7 +998,10 @@ fn repair_known_migration_metadata_at_paths(
     let migration56 = db::migrations::m56_thumbnail_optimization::migration56();
     let expected_m56_checksum = Sha384::digest(migration56.sql.as_bytes()).to_vec();
 
-    for db_path in db_paths {
+    for db_path in db_paths
+        .iter()
+        .filter(|db_path| !is_debug_build || db_path.as_path() == active_db_path)
+    {
         if !db_path.exists() {
             continue;
         }
