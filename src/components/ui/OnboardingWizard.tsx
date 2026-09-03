@@ -343,21 +343,18 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                 icon={<Image className="h-6 w-6" />}
                                                 title="InvokeAI"
                                                 features={['Boards & favorites', 'Live sync']}
-                                                color="indigo"
                                                 onSetup={() => onOpenSettings?.('invokeai')}
                                             />
                                             <IntegrationCard
                                                 icon={<Workflow className="h-6 w-6" />}
                                                 title="ComfyUI"
                                                 features={['Output folders', 'Workflow metadata']}
-                                                color="emerald"
                                                 onSetup={() => onOpenSettings?.('comfyui')}
                                             />
                                             <IntegrationCard
                                                 icon={<Palette className="h-6 w-6" />}
                                                 title="SD WebUI"
                                                 features={['A1111, Forge & more', 'Generation parameters']}
-                                                color="amber"
                                                 onSetup={() => onOpenSettings?.('a1111')}
                                             />
                                         </div>
@@ -408,9 +405,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                             aria-checked={enableAI}
                                             disabled={isVerifying}
                                             onClick={() => setEnableAIDraft(!enableAI)}
-                                            className={`mb-5 flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 disabled:cursor-not-allowed disabled:opacity-50 ${enableAI ? 'border-sage-500/50 bg-sage-500/5' : 'border-gray-200 dark:border-white/10'}`}
+                                            className={`mb-5 flex w-full items-center gap-4 rounded-2xl border p-4 text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amethyst-500 disabled:cursor-not-allowed disabled:opacity-50 ${enableAI ? 'border-amethyst-500/50 bg-amethyst-500/5' : 'border-gray-200 dark:border-white/10'}`}
                                         >
-                                            <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${enableAI ? 'border-sage-500 bg-sage-500 shadow-lg shadow-sage-500/20' : 'border-gray-400'}`}>
+                                            <span aria-hidden="true" className={`flex h-6 w-6 items-center justify-center rounded-lg border transition-all ${enableAI ? 'border-amethyst-500 bg-amethyst-500 shadow-lg shadow-amethyst-500/20' : 'border-gray-400'}`}>
                                                 {enableAI ? <Check className="h-4 w-4 text-white" /> : null}
                                             </span>
                                             <span className="flex-1">
@@ -447,7 +444,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                         : 'Stored in your OS keyring. Gemini requests are handled by Google under your AI Studio plan. A free tier is available for eligible accounts and regions; limits apply.'}
                                                 </p>
                                                 {needsAiSetup ? (
-                                                    <p role="status" className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                                                    <p role="status" className="text-xs font-medium text-ember-600 dark:text-ember-300">
                                                         Verify your key to continue, or set up Gemini later.
                                                     </p>
                                                 ) : null}
@@ -582,7 +579,7 @@ const FeatureRow = ({ icon, title, desc }: { icon: React.ReactNode; title: strin
 
 const CompactFeature = ({ icon, title, description }: { icon: React.ReactNode; title: string; description: string }) => (
     <div className="flex items-start gap-3 rounded-xl border border-gray-100 bg-gray-50 p-3 dark:border-white/5 dark:bg-white/5">
-        <div className="rounded-lg border border-gray-100 bg-white p-2 text-sage-500 shadow-sm dark:border-white/5 dark:bg-white/5">
+        <div className="rounded-lg border border-gray-100 bg-white p-2 text-amethyst-600 shadow-sm dark:border-white/5 dark:bg-white/5 dark:text-amethyst-300">
             {icon}
         </div>
         <div>
@@ -606,52 +603,31 @@ interface IntegrationCardProps {
     icon: React.ReactNode;
     title: string;
     features: string[];
-    color: 'indigo' | 'emerald' | 'amber';
     onSetup?: () => void;
 }
 
-const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features, color, onSetup }) => {
-    const colors = {
-        indigo: {
-            hover: 'hover:bg-indigo-500/5 hover:border-indigo-500/30 hover:shadow-[0_0_20px_rgba(99,102,241,0.15)]',
-            icon: 'bg-indigo-500/10 text-indigo-500',
-            dot: 'bg-indigo-400',
-            text: 'text-indigo-500',
-        },
-        emerald: {
-            hover: 'hover:bg-emerald-500/5 hover:border-emerald-500/30 hover:shadow-[0_0_20px_rgba(16,185,129,0.15)]',
-            icon: 'bg-emerald-500/10 text-emerald-500',
-            dot: 'bg-emerald-400',
-            text: 'text-emerald-500',
-        },
-        amber: {
-            hover: 'hover:bg-amber-500/5 hover:border-amber-500/30 hover:shadow-[0_0_20px_rgba(245,158,11,0.15)]',
-            icon: 'bg-amber-500/10 text-amber-500',
-            dot: 'bg-amber-400',
-            text: 'text-amber-500',
-        },
-    }[color];
+const IntegrationCard: React.FC<IntegrationCardProps> = ({ icon, title, features, onSetup }) => {
 
     return (
         <motion.button
             type="button"
             whileHover={{ y: -4 }}
             onClick={onSetup}
-            className={`group rounded-2xl border border-gray-100 bg-white p-4 text-left transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 dark:border-white/10 dark:bg-white/[0.02] ${colors.hover}`}
+            className="group rounded-2xl border border-gray-100 bg-white p-4 text-left transition-all duration-300 hover:border-sage-300 hover:bg-sage-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 dark:border-white/10 dark:bg-white/[0.02] dark:hover:border-sage-500/30 dark:hover:bg-sage-500/10"
         >
-            <span className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl shadow-sm transition-transform duration-500 group-hover:scale-110 ${colors.icon}`}>
+            <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-gray-100 text-gray-600 shadow-sm transition-transform duration-500 group-hover:scale-110 dark:bg-white/10 dark:text-gray-300">
                 {icon}
             </span>
             <span className="mb-3 block text-sm font-black tracking-tight text-gray-900 dark:text-white">{title}</span>
             <span className="mb-4 block space-y-2">
                 {features.map(feature => (
                     <span key={feature} className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                        <span aria-hidden="true" className={`h-1 w-1 rounded-full ${colors.dot}`} />
+                        <span aria-hidden="true" className="h-1 w-1 rounded-full bg-gray-400" />
                         {feature}
                     </span>
                 ))}
             </span>
-            <span className={`text-xs font-black uppercase tracking-wider ${colors.text}`}>Set up →</span>
+            <span className="text-xs font-black uppercase tracking-wider text-gray-600 dark:text-gray-300">Set up →</span>
         </motion.button>
     );
 };

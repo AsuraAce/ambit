@@ -34,7 +34,8 @@ const createFacetDb = (
         if (normalizedSql.startsWith('SELECT m.resource_type, m.name, m.hash,')) {
             return diskRows;
         }
-        if (normalizedSql.includes('FROM scoped_images')) {
+        if (normalizedSql.includes('scoped_images AS images')) {
+            if (normalizedSql.includes("COALESCE(tool, 'Unknown')")) return scopedRows.tools ?? deriveScopedRows(cacheRows, 'tools');
             if (normalizedSql.includes('JOIN image_loras')) return scopedRows.loras ?? deriveScopedRows(cacheRows, 'loras');
             if (normalizedSql.includes('JOIN image_embeddings')) return scopedRows.embeddings ?? deriveScopedRows(cacheRows, 'embeddings');
             if (normalizedSql.includes('JOIN image_hypernetworks')) return scopedRows.hypernetworks ?? deriveScopedRows(cacheRows, 'hypernetworks');
@@ -63,7 +64,7 @@ describe('searchRepo basic queries', () => {
 
         await expect(countGlobalImages()).resolves.toBe(7);
         await expect(countGlobalImages()).resolves.toBe(0);
-        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM images WHERE is_deleted = 0');
+        expect(db.select).toHaveBeenCalledWith('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
     });
 
     it('searches image IDs with explicit and default visibility predicates', async () => {
@@ -73,7 +74,7 @@ describe('searchRepo basic queries', () => {
 
         await expect(searchImageIds('WHERE is_deleted = ?', [0])).resolves.toEqual(['a', 'b']);
         await expect(searchImageIds('', [])).resolves.toEqual([]);
-        expect(db.select).toHaveBeenNthCalledWith(1, 'SELECT id FROM images WHERE is_deleted = ?', [0]);
+        expect(db.select).toHaveBeenNthCalledWith(1, 'SELECT id FROM scoped_images AS images WHERE is_deleted = ?', [0]);
         expect(db.select.mock.calls[1]?.[0]).toContain('IFNULL(is_intermediate_gen, 0) = 0');
     });
 
@@ -101,6 +102,7 @@ describe('searchRepo basic queries', () => {
         });
 
         expect(db.select.mock.calls[0]?.[0]).toContain('ORDER BY images.timestamp DESC, images.id DESC');
+        expect(db.select.mock.calls[0]?.[0]).toContain('FROM scoped_images AS images');
         expect(db.select.mock.calls[1]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.path ASC, images.id ASC');
         expect(db.select.mock.calls[1]?.[1]).toEqual([0, 0, 0, 'image.png', 0, 'image.png', 'image-1']);
         expect(db.select.mock.calls[2]?.[0]).toContain('ORDER BY images.is_pinned DESC, images.timestamp DESC, images.id DESC');
@@ -108,12 +110,13 @@ describe('searchRepo basic queries', () => {
     });
 
     it.each([
-        ['timestamp', '', 'idx_images_fast_sort_v3'],
-        ['timestamp', ' AND privacy_hidden = 0', 'idx_images_privacy_fast_sort_v1'],
-        ['path', '', 'idx_images_name_sort_v1'],
-        ['file_size', '', 'idx_images_size_sort_v1'],
-        ['width', '', null],
-    ])('selects the expected fast index for %s sorting', async (sortField, suffix, expectedIndex) => {
+        ['timestamp', ''],
+        ['timestamp', ' AND privacy_hidden = 0'],
+        ['timestamp', ' AND IFNULL(is_invoke_asset_gen, 0) = 0'],
+        ['path', ''],
+        ['file_size', ''],
+        ['width', ''],
+    ])('uses the owner-scoped view for %s sorting', async (sortField, suffix) => {
         const db = { select: vi.fn().mockResolvedValue([]) };
         getDbMock.mockResolvedValue(db);
         const { searchImages } = await import('../searchRepo');
@@ -122,8 +125,8 @@ describe('searchRepo basic queries', () => {
         await searchImages(whereClause, [], 25, sortField, 'DESC');
 
         const sql = db.select.mock.calls[0]?.[0] as string;
-        if (expectedIndex) expect(sql).toContain(`FROM images INDEXED BY ${expectedIndex}`);
-        else expect(sql).toContain('FROM images\n');
+        expect(sql).toContain('FROM scoped_images AS images');
+        expect(sql).not.toContain('INDEXED BY');
     });
 });
 
@@ -194,7 +197,8 @@ describe('searchRepo fallbacks and caching', () => {
         const { getLibraryStatsSummary } = await import('../searchRepo');
 
         await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0])).resolves.toEqual({
-            totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: []
+            totalItems: 0, totalImages: 0, totalVideos: 0, totalBytes: 0,
+            totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: []
         });
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats summary', expect.any(Error));
         errorSpy.mockRestore();
@@ -219,10 +223,41 @@ describe('searchRepo fallbacks and caching', () => {
         const { getLibraryStats } = await import('../searchRepo');
 
         await expect(getLibraryStats()).resolves.toEqual({
-            totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: []
+            totalItems: 0, totalImages: 0, totalVideos: 0, totalBytes: 0,
+            totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [], keywordStats: []
         });
         expect(errorSpy).toHaveBeenCalledWith('[DB] Failed to get library stats', expect.any(Error));
         errorSpy.mockRestore();
+    });
+
+    it('reports scoped image/video counts and actual file bytes', async () => {
+        const db = {
+            select: vi.fn(async (sql: string) => {
+                if (sql.includes('AS total_items')) {
+                    return [{ total_items: 3, total_images: 1, total_videos: 2, total_bytes: 3 * 1024 * 1024 }];
+                }
+                if (sql.includes('AVG(steps)')) return [{ avg_steps: 24 }];
+                return [];
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+        const { getLibraryStatsSummary } = await import('../searchRepo');
+
+        await expect(getLibraryStatsSummary('WHERE is_deleted = ?', [0])).resolves.toMatchObject({
+            totalItems: 3,
+            totalImages: 1,
+            totalVideos: 2,
+            totalBytes: 3 * 1024 * 1024,
+            totalGenerations: 3,
+            avgSteps: 24,
+            estSizeMB: '3.0'
+        });
+
+        const mediaQuery = db.select.mock.calls.find(([sql]) => (sql as string).includes('AS total_items'))?.[0] as string;
+        expect(mediaQuery).toContain("media_type = 'image'");
+        expect(mediaQuery).toContain("media_type = 'video'");
+        expect(mediaQuery).toContain('SUM(file_size)');
+        expect(mediaQuery).toContain('SELECT DISTINCT rowid, media_type, file_size');
     });
 });
 
@@ -243,6 +278,40 @@ describe('searchRepo getFacets', () => {
 
         expect(facets.tools).toEqual(['ComfyUI', 'Unknown']);
         expect(db.select).toHaveBeenCalledTimes(1);
+    });
+
+    it('hides asset-only cached tools by default and restores them when revealed regardless of resource scope', async () => {
+        const db = createFacetDb(
+            [
+                { facet_type: 'tools', resource_name: 'ComfyUI', count: 4 },
+                { facet_type: 'tools', resource_name: 'AssetOnlyTool', count: 0 },
+            ],
+            [],
+            { tools: [
+                { name: 'ComfyUI', count: 4 },
+                { name: 'AssetOnlyTool', count: 1 },
+            ] }
+        );
+        getDbMock.mockResolvedValue(db);
+        const { getFacets } = await import('../searchRepo');
+
+        const hidden = await getFacets('', [], ['tools']);
+        const revealed = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools']
+        );
+        const revealedWithLocalResources = await getFacets(
+            'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0',
+            [],
+            ['tools'],
+            { assetScope: 'local' }
+        );
+
+        expect(hidden.tools).toEqual(['ComfyUI']);
+        expect(revealed.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(revealedWithLocalResources.tools).toEqual(['ComfyUI', 'AssetOnlyTool']);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes("COALESCE(tool, 'Unknown') AS name"))).toBe(true);
     });
 
     it('ignores unsupported runtime facet types during scoped counting', async () => {
@@ -863,7 +932,7 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({ name: 'Model A', count: 5 }),
             expect.objectContaining({ name: 'Model B', count: 2 })
         ]);
-        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(false);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
 
     it('skips scoped facet overlays for the default unfiltered all scope', async () => {
@@ -900,7 +969,7 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({ name: 'Model A', count: 5 }),
             expect.objectContaining({ name: 'Unused Local', count: 0, isLocalDisk: true })
         ]);
-        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(false);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
 
     it('preserves zero-count disk aliases for used assets in used scope', async () => {
@@ -975,7 +1044,7 @@ describe('searchRepo getFacets', () => {
                 count: 1
             })
         ]);
-        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(true);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(true);
     });
 
     it('uses self-excluded scoped count overrides to keep Match Any lora alternatives visible', async () => {
@@ -1017,7 +1086,7 @@ describe('searchRepo getFacets', () => {
             expect.objectContaining({ name: 'LoraA', count: 10 }),
             expect.objectContaining({ name: 'LoraB', count: 8 })
         ]);
-        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(false);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(false);
     });
 
     it('keeps narrowed scoped lora counts when Match All does not provide an override', async () => {
@@ -1052,7 +1121,7 @@ describe('searchRepo getFacets', () => {
         expect(facets.loras).toEqual([
             expect.objectContaining({ name: 'LoraA', count: 1 })
         ]);
-        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('FROM scoped_images'))).toBe(true);
+        expect(db.select.mock.calls.some(([sql]) => (sql as string).includes('scoped_images AS images'))).toBe(true);
     });
 
     it('normalizes scoped checkpoint counts across merged aliases in used scope', async () => {
@@ -1302,8 +1371,8 @@ describe('searchRepo scoped stats queries', () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
-                if (normalizedSql.includes('count(*) as count')) {
-                    return [{ count: 0 }];
+                if (normalizedSql.includes('AS total_items')) {
+                    return [{ total_items: 0, total_images: 0, total_videos: 0, total_bytes: 0 }];
                 }
                 return [];
             })
@@ -1315,13 +1384,13 @@ describe('searchRepo scoped stats queries', () => {
 
         await getLibraryStats('WHERE is_deleted = ?', [0], collectionId, loraName);
 
-        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
+        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('AS total_items')) as [string, unknown[]];
         const [averageSql, averageParams] = findSelectCall(db, (value) => value.includes('AVG(steps) AS avg_steps')) as [string, unknown[]];
         const [keywordSql, keywordParams] = findSelectCall(db, (value) => value.includes('JOIN images_fts')) as [string, unknown[]];
 
         expect(statsSql).toContain('FROM collection_images ci');
         expect(statsSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
-        expect(statsSql).toContain('JOIN images ON images.id = ci.image_id');
+        expect(statsSql).toContain('JOIN scoped_images AS images ON images.id = ci.image_id');
         expect(statsSql).toContain('ci.collection_id = ?');
         expect(statsSql).toContain("instr(il.lora_name, ' (')");
         expect(statsSql).toContain('COLLATE NOCASE = ?');
@@ -1339,7 +1408,7 @@ describe('searchRepo scoped stats queries', () => {
 
         expect(keywordSql).toContain('FROM collection_images ci');
         expect(keywordSql).toContain('JOIN image_loras il ON il.image_id = ci.image_id');
-        expect(keywordSql).toContain('JOIN images ON images.id = ci.image_id');
+        expect(keywordSql).toContain('JOIN scoped_images AS images ON images.id = ci.image_id');
         expect(keywordSql).toContain('ci.collection_id = ?');
         expect(keywordSql).toContain("instr(il.lora_name, ' (')");
         expect(keywordSql).toContain('COLLATE NOCASE = ?');
@@ -1354,7 +1423,7 @@ describe('searchRepo scoped stats queries', () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
-                if (normalizedSql.includes('count(*) as count')) return [{ count: 3 }];
+                if (normalizedSql.includes('AS total_items')) return [{ total_items: 3, total_images: 3, total_videos: 0, total_bytes: 0 }];
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
             })
@@ -1366,16 +1435,16 @@ describe('searchRepo scoped stats queries', () => {
 
         await getLibraryStatsSummary('WHERE is_deleted = ?', [0], 'collection-1');
 
-        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
+        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('AS total_items')) as [string, unknown[]];
         const [modelSql, modelParams] = findSelectCall(db, (value) => value.includes('GROUP BY name')) as [string, unknown[]];
 
         expect(statsSql).toContain('FROM collection_images ci');
-        expect(statsSql).toContain('CROSS JOIN images ON images.id = ci.image_id');
+        expect(statsSql).toContain('CROSS JOIN scoped_images AS images ON images.id = ci.image_id');
         expect(statsSql).not.toContain('FROM images INDEXED BY');
         expect(statsParams).toEqual(['collection-1', 0]);
 
         expect(modelSql).toContain('FROM collection_images ci');
-        expect(modelSql).toContain('CROSS JOIN images ON images.id = ci.image_id');
+        expect(modelSql).toContain('CROSS JOIN scoped_images AS images ON images.id = ci.image_id');
         expect(modelSql).not.toContain('FROM images INDEXED BY');
         expect(modelParams).toEqual(['collection-1', 0]);
     });
@@ -1384,7 +1453,7 @@ describe('searchRepo scoped stats queries', () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
-                if (normalizedSql.includes('count(*) as count')) return [{ count: 2 }];
+                if (normalizedSql.includes('AS total_items')) return [{ total_items: 2, total_images: 2, total_videos: 0, total_bytes: 0 }];
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 if (normalizedSql.includes('JOIN images_fts')) return [];
                 return [];
@@ -1397,18 +1466,18 @@ describe('searchRepo scoped stats queries', () => {
 
         await getLibraryStats('WHERE is_deleted = ?', [0], undefined, 'Detailer');
 
-        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
+        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('AS total_items')) as [string, unknown[]];
         const [keywordSql, keywordParams] = findSelectCall(db, (value) => value.includes('JOIN images_fts')) as [string, unknown[]];
 
         expect(statsSql).toContain('FROM image_loras il');
-        expect(statsSql).toContain('CROSS JOIN images ON images.id = il.image_id');
+        expect(statsSql).toContain('CROSS JOIN scoped_images AS images ON images.id = il.image_id');
         expect(statsSql).toContain("instr(il.lora_name, ' (')");
         expect(statsSql).toContain('COLLATE NOCASE = ?');
         expect(statsSql).not.toContain('FROM images INDEXED BY');
         expect(statsParams).toEqual(['Detailer', 0]);
 
         expect(keywordSql).toContain('FROM image_loras il');
-        expect(keywordSql).toContain('CROSS JOIN images ON images.id = il.image_id');
+        expect(keywordSql).toContain('CROSS JOIN scoped_images AS images ON images.id = il.image_id');
         expect(keywordSql).toContain("instr(il.lora_name, ' (')");
         expect(keywordSql).toContain('COLLATE NOCASE = ?');
         expect(keywordSql).toContain('images.rowid > ?');
@@ -1421,7 +1490,7 @@ describe('searchRepo scoped stats queries', () => {
         {
             label: 'default image search',
             args: [undefined, undefined] as const,
-            expectedSql: 'FROM images',
+            expectedSql: 'FROM scoped_images',
             expectedParams: [0, "x' OR 1=1 --", "id' OR 1=1 --"]
         },
         {
@@ -1532,7 +1601,7 @@ describe('searchRepo scoped stats queries', () => {
         const { getFacets } = await import('../searchRepo');
         await getFacets('WHERE is_deleted = 0', [], ['loras'], { assetScope: 'used' });
 
-        const [scopedSql] = findSelectCall(db, (value) => value.includes('FROM scoped_images') && value.includes('JOIN image_loras')) as [string, unknown[]];
+        const [scopedSql] = findSelectCall(db, (value) => value.includes('scoped_images AS images') && value.includes('JOIN image_loras')) as [string, unknown[]];
         expect(scopedSql).toContain("instr(il.lora_name, ' (')");
         expect(scopedSql).toContain('GROUP BY CASE');
     });
@@ -1567,7 +1636,7 @@ describe('searchRepo scoped stats queries', () => {
         });
 
         const [modelSql, modelParams] = findSelectCall(db, (value) => value.includes('GROUP BY name')) as [string, unknown[]];
-        expect(modelSql).toContain('WITH scoped_images');
+        expect(modelSql).toContain('WITH filtered_images');
         expect(modelSql).toContain('ci.collection_id = ?');
         expect(modelSql).toContain("instr(il.lora_name, ' (')");
         expect(modelSql).toContain('COLLATE NOCASE = ?');
@@ -1575,7 +1644,7 @@ describe('searchRepo scoped stats queries', () => {
         expect(modelParams).toEqual(['collection-1', 'Detailer', 0]);
     });
 
-    it('returns the positive-only average and uses the indexed scoped rowid query', async () => {
+    it('returns the positive-only average from the already filtered owner scope', async () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
@@ -1594,11 +1663,12 @@ describe('searchRepo scoped stats queries', () => {
 
         expect(stats.avgSteps).toBe(25);
         const [averageSql, averageParams] = findSelectCall(db, (value) => value.includes('AVG(steps) AS avg_steps')) as [string, unknown[]];
-        expect(averageSql).toContain('WITH scoped_images AS');
-        expect(averageSql).toContain('SELECT images.rowid AS rowid');
-        expect(averageSql).toContain('FROM images INDEXED BY idx_images_steps');
+        expect(averageSql).toContain('WITH filtered_images AS');
+        expect(averageSql).toContain('images.steps AS steps');
+        expect(averageSql).toContain('FROM scoped_images AS images');
+        expect(averageSql).toContain('FROM filtered_images');
         expect(averageSql).toContain('WHERE steps > 0');
-        expect(averageSql).toContain('images.rowid IN (SELECT rowid FROM scoped_images)');
+        expect(averageSql).not.toContain('images.rowid IN');
         expect(averageSql).not.toMatch(/json_extract/i);
         expect(averageParams).toEqual([0]);
     });
@@ -1624,29 +1694,32 @@ describe('searchRepo scoped stats queries', () => {
             .resolves.toMatchObject({ avgSteps: expectedAverage });
     });
 
-    it('forces visibility indexes only for the exact default and privacy scopes', async () => {
+    it('keeps every summary scope behind the owner-scoped view', async () => {
         const db = { select: vi.fn(async (_sql: string, _params: unknown[] = []) => []) };
         getDbMock.mockResolvedValue(db);
 
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        const defaultWhere = 'WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const baseWhere = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0';
+        const defaultWhere = `${baseWhere} AND IFNULL(is_invoke_asset_gen, 0) = 0`;
         const privacyWhere = `${defaultWhere} AND privacy_hidden = 0`;
         await getLibraryStatsSummary(defaultWhere, []);
         await getLibraryStatsSummary(privacyWhere, []);
+        await getLibraryStatsSummary(baseWhere, []);
+        await getLibraryStatsSummary(`${baseWhere} AND privacy_hidden = 0`, []);
         await getLibraryStatsSummary(`${privacyWhere} AND sampler = ?`, ['Euler']);
 
         const averageCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('AVG(steps) AS avg_steps'));
-        expect(averageCalls).toHaveLength(3);
-        expect(averageCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
-        expect(averageCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
-        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_fast_sort_v3');
-        expect(averageCalls[2]?.[0]).not.toContain('FROM images INDEXED BY idx_images_privacy_fast_sort_v1');
-        expect(averageCalls[2]?.[1]).toEqual(['Euler']);
+        expect(averageCalls).toHaveLength(5);
+        averageCalls.forEach(([sql]) => {
+            expect(sql).toContain('FROM scoped_images AS images');
+            expect(sql).not.toContain('INDEXED BY');
+        });
+        expect(averageCalls[4]?.[1]).toEqual(['Euler']);
     });
 
-    it('uses the optimized model-stats indexes for unscoped summaries', async () => {
+    it('uses the owner-scoped view for unscoped model summaries', async () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
@@ -1660,21 +1733,23 @@ describe('searchRepo scoped stats queries', () => {
         const { clearLibraryStatsCache, getLibraryStatsSummary } = await import('../searchRepo');
         clearLibraryStatsCache();
 
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
-        await getLibraryStatsSummary('WHERE is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0', []);
+        await getLibraryStatsSummary('WHERE invoke_scope_hidden = 0 AND is_deleted = 0 AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0 AND privacy_hidden = 0', []);
 
         const modelCalls = db.select.mock.calls.filter(([sql]) => (sql as string).includes('GROUP BY name'));
 
         expect(modelCalls).toHaveLength(2);
-        expect(modelCalls[0]?.[0]).toContain('FROM images INDEXED BY idx_images_model_stats_v2');
-        expect(modelCalls[1]?.[0]).toContain('FROM images INDEXED BY idx_images_privacy_model_stats_v1');
+        expect(modelCalls[0]?.[0]).toContain('FROM scoped_images AS images');
+        expect(modelCalls[1]?.[0]).toContain('FROM scoped_images AS images');
     });
 
-    it('uses the restored fast count path for unscoped summary totals', async () => {
+    it('uses one scoped aggregation for unscoped media counts and storage', async () => {
         const db = {
             select: vi.fn(async (sql: string) => {
                 const normalizedSql = sql.replace(/\s+/g, ' ').trim();
-                if (normalizedSql.includes('count(*) as count')) return [{ count: 3 }];
+                if (normalizedSql.includes('AS total_items')) {
+                    return [{ total_items: 3, total_images: 2, total_videos: 1, total_bytes: 4096 }];
+                }
                 if (normalizedSql.includes('GROUP BY name')) return [];
                 return [];
             })
@@ -1686,12 +1761,13 @@ describe('searchRepo scoped stats queries', () => {
 
         const summary = await getLibraryStatsSummary('', []);
 
-        expect(summary.totalImages).toBe(3);
-        const [countSql, countParams] = findSelectCall(db, (value) => value.includes('count(*) as count')) as [string, unknown[]];
-        expect(countSql).toContain('FROM images');
-        expect(countSql).not.toContain('FROM scoped_images');
-        expect(countParams).toEqual([]);
-        expect(findSelectCall(db, (value) => value.includes('count(*) as total'))).toBeUndefined();
+        expect(summary).toMatchObject({ totalItems: 3, totalImages: 2, totalVideos: 1, totalBytes: 4096 });
+        const [statsSql, statsParams] = findSelectCall(db, (value) => value.includes('AS total_items')) as [string, unknown[]];
+        expect(statsSql).toContain('WITH filtered_images AS');
+        expect(statsSql).toContain('FROM scoped_images AS images');
+        expect(statsSql).toContain('FROM filtered_images');
+        expect(statsSql).not.toContain('INDEXED BY');
+        expect(statsParams).toEqual([]);
     });
 
     it('includes prompts beyond the old 2000-row limit when building keyword stats', async () => {
@@ -1738,6 +1814,29 @@ describe('searchRepo scoped stats queries', () => {
             expect(sql).not.toContain('WHERE si.rowid > ?');
             expect(sql).not.toContain('OFFSET');
         });
+    });
+
+    it('stops keyword batching when the query signal is cancelled', async () => {
+        const controller = new AbortController();
+        const promptRows = Array.from({ length: 500 }, (_, index) => ({
+            rowid: index + 1,
+            positive_prompt: 'alpha',
+        }));
+        const db = {
+            select: vi.fn(async () => {
+                controller.abort();
+                return promptRows;
+            })
+        };
+        getDbMock.mockResolvedValue(db);
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { getKeywordStats } = await import('../searchRepo');
+
+        await expect(getKeywordStats('', [], undefined, undefined, controller.signal))
+            .rejects.toMatchObject({ name: 'AbortError' });
+        expect(db.select).toHaveBeenCalledOnce();
+        expect(errorSpy).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
     });
 
     it('excludes short, numeric, and configured stop-word tokens from keyword stats', async () => {

@@ -51,6 +51,15 @@ describe('CollectionsSection', () => {
         expect(view.onCreateCollection).toHaveBeenCalledOnce();
     });
 
+    it('does not present a temporarily empty InvokeAI board list as a new library', () => {
+        setup({ collections: [], isInvokeCollectionCatchupPending: true });
+
+        expect(screen.getByRole('status').textContent).toContain('Preparing InvokeAI collections');
+        expect(screen.getByText('Boards and thumbnails will appear here as they become available.')).toBeTruthy();
+        expect(screen.queryByText('No collections yet')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Create Collection' })).toBeNull();
+    });
+
     it('saves current filters and cancels blank creation on blur', () => {
         const view = setup({ isDirty: true });
         fireEvent.click(screen.getByRole('button', { name: 'Save Filters as Collection' }));

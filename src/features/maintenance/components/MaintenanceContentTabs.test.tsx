@@ -26,16 +26,16 @@ vi.mock('./MaintenanceItem', () => ({
     MaintenanceItem: ({ img, isSelected, onClick, overlayActions, children, isMissing, imageClassName, maskedKeywords }: {
         img: AIImage;
         isSelected?: boolean;
-        onClick: (event: React.MouseEvent) => void;
-        overlayActions?: React.ReactNode;
+        onClick: (event: React.MouseEvent, revealGranted?: boolean) => void;
+        overlayActions?: (revealGranted: boolean) => React.ReactNode;
         children?: React.ReactNode;
         isMissing?: boolean;
         imageClassName?: string;
         maskedKeywords: string[];
     }) => (
         <div data-testid="maintenance-item" data-selected={isSelected} data-missing={isMissing} data-image-class={imageClassName} data-masked-keywords={maskedKeywords.join(',')}>
-            <button onClick={onClick}>{img.filename}</button>
-            {overlayActions}
+            <button onClick={(event) => onClick(event, false)}>{img.filename}</button>
+            {overlayActions?.(false)}
             {children}
         </div>
     ),
@@ -95,7 +95,7 @@ const exerciseGrid = (callbacks: ReturnType<typeof common>) => {
     fireEvent.click(screen.getByRole('button', { name: 'Background' }));
     fireEvent.click(screen.getByRole('button', { name: 'Select all' }));
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
-    expect(callbacks.onItemClick).toHaveBeenCalledWith('image-1', 0, expect.any(Object));
+    expect(callbacks.onItemClick).toHaveBeenCalledWith('image-1', 0, expect.any(Object), false);
     expect(callbacks.onRangeSelection).toHaveBeenCalledWith([0], true);
     expect(callbacks.onBackgroundClick).toHaveBeenCalledOnce();
     expect(callbacks.onSelectAll).toHaveBeenCalledOnce();
@@ -133,7 +133,7 @@ describe('maintenance content tabs', () => {
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
         fireEvent.click(screen.getByRole('button', { name: 'Filtered' }));
         fireEvent.click(screen.getByRole('button', { name: 'Global' }));
-        expect(onView).toHaveBeenCalledWith('image-1');
+        expect(onView).toHaveBeenCalledWith('image-1', false);
         expect(onScopeChange.mock.calls).toEqual([['filtered'], ['global']]);
         expect(screen.getByText('Recover')).toBeTruthy();
 
@@ -156,7 +156,7 @@ describe('maintenance content tabs', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Remove all 1 from Library' }));
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
         expect(onPurge).toHaveBeenCalledOnce();
-        expect(onView).toHaveBeenCalledWith('image-1');
+        expect(onView).toHaveBeenCalledWith('image-1', false);
         expect(screen.getByTestId('maintenance-item').dataset.missing).toBe('true');
         expect(screen.getByTestId('maintenance-item').dataset.maskedKeywords).toBe('private');
 
@@ -175,7 +175,7 @@ describe('maintenance content tabs', () => {
 
         rerender(<TrashTab {...baseProps} />);
         exerciseGrid(callbacks);
-        expect(screen.getByText('Select images to restore or delete from disk')).toBeTruthy();
+        expect(screen.getByText('Select items to restore or delete from disk')).toBeTruthy();
         expect(screen.getByTestId('maintenance-item').dataset.imageClass).toContain('grayscale');
 
         rerender(<TrashTab {...baseProps} selectedIds={new Set(['image-1'])} />);
@@ -211,7 +211,7 @@ describe('maintenance content tabs', () => {
         fireEvent.click(screen.getByRole('button', { name: 'View Image' }));
         fireEvent.click(screen.getByRole('button', { name: 'Filtered' }));
         fireEvent.click(screen.getByRole('button', { name: 'Global' }));
-        expect(onView).toHaveBeenCalledWith('image-1');
+        expect(onView).toHaveBeenCalledWith('image-1', false);
 
         rerender(<IntermediatesTab {...baseProps} selectedIds={new Set(['image-1'])} scope="filtered" />);
         fireEvent.click(screen.getByRole('button', { name: /^Move to Gallery/ }));

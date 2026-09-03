@@ -1,5 +1,6 @@
 import { GeneratorTool, ImageMetadata } from '../types';
 import { parseA1111Parameters } from '../services/metadata/mappingUtils';
+import { mapRawInvokeMetadata } from '../services/invoke/metadataMapper';
 
 export interface ParseResult {
     metadata: Partial<ImageMetadata>;
@@ -200,10 +201,10 @@ export const parseFilenameMetadata = (filename: string): Partial<ImageMetadata> 
     };
 };
 
-export const detectGenerationType = (path: string, currentType?: string): 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown' => {
+export const detectGenerationType = (path: string, currentType?: string): string => {
     // If we already know it, return it (unless it's unknown/undefined)
     if (currentType && currentType !== 'unknown') {
-        return currentType as 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
+        return currentType;
     }
 
     if (!path) return 'unknown';
@@ -222,45 +223,8 @@ export const detectGenerationType = (path: string, currentType?: string): 'txt2i
     return 'unknown';
 };
 
-const parseInvokeAIMetadata = (json: unknown, metadata: Partial<ImageMetadata>, extra: ParseResult['extra']) => {
-    // Basic InvokeAI parsing helper (Simplified for worker)
-    const record = asRecord(json);
-    if (typeof record.positive_prompt === 'string') metadata.positivePrompt = record.positive_prompt;
-    if (typeof record.negative_prompt === 'string') metadata.negativePrompt = record.negative_prompt;
-    // width/height are physical properties, not metadata params usually
-    if (typeof record.seed === 'number') metadata.seed = record.seed;
-    if (typeof record.steps === 'number') metadata.steps = record.steps;
-    if (typeof record.cfg_scale === 'number') metadata.cfg = record.cfg_scale;
-    if (typeof record.sampler_name === 'string') metadata.sampler = record.sampler_name;
-    if (record.model) {
-        if (typeof record.model === 'string') {
-            metadata.model = record.model;
-        } else if (isRecord(record.model)) {
-            metadata.model = String(record.model.model_name || record.model.name || 'Unknown Model');
-        }
-    }
-
-    if (Array.isArray(record.loras)) {
-        metadata.loras = record.loras.map((l: unknown) => {
-            if (typeof l === 'string') return l;
-            // Handle { model: { name: "..." } } structure (InvokeAI 4+)
-            const loraRecord = asRecord(l);
-            const modelRecord = asRecord(loraRecord.model);
-            const loraModelRecord = asRecord(loraRecord.lora);
-            if (Object.keys(modelRecord).length > 0) {
-                return String(modelRecord.model_name || modelRecord.name || 'Unknown LoRA');
-            }
-            if (Object.keys(loraModelRecord).length > 0) return String(loraModelRecord.model_name || loraModelRecord.name || 'Unknown LoRA');
-            return String(loraRecord.model_name || loraRecord.name || 'Unknown LoRA');
-        }).filter(Boolean);
-    }
-
-    if (record.workflow || record.graph) {
-        const wf = record.workflow || record.graph;
-        metadata.workflowJson = typeof wf === 'string' ? wf : JSON.stringify(wf);
-    }
-    metadata.tool = GeneratorTool.INVOKEAI;
-};
+const isFiniteF32 = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isFinite(Math.fround(value));
 
 export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<ImageMetadata>) => {
     if ((base.tool === GeneratorTool.UNKNOWN || !base.tool) && secondary.tool) {
@@ -270,7 +234,8 @@ export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<I
         base.model = secondary.model;
     }
     if (!base.steps && secondary.steps) base.steps = secondary.steps;
-    if (!base.cfg && secondary.cfg) base.cfg = secondary.cfg;
+    if (base.cfg !== undefined && !isFiniteF32(base.cfg)) delete base.cfg;
+    if (base.cfg === undefined && isFiniteF32(secondary.cfg)) base.cfg = secondary.cfg;
     if (base.seed === undefined && secondary.seed !== undefined) base.seed = secondary.seed;
     if ((!base.sampler || base.sampler === 'Unknown') && secondary.sampler) {
         base.sampler = secondary.sampler;
@@ -327,11 +292,19 @@ export const mergeMetadata = (base: Partial<ImageMetadata>, secondary: Partial<I
     // Merge other fields
     if (base.vae === undefined) base.vae = secondary.vae;
     if (base.clipSkip === undefined) base.clipSkip = secondary.clipSkip;
-    if (base.denoisingStrength === undefined) base.denoisingStrength = secondary.denoisingStrength;
+    if (base.denoisingStrength !== undefined && !isFiniteF32(base.denoisingStrength)) {
+        delete base.denoisingStrength;
+    }
+    if (base.denoisingStrength === undefined && isFiniteF32(secondary.denoisingStrength)) {
+        base.denoisingStrength = secondary.denoisingStrength;
+    }
     if (base.hiresUpscale === undefined) base.hiresUpscale = secondary.hiresUpscale;
     if (base.hiresSteps === undefined) base.hiresSteps = secondary.hiresSteps;
     if (base.hiresUpscaler === undefined) base.hiresUpscaler = secondary.hiresUpscaler;
     if (base.modelHash === undefined) base.modelHash = secondary.modelHash;
+    if ((!base.generationType || base.generationType === 'unknown') && secondary.generationType && secondary.generationType !== 'unknown') {
+        base.generationType = secondary.generationType;
+    }
 };
 
 export const parseExifData = (data: Uint8Array): string | null => {
@@ -661,9 +634,7 @@ self.onmessage = async (e: MessageEvent) => {
             if (invokeMeta) {
                 try {
                     const json = JSON.parse(invokeMeta) as unknown;
-                    const secondary: Partial<ImageMetadata> = {};
-                    parseInvokeAIMetadata(json, secondary, extra);
-                    mergeMetadata(metadata, secondary);
+                    mergeMetadata(metadata, mapRawInvokeMetadata(json));
                 } catch { }
             }
 
@@ -691,7 +662,7 @@ self.onmessage = async (e: MessageEvent) => {
         // This prevents false positives for non-AI images (photos, archived art).
 
         // Path-based generation type detection (A1111 standard)
-        metadata.generationType = detectGenerationType(path || '');
+        metadata.generationType = detectGenerationType(path || '', metadata.generationType);
 
         self.postMessage({ metadata, extra, isIntermediate, requestId });
 

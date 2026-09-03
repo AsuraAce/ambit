@@ -4,7 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import { getEffectiveMaskedKeywords, isImageMasked } from '../../utils/maskingUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
-import { AIImage, ContextMenuState, FilterState, getDetectedSourceKind, getEffectiveSourceKind } from '../../types';
+import { AIImage, ContextMenuState, FilterState, getDetectedSourceKind, getEffectiveSourceKind, isVideoAsset } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
 import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
@@ -72,7 +72,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             onClose={onClose}
             detectedSourceKind={activeImage ? getDetectedSourceKind(activeImage) : undefined}
             sourceKindOverride={activeImage?.sourceKindOverride}
-            onSetImageKind={activeImage ? async sourceKindOverride => {
+            onSetImageKind={activeImage && !isVideoAsset(activeImage) ? async sourceKindOverride => {
                 await actions.handleSetImageSourceKind([activeImage.id], sourceKindOverride);
                 onClose();
             } : undefined}

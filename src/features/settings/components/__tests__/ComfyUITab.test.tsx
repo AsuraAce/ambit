@@ -49,7 +49,9 @@ describe('ComfyUITab', () => {
         const input = screen.getByDisplayValue('D:/ComfyUI/output');
         const primaryAction = screen.getByRole('button', { name: /link output folder/i });
 
-        expect(header.className).toContain('bg-sage-600');
+        expect(header.className).toContain('text-sage-600');
+        expect(header.className).toContain('dark:text-sage-300');
+        expect(header.className).not.toContain('bg-sage-600');
         expect(input.className).toContain('focus:border-sage-500');
         expect(primaryAction.className).toContain('bg-sage-600');
         expect(header.className + input.className + primaryAction.className).not.toContain('indigo');

@@ -5,6 +5,10 @@ interface PhotoDetailsTabProps {
     image: AIImage;
 }
 
+interface PhotoDetailsSectionProps extends PhotoDetailsTabProps {
+    includeFileDetails?: boolean;
+}
+
 const formatCaptureTime = (image: AIImage): string | undefined => {
     const capture = image.photoMetadata?.capturedAt;
     if (!capture) return undefined;
@@ -38,19 +42,19 @@ const DetailRow = ({ label, value }: { label: string; value?: string | number })
     );
 };
 
-export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
+export const PhotoDetailsSection = ({ image, includeFileDetails = false }: PhotoDetailsSectionProps) => {
     const sourceKind = getEffectiveSourceKind(image);
     const photo = image.photoMetadata;
     const isPhoto = sourceKind === 'photograph';
 
     return (
-        <div className="flex-1 overflow-y-auto p-6 pb-10 custom-scrollbar animate-in fade-in duration-300">
-            <section className="mb-6">
+        <>
+            <section>
                 <div className="mb-3 flex items-center gap-2">
                     {isPhoto ? <Camera className="h-4 w-4 text-sage-500" /> : <FileImage className="h-4 w-4 text-sage-500" />}
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                        {isPhoto ? 'Capture details' : 'File details'}
-                    </h3>
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">{isPhoto ? 'Capture details' : 'File details'}</h3>
+                    {isPhoto ? <span className="rounded border border-gray-200 bg-gray-100 px-2 py-0.5 font-mono text-xs text-sage-700 dark:border-white/10 dark:bg-zinc-800 dark:text-sage-200">Photo</span> : null}
+                    {isPhoto && photo?.cameraModel ? <span className="max-w-[180px] truncate rounded border border-gray-200 bg-gray-100 px-2 py-0.5 font-mono text-xs text-gray-600 dark:border-white/10 dark:bg-zinc-800 dark:text-gray-300">{photo.cameraModel}</span> : null}
                 </div>
                 <dl className="rounded-xl border border-gray-200 bg-white px-4 dark:border-white/10 dark:bg-zinc-800/40">
                     {isPhoto && <DetailRow label="Captured" value={formatCaptureTime(image)} />}
@@ -61,9 +65,9 @@ export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
                     {isPhoto && <DetailRow label="Aperture" value={photo?.apertureFNumber ? `f/${photo.apertureFNumber}` : undefined} />}
                     {isPhoto && <DetailRow label="Shutter" value={photo?.exposureTimeSeconds ? formatShutter(photo.exposureTimeSeconds) : undefined} />}
                     {isPhoto && <DetailRow label="ISO" value={photo?.iso ?? undefined} />}
-                    <DetailRow label="Dimensions" value={`${image.width} × ${image.height}`} />
-                    <DetailRow label="File size" value={formatBytes(image.fileSize)} />
-                    <DetailRow label="Modified" value={new Date(image.timestamp).toLocaleString()} />
+                    {includeFileDetails && <DetailRow label="Dimensions" value={`${image.width} × ${image.height}`} />}
+                    {includeFileDetails && <DetailRow label="File size" value={formatBytes(image.fileSize)} />}
+                    {includeFileDetails && <DetailRow label="Modified" value={new Date(image.timestamp).toLocaleString()} />}
                     {isPhoto && <DetailRow label="Artist" value={photo?.artist ?? undefined} />}
                     {isPhoto && <DetailRow label="Copyright" value={photo?.copyright ?? undefined} />}
                 </dl>
@@ -71,7 +75,7 @@ export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
 
             {isPhoto && photo?.gpsLatitude !== null && photo?.gpsLatitude !== undefined
                 && photo.gpsLongitude !== null && photo.gpsLongitude !== undefined && (
-                <details className="rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-zinc-800/40">
+                <details className="mt-6 rounded-xl border border-gray-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-zinc-800/40">
                     <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
                         <MapPin className="h-4 w-4 text-sage-500" /> Local GPS coordinates
                     </summary>
@@ -81,6 +85,14 @@ export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
                     <p className="mt-1 text-xs text-gray-400">Stored and displayed locally. No map or network request is made.</p>
                 </details>
             )}
+        </>
+    );
+};
+
+export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
+    return (
+        <div className="flex-1 overflow-y-auto p-6 pb-10 custom-scrollbar animate-in fade-in duration-300">
+            <PhotoDetailsSection image={image} includeFileDetails />
         </div>
     );
 };

@@ -2,10 +2,11 @@ import * as React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '../../test/testUtils';
 import type { AppSettings } from '../../types';
+import type { FolderChange } from '../../bindings';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useWatchers, WatcherProvider } from '../WatcherContext';
 
-type WatchCallback = (paths?: string[]) => void | Promise<void>;
+type WatchCallback = (changes?: FolderChange[]) => void | Promise<void>;
 
 const mocks = vi.hoisted(() => ({
     settings: undefined as unknown as AppSettings,
@@ -16,7 +17,10 @@ const mocks = vi.hoisted(() => ({
     startWatching: vi.fn(),
     stopWatching: vi.fn(),
     watcherCallback: undefined as WatchCallback | undefined,
-    getMaintenanceCounts: vi.fn()
+    getMaintenanceCounts: vi.fn(),
+    markImagePathIdentitiesMissing: vi.fn(),
+    moveImagePathIdentities: vi.fn(),
+    refreshMetadata: vi.fn()
 }));
 
 vi.mock('../SettingsContext', () => ({
@@ -31,6 +35,10 @@ vi.mock('../SyncContext', () => ({
     })
 }));
 
+vi.mock('../SearchContext', () => ({
+    useSearch: () => ({ refreshMetadata: mocks.refreshMetadata })
+}));
+
 vi.mock('../../services/WatcherService', () => ({
     watcherService: {
         startWatching: (...args: [string[], WatchCallback]) => mocks.startWatching(...args),
@@ -40,6 +48,11 @@ vi.mock('../../services/WatcherService', () => ({
 
 vi.mock('../../services/db/maintenanceRepo', () => ({
     getMaintenanceCounts: mocks.getMaintenanceCounts
+}));
+
+vi.mock('../../services/db/imageRepo', () => ({
+    moveImagePathIdentities: mocks.moveImagePathIdentities,
+    markImagePathIdentitiesMissing: mocks.markImagePathIdentitiesMissing
 }));
 
 const baseSettings = (): AppSettings => ({
@@ -99,6 +112,9 @@ describe('WatcherContext', () => {
         mocks.stopWatching.mockResolvedValue(undefined);
         mocks.startInvokeSync.mockResolvedValue(undefined);
         mocks.startTargetedLiveSync.mockResolvedValue(targetedResult());
+        mocks.markImagePathIdentitiesMissing.mockResolvedValue(0);
+        mocks.moveImagePathIdentities.mockResolvedValue({ moved: 0, skippedTargetExists: 0, skippedSourceMissing: 0 });
+        mocks.refreshMetadata.mockResolvedValue(undefined);
         mocks.getMaintenanceCounts.mockResolvedValue({
             untagged: 1,
             orphans: 2,
@@ -184,7 +200,7 @@ describe('WatcherContext', () => {
         await act(async () => mocks.watcherCallback?.([]));
         expect(mocks.startTargetedLiveSync).not.toHaveBeenCalled();
 
-        await act(async () => mocks.watcherCallback?.(['C:\\active\\new.png']));
+        await act(async () => mocks.watcherCallback?.([{ kind: 'create', paths: ['C:\\active\\new.png'] }]));
         await act(async () => Promise.resolve());
         expect(mocks.startTargetedLiveSync).toHaveBeenCalledWith(
             ['C:/active/new.png'],
@@ -192,6 +208,38 @@ describe('WatcherContext', () => {
         );
         expect(mocks.getMaintenanceCounts).toHaveBeenCalled();
         expect(Number(screen.getByTestId('event').textContent)).toBeGreaterThan(0);
+    });
+
+    it('preserves identity on rename, marks removals missing, and imports the renamed video', async () => {
+        mocks.settings = {
+            ...baseSettings(),
+            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }]
+        };
+        useLibraryStore.setState({ isLiveWatching: true });
+        mocks.moveImagePathIdentities.mockResolvedValueOnce({ moved: 1, skippedTargetExists: 0, skippedSourceMissing: 0 });
+        mocks.markImagePathIdentitiesMissing.mockResolvedValueOnce(1);
+        mocks.startTargetedLiveSync.mockResolvedValueOnce(targetedResult(['C:/active/new.mp4']));
+        renderProvider();
+        await advanceInit();
+
+        await act(async () => mocks.watcherCallback?.([
+            { kind: 'rename', paths: ['C:/active/old.mp4', 'C:/active/new.mp4'] },
+            { kind: 'remove', paths: ['C:/active/gone.webm'] }
+        ]));
+        await act(async () => Promise.resolve());
+
+        expect(mocks.moveImagePathIdentities).toHaveBeenCalledWith([
+            { oldId: 'C:/active/old.mp4', newId: 'C:/active/new.mp4' }
+        ]);
+        expect(mocks.markImagePathIdentitiesMissing).toHaveBeenCalledWith([
+            'C:/active/old.mp4',
+            'C:/active/gone.webm'
+        ]);
+        expect(mocks.refreshMetadata).toHaveBeenCalled();
+        expect(mocks.startTargetedLiveSync).toHaveBeenCalledWith(
+            ['C:/active/new.mp4'],
+            expect.objectContaining({ source: 'generic-folder-watch', pathCount: 1 })
+        );
     });
 
     it('merges generic events arriving during an active targeted drain', async () => {
@@ -208,9 +256,9 @@ describe('WatcherContext', () => {
         await advanceInit();
 
         await act(async () => {
-            void mocks.watcherCallback?.(['C:/active/one.png']);
-            void mocks.watcherCallback?.(['C:/active/two.png', 'C:/active/two.png']);
-            void mocks.watcherCallback?.(['C:/active/three.png']);
+            void mocks.watcherCallback?.([{ kind: 'create', paths: ['C:/active/one.png'] }]);
+            void mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/active/two.png', 'C:/active/two.png'] }]);
+            void mocks.watcherCallback?.([{ kind: 'create', paths: ['C:/active/three.png'] }]);
         });
         expect(mocks.startTargetedLiveSync).toHaveBeenCalledTimes(1);
 
@@ -234,12 +282,12 @@ describe('WatcherContext', () => {
         expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'live' });
         mocks.startInvokeSync.mockClear();
 
-        await act(async () => mocks.watcherCallback?.([
+        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: [
             'C:/InvokeAI/databases/invokeai.db',
             'C:/InvokeAI/databases/invokeai.db-wal',
             'C:/InvokeAI/databases/ignore.txt'
-        ]));
-        await act(async () => mocks.watcherCallback?.(['C:/InvokeAI/databases/invokeai.db']));
+        ] }]));
+        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db'] }]));
         expect(mocks.startInvokeSync).not.toHaveBeenCalled();
 
         await act(async () => vi.advanceTimersByTime(500));
@@ -279,7 +327,7 @@ describe('WatcherContext', () => {
         const view = renderProvider();
         await advanceInit();
         mocks.startInvokeSync.mockClear();
-        await act(async () => mocks.watcherCallback?.(['C:/InvokeAI/databases/invokeai.db']));
+        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db'] }]));
 
         view.unmount();
         await act(async () => vi.advanceTimersByTime(500));
@@ -293,7 +341,7 @@ describe('WatcherContext', () => {
         const view = renderProvider();
         await advanceInit();
         mocks.startInvokeSync.mockClear();
-        await act(async () => mocks.watcherCallback?.(['C:/InvokeAI/databases/invokeai.db-wal']));
+        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db-wal'] }]));
 
         view.unmount();
         await act(async () => vi.advanceTimersByTime(500));

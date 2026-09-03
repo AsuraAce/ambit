@@ -22,6 +22,14 @@ describe('pathUtils', () => {
             expect(normalizePath('foo//bar')).toBe('foo/bar');
             expect(normalizePath('foo\\\\bar')).toBe('foo/bar');
         });
+
+        it('preserves Windows verbatim and UNC identity prefixes', () => {
+            expect(normalizePath('\\\\?\\C:\\videos\\clip.mp4')).toBe('//?/C:/videos/clip.mp4');
+            expect(normalizePath('//?/C:/videos//clip.mp4')).toBe('//?/C:/videos/clip.mp4');
+            expect(normalizePath('\\\\server\\share\\videos\\clip.mp4')).toBe('//server/share/videos/clip.mp4');
+            expect(normalizePath('//server//share///clip.mp4')).toBe('//server/share/clip.mp4');
+            expect(normalizePath('////server///share/clip.mp4')).toBe('//server/share/clip.mp4');
+        });
     });
 
     describe('toWindowsPath', () => {
@@ -102,6 +110,8 @@ describe('pathUtils', () => {
     describe('normalizeInvokeRoot', () => {
         it('normalizes database files, databases folders, roots, and empty values', () => {
             expect(normalizeInvokeRoot(null)).toBeNull();
+            expect(normalizeInvokeRoot('   ')).toBeNull();
+            expect(normalizeInvokeRoot('  D:/Invoke/databases/  ')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:\\Invoke\\databases\\invokeai.db')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:/Invoke/databases/')).toBe('D:/Invoke');
             expect(normalizeInvokeRoot('D:/Invoke/')).toBe('D:/Invoke');

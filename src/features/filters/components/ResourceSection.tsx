@@ -387,7 +387,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             role={isInventoryOnly ? 'img' : undefined}
                             aria-label={isInventoryOnly ? localOnlyTitle : undefined}
                             title={isInventoryOnly ? localOnlyTitle : `${item.count.toLocaleString()} total images`}
-                            className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-blue-500/80 text-white' : 'bg-black/40 text-white/90'}`}
+                            className={`px-1.5 py-0.5 rounded-md backdrop-blur-sm text-[9px] font-bold shadow-sm ${isInventoryOnly ? 'bg-harbor-500/80 text-white' : 'bg-black/40 text-white/90'}`}
                         >
                             {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
                         </div>
@@ -399,7 +399,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                         role="img"
                         aria-label={localTitle}
                         title={localTitle}
-                        className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-black/50 backdrop-blur-sm text-blue-700 dark:text-blue-200 shadow-sm"
+                        className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-black/50 backdrop-blur-sm text-harbor-600 dark:text-harbor-300 shadow-sm"
                     >
                         <HardDrive className="h-3 w-3" aria-hidden="true" />
                     </div>
@@ -462,7 +462,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                     <span
                         role={isInventoryOnly ? 'img' : undefined}
                         aria-label={isInventoryOnly ? localOnlyTitle : undefined}
-                        className={`text-[10px] px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${isInventoryOnly ? 'bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 opacity-100' : `bg-gray-100 dark:bg-white/10 ${validNames != null ? 'opacity-30' : 'opacity-60'}`}`}
+                        className={`text-[10px] px-1.5 py-0.5 rounded-md transition-opacity group-hover:opacity-100 ${isInventoryOnly ? 'bg-harbor-50 dark:bg-harbor-500/15 text-harbor-600 dark:text-harbor-300 opacity-100' : `bg-gray-100 dark:bg-white/10 ${validNames != null ? 'opacity-30' : 'opacity-60'}`}`}
                         title={isInventoryOnly ? localOnlyTitle : `${item.count.toLocaleString()} total images`}
                     >
                         {isInventoryOnly ? <ImageOff className="h-3 w-3" aria-hidden="true" /> : formatCountCompact(item.count)}
@@ -472,7 +472,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             role="img"
                             aria-label={localTitle}
                             title={localTitle}
-                            className="bg-blue-50 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md"
+                            className="bg-harbor-50 dark:bg-harbor-500/15 text-harbor-600 dark:text-harbor-300 px-1.5 py-0.5 rounded-md"
                         >
                             <HardDrive className="h-3 w-3" aria-hidden="true" />
                         </span>
@@ -637,7 +637,7 @@ export const ResourceSection: React.FC<ResourceSectionProps> = ({
                             onClick={() => handleUseDynamic(contextMenu.item)}
                             disabled={!contextMenu.item.isManual}
                             className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs rounded-md transition-colors ${contextMenu.item.isManual
-                                ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                                ? 'text-ember-600 dark:text-ember-300 hover:bg-ember-50 dark:hover:bg-ember-900/20'
                                 : 'text-gray-400 cursor-not-allowed opacity-50'
                                 }`}
                             title="Clear sidecar and override, use pinned/recent image"

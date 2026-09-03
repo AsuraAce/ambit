@@ -44,6 +44,7 @@ fn build_photo_filters(
 ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
     let mut clauses = vec![
         "is_deleted = 0".to_string(),
+        "media_type = 'image'".to_string(),
         "(detected_source_kind != 'generated' OR source_kind_override = 'photograph')".to_string(),
     ];
     if !force_reparse {
@@ -204,7 +205,9 @@ pub async fn start_reparse_job(
         // Helper to build WHERE clause
         let build_filters = |force: bool, root: Option<&String>, tool: Option<&String>| -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let mut clauses = vec![
+                "invoke_scope_hidden = 0".to_string(),
                 "is_deleted = 0".to_string(),
+                "COALESCE(media_type, 'image') != 'video'".to_string(),
                 "original_metadata_json IS NOT NULL".to_string(),
                 "original_metadata_json != ''".to_string()
             ];
@@ -240,7 +243,7 @@ pub async fn start_reparse_job(
 
         // Count total work upfront
         let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
-        let count_query = format!("SELECT COUNT(*) FROM images WHERE {}", where_sql);
+        let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
 
         let generated_total: usize = conn.query_row(
             &count_query,
@@ -252,7 +255,7 @@ pub async fn start_reparse_job(
             let (photo_where, photo_params) =
                 build_photo_filters(force_reparse, normalized_filter_root.as_deref());
             conn.query_row(
-                &format!("SELECT COUNT(*) FROM images WHERE {}", photo_where),
+                &format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where),
                 rusqlite::params_from_iter(photo_params.iter()),
                 |row| row.get::<_, i64>(0),
             )
@@ -494,7 +497,7 @@ pub async fn start_reparse_job(
             // 1. Pre-fetch all IDs (Fast O(Folder Size) using Path Index)
             let (where_sql, params_vec) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
 
-             let query = format!("SELECT id FROM images WHERE {}", where_sql);
+             let query = format!("SELECT id FROM scoped_images WHERE {}", where_sql);
 
              let ids: Vec<String> = {
                  let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
@@ -517,7 +520,7 @@ pub async fn start_reparse_job(
                  let placeholders = std::iter::repeat("?").take(chunk.len()).collect::<Vec<_>>().join(",");
                  let batch_query = format!(
                     "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                     FROM images
+                     FROM scoped_images
                      WHERE id IN ({})",
                     placeholders
                  );
@@ -558,7 +561,7 @@ pub async fn start_reparse_job(
 
                     let query = format!(
                         "SELECT id, COALESCE(json_extract(original_parsed_json, '$.tool'), tool, 'Unknown'), original_metadata_json, COALESCE(metadata_json, '')
-                         FROM images
+                         FROM scoped_images
                          WHERE {} AND id > ?
                          ORDER BY id ASC
                          LIMIT {}",
@@ -604,7 +607,7 @@ pub async fn start_reparse_job(
                     photo_params.push(Box::new(last_photo_id.clone()));
                     let query = format!(
                         "SELECT id, path
-                         FROM images
+                         FROM scoped_images
                          WHERE {} AND id > ?
                          ORDER BY id ASC
                          LIMIT {}",
@@ -878,13 +881,15 @@ mod tests {
                 is_deleted INTEGER NOT NULL,
                 detected_source_kind TEXT NOT NULL,
                 source_kind_override TEXT,
-                photo_refresh_version INTEGER NOT NULL
+                photo_refresh_version INTEGER NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'image'
              );
              INSERT INTO images VALUES
-                ('generated-auto', 'C:/library/a.jpg', 0, 'generated', NULL, 0),
-                ('generated-corrected', 'C:/library/b.jpg', 0, 'generated', 'photograph', 0),
-                ('other-stale', 'C:/library/c.jpg', 0, 'other', NULL, 0),
-                ('other-current', 'C:/library/d.jpg', 0, 'other', NULL, 1);",
+                ('generated-auto', 'C:/library/a.jpg', 0, 'generated', NULL, 0, 'image'),
+                ('generated-corrected', 'C:/library/b.jpg', 0, 'generated', 'photograph', 0, 'image'),
+                ('other-stale', 'C:/library/c.jpg', 0, 'other', NULL, 0, 'image'),
+                ('other-current', 'C:/library/d.jpg', 0, 'other', NULL, 1, 'image'),
+                ('video', 'C:/library/e.mp4', 0, 'other', NULL, 0, 'video');",
         )
         .expect("seed candidates");
 

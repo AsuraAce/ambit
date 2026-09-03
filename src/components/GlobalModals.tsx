@@ -1,9 +1,10 @@
 import * as React from 'react';
 import { ConfirmDialog } from './ui/ConfirmDialog';
-import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, RecoveryStyle, ViewMode } from '../types';
+import { AIImage, AppSettings, AppSettingsUpdate, Collection, FilterState, RecoveryStyle, ViewMode, isVideoAsset } from '../types';
 import { AppUpdaterStatus } from '../hooks/useAppUpdater';
 import type { ImportResult } from '../services/importService';
 import { createDefaultFilters } from '../utils/filterState';
+import type { AmbitCollectionScopeTarget } from '../services/db/collectionRepo';
 
 const SettingsModal = React.lazy(() => import('../features/settings/components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 const ExportModal = React.lazy(() => import('../features/library/components/ExportModal').then(module => ({ default: module.ExportModal })));
@@ -24,8 +25,8 @@ interface GlobalModalsProps {
     canCheckForUpdates: boolean;
     onSettingsSave: (settings: AppSettingsUpdate) => void;
     onExportConfirm: (name: string, folder: string) => void;
-    onDeleteConfirm: () => void;
-    onDeleteCollectionConfirm: () => void;
+    onDeleteConfirm: () => void | Promise<void>;
+    onDeleteCollectionConfirm: () => void | Promise<void>;
     onRecoverMetadata: (style: RecoveryStyle) => void;
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => void;
     onCloseExport: () => void;
@@ -58,6 +59,8 @@ interface GlobalModalsProps {
     filters?: FilterState;
     collectionToEditId?: string | null;
     onSaveCollectionFilters?: (id: string, filters: FilterState | undefined) => void | Promise<void>;
+    onUpdateCollectionScope?: (id: string, target: AmbitCollectionScopeTarget) => Promise<boolean>;
+    onResetInvokeCollection?: (id: string) => Promise<boolean>;
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     hasPendingUpdate: boolean;
@@ -103,6 +106,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     filters,
     collectionToEditId,
     onSaveCollectionFilters,
+    onUpdateCollectionScope,
+    onResetInvokeCollection,
     onScanFolder, // Added
     onInvokeSync, // Added for managed InvokeAI sync
     hasPendingUpdate,
@@ -113,7 +118,39 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
     onOpenUpdatePrompt,
     onNavigateToMaintenance
 }) => {
+    const deletePendingRef = React.useRef(false);
+    const collectionDeletePendingRef = React.useRef(false);
+    const [isDeletePending, setIsDeletePending] = React.useState(false);
+    const [isCollectionDeletePending, setIsCollectionDeletePending] = React.useState(false);
     const closeModal = (name: string) => setModals(p => ({ ...p, [name]: false }));
+    const imageOnlyResults = filteredImages.filter(image => !isVideoAsset(image));
+    const deleteTargetCount = pendingViewerDeleteId ? 1 : selectedIds.size;
+    const collectionToDelete = [...collections, ...smartCollections]
+        .find(collection => collection.id === collectionToDeleteId);
+    const handleDeleteConfirm = async () => {
+        if (deletePendingRef.current) return;
+
+        deletePendingRef.current = true;
+        setIsDeletePending(true);
+        try {
+            await onDeleteConfirm();
+        } finally {
+            deletePendingRef.current = false;
+            setIsDeletePending(false);
+        }
+    };
+    const handleCollectionDeleteConfirm = async () => {
+        if (collectionDeletePendingRef.current) return;
+
+        collectionDeletePendingRef.current = true;
+        setIsCollectionDeletePending(true);
+        try {
+            await onDeleteCollectionConfirm();
+        } finally {
+            collectionDeletePendingRef.current = false;
+            setIsCollectionDeletePending(false);
+        }
+    };
 
     return (
         <>
@@ -155,19 +192,22 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
             <ConfirmDialog
                 isOpen={modals.deleteConfirm}
                 onCancel={() => closeModal('deleteConfirm')}
-                onConfirm={() => onDeleteConfirm()}
+                onConfirm={handleDeleteConfirm}
                 title="Remove from Library?"
-                message={`Remove ${pendingViewerDeleteId ? 1 : selectedIds.size} image(s) from Ambit while keeping the original file(s) on disk? You can restore them later from Maintenance > Removed.`}
+                message={`Remove ${deleteTargetCount} ${deleteTargetCount === 1 ? 'item' : 'items'} from Ambit while keeping the original ${deleteTargetCount === 1 ? 'file' : 'files'} on disk? You can restore them later from Maintenance > Removed.`}
                 isDangerous={true}
+                isLoading={isDeletePending}
             />
 
             <ConfirmDialog
                 isOpen={modals.deleteCollection}
                 onCancel={() => closeModal('deleteCollection')}
-                onConfirm={() => onDeleteCollectionConfirm()}
+                onConfirm={handleCollectionDeleteConfirm}
                 title="Delete Collection"
-                message="Are you sure you want to delete this collection? Images will not be deleted from your library."
+                message={`Delete collection "${collectionToDelete?.name ?? 'Unknown collection'}"? Images will remain in your library.`}
+                confirmLabel="Delete Collection"
                 isDangerous={true}
+                isLoading={isCollectionDeletePending}
             />
 
             <React.Suspense fallback={null}>
@@ -175,7 +215,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                     <SlideshowModal
                         isOpen={modals.slideshow}
                         onClose={() => closeModal('slideshow')}
-                        images={filteredImages}
+                        images={imageOnlyResults}
                         initialIndex={0}
                         isShuffleDefault={slideshowShuffle}
                     />
@@ -220,10 +260,10 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                     />
                 )}
 
-                {modals.compare && filteredImages.length >= 2 && Array.from(selectedIds).length >= 2 && (
+                {modals.compare && imageOnlyResults.length >= 2 && Array.from(selectedIds).length >= 2 && (
                     <CompareModal
-                        imageA={filteredImages.find(i => i.id === Array.from(selectedIds)[0]) || filteredImages[0]}
-                        imageB={filteredImages.find(i => i.id === Array.from(selectedIds)[1]) || filteredImages[1]}
+                        imageA={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[0]) || imageOnlyResults[0]}
+                        imageB={imageOnlyResults.find(i => i.id === Array.from(selectedIds)[1]) || imageOnlyResults[1]}
                         onClose={() => closeModal('compare')}
                         onToggleFavorite={toggleFavorite}
                         onTogglePin={togglePin}
@@ -244,6 +284,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
                         collection={[...collections, ...smartCollections].find(c => c.id === collectionToEditId) || null}
                         filters={filters ?? createDefaultFilters()}
                         onSave={onSaveCollectionFilters || (() => { })}
+                        onUpdateScope={onUpdateCollectionScope || (async () => false)}
+                        onResetInvokeCollection={onResetInvokeCollection || (async () => false)}
                     />
                 )}
             </React.Suspense>

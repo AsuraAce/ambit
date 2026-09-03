@@ -189,21 +189,25 @@ describe('thumbnailService', () => {
 
     it('cleans only thumbnail files that are not referenced by the database', async () => {
         mocks.readDir.mockResolvedValue([{ name: 'Keep.WebP' }, { name: 'orphan.webp' }]);
+        const select = vi.fn().mockResolvedValue([{ thumbnail_path: 'C:/thumbs/keep.webp' }]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ thumbnail_path: 'C:/thumbs/keep.webp' }]),
+            select,
             execute: vi.fn(),
         });
 
         const { cleanupOrphanThumbnails } = await import('../thumbnailService');
 
         await expect(cleanupOrphanThumbnails()).resolves.toBe(1);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('FROM images'));
+        expect(select).not.toHaveBeenCalledWith(expect.stringContaining('FROM scoped_images'));
         expect(mocks.remove).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/orphan.webp');
         expect(mocks.remove).toHaveBeenCalledTimes(1);
     });
 
     it('syncs missing DB thumbnail paths by rescanning existing files and writing one batch update', async () => {
+        const select = vi.fn().mockResolvedValue([{ id: 'C:/library/a.png' }, { id: 'C:/library/b.png' }]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([{ id: 'C:/library/a.png' }, { id: 'C:/library/b.png' }]),
+            select,
             execute: vi.fn(),
         });
         mocks.scanImagesBulk.mockResolvedValue([{ thumbnail: 'a.webp' }, { thumbnail: 'b.webp' }]);
@@ -211,6 +215,8 @@ describe('thumbnailService', () => {
         const { syncExistingThumbnailsToDB } = await import('../thumbnailService');
 
         await expect(syncExistingThumbnailsToDB()).resolves.toBe(2);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining("media_type = 'image'"));
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.convertFileSrc).toHaveBeenCalledWith('C:/library/a.png');
         expect(mocks.updateThumbnailPathsBatch).toHaveBeenCalledWith([
             { id: 'C:/library/a.png', thumbnailPath: 'a.webp', thumbnailSource: 'ambit' },
@@ -220,12 +226,13 @@ describe('thumbnailService', () => {
 
     it('prunes missing local thumbnails while leaving remote thumbnail URLs alone', async () => {
         const execute = vi.fn().mockResolvedValue(undefined);
+        const select = vi.fn().mockResolvedValue([
+            { id: 'remote', thumbnail_path: 'https://example.test/thumb.webp' },
+            { id: 'relative', thumbnail_path: 'legacy.webp' },
+            { id: 'absolute', thumbnail_path: 'C:/thumbs/absolute.webp' },
+        ]);
         mocks.getDb.mockResolvedValue({
-            select: vi.fn().mockResolvedValue([
-                { id: 'remote', thumbnail_path: 'https://example.test/thumb.webp' },
-                { id: 'relative', thumbnail_path: 'legacy.webp' },
-                { id: 'absolute', thumbnail_path: 'C:/thumbs/absolute.webp' },
-            ]),
+            select,
             execute,
         });
         mocks.exists.mockImplementation(async (path: string) => path !== 'C:/AppData/Ambit/.thumbnails/legacy.webp');
@@ -233,10 +240,11 @@ describe('thumbnailService', () => {
         const { pruneBrokenThumbnails } = await import('../thumbnailService');
 
         await expect(pruneBrokenThumbnails()).resolves.toBe(1);
+        expect(select).toHaveBeenCalledWith(expect.stringContaining('invoke_scope_hidden = 0'));
         expect(mocks.exists).toHaveBeenCalledWith('C:/AppData/Ambit/.thumbnails/legacy.webp');
         expect(mocks.exists).toHaveBeenCalledWith('C:/thumbs/absolute.webp');
         expect(execute).toHaveBeenCalledWith(
-            'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (?)',
+            'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL WHERE id IN (?) AND id IN (SELECT id FROM scoped_images WHERE invoke_scope_hidden = 0)',
             ['relative']
         );
     });

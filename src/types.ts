@@ -19,6 +19,7 @@ export enum GeneratorTool {
   SDNEXT = 'SD.Next',
   FORGE = 'Forge',
   ANAPNOE = 'Anapnoe',
+  OTHER = 'Other',
   UNKNOWN = 'Unknown'
 }
 
@@ -76,8 +77,58 @@ export interface ImageMetadata {
   hiresSteps?: number;
   hiresUpscaler?: string;
   modelHash?: string;
-  generationType?: 'txt2img' | 'img2img' | 'extras' | 'grid' | 'unknown';
+  generationType?: string;
   isFavorite?: boolean; // Extracted from legacy metadata (e.g. Subject: favorite)
+  generationMode?: VideoGenerationMode;
+  fieldSources?: Partial<Record<VideoMetadataField, MetadataEvidenceSource>>;
+  conflicts?: VideoMetadataConflict[];
+  diagnostics?: VideoMetadataDiagnostic[];
+  parserVersion?: number;
+}
+
+export type VideoGenerationMode =
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'first_last_frame_to_video'
+  | 'video_editing'
+  | 'audio_lip_sync'
+  | 'guided_video'
+  | 'unknown';
+
+export type MetadataEvidenceSource =
+  | 'user_override'
+  | 'trusted_sidecar'
+  | 'embedded'
+  | 'workflow_default'
+  | 'unknown';
+
+export type VideoMetadataField =
+  | 'tool'
+  | 'model'
+  | 'overrideModel'
+  | 'seed'
+  | 'steps'
+  | 'cfg'
+  | 'sampler'
+  | 'loras'
+  | 'controlNets'
+  | 'ipAdapters'
+  | 'positivePrompt'
+  | 'negativePrompt'
+  | 'generationType'
+  | 'generationMode'
+  | 'workflowJson';
+
+export interface VideoMetadataConflict {
+  field: string;
+  selectedValue: string;
+  ignoredValue: string;
+  ignoredSource: MetadataEvidenceSource;
+}
+
+export interface VideoMetadataDiagnostic {
+  code: string;
+  message: string;
 }
 
 export interface ParseResult {
@@ -123,6 +174,8 @@ export interface OriginalState {
 }
 
 export interface AIImage {
+  /** Omitted by pre-video records; those records are always images. */
+  mediaType?: 'image' | 'video';
   id: string;
   url: string;
   thumbnailUrl: string;
@@ -153,6 +206,10 @@ export interface AIImage {
   userMasked?: boolean; // Explicit manual mask
   groupId?: string; // ID linking multiple versions/upscales
   boardId?: string; // ID linking to external board/collection
+  invokeImageName?: string; // Stable image name from the InvokeAI database
+  invokeImageCategory?: string; // InvokeAI source category, independent of generation metadata
+  invokeImageOrigin?: string; // Supplementary InvokeAI source provenance
+  invokeOwnerId?: string; // Stable owner ID from the configured InvokeAI database
   stack?: AIImage[]; // UI ONLY: List of images collapsed under this one
   notes?: string;
   metadata: ImageMetadata;
@@ -167,7 +224,28 @@ export const getDetectedSourceKind = (image: AIImage): SourceKind =>
 export const getEffectiveSourceKind = (image: AIImage): SourceKind =>
   image.sourceKindOverride ?? image.sourceKind ?? getDetectedSourceKind(image);
 
+export interface VideoAsset extends AIImage {
+  mediaType: 'video';
+  mediaContainer?: string;
+  mediaMimeType?: string;
+  durationMs: number;
+  videoCodec: string;
+  videoProfile?: string;
+  audioPresent: boolean;
+  audioCodec?: string;
+  frameRateNum?: number;
+  frameRateDen?: number;
+  rotationDegrees: 0 | 90 | 180 | 270;
+  probeStatus: 'ready' | 'invalid';
+  playbackStatus: 'unknown' | 'playable' | 'external_required';
+}
+
+export type LibraryAsset = AIImage | VideoAsset;
+
+export const isVideoAsset = (asset: AIImage): asset is VideoAsset => asset.mediaType === 'video';
+
 export interface FilterState {
+  mediaType?: 'all' | 'image' | 'video';
   searchQuery: string;
   /** Undefined is accepted for smart collections persisted before photography support. */
   sourceKind?: ImageKindFilter;
@@ -192,6 +270,7 @@ export interface FilterState {
   pinnedOnly?: boolean;
   showIntermediates?: boolean;
   showGrids?: boolean;
+  showInvokeImageAssets?: boolean;
   sortOption?: SortOption;
   matchModes?: Record<string, 'any' | 'all'>; // Key: filter key (e.g. 'loras'), Value: 'any' (OR) | 'all' (AND)
   assetFilterAliases?: Partial<Record<'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters', Record<string, string[]>>>;
@@ -217,6 +296,11 @@ export interface Collection {
   filters?: FilterState; // Added for Smart/Hybrid logic
   manualExclusions?: string[]; // Added for Hybrid override logic
   source?: 'ambit' | 'invoke'; // Added to track InvokeAI boards
+  invokeOwnerId?: string; // Owner-specific visibility for InvokeAI boards and Ambit collections
+  invokeSourceId?: string; // InvokeAI database whose owner namespace scopes this collection
+  invokeSourceName?: string; // Last authoritative InvokeAI board name
+  invokeSourcePresent?: boolean; // False when the source board was absent from the latest snapshot
+  invokeSuppressed?: boolean; // Locally hidden without deleting source ownership state
 }
 
 export interface SmartCollection extends Collection {
@@ -275,14 +359,51 @@ export interface InvokeDbSnapshotFile {
   modifiedMs: number | null;
 }
 
+export interface InvokeSourceFingerprint {
+  schemaVersion: 1;
+  imageCount: number;
+  imageUpdatedAt: string | null;
+  boardCount: number;
+  boardUpdatedAt: string | null;
+  membershipCount: number;
+  membershipMaxRowId: string | null;
+}
+
 export interface InvokeDbSnapshotState {
   dbPath: string;
   lastSyncedAt: number | null;
   importIntermediates: boolean;
   importOrphans: boolean;
   syncBoardsToCollections: boolean;
+  scopeMode: 'legacy' | 'all' | 'owner';
+  scopeOwnerId: string | null;
   pathRepairVersion: number;
+  importSchemaVersion: number;
+  boardOwnerSchemaVersion?: number;
+  sourceFingerprint?: InvokeSourceFingerprint;
   files: InvokeDbSnapshotFile[];
+}
+
+export type InvokeOwnerSelection =
+  | { dbPath: string; mode: 'owner'; ownerId: string }
+  | { dbPath: string; mode: 'all' };
+
+export interface InvokeOwnerSummary {
+  ownerId: string;
+  displayName?: string;
+  imageCount: number;
+  intermediateImageCount?: number;
+  boardCount?: number;
+  isStale?: boolean;
+}
+
+export interface InvokeOwnerDiscovery {
+  schemaMode: 'legacy' | 'multi_user';
+  dbPath: string;
+  imagesRoot: string;
+  owners: InvokeOwnerSummary[];
+  unassignedImageCount: number;
+  unassignedBoardCount?: number;
 }
 
 export interface AppSettings {
@@ -313,11 +434,14 @@ export interface AppSettings {
   importIntermediates?: boolean; // New: Option to ignore/hide intermediate images during sync
   importOrphans?: boolean; // New: Option to scan for files not in DB
   invokeDbSnapshot?: InvokeDbSnapshotState; // Internal: last known InvokeAI DB/WAL/SHM file snapshot for startup no-op skips
+  invokeDbSnapshots?: InvokeDbSnapshotState[]; // Internal: per-owner-scope InvokeAI startup snapshots
+  invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
   librarySourceKind?: ImageKindFilter; // Persisted top-level library scope
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
+  libraryShowInvokeImageAssets?: boolean; // Persisted InvokeAI image-asset visibility preference
   resourceFolders?: string[]; // New: Folders to scan for resources (models/loras)
   resourceViewModes?: Record<string, 'grid' | 'list'>; // Persisted view mode per resource section
   resourceSortOptions?: Record<string, SidebarSortOption>; // Persisted sort option per sidebar resource or collection section

@@ -139,7 +139,6 @@ export const useFoldersTabLogic = ({
         try {
             if (isManaged && variant === GeneratorTool.INVOKEAI && onInvokeSync) {
                 await onInvokeSync();
-                addToast('InvokeAI database sync complete', 'success');
             } else if (onScanFolder) {
                 const folder = settings.monitoredFolders.find(f => f.id === id);
                 const lastScanned = folder?.lastScanned;

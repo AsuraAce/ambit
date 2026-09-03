@@ -20,7 +20,7 @@ const store = vi.hoisted(() => ({
 
 const lifecycle = vi.hoisted(() => ({
     tauriRuntime: false,
-    close: vi.fn(),
+    exit: vi.fn(),
     unlisten: vi.fn(),
     closeHandler: undefined as undefined | ((event: { preventDefault: () => void }) => Promise<void>),
 }));
@@ -35,12 +35,15 @@ vi.mock('../../services/runtime', () => ({
 
 vi.mock('@tauri-apps/api/window', () => ({
     getCurrentWindow: () => ({
-        close: lifecycle.close,
         onCloseRequested: vi.fn(async (handler) => {
             lifecycle.closeHandler = handler;
             return lifecycle.unlisten;
         }),
     }),
+}));
+
+vi.mock('@tauri-apps/plugin-process', () => ({
+    exit: lifecycle.exit,
 }));
 
 describe('SettingsContext', () => {
@@ -53,6 +56,7 @@ describe('SettingsContext', () => {
         store.flushSettings.mockResolvedValue(undefined);
         lifecycle.tauriRuntime = false;
         lifecycle.closeHandler = undefined;
+        lifecycle.exit.mockResolvedValue(undefined);
     });
 
     it('requires a provider', () => {
@@ -78,7 +82,7 @@ describe('SettingsContext', () => {
         expect(result.current.isLoaded).toBe(true);
     });
 
-    it('flushes settings before allowing a Tauri close request', async () => {
+    it('flushes settings before exiting for a Tauri close request', async () => {
         lifecycle.tauriRuntime = true;
         let resolveFlush: () => void = () => undefined;
         store.flushSettings.mockReturnValue(new Promise<void>((resolve) => {
@@ -93,18 +97,19 @@ describe('SettingsContext', () => {
         await waitFor(() => expect(store.flushSettings).toHaveBeenCalledOnce());
 
         expect(preventDefault).toHaveBeenCalledOnce();
-        expect(lifecycle.close).not.toHaveBeenCalled();
+        expect(lifecycle.exit).not.toHaveBeenCalled();
 
         resolveFlush();
         await act(async () => {
             await closeRequest;
         });
 
-        expect(lifecycle.unlisten).toHaveBeenCalledOnce();
-        expect(lifecycle.close).toHaveBeenCalledOnce();
-        expect(lifecycle.unlisten.mock.invocationCallOrder[0]).toBeLessThan(
-            lifecycle.close.mock.invocationCallOrder[0]
+        expect(lifecycle.exit).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledWith(0);
+        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(
+            lifecycle.exit.mock.invocationCallOrder[0]
         );
+        expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
     });
@@ -128,8 +133,8 @@ describe('SettingsContext', () => {
             '[SettingsStore] Failed to flush settings before close',
             expect.any(Error)
         );
-        expect(lifecycle.unlisten).toHaveBeenCalledOnce();
-        expect(lifecycle.close).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledOnce();
+        expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
         error.mockRestore();
@@ -154,13 +159,13 @@ describe('SettingsContext', () => {
         expect(firstPreventDefault).toHaveBeenCalledOnce();
         expect(secondPreventDefault).toHaveBeenCalledOnce();
         expect(store.flushSettings).toHaveBeenCalledOnce();
-        expect(lifecycle.close).not.toHaveBeenCalled();
+        expect(lifecycle.exit).not.toHaveBeenCalled();
 
         resolveFlush();
         await act(async () => firstClose);
 
-        expect(lifecycle.unlisten).toHaveBeenCalledOnce();
-        expect(lifecycle.close).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledOnce();
+        expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
     });
@@ -198,7 +203,7 @@ describe('SettingsContext', () => {
         await waitFor(() => expect(rollbackStarted).toHaveBeenCalledOnce());
 
         expect(store.flushSettings).not.toHaveBeenCalled();
-        expect(lifecycle.close).not.toHaveBeenCalled();
+        expect(lifecycle.exit).not.toHaveBeenCalled();
 
         resolveRollback();
         await expect(transaction).rejects.toThrow('disk full');
@@ -209,7 +214,7 @@ describe('SettingsContext', () => {
             expect.any(AggregateError)
         );
         expect(store.flushSettings).toHaveBeenCalledOnce();
-        expect(lifecycle.close).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledOnce();
         error.mockRestore();
     });
 
@@ -228,19 +233,19 @@ describe('SettingsContext', () => {
         await Promise.resolve();
 
         expect(store.flushSettings).not.toHaveBeenCalled();
-        expect(lifecycle.close).not.toHaveBeenCalled();
+        expect(lifecycle.exit).not.toHaveBeenCalled();
 
         releasePurge();
         await purgeTransaction;
         await act(async () => closeRequest);
 
         expect(store.flushSettings).toHaveBeenCalledOnce();
-        expect(lifecycle.close).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledOnce();
     });
 
-    it('reopens transaction admission and close interception when the window does not close', async () => {
+    it('reopens transaction admission and permits a retry when process exit fails', async () => {
         lifecycle.tauriRuntime = true;
-        lifecycle.close.mockRejectedValueOnce(new Error('close cancelled'));
+        lifecycle.exit.mockRejectedValueOnce(new Error('exit cancelled'));
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
         renderHook(() => useSettings(), { wrapper });
@@ -249,17 +254,21 @@ describe('SettingsContext', () => {
 
         await act(async () => firstCloseHandler?.({ preventDefault: vi.fn() }));
 
-        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to close app window', expect.any(Error));
-        expect(lifecycle.closeHandler).not.toBe(firstCloseHandler);
+        expect(error).toHaveBeenCalledWith('[SettingsStore] Failed to exit app process', expect.any(Error));
+        expect(lifecycle.closeHandler).toBe(firstCloseHandler);
         const admittedAfterCancellation = vi.fn(async () => undefined);
         await expect(settingsPersistenceCoordinator.run(admittedAfterCancellation)).resolves.toBeUndefined();
         expect(admittedAfterCancellation).toHaveBeenCalledOnce();
+
+        await act(async () => firstCloseHandler?.({ preventDefault: vi.fn() }));
+        expect(store.flushSettings).toHaveBeenCalledTimes(2);
+        expect(lifecycle.exit).toHaveBeenCalledTimes(2);
         error.mockRestore();
     });
 
     it('restores exclusive admission when a close request cannot close the window', async () => {
         lifecycle.tauriRuntime = true;
-        lifecycle.close.mockRejectedValueOnce(new Error('close cancelled'));
+        lifecycle.exit.mockRejectedValueOnce(new Error('exit cancelled'));
         let releaseExclusive!: () => void;
         const exclusiveWork = settingsPersistenceCoordinator.runExclusive(() => (
             new Promise<void>(resolve => {

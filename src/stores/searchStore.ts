@@ -34,6 +34,7 @@ interface SearchState {
 }
 
 const INITIAL_FILTERS: FilterState = {
+    mediaType: 'all',
     searchQuery: '',
     sourceKind: 'all',
     models: [],
@@ -52,7 +53,8 @@ const INITIAL_FILTERS: FilterState = {
     pinnedOnly: false,
     collectionId: null,
     showIntermediates: false,
-    showGrids: false
+    showGrids: false,
+    showInvokeImageAssets: false
 };
 
 
@@ -95,7 +97,9 @@ export const useSearchStore = create<SearchState>()(
                     filters: {
                         ...INITIAL_FILTERS,
                         showIntermediates: state.filters.showIntermediates,
+                        collectionId: state.filters.collectionId,
                         showGrids: state.filters.showGrids,
+                        showInvokeImageAssets: state.filters.showInvokeImageAssets,
                     }
                 }));
             },

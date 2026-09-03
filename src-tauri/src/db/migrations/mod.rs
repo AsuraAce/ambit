@@ -29,8 +29,25 @@ pub mod m59_canonical_resource_lookup_indexes;
 pub mod m60_resource_inventory_cleanup;
 pub mod m61_auxiliary_resource_inventory_cleanup;
 pub mod m62_smart_collection_count_cache;
-pub mod m63_photography;
-pub mod m64_photo_refresh;
+pub mod m63_invoke_image_source;
+pub mod m64_invoke_image_references;
+pub mod m65_invoke_owner_scope;
+pub mod m66_invoke_collection_owner;
+pub mod m67_removed_restore_state;
+pub mod m68_video_library_assets;
+pub mod m69_invoke_scope_cache;
+pub mod m70_invoke_scoped_views;
+pub mod m71_invoke_scope_dirty_items;
+pub mod m72_invoke_scope_dirty_conflicts;
+pub mod m73_ambit_collection_scope;
+pub mod m74_invoke_scope_literal_prefix;
+pub mod m75_owner_scope_review;
+pub mod m76_invoke_collection_ownership;
+pub mod m77_removed_invoke_identity_index;
+pub mod m78_thumbnail_retry_invalidation;
+pub mod m79_photography;
+pub mod m80_photo_refresh;
+pub mod m81_photo_scope_invalidation;
 
 pub fn init_db() -> Vec<Migration> {
     get_migrations()
@@ -69,8 +86,25 @@ pub fn get_migrations() -> Vec<Migration> {
     migrations.push(m60_resource_inventory_cleanup::migration60());
     migrations.push(m61_auxiliary_resource_inventory_cleanup::migration61());
     migrations.push(m62_smart_collection_count_cache::migration62());
-    migrations.push(m63_photography::migration63());
-    migrations.push(m64_photo_refresh::migration64());
+    migrations.push(m63_invoke_image_source::migration63());
+    migrations.push(m64_invoke_image_references::migration64());
+    migrations.push(m65_invoke_owner_scope::migration65());
+    migrations.push(m66_invoke_collection_owner::migration66());
+    migrations.push(m67_removed_restore_state::migration67());
+    migrations.push(m68_video_library_assets::migration68());
+    migrations.push(m69_invoke_scope_cache::migration69());
+    migrations.push(m70_invoke_scoped_views::migration70());
+    migrations.push(m71_invoke_scope_dirty_items::migration71());
+    migrations.push(m72_invoke_scope_dirty_conflicts::migration72());
+    migrations.push(m73_ambit_collection_scope::migration73());
+    migrations.push(m74_invoke_scope_literal_prefix::migration74());
+    migrations.push(m75_owner_scope_review::migration75());
+    migrations.push(m76_invoke_collection_ownership::migration76());
+    migrations.push(m77_removed_invoke_identity_index::migration77());
+    migrations.push(m78_thumbnail_retry_invalidation::migration78());
+    migrations.push(m79_photography::migration79());
+    migrations.push(m80_photo_refresh::migration80());
+    migrations.push(m81_photo_scope_invalidation::migration81());
 
     migrations.sort_by_key(|m| m.version);
 
@@ -80,9 +114,10 @@ pub fn get_migrations() -> Vec<Migration> {
 #[cfg(test)]
 mod tests {
     use super::get_migrations;
+    use rusqlite::Connection;
 
     #[test]
-    fn migrations_include_mainline_through_photo_refresh_64() {
+    fn migrations_include_mainline_and_photography_through_owner_scope_fix_81() {
         let versions: Vec<i64> = get_migrations()
             .iter()
             .map(|migration| migration.version)
@@ -104,6 +139,23 @@ mod tests {
         assert!(versions.contains(&62));
         assert!(versions.contains(&63));
         assert!(versions.contains(&64));
+        assert!(versions.contains(&65));
+        assert!(versions.contains(&66));
+        assert!(versions.contains(&67));
+        assert!(versions.contains(&68));
+        assert!(versions.contains(&69));
+        assert!(versions.contains(&70));
+        assert!(versions.contains(&71));
+        assert!(versions.contains(&72));
+        assert!(versions.contains(&73));
+        assert!(versions.contains(&74));
+        assert!(versions.contains(&75));
+        assert!(versions.contains(&76));
+        assert!(versions.contains(&77));
+        assert!(versions.contains(&78));
+        assert!(versions.contains(&79));
+        assert!(versions.contains(&80));
+        assert!(versions.contains(&81));
     }
 
     #[test]
@@ -114,8 +166,15 @@ mod tests {
             .collect();
         let mut sorted = versions.clone();
         sorted.sort_unstable();
+        let mut unique = sorted.clone();
+        unique.dedup();
 
         assert_eq!(versions, sorted);
+        assert_eq!(
+            versions.len(),
+            unique.len(),
+            "migration versions must be unique"
+        );
     }
 
     #[test]
@@ -129,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn database_at_mainline_49_has_migrations_through_photo_refresh_64_pending() {
+    fn database_at_mainline_49_has_mainline_and_photography_migrations_pending() {
         let migrations = get_migrations();
         let has_49 = migrations.iter().any(|migration| migration.version == 49);
         let pending_after_49: Vec<i64> = migrations
@@ -141,7 +200,54 @@ mod tests {
         assert!(has_49);
         assert_eq!(
             pending_after_49,
-            vec![50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64]
+            vec![
+                50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70,
+                71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81
+            ]
+        );
+    }
+
+    #[test]
+    fn removed_invoke_identity_lookup_uses_image_name_index() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in get_migrations() {
+            conn.execute_batch(&migration.sql)
+                .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
+        }
+
+        let plan = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN
+                 SELECT DISTINCT removed_images.invoke_source_id,
+                                 scope.db_path,
+                                 removed_images.invoke_image_name
+                 FROM removed_images AS removed_images
+                 JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+                 WHERE removed_images.invoke_source_id IS NOT NULL
+                   AND removed_images.invoke_image_name IN ('one.png', 'two.png')
+                   AND removed_images.invoke_scope_hidden = 0
+                   AND (
+                       scope.scope_mode IN ('legacy', 'all')
+                       OR (
+                           scope.scope_mode = 'owner'
+                           AND (
+                               removed_images.invoke_owner_id IS NULL
+                               OR removed_images.invoke_owner_id = scope.owner_id
+                           )
+                       )
+                   )",
+            )
+            .expect("prepare identity lookup plan")
+            .query_map([], |row| row.get::<_, String>(3))
+            .expect("read identity lookup plan")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect identity lookup plan");
+
+        assert!(
+            plan.iter().any(|detail| {
+                detail.contains("idx_removed_images_invoke_name_scope_source_owner")
+            }),
+            "Removed Invoke identity lookup should use its image-name index: {plan:?}"
         );
     }
 }

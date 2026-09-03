@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type AIImage } from '../../../../types';
 import { ImageViewer } from '../ImageViewer';
@@ -191,6 +191,45 @@ describe('ImageViewer full metadata loading', () => {
         vi.useRealTimers();
     });
 
+    it('does not load a masked image until the viewer reveal is confirmed', async () => {
+        renderViewer({ isMasked: true });
+
+        const dialog = screen.getByRole('dialog', { name: 'Hidden image' });
+        expect(screen.queryByText(lightImage.filename)).toBeNull();
+        expect(screen.queryByLabelText(new RegExp(lightImage.filename))).toBeNull();
+        expect(screen.getByRole('button', { name: 'Reveal image' })).toBeTruthy();
+        expect(screen.queryByTestId('image-canvas')).toBeNull();
+        expect(mockGetImageWithFullMetadata).not.toHaveBeenCalled();
+        expect(assetAccessMock).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Reveal image' }));
+        await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect(screen.getByRole('dialog', { name: `Image viewer: ${lightImage.filename}` })).toBe(dialog);
+        expect((captures.toolbar?.image as AIImage).filename).toBe(lightImage.filename);
+        expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
+        expect(assetAccessMock).toHaveBeenCalledWith(lightImage.url);
+    });
+
+    it('uses a card reveal grant without showing a second image gate', async () => {
+        renderViewer({ isMasked: true, initiallyRevealed: true });
+
+        expect(screen.queryByRole('button', { name: 'Reveal image' })).toBeNull();
+        await waitFor(() => expect(screen.getByTestId('image-canvas')).toBeTruthy());
+        expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
+    });
+
+    it('opens new image viewers on Metadata', async () => {
+        const view = renderViewer();
+
+        await waitFor(() => expect(captures.sidebar).toBeTruthy());
+        expect(captures.sidebar?.activeTab).toBe('metadata');
+
+        act(() => (captures.sidebar?.setActiveTab as (tab: 'details') => void)('details'));
+        view.rerender(<ImageViewer {...view.props} image={{ ...lightImage, id: 'C:/library/next.png' }} />);
+        await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith('C:/library/next.png'));
+        expect(captures.sidebar?.activeTab).toBe('details');
+    });
+
     it('keeps persisted original metadata when a lightweight image omits it after restart', async () => {
         const originalMetadata = {
             ...metadata('Original prompt'),
@@ -295,6 +334,20 @@ describe('ImageViewer full metadata loading', () => {
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
         expect(container.firstChild).toBeNull();
         expect(onNext).not.toHaveBeenCalled();
+    });
+
+    it('ignores arrow shortcuts when the active image is outside the current result list', () => {
+        const onNext = vi.fn();
+        const onPrev = vi.fn();
+        renderViewer({ onNext, onPrev, canNavigateNext: false, canNavigatePrevious: false });
+
+        act(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+        });
+
+        expect(onNext).not.toHaveBeenCalled();
+        expect(onPrev).not.toHaveBeenCalled();
     });
 
     it('handles navigation, actions, theater mode, and input shortcut guards', async () => {
@@ -443,6 +496,29 @@ describe('ImageViewer full metadata loading', () => {
         expect(aiState.value.analyzePrompt).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.generateVariations).toHaveBeenCalledWith('Recovered prompt', callbacks.onOpenSettings);
         expect(aiState.value.openModal).toHaveBeenCalled();
+    });
+
+    it('preserves absent mutation callbacks as a read-only viewer contract', async () => {
+        renderViewer({
+            onToggleFavorite: undefined,
+            onTogglePin: undefined,
+            onSetCollectionMembership: undefined,
+            onUpdateNotes: undefined,
+            onUpdatePrompt: undefined,
+            onUpdateNegativePrompt: undefined,
+            onUpdateModel: undefined,
+            onUpdateTool: undefined,
+        });
+
+        await waitFor(() => expect(captures.sidebar).toBeTruthy());
+        expect(captures.toolbar?.onToggleFavorite).toBeUndefined();
+        expect(captures.toolbar?.onTogglePin).toBeUndefined();
+        expect(captures.sidebar?.onSetCollectionMembership).toBeUndefined();
+        expect(captures.sidebar?.onUpdateNotes).toBeUndefined();
+        expect(captures.sidebar?.onUpdatePrompt).toBeUndefined();
+        expect(captures.sidebar?.onUpdateNegativePrompt).toBeUndefined();
+        expect(captures.sidebar?.onUpdateModel).toBeUndefined();
+        expect(captures.sidebar?.onUpdateTool).toBeUndefined();
     });
 
     it('sorts stacked versions and loads the selected version metadata', async () => {

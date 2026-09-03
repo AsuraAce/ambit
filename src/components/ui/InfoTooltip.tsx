@@ -214,7 +214,7 @@ export const InfoTooltip: React.FC<InfoTooltipProps> = ({ label, content }) => (
         label={label}
         content={content}
         persistOnClick
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-gray-500 dark:hover:text-sage-400"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-sage-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:text-gray-500 dark:hover:text-sage-300"
     >
         <Info aria-hidden="true" className="h-3.5 w-3.5" />
     </TooltipButton>

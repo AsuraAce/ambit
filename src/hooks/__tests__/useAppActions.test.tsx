@@ -1,6 +1,7 @@
 
 import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
 import type { AIImage, SourceKind } from '../../types';
@@ -29,6 +30,7 @@ const mockIncrementFacetCacheVersion = vi.fn();
 const mockRefreshCollections = vi.fn();
 const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
+const mockUpdateImagesQueryCaches = vi.fn();
 let mockStoreImages: MockImage[] = [
     { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 100 },
     { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 200 },
@@ -51,6 +53,14 @@ vi.mock('../../services/db/imageRepo', () => ({
 vi.mock('../../services/db/maintenanceRepo', () => ({
     backfillParameterColumns: () => mockBackfillParameterColumns(),
 }));
+
+vi.mock('../../utils/imageQueryCache', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../../utils/imageQueryCache')>();
+    return {
+        ...actual,
+        updateImagesQueryCaches: (...args: unknown[]) => mockUpdateImagesQueryCaches(...args),
+    };
+});
 
 vi.mock('../../stores/searchStore', () => ({
     useSearchStore: (selector: any) => selector({
@@ -130,6 +140,7 @@ describe('useAppActions', () => {
         mockRebuildThumbnailFacetCache.mockResolvedValue(undefined);
         mockBackfillParameterColumns.mockResolvedValue(0);
         mockRefreshCollections.mockResolvedValue(undefined);
+        mockFileOps.deleteImages.mockResolvedValue(true);
     });
 
     it('should open delete confirmation modal if settings.confirmDelete is true', () => {
@@ -154,11 +165,11 @@ describe('useAppActions', () => {
         expect(mockModalManager.openModal).toHaveBeenCalledWith('deleteConfirm');
     });
 
-    it('should execute delete and clear selection', () => {
+    it('should execute delete and clear selection', async () => {
         const { result } = renderHook(() => useAppActions(props));
 
-        act(() => {
-            result.current.executeDelete();
+        await act(async () => {
+            await result.current.executeDelete();
         });
 
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1']);
@@ -166,7 +177,7 @@ describe('useAppActions', () => {
         expect(mockModalManager.closeModal).toHaveBeenCalledWith('deleteConfirm');
     });
 
-    it('should ignore accidental confirm click arguments when deleting multiple selected images', () => {
+    it('should ignore accidental confirm click arguments when deleting multiple selected images', async () => {
         const multiSelectProps = {
             ...props,
             selectedIds: new Set(['1', '2']),
@@ -174,8 +185,8 @@ describe('useAppActions', () => {
         const fakeClickEvent = { type: 'click', currentTarget: {} };
         const { result } = renderHook(() => useAppActions(multiSelectProps));
 
-        act(() => {
-            (result.current.executeDelete as unknown as (event: unknown) => void)(fakeClickEvent);
+        await act(async () => {
+            await (result.current.executeDelete as unknown as (event: unknown) => Promise<void>)(fakeClickEvent);
         });
 
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['1', '2']);
@@ -332,6 +343,108 @@ describe('useAppActions', () => {
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
+    it('applies favorite and pin actions to a directly opened asset outside the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: true, isPinned: true }));
+        expect(mockToggleImageFavorite).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockToggleImagePin).toHaveBeenCalledWith(directImage.id, true);
+        expect(mockSetImages).not.toHaveBeenCalled();
+    });
+
+    it('invalidates image queries after a direct pin so cached collections can restore pinned-first order', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        const { result } = renderHook(() => ({
+            actions: useAppActions({ ...props, activeImageState }),
+            queryClient: useQueryClient(),
+        }));
+        const invalidateQueries = vi.spyOn(result.current.queryClient, 'invalidateQueries');
+
+        act(() => result.current.actions.handlePinImage(directImage.id, true, { showToast: false }));
+
+        await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] }));
+    });
+
+    it('rolls back failed direct-asset flags without replacing the gallery', async () => {
+        let directImage = {
+            id: 'hidden-control',
+            isFavorite: false,
+            isPinned: false,
+            filename: 'hidden-control.png',
+            timestamp: 300,
+        } as unknown as AIImage;
+        const activeImageState = {
+            getImage: (id: string) => id === directImage.id ? directImage : undefined,
+            updateImage: (id: string, updater: (image: AIImage) => AIImage) => {
+                if (id === directImage.id) directImage = updater(directImage);
+            },
+            removeImage: vi.fn(),
+        };
+        mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
+        mockToggleImagePin.mockRejectedValueOnce(new Error('pin failed'));
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        act(() => result.current.handleFavoriteImage(directImage.id));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update favorite state', 'error'));
+        await act(async () => result.current.handlePinImage(directImage.id, true, { showToast: false }));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Failed to update pinned state', 'error'));
+
+        expect(directImage).toEqual(expect.objectContaining({ isFavorite: false, isPinned: false }));
+        expect(mockSetImages).not.toHaveBeenCalled();
+        errorSpy.mockRestore();
+    });
+
+    it('closes a directly opened asset when it is deleted', async () => {
+        mockSettings = { ...mockSettings, confirmDelete: false };
+        const removeImage = vi.fn();
+        const activeImageState = {
+            getImage: vi.fn(),
+            updateImage: vi.fn(),
+            removeImage,
+        };
+        const { result } = renderHook(() => useAppActions({ ...props, activeImageState }));
+
+        await act(async () => {
+            result.current.requestDeleteForId('hidden-control');
+            await Promise.resolve();
+        });
+
+        expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['hidden-control']);
+        expect(removeImage).toHaveBeenCalledWith('hidden-control');
+        expect(mockSetSelectedImageIndex).not.toHaveBeenCalled();
+    });
+
     it('shows single-image unpin feedback', async () => {
         const { result } = renderHook(() => useAppActions(props));
         await act(async () => result.current.handlePinImage('2', false));
@@ -360,21 +473,27 @@ describe('useAppActions', () => {
         expect(mockAddToast).toHaveBeenCalledWith(expect.stringContaining('Privacy Mode'), 'info');
     });
 
-    it('deletes immediately when confirmation is disabled and advances viewer indices', () => {
+    it('deletes immediately when confirmation is disabled and advances viewer indices', async () => {
         mockSettings = { ...mockSettings, confirmDelete: false };
         const { result } = renderHook(() => useAppActions({ ...props, selectedImageIndex: 1 }));
-        act(() => result.current.requestDeleteForId('2'));
+        await act(async () => {
+            result.current.requestDeleteForId('2');
+            await Promise.resolve();
+        });
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['2']);
         expect(mockSetViewerSessionImages).toHaveBeenCalledWith([mockStoreImages[0]]);
         expect(mockSetSelectedImageIndex).toHaveBeenCalledWith(0);
         expect(mockModalManager.openModal).not.toHaveBeenCalled();
     });
 
-    it('closes a single-image viewer and preserves a middle delete index', () => {
+    it('closes a single-image viewer and preserves a middle delete index', async () => {
         mockSettings = { ...mockSettings, confirmDelete: false };
         mockStoreImages = [{ id: 'only', isFavorite: false, isPinned: false, filename: 'only.png', timestamp: 1 }];
         const single = renderHook(() => useAppActions(props));
-        act(() => single.result.current.requestDeleteForId('only'));
+        await act(async () => {
+            single.result.current.requestDeleteForId('only');
+            await Promise.resolve();
+        });
         expect(mockSetSelectedImageIndex).toHaveBeenCalledWith(null);
         single.unmount();
 
@@ -385,17 +504,20 @@ describe('useAppActions', () => {
             { id: 'c', isFavorite: false, isPinned: false, filename: 'c.png', timestamp: 3 },
         ];
         const middle = renderHook(() => useAppActions(props));
-        act(() => middle.result.current.requestDeleteForId('b'));
+        await act(async () => {
+            middle.result.current.requestDeleteForId('b');
+            await Promise.resolve();
+        });
         expect(mockSetSelectedImageIndex).toHaveBeenCalledWith(1);
     });
 
-    it('executes a pending viewer delete and ignores unknown viewer ids', () => {
+    it('executes a pending viewer delete and ignores unknown viewer ids', async () => {
         const pendingProps = {
             ...props,
             modalManager: { ...mockModalManager, pendingViewerDeleteId: '2' },
         };
         const pending = renderHook(() => useAppActions(pendingProps));
-        act(() => pending.result.current.executeDelete());
+        await act(async () => pending.result.current.executeDelete());
         expect(mockFileOps.deleteImages).toHaveBeenCalledWith(['2']);
         expect(mockSetSelectedImageIndex).toHaveBeenCalledWith(0);
         pending.unmount();
@@ -403,7 +525,10 @@ describe('useAppActions', () => {
         mockSetSelectedImageIndex.mockClear();
         mockSettings = { ...mockSettings, confirmDelete: false };
         const unknown = renderHook(() => useAppActions(props));
-        act(() => unknown.result.current.requestDeleteForId('missing'));
+        await act(async () => {
+            unknown.result.current.requestDeleteForId('missing');
+            await Promise.resolve();
+        });
         expect(mockSetSelectedImageIndex).not.toHaveBeenCalled();
     });
 
@@ -421,12 +546,27 @@ describe('useAppActions', () => {
         expect(mockSetSelectedIds).not.toHaveBeenCalled();
     });
 
+    it('passes video selections to the shared ZIP exporter', async () => {
+        mockStoreImages = [{ id: 'video', mediaType: 'video', filename: 'clip.mp4', timestamp: 100 }];
+        const videoProps = { ...props, selectedIds: new Set(['video']) };
+        const { result } = renderHook(() => useAppActions(videoProps));
+
+        await act(async () => result.current.handleExportConfirm('videos.zip', 'C:/out'));
+
+        expect(mockFileOps.exportImages).toHaveBeenCalledWith(
+            'videos.zip',
+            videoProps.selectedIds,
+            'C:/out',
+            expect.any(Function)
+        );
+    });
+
     it('bulk-unfavorites selected favorites and rolls back favorite failures', async () => {
         const allFavoriteProps = { ...props, selectedIds: new Set(['2']) };
         const first = renderHook(() => useAppActions(allFavoriteProps));
         act(() => first.result.current.handleBulkFavorite());
         expect(mockToggleImageFavorite).toHaveBeenCalledWith('2', false);
-        expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 images', 'success');
+        expect(mockAddToast).toHaveBeenCalledWith('Unfavorited 1 item', 'success');
         first.unmount();
 
         mockToggleImageFavorite.mockRejectedValueOnce(new Error('favorite failed'));
@@ -453,7 +593,7 @@ describe('useAppActions', () => {
         const first = renderHook(() => useAppActions(selectedPinned));
         act(() => first.result.current.handleBulkPin());
         expect(mockToggleImagePin).toHaveBeenCalledWith('2', false);
-        expect(mockAddToast).toHaveBeenCalledWith('Unpinned 1 images', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('Unpinned 1 item', 'info');
         first.unmount();
 
         mockToggleImagePin.mockRejectedValueOnce(new Error('bulk pin failed'));
@@ -469,22 +609,25 @@ describe('useAppActions', () => {
         await act(async () => result.current.handleBulkMask('1', true));
         const maskTrue = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskTrue(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
+        expect(mockUpdateImagesQueryCaches).toHaveBeenCalledOnce();
+        const updateCachedImage = mockUpdateImagesQueryCaches.mock.calls[0][1] as (image: AIImage) => AIImage;
+        expect(updateCachedImage({ ...mockStoreImages[0], userMasked: false } as AIImage).userMasked).toBe(true);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Manually Masked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Manually Masked', 'info');
 
         await act(async () => result.current.handleBulkMask('1', false));
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Unmasked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Unmasked', 'info');
         await act(async () => result.current.handleBulkMask('1', null));
         const maskAuto = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskAuto(mockStoreImages).map(image => image.userMasked)).toEqual([undefined, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', null);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Reset to Auto Mask', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Reset to Auto Mask', 'info');
 
         await act(async () => result.current.handleBulkMask());
         const maskToggle = mockSetImages.mock.calls.at(-1)?.[0] as (images: typeof mockStoreImages) => Array<{ userMasked?: boolean }>;
         expect(maskToggle(mockStoreImages).map(image => image.userMasked)).toEqual([true, undefined]);
         expect(mockToggleImageMask).toHaveBeenCalledWith('1', true);
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Mask Toggled', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
         expect(mockRebuildThumbnailFacetCache).toHaveBeenCalled();
         expect(mockIncrementFacetCacheVersion).toHaveBeenCalled();
         expect(mockRefreshCollections).toHaveBeenCalledWith(true);
@@ -506,7 +649,7 @@ describe('useAppActions', () => {
         const { result } = renderHook(() => useAppActions(props));
         await act(async () => result.current.handleBulkMask('missing'));
         expect(mockToggleImageMask).not.toHaveBeenCalled();
-        expect(mockAddToast).toHaveBeenCalledWith('1 image Mask Toggled', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('1 item Mask Toggled', 'info');
     });
 
     it('invalidates hidden privacy queries and pluralizes bulk mask feedback', async () => {
@@ -514,7 +657,7 @@ describe('useAppActions', () => {
         mockSettings = { ...mockSettings, maskingMode: 'hide' };
         const multi = renderHook(() => useAppActions({ ...props, selectedIds: new Set(['1', '2']) }));
         await act(async () => multi.result.current.handleBulkMask(undefined, true));
-        expect(mockAddToast).toHaveBeenCalledWith('2 images Manually Masked', 'info');
+        expect(mockAddToast).toHaveBeenCalledWith('2 items Manually Masked', 'info');
     });
 
     it('disables privacy mode when already enabled', () => {

@@ -20,11 +20,59 @@ export interface WorkflowDisplayNode {
     title: string;
     type: string;
     inputs: WorkflowInputs;
+    subgraphPath?: string[];
+}
+
+export interface WorkflowDisplayEdge {
+    sourceNodeId: string;
+    sourceOutputSlot?: number | null;
+    targetNodeId: string;
+    targetInputName: string;
+    targetInputSlot?: number | null;
+}
+
+export interface WorkflowNodeConnections {
+    incoming: WorkflowDisplayEdge[];
+    outgoing: WorkflowDisplayEdge[];
 }
 
 export interface WorkflowGraphSource {
     json: string;
     source: 'workflow' | 'prompt';
+    nodes: WorkflowDisplayNode[];
+    edges: WorkflowDisplayEdge[];
+    selectedOutputNodeIds: string[];
+    rootSamplerNodeIds: string[];
+    selectedBranchNodeIds: string[];
+    outputAmbiguous: boolean;
+    normalizedByBackend?: boolean;
+}
+
+interface ComfyWorkflowGraphReportLike {
+    source: string;
+    selectedOutputNodeIds?: string[];
+    rootSamplerNodeIds?: string[];
+    selectedBranchNodeIds?: string[];
+    outputAmbiguous?: boolean;
+    edges?: Array<{
+        sourceNodeId: string;
+        sourceOutputSlot: number | null;
+        targetNodeId: string;
+        targetInputName: string;
+        targetInputSlot: number | null;
+    }>;
+    nodes: Array<{
+        id: string;
+        nodeType: string;
+        title: string;
+        inputs: Partial<Record<string, string>>;
+        subgraphPath: string[];
+    }>;
+}
+
+export interface WorkflowNodeGroup {
+    key: string;
+    path: string[];
     nodes: WorkflowDisplayNode[];
 }
 
@@ -168,7 +216,12 @@ export const selectWorkflowGraphSource = ({
         return {
             json: originalChunks.prompt,
             source: 'prompt',
-            nodes: promptNodes
+            nodes: promptNodes,
+            edges: [],
+            selectedOutputNodeIds: [],
+            rootSamplerNodeIds: [],
+            selectedBranchNodeIds: [],
+            outputAmbiguous: false
         };
     }
 
@@ -176,9 +229,84 @@ export const selectWorkflowGraphSource = ({
         return {
             json: preservedWorkflow,
             source: 'workflow',
-            nodes: workflowNodes
+            nodes: workflowNodes,
+            edges: [],
+            selectedOutputNodeIds: [],
+            rootSamplerNodeIds: [],
+            selectedBranchNodeIds: [],
+            outputAmbiguous: false
         };
     }
 
     return undefined;
+};
+
+export const workflowGraphSourceFromBackend = (
+    report: ComfyWorkflowGraphReportLike | null | undefined,
+    originalChunks?: Record<string, string>
+): WorkflowGraphSource | undefined => {
+    if (!report || report.nodes.length === 0) return undefined;
+
+    if (report.source !== 'api_prompt' && report.source !== 'expanded_workflow') return undefined;
+
+    const source = report.source === 'api_prompt' ? 'prompt' : 'workflow';
+    const json = originalChunks?.[source];
+    if (!json) return undefined;
+
+    return {
+        json,
+        source,
+        normalizedByBackend: true,
+        edges: report.edges ?? [],
+        selectedOutputNodeIds: report.selectedOutputNodeIds ?? [],
+        rootSamplerNodeIds: report.rootSamplerNodeIds ?? [],
+        selectedBranchNodeIds: report.selectedBranchNodeIds ?? [],
+        outputAmbiguous: report.outputAmbiguous ?? false,
+        nodes: report.nodes.map((node) => ({
+            id: node.id,
+            title: node.title,
+            type: node.nodeType,
+            inputs: node.inputs,
+            subgraphPath: node.subgraphPath
+        }))
+    };
+};
+
+export const indexWorkflowConnections = (
+    nodes: WorkflowDisplayNode[],
+    edges: WorkflowDisplayEdge[]
+): Map<string, WorkflowNodeConnections> => {
+    const connections = new Map<string, WorkflowNodeConnections>();
+
+    for (const node of nodes) {
+        connections.set(String(node.id), { incoming: [], outgoing: [] });
+    }
+
+    for (const edge of edges) {
+        const source = connections.get(edge.sourceNodeId);
+        const target = connections.get(edge.targetNodeId);
+        if (!source || !target) continue;
+
+        source.outgoing.push(edge);
+        target.incoming.push(edge);
+    }
+
+    return connections;
+};
+
+export const groupWorkflowNodes = (nodes: WorkflowDisplayNode[]): WorkflowNodeGroup[] => {
+    const groups = new Map<string, WorkflowNodeGroup>();
+
+    for (const node of nodes) {
+        const path = node.subgraphPath ?? [];
+        const key = path.join(':');
+        const group = groups.get(key);
+        if (group) {
+            group.nodes.push(node);
+        } else {
+            groups.set(key, { key, path, nodes: [node] });
+        }
+    }
+
+    return [...groups.values()];
 };

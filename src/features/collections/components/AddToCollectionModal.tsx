@@ -119,7 +119,7 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">
                             {mode === 'move' ? 'Move to Collection' : 'Add to Collection'}
                         </h3>
-                        <p className="text-xs text-gray-500">{selectedIds.length} images selected</p>
+                        <p className="text-xs text-gray-500">{selectedIds.length} {selectedIds.length === 1 ? 'item' : 'items'} selected</p>
                     </div>
                     <button ref={closeButtonRef} type="button" aria-label="Close Add to Collection" onClick={onClose} className="p-2 hover:bg-gray-100 dark:hover:bg-white/5 rounded-full transition-colors">
                         <X className="w-5 h-5 text-gray-400" />

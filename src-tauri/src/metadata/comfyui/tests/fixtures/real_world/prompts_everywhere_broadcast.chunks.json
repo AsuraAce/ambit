@@ -1,0 +1,14 @@
+{
+  "workflow": {
+    "nodes": [
+      {"id": 3, "type": "KSampler", "inputs": [{"name": "positive", "type": "CONDITIONING", "link": null}, {"name": "negative", "type": "CONDITIONING", "link": null}]},
+      {"id": 1735, "type": "Prompts Everywhere", "inputs": [{"name": "CONDITIONING", "type": "*", "link": 10}, {"name": "CONDITIONING", "type": "*", "link": 11}]},
+      {"id": 10, "type": "CLIPTextEncode", "inputs": [{"name": "text", "type": "STRING", "link": null}], "widgets_values": ["Positive 1"]},
+      {"id": 11, "type": "CLIPTextEncode", "inputs": [{"name": "text", "type": "STRING", "link": null}], "widgets_values": ["Positive 2"]}
+    ],
+    "links": [
+      [10, 10, 0, 1735, 0, "CONDITIONING"],
+      [11, 11, 0, 1735, 1, "CONDITIONING"]
+    ]
+  }
+}

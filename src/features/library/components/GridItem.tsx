@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { memo, useRef } from 'react';
-import { AIImage } from '../../../types';
+import { AIImage, isVideoAsset } from '../../../types';
 import { ImageCard } from './ImageCard';
 import { Layers } from 'lucide-react';
 import { isImageMasked } from '../../../utils/maskingUtils';
@@ -18,7 +18,7 @@ interface GridItemProps {
     selectedIds: Set<string>;
     maskedKeywords: string[];
     setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
-    onClick: (e: React.MouseEvent, id: string, index: number) => void;
+    onClick: (e: React.MouseEvent, id: string, index: number, revealGranted?: boolean) => void;
     onToggleSelection: (e: React.MouseEvent, id: string) => void;
     onTogglePin: (e: React.MouseEvent, id: string) => void;
     onToggleFavorite: (e: React.MouseEvent, id: string) => void;
@@ -51,6 +51,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
 
     // Error Handler: If real thumbnail fails to load, regenerate it (with retry limit)
     const handleImageError = () => {
+        if (isVideoAsset(image)) return;
         const sourcePath = normalizePath(urlToPath(image.url));
         if (!sourcePath || image.isMissing || isVerifyingMissingRef.current) {
             return;
@@ -115,7 +116,7 @@ export const GridItem: React.FC<GridItemProps> = memo(({
                             console.error('[GridItem] Failed to set drag data:', err);
                         }
                     }}
-                    onClick={(e) => onClick(e, image.id, index)}
+                    onClick={(e, revealGranted) => onClick(e, image.id, index, revealGranted)}
                     onToggleSelection={(e) => onToggleSelection(e, image.id)}
                     onToggleFavorite={(e) => {
                         e.stopPropagation();

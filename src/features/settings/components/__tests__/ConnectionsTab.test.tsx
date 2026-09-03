@@ -52,6 +52,17 @@ describe('ConnectionsTab', () => {
         expect(screen.getByText('Folders panel')).toBeTruthy();
     });
 
+    it('switches subtabs without slide, zoom, or transition-all motion', () => {
+        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} />);
+
+        const resourcesTab = screen.getByRole('button', { name: /resources/i });
+        expect(resourcesTab.className).toContain('transition-colors');
+        expect(resourcesTab.className).not.toContain('transition-all');
+
+        fireEvent.click(resourcesTab);
+        const panel = screen.getByText('Resources panel').parentElement;
+        expect(panel?.className).not.toMatch(/animate-in|slide-in|zoom-in/);
+    });
     it('supplies a harmless default close callback to the SD WebUI panel', () => {
         render(<ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="a1111" />);
 

@@ -40,14 +40,14 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
     ];
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="space-y-6">
             {/* Sub Tabs Navigation */}
             <div className="flex p-1 bg-gray-100 dark:bg-white/5 rounded-xl overflow-x-auto custom-scrollbar">
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex-1 min-w-[100px] py-2 px-3 text-xs font-bold rounded-lg transition-all capitalize flex items-center justify-center gap-2 ${activeTab === tab.id
+                        className={`flex-1 min-w-[100px] py-2 px-3 text-xs font-bold rounded-lg transition-colors capitalize flex items-center justify-center gap-2 ${activeTab === tab.id
                             ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm'
                             : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
                             }`}

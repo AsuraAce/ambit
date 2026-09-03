@@ -119,7 +119,7 @@ const emptyFacets = (): Facets => ({
 
 const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): SearchContextValue => ({
     images: [],
-    imagesQueryKey: ['images', filters, 'date_desc', false, 'blur', [], null] as ImagesQueryKey,
+    imagesQueryKey: ['images', filters, 'date_desc', false, 'blur', [], null, 'invoke:none'] as ImagesQueryKey,
     setImages: vi.fn() as Dispatch<SetStateAction<SearchContextValue['images']>>,
     filters,
     setFilters: vi.fn() as Dispatch<SetStateAction<FilterState>>,
@@ -149,7 +149,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     setRecentSearches: vi.fn() as Dispatch<SetStateAction<string[]>>,
     toggleFavorite: async () => { },
     togglePin: async () => { },
-    availableHiddenContent: { hasIntermediates: false, hasGrids: false },
+    availableHiddenContent: { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false },
     refreshHiddenAvailability: async () => { },
     isFacetsLoading: false,
     isLoadingMore: false,
@@ -399,17 +399,38 @@ describe('FilterPanel interactions', () => {
         expect(onOpenResourceFolders).toHaveBeenCalledOnce();
     });
 
-    it('clears dirty filters and opens the project repository', () => {
+    it('clears result filters and opens the project repository', () => {
         const clearAllFilters = vi.fn();
         renderPanel({
-            search: { filters: { ...filters, collectionId: 'regular' }, clearAllFilters }
+            search: { filters: { ...filters, searchQuery: 'portrait', collectionId: 'regular' }, clearAllFilters }
         });
 
-        fireEvent.click(screen.getByRole('button', { name: 'Reset All' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
         fireEvent.click(screen.getByRole('button', { name: 'Open Ambit on GitHub' }));
         expect(clearAllFilters).toHaveBeenCalledOnce();
         expect(openExternalUrl).toHaveBeenCalledOnce();
         expect(screen.getByText('v0.0.0-test')).toBeTruthy();
+    });
+
+    it('does not offer to clear filters when only collection navigation scope is active', () => {
+        renderPanel({
+            search: { filters: { ...filters, collectionId: 'regular' } }
+        });
+
+        expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    });
+
+    it.each([
+        { samplers: ['Euler'] },
+        { generationTypes: ['txt2img'] },
+        { minSteps: 0 },
+        { maxCfg: 0 },
+    ])('offers to clear every non-collection result criterion', criterion => {
+        renderPanel({
+            search: { filters: { ...filters, collectionId: 'regular', ...criterion } }
+        });
+
+        expect(screen.getByRole('button', { name: 'Clear filters' })).toBeTruthy();
     });
 
     it('merges manual filters into a smart collection and clears transient edits', () => {

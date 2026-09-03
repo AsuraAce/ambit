@@ -183,7 +183,7 @@ describe('AppLayout', () => {
         setLayoutMode: vi.fn(),
         sortOption: 'date-desc',
         setSortOption: vi.fn(),
-        totalImages: 0,
+        displayedCount: 0,
         scopeTotal: 0,
         scopeName: 'All Photos',
         isFiltering: false,
@@ -196,6 +196,7 @@ describe('AppLayout', () => {
         handlers: {} as any,
         setViewingImageId: vi.fn(),
         onMaintenanceViewerOpenChange: vi.fn(),
+        onOpenReferencedImage: vi.fn().mockResolvedValue(true),
         isViewerShortcutBlocked: false,
         settings: {} as any,
         privacyEnabled: false,
@@ -228,6 +229,24 @@ describe('AppLayout', () => {
         expect(screen.getByTestId('app-header')).toBeTruthy();
         expect(screen.getByTestId('error-boundary')).toBeTruthy();
     });
+    it('suppresses the native focus outline on the programmatically focused workspace', () => {
+        render(<AppLayout {...defaultProps} />);
+
+        const workspace = screen.getByRole('main', { name: 'Library workspace' });
+        expect(workspace.getAttribute('tabindex')).toBe('-1');
+        expect(workspace.className.split(/\s+/)).toContain('outline-none');
+    });
+
+    it('uses the authoritative scoped count supplied by App', () => {
+        searchState.value.totalImages = 265804;
+
+        render(<AppLayout {...defaultProps} displayedCount={823} scopeTotal={823} />);
+
+        expect(capturedProps.header).toEqual(expect.objectContaining({
+            displayedCount: 823,
+            totalCount: 823,
+        }));
+    });
 
     it('unmounts library surfaces while privacy protection is stale', () => {
         useSettingsStore.setState({ privacyMaskIndexStatus: 'failed' });
@@ -240,6 +259,21 @@ describe('AppLayout', () => {
 
         view.rerender(<AppLayout {...defaultProps} viewMode="maintenance" />);
         expect(screen.queryByTestId('maintenance-view')).toBeNull();
+    });
+
+    it('holds the privacy gate while initial preparation finishes presenting', () => {
+        const view = render(
+            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate />
+        );
+
+        expect(screen.getByTestId('privacy-protection-gate')).toBeTruthy();
+        expect(screen.queryByTestId('virtual-grid')).toBeNull();
+
+        view.rerender(
+            <AppLayout {...defaultProps} viewMode="grid" forcePrivacyProtectionGate={false} />
+        );
+        expect(screen.queryByTestId('privacy-protection-gate')).toBeNull();
+        expect(screen.getByTestId('virtual-grid')).toBeTruthy();
     });
 
     it('renders VirtualGrid when viewMode is grid', () => {
@@ -282,7 +316,7 @@ describe('AppLayout', () => {
         );
 
         expect(screen.getByTestId('virtual-grid').getAttribute('data-transition-key')).toBe(
-            `justified|${thumbnailSize}|name_asc|collection-1|favorites|unpinned-scope|show-grids|hide-intermediates`
+            `justified|${thumbnailSize}|name_asc|collection-1|all-media|favorites|unpinned-scope|show-grids|hide-intermediates|hide-invoke-assets`
         );
     });
 
@@ -340,6 +374,7 @@ describe('AppLayout', () => {
         render(<AppLayout {...defaultProps} viewMode="maintenance" isViewerShortcutBlocked={true} />);
         expect(await screen.findByTestId('maintenance-view')).toBeTruthy();
         expect(capturedProps.maintenance?.onViewerOpenChange).toBe(defaultProps.onMaintenanceViewerOpenChange);
+        expect(capturedProps.maintenance?.onOpenReferencedImage).toBe(defaultProps.onOpenReferencedImage);
         expect(capturedProps.maintenance?.isShortcutBlocked).toBe(true);
     });
 
@@ -509,7 +544,7 @@ describe('AppLayout', () => {
         searchState.value.clearAllFilters = clearAllFilters;
         render(<AppLayout {...defaultProps} />);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Clear All Filters' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
         expect(clearAllFilters).toHaveBeenCalled();
     });
 
@@ -633,18 +668,18 @@ describe('AppLayout', () => {
 
         const item = capturedProps.gridItem as {
             index: number;
-            onClick: (event: React.MouseEvent, id: string, index: number) => void;
+            onClick: (event: React.MouseEvent, id: string, index: number, revealGranted?: boolean) => void;
             onToggleFavorite: (event: React.MouseEvent, id: string) => void;
             onTogglePin: (event: React.MouseEvent, id: string) => void;
             onContextMenu: (event: { clientX: number; clientY: number }, id: string) => void;
         };
         expect(item.index).toBe(1);
-        item.onClick({} as React.MouseEvent, 'regular', 1);
+        item.onClick({} as React.MouseEvent, 'regular', 1, true);
         item.onToggleFavorite({} as React.MouseEvent, 'regular');
         item.onTogglePin({} as React.MouseEvent, 'regular');
         item.onTogglePin({} as React.MouseEvent, 'missing');
         item.onContextMenu({ clientX: 7, clientY: 9 }, 'regular');
-        expect(handleImageClick).toHaveBeenCalledWith(expect.anything(), 'regular', 1, defaultProps.setSelectedImageIndex);
+        expect(handleImageClick).toHaveBeenCalledWith(expect.anything(), 'regular', 1, defaultProps.setSelectedImageIndex, true);
         expect(searchState.value.toggleFavorite).toHaveBeenCalledWith('regular');
         expect(handlePinImage).toHaveBeenCalledWith('regular', true);
         expect(setContextMenu).toHaveBeenCalledWith({ x: 7, y: 9, imageId: 'regular' });

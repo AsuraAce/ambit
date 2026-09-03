@@ -174,7 +174,7 @@ const useLiveWatchPresentation = (
 export const ActivityDock: React.FC = () => {
     const {
         isImporting, importProgress, importAbortController,
-        syncStatus, syncProgress,
+        syncStatus, syncProgress, invokeSyncActivityKind,
         liveWatchSession,
         isRegeneratingThumbnails, thumbnailProgress,
         isResolvingModels, modelResolutionProgress,
@@ -195,6 +195,7 @@ export const ActivityDock: React.FC = () => {
         isRefreshingMetadata, refreshProgress,
         cancelImport,
         cancelThumbnailRegeneration,
+        requestThumbnailOptimizationCancel,
         cancelSync,
         cancelRefresh
     } = useLibraryStore();
@@ -227,8 +228,11 @@ export const ActivityDock: React.FC = () => {
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
         progress = syncProgress;
-        label = "Syncing";
+        label = invokeSyncActivityKind === 'startup' ? "InvokeAI Catch-up" : "InvokeAI Sync";
         supportsCancel = true;
+        footerMessage = invokeSyncActivityKind === 'startup'
+            ? "You can keep using the library while Ambit catches up."
+            : "You can keep using the library while Ambit synchronizes InvokeAI.";
     } else if (isRegeneratingThumbnails) {
         progress = thumbnailProgress;
         label = "Optimizing";
@@ -262,7 +266,7 @@ export const ActivityDock: React.FC = () => {
         footerMessage = THUMBNAIL_QUEUE_RUNNING_FOOTER;
     } else if (isRefreshActive) {
         progress = refreshProgress;
-        label = "Metadata Refresh";
+        label = "Updating Metadata";
         isLowPriority = false;
         supportsCancel = true;
     } else if (isLiveWatchVisible) {
@@ -325,26 +329,26 @@ export const ActivityDock: React.FC = () => {
     const shouldPulseSparkles = isLowPriority && !isLiveWatchTone;
     const accentClasses = isLiveWatchTone
         ? {
-            iconText: 'text-sage-600 dark:text-sage-400',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            iconText: 'text-sage-600 dark:text-sage-300',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
             fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.32)]',
             pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.2)]',
-            percentText: 'text-sage-600 dark:text-sage-400'
+            percentText: 'text-sage-600 dark:text-sage-300'
         }
         : isLowPriority
         ? {
-            iconText: 'text-violet-600 dark:text-violet-400',
-            iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
-            fill: 'bg-violet-400 shadow-[0_0_12px_rgba(139,92,246,0.3)]',
-            pillHover: 'hover:shadow-[0_0_15px_rgba(139,92,246,0.2)]',
-            percentText: 'text-violet-600 dark:text-violet-400'
+            iconText: 'text-harbor-600 dark:text-harbor-300',
+            iconBg: 'bg-harbor-500/10 text-harbor-600 dark:text-harbor-300',
+            fill: 'bg-harbor-400 shadow-[0_0_12px_rgba(104,127,140,0.3)]',
+            pillHover: 'hover:shadow-[0_0_15px_rgba(104,127,140,0.2)]',
+            percentText: 'text-harbor-600 dark:text-harbor-300'
         }
         : {
-            iconText: 'text-sage-600 dark:text-sage-400',
-            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
+            iconText: 'text-sage-600 dark:text-sage-300',
+            iconBg: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
             fill: 'bg-sage-500 shadow-[0_0_12px_rgba(139,174,124,0.5)]',
             pillHover: 'hover:shadow-[0_0_15px_rgba(139,174,124,0.3)]',
-            percentText: 'text-sage-600 dark:text-sage-400'
+            percentText: 'text-sage-600 dark:text-sage-300'
         };
 
     const dismissDock = React.useCallback(() => {
@@ -382,7 +386,7 @@ export const ActivityDock: React.FC = () => {
                                 </motion.div>
                                 <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
                                     <div
-                                        className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-violet-500'}`}
+                                        className={`h-full ${isLiveWatchTone || !isLowPriority ? 'bg-sage-500' : 'bg-harbor-500'}`}
                                         style={{ width: `${percent}%` }}
                                     />
                                 </motion.div>
@@ -509,7 +513,7 @@ export const ActivityDock: React.FC = () => {
                                             if (isScanningDiscovery) cancelDiscoveryScan();
                                             if (isScanningDuplicates) cancelDuplicateScan();
                                             if (isScanningMissingFiles) cancelMissingScan();
-                                            if (isBackgroundActive) void commands.cancelThumbnailOptimizationJob().catch(console.error);
+                                            if (isBackgroundActive) requestThumbnailOptimizationCancel();
                                             if (isRefreshActive) cancelRefresh();
                                         }}
                                         className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"

@@ -43,7 +43,7 @@ export const VersionSelector: React.FC<VersionSelectorProps> = ({
 
                         {/* Upscale Icon */}
                         {isUpscale && (
-                            <div className="absolute top-1 right-1 p-0.5 bg-amethyst-500 rounded-full shadow-sm">
+                            <div className="absolute top-1 right-1 p-0.5 bg-sage-500 rounded-full shadow-sm">
                                 <ArrowRight className="w-2 h-2 text-white -rotate-45" />
                             </div>
                         )}

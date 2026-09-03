@@ -70,7 +70,7 @@ describe('SelectionBar tooltips', () => {
         expect(favoriteButton.getAttribute('aria-pressed')).toBe('true');
         fireEvent.click(favoriteButton);
         expect(onToggleFavorite).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('button', { name: 'Unpin Selected Images' }).getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByRole('button', { name: 'Unpin Selected Items' }).getAttribute('aria-pressed')).toBe('true');
 
         for (const button of screen.getAllByRole('button')) {
             expect(button.className).toContain('focus-visible:ring-2');

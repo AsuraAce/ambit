@@ -1,0 +1,19 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Ambit (Video Smoke)",
+  "identifier": "com.ambit.dev.video-smoke",
+  "app": {
+    "windows": [
+      {
+        "title": "Ambit (VIDEO SMOKE) | Isolated Local Profile",
+        "width": 1000,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "dragDropEnabled": false,
+        "backgroundColor": "#09090b"
+      }
+    ]
+  }
+}

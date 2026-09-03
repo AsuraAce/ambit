@@ -70,7 +70,7 @@ describe('CollectionContextMenu', () => {
         ];
         const textActions: Array<[string, ReturnType<typeof vi.fn>]> = [
             ['Rename', handlers.onRename],
-            ['Edit Filters', handlers.onEditCollection],
+            ['Edit Collection', handlers.onEditCollection],
             ['Export to ZIP...', handlers.onExport],
             ['Reset Thumbnail', handlers.onResetThumbnail]
         ];
@@ -98,7 +98,7 @@ describe('CollectionContextMenu', () => {
             />
         );
 
-        expect(screen.queryByText('Edit Filters')).toBeNull();
+        expect(screen.queryByText('Edit Collection')).toBeNull();
         expect(screen.queryByText('Reset Thumbnail')).toBeNull();
         expect(screen.getByRole('button', { name: 'Pin collection' })).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Archive' })).toBeTruthy();

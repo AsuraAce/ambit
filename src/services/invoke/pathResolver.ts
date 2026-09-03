@@ -70,7 +70,14 @@ const fromOutputImagesRelative = (rootRelativePath: string): string | null => {
 const toAbsolutePath = (invokeRoot: string, rootRelativePath: string): string =>
     normalizePath(`${invokeRoot}/${normalizeSafeRelativePath(rootRelativePath)!}`);
 
-export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
+const isCaseInsensitiveRoot = (normalizedRoot: string): boolean =>
+    /^[A-Za-z]:\//.test(normalizedRoot) || normalizedRoot.startsWith('//');
+
+export const buildInvokeImageDiskIndex = (
+    files: string[],
+    caseInsensitive: boolean = true
+): InvokeDiskIndex => {
+    const indexKey = (path: string): string => caseInsensitive ? path.toLowerCase() : path;
     const byRootRelative = new Map<string, string>();
     const byImagesRelative = new Map<string, string>();
     const byBasename = new Map<string, string | null>();
@@ -79,14 +86,14 @@ export const buildInvokeImageDiskIndex = (files: string[]): InvokeDiskIndex => {
         const rootRelative = normalizeSafeRelativePath(file);
         if (!rootRelative) return;
 
-        byRootRelative.set(rootRelative.toLowerCase(), rootRelative);
+        byRootRelative.set(indexKey(rootRelative), rootRelative);
 
         const imagesRelative = fromOutputImagesRelative(rootRelative);
         if (imagesRelative) {
-            byImagesRelative.set(imagesRelative.toLowerCase(), rootRelative);
+            byImagesRelative.set(indexKey(imagesRelative), rootRelative);
         }
 
-        const basename = getFilename(rootRelative).toLowerCase();
+        const basename = indexKey(getFilename(rootRelative));
 
         if (!byBasename.has(basename)) {
             byBasename.set(basename, rootRelative);
@@ -107,10 +114,14 @@ export const createInvokeImagePathResolver = (
 ) => {
     const normalizedRoot = normalizePath(invokeRoot).replace(/\/$/, '');
     let diskIndexPromise: Promise<InvokeDiskIndex> | null = null;
+    const caseInsensitive = isCaseInsensitiveRoot(normalizedRoot);
+    const relativeKey = (path: string): string => caseInsensitive ? path.toLowerCase() : path;
 
     const getDiskIndex = async (): Promise<InvokeDiskIndex> => {
         if (!diskIndexPromise) {
-            diskIndexPromise = listImages().then(buildInvokeImageDiskIndex);
+            diskIndexPromise = listImages().then(files =>
+                buildInvokeImageDiskIndex(files, caseInsensitive)
+            );
         }
         return diskIndexPromise;
     };
@@ -146,8 +157,8 @@ export const createInvokeImagePathResolver = (
 
         try {
             const index = await getDiskIndex();
-            const rootRelativeMatch = index.byRootRelative.get(fallbackRelativePath.toLowerCase());
-            const imagesRelativeMatch = index.byImagesRelative.get(normalizedName.toLowerCase());
+            const rootRelativeMatch = index.byRootRelative.get(relativeKey(fallbackRelativePath));
+            const imagesRelativeMatch = index.byImagesRelative.get(relativeKey(normalizedName));
             const exactMatch = rootRelativeMatch ?? imagesRelativeMatch;
 
             if (exactMatch) {
@@ -158,7 +169,7 @@ export const createInvokeImagePathResolver = (
                 };
             }
 
-            const basenameMatch = index.byBasename.get(normalizedName.toLowerCase());
+            const basenameMatch = index.byBasename.get(relativeKey(normalizedName));
             if (basenameMatch === null) {
                 console.warn('[InvokeAI Sync] Ambiguous image basename; skipping DB row to avoid importing the wrong file.', {
                     imageName

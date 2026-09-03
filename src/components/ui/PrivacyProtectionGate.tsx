@@ -25,7 +25,7 @@ export const PrivacyProtectionGate: React.FC<PrivacyProtectionGateProps> = ({
         >
             <div className="max-w-md text-center">
                 {failed ? (
-                    <ShieldAlert className="w-12 h-12 mx-auto mb-4 text-rose-500" />
+                    <ShieldAlert className="w-12 h-12 mx-auto mb-4 text-red-600 dark:text-red-300" />
                 ) : (
                     <Loader2 className="w-10 h-10 mx-auto mb-4 text-sage-500 animate-spin" />
                 )}
@@ -38,7 +38,7 @@ export const PrivacyProtectionGate: React.FC<PrivacyProtectionGateProps> = ({
                         : 'Library content will appear after the latest masking rules are ready.'}
                 </p>
                 {failed && error && (
-                    <p className="mt-3 text-xs text-rose-600 dark:text-rose-400 break-words">{error}</p>
+                    <p className="mt-3 text-xs text-red-600 dark:text-red-300 break-words">{error}</p>
                 )}
                 {failed && (
                     <div className="mt-5 flex flex-wrap justify-center gap-3">

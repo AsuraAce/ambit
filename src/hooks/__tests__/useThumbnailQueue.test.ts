@@ -130,6 +130,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             backgroundHealingPaused: false,
             lastBackgroundHealingRun: null,
             thumbnailOptimizationRetrySignal: 0,
+            thumbnailOptimizationCancelSignal: 0,
             facetCacheVersion: 0,
         });
         useSettingsStore.setState({
@@ -138,6 +139,10 @@ describe('useThumbnailQueue behavioral contract', () => {
                 enableAutoThumbnailHealing: true,
                 enforceHighQualityThumbnails: false,
                 thumbnailOptimizationProfile: 'balanced',
+                monitoredFolders: [
+                    { id: 'active', path: 'D:/Library', isActive: true, imageCount: 10 },
+                    { id: 'inactive', path: 'E:/Archive', isActive: false, imageCount: 20 },
+                ],
             }),
         });
     });
@@ -179,6 +184,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             thumbnailDir: 'C:/AppData/Ambit/.thumbnails',
             includeUpgradeable: false,
             profile: 'balanced',
+            sourceRoots: ['D:/Library'],
         });
         expect(mocks.setThumbnailOptimizationThrottled).toHaveBeenCalledWith(false);
         expect(useLibraryStore.getState().lastBackgroundHealingRun).toEqual(expect.objectContaining({
@@ -216,7 +222,7 @@ describe('useThumbnailQueue behavioral contract', () => {
                     optimized: 2,
                     reused: 1,
                     failed: 0,
-                    skipped: 0,
+                    skipped: 1,
                     imagesPerSecond: 4,
                     batchMs: 12,
                     dbMs: 3,
@@ -234,7 +240,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         expect(useLibraryStore.getState().backgroundHealingProgress).toEqual({
             current: 3,
             total: 10,
-            message: 'Optimized 2 thumbnails after checking 3 images',
+            message: 'Optimized 2 thumbnails; deferred 1 file from unavailable folders',
         });
         expect(useLibraryStore.getState().backgroundHealingDetails).toEqual(expect.objectContaining({
             checked: 3,
@@ -248,6 +254,17 @@ describe('useThumbnailQueue behavioral contract', () => {
             checked: 3,
             optimized: 2,
         }));
+    });
+
+    it('starts the backend optimizer once after React Strict Mode replays mount effects', async () => {
+        vi.useFakeTimers();
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+
+        renderHook(() => useThumbnailQueue(), { reactStrictMode: true });
+
+        await advanceStartup();
+
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
     });
 
     it('ignores invisible backend progress instead of showing empty thumbnail work', async () => {
@@ -953,7 +970,41 @@ describe('useThumbnailQueue behavioral contract', () => {
         act(() => useSettingsStore.setState(state => ({ settings: { ...state.settings, enableAutoThumbnailHealing: true } })));
         await act(async () => Promise.resolve());
         expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
         cancel.resolve();
+    });
+
+    it('owns ActivityDock cancellation and clears queue presentation state', async () => {
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        renderHook(() => useThumbnailQueue());
+        useLibraryStore.setState({
+            isBackgroundHealingActive: true,
+            backgroundHealingProgress: { current: 1, total: 10, message: 'Working' },
+        });
+
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
+        await act(async () => Promise.resolve());
+
+        expect(mocks.cancelThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+        expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
+        expect(useLibraryStore.getState().backgroundHealingProgress).toBeNull();
+    });
+
+    it('does not overlap a new run while ActivityDock cancellation is still settling', async () => {
+        vi.useFakeTimers();
+        const job = deferred<never>();
+        mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        renderHook(() => useThumbnailQueue());
+        await advanceStartup();
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
+        await act(async () => Promise.resolve());
+        act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
     });
 
     it('should export a void function hook', async () => {

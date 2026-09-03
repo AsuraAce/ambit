@@ -78,6 +78,43 @@ describe('mappingUtils - mapRawChunksToMetadata', () => {
             expect(result.modelHash).toBe('abc123');
         });
 
+        it('requires whole finite decimal f32 values while preserving padded exponents and explicit zero', () => {
+            const nonFinite = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale: NaN, Denoising strength: 3.4028236e38'
+            );
+            const overflow = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale: 3.4028236e38, Denoising strength: NaN'
+            );
+            const prefixJunk = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale: 7junk, Denoising strength: 4.5junk'
+            );
+            const hex = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale: 0x10, Denoising strength: -0x10'
+            );
+            const paddedExponent = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale:   +4.5e0  , Denoising strength:  3.5e-1  '
+            );
+            const zero = parseA1111Parameters(
+                'cat\nSteps: 1, CFG scale: 0, Denoising strength: 0'
+            );
+
+            expect(nonFinite.cfg).toBeUndefined();
+            expect(nonFinite.denoisingStrength).toBeUndefined();
+            expect(overflow.cfg).toBeUndefined();
+            expect(overflow.denoisingStrength).toBeUndefined();
+            expect(prefixJunk.cfg).toBeUndefined();
+            expect(prefixJunk.denoisingStrength).toBeUndefined();
+            expect(hex.cfg).toBeUndefined();
+            expect(hex.denoisingStrength).toBeUndefined();
+            expect(paddedExponent).toMatchObject({ cfg: 4.5, denoisingStrength: 0.35 });
+            expect(zero).toMatchObject({ cfg: 0, denoisingStrength: 0 });
+        });
+
+        it('recognizes both A1111 CFG keys case-insensitively and preserves zero', () => {
+            expect(parseA1111Parameters('cat\nSteps: 1, cfg SCALE: 4.5').cfg).toBe(4.5);
+            expect(parseA1111Parameters('cat\nSteps: 1, cFg: 0').cfg).toBe(0);
+        });
+
         it('should infer Forge, Anapnoe, and Comfy variants from version metadata only when the default is generic', () => {
             expect(parseA1111Parameters('cat\nSteps: 1, Version: forge-classic').tool).toBe(GeneratorTool.FORGE);
             expect(parseA1111Parameters('cat\nSteps: 1, Version: anapnoe-ui').tool).toBe(GeneratorTool.ANAPNOE);

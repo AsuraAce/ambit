@@ -400,7 +400,7 @@ describe('ThumbnailsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Background' }));
 
         expect(props.onRegenerate).toHaveBeenCalledWith(['first']);
-        expect(props.onItemClick).toHaveBeenCalledWith('first', 0, expect.any(Object));
+        expect(props.onItemClick).toHaveBeenCalledWith('first', 0, expect.any(Object), undefined);
         expect(props.onRangeSelection).toHaveBeenCalledWith([0], true);
         expect(props.onBackgroundClick).toHaveBeenCalled();
         expect(screen.getByText(/in current filter.*showing first 2/i)).not.toBeNull();

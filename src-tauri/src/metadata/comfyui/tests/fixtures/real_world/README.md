@@ -51,8 +51,49 @@ Initial fixture sources:
   `D:\AI\art\webUI\comfyUI\output\Krea2_turbo_00719_.png`, generated via the
   regular ComfyUI `SaveImage` node. Covers the same Krea template path without
   the metadata saver node.
+- `issue_1024_sdprompt_saver.chunks.json`: minimized from
+  `repro_issue_1024.rs`, covering mixed flat parameters, an `SDPromptSaver`
+  output path, stale sentinel prompts, and graph-derived steps and prompt text.
+- `inspire_faceid_resources.chunks.json`: minimized from
+  `repro_ip_adapter.rs`, covering exact `KSampler //Inspire` widgets plus
+  FaceID LoRA and ControlNet collection on a workflow fragment without a save
+  output.
+- `smz_concat_setget.chunks.json`: minimized from `repro_smz_concat.rs`,
+  covering SetNode/GetNode model resolution, smZ prompt encoders, and
+  conditioning concatenation.
+- `prompts_everywhere_broadcast.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering role-aware positive and negative routing for
+  the two `Prompts Everywhere` conditioning inputs.
+- `anything_everywhere_broadcaster_loop.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering a disconnected generic broadcaster that must
+  terminate without fabricating prompt metadata.
+- `placeholder_saver_prompt_precedence.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering a valid graph prompt overriding flat and
+  saver-node `undefined` placeholders while flat steps remain available.
+- `placeholder_positive_valid_negative.chunks.json`: minimized from
+  `repro_smz_concat.rs`, covering role-correct negative conditioning plus a
+  deterministic positive fallback when the connected value is a placeholder.
+- `loader_only_unet_gguf_fallback.chunks.json`: minimized from
+  `subgraph_repro.rs`, covering deterministic weak model fallback when a
+  disconnected sampler and competing UNET/GGUF loaders are present.
+- `loader_only_gguf_fallback.chunks.json`: minimized from `subgraph_repro.rs`,
+  covering suffix-free GGUF global model recovery without a sampler or saved
+  output.
+- `connected_gguf_sampler.chunks.json`: minimized workflow-only coverage for a
+  saved-output `KSampler` path connected to `UnetLoaderGGUF`, proving GGUF
+  model extraction receives `SamplerTraversal` provenance.
+- `use_everywhere_v7_resolved_links.chunks.json`: exact workflow-only fixture
+  from the upstream cg-use-everywhere `docs/UE_example.json` example. It covers
+  version 7.0.1 persisted `extra.ue_links` reconstruction for model, VAE, CLIP,
+  and conditioning inputs without simulating Use Everywhere matching rules.
+  Source: https://github.com/chrisgoringe/cg-use-everywhere/blob/main/docs/UE_example.json
+  Plugin commit recorded by the workflow:
+  `98286cadb33486c27d87759f24b4813bbbda8799`.
 
 Extraction dates:
 
 - 2026-07-07: initial real-world fixture batch.
 - 2026-07-08: Krea/format-parity fixtures from user-provided local images.
+- 2026-07-30: additional in-repo user/repro fixture batch.
+- 2026-07-30: connected GGUF saved-output fixture.
+- 2026-07-30: upstream cg-use-everywhere 7.0.1 resolved-link fixture.

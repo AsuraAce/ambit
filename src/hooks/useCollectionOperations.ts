@@ -1,25 +1,31 @@
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, Collection, SmartCollection, FilterState } from '../types';
+import { AIImage, Collection, SmartCollection, FilterState, isVideoAsset } from '../types';
 import { useToast } from './useToast';
 import { useSettingsStore } from '../stores/settingsStore';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useCollectionStore } from '../stores/collectionStore';
+import type { CollectionRefreshOptions } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
   upsertCollection,
   deleteCollectionFromDb,
   addImagesToCollection as addImgsToCol,
   removeImagesFromCollection as removeImgsFromCol,
-  setCollectionCustomThumbnail
+  moveImagesBetweenCollections as moveImgsBetweenCols,
+  setCollectionCustomThumbnail,
+  resetInvokeCollection as resetInvokeCollectionInDb,
+  updateAmbitCollectionScope,
+  type AmbitCollectionScopeTarget
 } from '../services/db/collectionRepo';
+import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
 
 interface UseCollectionOperationsProps {
   collections: Collection[];
   smartCollections: SmartCollection[];
   setAllCollections: React.Dispatch<React.SetStateAction<Collection[]>>;
-  refreshCollections: (debounced?: boolean) => Promise<void>;
+  refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   setImages: React.Dispatch<React.SetStateAction<AIImage[]>>;
   activeCollectionId: string | null;
@@ -39,6 +45,7 @@ export const useCollectionOperations = ({
   const maskedKeywords = useSettingsStore(s => getEffectiveMaskedKeywords(s.settings));
   const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
   const refreshSmartCounts = useCollectionStore(s => s.refreshSmartCounts);
+  const invokeOwnerScope = useInvokeOwnerScopeStore(s => s.ownerScopeState.scope);
   const activeCollectionIdRef = React.useRef(activeCollectionId);
   const membershipMutationTailsRef = React.useRef(new Map<string, Promise<void>>());
   activeCollectionIdRef.current = activeCollectionId;
@@ -88,6 +95,8 @@ export const useCollectionOperations = ({
       name,
       createdAt: Date.now(),
       source: 'ambit',
+      invokeSourceId: invokeOwnerScope?.mode === 'legacy' ? undefined : invokeOwnerScope?.dbPath,
+      invokeOwnerId: invokeOwnerScope?.mode === 'owner' ? invokeOwnerScope.ownerId : undefined,
       imageIds: [],
       count: 0,
       filters // Hybrid Support: Initialize with filters if provided
@@ -98,15 +107,23 @@ export const useCollectionOperations = ({
 
     try {
       await upsertCollection(newCol);
-      addToast(`Collection "${name}" created`, 'success');
-      // Background refresh to ensure everything is in sync (smart stats etc)
-      await refreshCollections();
     } catch (e) {
       // Rollback
       setAllCollections(prev => prev.filter(c => c.id !== id));
       addToast("Failed to create collection", "error");
+      return;
     }
-  }, [setAllCollections, refreshCollections, addToast]);
+
+    addToast(`Collection "${name}" created`, 'success');
+    try {
+      await refreshCollections(false, {
+        consistency: 'authoritative',
+      });
+    } catch (error) {
+      console.error('[Collections] Failed to refresh after creating collection', error);
+      addToast('Collection created, but the collection list may need a refresh.', 'warning');
+    }
+  }, [setAllCollections, refreshCollections, addToast, invokeOwnerScope]);
 
   const updateCollectionFilters = useCallback(async (id: string, filters: FilterState | undefined) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
@@ -146,26 +163,84 @@ export const useCollectionOperations = ({
     }
   }, [collections, smartCollections, setAllCollections, refreshCollections, addToast]);
 
+  const updateCollectionScope = useCallback(async (
+    id: string,
+    target: AmbitCollectionScopeTarget
+  ): Promise<boolean> => {
+    const collection = [...collections, ...smartCollections].find(item => item.id === id);
+    if (!collection || collection.source === 'invoke') return false;
+
+    try {
+      await updateAmbitCollectionScope(id, target);
+      if (activeCollectionIdRef.current === id) {
+        const activeScope = useInvokeOwnerScopeStore.getState().ownerScopeState.scope;
+        const remainsVisible = activeScope?.mode === 'all'
+          || (activeScope?.mode === 'owner'
+            && target.mode === 'owner'
+            && activeScope.ownerId === target.ownerId);
+        if (!remainsVisible) {
+          setFilters(previous => ({ ...previous, collectionId: null }));
+        }
+      }
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+        queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+      ]);
+      addToast('Collection visibility updated', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(message || 'Failed to update collection visibility', 'error');
+      return false;
+    }
+  }, [addToast, collections, queryClient, refreshCollections, setFilters, smartCollections]);
+
   const deleteCollection = useCallback(async (id: string) => {
     const original = [...collections, ...smartCollections].find(c => c.id === id);
-    if (!original) return;
+    if (!original) return false;
 
-    // Optimistic Update
+    try {
+      await deleteCollectionFromDb(id);
+    } catch (e) {
+      addToast(original.source === 'invoke' ? "Failed to hide collection" : "Failed to delete collection", "error");
+      return false;
+    }
+
     setAllCollections(prev => prev.filter(c => c.id !== id));
     if (activeCollectionId === id) {
       setFilters((prev) => ({ ...prev, collectionId: null }));
     }
-
+    addToast(original.source === 'invoke' ? "Collection hidden" : "Collection deleted", "success");
     try {
-      await deleteCollectionFromDb(id);
-      addToast("Collection deleted", "success");
       await refreshCollections();
     } catch (e) {
-      // Rollback
-      setAllCollections(prev => [...prev, original]);
-      addToast("Failed to delete collection", "error");
+      console.error("[Collections] Failed to refresh after deleting collection", e);
+      addToast("Collection deleted, but the collection list may need a refresh.", "warning");
     }
+    return true;
   }, [collections, smartCollections, activeCollectionId, setFilters, setAllCollections, refreshCollections, addToast]);
+
+  const resetInvokeCollection = useCallback(async (id: string): Promise<boolean> => {
+    const collection = [...collections, ...smartCollections].find(item => item.id === id);
+    if (!collection || collection.source !== 'invoke') return false;
+
+    try {
+      await resetInvokeCollectionInDb(id);
+      await Promise.all([
+        refreshCollections(),
+        queryClient.invalidateQueries({ queryKey: ['images'] }),
+        queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+      ]);
+      addToast('InvokeAI collection reset', 'success');
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast(message || 'Failed to reset InvokeAI collection', 'error');
+      return false;
+    }
+  }, [addToast, collections, queryClient, refreshCollections, smartCollections]);
 
   const renameCollection = useCallback(async (id: string, newName: string) => {
     const col = [...collections, ...smartCollections].find(c => c.id === id);
@@ -247,25 +322,14 @@ export const useCollectionOperations = ({
     if (!col) return false;
 
     return serializeCollectionMembershipMutation(collectionId, async () => {
-      let collectionBeforeMutation = col;
-
-      // Optimistic Update: Increment count
-      setAllCollections(prev => prev.map(c => {
-        if (c.id !== collectionId) return c;
-        collectionBeforeMutation = c;
-        return { ...c, count: (c.count || 0) + imageIds.length };
-      }));
-
       try {
         await addImgsToCol(collectionId, imageIds);
       } catch (e) {
-        // Rollback to the state at the start of this serialized mutation.
-        setAllCollections(prev => prev.map(c => c.id === collectionId ? collectionBeforeMutation : c));
         addToast("Failed to add to collection", "error");
         return false;
       }
 
-      addToast(`Added images to collection`, 'success');
+      addToast('Added to collection', 'success');
       try {
         await Promise.all([
           refreshCollections(),
@@ -276,10 +340,10 @@ export const useCollectionOperations = ({
         console.error("[Collections] Failed to refresh after adding images", e);
       }
 
-      refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
+      refreshAffectedCollectionThumbnails([col]);
       return true;
     });
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, serializeCollectionMembershipMutation]);
+  }, [collections, smartCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, serializeCollectionMembershipMutation]);
 
   const removeImagesFromCollection = useCallback(async (
     imageIds: string[],
@@ -290,28 +354,9 @@ export const useCollectionOperations = ({
     if (!col) return false;
 
     return serializeCollectionMembershipMutation(collectionId, async () => {
-      let collectionBeforeMutation = col;
-
-      // Optimistic Update: Decrement count
-      setAllCollections(prev => prev.map(c => {
-        if (c.id !== collectionId) return c;
-        collectionBeforeMutation = c;
-        return { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) };
-      }));
-
       try {
-        // Handle Manual Exclusions for Hybrid Smart Collections
-        if (collectionBeforeMutation.filters) {
-          const currentExclusions = collectionBeforeMutation.manualExclusions || [];
-          const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
-          await upsertCollection({ ...collectionBeforeMutation, manualExclusions: newExclusions });
-        }
-
-        // Always attempt removal from junction table (handles manual additions)
         await removeImgsFromCol(collectionId, imageIds);
       } catch (e) {
-        // Rollback to the state at the start of this serialized mutation.
-        setAllCollections(prev => prev.map(c => c.id === collectionId ? collectionBeforeMutation : c));
         addToast("Failed to remove from collection", "error");
         return false;
       }
@@ -335,62 +380,46 @@ export const useCollectionOperations = ({
         console.error("[Collections] Failed to refresh after removing images", e);
       }
 
-      refreshAffectedCollectionThumbnails([collectionBeforeMutation]);
+      refreshAffectedCollectionThumbnails([col]);
       return true;
     });
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, setImages, serializeCollectionMembershipMutation]);
+  }, [collections, smartCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, setImages, serializeCollectionMembershipMutation]);
 
   // Deprecated/Aliased for backward compat
   const saveSmartCollection = useCallback(async (name: string, filters: FilterState) => {
     return createCollection(name, filters);
   }, [createCollection]);
 
-  const moveImagesBetweenCollections = useCallback(async (imageIds: string[], sourceId: string, targetId: string) => {
+  const moveImagesBetweenCollections = useCallback(async (imageIds: string[], sourceId: string, targetId: string): Promise<boolean> => {
     const sourceCol = [...collections, ...smartCollections].find(c => c.id === sourceId);
     const targetCol = [...collections, ...smartCollections].find(c => c.id === targetId);
-    if (!sourceCol || !targetCol) return;
+    if (!sourceCol || !targetCol) return false;
 
-    // Optimistic Update: Transfer counts
-    setAllCollections(prev => prev.map(c => {
-      if (c.id === sourceId) return { ...c, count: Math.max(0, (c.count || 0) - imageIds.length) };
-      if (c.id === targetId) return { ...c, count: (c.count || 0) + imageIds.length };
-      return c;
-    }));
+    try {
+      await moveImgsBetweenCols(sourceId, targetId, imageIds);
+    } catch (e) {
+      addToast("Failed to move images", "error");
+      return false;
+    }
 
-    // Optimistic Grid Removal: Remove from current view if we are looking at the source collection
-    if (activeCollectionId === sourceId) {
+    if (activeCollectionIdRef.current === sourceId) {
       setImages(prev => prev.filter(img => !imageIds.includes(img.id)));
     }
 
+    addToast(`Moved images to ${targetCol.name}`, 'success');
     try {
-      // 1. Remove from source
-      if (sourceCol.filters) {
-        const currentExclusions = sourceCol.manualExclusions || [];
-        const newExclusions = [...new Set([...currentExclusions, ...imageIds])];
-        await upsertCollection({ ...sourceCol, manualExclusions: newExclusions });
-      }
-      await removeImgsFromCol(sourceId, imageIds);
-
-      // 2. Add to target
-      await addImgsToCol(targetId, imageIds);
-
-      addToast(`Moved images to ${targetCol.name}`, 'success');
       await Promise.all([
         refreshCollections(),
         queryClient.invalidateQueries({ queryKey: ['images'] }),
         queryClient.invalidateQueries({ queryKey: ['libraryStats'] })
       ]);
-      refreshAffectedCollectionThumbnails([sourceCol, targetCol]);
     } catch (e) {
-      // Rollback both
-      setAllCollections(prev => prev.map(c => {
-        if (c.id === sourceId) return sourceCol;
-        if (c.id === targetId) return targetCol;
-        return c;
-      }));
-      addToast("Failed to move images", "error");
+      console.error("[Collections] Failed to refresh after moving images", e);
+      addToast("Images moved, but collection views may need a refresh.", "warning");
     }
-  }, [collections, smartCollections, setAllCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast]);
+    refreshAffectedCollectionThumbnails([sourceCol, targetCol]);
+    return true;
+  }, [collections, smartCollections, refreshCollections, refreshAffectedCollectionThumbnails, queryClient, addToast, setImages]);
 
   const setCollectionThumbnail = useCallback(async (collectionId: string, image: AIImage) => {
     const col = [...collections, ...smartCollections].find(c => c.id === collectionId);
@@ -399,10 +428,13 @@ export const useCollectionOperations = ({
       return;
     }
 
+    const thumbnail = isVideoAsset(image)
+      ? image.thumbnailSource === 'ambit-video-v1' ? image.thumbnailUrl : undefined
+      : image.thumbnailUrl || image.url;
     const nextCollection: Collection = {
       ...col,
       customThumbnail: image.id,
-      thumbnail: image.thumbnailUrl || image.url,
+      thumbnail,
       safeThumbnail: undefined,
       thumbnailIsSensitive: isImageMasked(image, true, maskedKeywords),
       thumbnailSourceKind: 'customImage'
@@ -461,6 +493,8 @@ export const useCollectionOperations = ({
   return {
     createCollection,
     updateCollectionFilters,
+    updateCollectionScope,
+    resetInvokeCollection,
     deleteCollection,
     renameCollection,
     setCollectionColor,

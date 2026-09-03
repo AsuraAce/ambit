@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { AIImage } from '../../../types';
-import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, GitCompare, X, RefreshCw } from 'lucide-react';
+import { AIImage, isVideoAsset } from '../../../types';
+import { AlertTriangle, Check, EyeOff, Eye, Clock, Zap, Fingerprint, GitCompare, X, RefreshCw, Video } from 'lucide-react';
 import { useDuplicateFinder, DuplicateGroup } from '../../../hooks/useDuplicateFinder';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -14,7 +14,7 @@ import type { ExactDuplicateResolution, FileHashBackfillResult } from '../../../
 const DuplicateItem: React.FC<{
     img: AIImage;
     onKeepOnly: (imgId: string) => void;
-    onView: (img: AIImage) => void;
+    onView: (img: AIImage, revealGranted?: boolean) => void;
     onCompare: (img: AIImage) => void;
     maskedKeywords: string[];
     isLatestModified?: boolean;
@@ -23,17 +23,25 @@ const DuplicateItem: React.FC<{
 }> = ({ img, onKeepOnly, onView, onCompare, maskedKeywords, isLatestModified, canCompare, disabled = false }) => {
     const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const [isRevealed, setRevealed] = useState(false);
-    const isMasked = !isRevealed && isImageMasked(img, privacyEnabled, maskedKeywords);
+    const effectiveMasked = isImageMasked(img, privacyEnabled, maskedKeywords);
+    const isMasked = !isRevealed && effectiveMasked;
+    const useVideoPlaceholder = isVideoAsset(img) && img.thumbnailSource !== 'ambit-video-v1';
 
     return (
         <div className="group relative flex flex-col min-w-[160px] w-[calc(50%-0.5rem)] flex-shrink-0" onMouseLeave={() => isRevealed && setRevealed(false)}>
             {/* Image Preview */}
             <div className="relative aspect-[2/3] bg-gray-100 dark:bg-slate-950 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 group-hover:border-sage-500/50 transition-colors">
-                <img
-                    src={img.thumbnailUrl}
-                    alt=""
-                    className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
-                />
+                {useVideoPlaceholder ? (
+                    <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}>
+                        <Video className="h-10 w-10 text-white/30" aria-hidden="true" />
+                    </div>
+                ) : (
+                    <img
+                        src={img.thumbnailUrl}
+                        alt=""
+                        className={`w-full h-full object-cover transition-all ${isMasked ? 'blur-xl scale-110' : ''}`}
+                    />
+                )}
 
                 {isMasked && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100/50 dark:bg-slate-950/20 backdrop-blur-sm z-10">
@@ -72,7 +80,7 @@ const DuplicateItem: React.FC<{
                             <TooltipButton
                                 label="Open in Viewer"
                                 content="Open in Viewer"
-                                onClick={() => onView(img)}
+                                onClick={() => onView(img, effectiveMasked && isRevealed)}
                                 className="p-2 bg-white/90 hover:bg-white text-gray-900 rounded-full shadow-lg transform hover:scale-105 transition-all"
                             >
                                 <Eye className="w-4 h-4" />
@@ -116,15 +124,16 @@ const DuplicateGroupCard: React.FC<{
     group: DuplicateGroup;
     latestModifiedId?: string;
     onResolve: (keepId: string, allIds: string[]) => Promise<void>;
-    onViewImage?: (id: string) => void;
+    onViewImage?: (id: string, revealGranted?: boolean) => void;
     onCompareImages?: (imageA: AIImage, imageB: AIImage) => void;
     maskedKeywords: string[];
     isResolving: boolean;
     style?: React.CSSProperties;
 }> = React.memo(({ group, latestModifiedId, onResolve, onViewImage, onCompareImages, maskedKeywords, isResolving, style }) => {
     const getComparePeer = (img: AIImage) => {
-        return group.images.find(candidate => candidate.id === latestModifiedId && candidate.id !== img.id)
-            || group.images.find(candidate => candidate.id !== img.id);
+        if (isVideoAsset(img)) return undefined;
+        return group.images.find(candidate => !isVideoAsset(candidate) && candidate.id === latestModifiedId && candidate.id !== img.id)
+            || group.images.find(candidate => !isVideoAsset(candidate) && candidate.id !== img.id);
     };
 
     return (
@@ -137,7 +146,7 @@ const DuplicateGroupCard: React.FC<{
                             Exact Duplicate Group
                         </span>
                     </div>
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${group.images.length > 2 ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50' : 'text-gray-400'}`}>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${group.images.length > 2 ? 'border border-ember-200 bg-ember-100 text-ember-600 dark:border-ember-500/30 dark:bg-ember-500/15 dark:text-ember-300' : 'text-gray-400'}`}>
                         {group.images.length} copies
                     </span>
                 </div>
@@ -152,14 +161,14 @@ const DuplicateGroupCard: React.FC<{
                                 onKeepOnly={(imgId) => {
                                     void onResolve(imgId, group.images.map(i => i.id)).catch(() => undefined);
                                 }}
-                                onView={(viewImage) => onViewImage?.(viewImage.id)}
+                                onView={(viewImage, revealGranted) => onViewImage?.(viewImage.id, revealGranted)}
                                 onCompare={(compareImage) => {
                                     const peer = getComparePeer(compareImage);
                                     onCompareImages?.(peer!, compareImage);
                                 }}
                                 maskedKeywords={maskedKeywords}
                                 isLatestModified={img.id === latestModifiedId}
-                                canCompare={group.images.length > 1 && Boolean(onCompareImages)}
+                                canCompare={Boolean(onCompareImages) && Boolean(getComparePeer(img))}
                                 disabled={isResolving}
                             />
                         ))}
@@ -240,7 +249,7 @@ interface DuplicateFinderProps {
     scanProgress?: SyncProgress | null;
     scanResult?: FileHashBackfillResult | null;
     onCancelScan?: () => void;
-    onViewImage?: (id: string) => void;
+    onViewImage?: (id: string, revealGranted?: boolean) => void;
     onCompareImages?: (imageA: AIImage, imageB: AIImage) => void;
     scrollContainerRef: React.RefObject<HTMLDivElement | null>;
     onRangeSelection?: (indexes: number[], isAdditive: boolean) => void;
@@ -279,7 +288,7 @@ export const DuplicateFinder: React.FC<DuplicateFinderProps> = React.memo(({
                     {isScanning ? (
                         <Fingerprint className="w-16 h-16 text-sage-500" />
                     ) : scanIncomplete ? (
-                        <AlertTriangle className="w-16 h-16 text-amber-500" />
+                        <AlertTriangle className="h-16 w-16 text-ember-600 dark:text-ember-300" />
                     ) : (
                         <Check className="w-16 h-16 text-sage-500" />
                     )}

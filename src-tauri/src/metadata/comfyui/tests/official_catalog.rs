@@ -63,6 +63,10 @@ const FIXTURES: &[CatalogFixture] = &[
         chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_3.chunks.json"),
     },
     CatalogFixture {
+        name: "gsl_starter_1_3",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_3.chunks.json"),
+    },
+    CatalogFixture {
         name: "image_flux2_klein_image_edit_4b_distilled",
         chunks_json: include_str!(
             "fixtures/official_catalog/image_flux2_klein_image_edit_4b_distilled.chunks.json"
@@ -111,6 +115,10 @@ const FIXTURES: &[CatalogFixture] = &[
     CatalogFixture {
         name: "image_anima_base_v1",
         chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_anima_preview",
+        chunks_json: include_str!("fixtures/official_catalog/image_anima_preview.chunks.json"),
     },
     CatalogFixture {
         name: "image_newbieimage_exp0_1-t2i",
@@ -168,7 +176,411 @@ const FIXTURES: &[CatalogFixture] = &[
             "fixtures/official_catalog/image_netayume_lumina_t2i.chunks.json"
         ),
     },
+    CatalogFixture {
+        name: "image_longcat_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_longcat_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "Image_capybara_v0_1_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/Image_capybara_v0_1_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_omnigen2_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_omnigen2_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_e1_1",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "flux1_dev_uso_reference_image_gen",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux1_dev_uso_reference_image_gen.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux.1_fill_dev_OneReward",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux.1_fill_dev_OneReward.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_9b_kv_image_edit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_9b_kv_image_edit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image-qwen_image_edit_2511_lora_inflation",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image-qwen_image_edit_2511_lora_inflation.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_Image_2512",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_Image_2512.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_2512_with_2steps_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_2512_with_2steps_lora.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_i1_dev",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "hidream_i1_fast",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_i1_fast.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_krea2_turbo_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_krea2_turbo_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_krea2_turbo_t2i_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_t2i_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "flux_dev_checkpoint_example",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_checkpoint_example.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_turbo_t2i",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_turbo_t2i.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_chroma_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_chroma_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_image",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image_turbo",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo.chunks.json"),
+    },
+    CatalogFixture {
+        name: "flux_dev_full_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_dev_full_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "flux1_krea_dev",
+        chunks_json: include_str!("fixtures/official_catalog/flux1_krea_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_z_image_turbo_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_turbo_int8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2_fp8",
+        chunks_json: include_str!("fixtures/official_catalog/image_flux2_fp8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_4b_base",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_4b_base.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_9b_base",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_base.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_image_edit_9b_distilled",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_image_edit_9b_distilled.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_klein_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_klein_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_flux2_text_to_image_9b",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_flux2_text_to_image_9b.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "flux_schnell_full_text_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/flux_schnell_full_text_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "hidream_e1_full",
+        chunks_json: include_str!("fixtures/official_catalog/hidream_e1_full.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_hidream_o1",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_hidream_o1_dev",
+        chunks_json: include_str!("fixtures/official_catalog/image_hidream_o1_dev.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit_2511",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_krea2_turbo_int8_image_style_reference",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_krea2_turbo_int8_image_style_reference.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_edit_2511_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_edit_2511_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_ideogram4_t2i_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_anima_lllite_any_control_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_any_control_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_anima_lllite_image_inpainting",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_image_inpainting.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_anima_lllite_depth_control_to_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_boogu_image_0_1_edit_int8",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_boogu_image_0_1_edit_int8.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_z_image_int8",
+        chunks_json: include_str!("fixtures/official_catalog/image_z_image_int8.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_joyai_image_edit",
+        chunks_json: include_str!("fixtures/official_catalog/image_joyai_image_edit.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsl_creator_2",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_creator_2.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsl_starter_1_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsl_starter_1_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "template_qwen_Image_2512_360_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_Image_2512_360_lora.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "template_qwen_image_edit_2511_systms_action",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_edit_2511_systms_action.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "template_qwen_image_illustration_lora",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_qwen_image_illustration_lora.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "template_sugar_coated_gummy_style_qwen",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/template_sugar_coated_gummy_style_qwen.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates-1_click_multiple_character_angles-v1.0",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-1_click_multiple_character_angles-v1.0.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates-image_to_real",
+        chunks_json: include_str!("fixtures/official_catalog/templates-image_to_real.chunks.json"),
+    },
+    CatalogFixture {
+        name: "templates-portrait_light_migration",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-portrait_light_migration.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_rob_image_to_real.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_image_to_real.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_rob_portrait_light_migration.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_rob_portrait_light_migration.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "default",
+        chunks_json: include_str!("fixtures/official_catalog/default.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsc_creator_2_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_creator_2_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "gsc_starter_1",
+        chunks_json: include_str!("fixtures/official_catalog/gsc_starter_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_lens_turbo_t2i",
+        chunks_json: include_str!("fixtures/official_catalog/image_lens_turbo_t2i.chunks.json"),
+    },
+    CatalogFixture {
+        name: "templates-qwen_image_edit-crop_and_stitch-fusion",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates-qwen_image_edit-crop_and_stitch-fusion.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_doc_workbox_klein_9b_image_extend",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_doc_workbox_klein_9b_image_extend.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "templates_text_prompt_to_360hdr.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/templates_text_prompt_to_360hdr.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_z_image_turbo_2k_upscaler.app",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_z_image_turbo_2k_upscaler.app.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "image_lotus_depth_v1_1",
+        chunks_json: include_str!("fixtures/official_catalog/image_lotus_depth_v1_1.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_layered",
+        chunks_json: include_str!("fixtures/official_catalog/image_qwen_image_layered.chunks.json"),
+    },
+    CatalogFixture {
+        name: "image_qwen_image_layered_control",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/image_qwen_image_layered_control.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_pid_latent_upscale_dit",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_pid_latent_upscale_dit.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_image_upscale_supir",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_image_upscale_supir.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_seedvr2_3b_int8_upscale_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_seedvr2_3b_int8_upscale_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_seedvr2_7b_int8_upscale_image",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_seedvr2_7b_int8_upscale_image.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_interpolation_image_upscale",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_interpolation_image_upscale.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_birefnet_remove_background",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_birefnet_remove_background.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_depth_anything3_image_depth_estimation",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_depth_anything3_image_depth_estimation.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_image_segment_sam3",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_image_segment_sam3.chunks.json"
+        ),
+    },
+    CatalogFixture {
+        name: "utility_sdpose_ood_image_to_pose",
+        chunks_json: include_str!(
+            "fixtures/official_catalog/utility_sdpose_ood_image_to_pose.chunks.json"
+        ),
+    },
 ];
+
+pub(super) fn catalog_fixture_cases() -> impl Iterator<Item = (&'static str, &'static str)> {
+    FIXTURES
+        .iter()
+        .map(|fixture| (fixture.name, fixture.chunks_json))
+}
 
 const IDEOGRAM_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_ideogram4_t2i.expected-positive.txt");
@@ -176,6 +588,26 @@ const NETAYUME_EXPECTED_POSITIVE: &str =
     include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-positive.txt");
 const NETAYUME_EXPECTED_NEGATIVE: &str =
     include_str!("fixtures/official_catalog/image_netayume_lumina_t2i.expected-negative.txt");
+const QWEN_IMAGE_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_qwen_image.expected-positive.txt");
+const Z_IMAGE_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_z_image.expected-positive.txt");
+const IDEOGRAM_INT8_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_ideogram4_t2i_int8.expected-positive.txt");
+const Z_IMAGE_INT8_EXPECTED_POSITIVE: &str =
+    include_str!("fixtures/official_catalog/image_z_image_int8.expected-positive.txt");
+const ANIMA_LLLITE_ANY_EXPECTED_POSITIVE: &str = include_str!(
+    "fixtures/official_catalog/image_anima_lllite_any_control_to_image.expected-positive.txt"
+);
+const ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE: &str = include_str!(
+    "fixtures/official_catalog/image_anima_lllite_depth_control_to_image.expected-positive.txt"
+);
+const GSL_STARTER_POSITIVE: &str = "masterpiece, best quality, ultra-detailed, 8k, photorealistic oil painting, cinematic lighting, soft focus,\n1girl, solo, blonde wavy short hair, messy hair, floating hair, looking up, blue eyes, soft gaze, parted lips, pale skin, delicate facial features, **simple white long-sleeve top, fully covered shoulders, high neckline, modest clothing**, gold necklace with green gem pendant, upper body shot,\nbackground of cosmic space, giant glowing planet with clouds, bright light beam from planet, starry sky, bokeh, dreamy atmosphere, soft light, ethereal, fantasy aesthetic, depth of field, painterly details, smooth skin texture";
+const GSL_STARTER_NEGATIVE: &str = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blurry, artist name, deformed, disfigured, ugly, extra limbs, missing limbs, poorly drawn face, mutated, mutated hands, extra fingers, bad proportions, gross proportions, malformed limbs, missing arms, missing legs, extra arms, extra legs, fused fingers, long neck, text, signature, watermark, cartoon, anime, 3d render, realistic (non-painting style)";
+const DEFAULT_POSITIVE: &str =
+    "beautiful scenery nature glass bottle landscape, purple galaxy bottle,";
+const GSC_CREATOR_POSITIVE: &str = "Editorial shot: On a volcanic black sand beach with a dark overcast sky.\n\nLow side-angle: Male model is in a deep squat, knees wide, head resting in one hand with a brooding, sharp gaze.\n\nHair: Ultra-short platinum blonde buzz cut.\n\nWardrobe: light-blue transparent oval sunglasses, oversized black wool chunky-knit sweater, baggy cargo trousers, climbing shoes. \n\nLighting: Theatrical cold blue moonlighting contrasted by a single sharp, warm orange spotlight on the face. Shot on Fujifilm GFX 100S, 110mm f/2 lens\n\nVibe: Paganism, futuristic tech-wear.";
+const GSC_STARTER_POSITIVE: &str = "High-fashion editorial tight portrait, ultra-crisp detail\nclean modern sheen, faint high-key digital gloss\nhyper-saturated pale-lilac flat sky background\nharsh unfiltered desert noon glare\nfemale model standing, subtle head tilt to the side\ncalm yet piercing direct eye contact, quiet self-assured intensity\nexpression of someone who just solved a complex node chain perfectly\nglossy dark-chocolate brown medium-length hair\nsoft centre-part, slight forward-falling fringe, air-dried natural texture\nhair tucked behind one ear revealing matte-black wireless earbud\nthin matte-black sports headband pushed up on forehead\noff-white/bone technical half-zip mock-neck pullover\nprominent tiny tonal micro-raised “comfy” monospaced embroidery on right chest\nlayered semi-sheer pale-grey long-sleeve base tee\nvery faint terminal-green command-line micro-grid subtly visible through top\nlow-rise wide-leg washed charcoal parachute-nylon track pants, tonal drawcord, slightly open zip cargo pocket showing phone edge, exposed toned midriff + iliac line";
 
 struct ExpectedMetadata<'a> {
     model: &'a str,
@@ -274,6 +706,54 @@ fn assert_fixture(name: &str, expected: ExpectedMetadata<'_>) {
     );
 }
 
+fn assert_non_generative_fixture(name: &str, graph_node_count: usize) {
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "Unknown");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "Unknown");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert!(meta.embeddings.is_empty());
+    assert!(meta.hypernetworks.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+
+    assert_eq!(diagnostics.graph_node_count, graph_node_count);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert!(!diagnostics.output_ambiguous);
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::SamplerFallback));
+    assert!(!diagnostics
+        .attempted_layers
+        .contains(&ComfyParseLayer::GlobalScan));
+    assert_eq!(diagnostics.field_sources.len(), 2);
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+}
+
 fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata<'_>) {
     assert_eq!(meta.tool, "ComfyUI", "{name} tool");
     assert_eq!(meta.model, expected.model, "{name} model");
@@ -304,12 +784,332 @@ fn assert_metadata(name: &str, meta: &ImageMetadata, expected: &ExpectedMetadata
 }
 
 #[test]
+fn qwen_crop_and_stitch_fusion_is_golden() {
+    assert_fixture(
+        "templates-qwen_image_edit-crop_and_stitch-fusion",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(1_032_855_151_349_184),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Image blending, correcting the product's perspective angle and light and shadow to integrate the product into the background",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_fusion"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_image_extend_is_golden() {
+    assert_fixture(
+        "templates_doc_workbox_klein_9b_image_extend",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b",
+            seed: Some(754_163_315_896_983),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "remove the green part",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_360_hdr_generation_is_golden() {
+    assert_fixture(
+        "templates_text_prompt_to_360hdr.app",
+        ExpectedMetadata {
+            model: "qwen_image_2512_bf16",
+            seed: Some(364_767_852_585_212),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "equirectangular 360 image, a quiet lakeside with pine trees and crystal blue lake. Captured during a sunset, the sun is in the frame with many clouds nearby",
+            negative_prompt: "",
+            loras: &["qwen_360_diffusion_2512_int8_bf16_v2"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_2k_upscaler_is_golden() {
+    assert_fixture(
+        "utility_z_image_turbo_2k_upscaler.app",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(824_287_194_145_573),
+            steps: 5,
+            cfg: 1.0,
+            sampler: "dpmpp_2m_sde (beta)",
+            positive_prompt: "masterpiece, 8k",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn lotus_depth_v1_1_is_golden() {
+    let name = "image_lotus_depth_v1_1";
+    let chunks = load_chunks(name);
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+    assert_eq!(meta.tool, "ComfyUI");
+    assert_eq!(meta.model, "lotus_depth_d_v1_1");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 1);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "euler (normal)");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert!(meta.ip_adapters.is_empty());
+    assert!(meta.embeddings.is_empty());
+    assert!(meta.hypernetworks.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+
+    assert_eq!(diagnostics.graph_node_count, 15);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert!(!diagnostics.output_ambiguous);
+    for field in [
+        ComfyMetadataField::Model,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Sampler,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            Some(&ComfyParseLayer::SamplerTraversal),
+            "{name} {field:?} provenance"
+        );
+    }
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+    ] {
+        assert_eq!(
+            diagnostics.field_sources.get(&field),
+            None,
+            "{name} {field:?} should be unavailable"
+        );
+    }
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+}
+
+#[test]
+fn qwen_layered_image_is_golden() {
+    assert_fixture(
+        "image_qwen_image_layered",
+        ExpectedMetadata {
+            model: "qwen_image_layered_bf16",
+            seed: Some(331_728_509_923_362),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "A cinematic medium shot of a beautiful young woman with fair skin and a joyful, radiant smile, looking back over her shoulder. She has voluminous, curly auburn hair styled in a loose, windblown updo. She is standing on a rugged, rocky coastline overlooking a sun-drenched ocean. She wears a vintage, long-sleeved, high-collared dress in an off-white, crinkled fabric with delicate smocking on the bodice and a simple brown sash at her waist. In the background, the ocean sparkles brightly under the sun, and a majestic tall ship with full sails is visible in the distance. The scene is illuminated by the warm, golden light of the late afternoon, creating a soft, romantic, and nostalgic atmosphere with a shallow depth of field that keeps the woman in sharp focus.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_layered_control_is_golden() {
+    assert_fixture(
+        "image_qwen_image_layered_control",
+        ExpectedMetadata {
+            model: "qwen_image_layered_control_bf16",
+            seed: Some(657_641_993_490_688),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "guitar",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn pid_latent_upscale_is_golden() {
+    assert_fixture(
+        "utility_pid_latent_upscale_dit",
+        ExpectedMetadata {
+            model: "pid_flux1_1024_to_4096_4step_bf16",
+            seed: Some(3),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "lcm (simple)",
+            positive_prompt: "A cinematic shot of a solitary figure viewed from behind, standing on a circular platform inside a massive concrete tube structure. The person is wearing a long beige trench coat and looking out through the large circular opening at a dense cityscape of tall skyscrapers with grid-like windows. The composition features strong concentric circles and framing, creating a sense of depth and isolation. The lighting is soft and diffused daylight, casting gentle shadows within the curved architecture. The art style is photorealistic with a slightly muted color palette dominated by beige, grey, and concrete tones. High resolution, architectural photography, 8k, sharp focus on the subject and background buildings, volumetric lighting, detailed texture of the concrete walls and fabric coat.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn supir_upscale_is_an_honest_partial() {
+    assert_fixture(
+        "utility_image_upscale_supir",
+        ExpectedMetadata {
+            model: "juggernautxl_v9rdphoto2lightning",
+            seed: Some(402_244_474_214_267),
+            steps: 10,
+            cfg: 1.5,
+            sampler: "dpmpp_2m_sde (sgm_uniform)",
+            positive_prompt: "",
+            negative_prompt: "painting, oil painting, illustration, drawing, art, sketch, cartoon, CG Style, 3D render, unreal engine, blurring, dirty, messy, worst quality, low quality, frames, watermark, signature, jpeg artifacts, deformed, lowres, over-smooth bad quality, blurry, messy",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn seedvr2_3b_int8_upscale_is_golden() {
+    assert_fixture(
+        "utility_seedvr2_3b_int8_upscale_image",
+        ExpectedMetadata {
+            model: "seedvr2_3b_int8_convrot",
+            seed: Some(959_948_902_156_062),
+            steps: 1,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn seedvr2_7b_int8_upscale_is_golden() {
+    assert_fixture(
+        "utility_seedvr2_7b_int8_upscale_image",
+        ExpectedMetadata {
+            model: "seedvr2_7b_int8_convrot",
+            seed: Some(959_948_902_156_062),
+            steps: 1,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn interpolation_upscale_is_a_non_generative_golden() {
+    assert_non_generative_fixture("utility_interpolation_image_upscale", 5);
+}
+
+#[test]
+fn birefnet_background_removal_is_a_non_generative_golden() {
+    assert_non_generative_fixture("utility_birefnet_remove_background", 8);
+}
+
+#[test]
+fn depth_anything3_estimation_is_a_non_generative_golden() {
+    assert_non_generative_fixture("utility_depth_anything3_image_depth_estimation", 8);
+}
+
+#[test]
+fn sam3_segmentation_does_not_promote_utility_conditioning() {
+    assert_non_generative_fixture("utility_image_segment_sam3", 9);
+}
+
+#[test]
+fn sdpose_estimation_does_not_promote_utility_checkpoint() {
+    assert_non_generative_fixture("utility_sdpose_ood_image_to_pose", 7);
+}
+
+#[test]
 fn image_qwen_image_edit_2509() {
     assert_fixture(
         "image_qwen_image_edit_2509",
         ExpectedMetadata {
             model: "qwen_image_edit_2509_fp8_e4m3fn",
-            seed: Some(973_414_316_252_139),
+            seed: Some(362_225_868_152_841),
             steps: 4,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -319,7 +1119,7 @@ fn image_qwen_image_edit_2509() {
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 27,
+            graph_node_count: 24,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
@@ -426,7 +1226,7 @@ fn getting_started_qwen_image_edit_subgraph() {
         "02_qwen_Image_edit_subgraphed",
         ExpectedMetadata {
             model: "qwen_image_edit_2509_fp8_e4m3fn",
-            seed: Some(1_118_877_715_456_453),
+            seed: Some(392_667_428_726_572),
             steps: 4,
             cfg: 1.0,
             sampler: "euler (simple)",
@@ -435,9 +1235,131 @@ fn getting_started_qwen_image_edit_subgraph() {
             loras: &["qwen_image_edit_2509_lightning_4steps_v1.0_bf16"],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 22,
+            graph_node_count: 17,
             output_candidates: 1,
             output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsl_starter_bypassed_generator_remains_pattern_covered() {
+    let chunks = load_chunks("gsl_starter_1_3");
+    let workflow = chunks
+        .get("workflow")
+        .expect("catalog fixture should include workflow chunk");
+    let (meta, diagnostics) = extract_comfyui_metadata_with_diagnostics(&chunks);
+
+    assert_eq!(meta.model, "flux_2_klein_base_4b_fp8");
+    assert_eq!(meta.seed, None);
+    assert_eq!(meta.steps, 0);
+    assert_eq!(meta.cfg, 0.0);
+    assert_eq!(meta.sampler, "Unknown");
+    assert!(meta.positive_prompt.is_empty());
+    assert!(meta.negative_prompt.is_empty());
+    assert!(meta.loras.is_empty());
+    assert!(meta.control_nets.is_empty());
+    assert_eq!(meta.workflow_json.as_deref(), Some(workflow.as_str()));
+    assert!(meta.has_workflow_hint);
+    assert_eq!(diagnostics.graph_node_count, 8);
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert!(!diagnostics.output_ambiguous);
+    assert_eq!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::GlobalScan)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowJson),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    assert_eq!(
+        diagnostics
+            .field_sources
+            .get(&ComfyMetadataField::WorkflowHint),
+        Some(&ComfyParseLayer::WorkflowChunk)
+    );
+    for field in [
+        ComfyMetadataField::Seed,
+        ComfyMetadataField::Steps,
+        ComfyMetadataField::Cfg,
+        ComfyMetadataField::Sampler,
+        ComfyMetadataField::PositivePrompt,
+        ComfyMetadataField::NegativePrompt,
+        ComfyMetadataField::Loras,
+        ComfyMetadataField::ControlNets,
+    ] {
+        assert_eq!(diagnostics.field_sources.get(&field), None, "{field:?}");
+    }
+}
+
+#[test]
+fn default_sd15_workflow_is_golden() {
+    assert_fixture(
+        "default",
+        ExpectedMetadata {
+            model: "v1_5_pruned_emaonly_fp16",
+            seed: Some(685_468_484_323_813),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt: DEFAULT_POSITIVE,
+            negative_prompt: "text, watermark",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn getting_started_z_image_creator_is_golden() {
+    assert_fixture(
+        "gsc_creator_2_1",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(222_678_399_973_641),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: GSC_CREATOR_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn disconnected_z_image_starter_remains_pattern_covered() {
+    assert_fixture(
+        "gsc_starter_1",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(336_703_310_549_440),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: GSC_STARTER_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerFallback,
+            graph_node_count: 13,
+            output_candidates: 0,
+            output_roots: 0,
             output_ambiguous: false,
         },
     );
@@ -513,7 +1435,7 @@ fn gsc_creator_2_2() {
 }
 
 #[test]
-fn gsc_creator_2_3_generated_prompt_is_partial() {
+fn gsc_creator_2_3_selected_literal_prompt_is_golden() {
     assert_fixture(
         "gsc_creator_2_3",
         ExpectedMetadata {
@@ -840,11 +1762,34 @@ fn anima_base_subgraph_control() {
         "image_anima_base_v1",
         ExpectedMetadata {
             model: "anima_base_v1.0",
+            seed: Some(755_918_130_909_406),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_preview_subgraph_control() {
+    assert_fixture(
+        "image_anima_preview",
+        ExpectedMetadata {
+            model: "anima_preview3_base",
             seed: Some(875_817_230_929_465),
             steps: 30,
             cfg: 4.0,
             sampler: "er_sde (simple)",
-            positive_prompt: "Anime monochrome cyberpunk front portrait, male figure, sleek skin with delicate mechanical lines, piercing glowing eyes, partial exposed metallic mecha components and light cables, sharp domineering cool style, textured anime brushwork, faint circuit background, high contrast chiaroscuro lighting, immersive cinematic shadows, ultra fine details, 8K high-def render, futuristic dystopian mood",
+            positive_prompt: "masterpiece, best quality, score_7, safe, anime, a close-up of a futuristic cyberpunk robotic eye, original close-up eye composition strictly preserved, encased in weathered metallic blue and chrome plating with exposed wiring, glowing orange indicator lights, hydraulic pistons, and panel seams wrapping around the eyelid, a chrome mechanical tear duct with fine circuit details, long dark anime-style eyelashes framing the eye, soft pink sclera. The dark pupil holds a complete, glowing Earth with blue atmosphere and white clouds as a reflection, while the surrounding iris reflects a vivid cosmic scene: a fiery red shooting star, wispy cyan nebula clouds, and tiny glowing star specks. No change to the original close-up eye framing, no additional elements outside the eye structure, neon accent lighting, high contrast cyberpunk color palette, intricate mechanical engineering, sharp line art, gritty futuristic sci-fi atmosphere.",
             negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
             loras: &[],
             control_nets: &[],
@@ -925,7 +1870,7 @@ fn boogu_edit_custom_conditioning() {
             loras: &[],
             control_nets: &[],
             source: ComfyParseLayer::SamplerTraversal,
-            graph_node_count: 17,
+            graph_node_count: 18,
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
@@ -1158,6 +2103,1332 @@ fn netayume_lumina_nested_prompt_composition() {
             output_candidates: 1,
             output_roots: 1,
             output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn longcat_image_edit() {
+    assert_fixture(
+        "image_longcat_image_edit",
+        ExpectedMetadata {
+            model: "longcat_image_edit_bf16",
+            seed: Some(43),
+            steps: 50,
+            cfg: 4.5,
+            sampler: "euler (simple)",
+            positive_prompt: "Change the scene to a time when it is illuminated by the rising sun. The overall atmosphere is filled with the light of early morning. The tall snow-capped mountains in the background are lit up by the sunlight. The rays of the rising sun illuminate the front of the building as well as the distant snow-capped mountains. In the foreground of the photo, there is a person walking alone towards the building.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn capybara_image_edit() {
+    assert_fixture(
+        "Image_capybara_v0_1_image_edit",
+        ExpectedMetadata {
+            model: "capybara_v0.1",
+            seed: Some(1_044_901_887_090_653),
+            steps: 20,
+            cfg: 6.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Keep the characters and fluttering costumes unchanged, replace the indoor scene with an outdoor grassland setting",
+            negative_prompt: "blurry, low quality, distorted, ugly, watermark, text",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 22,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn omnigen2_image_edit() {
+    assert_fixture(
+        "image_omnigen2_image_edit",
+        ExpectedMetadata {
+            model: "omnigen2_fp16",
+            seed: Some(441_693_270_797_774),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Transform character into crystal material, transparent crystal texture, sparkling surface, prismatic light effects, magical appearance, elegant translucent look",
+            negative_prompt: "deformed, blurry, over saturation, bad anatomy, disfigured, poorly drawn face, mutation, mutated, extra_limb, ugly, poorly drawn hands, fused fingers, messy drawing, broken legs censor, censored, censor_bar",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_e1_image_edit() {
+    assert_fixture(
+        "hidream_e1_1",
+        ExpectedMetadata {
+            model: "hidream_e1_1_bf16",
+            seed: Some(567_500_569_211_369),
+            steps: 20,
+            cfg: 3.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Change the image to let the girl’s hair fall loose around her shoulders, natural and flowing. Don’t change other parts",
+            negative_prompt: "low quality, blurry, distorted",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux1_uso_reference_image_generation() {
+    assert_fixture(
+        "flux1_dev_uso_reference_image_gen",
+        ExpectedMetadata {
+            model: "flux1_dev_fp8",
+            seed: Some(1_058_487_910_949_722),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A European girl with a heartfelt smile. She is immersed in a vast, endless field of blooming flowers under a perfect summer sky.",
+            negative_prompt: "",
+            loras: &["uso_flux1_dit_lora_v1"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux1_fill_onereward_preview_outputs_share_one_root() {
+    assert_fixture(
+        "image_flux.1_fill_dev_OneReward",
+        ExpectedMetadata {
+            model: "flux.1_fill_dev_onereward_transformer_fp8",
+            seed: Some(75_154_916_226_486),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Remove the girl's hat\n",
+            negative_prompt: "",
+            loras: &["removal_timestep_alpha_2_1740"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 2,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_kv_image_edit() {
+    assert_fixture(
+        "image_flux2_klein_9b_kv_image_edit",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b_kv_fp8",
+            seed: Some(720_512_742_793_301),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "Have the man in Figure 1 put on the clothes from Figure 2, wear a hat, and carry a bag. Then, change the background environment to an African savannah while keeping the man in the same posture to give a natural outdoor feel.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_inflation_lora() {
+    assert_fixture(
+        "image-qwen_image_edit_2511_lora_inflation",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(1_123_448_499_955_428),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "inflate the man",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2511_systms_infl8"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 20,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_2512_base() {
+    assert_fixture(
+        "image_qwen_Image_2512",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(464_857_551_335_368),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Urban alleyway at dusk. Tall, statuesque high-fashion model striding elegantly, mid distant full body shot from an angular perspective, cinematic/editorial with bold contrasts and tactile materials. They wear a rose-gold metallic trench coat with deconstructed elements over a black long-sleeved turtleneck with subtle texture; paired with forest-green pleated pants with raw hems and a soft texture. Long braided dark hair, medium complexion. They carry a vibrant yellow designer handbag with geometric details and a structured silhouette. White architectural sneakers with bold geometric cutouts. Bold, high-contrast, tactile, urban-grit meets high-fashion impact, extreme clarity, extreme layering, post-processing with transparent light-transmitting ultra-smooth high-definition film effect, removing all noise and grain, removing all blur, removing all vintage feel, removing all roughness, drawn with 32K pixel precision, unparalleled fine line drawing of every single detail, the entire image like a brand new photograph, photorealistic\n",
+            negative_prompt: "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 21,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_2512_two_step_lora() {
+    assert_fixture(
+        "image_qwen_image_2512_with_2steps_lora",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(318_036_859_179_089),
+            steps: 2,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "High-contrast black and white fashion photography, extreme side profile of a rugged European male model with tousled wet-look hair and stubble, wearing an unbuttoned textured black leather jacket over a fitted white crewneck shirt. Low-angle composition, dramatic side lighting carving sharp, sculpted shadows across his angular jawline and neck, minimalist stark white background, edgy tough masculine aesthetic, hyper-realistic studio quality.\n",
+            negative_prompt: "",
+            loras: &["wuli_qwen_image_2512_turbo_lora_2steps_v1.0_bf16"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 13,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_i1_dev_variant() {
+    assert_fixture(
+        "hidream_i1_dev",
+        ExpectedMetadata {
+            model: "hidream_i1_dev_fp8",
+            seed: Some(426_270_906_276_990),
+            steps: 28,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "A photograph of an albino woman with white skin and dark hair wearing black in the style of old baroque oil paintings, with soft focus, wearing a pearl necklace around her neck, with a dark background, with rosy cheeks, with a long veil covering her face, looking straight ahead",
+            negative_prompt: "bad ugly jpeg artifacts",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_i1_fast_variant() {
+    assert_fixture(
+        "hidream_i1_fast",
+        ExpectedMetadata {
+            model: "hidream_i1_fast_fp8",
+            seed: Some(833_271_177_511_441),
+            steps: 16,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "A lo-fi, grungy wide shot of a ragged large red tree leaning slightly to one side Polaroid aesthetic. the tree is alone in a desolate landscape, the tree is illuminated by a red light, the background is pitch black",
+            negative_prompt: "bad ugly jpeg artifacts",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_krea2_turbo_t2i",
+        ExpectedMetadata {
+            model: "krea2_turbo_fp8_scaled",
+            seed: Some(735_915_477_938_686),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_int8_generated_prompt_is_partial() {
+    assert_fixture(
+        "image_krea2_turbo_t2i_int8",
+        ExpectedMetadata {
+            model: "krea2_turbo_int8_convrot",
+            seed: Some(45_862_206_397_178),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_dev_checkpoint_subgraph_variant() {
+    assert_fixture(
+        "flux_dev_checkpoint_example",
+        ExpectedMetadata {
+            model: "flux1_dev",
+            seed: Some(53_943_644_181_156),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "Beautiful photography of a gorgeous-haired female artist, natural and authentic, her hair styled in a messy casual bun, smiling joyfully and looking directly at the camera, cinematic lighting, soft natural daylight, shallow depth of field, warm gentle tones, film grain, high detail, 8K, realistic portrait",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn boogu_turbo_text_to_image_variant() {
+    assert_fixture(
+        "image_boogu_image_0_1_turbo_t2i",
+        ExpectedMetadata {
+            model: "boogu_image_turbo_fp8_scaled",
+            seed: Some(896_977_722_960_984),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "lcm (sgm_uniform)",
+            positive_prompt: "Abstract close-up portrait of a young man wearing a cream turtleneck, captured with severe horizontal motion blur and double exposure effect that distorts his facial features, rendered in an analog film grain style with muted earthy background tones, framed tightly on his face to emphasize the blur streaks across his eyes, nose, and lips while retaining the texture of the knit collar and soft ambient lighting.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn chroma_direct_custom_sampler_variant() {
+    assert_fixture(
+        "image_chroma_text_to_image",
+        ExpectedMetadata {
+            model: "chroma1_hd_fp8mixed",
+            seed: Some(68_346_347_456_896),
+            steps: 26,
+            cfg: 3.5,
+            sampler: "euler (beta)",
+            positive_prompt: "This is a nature documentary close-up photograph of the right side of the face of a tiger. The photograph is centered on it's highly detailed and speckled eye surrounded by intricately detailed fur. Overlaid at the center of the image is a title text that says \"CHROMA1-HD\" in a large white 3D letters. Amateur photography. Unfiltered. Real life. Natural light. Subtle shadows. ",
+            negative_prompt: "This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom. It has a toony aesthetic with bold outlines and flat colors. ",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_base_switches_keep_turbo_resources_disabled() {
+    assert_fixture(
+        "image_qwen_image",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(50_347_169_638_278),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: QWEN_IMAGE_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 23,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_subgraph_variant() {
+    assert_fixture(
+        "image_z_image_turbo",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(0),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "Latina female with thick wavy hair, harbor boats and pastel houses behind. Breezy seaside light, warm tones, cinematic close-up. ",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_dev_full_subgraph_variant() {
+    assert_fixture(
+        "flux_dev_full_text_to_image",
+        ExpectedMetadata {
+            model: "flux1_dev",
+            seed: Some(0),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "A fairy tale scene of a young girl with silver curly hair wearing a delicate white dress, standing among crystal butterflies and glowing glass roses. The scene is filled with soft magical light, like a dream from a fantasy world.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_krea_dev_subgraph_variant() {
+    assert_fixture(
+        "flux1_krea_dev",
+        ExpectedMetadata {
+            model: "flux1_krea_dev_fp8_scaled",
+            seed: Some(0),
+            steps: 20,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: concat!(
+                "Highly realistic portrait of a Nordic woman with blonde hair and blue eyes, gaze sharp and intellectual. The lighting should reflect the unique coolness of Northern Europe. Outfit is minimalist and modern, background is blurred in cool tones. Needs to perfectly capture the characteristics of a Scandinavian woman. solo, Centered composition",
+                "\n"
+            ),
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_base_mode_omits_lightning_lora() {
+    assert_fixture(
+        "image_qwen_image_edit",
+        ExpectedMetadata {
+            model: "qwen_image_edit_fp8_e4m3fn",
+            seed: Some(344_147_753_686_358),
+            steps: 20,
+            cfg: 2.5,
+            sampler: "euler (simple)",
+            positive_prompt: "Remove all UI text elements from the image. Keep the feeling that the characters and scene are in water. Also, remove the green UI elements at the bottom.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_base_subgraph_variant() {
+    assert_fixture(
+        "image_z_image",
+        ExpectedMetadata {
+            model: "z_image_bf16",
+            seed: Some(677_498_465_340_151),
+            steps: 25,
+            cfg: 4.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: Z_IMAGE_EXPECTED_POSITIVE,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_turbo_int8_subgraph_variant() {
+    assert_fixture(
+        "image_z_image_turbo_int8",
+        ExpectedMetadata {
+            model: "z_image_turbo_int8_convrot",
+            seed: Some(121_725_701_057_393),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "Dramatic black and white high fashion studio portrait, close-up bust shot, pale platinum blonde woman with sleek low ponytail, head tilted upward, eyes softly closed, wearing a fitted black turtleneck top. A large translucent pale white butterfly hovers gently right at her lips, delicate detailed wing veins visible. Hard rim light creates glowing bright white halo around her hair and face, deep inky pure black minimalist background, stark high contrast chiaroscuro lighting, film grain texture, moody ethereal atmosphere, monochrome, editorial fashion photography, shot on 35mm film, soft subtle skin texture, sharp focus on butterfly and facial profile, vertical composition, minimalist dark aesthetic, artistic surreal fashion",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 11,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_image_edit_keeps_turbo_mode_disabled() {
+    assert_fixture(
+        "image_flux2",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(342_971_778_941_390),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler",
+            positive_prompt: "The woman is wearing a small pale yellow knitted beanie, with a white fabric patch on the front right, embroidered with big gray text “FLUX.2 COMFY.” Keep the face",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 25,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_fp8_image_edit_keeps_turbo_mode_disabled() {
+    assert_fixture(
+        "image_flux2_fp8",
+        ExpectedMetadata {
+            model: "flux2_dev_fp8mixed",
+            seed: Some(315_616_751_694_460),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler",
+            positive_prompt:
+                "Apply the design from Reference Image 1 onto objects in Reference Image 2.\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_4b_base_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_4b_base",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_4b_fp8",
+            seed: Some(1_111_443_136_920_027),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "Change the background to a cozy, softly lit interior space with warm beige tones, soft natural window light filtering through, and a relaxed, intimate atmosphere similar to the original image's mood. Keep the person in the exact same position, scale, and pose. Maintain identical camera angle, framing, and perspective. The lighting should be soft, even, and warm - not harsh or bright. Only replace the room environment, preserving all facial features, hairstyle, expression, clothing, and pose exactly as they are.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_base_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_9b_base",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_9b_fp8",
+            seed: Some(192_774_551_144_773),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "Change the camera angle to a first-person driver's perspective looking through the steering wheel at the dashboard and windshield, maintaining the same white minimalist interior style and lighting\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_distilled_ignores_bypassed_alternative() {
+    assert_fixture(
+        "image_flux2_klein_image_edit_9b_distilled",
+        ExpectedMetadata {
+            model: "flux_2_klein_9b_fp8",
+            seed: Some(26_416_064_315_367),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler",
+            positive_prompt: "Replace the background with a quiet coastal cliff at overcast sunset. Remove all buildings and streets. Add wind-shaped grass and a distant ocean horizon. Keep the subject’s pose and framing unchanged.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 24,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_4b_base_text_to_image_ignores_distilled_branch() {
+    assert_fixture(
+        "image_flux2_klein_text_to_image",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_4b",
+            seed: Some(0),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "A hedgehog wearing a tiny party hat surrounded by confetti, early digital camera style, slight noise, flash photography, candid moment, 2000s digicam aesthetic, festive birthday celebration atmosphere\n",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 19,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux2_klein_9b_base_text_to_image() {
+    assert_fixture(
+        "image_flux2_text_to_image_9b",
+        ExpectedMetadata {
+            model: "flux_2_klein_base_9b_fp8",
+            seed: Some(145_965_955_694_731),
+            steps: 20,
+            cfg: 5.0,
+            sampler: "euler",
+            positive_prompt: "A vintage motorcycle parked in front of a retro diner at sunset, warm orange and pink sky, neon signs glowing, 80s vintage photo style, film grain, warm color cast",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 17,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn flux_schnell_dual_encoder_is_golden() {
+    assert_fixture(
+        "flux_schnell_full_text_to_image",
+        ExpectedMetadata {
+            model: "flux1_schnell",
+            seed: Some(167_447_334_682_596),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Cute retro mini car, pastel - colored 3D flowers overflowing from it, soft green background, minimalist and fresh style, high - precision rendering, spring - like vibrant atmosphere, delicate petal details, gentle color grading, whimsical and lovely scene\n\nCreate a 3D - styled image: A cute, retro - looking mini car with soft, pastel - colored flowers (like daisies, pink blooms) overflowing from it. Set against a gentle green background, giving a fresh, spring - vibe. Make it look whimsical and delicate, like a sweet illustration.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 10,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_e1_full_is_golden() {
+    assert_fixture(
+        "hidream_e1_full",
+        ExpectedMetadata {
+            model: "hidream_e1_full_bf16",
+            seed: Some(705_826_023_365_990),
+            steps: 28,
+            cfg: 5.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Let the girl put on the VR glasses full of a sense of technology, just like the scenes in Ready Player One, with CG rendering and ultra-realism.",
+            negative_prompt: "low quality, blurry, distorted",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_o1_selected_literal_prompt_is_golden() {
+    assert_fixture(
+        "image_hidream_o1",
+        ExpectedMetadata {
+            model: "hidream_o1_image_bf16",
+            seed: Some(493_576_922_569_549),
+            steps: 40,
+            cfg: 5.0,
+            sampler: "dpmpp_2m_sde_gpu (normal)",
+            positive_prompt: "Graceful female skincare shot, light nude makeup, holding essence bottle, warm ivory backdrop, soft diffused light",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 41,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn hidream_o1_dev_selected_literal_prompt_is_golden() {
+    assert_fixture(
+        "image_hidream_o1_dev",
+        ExpectedMetadata {
+            model: "hidream_o1_image_dev_fp8_scaled",
+            seed: Some(270_186_383_729_385),
+            steps: 28,
+            cfg: 1.0,
+            sampler: "lcm (normal)",
+            positive_prompt: "Transform the background into a rainy neon city street at night, with wet asphalt reflections, blurred neon signs",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 40,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_is_golden() {
+    assert_fixture(
+        "image_qwen_image_edit_2511",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_fp8mixed",
+            seed: Some(677_909_188_488_042),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt:
+                "Change the furniture leather difference in image 1 to the fur material in image 2.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn krea2_turbo_int8_style_reference_uses_the_selected_branch() {
+    assert_fixture(
+        "image_krea2_turbo_int8_image_style_reference",
+        ExpectedMetadata {
+            model: "krea2_turbo_int8_convrot",
+            seed: Some(355_028_178_891_957),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "a white yeti with horns reading a book that is titled \"Ostris + Krea2 Style Reference\"",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_int8_omits_the_disabled_lightning_lora() {
+    assert_fixture(
+        "image_qwen_image_edit_2511_int8",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_int8_convrot",
+            seed: Some(1_119_496_583_977_398),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "Convert this image to pop art poster style",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsl_creator_2_is_golden() {
+    assert_fixture(
+        "gsl_creator_2",
+        ExpectedMetadata {
+            model: "z_image_turbo_bf16",
+            seed: Some(179_304_186_588_666),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt: "sunglasses.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &["z_image_turbo_fun_controlnet_union_2.1"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn gsl_starter_1_1_is_golden() {
+    assert_fixture(
+        "gsl_starter_1_1",
+        ExpectedMetadata {
+            model: "dreamshaper_8_pruned",
+            seed: Some(650_101_271_515_995),
+            steps: 20,
+            cfg: 8.0,
+            sampler: "euler (normal)",
+            positive_prompt: GSL_STARTER_POSITIVE,
+            negative_prompt: GSL_STARTER_NEGATIVE,
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn ideogram4_int8_uses_the_primary_model_and_exact_json_prompt() {
+    let positive_prompt = IDEOGRAM_INT8_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Ideogram INT8 expected prompt should end with one fixture newline");
+    assert_eq!(positive_prompt.len(), 2_215);
+
+    assert_fixture(
+        "image_ideogram4_t2i_int8",
+        ExpectedMetadata {
+            model: "ideogram4_int8_convrot",
+            seed: Some(71_584_314_815_009),
+            steps: 20,
+            cfg: 7.0,
+            sampler: "euler (ideogram4)",
+            positive_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 46,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn boogu_image_edit_int8_is_golden() {
+    assert_fixture(
+        "image_boogu_image_0_1_edit_int8",
+        ExpectedMetadata {
+            model: "boogu_image_edit_int8_convrot",
+            seed: Some(22),
+            steps: 25,
+            cfg: 3.5,
+            sampler: "dpmpp_2m (simple)",
+            positive_prompt: "Keep the character unchanged, replace the desert background and scene. The model is on the dune.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 18,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn z_image_int8_preserves_the_exact_literal_prompt() {
+    let positive_prompt = Z_IMAGE_INT8_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Z-Image INT8 expected prompt should end with one fixture newline");
+    assert_eq!(positive_prompt.len(), 633);
+
+    assert_fixture(
+        "image_z_image_int8",
+        ExpectedMetadata {
+            model: "z_image_int8_convrot",
+            seed: Some(677_498_465_340_151),
+            steps: 25,
+            cfg: 4.0,
+            sampler: "res_multistep (simple)",
+            positive_prompt,
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 14,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn joyai_image_edit_int8_is_golden() {
+    assert_fixture(
+        "image_joyai_image_edit",
+        ExpectedMetadata {
+            model: "joyai_image_edit_int8_convrot",
+            seed: Some(42),
+            steps: 40,
+            cfg: 4.0,
+            sampler: "euler (normal)",
+            positive_prompt: "Change the background to a glacial scene.",
+            negative_prompt: "",
+            loras: &[],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_any_control_is_golden() {
+    let positive_prompt = ANIMA_LLLITE_ANY_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Anima LLLite any-control prompt should end with one fixture newline");
+
+    assert_fixture(
+        "image_anima_lllite_any_control_to_image",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(1_986_030_987_480),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt,
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &["anima_lllite_any_test_like_v2"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_inpainting_is_golden() {
+    assert_fixture(
+        "image_anima_lllite_image_inpainting",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(1_376_514_088_921),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "girl with red eyes",
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &["anima_turbo_lora_v0.2"],
+            control_nets: &["anima_lllite_inpainting_v2"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn anima_lllite_depth_control_is_golden() {
+    let positive_prompt = ANIMA_LLLITE_DEPTH_EXPECTED_POSITIVE
+        .strip_suffix('\n')
+        .expect("Anima LLLite depth prompt should end with one fixture newline");
+
+    assert_fixture(
+        "image_anima_lllite_depth_control_to_image",
+        ExpectedMetadata {
+            model: "anima_base_v1.0",
+            seed: Some(520_254_185_749_746),
+            steps: 30,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt,
+            negative_prompt:
+                "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
+            loras: &[],
+            control_nets: &["anima_lllite_depth_1"],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 29,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_2512_360_lora_use_case() {
+    assert_fixture(
+        "template_qwen_Image_2512_360_lora",
+        ExpectedMetadata {
+            model: "qwen_image_2512_fp8_e4m3fn",
+            seed: Some(662_848_447_520_565),
+            steps: 50,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "equirectangular 360 image, A spacious warm living room, soft sunlight through window, soft sofa, delicate decor, green potted plants, clean tidy space, gentle ambient light",
+            negative_prompt: "低分辨率，低画质，肢体畸形，手指畸形，画面过饱和，蜡像感，人脸无细节，过度光滑，画面具有AI感。构图混乱。文字模糊，扭曲",
+            loras: &["qwen_360_diffusion_2512_int8_bf16_v2"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_edit_2511_action_lora_use_case() {
+    assert_fixture(
+        "template_qwen_image_edit_2511_systms_action",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(314_630_365_089_879),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: "action the scene",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2511_lightning_4steps_v1.0_bf16",
+                "qwen_edit_action_v1",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_illustration_lora_use_case() {
+    assert_fixture(
+        "template_qwen_image_illustration_lora",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(1_124_798_614_324_697),
+            steps: 45,
+            cfg: 3.5,
+            sampler: "euler (simple)",
+            positive_prompt: "a girl with short hair in a bomber jacket leaning against a wall, clean cel shading, bold graphic composition, 90s ranma era anime, film grain",
+            negative_prompt: "",
+            loras: &["illustration_1.0_qwen_image"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 12,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn sugar_coated_gummy_qwen_use_case() {
+    assert_fixture(
+        "template_sugar_coated_gummy_style_qwen",
+        ExpectedMetadata {
+            model: "qwen_image_fp8_e4m3fn",
+            seed: Some(671_299_924_443_981),
+            steps: 25,
+            cfg: 3.0,
+            sampler: "euler (simple)",
+            positive_prompt: "cat,sugar-coated sour gummy candy style, with pink, yellow, and green gummy, sugar crystals, glossy eyes",
+            negative_prompt: "",
+            loras: &["gummycandy_qwen"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_image_to_real_use_case() {
+    assert_fixture(
+        "templates-image_to_real",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(27_584_544_029_937),
+            steps: 8,
+            cfg: 1.0,
+            sampler: "euler (beta)",
+            positive_prompt: "change image 1 to realistic photograph",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2509_lightning_8steps_v1.0_bf16",
+                "qwen_image_edit_2509_anything2realalpha",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 15,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn qwen_portrait_light_migration_use_case() {
+    assert_fixture(
+        "templates-portrait_light_migration",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(919_727_647_002_936),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明, maintain canny edge of interior glass orb.",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_light_migration"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 27,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn rob_qwen_image_to_real_use_case() {
+    assert_fixture(
+        "templates_rob_image_to_real.app",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(189_890_890_797_522),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "change image 1 to realistic photograph",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_anything2realalpha"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 26,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn rob_qwen_portrait_light_migration_use_case() {
+    assert_fixture(
+        "templates_rob_portrait_light_migration.app",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2509_fp8_e4m3fn",
+            seed: Some(67_733_640_390_271),
+            steps: 20,
+            cfg: 4.0,
+            sampler: "euler (simple)",
+            positive_prompt: "参考色调，移除图1原有的光照并参考图2的光照和色调对图1重新照明",
+            negative_prompt: "",
+            loras: &["qwen_image_edit_2509_light_migration"],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerTraversal,
+            graph_node_count: 28,
+            output_candidates: 1,
+            output_roots: 1,
+            output_ambiguous: false,
+        },
+    );
+}
+
+#[test]
+fn multiple_character_angles_remains_an_honest_ambiguous_partial() {
+    assert_fixture(
+        "templates-1_click_multiple_character_angles-v1.0",
+        ExpectedMetadata {
+            model: "qwen_image_edit_2511_bf16",
+            seed: Some(345_666_571_704_709),
+            steps: 4,
+            cfg: 1.0,
+            sampler: "euler (simple)",
+            positive_prompt: " Turn the camera to a close-up.",
+            negative_prompt: "",
+            loras: &[
+                "qwen_image_edit_2511_lightning_4steps_v1.0_bf16",
+                "qwen_image_edit_2511_multiple_angles_lora",
+            ],
+            control_nets: &[],
+            source: ComfyParseLayer::SamplerFallback,
+            graph_node_count: 202,
+            output_candidates: 8,
+            output_roots: 8,
+            output_ambiguous: true,
         },
     );
 }

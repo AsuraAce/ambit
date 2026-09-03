@@ -13,6 +13,8 @@ interface ImageCanvasProps {
     showControls: boolean;
     onPrev: () => void;
     onNext: () => void;
+    canNavigatePrevious?: boolean;
+    canNavigateNext?: boolean;
     onClose: () => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
@@ -37,6 +39,8 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
     showControls,
     onPrev,
     onNext,
+    canNavigatePrevious = true,
+    canNavigateNext = true,
     onClose,
     onZoomIn,
     onZoomOut,
@@ -85,11 +89,12 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 <button
                     type="button"
                     aria-label="Previous Image (Left Arrow)"
+                    disabled={!canNavigatePrevious}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
                     }}
                     onClick={(e) => { e.stopPropagation(); onPrev(); }}
-                    className={`absolute left-4 z-30 p-4 bg-black/20 hover:bg-black/40 text-white/50 hover:text-white rounded-full backdrop-blur-sm transition-all pointer-events-auto border border-white/5 hover:border-white/10 focus:opacity-100 ${showControls ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}
+                    className={`absolute left-4 z-30 p-4 bg-black/20 enabled:hover:bg-black/40 text-white/50 enabled:hover:text-white rounded-full backdrop-blur-sm transition-all border border-white/5 enabled:hover:border-white/10 focus:opacity-100 disabled:pointer-events-none disabled:opacity-0 ${showControls && canNavigatePrevious ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                 >
                     <ChevronLeft className="w-6 h-6" />
                 </button>
@@ -125,11 +130,12 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 <button
                     type="button"
                     aria-label="Next Image (Right Arrow)"
+                    disabled={!canNavigateNext}
                     onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
                     }}
                     onClick={(e) => { e.stopPropagation(); onNext(); }}
-                    className={`absolute right-4 z-30 p-4 bg-black/20 hover:bg-black/40 text-white/50 hover:text-white rounded-full backdrop-blur-sm transition-all pointer-events-auto border border-white/5 hover:border-white/10 focus:opacity-100 ${showControls ? 'opacity-0 group-hover:opacity-100' : 'opacity-0'}`}
+                    className={`absolute right-4 z-30 p-4 bg-black/20 enabled:hover:bg-black/40 text-white/50 enabled:hover:text-white rounded-full backdrop-blur-sm transition-all border border-white/5 enabled:hover:border-white/10 focus:opacity-100 disabled:pointer-events-none disabled:opacity-0 ${showControls && canNavigateNext ? 'opacity-0 group-hover:opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
                 >
                     <ChevronRight className="w-6 h-6" />
                 </button>

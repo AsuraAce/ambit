@@ -111,6 +111,6 @@ describe('TimelineView', () => {
 
         fireEvent.click(screen.getByTestId('timeline-card-pinned-second'));
 
-        expect(onImageClick).toHaveBeenCalledWith(expect.anything(), 'pinned-second', 1);
+        expect(onImageClick).toHaveBeenCalledWith(expect.anything(), 'pinned-second', 1, undefined);
     });
 });

@@ -47,7 +47,7 @@ export const StackGroup: React.FC<StackGroupProps> = ({ group, onConfirm }) => {
             {/* Header */}
             <div className="px-4 py-3 bg-gray-50 dark:bg-slate-950/30 border-b border-gray-200 dark:border-white/5 flex justify-between items-center">
                 <div className="flex items-center gap-3">
-                    <div className="p-1.5 bg-amethyst-100 dark:bg-amethyst-900/30 rounded text-amethyst-600 dark:text-amethyst-400">
+                    <div className="p-1.5 bg-sage-100 dark:bg-sage-900/30 rounded text-sage-600 dark:text-sage-300">
                         <Layers className="w-4 h-4" />
                     </div>
                     <div>
@@ -107,7 +107,7 @@ export const StackGroup: React.FC<StackGroupProps> = ({ group, onConfirm }) => {
 
                                 {/* Upscale Badge */}
                                 {isUpscale && isSelected && (
-                                    <div className="absolute -top-2 -right-2 bg-amethyst-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-1 z-10">
+                                    <div className="absolute -top-2 -right-2 bg-sage-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-sm flex items-center gap-1 z-10">
                                         <Maximize className="w-2 h-2" /> Upscale
                                     </div>
                                 )}

@@ -4,9 +4,57 @@ import process from 'node:process';
 const ignoredAdvisories = new Map([
   [
     'RUSTSEC-2023-0071',
-    'optional rsa dependency through sqlx-mysql; Ambit beta only enables the local SQLite path',
+    {
+      packageName: 'rsa',
+      reason: 'optional rsa dependency through sqlx-mysql; Ambit beta only enables the local SQLite path',
+    },
+  ],
+  [
+    'RUSTSEC-2026-0235',
+    {
+      packageName: 'rkyv',
+      reason: 'optional rkyv feature of rust_decimal is not enabled in Ambit\'s compiled dependency graph',
+    },
   ],
 ]);
+
+for (const [id, { packageName }] of ignoredAdvisories) {
+  const treeResult = spawnSync(
+    'cargo',
+    [
+      'tree',
+      '--locked',
+      '--manifest-path',
+      'src-tauri/Cargo.toml',
+      '--target',
+      'x86_64-pc-windows-msvc',
+      '--invert',
+      packageName,
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+
+  if (treeResult.error || treeResult.status !== 0) {
+    if (treeResult.stdout) {
+      console.error(treeResult.stdout);
+    }
+    if (treeResult.stderr) {
+      console.error(treeResult.stderr);
+    }
+    console.error(`Failed to verify that ignored advisory ${id} is outside the compiled dependency graph.`);
+    process.exit(treeResult.status ?? 1);
+  }
+
+  if (treeResult.stdout.trim()) {
+    console.error(`Ignored advisory ${id} is present in the compiled dependency graph:`);
+    console.error(treeResult.stdout.trim());
+    process.exit(1);
+  }
+}
 
 const args = [
   'audit',
@@ -79,7 +127,7 @@ const dependencyCount = report.lockfile?.['dependency-count'] ?? 'unknown';
 console.log(`Rust advisory audit passed: 0 unignored vulnerabilities across ${dependencyCount} dependencies.`);
 console.log(
   `Ignored advisories: ${[...ignoredAdvisories.entries()]
-    .map(([id, reason]) => `${id} (${reason})`)
+    .map(([id, { reason }]) => `${id} (${reason})`)
     .join('; ')}`,
 );
 

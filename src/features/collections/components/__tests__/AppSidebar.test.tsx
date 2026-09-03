@@ -65,7 +65,10 @@ describe('AppSidebar', () => {
         }
         fireEvent.click(button('Show Filters'));
         fireEvent.click(button('Disable Favorites Only'));
-        fireEvent.click(button('Disable Pinned Only'));
+        const activePinnedButton = button('Disable Pinned Only');
+        expect(activePinnedButton.querySelector('svg')?.getAttribute('class')).toContain('fill-white');
+        expect(activePinnedButton.querySelector('svg')?.getAttribute('class')).toContain('text-white');
+        fireEvent.click(activePinnedButton);
         fireEvent.click(screen.getByRole('button', { name: 'Support Ambit' }));
         fireEvent.click(screen.getByRole('button', { name: 'Open Help & Guide' }));
         fireEvent.click(button('Settings'));

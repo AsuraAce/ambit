@@ -402,11 +402,13 @@ describe('libraryStore live watch session', () => {
         const abort = vi.spyOn(controller, 'abort');
         act(() => {
             useLibraryStore.getState().setSyncStatus('syncing');
+            useLibraryStore.getState().setInvokeSyncActivityKind('manual');
             useLibraryStore.getState().setSyncAbortController(controller);
             useLibraryStore.getState().cancelSync();
         });
         expect(abort).toHaveBeenCalled();
         expect(useLibraryStore.getState().syncStatus).toBe('idle');
+        expect(useLibraryStore.getState().invokeSyncActivityKind).toBeNull();
     });
 
     it('sets direct import state and preserves dock dismissal when import stops', () => {

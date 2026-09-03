@@ -1,14 +1,19 @@
 import * as React from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
-import { act, fireEvent, render, waitFor } from './test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from './test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from './constants/defaultSettings';
 import { createDefaultFilters } from './utils/filterState';
 import { GeneratorTool, type AIImage, type AppSettings, type Collection, type FilterState, type LayoutMode, type SmartCollection, type ViewMode } from './types';
+import type { InvokeOwnerScopeState } from './contexts/SyncContext';
 import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
+import { useLibraryStore } from './stores/libraryStore';
 
 type AppLayoutProbe = {
+    isInvokeCollectionCatchupPending: boolean;
+    forcePrivacyProtectionGate: boolean;
+    images: AIImage[];
     workspaceRef: React.RefObject<HTMLElement | null>;
     viewMode: ViewMode;
     changeViewMode: (mode: ViewMode) => void;
@@ -24,6 +29,13 @@ type AppLayoutProbe = {
     onMaintenanceViewerOpenChange: (isOpen: boolean) => void;
     isViewerShortcutBlocked: boolean;
     setSelectedImageIndex: React.Dispatch<React.SetStateAction<number | null>>;
+    handleImageClick: (
+        event: React.MouseEvent,
+        id: string,
+        index: number,
+        callback: (index: number) => void,
+        revealGranted?: boolean,
+    ) => void;
     searchProps: {
         onFocus: () => void;
         onBlur: () => void;
@@ -32,6 +44,7 @@ type AppLayoutProbe = {
     };
     scopeName: string;
     scopeTotal: number;
+    displayedCount: number;
     loadMoreImages: () => void;
     handlers: {
         setContextMenu: React.Dispatch<React.SetStateAction<unknown>>;
@@ -45,6 +58,7 @@ type GlobalModalsProbe = {
     onCollectionAction: (ids: string[], targetId: string, mode: 'add' | 'move', sourceId?: string) => Promise<void>;
     onCloseExport: () => void;
     onSettingsSave: React.Dispatch<React.SetStateAction<AppSettings>>;
+    onInvokeSync: () => void | Promise<void>;
     onCheckForUpdates: () => Promise<void>;
     onOpenUpdatePrompt: () => void;
     onNavigateToMaintenance: () => void;
@@ -77,6 +91,8 @@ type ImportModalProbe = {
 
 type ViewerProbe = {
     image: AIImage;
+    isMasked: boolean;
+    initiallyRevealed: boolean;
     isShortcutBlocked: boolean;
     onClose: () => void;
     onNext: () => void;
@@ -94,7 +110,10 @@ type ViewerProbe = {
     onRevertMetadata: (id: string) => void;
     onRecoverMetadata: () => void;
     onSetCollectionMembership: (id: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    onOpenReferencedImage: (id: string) => Promise<boolean>;
     onToggleSidebar: () => void;
+    canNavigateNext: boolean;
+    canNavigatePrevious: boolean;
 };
 
 type ContextMenuProbe = {
@@ -131,6 +150,8 @@ const mocks = vi.hoisted(() => ({
     addToast: vi.fn(),
     settings: null as unknown as AppSettings,
     settingsLoaded: true,
+    privacyEnabled: false,
+    privacyMaskIndexStatus: 'ready' as 'pending' | 'ready' | 'failed',
     geminiApiKey: null as string | null,
     setSettings: vi.fn(),
     rollbackSettings: vi.fn(),
@@ -148,6 +169,7 @@ const mocks = vi.hoisted(() => ({
     setSortOption: vi.fn(),
     toggleFavorite: vi.fn(),
     clearAllFilters: vi.fn(),
+    churnClearAllFiltersIdentity: false,
     setRecentSearches: vi.fn(),
     refreshMetadata: vi.fn(),
     selectedIds: new Set<string>(),
@@ -168,7 +190,6 @@ const mocks = vi.hoisted(() => ({
     handleImportPaths: vi.fn().mockResolvedValue(undefined),
     handleImportFolders: vi.fn().mockResolvedValue(undefined),
     importImages: vi.fn(),
-    handleInvokeSync: vi.fn(),
     removeImagesFromCollection: vi.fn(async (
         _imageIds: string[],
         _collectionId: string,
@@ -201,6 +222,12 @@ const mocks = vi.hoisted(() => ({
         handleRevertMetadata: vi.fn()
     },
     startInvokeSync: vi.fn(),
+    selectInvokeOwnerScope: vi.fn(),
+    retryInvokeOwnerScope: vi.fn(),
+    invokeOwnerScopeState: { status: 'ready' } as InvokeOwnerScopeState,
+    isInvokeSyncActive: false,
+    isLiveSyncing: false,
+    getImageWithFullMetadata: vi.fn(),
     folderMonitor: vi.fn(),
     shortcuts: vi.fn(),
     thumbnailQueue: vi.fn(),
@@ -273,10 +300,15 @@ const createDeferred = <T,>() => {
 vi.mock('./hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
 vi.mock('./hooks/useModalManager', () => ({ useModalManager: () => mocks.modals }));
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
+vi.mock('./services/db/imageRepo', () => ({
+    getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id)
+}));
 vi.mock('./stores/settingsStore', () => {
     const storeState = () => ({
         isLoaded: mocks.settingsLoaded,
         settings: mocks.settings,
+        privacyEnabled: mocks.privacyEnabled,
+        privacyMaskIndexStatus: mocks.privacyMaskIndexStatus,
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
@@ -285,10 +317,12 @@ vi.mock('./stores/settingsStore', () => {
     const useSettingsStore = (selector: (state: ReturnType<typeof storeState>) => unknown) => selector({
         isLoaded: mocks.settingsLoaded,
         settings: mocks.settings,
+        privacyEnabled: mocks.privacyEnabled,
+        privacyMaskIndexStatus: mocks.privacyMaskIndexStatus,
         geminiApiKey: mocks.geminiApiKey,
         setSettings: mocks.setSettings,
         rollbackSettings: mocks.rollbackSettings,
-        flushSettings: mocks.flushSettings
+        flushSettings: mocks.flushSettings,
     });
     useSettingsStore.getState = storeState;
     return { useSettingsStore };
@@ -322,7 +356,9 @@ vi.mock('./contexts/SearchContext', () => ({
         isFiltering: false,
         privacyExposureBlocked: mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
-        clearAllFilters: mocks.clearAllFilters,
+        clearAllFilters: mocks.churnClearAllFiltersIdentity
+            ? () => mocks.clearAllFilters()
+            : mocks.clearAllFilters,
         recentSearches: ['old'],
         setRecentSearches: mocks.setRecentSearches,
         refreshMetadata: mocks.refreshMetadata
@@ -364,7 +400,6 @@ vi.mock('./hooks/useFileOperations', () => ({
         handleImportPaths: mocks.handleImportPaths,
         handleImportFolders: mocks.handleImportFolders,
         importImages: mocks.importImages,
-        handleInvokeSync: mocks.handleInvokeSync,
         fileInputRef: mocks.fileInputRef,
         isRecoveringMetadata: false,
         isExporting: false
@@ -400,7 +435,16 @@ vi.mock('./hooks/useDragDrop', () => ({
         return { isDraggingExternal: true };
     }
 }));
-vi.mock('./contexts/SyncContext', () => ({ useSync: () => ({ startInvokeSync: mocks.startInvokeSync }) }));
+vi.mock('./contexts/SyncContext', () => ({
+    useSync: () => ({
+        startInvokeSync: mocks.startInvokeSync,
+        isInvokeSyncActive: mocks.isInvokeSyncActive,
+        isLiveSyncing: mocks.isLiveSyncing,
+        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
+        selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
+        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+    })
+}));
 vi.mock('./hooks/useFolderMonitor', () => ({ useFolderMonitor: mocks.folderMonitor }));
 vi.mock('./hooks/useGlobalShortcuts', () => ({ useGlobalShortcuts: mocks.shortcuts }));
 vi.mock('./features/viewer/utils/searchHighlights', () => ({ derivePromptHighlightSpec: vi.fn(() => ({ terms: ['sunset'] })) }));
@@ -473,11 +517,18 @@ describe('App orchestration', () => {
             defaultTheaterMode: false
         });
         mocks.settingsLoaded = true;
+        mocks.privacyEnabled = false;
+        mocks.privacyMaskIndexStatus = 'ready';
         mocks.geminiApiKey = null;
         mocks.collectionsLoaded = true;
         mocks.collections = [];
         mocks.privacyExposureBlocked = false;
         mocks.images = [image('one'), image('two')];
+        mocks.invokeOwnerScopeState = { status: 'ready' };
+        mocks.isInvokeSyncActive = false;
+        mocks.isLiveSyncing = false;
+        useLibraryStore.setState({ isStartupCatchupPending: false });
+        mocks.churnClearAllFiltersIdentity = false;
         mocks.filters = createDefaultFilters();
         mocks.selectedIds = new Set();
         mocks.aiSearchOptions = null;
@@ -516,6 +567,7 @@ describe('App orchestration', () => {
             onPersisted?.();
             return true;
         });
+        mocks.getImageWithFullMetadata.mockResolvedValue(null);
         vi.mocked(open).mockReset();
     });
 
@@ -561,6 +613,370 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(4000);
         });
         expect(document.getElementById('static-loading')).toBeNull();
+    });
+
+    it('keeps quick initial InvokeAI admission behind the splash without flashing preparation', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = { status: 'idle' };
+
+        const view = render(<App />);
+        expect(staticLoader.style.opacity).toBe('');
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(699);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(staticLoader.style.opacity).toBe('0');
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+        expect(document.getElementById('static-loading')).toBeNull();
+    });
+
+    it('keeps brief initial privacy preparation behind the splash', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.privacyEnabled = true;
+        mocks.privacyMaskIndexStatus = 'pending';
+        mocks.privacyExposureBlocked = true;
+
+        const view = render(<App />);
+        expect(staticLoader.style.opacity).toBe('');
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(699);
+        });
+        expect(staticLoader.style.opacity).toBe('');
+
+        mocks.privacyMaskIndexStatus = 'ready';
+        mocks.privacyExposureBlocked = false;
+        view.rerender(<App />);
+
+        expect(staticLoader.style.opacity).toBe('0');
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('replaces the splash with sustained privacy preparation and holds it stable', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.privacyEnabled = true;
+        mocks.privacyMaskIndexStatus = 'pending';
+        mocks.privacyExposureBlocked = true;
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+
+        expect(document.getElementById('static-loading')).toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(true);
+
+        mocks.privacyMaskIndexStatus = 'ready';
+        mocks.privacyExposureBlocked = false;
+        view.rerender(<App />);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(499);
+        });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(true);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('keeps owner admission and a brief privacy handoff behind the startup splash', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'discovering',
+            rootPath: 'D:/Invoke',
+            progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
+        };
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        mocks.privacyEnabled = true;
+        mocks.privacyMaskIndexStatus = 'pending';
+        mocks.privacyExposureBlocked = true;
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(699);
+        });
+        mocks.privacyMaskIndexStatus = 'ready';
+        mocks.privacyExposureBlocked = false;
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('keeps sustained initial InvokeAI preparation behind the startup splash', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'discovering',
+            rootPath: 'D:/Invoke',
+            progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
+        };
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(document.getElementById('static-loading')?.style.opacity).toBe('0');
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
+    it('keeps initial owner admission behind the splash before showing a trusted offline view', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'discovering',
+            rootPath: 'D:/Invoke',
+            progress: { current: 0, total: 0, message: 'Checking InvokeAI owner information...' },
+        };
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+            error: 'InvokeAI is temporarily unavailable.',
+            failure: { kind: 'source_unavailable', details: 'InvokeAI is temporarily unavailable.' },
+            isRetrying: false,
+        };
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(document.getElementById('static-loading')?.style.opacity).toBe('0');
+    });
+
+    it('keeps the startup splash visible when the configured InvokeAI root changes during admission', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/InvokeA',
+        });
+        mocks.invokeOwnerScopeState = { status: 'discovering', rootPath: 'D:/InvokeA' };
+
+        const view = render(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(700);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+
+        mocks.settings = { ...mocks.settings, invokeAiPath: 'D:/InvokeB' };
+        mocks.invokeOwnerScopeState = { status: 'discovering', rootPath: 'D:/InvokeB' };
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+    });
+
+    it('shows actionable owner states immediately and delays runtime preparation for 400 ms', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'selection_required',
+            rootPath: 'D:/Invoke',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', imageCount: 2 }],
+                unassignedImageCount: 0,
+            },
+        };
+
+        const view = render(<App />);
+        expect(document.getElementById('static-loading')).toBeNull();
+        expect(screen.getByText('Choose which InvokeAI images to show')).toBeTruthy();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(500);
+        });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+
+        mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(399);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+    });
+
+    it('never shows the gate for a switch that completes within the grace period', async () => {
+        vi.useFakeTimers();
+        const previousImage = image('previous-owner-image');
+        const nextImage = image('next-owner-image');
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.images = [previousImage];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+        const clearFiltersCallsBeforeSwitch = mocks.clearAllFilters.mock.calls.length;
+
+        mocks.images = [];
+        mocks.invokeOwnerScopeState = {
+            status: 'applying',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-b',
+            },
+        };
+        view.rerender(<App />);
+
+        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([previousImage]);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(399);
+        });
+        mocks.images = [nextImage];
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').images).toEqual([nextImage]);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(1);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+    });
+    it('shows collection catch-up only for startup or foreground InvokeAI board synchronization', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+            invokeSyncBoards: true,
+            syncBoardsToCollections: true,
+        });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        useLibraryStore.setState({ isStartupCatchupPending: true });
+
+        const view = render(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(true);
+
+        mocks.settings = { ...mocks.settings, invokeSyncBoards: false };
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+
+        mocks.settings = { ...mocks.settings, invokeSyncBoards: true, syncBoardsToCollections: false };
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+
+        mocks.settings = { ...mocks.settings, syncBoardsToCollections: true };
+        useLibraryStore.setState({ isStartupCatchupPending: false });
+        mocks.isInvokeSyncActive = true;
+        mocks.isLiveSyncing = true;
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+
+        mocks.isLiveSyncing = false;
+        view.rerender(<App />);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(true);
     });
 
     it('handles view, layout, search focus, collection, and export commands', async () => {
@@ -611,7 +1027,7 @@ describe('App orchestration', () => {
         expect(mocks.modals.setCollectionToEditId).toHaveBeenCalledWith('collection-a');
         await act(async () => layout.handleRemoveFromCollection());
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
-        expect(mocks.addToast).toHaveBeenCalledWith('Removed 1 images from collection', 'info');
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('images from collection'), 'info');
         await act(async () => {
             expect(await layout.onSetCollectionMembership('one', 'target', true)).toBe(true);
             expect(await layout.onSetCollectionMembership('one', 'target', false)).toBe(true);
@@ -629,6 +1045,28 @@ describe('App orchestration', () => {
         requireProbe(captured.contextMenu, 'AppContextMenu').onMoveToCollection();
         expect(mocks.modals.setSourceCollectionId).toHaveBeenCalledWith('collection-a');
         requireProbe(captured.contextMenu, 'AppContextMenu').onClose();
+    });
+
+    it('keeps the selection when bulk collection removal does not persist', async () => {
+        mocks.collections = [{
+            id: 'collection-a',
+            name: 'Collection A',
+            imageIds: ['one'],
+            count: 1,
+            createdAt: 1,
+            source: 'ambit'
+        }];
+        mocks.filters = createDefaultFilters({ collectionId: 'collection-a' });
+        mocks.selectedIds = new Set(['one']);
+        mocks.removeImagesFromCollection.mockResolvedValueOnce(false);
+        render(<App />);
+        const clearCount = mocks.clearSelection.mock.calls.length;
+
+        await act(async () => requireProbe(captured.appLayout, 'AppLayout').handleRemoveFromCollection());
+
+        expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'collection-a');
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearCount);
+        expect(mocks.addToast).not.toHaveBeenCalledWith(expect.stringContaining('from collection'), 'info');
     });
 
     it('routes committed navbar searches by view and opens syntax help', () => {
@@ -872,6 +1310,8 @@ describe('App orchestration', () => {
         expect(mocks.moveImagesBetweenCollections).toHaveBeenCalledWith(['two'], 'source', 'target');
         await global.onCheckForUpdates();
         expect(mocks.updater.checkForUpdates).toHaveBeenCalledWith({ manual: true });
+        await act(async () => global.onInvokeSync());
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'manual', afterTimestamp: 0 });
         global.onOpenUpdatePrompt();
         expect(mocks.updater.openUpdateDialog).toHaveBeenCalled();
         global.onNavigateToMaintenance();
@@ -939,6 +1379,410 @@ describe('App orchestration', () => {
         expect(mocks.removeImagesFromCollection).toHaveBeenCalledWith(['one'], 'target', expect.any(Function));
         expect(mocks.modals.openModal).not.toHaveBeenCalledWith('addToCollection');
         expect(mocks.settings.defaultTheaterMode).toBe(true);
+    });
+
+    it('grants one revealed card opening without reusing it for a direct reopen', async () => {
+        mocks.privacyEnabled = true;
+        mocks.images = [
+            { ...image('one'), userMasked: true },
+            { ...image('two'), userMasked: true },
+        ];
+        mocks.handleImageClick.mockImplementationOnce((
+            _event: React.MouseEvent,
+            _id: string,
+            index: number,
+            callback: (nextIndex: number) => void,
+        ) => callback(index));
+        render(<App />);
+
+        const layout = requireProbe(captured.appLayout, 'AppLayout');
+        act(() => layout.handleImageClick({} as React.MouseEvent, 'one', 0, layout.setSelectedImageIndex, true));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: true,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onNext());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toMatchObject({
+            isMasked: true,
+            initiallyRevealed: false,
+        });
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.initiallyRevealed).toBe(false));
+        expect(requireProbe(captured.viewer, 'ImageViewer').isMasked).toBe(true);
+    });
+
+    it('opens a referenced asset outside the current query without changing gallery results', async () => {
+        const hiddenAsset = {
+            ...image('hidden-control'),
+            invokeImageCategory: 'control',
+        } satisfies AIImage;
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce(hiddenAsset);
+        render(<App />);
+
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage(hiddenAsset.id)).toBe(true);
+        });
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(hiddenAsset.id));
+        expect(requireProbe(captured.viewer, 'ImageViewer')).toEqual(expect.objectContaining({
+            canNavigateNext: false,
+            canNavigatePrevious: false,
+        }));
+        expect(mocks.images.map(candidate => candidate.id)).toEqual(['one', 'two']);
+        expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith(hiddenAsset.id);
+    });
+
+    it('retains an inert runtime view during the grace period and cleans it before the gate', async () => {
+        const localImage = image('local-image');
+        const ownerGalleryImage = {
+            ...image('owner-a-gallery'),
+            invokeImageName: 'owner-a-gallery.png',
+        };
+        const referencedAsset = {
+            ...image('owner-a-control'),
+            invokeImageName: 'owner-a-control.png',
+        };
+        mocks.images = [localImage, ownerGalleryImage];
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        mocks.churnClearAllFiltersIdentity = true;
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce(referencedAsset);
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(localImage.id));
+        await act(async () => {
+            await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage(referencedAsset.id);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe(referencedAsset.id));
+
+        const clearSelectionCallsBeforeSwitch = mocks.clearSelection.mock.calls.length;
+        const clearFiltersCallsBeforeSwitch = mocks.clearAllFilters.mock.calls.length;
+        vi.useFakeTimers();
+        mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-owner-scope-transition="retained"]')?.hasAttribute('inert')).toBe(true);
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCallsBeforeSwitch);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch);
+
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(400);
+        });
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+        expect(mocks.clearSelection).toHaveBeenCalledTimes(clearSelectionCallsBeforeSwitch + 1);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
+
+        view.rerender(<App />);
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 1);
+
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        mocks.invokeOwnerScopeState = { status: 'applying', rootPath: 'D:/Invoke' };
+        view.rerender(<App />);
+        await act(async () => {
+            await vi.advanceTimersByTimeAsync(400);
+        });
+        expect(mocks.clearAllFilters).toHaveBeenCalledTimes(clearFiltersCallsBeforeSwitch + 2);
+    });
+
+    it('blocks a configured InvokeAI library before discovery and while discovery belongs to an older root', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke/databases',
+        });
+        mocks.invokeOwnerScopeState = { status: 'idle' };
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            rootPath: 'D:/PreviousInvoke',
+        };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            rootPath: 'D:/Invoke',
+        };
+        view.rerender(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
+    it('treats a whitespace-only InvokeAI path as unconfigured instead of showing an indefinite gate', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: '   ',
+        });
+        mocks.invokeOwnerScopeState = { status: 'idle' };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+    });
+
+    it('keeps selection and blocking errors in front of the library', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'selection_required',
+            rootPath: 'D:/Invoke',
+            discovery: {
+                schemaMode: 'multi_user',
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                owners: [{ ownerId: 'owner-a', imageCount: 2 }],
+                unassignedImageCount: 0,
+            },
+        };
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(screen.getByText('Choose which InvokeAI images to show')).toBeTruthy();
+
+        mocks.invokeOwnerScopeState = {
+            status: 'error',
+            rootPath: 'D:/Invoke',
+            error: 'database locked',
+            failure: { kind: 'preparation_failed', details: 'database locked' },
+        };
+        view.rerender(<App />);
+        expect(screen.getByText('InvokeAI library preparation failed')).toBeTruthy();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+    });
+
+    it('shows the authoritative library with a persistent warning for an exact-root offline view', async () => {
+        const invokeImage = {
+            ...image('invoke-image'),
+            invokeImageName: 'invoke-image.png',
+            metadata: { ...image('invoke-image').metadata, tool: GeneratorTool.INVOKEAI },
+        };
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/Invoke',
+        });
+        mocks.images = [image('local-image'), invokeImage];
+        mocks.invokeOwnerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/Invoke',
+            scope: {
+                dbPath: 'D:/Invoke/databases/invokeai.db',
+                imagesRoot: 'D:/Invoke',
+                mode: 'owner',
+                ownerId: 'owner-a',
+            },
+            failure: { kind: 'source_unavailable', details: 'offline' },
+        };
+        mocks.retryInvokeOwnerScope.mockResolvedValueOnce(true);
+        mocks.startInvokeSync.mockResolvedValue(undefined);
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-offline-banner"]')).not.toBeNull();
+        expect(requireProbe(captured.appLayout, 'AppLayout').images.map(candidate => candidate.id)).toEqual([
+            'local-image',
+            'invoke-image',
+        ]);
+        expect(requireProbe(captured.globalModals, 'GlobalModals').filteredImages).toHaveLength(2);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
+        expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('invokeai');
+        expect(mocks.modals.openModal).toHaveBeenCalledWith('settings');
+    });
+
+    it('does not trust an offline view from a different configured root', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: 'D:/InvokeNew',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'offline_ready',
+            rootPath: 'D:/InvokeOld',
+            scope: {
+                dbPath: 'D:/InvokeOld/databases/invokeai.db',
+                imagesRoot: 'D:/InvokeOld',
+                mode: 'legacy',
+            },
+        };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="invoke-owner-offline-banner"]')).toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+    });
+
+    it('does not treat differently cased POSIX InvokeAI roots as the same installation', () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            invokeAiPath: '/home/Artemis/Invoke/databases',
+        });
+        mocks.invokeOwnerScopeState = {
+            status: 'ready',
+            rootPath: '/home/artemis/Invoke',
+        };
+
+        const view = render(<App />);
+
+        expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).not.toBeNull();
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+    });
+
+    it('uses the current gallery for visible reference targets and keeps missing targets disabled', async () => {
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('two')).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('two'));
+        expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('missing')).toBe(false);
+        });
+        expect(captured.viewer?.image.id).toBe('two');
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is no longer available in Ambit.', 'error');
+    });
+
+    it('moves visible reference navigation onto the current gallery session', async () => {
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        mocks.images = [image('replacement-one'), image('replacement-two')];
+        view.rerender(<App />);
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('replacement-two')).toBe(true);
+        });
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-two'));
+
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onPrev());
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('replacement-one'));
+    });
+
+    it('does not open a visible reference target hidden by Privacy Mode', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+        });
+        mocks.privacyEnabled = true;
+        mocks.images = [image('one'), { ...image('two'), userMasked: true }];
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('two')).toBe(false);
+        });
+
+        expect(captured.viewer?.image.id).toBe('one');
+        expect(mocks.getImageWithFullMetadata).not.toHaveBeenCalled();
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
+    });
+
+    it('allows prompt-matched references when prompt masking is disabled', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+            promptMaskingEnabled: false,
+            maskedKeywords: ['private'],
+        });
+        mocks.privacyEnabled = true;
+        mocks.getImageWithFullMetadata.mockResolvedValueOnce({
+            ...image('off-query-reference'),
+            metadata: {
+                ...image('off-query-reference').metadata,
+                positivePrompt: 'private portrait',
+            },
+        });
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        await act(async () => {
+            expect(await requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('off-query-reference')).toBe(true);
+        });
+
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('off-query-reference'));
+        expect(mocks.addToast).not.toHaveBeenCalledWith(
+            'The referenced image is hidden by Privacy Mode.',
+            'warning'
+        );
+    });
+
+    it('does not reopen the viewer when a reference lookup finishes after close', async () => {
+        const deferred = createDeferred<AIImage | null>();
+        mocks.getImageWithFullMetadata.mockReturnValueOnce(deferred.promise);
+        const view = render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let navigation: Promise<boolean> | undefined;
+        act(() => {
+            navigation = requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('hidden-control');
+        });
+        act(() => requireProbe(captured.viewer, 'ImageViewer').onClose());
+        await waitFor(() => expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull());
+
+        await act(async () => deferred.resolve(image('hidden-control')));
+        await expect(navigation).resolves.toBe(false);
+        expect(view.container.querySelector('[data-testid="image-viewer"]')).toBeNull();
+    });
+
+    it('does not open a referenced image hidden while its lookup is in flight', async () => {
+        mocks.settings = createDefaultAppSettings({
+            hasCompletedOnboarding: true,
+            maskingMode: 'hide',
+        });
+        const deferred = createDeferred<AIImage | null>();
+        mocks.getImageWithFullMetadata.mockReturnValueOnce(deferred.promise);
+        render(<App />);
+        act(() => requireProbe(captured.appLayout, 'AppLayout').setSelectedImageIndex(0));
+        await waitFor(() => expect(captured.viewer?.image.id).toBe('one'));
+
+        let navigation: Promise<boolean> | undefined;
+        act(() => {
+            navigation = requireProbe(captured.viewer, 'ImageViewer').onOpenReferencedImage('private-reference');
+        });
+        mocks.privacyEnabled = true;
+        await act(async () => deferred.resolve({
+            ...image('private-reference'),
+            userMasked: true,
+        }));
+
+        await expect(navigation).resolves.toBe(false);
+        expect(captured.viewer?.image.id).toBe('one');
+        expect(mocks.addToast).toHaveBeenCalledWith('The referenced image is hidden by Privacy Mode.', 'warning');
     });
 
     it('keeps the open viewer bound to its original result session when search results are replaced', async () => {

@@ -1,6 +1,6 @@
 import { FilterState, type ImageKindFilter } from '../types';
 
-type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'sortOption'>;
+type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'showInvokeImageAssets' | 'sortOption'>;
 
 export const normalizeImageKindFilter = (value: unknown): ImageKindFilter => (
     value === 'generated' || value === 'photograph' || value === 'other'
@@ -36,6 +36,7 @@ export const createDefaultFilters = (
         pinnedOnly: false,
         showIntermediates: false,
         showGrids: false,
+        showInvokeImageAssets: false,
         sortOption: undefined,
         matchModes: undefined,
         assetFilterAliases: undefined,
@@ -47,9 +48,10 @@ export const createDefaultFilters = (
 const hasRangeFilter = (value: number | null | undefined): boolean =>
     value !== undefined && value !== null;
 
-export const hasActiveResultFilters = (filters: FilterState): boolean => (
+export const hasNonCollectionResultFilters = (filters: FilterState): boolean => (
     filters.searchQuery.trim().length > 0 ||
     (filters.sourceKind ?? 'all') !== 'all' ||
+    (!!filters.mediaType && filters.mediaType !== 'all') ||
     filters.models.length > 0 ||
     filters.tools.length > 0 ||
     filters.loras.length > 0 ||
@@ -64,13 +66,18 @@ export const hasActiveResultFilters = (filters: FilterState): boolean => (
     !!filters.dateTo ||
     filters.favoritesOnly ||
     !!filters.pinnedOnly ||
-    !!filters.collectionId ||
     !!filters.showIntermediates ||
     !!filters.showGrids ||
+    !!filters.showInvokeImageAssets ||
     hasRangeFilter(filters.minSteps) ||
     hasRangeFilter(filters.maxSteps) ||
     hasRangeFilter(filters.minCfg) ||
     hasRangeFilter(filters.maxCfg)
+);
+
+export const hasActiveResultFilters = (filters: FilterState): boolean => (
+    hasNonCollectionResultFilters(filters) ||
+    !!filters.collectionId
 );
 
 export const shouldPrefetchResultPages = (
@@ -89,6 +96,7 @@ export const shouldPrefetchResultPages = (
 const preserveViewFilters = (filters: FilterState): PreservedViewFilters => ({
     showGrids: filters.showGrids,
     showIntermediates: filters.showIntermediates,
+    showInvokeImageAssets: filters.showInvokeImageAssets,
     sortOption: filters.sortOption,
 });
 

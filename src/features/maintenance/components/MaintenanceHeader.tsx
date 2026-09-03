@@ -11,7 +11,7 @@ interface MaintenanceHeaderProps {
     extraControls?: React.ReactNode;
     onSelectAll?: () => void;
     onClearSelection?: () => void;
-    variant?: 'sage' | 'blue' | 'orange' | 'red';
+    variant?: 'sage' | 'harbor' | 'ember' | 'red';
 }
 
 export const MaintenanceHeader: React.FC<MaintenanceHeaderProps> = ({
@@ -27,9 +27,9 @@ export const MaintenanceHeader: React.FC<MaintenanceHeaderProps> = ({
     variant = 'sage'
 }) => {
     const bgColors = {
-        sage: 'bg-sage-500/10 text-sage-600 dark:text-sage-400',
-        blue: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
-        orange: 'bg-orange-500/10 text-orange-600 dark:text-orange-400',
+        sage: 'bg-sage-500/10 text-sage-600 dark:text-sage-300',
+        harbor: 'bg-harbor-100 text-harbor-600 dark:bg-harbor-500/10 dark:text-harbor-300',
+        ember: 'bg-ember-100 text-ember-600 dark:bg-ember-500/10 dark:text-ember-300',
         red: 'bg-red-500/10 text-red-600 dark:text-red-400'
     };
 

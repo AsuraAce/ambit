@@ -93,6 +93,45 @@ export const updateImagesQueryCaches = (
     });
 };
 
+export const removeImagesFromQueryCaches = (
+    queryClient: QueryClient,
+    ids: Iterable<string>
+): void => {
+    const idSet = new Set(ids);
+    if (idSet.size === 0) return;
+
+    queryClient.getQueriesData<ImagesQueryData>({ queryKey: ['images'] }).forEach(([queryKey, data]) => {
+        if (!data) return;
+
+        const removedIds = new Set<string>();
+        const pages = data.pages.map(page => {
+            const images = page.images.filter(image => {
+                if (!idSet.has(image.id)) return true;
+                removedIds.add(image.id);
+                return false;
+            });
+            return images.length === page.images.length ? page : { ...page, images };
+        });
+
+        if (removedIds.size === 0) return;
+
+        const removedCount = removedIds.size;
+        const nextPages = pages.map(page => {
+            const totalCount = page.totalCount < 0
+                ? page.totalCount
+                : Math.max(0, page.totalCount - removedCount);
+            const globalCount = page.globalCount < 0
+                ? page.globalCount
+                : Math.max(0, page.globalCount - removedCount);
+            return totalCount === page.totalCount && globalCount === page.globalCount
+                ? page
+                : { ...page, totalCount, globalCount };
+        });
+
+        queryClient.setQueryData(queryKey, { ...data, pages: nextPages });
+    });
+};
+
 export const patchImageFlagsInQueryCaches = (
     queryClient: QueryClient,
     ids: Iterable<string>,

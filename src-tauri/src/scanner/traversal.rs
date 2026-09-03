@@ -1,8 +1,9 @@
-use super::models::{FileEntry, FolderStats};
+use super::models::{FileEntry, FolderStats, MediaCandidateKind};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
+const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "m4v", "mkv"];
 
 fn canonical_root(root: &Path) -> Option<PathBuf> {
     root.canonicalize().ok()
@@ -29,6 +30,17 @@ fn is_image_path(path: &Path) -> bool {
         .and_then(|s| s.to_str())
         .map(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
         .unwrap_or(false)
+}
+
+pub(crate) fn classify_media_path(path: &Path) -> Option<MediaCandidateKind> {
+    let extension = path.extension()?.to_str()?.to_lowercase();
+    if IMAGE_EXTENSIONS.contains(&extension.as_str()) {
+        Some(MediaCandidateKind::Image)
+    } else if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
+        Some(MediaCandidateKind::Video)
+    } else {
+        None
+    }
 }
 
 fn is_thumbnail_file(path: &Path) -> bool {
@@ -109,6 +121,8 @@ fn scan_dir_recursive_inner(
                             }
                         }
                     }
+                } else if classify_media_path(&p) == Some(MediaCandidateKind::Video) {
+                    stats.video_files += 1;
                 } else {
                     stats.other_files += 1;
                 }
@@ -248,10 +262,10 @@ fn collect_images_with_stats_recursive_inner(
                 if !is_thumbnail_dir(&p) {
                     collect_images_with_stats_recursive_inner(root_canonical, &p, files, visited);
                 }
-            } else if safe_file(root_canonical, &p, file_type)
-                && is_image_path(&p)
-                && !is_thumbnail_file(&p)
-            {
+            } else if safe_file(root_canonical, &p, file_type) && !is_thumbnail_file(&p) {
+                let Some(media_type) = classify_media_path(&p) else {
+                    continue;
+                };
                 let (size, modified) = match entry.metadata() {
                     Ok(m) => (
                         m.len(),
@@ -268,6 +282,7 @@ fn collect_images_with_stats_recursive_inner(
                     path: p.to_string_lossy().replace("\\", "/"),
                     size,
                     modified,
+                    media_type,
                 });
             }
         }
@@ -327,10 +342,10 @@ fn collect_images_with_stats_since_recursive_inner(
                         visited,
                     );
                 }
-            } else if safe_file(root_canonical, &p, file_type)
-                && is_image_path(&p)
-                && !is_thumbnail_file(&p)
-            {
+            } else if safe_file(root_canonical, &p, file_type) && !is_thumbnail_file(&p) {
+                let Some(media_type) = classify_media_path(&p) else {
+                    continue;
+                };
                 let (size, modified, created) = match entry.metadata() {
                     Ok(m) => {
                         let mtime = m
@@ -355,6 +370,7 @@ fn collect_images_with_stats_since_recursive_inner(
                         path: p.to_string_lossy().replace("\\", "/"),
                         size,
                         modified: modified.max(created),
+                        media_type,
                     });
                 }
             }
@@ -403,6 +419,35 @@ mod tests {
 
     fn normalized(path: &Path) -> String {
         path.to_string_lossy().replace("\\", "/")
+    }
+
+    #[test]
+    fn mixed_media_discovery_classifies_supported_video_candidates() {
+        let root = TestDir::new("mixed-media");
+        let image = root.path.join("still.png");
+        let video = root.path.join("clip.MP4");
+        let unsupported = root.path.join("notes.txt");
+        write_file(&image);
+        write_file(&video);
+        write_file(&unsupported);
+
+        let mut stats = FolderStats::default();
+        scan_dir_recursive(&root.path, &root.path, &mut stats);
+        assert_eq!(stats.image_files, 1);
+        assert_eq!(stats.video_files, 1);
+        assert_eq!(stats.other_files, 1);
+
+        let mut files = Vec::new();
+        collect_images_with_stats_recursive(&root.path, &mut files);
+        files.sort_by(|left, right| left.path.cmp(&right.path));
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].media_type, MediaCandidateKind::Video);
+        assert_eq!(files[1].media_type, MediaCandidateKind::Image);
+        assert_eq!(
+            classify_media_path(Path::new("movie.mkv")),
+            Some(MediaCandidateKind::Video)
+        );
+        assert_eq!(classify_media_path(Path::new("audio.mp3")), None);
     }
 
     #[cfg(unix)]

@@ -1,47 +1,32 @@
-import fs from 'node:fs';
-import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import process from 'node:process';
 
-const rootDir = process.cwd();
+import { readRepositoryVersions } from './version-files.mjs';
 
-const readJson = (relativePath) => {
-  const absolutePath = path.join(rootDir, relativePath);
-  return JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
-};
+export const validateVersionConsistency = ({ rootDir = process.cwd() } = {}) => {
+  const versions = readRepositoryVersions(rootDir);
+  const packageVersion = versions.find(({ path }) => path === 'package.json')?.version;
+  const mismatches = versions.filter(({ version }) => version !== packageVersion);
 
-const readCargoVersion = (relativePath) => {
-  const absolutePath = path.join(rootDir, relativePath);
-  const cargoToml = fs.readFileSync(absolutePath, 'utf8');
-  const versionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"$/m);
-
-  if (!versionMatch) {
-    throw new Error(`Could not find Cargo version in ${relativePath}`);
+  if (mismatches.length > 0) {
+    const details = mismatches.map(({ path, version }) => `${path}: ${version}`).join('\n');
+    throw new Error(
+      `Version mismatch detected. Expected all versions to match package.json.\n` +
+        `package.json: ${packageVersion}\n${details}`,
+    );
   }
 
-  return versionMatch[1];
+  return packageVersion;
 };
 
-const packageVersion = readJson('package.json').version;
-const tauriVersion = readJson('src-tauri/tauri.conf.json').version;
-const tauriDevVersion = readJson('src-tauri/tauri.dev.json').version;
-const cargoVersion = readCargoVersion('src-tauri/Cargo.toml');
+const isCli = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-const mismatches = [
-  ['package.json', packageVersion],
-  ['src-tauri/tauri.conf.json', tauriVersion],
-  ['src-tauri/tauri.dev.json', tauriDevVersion],
-  ['src-tauri/Cargo.toml', cargoVersion],
-].filter(([, version]) => version !== packageVersion);
-
-if (mismatches.length > 0) {
-  console.error('Version mismatch detected. Expected all versions to match package.json.');
-  console.error(`package.json: ${packageVersion}`);
-
-  for (const [relativePath, version] of mismatches) {
-    console.error(`${relativePath}: ${version}`);
+if (isCli) {
+  try {
+    const version = validateVersionConsistency();
+    console.log(`Version check passed: ${version}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    process.exit(1);
   }
-
-  process.exit(1);
 }
-
-console.log(`Version check passed: ${packageVersion}`);

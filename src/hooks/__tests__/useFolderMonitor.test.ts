@@ -209,6 +209,28 @@ describe('useFolderMonitor', () => {
         expect(mockAddToast).not.toHaveBeenCalled();
     });
 
+    it('does not restart startup scanning for the first queued folder added after an empty startup', () => {
+        const { rerender } = renderHook(({ folders }) => useFolderMonitor({
+            isLoaded: true,
+            monitoredFolders: folders,
+            onScan: mockOnScan,
+            addToast: mockAddToast,
+            handleImportPaths: vi.fn(),
+            refreshMetadata: vi.fn()
+        }), {
+            initialProps: { folders: [] as MonitoredFolder[] }
+        });
+
+        rerender({
+            folders: [
+                { id: 'queued', path: '/queued', isActive: true, imageCount: 0, initialScanPending: true }
+            ]
+        });
+
+        expect(mockOnScan).not.toHaveBeenCalled();
+        expect(mockAddToast).not.toHaveBeenCalled();
+    });
+
     it('should not auto-scan newly added folders whose initial import was cancelled', () => {
         const initialFolders: MonitoredFolder[] = [{ id: '1', path: '/test1', isActive: true, imageCount: 0 }];
         const { rerender } = renderHook(({ folders }) => useFolderMonitor({
@@ -1148,6 +1170,6 @@ describe('useFolderMonitor', () => {
         act(() => useLibraryStore.setState({ isLiveWatching: true }));
 
         await waitFor(() => expect(handleImportPaths).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Catch-up: Synced 1 new images', 'success'));
+        await waitFor(() => expect(mockAddToast).toHaveBeenCalledWith('Catch-up: Synced 1 new items', 'success'));
     });
 });

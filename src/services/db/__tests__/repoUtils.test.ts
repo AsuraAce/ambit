@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { GeneratorTool } from '../../../types';
-import { getImageFieldsFull, getImageFieldsLight, mapRowToImage } from '../repoUtils';
+import { getImageFieldsFull, getImageFieldsLight, mapRowToImage, REMOVED_IMAGE_FIELDS } from '../repoUtils';
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
@@ -25,6 +25,9 @@ const baseLightRow = {
     group_id: null,
     board_id: null,
     notes: null,
+    invoke_image_name: 'sample.png',
+    invoke_image_category: 'control',
+    invoke_image_origin: 'internal',
     is_intermediate_gen: 0,
     is_grid_gen: 0,
     model_name: 'Fallback Model',
@@ -49,6 +52,7 @@ describe('repoUtils lightweight image rows', () => {
         expect(fields).toContain('images.source_kind');
         expect(fields).toContain('images.display_timestamp');
         expect(fields).not.toContain('photo_metadata_json');
+        expect(fields).toContain('images.invoke_image_category');
         expect(fields).not.toContain('metadata_json');
         expect(fields).not.toContain('original_metadata_json');
         expect(fields).not.toContain('original_parsed_json');
@@ -69,6 +73,12 @@ describe('repoUtils lightweight image rows', () => {
         expect(getImageFieldsFull('')).toContain('metadata_json');
     });
 
+    it('keeps InvokeAI source facts in Removed lifecycle selections', () => {
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_name');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_category');
+        expect(REMOVED_IMAGE_FIELDS).toContain('invoke_image_origin');
+    });
+
     it('maps prompt metadata from scalar columns without original metadata JSON', () => {
         const image = mapRowToImage(baseLightRow);
 
@@ -78,6 +88,56 @@ describe('repoUtils lightweight image rows', () => {
         expect(image.metadata.steps).toBe(28);
         expect(image.metadata.seed).toBe(0);
         expect(image.originalMetadata).toBeUndefined();
+        expect(image).toMatchObject({
+            invokeImageName: 'sample.png',
+            invokeImageCategory: 'control',
+            invokeImageOrigin: 'internal',
+        });
+    });
+
+    it('maps persisted video fields without treating the source file as a generated poster', () => {
+        const asset = mapRowToImage({
+            ...baseLightRow,
+            id: 'C:/videos/clip.mp4',
+            path: 'C:/videos/clip.mp4',
+            thumbnail_path: null,
+            media_type: 'video',
+            generation_type: 'text_to_video',
+            media_container: 'MPEG-4',
+            media_mime_type: 'video/mp4',
+            duration_ms: 2_500,
+            video_codec: 'AVC',
+            video_profile: 'High',
+            audio_present: 1,
+            audio_codec: 'AAC',
+            frame_rate_num: 30_000,
+            frame_rate_den: 1_001,
+            rotation_degrees: 90,
+            probe_status: 'ready',
+            playback_status: 'playable',
+        });
+
+        expect(asset).toMatchObject({
+            mediaType: 'video',
+            url: 'asset://C:/videos/clip.mp4',
+            thumbnailUrl: 'asset://C:/videos/clip.mp4',
+            mediaContainer: 'MPEG-4',
+            mediaMimeType: 'video/mp4',
+            durationMs: 2_500,
+            videoCodec: 'AVC',
+            videoProfile: 'High',
+            audioPresent: true,
+            audioCodec: 'AAC',
+            frameRateNum: 30_000,
+            frameRateDen: 1_001,
+            rotationDegrees: 90,
+            probeStatus: 'ready',
+            playbackStatus: 'playable',
+            metadata: expect.objectContaining({
+                generationType: 'text_to_video',
+                generationMode: 'text_to_video',
+            }),
+        });
     });
 
     it('maps photo source/date scalars lightly and photo details only on full rows', () => {

@@ -70,6 +70,10 @@ describe('FoldersTab', () => {
     it('stays focused on watched image folders rather than resource discovery', () => {
         render(<FoldersTab settings={settings} setSettings={vi.fn()} />);
 
+        const infoBanner = screen.getByText('Image Folders').parentElement?.parentElement;
+        expect(infoBanner?.className).toContain('bg-harbor-50');
+        expect(infoBanner?.className).toContain('dark:text-harbor-300');
+        expect(infoBanner?.className).not.toContain('bg-sage');
         expect(screen.getByText('Monitored Folders')).not.toBeNull();
         expect(screen.queryByText(/online model hash resolution/i)).toBeNull();
         expect(screen.queryByText(/resolve online/i)).toBeNull();

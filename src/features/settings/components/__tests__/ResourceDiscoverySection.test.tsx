@@ -123,6 +123,11 @@ describe('ResourceDiscoverySection', () => {
             />
         );
 
+        const discoveryBanner = screen.getByText('Resource Discovery').parentElement?.parentElement?.parentElement;
+        expect(discoveryBanner?.className).toContain('bg-harbor-50');
+        expect(discoveryBanner?.className).toContain('dark:bg-harbor-500/15');
+        expect(screen.getByRole('button', { name: 'Scan Now' }).className).toContain('bg-sage-600');
+
         fireEvent.change(screen.getByPlaceholderText('e.g. D:/StableDiffusion/models/Lora'), {
             target: { value: 'D:/Models/VAE' },
         });

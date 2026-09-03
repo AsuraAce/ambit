@@ -9,12 +9,12 @@ import { MaintenanceItem } from './MaintenanceItem';
 interface MissingTabProps {
     images: AIImage[];
     selectedIds: Set<string>;
-    onItemClick: (id: string, index: number, e: React.MouseEvent) => void;
+    onItemClick: (id: string, index: number, e: React.MouseEvent, revealGranted?: boolean) => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
     onDeleteSelected: () => void;
     onPurgeMissing: () => void;
-    onViewImage: (id: string) => void;
+    onViewImage: (id: string, revealGranted?: boolean) => void;
     maskedKeywords: string[];
     scrollContainerRef: React.RefObject<HTMLElement | null>;
     onRangeSelection: (indexes: number[], isAdditive: boolean) => void;
@@ -36,11 +36,11 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     onBackgroundClick
 }) => {
     const renderItem = useCallback((img: AIImage, style: React.CSSProperties, index: number) => {
-        const overlayActions = (
+        const overlayActions = (revealGranted: boolean) => (
             <button
                 onClick={(e) => {
                     e.stopPropagation();
-                    onViewImage(img.id);
+                    onViewImage(img.id, revealGranted);
                 }}
                 className="px-4 py-2 bg-white/90 dark:bg-zinc-900/90 text-gray-900 dark:text-white rounded-full text-xs font-bold shadow-xl transform scale-90 hover:scale-100 transition-all flex items-center gap-2 hover:bg-white dark:hover:bg-zinc-800"
             >
@@ -54,7 +54,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 img={img}
                 style={style}
                 isSelected={selectedIds.has(img.id)}
-                onClick={(e) => onItemClick(img.id, index, e)}
+                onClick={(e, revealGranted) => onItemClick(img.id, index, e, revealGranted)}
                 maskedKeywords={maskedKeywords}
                 overlayActions={overlayActions}
                 isMissing={true}
@@ -65,8 +65,8 @@ export const MissingTab: React.FC<MissingTabProps> = ({
     if (images.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <div className="p-6 bg-red-500/10 rounded-full mb-6 border border-red-500/20">
-                    <FileWarning className="w-16 h-16 text-red-500" />
+                <div className="mb-6 rounded-full border border-sage-200 bg-sage-50 p-6 dark:border-sage-500/20 dark:bg-sage-500/10">
+                    <FileWarning className="h-16 w-16 text-sage-600 dark:text-sage-300" />
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200 mb-2">No Missing Files</h2>
                 <p className="max-w-md text-center text-gray-500 dark:text-gray-400">
@@ -108,7 +108,7 @@ export const MissingTab: React.FC<MissingTabProps> = ({
                 onClearSelection={onClearSelection}
                 selectedCount={selectedIds.size}
                 actions={actions}
-                variant="red"
+                variant="ember"
             />
 
             <VirtualGrid

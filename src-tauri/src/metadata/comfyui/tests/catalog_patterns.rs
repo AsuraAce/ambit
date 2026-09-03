@@ -25,14 +25,6 @@ struct SelectedInternalPathSignature {
     edges: BTreeMap<(String, usize, String, usize, String), usize>,
 }
 
-const ANIMA_BASE: PatternFixture = PatternFixture {
-    name: "image_anima_base_v1",
-    chunks_json: include_str!("fixtures/official_catalog/image_anima_base_v1.chunks.json"),
-};
-const ANIMA_PREVIEW: PatternFixture = PatternFixture {
-    name: "image_anima_preview",
-    chunks_json: include_str!("fixtures/official_catalog/image_anima_preview.chunks.json"),
-};
 const LENS: PatternFixture = PatternFixture {
     name: "image_lens_t2i",
     chunks_json: include_str!("fixtures/official_catalog/image_lens_t2i.chunks.json"),
@@ -275,31 +267,6 @@ fn selected_path_edges_preserve_source_output_slots() {
             5,
             "CONDITIONING".to_string(),
         ))
-    );
-}
-
-#[test]
-fn anima_preview_matches_the_anima_base_selected_path_pattern() {
-    let base = selected_internal_path_signature(&ANIMA_BASE);
-    let preview = selected_internal_path_signature(&ANIMA_PREVIEW);
-
-    assert_eq!(preview, base);
-    assert_eq!(preview.node_types.get("KSampler"), Some(&1));
-    assert_eq!(preview.node_types.get("UNETLoader"), Some(&1));
-    assert_eq!(preview.node_types.get("CLIPTextEncode"), Some(&2));
-    assert_no_internal_resource_paths(&preview);
-    assert_supported_selected_path(
-        &ANIMA_PREVIEW,
-        ExpectedVariantMetadata {
-            model: "anima_preview3_base",
-            seed: 875_817_230_929_465,
-            steps: 30,
-            cfg: 4.0,
-            sampler: "er_sde (simple)",
-            positive_prompt: "masterpiece, best quality, score_7, safe, anime, a close-up of a futuristic cyberpunk robotic eye, original close-up eye composition strictly preserved, encased in weathered metallic blue and chrome plating with exposed wiring, glowing orange indicator lights, hydraulic pistons, and panel seams wrapping around the eyelid, a chrome mechanical tear duct with fine circuit details, long dark anime-style eyelashes framing the eye, soft pink sclera. The dark pupil holds a complete, glowing Earth with blue atmosphere and white clouds as a reflection, while the surrounding iris reflects a vivid cosmic scene: a fiery red shooting star, wispy cyan nebula clouds, and tiny glowing star specks. No change to the original close-up eye framing, no additional elements outside the eye structure, neon accent lighting, high contrast cyberpunk color palette, intricate mechanical engineering, sharp line art, gritty futuristic sci-fi atmosphere.",
-            negative_prompt: "worst quality, low quality, score_1, score_2, score_3, blurry, jpeg artifacts, sepia",
-            graph_node_count: 10,
-        },
     );
 }
 

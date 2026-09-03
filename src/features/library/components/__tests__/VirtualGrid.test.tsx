@@ -134,6 +134,28 @@ describe('VirtualGrid gallery motion', () => {
         vi.unstubAllGlobals();
     });
 
+    it('keeps a 10,000-item library bounded to the visible window', async () => {
+        const { container: scrollContainer } = createScrollContainer(600, 1_000_000);
+        const scrollContainerRef = { current: scrollContainer };
+        const view = render(
+            <VirtualGrid<TestItem>
+                items={createItems(10_000)}
+                layout="grid"
+                minItemWidth={100}
+                gap={0}
+                padding={0}
+                scrollContainerRef={scrollContainerRef}
+                renderItem={renderItem}
+                transitionKey="invoke-assets:hidden"
+            />
+        );
+
+        await screen.findByTestId('grid-item-item-0');
+        const renderedItems = view.container.querySelectorAll('[data-testid^="grid-item-item-"]');
+        expect(renderedItems.length).toBeLessThan(200);
+        expect(screen.queryByTestId('grid-item-item-9999')).toBeNull();
+    });
+
     it('adds transform transition styles when the transition key changes', async () => {
         const { container } = createScrollContainer();
         const scrollContainerRef = { current: container };

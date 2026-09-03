@@ -127,12 +127,8 @@ fn test_repro_prompts_everywhere_multiple_inputs() {
 
     let meta = extract_comfyui_metadata(&chunks);
 
-    // If it correctly follows both links, it should have both.
-    // However, prompts_everywhere broadcasts to any node that needs it.
-    // Our find_wireless_node needs to handle it.
-
-    assert!(meta.positive_prompt.contains("Positive 1"));
-    assert!(meta.positive_prompt.contains("Positive 2"));
+    assert_eq!(meta.positive_prompt, "Positive 1");
+    assert_eq!(meta.negative_prompt, "Positive 2");
 }
 
 #[test]

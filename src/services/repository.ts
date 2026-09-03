@@ -12,6 +12,7 @@ export interface AppState {
   smartCollections: SmartCollection[];
   settings: AppSettings;
   recentSearches: string[];
+  collectionStorageVersion?: number;
 }
 
 export interface PurgeScheduleResult {
@@ -115,7 +116,8 @@ export class LocalStorageRepository implements IRepository {
         ],
         maskedKeywords: ['nsfw', 'blood', 'gore'],
       }),
-      recentSearches: []
+      recentSearches: [],
+      collectionStorageVersion: 1
     };
   }
 }

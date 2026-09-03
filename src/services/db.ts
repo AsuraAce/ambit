@@ -6,3 +6,4 @@ export * from './db/searchRepo';
 export * from './db/maintenanceRepo';
 export * from './db/migrations';
 export * from './db/collectionRepo';
+export * from './db/invokeReferenceRepo';

@@ -188,6 +188,13 @@ describe('WorkflowInspector', () => {
         expect(workflowMocks.updateImageWorkflowHint).not.toHaveBeenCalled();
     });
 
+    it('never sends a video through the image workflow scanner', () => {
+        render(<WorkflowInspector image={{ ...createImage(), mediaType: 'video' }} />);
+
+        expect(workflowMocks.scanImageWorkflow).not.toHaveBeenCalled();
+        expect(screen.getByText(/No workflow data was found/i)).toBeTruthy();
+    });
+
     it('recognizes flat lazy-loaded graphs and persists invalid workflow hints', async () => {
         const flatWorkflow = JSON.stringify({
             one: { class_type: 'KSampler', inputs: { seed: 1 } },
@@ -229,12 +236,15 @@ describe('WorkflowInspector', () => {
         const workflow = JSON.stringify({ nodes: [{ id: 1, type: 'Prompt', inputs: { text: 'hello' } }] });
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
 
-        fireEvent.click(screen.getByTitle('Copy to clipboard'));
+        expect(screen.getByText('Node Graph')).toBeTruthy();
+        expect(screen.queryByText('Full Node Graph')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Copy workflow JSON' }));
         expect(navigator.clipboard.writeText).toHaveBeenCalledWith(workflow);
-        expect(screen.getByText('Copied')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Copied workflow JSON' })).toBeTruthy();
+        expect(screen.getByRole('status').textContent).toBe('Copied workflow JSON');
 
         await act(async () => vi.advanceTimersByTimeAsync(2000));
-        expect(screen.getByText('Copy')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Copy workflow JSON' })).toBeTruthy();
     });
 
     it('downloads workflow JSON and handles cancel and write failures', async () => {
@@ -246,7 +256,7 @@ describe('WorkflowInspector', () => {
         vi.mocked(writeTextFile).mockResolvedValue(undefined);
         render(<WorkflowInspector image={withWorkflow(workflow)} />);
 
-        const download = screen.getByTitle('Download JSON file');
+        const download = screen.getByRole('button', { name: 'Download workflow JSON' });
         fireEvent.click(download);
         await waitFor(() => expect(writeTextFile).toHaveBeenCalledWith('C:/exports/image_workflow.json', workflow));
         expect(save).toHaveBeenCalledWith({
@@ -356,7 +366,7 @@ describe('WorkflowInspector', () => {
         const workflow = JSON.stringify({ nodes: [{ type: 'Prompt' }] });
         vi.mocked(save).mockResolvedValueOnce(null);
         render(<WorkflowInspector image={withWorkflow(workflow, { filename: 'image' })} />);
-        fireEvent.click(screen.getByTitle('Download JSON file'));
+        fireEvent.click(screen.getByRole('button', { name: 'Download workflow JSON' }));
         await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
             defaultPath: 'image_workflow.json'
         })));

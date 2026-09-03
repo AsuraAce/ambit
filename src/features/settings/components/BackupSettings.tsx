@@ -137,7 +137,7 @@ export const BackupSettings: React.FC = () => {
                 )}
             </div>
 
-            <div className="mt-4 flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/10 text-blue-700 dark:text-blue-300 rounded-lg text-xs">
+            <div className="mt-4 flex items-start gap-2 p-3 bg-harbor-50 dark:bg-harbor-900/10 text-harbor-600 dark:text-harbor-300 rounded-lg text-xs">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <p>
                     Production builds create backups automatically once every 24 hours. The newest 3 backups are kept.

@@ -193,7 +193,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
       {isPlaying && (
         <motion.div
           key={`${currentIndex}-${duration}-${isPlaying}`}
-          className="absolute top-0 left-0 h-1 w-full bg-sage-500 z-[70] shadow-[0_0_10px_rgba(99,102,241,0.8)]"
+          className="absolute top-0 left-0 h-1 w-full bg-sage-500 z-[70] shadow-[0_0_10px_rgba(115,140,85,0.8)]"
           initial={{ scaleX: 0, opacity: showHud ? 1 : 0.24 }}
           animate={{ scaleX: 1, opacity: showHud ? 1 : 0.24 }}
           transition={{ duration: duration / 1000, ease: 'linear' }}

@@ -1,4 +1,10 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
+import {
+    commands,
+    type CollectionMembershipMutationResult,
+    type InvokeBoardSnapshotInput,
+    type InvokeBoardSnapshotResult,
+} from '../../bindings';
 import { getDb } from './connection';
 import { normalizePath } from '../../utils/pathUtils';
 import { Collection, FilterState } from '../../types';
@@ -7,6 +13,8 @@ import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
 import { buildSqlWhereClause } from '../../utils/sqlHelpers';
+import { unwrap } from '../../utils/spectaUtils';
+import { assertMutationMatched } from './mutationGuard';
 import {
     addBrowserMockImagesToCollection,
     deleteBrowserMockCollection,
@@ -27,6 +35,11 @@ export interface DbCollection {
     manual_exclusions?: string;
     custom_thumbnail?: string;
     source: 'ambit' | 'invoke';
+    invoke_owner_id?: string | null;
+    invoke_source_id?: string | null;
+    invoke_source_name?: string | null;
+    invoke_source_present?: number;
+    invoke_suppressed?: number;
     updated_at?: number;
     dynamic_thumbnail_path?: string | null;
     dynamic_safe_thumbnail_path?: string | null;
@@ -34,6 +47,46 @@ export interface DbCollection {
     dynamic_thumbnail_cached_at?: number | null;
     dynamic_count?: number | null;
 }
+
+export const migrateLegacyCollections = async (
+    collections: Array<Partial<Collection> & { id: string; name: string }>
+): Promise<void> => {
+    if (isBrowserMockMode()) {
+        collections.forEach((collection) => {
+            const existing = getBrowserMockCollections().find(item => item.id === collection.id);
+            upsertBrowserMockCollection({
+                ...existing,
+                ...collection,
+                imageIds: [...new Set([...(existing?.imageIds ?? []), ...(collection.imageIds ?? [])])],
+                source: existing?.source ?? 'ambit',
+                invokeOwnerId: existing?.invokeOwnerId,
+                invokeSourceId: existing?.invokeSourceId,
+            });
+        });
+        return;
+    }
+
+    await unwrap(commands.migrateLegacyCollections({
+        importKey: 'library-json-collections-v1',
+        collections: collections.map(collection => ({
+            id: collection.id,
+            name: collection.name,
+            color: collection.color ?? null,
+            isArchived: collection.isArchived ?? false,
+            isPinned: collection.isPinned ?? false,
+            createdAt: collection.createdAt ?? Date.now(),
+            updatedAt: collection.updatedAt ?? null,
+            filterState: collection.filters
+                ? JSON.stringify(createDefaultFilters(collection.filters))
+                : null,
+            manualExclusions: collection.manualExclusions
+                ? JSON.stringify(collection.manualExclusions)
+                : null,
+            customThumbnail: collection.customThumbnail ?? null,
+            imageIds: collection.imageIds?.map(normalizePath) ?? [],
+        })),
+    }));
+};
 
 interface CollectionThumbnailRow {
     collection_id: string;
@@ -47,11 +100,15 @@ interface ImageThumbnailLookupRow {
     path: string;
     thumb?: string | null;
     privacy_hidden?: number | null;
+    invoke_scope_hidden?: number | null;
+    media_type?: string | null;
 }
 
 interface CustomThumbnailMatch {
     thumb?: string | null;
     privacyHidden?: number | null;
+    ownerHidden?: boolean;
+    isVideo?: boolean;
 }
 
 export interface SmartCollectionSummary {
@@ -150,8 +207,18 @@ const loadImageThumbnailLookup = async (
     for (const batch of batches) {
         const placeholders = batch.map(() => '?').join(',');
         const rows = await db.select<ImageThumbnailLookupRow[]>(
-            `SELECT id, path, COALESCE(NULLIF(thumbnail_path, ''), path) as thumb, privacy_hidden
-             FROM images
+            `SELECT images.id, images.path,
+                    CASE
+                        WHEN images.media_type = 'video' THEN NULLIF(images.thumbnail_path, '')
+                        ELSE COALESCE(NULLIF(images.thumbnail_path, ''), images.path)
+                    END as thumb,
+                    images.privacy_hidden,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM scoped_images AS visible_images
+                        WHERE visible_images.id = images.id
+                    ) THEN 0 ELSE 1 END AS invoke_scope_hidden,
+                    images.media_type
+             FROM images AS images
              WHERE ${column} IN (${placeholders})`,
             batch
         );
@@ -160,7 +227,9 @@ const loadImageThumbnailLookup = async (
             const key = column === 'id' ? row.id : row.path;
             matches.set(key, {
                 thumb: row.thumb,
-                privacyHidden: row.privacy_hidden
+                privacyHidden: row.privacy_hidden,
+                ownerHidden: row.invoke_scope_hidden === 1,
+                isVideo: row.media_type === 'video',
             });
         });
     }
@@ -321,6 +390,20 @@ export const clearAllCollectionThumbnailCaches = async () => {
     );
 };
 
+export const clearCollectionOwnerScopeCaches = async () => {
+    if (isBrowserMockMode()) return;
+
+    const db = await getDb();
+    await db.execute(
+        `UPDATE collections
+         SET dynamic_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_path END,
+             dynamic_safe_thumbnail_path = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_safe_thumbnail_path END,
+             dynamic_thumbnail_is_sensitive = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_is_sensitive END,
+             dynamic_thumbnail_cached_at = CASE WHEN custom_thumbnail IS NULL OR custom_thumbnail = '' THEN NULL ELSE dynamic_thumbnail_cached_at END,
+             dynamic_count = CASE WHEN filter_state IS NOT NULL THEN NULL ELSE dynamic_count END`
+    );
+};
+
 const buildCollectionThumbnailSummaries = async (
     db: Awaited<ReturnType<typeof getDb>>,
     collections: CollectionThumbnailInput[]
@@ -352,8 +435,9 @@ const buildCollectionThumbnailSummaries = async (
                         ORDER BY i.is_pinned DESC, i.timestamp DESC
                     ) as privacy_rank
                 FROM collection_images ci
-                INNER JOIN images i ON ci.image_id = i.id
+                INNER JOIN scoped_images i ON ci.image_id = i.id
                 WHERE ci.collection_id IN (${placeholders})
+                    AND i.invoke_scope_hidden = 0
                     AND i.is_deleted = 0
                     AND i.thumbnail_path IS NOT NULL
                     AND i.thumbnail_path != ''
@@ -390,13 +474,20 @@ const buildCollectionThumbnailSummaries = async (
         let thumbnailSourceKind: Collection['thumbnailSourceKind'] = 'dynamic';
 
         if (collection.custom_thumbnail) {
-            if (customThumb) {
-                rawThumb = customThumb.thumb || collection.custom_thumbnail;
+            if (customThumb?.ownerHidden) {
+                rawThumb = undefined;
+                safeThumb = undefined;
+                thumbnailIsSensitive = false;
+                thumbnailSourceKind = 'customImage';
+            } else if (customThumb) {
+                rawThumb = customThumb.thumb || (customThumb.isVideo ? undefined : collection.custom_thumbnail);
                 safeThumb = undefined;
                 thumbnailIsSensitive = customThumb.privacyHidden === 1;
                 thumbnailSourceKind = 'customImage';
             } else {
-                rawThumb = collection.custom_thumbnail;
+                rawThumb = /\.(mp4|webm|mov|m4v|mkv)(?:$|[?#])/i.test(collection.custom_thumbnail)
+                    ? undefined
+                    : collection.custom_thumbnail;
                 safeThumb = undefined;
                 thumbnailIsSensitive = false;
                 thumbnailSourceKind = 'customPath';
@@ -497,6 +588,10 @@ export const ensureCollectionSchema = async () => {
                 'dynamic_count',
                 'ALTER TABLE collections ADD COLUMN dynamic_count INTEGER'
             );
+            await addColumnIfMissing(
+                'invoke_owner_id',
+                'ALTER TABLE collections ADD COLUMN invoke_owner_id TEXT'
+            );
         } catch (e) {
             console.error('[DB] Failed to ensure collection schema', e);
         }
@@ -517,9 +612,9 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
             : null;
 
         try {
-            await db.execute(
-                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            const result = await db.execute(
+                `INSERT INTO collections (id, name, color, is_archived, is_pinned, created_at, filter_state, manual_exclusions, custom_thumbnail, source, invoke_owner_id, invoke_source_id, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 color = excluded.color,
@@ -535,13 +630,13 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                 filter_state = excluded.filter_state,
                 manual_exclusions = excluded.manual_exclusions,
                 custom_thumbnail = excluded.custom_thumbnail,
-                source = excluded.source,
                 updated_at = CASE
                     WHEN collections.filter_state IS excluded.filter_state
                      AND collections.manual_exclusions IS excluded.manual_exclusions
                     THEN excluded.updated_at
                     ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
-                END`,
+                END
+             WHERE collections.id IN (SELECT id FROM scoped_collections)`,
                 [
                     collection.id,
                     collection.name,
@@ -553,15 +648,231 @@ export const upsertCollection = async (collection: Partial<Collection> & { id: s
                     collection.manualExclusions ? JSON.stringify(collection.manualExclusions) : null,
                     collection.customThumbnail || null,
                     collection.source || 'ambit',
+                    collection.invokeOwnerId || null,
+                    collection.invokeSourceId || null,
                     collection.updatedAt || now,
                     now
                 ]
             );
+            assertMutationMatched(result, collection.id, 'Saving collection', 'collection');
         } catch (e) {
             console.error(`[DB] Failed to upsert collection ${collection.id}`, e);
             throw e;
         }
     });
+};
+
+export interface AmbitCollectionScopeTarget {
+    mode: 'all' | 'owner';
+    dbPath: string;
+    ownerId?: string;
+}
+
+export const updateAmbitCollectionScope = async (
+    collectionId: string,
+    target: AmbitCollectionScopeTarget
+): Promise<void> => {
+    if (isBrowserMockMode()) {
+        const collection = getBrowserMockCollections().find(item => item.id === collectionId);
+        if (!collection || collection.source === 'invoke') return;
+        upsertBrowserMockCollection({
+            ...collection,
+            invokeSourceId: target.dbPath,
+            invokeOwnerId: target.mode === 'owner' ? target.ownerId : undefined,
+        });
+        return;
+    }
+
+    await unwrap(commands.updateAmbitCollectionScope({
+        collectionId,
+        mode: target.mode,
+        dbPath: target.dbPath,
+        ownerId: target.mode === 'owner' ? target.ownerId ?? null : null,
+    }));
+};
+
+export interface InvokeBoardCollectionInput {
+    id: string;
+    name: string;
+    createdAt: number;
+    invokeOwnerId?: string;
+    invokeSourceId: string;
+}
+
+export interface SuppressedInvokeCollection {
+    id: string;
+    name: string;
+    invokeSourceName?: string;
+    invokeSourcePresent: boolean;
+    invokeOwnerId?: string;
+}
+
+export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionInput) => {
+    if (isBrowserMockMode()) {
+        const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
+        const followsSource = !!existing?.invokeSourceName && existing.name === existing.invokeSourceName;
+        upsertBrowserMockCollection({
+            ...existing,
+            ...board,
+            name: existing && !followsSource ? existing.name : board.name,
+            imageIds: [],
+            source: 'invoke',
+            invokeSourceName: board.name,
+            invokeSourcePresent: true,
+        });
+        return;
+    }
+
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const now = Date.now();
+        await db.execute(
+            `INSERT INTO collections (
+                id, name, is_archived, is_pinned, created_at, source, invoke_owner_id,
+                invoke_source_id, invoke_source_name, invoke_source_present, updated_at
+             ) VALUES (?, ?, 0, 0, ?, 'invoke', ?, ?, ?, 1, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = CASE
+                    WHEN collections.invoke_source_name IS NOT NULL
+                     AND collections.name IS collections.invoke_source_name
+                    THEN excluded.name
+                    ELSE collections.name
+                END,
+                source = 'invoke',
+                invoke_owner_id = excluded.invoke_owner_id,
+                invoke_source_id = excluded.invoke_source_id,
+                invoke_source_name = excluded.invoke_source_name,
+                invoke_source_present = 1,
+                updated_at = CASE
+                    WHEN collections.invoke_source_name IS NULL
+                     AND collections.source IS 'invoke'
+                     AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                     AND collections.invoke_source_id IS excluded.invoke_source_id
+                     AND collections.invoke_source_present = 1
+                    THEN collections.updated_at
+                    WHEN collections.invoke_source_name IS excluded.invoke_source_name
+                     AND collections.source IS 'invoke'
+                     AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                     AND collections.invoke_source_id IS excluded.invoke_source_id
+                     AND collections.invoke_source_present = 1
+                    THEN collections.updated_at
+                    ELSE MAX(COALESCE(collections.updated_at, 0) + 1, ?)
+                END`,
+            [
+                board.id,
+                board.name,
+                board.createdAt,
+                board.invokeOwnerId || null,
+                board.invokeSourceId,
+                board.name,
+                now,
+                now,
+            ]
+        );
+    });
+};
+
+export const upsertInvokeBoardCollections = async (
+    boards: InvokeBoardCollectionInput[]
+): Promise<number> => {
+    if (boards.length === 0) return 0;
+    if (isBrowserMockMode()) {
+        boards.forEach(board => {
+            const existing = getBrowserMockCollections().find(collection => collection.id === board.id);
+            const followsSource = !!existing?.invokeSourceName && existing.name === existing.invokeSourceName;
+            upsertBrowserMockCollection({
+                ...existing,
+                ...board,
+                name: existing && !followsSource ? existing.name : board.name,
+                imageIds: [],
+                source: 'invoke',
+                invokeSourceName: board.name,
+                invokeSourcePresent: true,
+            });
+        });
+        return boards.length;
+    }
+
+    return dbMutex.dispatch(async () => {
+        const db = await getDb();
+        const now = Date.now();
+        let updated = 0;
+
+        for (let offset = 0; offset < boards.length; offset += 100) {
+            const batch = boards.slice(offset, offset + 100);
+            const values = batch.map(() => "(?, ?, 0, 0, ?, 'invoke', ?, ?, ?, 1, ?)").join(', ');
+            const params = batch.flatMap(board => [
+                board.id,
+                board.name,
+                board.createdAt,
+                board.invokeOwnerId || null,
+                board.invokeSourceId,
+                board.name,
+                now,
+            ]);
+            const result = await db.execute(
+                `INSERT INTO collections (
+                    id, name, is_archived, is_pinned, created_at, source, invoke_owner_id,
+                    invoke_source_id, invoke_source_name, invoke_source_present, updated_at
+                 ) VALUES ${values}
+                 ON CONFLICT(id) DO UPDATE SET
+                    name = CASE
+                        WHEN collections.invoke_source_name IS NOT NULL
+                         AND collections.name IS collections.invoke_source_name
+                        THEN excluded.name
+                        ELSE collections.name
+                    END,
+                    source = 'invoke',
+                    invoke_owner_id = excluded.invoke_owner_id,
+                    invoke_source_id = excluded.invoke_source_id,
+                    invoke_source_name = excluded.invoke_source_name,
+                    invoke_source_present = 1,
+                    updated_at = CASE
+                        WHEN collections.invoke_source_name IS NULL
+                         AND collections.source IS 'invoke'
+                         AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                         AND collections.invoke_source_id IS excluded.invoke_source_id
+                         AND collections.invoke_source_present = 1
+                        THEN collections.updated_at
+                        ELSE MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+                    END
+                 WHERE collections.source IS NOT 'invoke'
+                    OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
+                    OR collections.invoke_source_id IS NOT excluded.invoke_source_id
+                    OR collections.invoke_source_name IS NOT excluded.invoke_source_name
+                    OR collections.invoke_source_present != 1`,
+                params
+            );
+            updated += result.rowsAffected;
+        }
+
+        return updated;
+    });
+};
+
+export const reconcileInvokeBoardSnapshot = async (
+    input: InvokeBoardSnapshotInput
+): Promise<InvokeBoardSnapshotResult> => {
+    if (isBrowserMockMode()) {
+        input.boards.forEach(board => upsertBrowserMockCollection({
+            id: board.id,
+            name: board.name,
+            createdAt: board.createdAt,
+            invokeOwnerId: board.ownerId ?? undefined,
+            invokeSourceId: input.dbPath,
+            imageIds: [],
+            source: 'invoke',
+        }));
+        return {
+            collectionsUpdated: input.boards.length,
+            collectionsDeleted: 0,
+            imagesUpdated: 0,
+            membershipsDeleted: 0,
+            membershipsInserted: 0,
+        };
+    }
+
+    return unwrap(commands.reconcileInvokeBoardSnapshot(input));
 };
 
 export const setCollectionCustomThumbnail = async (collectionId: string, imageId: string | null) => {
@@ -573,63 +884,171 @@ export const setCollectionCustomThumbnail = async (collectionId: string, imageId
     }
 
     return dbMutex.dispatch(async () => {
-        const db = await getDb();
-        await db.execute(
-            'UPDATE collections SET custom_thumbnail = ?, updated_at = ? WHERE id = ?',
-            [imageId, Date.now(), collectionId]
-        );
-        if (imageId === null) {
-            await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
-        }
+        await unwrap(commands.setCollectionCustomThumbnail(collectionId, imageId));
     });
 };
 
 export const deleteCollectionFromDb = async (id: string) => {
     if (isBrowserMockMode()) {
-        deleteBrowserMockCollection(id);
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke') {
+            upsertBrowserMockCollection({ ...collection, invokeSuppressed: true });
+        } else {
+            deleteBrowserMockCollection(id);
+        }
         return;
     }
 
     const db = await getDb();
-    await db.execute('DELETE FROM collections WHERE id = ?', [id]);
+    const [collection] = await db.select<Array<{ source: 'ambit' | 'invoke' }>>(
+        'SELECT source FROM scoped_collections WHERE id = ?',
+        [id]
+    );
+    if (!collection) {
+        throw new Error(`Deleting collection failed: collection was not found (${id})`);
+    }
+    if (collection.source === 'invoke') {
+        await unwrap(commands.updateInvokeCollectionOwnership(id, 'suppress'));
+        return;
+    }
+    const result = await db.execute(
+        'DELETE FROM collections WHERE id = ? AND id IN (SELECT id FROM scoped_collections)',
+        [id]
+    );
+    assertMutationMatched(result, id, 'Deleting collection', 'collection');
 };
 
-export const addImagesToCollection = async (collectionId: string, imageIds: string[]) => {
+export const resetInvokeCollection = async (id: string): Promise<void> => {
+    if (isBrowserMockMode()) {
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke' && collection.invokeSourceName) {
+            upsertBrowserMockCollection({ ...collection, name: collection.invokeSourceName });
+        }
+        return;
+    }
+    await unwrap(commands.updateInvokeCollectionOwnership(id, 'reset'));
+};
+
+export const restoreInvokeCollection = async (id: string): Promise<void> => {
+    if (isBrowserMockMode()) {
+        const collection = getBrowserMockCollections().find(item => item.id === id);
+        if (collection?.source === 'invoke') {
+            upsertBrowserMockCollection({ ...collection, invokeSuppressed: false });
+        }
+        return;
+    }
+    await unwrap(commands.updateInvokeCollectionOwnership(id, 'restore'));
+};
+
+export const getSuppressedInvokeCollections = async (): Promise<SuppressedInvokeCollection[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections()
+            .filter(collection => collection.source === 'invoke' && collection.invokeSuppressed)
+            .map(collection => ({
+                id: collection.id,
+                name: collection.name,
+                invokeSourceName: collection.invokeSourceName,
+                invokeSourcePresent: collection.invokeSourcePresent !== false,
+                invokeOwnerId: collection.invokeOwnerId,
+            }));
+    }
+
+    const db = await getDb();
+    const rows = await db.select<Array<{
+        id: string;
+        name: string;
+        invoke_source_name?: string | null;
+        invoke_source_present: number;
+        invoke_owner_id?: string | null;
+    }>>(
+        `SELECT c.id, c.name, c.invoke_source_name, c.invoke_source_present, c.invoke_owner_id
+         FROM collections c
+         JOIN invoke_owner_scope_state s ON s.state_key = 'current'
+         WHERE COALESCE(c.source, 'ambit') = 'invoke'
+           AND c.invoke_suppressed = 1
+           AND c.invoke_source_id = s.db_path
+           AND (
+                s.scope_mode IN ('legacy', 'all')
+                OR (
+                    s.scope_mode = 'owner'
+                    AND c.invoke_owner_id IS NOT NULL
+                    AND c.invoke_owner_id = s.owner_id
+                    AND s.boards_verified = 1
+                    AND c.invoke_board_verified = 1
+                )
+           )
+         ORDER BY LOWER(c.name), c.id`
+    );
+    return rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        invokeSourceName: row.invoke_source_name || undefined,
+        invokeSourcePresent: row.invoke_source_present !== 0,
+        invokeOwnerId: row.invoke_owner_id || undefined,
+    }));
+};
+
+const browserMembershipResult = (
+    imageIds: string[],
+    sourceCollectionId: string | null,
+    targetCollectionId: string | null
+): CollectionMembershipMutationResult => ({
+    affectedIds: [...new Set(imageIds.map(normalizePath))],
+    sourceCollectionId,
+    targetCollectionId,
+});
+
+export const addImagesToCollection = async (
+    collectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         addBrowserMockImagesToCollection(collectionId, imageIds);
-        return;
+        return browserMembershipResult(imageIds, null, collectionId);
     }
 
-    return dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const now = Date.now();
-        for (const imgId of imageIds) {
-            await db.execute(
-                'INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)',
-                [collectionId, normalizePath(imgId)]
-            );
-        }
-        // Update collection timestamp
-        await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [now, collectionId]);
-        await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
-    });
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'add',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId: null,
+        targetCollectionId: collectionId,
+    }));
 };
 
-export const removeImagesFromCollection = async (collectionId: string, imageIds: string[]) => {
+export const removeImagesFromCollection = async (
+    collectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
     if (isBrowserMockMode()) {
         removeBrowserMockImagesFromCollection(collectionId, imageIds);
-        return;
+        return browserMembershipResult(imageIds, collectionId, null);
     }
 
-    const db = await getDb();
-    const placeholders = imageIds.map(() => '?').join(',');
-    await db.execute(
-        `DELETE FROM collection_images WHERE collection_id = ? AND image_id IN (${placeholders})`,
-        [collectionId, ...imageIds.map(normalizePath)]
-    );
-    // Update collection timestamp
-    await db.execute('UPDATE collections SET updated_at = ? WHERE id = ?', [Date.now(), collectionId]);
-    await clearDynamicThumbnailCacheForCollections(db, [collectionId]);
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'remove',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId: collectionId,
+        targetCollectionId: null,
+    }));
+};
+
+export const moveImagesBetweenCollections = async (
+    sourceCollectionId: string,
+    targetCollectionId: string,
+    imageIds: string[]
+): Promise<CollectionMembershipMutationResult> => {
+    if (isBrowserMockMode()) {
+        removeBrowserMockImagesFromCollection(sourceCollectionId, imageIds);
+        addBrowserMockImagesToCollection(targetCollectionId, imageIds);
+        return browserMembershipResult(imageIds, sourceCollectionId, targetCollectionId);
+    }
+
+    return unwrap(commands.mutateCollectionMembership({
+        operation: 'move',
+        imageIds: imageIds.map(normalizePath),
+        sourceCollectionId,
+        targetCollectionId,
+    }));
 };
 
 export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
@@ -641,12 +1060,15 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     const startedAt = nowMs();
     const db = await getDb();
 
-    // Get all collections
-    const collections = await db.select<DbCollection[]>('SELECT * FROM collections');
+    const collections = await db.select<DbCollection[]>('SELECT * FROM scoped_collections');
 
     // Get counts from junction table
     const counts = await db.select<{ collection_id: string, count: number }[]>(
-        'SELECT collection_id, COUNT(*) as count FROM collection_images GROUP BY collection_id'
+        `SELECT ci.collection_id, COUNT(*) as count
+         FROM collection_images ci
+         INNER JOIN scoped_images i ON i.id = ci.image_id
+         WHERE i.invoke_scope_hidden = 0
+         GROUP BY ci.collection_id`
     );
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
@@ -665,7 +1087,12 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             customThumbnail: c.custom_thumbnail,
             filters,
             manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
-            source: c.source
+            source: c.source,
+            invokeOwnerId: c.invoke_owner_id || undefined,
+            invokeSourceId: c.invoke_source_id || undefined,
+            invokeSourceName: c.invoke_source_name || undefined,
+            invokeSourcePresent: c.invoke_source_present !== 0,
+            invokeSuppressed: c.invoke_suppressed === 1,
         };
         const cachedThumbnail = getCachedDynamicThumbnailSummary(c);
         return cachedThumbnail ? { ...collection, ...cachedThumbnail } : collection;
@@ -773,6 +1200,7 @@ export const getSmartCollectionSummaries = async (
     try {
         const queries = smartCollections.map(c => {
             const statsFilters: FilterState = {
+                mediaType: 'all',
                 collectionId: c.id,
                 dateRange: 'all',
                 favoritesOnly: false,
@@ -794,7 +1222,7 @@ export const getSmartCollectionSummaries = async (
 
         // SQLite UNION ALL approach for batched counts - using denormalized columns, no JOIN needed
         const unionSql = queries.map(q =>
-            `SELECT ? as id, (SELECT COUNT(*) FROM images ${q.where}) as count`
+            `SELECT ? as id, (SELECT COUNT(*) FROM scoped_images AS images ${q.where}) as count`
         ).join(' UNION ALL ');
         const unionParams = queries.flatMap(q => [q.id, ...q.params]);
 
@@ -813,7 +1241,7 @@ export const getSmartCollectionSummaries = async (
                 query.id,
                 () => db.select<{ thumbnail_path?: string | null; privacy_hidden?: number | null }[]>(
                 `SELECT thumbnail_path, privacy_hidden
-                 FROM images
+                 FROM scoped_images AS images
                  ${query.where}
                  AND thumbnail_path IS NOT NULL
                  AND thumbnail_path != ''
@@ -827,7 +1255,7 @@ export const getSmartCollectionSummaries = async (
                 query.id,
                 () => db.select<{ thumbnail_path?: string | null }[]>(
                 `SELECT thumbnail_path
-                 FROM images
+                 FROM scoped_images AS images
                  ${query.where}
                  AND privacy_hidden = 0
                  AND thumbnail_path IS NOT NULL
@@ -895,8 +1323,9 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
 
             const query = `
                 SELECT thumbnail_path as path, timestamp, is_pinned
-                FROM images 
+                FROM scoped_images AS images
                 WHERE (id IN (${placeholders}) OR path IN (${placeholders}))
+                AND invoke_scope_hidden = 0
                 AND is_deleted = 0 
                 ORDER BY is_pinned DESC, timestamp DESC 
                 LIMIT 1
@@ -940,7 +1369,7 @@ export const getSmartCollectionThumbnail = async (whereClause: string, params: u
     try {
         const query = `
             SELECT images.thumbnail_path, images.timestamp, images.is_pinned
-            FROM images
+            FROM scoped_images AS images
             LEFT JOIN models m ON json_extract(images.metadata_json, '$.modelHash') = m.hash
             ${whereClause.replace(/WHERE /i, 'WHERE images.')}
             ORDER BY images.is_pinned DESC, images.timestamp DESC

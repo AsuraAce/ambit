@@ -53,6 +53,30 @@ describe('sqlHelpers', () => {
             expect(where).toContain('is_pinned = 1');
         });
 
+        it.each(['image', 'video'] as const)('filters the library to %s assets', (mediaType) => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).toContain('media_type = ?');
+            expect(params).toEqual([mediaType]);
+        });
+
+        it('does not constrain media type for the All filter', () => {
+            const { where, params } = buildSqlWhereClause(
+                { ...defaultFilters, mediaType: 'all' },
+                false,
+                'blur',
+                []
+            );
+
+            expect(where).not.toContain('media_type = ?');
+            expect(params).toEqual([]);
+        });
+
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
             expect(where).toContain("resolved_model_name = ?");
@@ -482,6 +506,30 @@ describe('sqlHelpers', () => {
                 expect(params).toContain('%ocean%');
             });
 
+            it('keeps an owner-scoped Ambit smart collection owner-limited in All Users', () => {
+                const ownerCollection: Collection = {
+                    ...mockCollections[1],
+                    id: 'owner-smart',
+                    source: 'ambit',
+                    invokeSourceId: 'C:/Invoke/databases/invokeai.db',
+                    invokeOwnerId: 'jupiter',
+                };
+                const { where, params } = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: ownerCollection.id },
+                    false,
+                    'blur',
+                    [],
+                    [ownerCollection]
+                );
+
+                expect(where).toContain('invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?)');
+                expect(params).toEqual([
+                    '%ocean%',
+                    'C:/Invoke/databases/invokeai.db',
+                    'jupiter',
+                ]);
+            });
+
             it('should pre-empt smart collection date if global date is set', () => {
                 const smartColWithDate: Collection = {
                     id: 'col_date',
@@ -645,19 +693,29 @@ describe('sqlHelpers', () => {
             expect(result.params).toEqual([]);
         });
 
-        it('allows intermediates and grids and uses Match Any for ControlNet and IP-Adapter filters', () => {
+        it('allows hidden image types and uses Match Any for ControlNet and IP-Adapter filters', () => {
             const result = buildSqlWhereClause({
                 ...defaultFilters,
                 showIntermediates: true,
                 showGrids: true,
+                showInvokeImageAssets: true,
                 controlNets: ['Canny', 'Depth'],
                 ipAdapters: ['Face', 'Style'],
                 matchModes: { controlNets: 'any', ipAdapters: 'any' }
             }, false, 'blur', []);
             expect(result.where).not.toContain('is_intermediate_gen');
             expect(result.where).not.toContain('is_grid_gen');
+            expect(result.where).not.toContain('is_invoke_asset_gen');
             expect(result.where).toContain('image_controlnets');
             expect(result.where).toContain(') OR EXISTS (');
+        });
+
+        it('hides only classified InvokeAI image assets at the outer query scope', () => {
+            const hidden = buildSqlWhereClause(defaultFilters, false, 'blur', []);
+            const recursive = buildSqlWhereClause(defaultFilters, false, 'blur', [], undefined, true);
+
+            expect(hidden.where).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
+            expect(recursive.where).not.toContain('is_invoke_asset_gen');
         });
 
         describe('Match Modes', () => {

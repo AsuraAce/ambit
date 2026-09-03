@@ -4,6 +4,8 @@ use rusqlite::{params, Connection};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::models::FileMetadataProbe;
+
 pub fn verify_image_paths_impl(paths: Vec<String>) -> Vec<String> {
     paths
         .par_iter()
@@ -19,6 +21,38 @@ pub fn get_file_sizes_bulk_impl(paths: Vec<String>) -> Vec<u64> {
         sizes.push(size);
     }
     sizes
+}
+
+pub fn probe_file_metadata_bulk_impl(paths: Vec<String>) -> Vec<FileMetadataProbe> {
+    paths
+        .into_par_iter()
+        .map(|path| match fs::metadata(&path) {
+            Ok(metadata) => FileMetadataProbe::Present {
+                size: metadata.len(),
+                is_file: metadata.is_file(),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                FileMetadataProbe::Missing
+            }
+            Err(error) => FileMetadataProbe::Error {
+                message: error.to_string(),
+            },
+        })
+        .collect()
+}
+
+pub fn validate_metadata_probe_paths<F>(paths: &[String], mut is_allowed: F) -> Result<(), String>
+where
+    F: FnMut(&Path) -> bool,
+{
+    for path in paths {
+        if path.trim().is_empty() || !is_allowed(Path::new(path)) {
+            return Err(format!(
+                "File metadata probe path is outside the allowed filesystem scope: {path}"
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub fn open_file_impl(app: &tauri::AppHandle, path: String) -> Result<(), String> {
@@ -149,11 +183,13 @@ fn path_is_known_media_file(
     let is_known: i64 = conn
         .query_row(
             "SELECT EXISTS(
-                SELECT 1 FROM images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                SELECT 1 FROM scoped_images
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
                 UNION ALL
-                SELECT 1 FROM removed_images
-                WHERE id IN (?1, ?2) OR path IN (?1, ?2)
+                SELECT 1 FROM scoped_removed_images
+                WHERE invoke_scope_hidden = 0
+                  AND (id IN (?1, ?2) OR path IN (?1, ?2))
             )",
             params![requested, canonical],
             |row| row.get(0),
@@ -234,13 +270,66 @@ fn normalize_path_string(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        resolve_existing_regular_file, resolve_existing_show_target,
+        probe_file_metadata_bulk_impl, resolve_existing_regular_file, resolve_existing_show_target,
         resolve_known_media_file_target, resolve_show_in_folder_target,
+        validate_metadata_probe_paths,
     };
+    use crate::scanner::models::FileMetadataProbe;
     use rusqlite::Connection;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn bulk_metadata_probe_distinguishes_present_paths_from_missing_paths() {
+        let temp_root = temp_dir("metadata_probe");
+        fs::create_dir_all(&temp_root).unwrap();
+        let zero_byte = temp_root.join("zero-byte.png");
+        let missing = temp_root.join("missing.png");
+        let directory = temp_root.join("directory");
+        fs::write(&zero_byte, []).unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        let probes = probe_file_metadata_bulk_impl(vec![
+            zero_byte.to_string_lossy().to_string(),
+            missing.to_string_lossy().to_string(),
+            directory.to_string_lossy().to_string(),
+        ]);
+
+        assert_eq!(
+            probes,
+            vec![
+                FileMetadataProbe::Present {
+                    size: 0,
+                    is_file: true,
+                },
+                FileMetadataProbe::Missing,
+                FileMetadataProbe::Present {
+                    size: fs::metadata(&directory).unwrap().len(),
+                    is_file: false,
+                },
+            ]
+        );
+
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn bulk_metadata_probe_rejects_paths_outside_registered_scope() {
+        let paths = vec![
+            "D:/Library/allowed.png".to_string(),
+            "C:/private/outside.png".to_string(),
+        ];
+
+        let result = validate_metadata_probe_paths(&paths, |path| {
+            path.to_string_lossy().starts_with("D:/Library/")
+        });
+
+        assert_eq!(
+            result,
+            Err("File metadata probe path is outside the allowed filesystem scope: C:/private/outside.png".to_string())
+        );
+    }
 
     #[test]
     fn os_open_media_targets_require_known_regular_files() {
@@ -248,10 +337,14 @@ mod tests {
         fs::create_dir_all(&temp_root).unwrap();
         let image = temp_root.join("image.png");
         let removed = temp_root.join("removed.png");
+        let owner_hidden = temp_root.join("owner-hidden.png");
+        let removed_owner_hidden = temp_root.join("removed-owner-hidden.png");
         let untracked = temp_root.join("untracked.png");
         let directory = temp_root.join("directory");
         fs::write(&image, b"image").unwrap();
         fs::write(&removed, b"removed").unwrap();
+        fs::write(&owner_hidden, b"owner hidden").unwrap();
+        fs::write(&removed_owner_hidden, b"removed owner hidden").unwrap();
         fs::write(&untracked, b"untracked").unwrap();
         fs::create_dir_all(&directory).unwrap();
 
@@ -268,6 +361,19 @@ mod tests {
             [&removed_path],
         )
         .unwrap();
+        let owner_hidden_path = normalize(&fs::canonicalize(&owner_hidden).unwrap());
+        let removed_owner_hidden_path =
+            normalize(&fs::canonicalize(&removed_owner_hidden).unwrap());
+        conn.execute(
+            "INSERT INTO images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            [&owner_hidden_path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO removed_images (id, path, invoke_scope_hidden) VALUES (?1, ?1, 1)",
+            [&removed_owner_hidden_path],
+        )
+        .unwrap();
 
         assert_eq!(
             resolve_known_media_file_target(&conn, &image.to_string_lossy()).unwrap(),
@@ -276,6 +382,11 @@ mod tests {
         assert_eq!(
             resolve_known_media_file_target(&conn, &removed.to_string_lossy()).unwrap(),
             fs::canonicalize(&removed).unwrap()
+        );
+        assert!(resolve_known_media_file_target(&conn, &owner_hidden.to_string_lossy()).is_err());
+        assert!(
+            resolve_known_media_file_target(&conn, &removed_owner_hidden.to_string_lossy())
+                .is_err()
         );
         assert!(resolve_known_media_file_target(&conn, &untracked.to_string_lossy()).is_err());
         assert!(resolve_known_media_file_target(&conn, &directory.to_string_lossy()).is_err());
@@ -382,10 +493,23 @@ mod tests {
 
     fn media_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute("CREATE TABLE images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
-        conn.execute("CREATE TABLE removed_images (id TEXT, path TEXT)", [])
+        conn.execute(
+            "CREATE TABLE removed_images (id TEXT, path TEXT, invoke_scope_hidden INTEGER NOT NULL DEFAULT 0)",
+            [],
+        )
             .unwrap();
+        conn.execute_batch(
+            "CREATE VIEW scoped_images AS
+                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
+             CREATE VIEW scoped_removed_images AS
+                 SELECT * FROM removed_images WHERE invoke_scope_hidden = 0;",
+        )
+        .unwrap();
         conn
     }
 

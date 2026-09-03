@@ -1,4 +1,5 @@
 pub mod catalog_intake;
+pub mod catalog_path_parity;
 pub mod catalog_patterns;
 pub mod complex_workflows;
 pub mod deterministic_values;
@@ -14,6 +15,7 @@ pub mod multi_stage;
 pub mod official_catalog;
 pub mod official_examples;
 pub mod output_selection;
+pub mod partial_diagnostics;
 pub mod prompts;
 pub mod real_world;
 pub mod repro_dual_ip_adapter;
@@ -26,3 +28,4 @@ pub mod template_coverage;
 pub mod test_workflow_repro;
 pub mod ui_format;
 pub mod workflow_subgraphs;
+pub mod workflow_virtual_links;

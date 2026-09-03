@@ -8,6 +8,11 @@ import { MetadataEditTab } from '../MetadataEditTab';
 const collectionRepoMocks = vi.hoisted(() => ({ getCollectionsForImage: vi.fn() }));
 
 vi.mock('../../../../../services/db/collectionRepo', () => collectionRepoMocks);
+vi.mock('../../../../../components/ui/PrivacyAwareThumbnail', () => ({
+    PrivacyAwareThumbnail: ({ src }: { src?: string | null }) => (
+        <div data-testid="privacy-aware-thumbnail" data-src={src || ''} />
+    ),
+}));
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
 const clipboardReadText = vi.fn();
@@ -129,7 +134,13 @@ describe('MetadataEditTab', () => {
         await waitFor(() => expect(screen.getByRole('button', { name: 'Portraits' }).className).toContain('bg-sage-100'));
         expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-1');
 
+        const searchToggle = screen.getByRole('button', { name: 'Search Collections' });
+        expect(searchToggle.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByPlaceholderText('Find collection...')).toBeNull();
+        fireEvent.click(searchToggle);
         const search = screen.getByPlaceholderText('Find collection...');
+        expect(searchToggle.getAttribute('aria-expanded')).toBe('true');
+        expect(document.activeElement).toBe(search);
         fireEvent.change(search, { target: { value: 'LAND' } });
         expect(screen.getByRole('button', { name: 'Landscapes' })).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Portraits' })).toBeNull();
@@ -146,6 +157,73 @@ describe('MetadataEditTab', () => {
         expect(onSetCollectionMembership).toHaveBeenCalledWith('image-1', 'two', true);
     });
 
+    it('puts current memberships first and keeps the selected state visible without color alone', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['three']);
+        render(<EditorHarness />);
+
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Archived Ideas' }).getAttribute('aria-pressed')).toBe('true'));
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.getByText('Add to another collection')).toBeTruthy();
+
+        const selected = screen.getByRole('button', { name: 'Archived Ideas' });
+        const firstOther = screen.getByRole('button', { name: 'Portraits' });
+        expect(selected.compareDocumentPosition(firstOther) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(selected.className).toContain('dark:bg-sage-500/15');
+        expect(selected.querySelector('[data-membership-indicator="selected"]')).toBeTruthy();
+    });
+
+    it('offers available collections without an orphaned empty-membership message', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce([]);
+        render(<EditorHarness />);
+
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(screen.queryByText('Not in any collection')).toBeNull();
+        expect(screen.getByText('Add to a collection')).toBeTruthy();
+    });
+
+    it('filters both membership groups and resets the result list scroll position', async () => {
+        collectionRepoMocks.getCollectionsForImage.mockResolvedValueOnce(['one']);
+        render(<EditorHarness />);
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+
+        const list = screen.getByTestId('collection-membership-list');
+        list.scrollTop = 80;
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
+        expect(list.scrollTop).toBe(0);
+
+        list.scrollTop = 60;
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Find collection' }), { target: { value: 'port' } });
+        expect(list.scrollTop).toBe(0);
+        expect(screen.getByText('Member of (1)')).toBeTruthy();
+        expect(screen.queryByText('Add to another collection')).toBeNull();
+    });
+
+    it('clears a collapsed collection search and keeps its open state across asset navigation', async () => {
+        collectionRepoMocks.getCollectionsForImage
+            .mockResolvedValueOnce(['one'])
+            .mockResolvedValueOnce([]);
+        const { rerender } = render(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-1')} />);
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+
+        const searchToggle = screen.getByRole('button', { name: 'Search Collections' });
+        fireEvent.click(searchToggle);
+        const search = screen.getByRole('searchbox', { name: 'Find collection' });
+        fireEvent.change(search, { target: { value: 'land' } });
+
+        rerender(<EditorHarness image={createImage(GeneratorTool.AUTOMATIC1111, 'image-2')} />);
+        await waitFor(() => expect(collectionRepoMocks.getCollectionsForImage).toHaveBeenCalledWith('image-2'));
+        expect(screen.getByRole('searchbox', { name: 'Find collection' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Portraits' })).toBeNull();
+
+        fireEvent.keyDown(screen.getByRole('searchbox', { name: 'Find collection' }), { key: 'Escape' });
+        expect(screen.queryByRole('searchbox', { name: 'Find collection' })).toBeNull();
+        expect(screen.getByRole('button', { name: 'Search Collections' }).getAttribute('aria-expanded')).toBe('false');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
+        expect((screen.getByRole('searchbox', { name: 'Find collection' }) as HTMLInputElement).value).toBe('');
+        expect(screen.getByRole('button', { name: 'Portraits' })).toBeTruthy();
+    });
+
     it('does not offer smart collections as manual assignment targets', async () => {
         const smartCollection: Collection = {
             id: 'smart',
@@ -158,6 +236,21 @@ describe('MetadataEditTab', () => {
 
         await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
         expect(screen.queryByRole('button', { name: 'Favorite Images' })).toBeNull();
+    });
+
+    it('shows collection thumbnails, folder fallbacks, and a clear empty search state', async () => {
+        render(<EditorHarness collectionItems={[
+            { ...collections[0], thumbnail: 'asset://portrait.webp', safeThumbnail: 'asset://portrait-safe.webp' },
+            collections[1],
+        ]} />);
+
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Portraits' }) as HTMLButtonElement).disabled).toBe(false));
+        expect(screen.getByTestId('privacy-aware-thumbnail').getAttribute('data-src')).toBe('asset://portrait.webp');
+        expect(screen.getByTestId('collection-thumbnail-fallback')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Search Collections' }));
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Find collection' }), { target: { value: 'missing' } });
+        expect(screen.getByText('No collections found.')).toBeTruthy();
     });
 
     it('rolls collection membership back when persistence reports failure', async () => {
@@ -187,15 +280,15 @@ describe('MetadataEditTab', () => {
         render(<EditorHarness onSetCollectionMembership={onSetCollectionMembership} />);
         await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
 
-        const landscapes = screen.getByRole('button', { name: 'Landscapes' });
-        fireEvent.click(landscapes);
-        expect((landscapes as HTMLButtonElement).disabled).toBe(true);
-        expect(landscapes.getAttribute('aria-busy')).toBe('true');
-        fireEvent.click(landscapes);
+        fireEvent.click(screen.getByRole('button', { name: 'Landscapes' }));
+        const pendingLandscapes = screen.getByRole('button', { name: 'Landscapes' });
+        expect((pendingLandscapes as HTMLButtonElement).disabled).toBe(true);
+        expect(pendingLandscapes.getAttribute('aria-busy')).toBe('true');
+        fireEvent.click(pendingLandscapes);
         expect(onSetCollectionMembership).toHaveBeenCalledTimes(1);
 
         await act(async () => pending.resolve(true));
-        await waitFor(() => expect((landscapes as HTMLButtonElement).disabled).toBe(false));
+        await waitFor(() => expect((screen.getByRole('button', { name: 'Landscapes' }) as HTMLButtonElement).disabled).toBe(false));
     });
 
     it('does not apply a late rollback to a different image', async () => {
@@ -333,7 +426,7 @@ describe('MetadataEditTab', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         collectionRepoMocks.getCollectionsForImage.mockRejectedValueOnce(new Error('read failed'));
         const first = render(<EditorHarness />);
-        await waitFor(() => expect(consoleError).toHaveBeenCalledWith('Failed to fetch image collections', expect.any(Error)));
+        await waitFor(() => expect(consoleError).toHaveBeenCalledWith('[CollectionMembershipPicker] Failed to load collection membership', expect.any(Error)));
         expect(first.container.querySelector('.animate-spin')).toBeNull();
         expect(screen.getByRole('alert').textContent).toContain('Could not load collection membership.');
         first.unmount();

@@ -25,6 +25,7 @@ interface PersistedAppState {
     smartCollections: PersistedSmartCollection[];
     settings: Partial<AppSettings>;
     recentSearches: string[];
+    collectionStorageVersion?: number;
 }
 
 interface PersistedStateCandidate {
@@ -121,7 +122,7 @@ const isPersistedFilterState = (value: unknown): boolean => {
         'controlNets', 'ipAdapters'
     ];
     const numberKeys = ['minSteps', 'maxSteps', 'minCfg', 'maxCfg'];
-    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids'];
+    const booleanKeys = ['favoritesOnly', 'pinnedOnly', 'showIntermediates', 'showGrids', 'showInvokeImageAssets'];
     const aliasKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
 
     return hasValidOptionalValue(value, 'searchQuery', item => typeof item === 'string')
@@ -180,6 +181,15 @@ const isStringRecord = (value: unknown, allowedValues?: readonly string[]): bool
     isRecordWithValues(value, item =>
         typeof item === 'string' && (!allowedValues || allowedValues.includes(item)));
 
+const isPersistedInvokeSourceFingerprint = (value: unknown): boolean => isRecord(value)
+    && value.schemaVersion === 1
+    && typeof value.imageCount === 'number'
+    && (value.imageUpdatedAt === null || typeof value.imageUpdatedAt === 'string')
+    && typeof value.boardCount === 'number'
+    && (value.boardUpdatedAt === null || typeof value.boardUpdatedAt === 'string')
+    && typeof value.membershipCount === 'number'
+    && (value.membershipMaxRowId === null || typeof value.membershipMaxRowId === 'string');
+
 const isPersistedInvokeSnapshot = (value: unknown): boolean => {
     if (!isRecord(value) || !Array.isArray(value.files)) return false;
 
@@ -188,7 +198,12 @@ const isPersistedInvokeSnapshot = (value: unknown): boolean => {
         && typeof value.importIntermediates === 'boolean'
         && typeof value.importOrphans === 'boolean'
         && typeof value.syncBoardsToCollections === 'boolean'
+        && hasValidOptionalValue(value, 'scopeMode', item => isEnumValue(item, ['legacy', 'all', 'owner']))
+        && hasValidOptionalValue(value, 'scopeOwnerId', item => item === null || typeof item === 'string')
         && hasValidOptionalValue(value, 'pathRepairVersion', item => typeof item === 'number')
+        && hasValidOptionalValue(value, 'importSchemaVersion', item => typeof item === 'number')
+        && hasValidOptionalValue(value, 'boardOwnerSchemaVersion', item => typeof item === 'number')
+        && hasValidOptionalValue(value, 'sourceFingerprint', isPersistedInvokeSourceFingerprint)
         && value.files.every(file => isRecord(file)
             && typeof file.path === 'string'
             && typeof file.exists === 'boolean'
@@ -203,6 +218,7 @@ const isPersistedSettings = (value: unknown): boolean => {
         'hasCompletedOnboarding', 'autoCheckForUpdates', 'confirmDelete', 'defaultTheaterMode',
         'enableAI', 'syncBoardsToCollections', 'invokeSyncFavorites', 'invokeSyncBoards',
         'importIntermediates', 'importOrphans', 'libraryShowGrids', 'libraryShowIntermediates',
+        'libraryShowInvokeImageAssets',
         'devMode', 'enableAutoThumbnailHealing', 'enforceHighQualityThumbnails',
         'promptMaskingEnabled'
     ];
@@ -238,7 +254,9 @@ const isPersistedSettings = (value: unknown): boolean => {
             'added_desc', 'added_asc', 'date_desc', 'date_asc'
         ]))
         && hasValidOptionalValue(value, 'systemPrompts', item => isStringRecord(item))
-        && hasValidOptionalValue(value, 'invokeDbSnapshot', isPersistedInvokeSnapshot);
+        && hasValidOptionalValue(value, 'invokeDbSnapshot', isPersistedInvokeSnapshot)
+        && hasValidOptionalValue(value, 'invokeDbSnapshots', item =>
+            Array.isArray(item) && item.every(isPersistedInvokeSnapshot));
 };
 
 export class TauriFsRepository implements IRepository {
@@ -542,7 +560,8 @@ export class TauriFsRepository implements IRepository {
             && Array.isArray(candidate.smartCollections)
             && candidate.smartCollections.every(collection => isPersistedCollection(collection, true))
             && isPersistedSettings(candidate.settings)
-            && isStringArray(candidate.recentSearches);
+            && isStringArray(candidate.recentSearches)
+            && hasValidOptionalValue(candidate, 'collectionStorageVersion', value => typeof value === 'number');
     }
 
     private prepareLoadedState(saved: PersistedAppState): AppState {
@@ -566,9 +585,21 @@ export class TauriFsRepository implements IRepository {
         const invokeDbSnapshot = savedSettings.invokeDbSnapshot
             ? {
                 ...savedSettings.invokeDbSnapshot,
-                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0
+                scopeMode: savedSettings.invokeDbSnapshot.scopeMode ?? 'legacy',
+                scopeOwnerId: savedSettings.invokeDbSnapshot.scopeOwnerId ?? null,
+                pathRepairVersion: savedSettings.invokeDbSnapshot.pathRepairVersion ?? 0,
+                importSchemaVersion: savedSettings.invokeDbSnapshot.importSchemaVersion ?? 0,
+                boardOwnerSchemaVersion: savedSettings.invokeDbSnapshot.boardOwnerSchemaVersion ?? 0,
             }
             : undefined;
+        const invokeDbSnapshots = savedSettings.invokeDbSnapshots?.map(snapshot => ({
+            ...snapshot,
+            scopeMode: snapshot.scopeMode ?? 'legacy',
+            scopeOwnerId: snapshot.scopeOwnerId ?? null,
+            pathRepairVersion: snapshot.pathRepairVersion ?? 0,
+            importSchemaVersion: snapshot.importSchemaVersion ?? 0,
+            boardOwnerSchemaVersion: snapshot.boardOwnerSchemaVersion ?? 0,
+        }));
         return {
             ...saved,
             images: [],
@@ -580,8 +611,11 @@ export class TauriFsRepository implements IRepository {
                 promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
                 maskedKeywords: savedSettings.maskedKeywords ?? [],
                 libraryShowGrids: savedSettings.libraryShowGrids ?? false,
+                libraryShowIntermediates: savedSettings.libraryShowIntermediates ?? false,
+                libraryShowInvokeImageAssets: savedSettings.libraryShowInvokeImageAssets ?? false,
                 resourceFolders: savedSettings.resourceFolders ?? [],
-                invokeDbSnapshot
+                invokeDbSnapshot,
+                invokeDbSnapshots
             })
         };
     }
@@ -679,7 +713,8 @@ export class TauriFsRepository implements IRepository {
             collections: INITIAL_COLLECTIONS,
             smartCollections: [],
             settings: createDefaultAppSettings(),
-            recentSearches: []
+            recentSearches: [],
+            collectionStorageVersion: 1,
         };
     }
 }

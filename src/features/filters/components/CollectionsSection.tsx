@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { useState } from 'react';
-import { Plus, Save, FolderOpen } from 'lucide-react';
+import { Plus, Save, FolderOpen, Loader2 } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
 import { SectionHeader } from './FilterPrimitives';
 import { CollectionList } from './CollectionList';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface CollectionsSectionProps {
+    isInvokeCollectionCatchupPending?: boolean;
     collections: Collection[];
     filters: FilterState;
     setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
@@ -27,6 +28,7 @@ interface CollectionsSectionProps {
 }
 
 export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
+    isInvokeCollectionCatchupPending = false,
     collections,
     filters,
     setFilters,
@@ -89,6 +91,23 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                     onResetCollectionThumbnail={onResetCollectionThumbnail}
                     onEditCollection={onEditCollection}
                     emptyMessage={
+                        isInvokeCollectionCatchupPending && collections.length === 0 ? (
+                            <div
+                                className="flex flex-col items-center justify-center space-y-3 px-4 py-6 text-center"
+                                role="status"
+                                aria-live="polite"
+                            >
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sage-50 dark:bg-white/5">
+                                    <Loader2 className="h-5 w-5 animate-spin text-sage-500 motion-reduce:animate-none" />
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs font-medium text-gray-600 dark:text-gray-300">Preparing InvokeAI collections…</p>
+                                    <p className="max-w-[190px] text-[10px] text-gray-400 dark:text-gray-500">
+                                        Boards and thumbnails will appear here as they become available.
+                                    </p>
+                                </div>
+                            </div>
+                        ) : (
                         <div className="flex flex-col items-center justify-center py-6 px-4 text-center space-y-3">
                             <div className="w-10 h-10 rounded-full bg-sage-50 dark:bg-white/5 flex items-center justify-center">
                                 <FolderOpen className="w-5 h-5 text-sage-400 dark:text-zinc-500" />
@@ -107,6 +126,7 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                                 <span>Create Collection</span>
                             </button>
                         </div>
+                        )
                     }
                     renderToolbarExtras={() => (
                         <div className="ml-auto flex items-center gap-1">

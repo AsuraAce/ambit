@@ -4,7 +4,6 @@ import { Collection, SmartCollection } from '../types';
 import { appRepository } from '../services/repository';
 import { shouldAutoRefreshSmartCollectionSummary } from '../utils/smartCollectionRefresh';
 import {
-    addImagesToCollection,
     cacheSmartCollectionCount,
     deleteCollectionFromDb,
     ensureCollectionSchema,
@@ -12,7 +11,7 @@ import {
     getCollectionImageIds,
     getCollectionThumbnailSummaries,
     getSmartCollectionSummaries,
-    upsertCollection,
+    migrateLegacyCollections,
 } from '../services/db/collectionRepo';
 import { useLibraryStore } from './libraryStore';
 
@@ -78,6 +77,13 @@ interface RefreshSmartCountsOptions {
     includeThumbnails?: boolean;
     includePromptSearch?: boolean;
     markPending?: boolean;
+    consistency?: 'best_effort' | 'authoritative';
+}
+
+export interface CollectionRefreshOptions {
+    includeThumbnails?: boolean;
+    scheduleSmartRefresh?: boolean;
+    consistency?: 'best_effort' | 'authoritative';
 }
 
 type RefreshSmartCountsInput = RefreshSmartCountsOptions | Collection[];
@@ -90,14 +96,48 @@ interface CollectionState {
 
     // Actions
     initialize: () => Promise<void>;
-    refreshCollections: (debounced?: boolean) => Promise<void>;
-    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean) => Promise<void>;
+    refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
+    refreshCollectionThumbnails: (debounced?: boolean, force?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
     refreshSmartCounts: (input?: RefreshSmartCountsInput) => Promise<void>;
     setCollections: (collections: Collection[] | ((prev: Collection[]) => Collection[])) => void;
 }
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-let thumbnailDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+interface SupersedingDebounce {
+    timer: ReturnType<typeof setTimeout> | null;
+    resolve: (() => void) | null;
+}
+
+const collectionDebounce: SupersedingDebounce = { timer: null, resolve: null };
+const thumbnailDebounce: SupersedingDebounce = { timer: null, resolve: null };
+const scheduleSupersedingDebounce = (
+    state: SupersedingDebounce,
+    task: () => Promise<void>
+): Promise<void> => {
+    if (state.timer) {
+        clearTimeout(state.timer);
+        state.timer = null;
+        state.resolve?.();
+        state.resolve = null;
+    }
+    return new Promise((resolve, reject) => {
+        const timer = setTimeout(async () => {
+            try {
+                await task();
+                resolve();
+            } catch (error) {
+                reject(error);
+            } finally {
+                if (state.timer === timer) {
+                    state.timer = null;
+                    state.resolve = null;
+                }
+            }
+        }, 300);
+        state.timer = timer;
+        state.resolve = resolve;
+    });
+};
+let authoritativeCollectionRefreshTail: Promise<void> = Promise.resolve();
 
 export const useCollectionStore = create<CollectionState>()(
     devtools(
@@ -107,39 +147,59 @@ export const useCollectionStore = create<CollectionState>()(
             thumbnailHydrationPendingIds: {},
             smartSummaryPendingIds: {},
 
-            refreshCollections: async (debounced = false) => {
-                const runId = invalidateCollectionRefreshes();
-                const run = async (currentRunId: number) => {
+            refreshCollections: async (debounced = false, options = {}) => {
+                const isAuthoritative = options.consistency === 'authoritative';
+                const run = async (initialRunId: number) => {
+                    let currentRunId = initialRunId;
                     try {
-                        const cols = await getAllCollectionsWithStats();
-                        if (currentRunId !== collectionRefreshRunId) return;
+                        while (true) {
+                            const cols = await getAllCollectionsWithStats({
+                                includeThumbnails: options.includeThumbnails,
+                            });
+                            if (currentRunId !== collectionRefreshRunId) {
+                                if (isAuthoritative) {
+                                    currentRunId = invalidateCollectionRefreshes();
+                                    continue;
+                                }
+                                return;
+                            }
 
-                        set({ collections: cols });
+                            set({ collections: cols });
 
-                        // Lazily fetch visible smart counts in the background.
-                        void get().refreshSmartCounts({ includeArchived: false, delayMs: 500, markPending: true });
+                            // Lazily fetch visible smart counts in the background.
+                            if (options.scheduleSmartRefresh !== false) {
+                                void get().refreshSmartCounts({ includeArchived: false, delayMs: 500, markPending: true });
+                            }
+                            return;
+                        }
                     } catch (e) {
                         console.error('[CollectionStore] Failed to refresh collections', e);
+                        if (isAuthoritative) throw e;
                     }
                 };
 
-                if (debounced) {
-                    if (debounceTimer) clearTimeout(debounceTimer);
-                    return new Promise((resolve) => {
-                        debounceTimer = setTimeout(async () => {
-                            await run(runId);
-                            debounceTimer = null;
-                            resolve();
-                        }, 300);
-                    });
-                } else {
-                    await run(runId);
+                if (isAuthoritative) {
+                    const authoritativeRun = authoritativeCollectionRefreshTail.then(() => (
+                        run(invalidateCollectionRefreshes())
+                    ));
+                    authoritativeCollectionRefreshTail = authoritativeRun.catch(() => undefined);
+                    await authoritativeRun;
+                    return;
                 }
+
+                const runId = invalidateCollectionRefreshes();
+
+                if (debounced) {
+                    return scheduleSupersedingDebounce(collectionDebounce, () => run(runId));
+                }
+                await run(runId);
             },
 
-            refreshCollectionThumbnails: async (debounced = false, force = false) => {
+            refreshCollectionThumbnails: async (debounced = false, force = false, options = {}) => {
+                const isAuthoritative = options.consistency === 'authoritative';
                 const run = async () => {
                     const runId = ++thumbnailRefreshRunId;
+                    let wasSuperseded = false;
                     try {
                         const currentCollections = sortForThumbnailHydration(
                             get().collections.filter(collection => shouldHydrateCollectionThumbnail(collection, force))
@@ -149,10 +209,16 @@ export const useCollectionStore = create<CollectionState>()(
                         if (currentCollections.length === 0) return;
 
                         for (const collectionBatch of chunk(currentCollections, COLLECTION_THUMBNAIL_CHUNK_SIZE)) {
-                            if (runId !== thumbnailRefreshRunId) return;
+                            if (runId !== thumbnailRefreshRunId) {
+                                wasSuperseded = true;
+                                break;
+                            }
 
                             const summaries = await getCollectionThumbnailSummaries(collectionBatch);
-                            if (runId !== thumbnailRefreshRunId) return;
+                            if (runId !== thumbnailRefreshRunId) {
+                                wasSuperseded = true;
+                                break;
+                            }
 
                             set((state) => ({
                                 collections: state.collections.map((collection) => {
@@ -167,24 +233,24 @@ export const useCollectionStore = create<CollectionState>()(
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);
                         }
+                        if (wasSuperseded) {
+                            if (isAuthoritative) {
+                                await get().refreshCollectionThumbnails(false, force, options);
+                                return;
+                            }
+                        }
                     } catch (e) {
                         if (runId === thumbnailRefreshRunId) {
                             set({ thumbnailHydrationPendingIds: {} });
                         }
                         console.error('[CollectionStore] Failed to refresh collection thumbnails', e);
+                        if (isAuthoritative) throw e;
                     }
                 };
 
                 if (debounced) {
-                    if (thumbnailDebounceTimer) clearTimeout(thumbnailDebounceTimer);
                     thumbnailRefreshRunId += 1;
-                    return new Promise((resolve) => {
-                        thumbnailDebounceTimer = setTimeout(async () => {
-                            await run();
-                            thumbnailDebounceTimer = null;
-                            resolve();
-                        }, 300);
-                    });
+                    return scheduleSupersedingDebounce(thumbnailDebounce, run);
                 }
 
                 await run();
@@ -195,6 +261,7 @@ export const useCollectionStore = create<CollectionState>()(
                 const options: RefreshSmartCountsOptions = Array.isArray(input)
                     ? { includePromptSearch: true }
                     : input;
+                const isAuthoritative = options.consistency === 'authoritative';
                 const includeThumbnails = options.includeThumbnails !== false;
                 const shouldManagePending = includeThumbnails && options.markPending;
                 let runId = 0;
@@ -205,6 +272,9 @@ export const useCollectionStore = create<CollectionState>()(
                         console.log('[CollectionStore] Skipping smart counts refresh - Import already in progress');
                         smartCountRunsByCollection.clear();
                         set({ smartSummaryPendingIds: {} });
+                        if (isAuthoritative) {
+                            throw new Error('Smart collection summaries cannot refresh while an import is active.');
+                        }
                         return;
                     }
 
@@ -254,11 +324,18 @@ export const useCollectionStore = create<CollectionState>()(
                         await delay(options.delayMs);
                     }
 
+                    let wasSuperseded = false;
                     for (const smartCol of smartCols) {
-                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                            wasSuperseded = true;
+                            continue;
+                        }
 
                         const summaries = await getSmartCollectionSummaries([smartCol], { includeThumbnails });
-                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                        if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                            wasSuperseded = true;
+                            continue;
+                        }
                         const summary = summaries[smartCol.id];
 
                         if (summary) {
@@ -267,7 +344,10 @@ export const useCollectionStore = create<CollectionState>()(
                                 summary.count,
                                 smartCol.updatedAt ?? smartCol.createdAt
                             );
-                            if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) continue;
+                            if (smartCountRunsByCollection.get(smartCol.id)?.runId !== runId) {
+                                wasSuperseded = true;
+                                continue;
+                            }
 
                             set((state) => ({
                                 collections: state.collections.map(c =>
@@ -309,6 +389,15 @@ export const useCollectionStore = create<CollectionState>()(
 
                         await delay(SMART_COUNT_YIELD_MS);
                     }
+                    if (wasSuperseded) {
+                        if (isAuthoritative) {
+                            await get().refreshSmartCounts({ ...options, delayMs: undefined });
+                            return;
+                        }
+                        if (isAuthoritative) {
+                            throw new Error('Smart collection summary refresh was superseded before it completed.');
+                        }
+                    }
                 } catch (e) {
                     if (runId > 0) {
                         const ownedIds = smartCols
@@ -324,6 +413,7 @@ export const useCollectionStore = create<CollectionState>()(
                         }
                     }
                     console.error('[CollectionStore] Failed to refresh smart counts', e);
+                    if (isAuthoritative) throw e;
                 }
             },
 
@@ -359,43 +449,37 @@ export const useCollectionStore = create<CollectionState>()(
                         console.info(`[Startup] collection load completed in ${Math.round(performance.now() - loadStartedAt)}ms`);
                         let needsReload = false;
 
-                        // 2. Only migrate if DB is EMPTY - if it has any collections (invoke or ambit), skip migration
-                        const shouldMigrate = dbCols.length === 0;
-                        console.log(`[CollectionStore] Initial load: ${dbCols.length} total, shouldMigrate: ${shouldMigrate}`);
+                        // 2. Import the legacy JSON collection store exactly once. This marker is
+                        // persisted with the JSON source so deleting all SQLite collections later
+                        // cannot accidentally replay stale data.
+                        try {
+                            const legacyState = await appRepository.load();
+                            const shouldMigrate = (legacyState.collectionStorageVersion ?? 0) < 1;
+                            console.log(`[CollectionStore] Initial load: ${dbCols.length} visible, shouldMigrate: ${shouldMigrate}`);
 
-                        if (shouldMigrate) {
-                            try {
-                                // Check if library.json has any collections to migrate
-                                const state = await appRepository.load();
-                                const legacyCols = state.collections || [];
-                                const legacySmart = state.smartCollections || [];
+                            if (shouldMigrate) {
+                                const legacyCols = legacyState.collections || [];
+                                const legacySmart = legacyState.smartCollections || [];
                                 const hasLegacyData = legacyCols.length > 0 || legacySmart.length > 0;
 
                                 if (hasLegacyData) {
                                     console.log(`[CollectionStore] Starting migration from JSON (${legacyCols.length} regular, ${legacySmart.length} smart)...`);
-
-                                    // Migrate regular collections
-                                    for (const col of legacyCols) {
-                                        await upsertCollection({ ...col, source: 'ambit' });
-                                        if (col.imageIds && col.imageIds.length > 0) {
-                                            await addImagesToCollection(col.id, col.imageIds);
-                                        }
-                                    }
-
-                                    // Migrate smart collections
-                                    for (const scol of legacySmart) {
-                                        await upsertCollection({ ...scol, source: 'ambit' });
-                                    }
-
-                                    // Flag for reload after all migrations are pushed
+                                    await migrateLegacyCollections([...legacyCols, ...legacySmart]);
                                     needsReload = true;
-                                    console.log(`[CollectionStore] Migration commands dispatched.`);
-                                } else {
-                                    console.log('[CollectionStore] No legacy data to migrate.');
                                 }
-                            } catch (migrationErr) {
-                                console.error('[CollectionStore] Migration failed', migrationErr);
+
+                                await appRepository.update(current => ({
+                                    ...current,
+                                    collections: [],
+                                    smartCollections: [],
+                                    collectionStorageVersion: 1,
+                                }));
+                                console.log('[CollectionStore] Legacy collection migration completed.');
                             }
+                        } catch (migrationErr) {
+                            // Keep both the legacy arrays and version unchanged so startup can
+                            // safely retry. Generic upserts preserve any existing scope identity.
+                            console.error('[CollectionStore] Migration failed', migrationErr);
                         }
 
                         // 3. Cleanup Legacy Mock Collections (for existing users who might have them)

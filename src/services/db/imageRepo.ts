@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
-import { commands, type ImageRecord } from '../../bindings';
+import { commands, type DeleteRemovedImagesResult, type ImageRecord, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata, getDetectedSourceKind, type PhotoMetadata, type SourceKind } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, getDetectedSourceKind, type PhotoMetadata, type SourceKind, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
 import { orderFacetTypes, TouchedFacetResources } from '../../utils/touchedFacetTypes';
 import {
@@ -13,8 +13,9 @@ import {
     liveWatchNow,
 } from '../../utils/liveWatchPerf';
 import { isBrowserMockMode } from '../runtime';
-import { getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
+import { deleteBrowserMockImages, getBrowserMockImages, updateBrowserMockImage } from '../browserMockData';
 import { clearLibraryStatsCache } from './searchRepo';
+import { assertMutationMatched } from './mutationGuard';
 import {
     clearAllCollectionThumbnailCaches,
     clearCollectionThumbnailCacheForCollections,
@@ -22,16 +23,12 @@ import {
     clearInvokeBoardThumbnailCaches,
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
+import { isSameInvokePath } from '../invoke/pathIdentity';
+import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 type PersistableImageRecord = ImageRecord;
 
 const CURRENT_THUMBNAIL_VERSION = 2;
-
-export interface DeleteRemovedImagesResult {
-    deletedIds: string[];
-    failedIds: string[];
-    thumbnailWarningIds: string[];
-}
 
 interface CountRow {
     count: number;
@@ -92,19 +89,6 @@ const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] =
     return chunks;
 };
 
-export const shouldTrashThumbnail = (
-    imagePath: string | null | undefined,
-    thumbnailPath: string | null | undefined
-): boolean => {
-    if (!thumbnailPath) return false;
-    if (!imagePath) return true;
-
-    const normalizedImagePath = normalizePath(urlToPath(imagePath));
-    const normalizedThumbnailPath = normalizePath(urlToPath(thumbnailPath));
-
-    return normalizedImagePath.toLowerCase() !== normalizedThumbnailPath.toLowerCase();
-};
-
 const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => ({
     id: normalizePath(image.id),
     path: normalizePath(image.id),
@@ -113,7 +97,9 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     fileSize: image.fileSize || 0,
     fileHash: image.fileHash || null,
     timestamp: image.timestamp,
-    metadataJson: getDetectedSourceKind(image) === 'generated' ? JSON.stringify(image.metadata) : '{}',
+    metadataJson: image.mediaType === 'video' || getDetectedSourceKind(image) === 'generated'
+        ? JSON.stringify(image.metadata)
+        : '{}',
     thumbnailPath: urlToPath(image.thumbnailUrl),
     microThumbnail: image.microThumbnail || null,
     thumbnailSource: image.thumbnailSource || null,
@@ -134,7 +120,13 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
         ? (Object.keys(image.originalChunks).length > 0 ? JSON.stringify(image.originalChunks) : null)
         : (image.originalMetadata ? JSON.stringify(image.originalMetadata) : null),
     originalStateJson: image.originalState ? JSON.stringify(image.originalState) : null,
-    isCorrupt: !!image.isCorrupt
+    isCorrupt: !!image.isCorrupt,
+    // InvokeAI rows always have a name. Native upsert uses it to distinguish an
+    // authoritative nullable source snapshot from omitted generic-scan fields.
+    invokeImageName: image.invokeImageName || null,
+    invokeImageCategory: image.invokeImageCategory || null,
+    invokeImageOrigin: image.invokeImageOrigin || null,
+    invokeOwnerId: image.invokeOwnerId || null
 });
 
 const persistImageRecords = async (
@@ -351,6 +343,24 @@ export const moveImagePathIdentity = async (
     return result.moved === 1;
 };
 
+export const markImagePathIdentitiesMissing = async (ids: string[]): Promise<number> => {
+    if (ids.length === 0) return 0;
+
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
+    if (isBrowserMockMode()) {
+        let marked = 0;
+        normalizedIds.forEach(id => {
+            const existing = getBrowserMockImages().find(image => image.id === id);
+            if (!existing || existing.isMissing) return;
+            updateBrowserMockImage(id, { isMissing: true });
+            marked++;
+        });
+        return marked;
+    }
+
+    return unwrap(commands.markImagePathIdentitiesMissing(normalizedIds));
+};
+
 /**
  * Rebuilds the facet_cache table with pre-computed counts for all resources.
  * This runs the expensive queries once per import, so getFacets becomes instant.
@@ -410,6 +420,8 @@ export const rebuildFacetCacheIncrementalBatchStrict = async (types: string[]): 
 };
 
 export const refreshFacetCacheForResourcesStrict = async (resources: TouchedFacetResources): Promise<number> => {
+    if (isBrowserMockMode()) return 0;
+
     const count = await runRefreshFacetCacheForResources(resources);
     console.log('[DB] Refreshed live facet cache resources:', count);
     return count;
@@ -439,11 +451,10 @@ export const syncCollectionImages = async (ids?: string[]) => {
         const db = await getDb();
         console.log(`[DB] Performing bulk collection sync${ids ? ` for ${ids.length} images` : ''}...`);
 
-        let query = `
-            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-            SELECT board_id, id 
-            FROM images 
-            WHERE board_id IS NOT NULL
+        let requestedImages = `
+            SELECT *
+            FROM scoped_images AS images
+            WHERE invoke_scope_hidden = 0
         `;
 
         const params: unknown[] = [];
@@ -451,9 +462,32 @@ export const syncCollectionImages = async (ids?: string[]) => {
             // SQLite has a limit on parameters, so we chunk if necessary, 
             // but for typical batch sizes (500) it's fine.
             const placeholders = ids.map(() => '?').join(',');
-            query += ` AND id IN (${placeholders})`;
+            requestedImages += ` AND id IN (${placeholders})`;
             params.push(...ids);
         }
+
+        const query = `
+            WITH requested_images AS (${requestedImages})
+            INSERT OR IGNORE INTO collection_images (collection_id, image_id)
+            SELECT snapshot.collection_id, images.id
+            FROM requested_images images
+            JOIN invoke_board_membership_snapshot snapshot
+              ON snapshot.invoke_image_name = images.invoke_image_name
+            JOIN scoped_collections collection
+              ON collection.id = snapshot.collection_id
+             AND collection.invoke_source_id IS images.invoke_source_id
+            LEFT JOIN invoke_board_membership_exclusions exclusion
+              ON exclusion.collection_id = snapshot.collection_id
+             AND exclusion.invoke_image_name = snapshot.invoke_image_name
+            WHERE exclusion.collection_id IS NULL
+            UNION
+            SELECT addition.collection_id, images.id
+            FROM requested_images images
+            JOIN invoke_board_membership_additions addition
+              ON addition.image_id = images.id
+            JOIN scoped_collections collection
+              ON collection.id = addition.collection_id
+        `;
 
         await db.execute(query, params);
         if (ids && ids.length > 0) {
@@ -473,7 +507,16 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
     if (isBrowserMockMode()) {
         const image = getBrowserMockImages().find(item => item.id === id);
         if (image) {
-            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates } });
+            const fieldSources = image.mediaType === 'video'
+                ? Object.keys(updates).reduce((sources, key) => {
+                    if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                        sources[key as VideoMetadataField] = 'user_override';
+                        if (key === 'overrideModel') sources.model = 'user_override';
+                    }
+                    return sources;
+                }, { ...image.metadata.fieldSources })
+                : image.metadata.fieldSources;
+            updateBrowserMockImage(id, { metadata: { ...image.metadata, ...updates, fieldSources } });
         }
         return;
     }
@@ -489,12 +532,20 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
         Object.entries(updates).forEach(([key, value]) => {
             // CRITICAL: If value is an array or object, it must be serialized and passed via JSON function
             // Otherwise SQLite might store it as a literal string "[object Object]" or similar corruption.
+            const previousExpr = jsonSetExpr;
             if (value !== null && typeof value === 'object') {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', json(?))`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', json(?))`;
                 params.push(JSON.stringify(value));
             } else {
-                jsonSetExpr = `json_set(${jsonSetExpr}, '$.${key}', ?)`;
+                jsonSetExpr = `json_set(${previousExpr}, '$.${key}', ?)`;
                 params.push(value);
+            }
+            if (['tool', 'positivePrompt', 'negativePrompt', 'model', 'overrideModel', 'generationType', 'generationMode'].includes(key)) {
+                let videoExpr = `json_set(${jsonSetExpr}, '$.fieldSources.${key}', 'user_override')`;
+                if (key === 'overrideModel') {
+                    videoExpr = `json_set(${videoExpr}, '$.fieldSources.model', 'user_override')`;
+                }
+                jsonSetExpr = `CASE WHEN media_type = 'video' THEN ${videoExpr} ELSE ${jsonSetExpr} END`;
             }
         });
 
@@ -521,6 +572,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.seed ?? null);
         }
 
+        if ('generationMode' in updates || 'generationType' in updates) {
+            query += ', generation_type = ?';
+            params.push(updates.generationMode ?? updates.generationType ?? null);
+        }
+
         // SPECIAL CASE: Model name is also denormalized for filtering
         if ('overrideModel' in updates) {
             query += ', resolved_model_name = ?';
@@ -530,10 +586,11 @@ export const updateImageMetadataFields = async (id: string, updates: Record<stri
             params.push(updates.model);
         }
 
-        query += ' WHERE id = ?';
+        query += ' WHERE id = ? AND id IN (SELECT id FROM scoped_images)';
         params.push(normalizedId);
 
-        await db.execute(query, params);
+        const result = await db.execute(query, params);
+        assertMutationMatched(result, normalizedId, 'Updating metadata');
     });
 };
 
@@ -551,13 +608,15 @@ export const revertImageMetadata = async (id: string) => {
         const normalizedId = normalizePath(id);
 
         // 1. Fetch the original parsed metadata (already parsed, no re-parsing needed!)
-        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM images WHERE id = ?', [normalizedId]);
-        if (rows.length === 0) return;
+        const rows = await db.select<OriginalParsedMetadataRow[]>('SELECT original_parsed_json FROM scoped_images WHERE id = ?', [normalizedId]);
+        if (rows.length === 0) {
+            throw new Error(`Reverting metadata failed because the asset was not found: ${normalizedId}`);
+        }
         const img = rows[0];
 
         if (!img.original_parsed_json) {
             // If no original parsed metadata, just clear overrides
-            await db.execute(`
+            const result = await db.execute(`
                 UPDATE images 
                 SET metadata_json = NULL,
                     tool = NULL,
@@ -565,26 +624,37 @@ export const revertImageMetadata = async (id: string) => {
                     model_name = NULL,
                     resolved_model_name = NULL,
                     seed = NULL,
+                    generation_type = NULL,
                     positive_prompt = NULL,
                     negative_prompt = NULL
-                WHERE id = ?
+                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
             `, [normalizedId]);
+            assertMutationMatched(result, normalizedId, 'Reverting metadata');
             return;
         }
 
+        let originalMetadata: Partial<ImageMetadata> & {
+            positive_prompt?: string;
+            negative_prompt?: string;
+        };
         try {
-            // Parse the already-stored baseline (no re-parsing from raw chunks!)
-            const originalMetadata = JSON.parse(img.original_parsed_json) as Partial<ImageMetadata> & {
-                positive_prompt?: string;
-                negative_prompt?: string;
-            };
+            originalMetadata = JSON.parse(img.original_parsed_json) as typeof originalMetadata;
+        } catch (error) {
+            console.error('[DB] Failed to parse original metadata:', error);
+            const result = await db.execute(
+                'UPDATE images SET metadata_json = NULL, seed = NULL, generation_type = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+                [normalizedId]
+            );
+            assertMutationMatched(result, normalizedId, 'Reverting metadata');
+            return;
+        }
 
-            // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
-            originalMetadata.isIntermediate = false;
+        // SAFEGUARD: Ensure the image doesn't disappear from the UI after revert.
+        originalMetadata.isIntermediate = false;
 
-            // 2. Update metadata_json and denormalized columns with the baseline
-            // CRITICAL: Set metadata_json = original_parsed_json to ensure they match exactly
-            await db.execute(`
+        // 2. Update metadata_json and denormalized columns with the baseline
+        // CRITICAL: Set metadata_json = original_parsed_json to ensure they match exactly
+        const result = await db.execute(`
                 UPDATE images 
                 SET metadata_json = ?,
                     model_hash = ?,
@@ -593,8 +663,9 @@ export const revertImageMetadata = async (id: string) => {
                     resolved_model_name = ?,
                     seed = ?,
                     positive_prompt = ?,
-                    negative_prompt = ?
-                WHERE id = ?
+                    negative_prompt = ?,
+                    generation_type = ?
+                WHERE id = ? AND id IN (SELECT id FROM scoped_images)
             `, [
                 img.original_parsed_json, // Use the exact same JSON string!
                 originalMetadata.modelHash || null,
@@ -604,13 +675,10 @@ export const revertImageMetadata = async (id: string) => {
                 originalMetadata.seed ?? null,
                 originalMetadata.positivePrompt ?? originalMetadata.positive_prompt ?? null,
                 originalMetadata.negativePrompt ?? originalMetadata.negative_prompt ?? null,
+                originalMetadata.generationMode ?? originalMetadata.generationType ?? null,
                 normalizedId
             ]);
-        } catch (e) {
-            console.error('[DB] Failed to revert metadata:', e);
-            // Fallback: just clear overrides if parsing fails
-            await db.execute('UPDATE images SET metadata_json = NULL, seed = NULL, positive_prompt = NULL, negative_prompt = NULL WHERE id = ?', [normalizedId]);
-        }
+        assertMutationMatched(result, normalizedId, 'Reverting metadata');
     });
 };
 
@@ -626,7 +694,11 @@ export const updateImageNotesCol = async (id: string, notes: string | null) => {
     await dbMutex.dispatch(async () => {
         const db = await getDb();
         const normalizedId = normalizePath(id);
-        await db.execute('UPDATE images SET notes = ? WHERE id = ?', [notes, normalizedId]);
+        const result = await db.execute(
+            'UPDATE images SET notes = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+            [notes, normalizedId]
+        );
+        assertMutationMatched(result, normalizedId, 'Updating notes');
     });
 };
 
@@ -645,13 +717,15 @@ export const getAllImages = async (
     offset: number = 0,
     prioritizePinned: boolean = false,
     showIntermediates: boolean = false,
-    showGrids: boolean = false
+    showGrids: boolean = false,
+    showInvokeImageAssets: boolean = false
 ): Promise<AIImage[]> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages()
             .filter(image => !image.isDeleted)
             .filter(image => showIntermediates || !(image.isIntermediate || image.metadata.isIntermediate))
             .filter(image => showGrids || !image.metadata.isGrid)
+            .filter(image => showInvokeImageAssets || !isKnownInvokeImageAsset(image.invokeImageCategory))
             .sort((a, b) => prioritizePinned && a.isPinned !== b.isPinned
                 ? (a.isPinned ? -1 : 1)
                 : b.timestamp - a.timestamp);
@@ -662,23 +736,29 @@ export const getAllImages = async (
     const orderBy = prioritizePinned ? 'ORDER BY is_pinned DESC, timestamp DESC' : 'ORDER BY timestamp DESC';
 
     // Optimize: Use STORED generated columns instead of LIKE scan
-    let filterClauses = 'WHERE is_deleted = 0';
+    let filterClauses = 'WHERE invoke_scope_hidden = 0 AND is_deleted = 0';
     if (!showIntermediates) {
         filterClauses += ' AND IFNULL(is_intermediate_gen, 0) = 0';
     }
     if (!showGrids) {
         filterClauses += ' AND IFNULL(is_grid_gen, 0) = 0';
     }
+    if (!showInvokeImageAssets) {
+        filterClauses += ' AND IFNULL(is_invoke_asset_gen, 0) = 0';
+    }
 
     const query = limit
-        ? `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
-        : `SELECT ${getImageFieldsLight()} FROM images ${filterClauses} ${orderBy}`;
+        ? `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy} LIMIT ${limit} OFFSET ${offset}`
+        : `SELECT ${getImageFieldsLight()} FROM scoped_images AS images ${filterClauses} ${orderBy}`;
 
     const rows = await db.select<ImageRow[]>(query);
     return rows.map(mapRowToImage);
 };
 
-export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
+export const getImagesByIds = async (
+    ids: string[],
+    options: { includeOwnerHidden?: boolean } = {}
+): Promise<AIImage[]> => {
     if (ids.length === 0) return [];
     if (isBrowserMockMode()) {
         const idSet = new Set(ids);
@@ -693,7 +773,9 @@ export const getImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${getImageFieldsFull()} FROM images WHERE images.id IN (${placeholders})`;
+        const source = options.includeOwnerHidden ? 'images' : 'scoped_images';
+        const ownerScope = options.includeOwnerHidden ? '' : ' AND invoke_scope_hidden = 0';
+        const query = `SELECT ${getImageFieldsFull()} FROM ${source} AS images WHERE images.id IN (${placeholders})${ownerScope}`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
@@ -714,7 +796,7 @@ export const getFlatInvokeImageIdsForRoot = async (invokeRoot: string): Promise<
     const db = await getDb();
     const rows = await db.select<Array<{ id: string }>>(
         `SELECT id
-         FROM images
+         FROM scoped_images AS images
          WHERE id LIKE ?
            AND instr(substr(id, ?), '/') = 0`,
         [`${imagesPrefix}%`, imagesPrefix.length + 1]
@@ -733,12 +815,58 @@ export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> =
     for (let i = 0; i < ids.length; i += CHUNK_SIZE) {
         const chunk = ids.slice(i, i + CHUNK_SIZE).map(normalizePath);
         const placeholders = chunk.map(() => '?').join(',');
-        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM removed_images WHERE id IN (${placeholders})`;
+        const query = `SELECT ${REMOVED_IMAGE_FIELDS} FROM scoped_removed_images AS removed_images WHERE id IN (${placeholders}) AND invoke_scope_hidden = 0`;
         const rows = await db.select<ImageRow[]>(query, chunk);
         allImages = [...allImages, ...rows.map(mapRowToImage)];
     }
 
     return allImages;
+};
+
+export const getRemovedInvokeImageNames = async (
+    invokeSourceId: string,
+    invokeImageNames: string[]
+): Promise<string[]> => {
+    if (invokeImageNames.length === 0) return [];
+    const db = await getDb();
+
+    const CHUNK_SIZE = 899;
+    const removedNames: string[] = [];
+    for (let i = 0; i < invokeImageNames.length; i += CHUNK_SIZE) {
+        const chunk = invokeImageNames.slice(i, i + CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = await db.select<Array<{
+            invoke_source_id: string;
+            scope_db_path: string;
+            invoke_image_name: string;
+        }>>(
+            `SELECT DISTINCT removed_images.invoke_source_id,
+                             scope.db_path AS scope_db_path,
+                             removed_images.invoke_image_name
+             FROM removed_images AS removed_images
+             JOIN invoke_owner_scope_state AS scope ON scope.state_key = 'current'
+             WHERE removed_images.invoke_source_id IS NOT NULL
+               AND removed_images.invoke_image_name IN (${placeholders})
+               AND removed_images.invoke_scope_hidden = 0
+               AND (
+                   scope.scope_mode IN ('legacy', 'all')
+                   OR (
+                       scope.scope_mode = 'owner'
+                       AND (
+                           removed_images.invoke_owner_id IS NULL
+                           OR removed_images.invoke_owner_id = scope.owner_id
+                       )
+                   )
+               )`,
+            chunk
+        );
+        removedNames.push(...rows
+            .filter(row => isSameInvokePath(row.scope_db_path, invokeSourceId)
+                && isSameInvokePath(row.invoke_source_id, invokeSourceId))
+            .map(row => row.invoke_image_name));
+    }
+
+    return removedNames;
 };
 
 export const getImageWithFullMetadata = async (id: string): Promise<AIImage | null> => {
@@ -748,7 +876,7 @@ export const getImageWithFullMetadata = async (id: string): Promise<AIImage | nu
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<ImageRow[]>('SELECT * FROM images WHERE id = ?', [normalizedId]);
+    const rows = await db.select<ImageRow[]>('SELECT * FROM scoped_images WHERE id = ? AND invoke_scope_hidden = 0', [normalizedId]);
     if (rows.length === 0) return null;
 
     const image = mapRowToImage(rows[0]);
@@ -786,7 +914,11 @@ export const toggleImagePin = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = $1 WHERE id = $2', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_pinned = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [isPinned ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
     // Note: Asset thumbnails update via facet cache rebuild, not on individual pins.
 };
@@ -799,7 +931,11 @@ export const toggleImageFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = $1 WHERE id = $2', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_favorite = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [isFavorite ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const toggleImageMask = async (id: string, userMasked: boolean | null) => {
@@ -814,7 +950,11 @@ export const toggleImageMask = async (id: string, userMasked: boolean | null) =>
     if (userMasked === true) value = 1;
     if (userMasked === false) value = 0;
 
-    await db.execute('UPDATE images SET user_masked = $1 WHERE id = $2', [value, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET user_masked = $1 WHERE id = $2 AND id IN (SELECT id FROM scoped_images)',
+        [value, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating content mask');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -833,238 +973,71 @@ export const toggleImageIntermediate = async (id: string, isIntermediate: boolea
     const db = await getDb();
     const normalizedId = normalizePath(id);
 
-    await db.execute(
-        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2",
+    const result = await db.execute(
+        "UPDATE images SET metadata_json = json_set(metadata_json, '$.isIntermediate', $1) WHERE id = $2 AND id IN (SELECT id FROM scoped_images)",
         [isIntermediate ? 1 : 0, normalizedId]
     );
+    assertMutationMatched(result, normalizedId, 'Updating intermediate status');
 };
 
-export const deleteImage = async (id: string) => {
-    if (isBrowserMockMode()) {
-        updateBrowserMockImage(id, { isDeleted: true });
-        return;
-    }
-
+export const updateVideoPlaybackStatus = async (
+    id: string,
+    status: 'unknown' | 'playable' | 'external_required'
+) => {
+    if (isBrowserMockMode()) return;
     const db = await getDb();
-    const normalizedId = normalizePath(id);
-    await clearCollectionThumbnailCacheForImages([normalizedId]);
-    await db.execute('DELETE FROM collection_images WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_loras WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_embeddings WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_hypernetworks WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_controlnets WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM image_ipadapters WHERE image_id = $1', [normalizedId]);
-    await db.execute('DELETE FROM images WHERE id = $1', [normalizedId]);
+    const result = await db.execute(
+        "UPDATE images SET playback_status = ? WHERE id = ? AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+        [status, normalizePath(id)]
+    );
+    assertMutationMatched(result, normalizePath(id), 'Updating video playback status');
 };
 
-const removeTombstones = async (db: Awaited<ReturnType<typeof getDb>>, ids: string[]) => {
-    for (const chunk of chunkItems(ids)) {
-        const placeholders = chunk.map(() => '?').join(',');
-        await db.execute(`DELETE FROM removed_images WHERE id IN (${placeholders})`, chunk);
-    }
-};
+const emptyRemovedLifecycleResult = (): RemovedLifecycleMutationResult => ({
+    affectedIds: [],
+    notFoundIds: [],
+    membershipWarningIds: [],
+    touchedResources: {
+        checkpoints: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        tools: [],
+    },
+});
 
 export const removeImagesFromLibrary = async (ids: string[]) => {
-    if (ids.length === 0) return;
-
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: RemovedImageRow[] = [];
-
-        console.info('[Repo] removeImagesFromLibrary: loading images', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version,
-                        detected_source_kind, source_kind_override, source_kind, photo_metadata_json, capture_wall_time_ms, display_timestamp, photo_refresh_version,
-                        is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                        original_metadata_json, original_parsed_json, original_state_json, is_corrupt
-                 FROM images
-                 WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length === 0) return;
-
-        const membershipRows: { image_id: string; collection_id: string }[] = [];
-        console.info('[Repo] removeImagesFromLibrary: loading collection memberships', { count: normalizedIds.length });
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkMembershipRows = await db.select<{ image_id: string; collection_id: string }[]>(
-                `SELECT image_id, collection_id
-                 FROM collection_images
-                 WHERE image_id IN (${placeholders})`,
-                chunk
-            );
-            membershipRows.push(...chunkMembershipRows);
-        }
-
-        const memberships = membershipRows.reduce<Record<string, string[]>>((acc, row) => {
-            if (!acc[row.image_id]) acc[row.image_id] = [];
-            acc[row.image_id].push(row.collection_id);
-            return acc;
-        }, {});
-
-        const removedAt = Date.now();
-        console.info('[Repo] removeImagesFromLibrary: persisting tombstones', { count: rows.length });
-        for (const row of rows) {
-            await db.execute(
-                `INSERT OR REPLACE INTO removed_images (
-                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version,
-                    detected_source_kind, source_kind_override, source_kind, photo_metadata_json, capture_wall_time_ms, display_timestamp, photo_refresh_version,
-                    is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
-                    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    row.id,
-                    row.path,
-                    row.width ?? null,
-                    row.height ?? null,
-                    row.file_size ?? null,
-                    row.timestamp,
-                    row.metadata_json ?? null,
-                    row.thumbnail_path ?? null,
-                    row.micro_thumbnail ?? null,
-                    row.thumbnail_source ?? null,
-                    row.thumbnail_version ?? CURRENT_THUMBNAIL_VERSION,
-                    row.detected_source_kind ?? 'generated',
-                    row.source_kind_override ?? null,
-                    row.source_kind ?? row.detected_source_kind ?? 'generated',
-                    row.photo_metadata_json ?? null,
-                    row.capture_wall_time_ms ?? null,
-                    row.display_timestamp ?? row.timestamp,
-                    row.photo_refresh_version ?? 0,
-                    row.is_favorite ?? 0,
-                    row.is_pinned ?? 0,
-                    row.is_missing ?? 0,
-                    row.user_masked ?? null,
-                    row.group_id ?? null,
-                    row.board_id ?? null,
-                    row.notes ?? null,
-                    row.original_metadata_json ?? null,
-                    row.original_parsed_json ?? null,
-                    row.original_state_json ?? null,
-                    row.is_corrupt ?? 0,
-                    removedAt,
-                    memberships[row.id] ? JSON.stringify(memberships[row.id]) : null
-                ]
-            );
-        }
-
-        console.info('[Repo] removeImagesFromLibrary: cleaning related tables', { count: normalizedIds.length });
-        await clearCollectionThumbnailCacheForImages(normalizedIds);
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            await db.execute(`DELETE FROM collection_images WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_loras WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_embeddings WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_hypernetworks WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_controlnets WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM image_ipadapters WHERE image_id IN (${placeholders})`, chunk);
-            await db.execute(`DELETE FROM images WHERE id IN (${placeholders})`, chunk);
-        }
-    });
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath).filter(Boolean)));
+    if (normalizedIds.length === 0) return emptyRemovedLifecycleResult();
+    if (isBrowserMockMode()) {
+        const activeIds = new Set(getBrowserMockImages().filter(image => !image.isDeleted).map(image => image.id));
+        const affectedIds = normalizedIds.filter(id => activeIds.has(id));
+        affectedIds.forEach(id => updateBrowserMockImage(id, { isDeleted: true }));
+        return {
+            ...emptyRemovedLifecycleResult(),
+            affectedIds,
+            notFoundIds: normalizedIds.filter(id => !activeIds.has(id)),
+        };
+    }
+    return unwrap(commands.removeImagesFromLibrary(normalizedIds));
 };
 
 export const restoreRemovedImages = async (ids: string[]) => {
-    if (ids.length === 0) return;
-
-    await dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-        const rows: RemovedImageRow[] = [];
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT ${REMOVED_IMAGE_FIELDS}, collection_ids_json FROM removed_images WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length === 0) return;
-
-        const restoredImages = rows.map(row => ({
-            ...mapRowToImage(row),
-            isDeleted: false
-        }));
-        const restoreStartedAt = liveWatchNow();
-        const records = restoredImages.map(buildPersistableImageRecord);
-        await persistImageRecords(records, db);
-        for (const row of rows) {
-            await db.execute(
-                'UPDATE images SET photo_refresh_version = ? WHERE id = ?',
-                [row.photo_refresh_version ?? 0, row.id]
-            );
-        }
-        infoLiveWatchPerf('restoreRemovedImages persisted restored records', {
-            imageCount: restoredImages.length,
-            totalMs: elapsedMs(restoreStartedAt)
-        });
-
-        const restoredCollectionIds: string[] = [];
-        for (const row of rows) {
-            if (!row.collection_ids_json) continue;
-
-            try {
-                const collectionIds = JSON.parse(row.collection_ids_json) as string[];
-                for (const collectionId of collectionIds) {
-                    await db.execute(
-                        `INSERT OR IGNORE INTO collection_images (collection_id, image_id)
-                         SELECT ?, ?
-                         WHERE EXISTS (SELECT 1 FROM collections WHERE id = ?)`,
-                        [collectionId, row.id, collectionId]
-                    );
-                    restoredCollectionIds.push(collectionId);
-                }
-            } catch (error) {
-                console.warn('[DB] Failed to restore collection membership for removed image', row.id, error);
-            }
-        }
-
-        await clearCollectionThumbnailCacheForCollections(restoredCollectionIds);
-        await removeTombstones(db, normalizedIds);
-    });
-};
-
-/**
- * Deletes the image from the database AND moves the physical file to the OS trash.
- * Also moves the generated thumbnail to trash.
- */
-export const deleteImageFromDisk = async (id: string, path: string, thumbnailPath: string | null) => {
+    const normalizedIds = Array.from(new Set(ids.map(normalizePath).filter(Boolean)));
+    if (normalizedIds.length === 0) return emptyRemovedLifecycleResult();
     if (isBrowserMockMode()) {
-        updateBrowserMockImage(id, { isDeleted: true });
-        return;
+        const removedIds = new Set(getBrowserMockImages().filter(image => image.isDeleted).map(image => image.id));
+        const affectedIds = normalizedIds.filter(id => removedIds.has(id));
+        affectedIds.forEach(id => updateBrowserMockImage(id, { isDeleted: false }));
+        return {
+            ...emptyRemovedLifecycleResult(),
+            affectedIds,
+            notFoundIds: normalizedIds.filter(id => !removedIds.has(id)),
+        };
     }
-
-    // 1. Move to Trash (OS)
-    if (path) {
-        try {
-            await unwrap(commands.moveToTrash(path));
-        } catch (e) {
-            console.error('[Repo] Failed to move file to trash:', path, e);
-            // We proceed even if trash fails?
-            // "make it a move to OS trash, this is an additonal safety net"
-            // If safety net fails, we should probably warn or throw?
-            // But blocking deletion because trash is full/error might be annoying.
-            // For now, we log and proceed.
-        }
-    }
-
-    // 2. Trash Thumbnail
-    if (thumbnailPath && shouldTrashThumbnail(path, thumbnailPath)) {
-        try {
-            await unwrap(commands.deleteThumbnail(thumbnailPath));
-        } catch (e) {
-            console.warn('[Repo] Failed to trash thumbnail:', thumbnailPath, e);
-        }
-    }
-
-    // 3. Delete from DB
-    await deleteImage(id);
+    return unwrap(commands.restoreRemovedImages(normalizedIds));
 };
 
 export const deleteRemovedImageFromDisk = async (id: string): Promise<DeleteRemovedImagesResult> => {
@@ -1072,79 +1045,35 @@ export const deleteRemovedImageFromDisk = async (id: string): Promise<DeleteRemo
 };
 
 export const deleteRemovedImagesFromDisk = async (ids: string[]): Promise<DeleteRemovedImagesResult> => {
-    if (ids.length === 0) {
-        return { deletedIds: [], failedIds: [], thumbnailWarningIds: [] };
-    }
-
     const normalizedIds = Array.from(new Set(ids.map(normalizePath)));
-
-    return dbMutex.dispatch(async () => {
-        const db = await getDb();
-        const rows: RemovedImageRow[] = [];
-        for (const chunk of chunkItems(normalizedIds)) {
-            const placeholders = chunk.map(() => '?').join(',');
-            const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, thumbnail_path FROM removed_images WHERE id IN (${placeholders})`,
-                chunk
-            );
-            rows.push(...chunkRows);
-        }
-
-        if (rows.length === 0) {
-            return { deletedIds: [], failedIds: [...normalizedIds], thumbnailWarningIds: [] };
-        }
-
-        const deletedIds: string[] = [];
-        const failedIds: string[] = [];
-        const thumbnailWarningIds: string[] = [];
-
-        for (const row of rows) {
-            if (row.path) {
-                try {
-                    await unwrap(commands.moveToTrash(row.path));
-                } catch (e) {
-                    console.error('[Repo] Failed to move removed file to trash:', row.path, e);
-                    failedIds.push(row.id);
-                    continue;
-                }
-            }
-
-            const thumbnailPath = row.thumbnail_path;
-            if (thumbnailPath && shouldTrashThumbnail(row.path, thumbnailPath)) {
-                try {
-                    await unwrap(commands.deleteThumbnail(thumbnailPath));
-                } catch (e) {
-                    console.warn('[Repo] Failed to trash removed thumbnail:', thumbnailPath, e);
-                    thumbnailWarningIds.push(row.id);
-                }
-            }
-
-            deletedIds.push(row.id);
-        }
-
-        if (deletedIds.length > 0) {
-            await removeTombstones(db, deletedIds);
-        }
-
-        const missingIds = normalizedIds.filter(id => !rows.some(row => row.id === id));
-        failedIds.push(...missingIds);
-
-        return { deletedIds, failedIds, thumbnailWarningIds };
-    });
-};
-
-export const markAsDeleted = async (ids: string[], deleted: boolean) => {
-    if (ids.length === 0) return;
-    if (isBrowserMockMode()) {
-        ids.forEach(id => updateBrowserMockImage(id, { isDeleted: deleted }));
-        return;
+    if (normalizedIds.length === 0) {
+        return {
+            clearedIds: [],
+            trashedIds: [],
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: [],
+        };
     }
 
-    const normalizedIds = ids.map(normalizePath);
-    const db = await getDb();
-    const placeholders = normalizedIds.map(() => '?').join(',');
-    await db.execute(`UPDATE images SET is_deleted = ? WHERE id IN (${placeholders})`, [deleted ? 1 : 0, ...normalizedIds]);
-    await clearCollectionThumbnailCacheForImages(normalizedIds);
+    if (isBrowserMockMode()) {
+        const removedIds = new Set(getBrowserMockImages().filter(image => image.isDeleted).map(image => image.id));
+        const clearedIds = normalizedIds.filter(id => removedIds.has(id));
+        deleteBrowserMockImages(clearedIds);
+        return {
+            clearedIds,
+            trashedIds: clearedIds,
+            alreadyMissingIds: [],
+            failedIds: [],
+            cleanupPendingIds: [],
+            thumbnailWarningIds: [],
+            notFoundIds: normalizedIds.filter(id => !removedIds.has(id)),
+        };
+    }
+
+    return unwrap(commands.deleteRemovedImagesFromDisk(normalizedIds));
 };
 
 export const updateImageWorkflow = async (id: string, workflowJson: string): Promise<void> => {
@@ -1160,18 +1089,26 @@ export const updateImageWorkflow = async (id: string, workflowJson: string): Pro
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
-    if (rows.length === 0) return;
-
-    try {
-        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
-        metadata.workflowJson = workflowJson;
-        metadata.hasWorkflowHint = true; // Mark as having workflow
-
-        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
-    } catch (e) {
-        console.error('[DB] Failed to update workflow for image', normalizedId, e);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
+    if (rows.length === 0) {
+        throw new Error(`Updating workflow failed because the asset was not found: ${normalizedId}`);
     }
+
+    let metadata: Partial<ImageMetadata>;
+    try {
+        metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
+    } catch (error) {
+        console.error('[DB] Failed to parse workflow metadata for image', normalizedId, error);
+        return;
+    }
+    metadata.workflowJson = workflowJson;
+    metadata.hasWorkflowHint = true;
+
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [JSON.stringify(metadata), normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating workflow');
 };
 
 export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean): Promise<void> => {
@@ -1187,17 +1124,25 @@ export const updateImageWorkflowHint = async (id: string, hasWorkflow: boolean):
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM images WHERE id = ?', [normalizedId]);
-    if (rows.length === 0) return;
-
-    try {
-        const metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
-        metadata.hasWorkflowHint = hasWorkflow;
-
-        await db.execute('UPDATE images SET metadata_json = ? WHERE id = ?', [JSON.stringify(metadata), normalizedId]);
-    } catch (e) {
-        console.error('[DB] Failed to update workflow hint for image', normalizedId, e);
+    const rows = await db.select<MetadataJsonRow[]>('SELECT metadata_json FROM scoped_images WHERE id = ?', [normalizedId]);
+    if (rows.length === 0) {
+        throw new Error(`Updating workflow hint failed because the asset was not found: ${normalizedId}`);
     }
+
+    let metadata: Partial<ImageMetadata>;
+    try {
+        metadata = JSON.parse(rows[0].metadata_json || '{}') as Partial<ImageMetadata>;
+    } catch (error) {
+        console.error('[DB] Failed to parse workflow hint metadata for image', normalizedId, error);
+        return;
+    }
+    metadata.hasWorkflowHint = hasWorkflow;
+
+    const result = await db.execute(
+        'UPDATE images SET metadata_json = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [JSON.stringify(metadata), normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating workflow hint');
 };
 
 export const updateFavorite = async (id: string, isFavorite: boolean) => {
@@ -1208,7 +1153,11 @@ export const updateFavorite = async (id: string, isFavorite: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_favorite = ? WHERE id = ?', [isFavorite ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [isFavorite ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating favorite');
 };
 
 export const updatePinned = async (id: string, isPinned: boolean) => {
@@ -1219,54 +1168,40 @@ export const updatePinned = async (id: string, isPinned: boolean) => {
 
     const db = await getDb();
     const normalizedId = normalizePath(id);
-    await db.execute('UPDATE images SET is_pinned = ? WHERE id = ?', [isPinned ? 1 : 0, normalizedId]);
+    const result = await db.execute(
+        'UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        [isPinned ? 1 : 0, normalizedId]
+    );
+    assertMutationMatched(result, normalizedId, 'Updating pin');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
-export const updateImagesBoard = async (ids: string[], boardId: string | null) => {
-    if (ids.length === 0) return;
-    if (isBrowserMockMode()) {
-        ids.forEach(id => updateBrowserMockImage(id, { boardId: boardId ?? undefined }));
-        return;
-    }
 
-    const db = await getDb();
-    const normalizedIds = ids.map(normalizePath);
-    const placeholders = normalizedIds.map(() => '?').join(',');
-
-    await db.execute(`UPDATE images SET board_id = ? WHERE id IN (${placeholders})`, [boardId, ...normalizedIds]);
-
-    // Junction Table Sync
-    if (boardId) {
-        for (const id of normalizedIds) {
-            await db.execute('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)', [boardId, id]);
-        }
-    } else {
-        // If boardId is null, we don't necessarily know which collection to remove it from in the M:N world,
-        // but since board_id was 1:N, we should probably remove it from any 'invoke' source collections?
-        // Actually, a simpler approach is to use the dedicated collection removal tools for manual changes.
-    }
-    await clearCollectionThumbnailCacheForImages(normalizedIds);
-};
-
-export const checkHiddenContentAvailability = async (): Promise<{ hasIntermediates: boolean, hasGrids: boolean }> => {
+export const checkHiddenContentAvailability = async (): Promise<{
+    hasIntermediates: boolean;
+    hasGrids: boolean;
+    hasInvokeImageAssets: boolean;
+}> => {
     if (isBrowserMockMode()) {
         const images = getBrowserMockImages();
         return {
             hasIntermediates: images.some(image => image.isIntermediate || image.metadata.isIntermediate),
-            hasGrids: images.some(image => image.metadata.isGrid === true)
+            hasGrids: images.some(image => image.metadata.isGrid === true),
+            hasInvokeImageAssets: images.some(image => isKnownInvokeImageAsset(image.invokeImageCategory)),
         };
     }
 
     const db = await getDb();
     // Use indexed STORED generated columns for instant lookup
-    const [intermediateCheck, gridCheck] = await Promise.all([
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
-        db.select<Array<Record<string, number>>>('SELECT 1 FROM images WHERE IFNULL(is_grid_gen, 0) = 1 LIMIT 1')
+    const [intermediateCheck, gridCheck, invokeAssetCheck] = await Promise.all([
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND IFNULL(is_grid_gen, 0) = 1 LIMIT 1'),
+        db.select<Array<Record<string, number>>>('SELECT 1 FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_invoke_asset_gen = 1 LIMIT 1'),
     ]);
 
     return {
         hasIntermediates: intermediateCheck.length > 0,
-        hasGrids: gridCheck.length > 0
+        hasGrids: gridCheck.length > 0,
+        hasInvokeImageAssets: invokeAssetCheck.length > 0,
     };
 };
 
@@ -1283,7 +1218,7 @@ export const clearAllThumbnailPaths = async (): Promise<number> => {
         while (true) {
             try {
                 const result = await db.execute(
-                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+                    'UPDATE images SET thumbnail_path = NULL, micro_thumbnail = NULL, thumbnail_source = NULL, thumbnail_version = 0, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id IN (SELECT id FROM scoped_images) AND thumbnail_path IS NOT NULL AND thumbnail_path != ""'
                 );
                 console.log('[DB] Cleared thumbnail paths:', result.rowsAffected);
                 if (result.rowsAffected > 0) {
@@ -1318,10 +1253,11 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const db = await getDb();
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
-    await db.execute(
-        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?`,
+    const result = await db.execute(
+        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
         [normalizedThumb, 'ambit', normalizedId]
     );
+    assertMutationMatched(result, normalizedId, 'Thumbnail update');
     await clearCollectionThumbnailCacheForImages([normalizedId]);
 };
 
@@ -1367,7 +1303,7 @@ export const updateThumbnailPathsBatch = async (updates: {
                          thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
                          thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
                          thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
-                     WHERE id = ?`,
+                     WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
                     [
                         normalizedThumb,
                         microThumbnail || null,

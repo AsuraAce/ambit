@@ -1,5 +1,76 @@
 # Changelog
 
+## [0.13.0](https://github.com/AsuraAce/ambit/compare/v0.12.2...v0.13.0) (2026-09-01)
+
+
+### Features
+
+* **invoke:** preserve local sync ownership and overrides ([#299](https://github.com/AsuraAce/ambit/issues/299)) ([621fb74](https://github.com/AsuraAce/ambit/commit/621fb74e882d48db1d395514cdef95b9e1a4a74b))
+
+
+### Bug Fixes
+
+* **release:** isolate title-check event concurrency ([#303](https://github.com/AsuraAce/ambit/issues/303)) ([b43bc61](https://github.com/AsuraAce/ambit/commit/b43bc61cc3cb08290253f2c9c6f3d46b417e21a7))
+* **thumbnails:** make smart optimization fast and resilient ([#301](https://github.com/AsuraAce/ambit/issues/301)) ([14b017c](https://github.com/AsuraAce/ambit/commit/14b017cbb84405e854eda9e9f4128f9f57378f26))
+* **ui:** polish viewer and settings interactions ([#302](https://github.com/AsuraAce/ambit/issues/302)) ([90abfaa](https://github.com/AsuraAce/ambit/commit/90abfaa44aa17ed0aa0c1291663ab94d5679b31f))
+
+## [0.12.2](https://github.com/AsuraAce/ambit/compare/v0.12.1...v0.12.2) (2026-08-30)
+
+
+### Bug Fixes
+
+* **release:** forward updater verification tag ([#295](https://github.com/AsuraAce/ambit/issues/295)) ([37f23bd](https://github.com/AsuraAce/ambit/commit/37f23bdef7e61399b7e530adb24903055a69c533))
+
+## [0.12.1](https://github.com/AsuraAce/ambit/compare/v0.12.0...v0.12.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **updater:** improve diagnostics and published release verification ([#293](https://github.com/AsuraAce/ambit/issues/293)) ([a80cd5a](https://github.com/AsuraAce/ambit/commit/a80cd5a922651cc62cf5aa13aa6e7b6d9f101b4c))
+
+## [0.12.0](https://github.com/AsuraAce/ambit/compare/v0.11.1...v0.12.0) (2026-08-28)
+
+
+### Features
+
+* **ui:** align light theme and semantic colors ([#291](https://github.com/AsuraAce/ambit/issues/291)) ([b4de9a8](https://github.com/AsuraAce/ambit/commit/b4de9a8e0a93b7b75d4c1e413d5fc27a15303d0a))
+
+## [0.11.1](https://github.com/AsuraAce/ambit/compare/v0.11.0...v0.11.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **invokeai:** harden owner-scoped library switching ([#288](https://github.com/AsuraAce/ambit/issues/288)) ([07b0c30](https://github.com/AsuraAce/ambit/commit/07b0c3074150246711518a74879a1fb0ec206685))
+
+## [0.11.0](https://github.com/AsuraAce/ambit/compare/v0.10.0...v0.11.0) (2026-08-20)
+
+
+### Features
+
+* add ComfyUI parser support workflow ([#275](https://github.com/AsuraAce/ambit/issues/275)) ([986422f](https://github.com/AsuraAce/ambit/commit/986422f6078ce478a40eb4236d4ca0c18d5226a6))
+* add foundational video library support ([#282](https://github.com/AsuraAce/ambit/issues/282)) ([f253fb2](https://github.com/AsuraAce/ambit/commit/f253fb2d82037d8cccff0f243d74510087f30df7))
+* expand ComfyUI support diagnostics and replay tooling ([#281](https://github.com/AsuraAce/ambit/issues/281)) ([7839500](https://github.com/AsuraAce/ambit/commit/783950005a923b52169cb437bf1cfe8046b05f54))
+* inspect normalized ComfyUI workflow subgraphs ([#278](https://github.com/AsuraAce/ambit/issues/278)) ([f9a216a](https://github.com/AsuraAce/ambit/commit/f9a216ad196a5cf1c118daee4f9197ac96b502f6))
+
+
+### Bug Fixes
+
+* **deps:** unblock release dependency audits ([#285](https://github.com/AsuraAce/ambit/issues/285)) ([01b8ef8](https://github.com/AsuraAce/ambit/commit/01b8ef8b361b0cf41e4088279e1f8dc8efd45ca5))
+* harden image removal lifecycle ([#277](https://github.com/AsuraAce/ambit/issues/277)) ([d22fe4b](https://github.com/AsuraAce/ambit/commit/d22fe4b9c19463e304454aca695c71f6c4c52003))
+
+## [0.10.0](https://github.com/AsuraAce/ambit/compare/v0.9.1...v0.10.0) (2026-08-03)
+
+
+### Features
+
+* expand and harden ComfyUI metadata extraction ([28db2dc](https://github.com/AsuraAce/ambit/commit/28db2dccba6e667df56d1b0a5c982aeb6787b682))
+* **invokeai:** add owner-aware assets and metadata ([#267](https://github.com/AsuraAce/ambit/issues/267)) ([2cb0cbe](https://github.com/AsuraAce/ambit/commit/2cb0cbeffe77b5fad36a250befadc38f172a986a))
+
+
+### Bug Fixes
+
+* **release:** keep generated versions consistent ([181735c](https://github.com/AsuraAce/ambit/commit/181735cf1a704b9a5e8ae75f004f88655ad4c9a4))
+
 ## [0.9.1](https://github.com/AsuraAce/ambit/compare/v0.9.0...v0.9.1) (2026-07-27)
 
 

@@ -10,6 +10,7 @@ const makeProject = (t, versions = {}) => {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ambit-release-tag-'));
   const version = versions.packageVersion ?? '0.6.3';
 
+  fs.mkdirSync(path.join(rootDir, '.github'), { recursive: true });
   fs.mkdirSync(path.join(rootDir, 'src-tauri'), { recursive: true });
   fs.writeFileSync(path.join(rootDir, 'package.json'), JSON.stringify({ version }, null, 2));
   fs.writeFileSync(
@@ -23,6 +24,14 @@ const makeProject = (t, versions = {}) => {
   fs.writeFileSync(
     path.join(rootDir, 'src-tauri', 'Cargo.toml'),
     `[package]\nname = "app"\nversion = "${versions.cargoVersion ?? version}"\n`,
+  );
+  fs.writeFileSync(
+    path.join(rootDir, 'src-tauri', 'Cargo.lock'),
+    `version = 4\n\n[[package]]\nname = "app"\nversion = "${versions.cargoLockVersion ?? version}"\n`,
+  );
+  fs.writeFileSync(
+    path.join(rootDir, '.github', '.release-please-manifest.json'),
+    JSON.stringify({ '.': versions.releaseManifestVersion ?? version }, null, 2),
   );
 
   t.after(() => fs.rmSync(rootDir, { recursive: true, force: true }));
@@ -119,6 +128,20 @@ test('rejects version mismatches between the tag and repository files', (t) => {
         git: makeGit(),
       }),
     /does not match repository version files[\s\S]*src-tauri\/tauri\.conf\.json: 0\.6\.2/,
+  );
+});
+
+test('rejects Cargo lock and Release Please manifest mismatches', (t) => {
+  const rootDir = makeProject(t, { cargoLockVersion: '0.6.2', releaseManifestVersion: '0.6.1' });
+
+  assert.throws(
+    () =>
+      validateReleaseTag({
+        env: makeEnv('v0.6.3'),
+        rootDir,
+        git: makeGit(),
+      }),
+    /src-tauri\/Cargo\.lock: 0\.6\.2[\s\S]*\.github\/\.release-please-manifest\.json: 0\.6\.1/,
   );
 });
 

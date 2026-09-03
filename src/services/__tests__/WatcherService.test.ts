@@ -58,8 +58,8 @@ describe('WatcherService', () => {
         expect(mockedListen).not.toHaveBeenCalled();
     });
 
-    it('logs successful native starts and debounced change events with path counts', async () => {
-        type FolderChangeEvent = { payload: string[] };
+    it('logs successful native starts and typed change events with change and path counts', async () => {
+        type FolderChangeEvent = { payload: Array<{ kind: 'create' | 'modify'; paths: string[] }> };
         let changeHandler: ((event: FolderChangeEvent) => void) | undefined;
         const onChange = vi.fn();
         const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -70,11 +70,15 @@ describe('WatcherService', () => {
 
         const service = new WatcherService();
         await service.startWatching(['C:/watch'], onChange);
-        changeHandler?.({ payload: ['C:/watch/a.png', 'C:/watch/b.png'] });
+        const changes = [
+            { kind: 'create' as const, paths: ['C:/watch/a.png'] },
+            { kind: 'modify' as const, paths: ['C:/watch/b.png'] }
+        ];
+        changeHandler?.({ payload: changes });
 
         expect(logSpy).toHaveBeenCalledWith('[WatcherService] Native watcher started for 1 paths');
-        expect(logSpy).toHaveBeenCalledWith('[WatcherService] Folder change detected with 2 paths');
-        expect(onChange).toHaveBeenCalledWith(['C:/watch/a.png', 'C:/watch/b.png']);
+        expect(logSpy).toHaveBeenCalledWith('[WatcherService] Folder change detected with 2 changes across 2 paths');
+        expect(onChange).toHaveBeenCalledWith(changes);
     });
 
     it('logs and skips a duplicate watcher request without restarting native state', async () => {

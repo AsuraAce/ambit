@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+    groupWorkflowNodes,
+    indexWorkflowConnections,
     selectWorkflowGraphSource,
-    selectWorkflowJsonForActions
+    selectWorkflowJsonForActions,
+    workflowGraphSourceFromBackend
 } from '../workflowGraphUtils';
 
 const compactTemplateWorkflow = JSON.stringify({
@@ -45,6 +48,11 @@ describe('workflow graph source selection', () => {
         expect(source?.source).toBe('prompt');
         expect(source?.json).toBe(richerApiPrompt);
         expect(source?.nodes).toHaveLength(4);
+        expect(source?.edges).toEqual([]);
+        expect(source?.selectedOutputNodeIds).toEqual([]);
+        expect(source?.rootSamplerNodeIds).toEqual([]);
+        expect(source?.selectedBranchNodeIds).toEqual([]);
+        expect(source?.outputAmbiguous).toBe(false);
         expect(source?.nodes.some(node => node.id === '30:19' && node.title === 'Positive Prompt')).toBe(true);
     });
 
@@ -121,5 +129,123 @@ describe('workflow graph source selection', () => {
 
         expect(source?.nodes).toHaveLength(1);
         expect(source?.nodes[0]).toMatchObject({ type: 'Unknown', title: 'Unknown' });
+    });
+
+    it('maps backend-normalized nodes without changing their archival source JSON', () => {
+        const source = workflowGraphSourceFromBackend({
+            source: 'expanded_workflow',
+            selectedOutputNodeIds: ['29'],
+            rootSamplerNodeIds: ['30:3'],
+            selectedBranchNodeIds: ['29', '30:3', '30:19'],
+            outputAmbiguous: false,
+            edges: [{
+                sourceNodeId: '30:19',
+                sourceOutputSlot: 0,
+                targetNodeId: '29',
+                targetInputName: 'images',
+                targetInputSlot: 0
+            }],
+            nodes: [{
+                id: '30:19',
+                nodeType: 'StringConcatenate',
+                title: 'Positive Prompt',
+                inputs: { string_a: 'glowing forest' },
+                subgraphPath: ['30']
+            }]
+        }, { workflow: compactTemplateWorkflow });
+
+        expect(source).toEqual({
+            json: compactTemplateWorkflow,
+            source: 'workflow',
+            normalizedByBackend: true,
+            selectedOutputNodeIds: ['29'],
+            rootSamplerNodeIds: ['30:3'],
+            selectedBranchNodeIds: ['29', '30:3', '30:19'],
+            outputAmbiguous: false,
+            edges: [{
+                sourceNodeId: '30:19',
+                sourceOutputSlot: 0,
+                targetNodeId: '29',
+                targetInputName: 'images',
+                targetInputSlot: 0
+            }],
+            nodes: [{
+                id: '30:19',
+                type: 'StringConcatenate',
+                title: 'Positive Prompt',
+                inputs: { string_a: 'glowing forest' },
+                subgraphPath: ['30']
+            }]
+        });
+    });
+
+    it('indexes normalized connections in one pass and omits missing endpoints', () => {
+        const nodes = [
+            { id: '2', type: 'Source', title: 'Source', inputs: {} },
+            { id: '10', type: 'Target', title: 'Target', inputs: {} }
+        ];
+        const edge = {
+            sourceNodeId: '2',
+            sourceOutputSlot: 1,
+            targetNodeId: '10',
+            targetInputName: 'image',
+            targetInputSlot: 0
+        };
+
+        const index = indexWorkflowConnections(nodes, [
+            edge,
+            { ...edge, sourceNodeId: 'missing' }
+        ]);
+
+        expect(index.get('2')).toEqual({ incoming: [], outgoing: [edge] });
+        expect(index.get('10')).toEqual({ incoming: [edge], outgoing: [] });
+    });
+
+    it('rejects empty or source-less backend reports so the caller can fall back', () => {
+        expect(workflowGraphSourceFromBackend({
+            source: 'expanded_workflow',
+            nodes: []
+        }, { workflow: compactTemplateWorkflow })).toBeUndefined();
+
+        expect(workflowGraphSourceFromBackend({
+            source: 'api_prompt',
+            nodes: [{
+                id: '1',
+                nodeType: 'SaveImage',
+                title: 'SaveImage',
+                inputs: {},
+                subgraphPath: []
+            }]
+        }, { workflow: compactTemplateWorkflow })).toBeUndefined();
+
+        expect(workflowGraphSourceFromBackend({
+            source: 'none',
+            nodes: [{
+                id: '1',
+                nodeType: 'SaveImage',
+                title: 'SaveImage',
+                inputs: {},
+                subgraphPath: []
+            }]
+        }, { workflow: compactTemplateWorkflow })).toBeUndefined();
+    });
+
+    it('groups top-level and nested nodes by their backend-derived subgraph paths', () => {
+        const groups = groupWorkflowNodes([
+            { id: '29', type: 'SaveImage', title: 'Save', inputs: {}, subgraphPath: [] },
+            { id: '30:19', type: 'Prompt', title: 'Prompt', inputs: {}, subgraphPath: ['30'] },
+            { id: '30:7:4', type: 'KSampler', title: 'Sampler', inputs: {}, subgraphPath: ['30', '7'] },
+            { id: '30:20', type: 'Preview', title: 'Preview', inputs: {}, subgraphPath: ['30'] }
+        ]);
+
+        expect(groups.map(group => ({
+            key: group.key,
+            path: group.path,
+            ids: group.nodes.map(node => node.id)
+        }))).toEqual([
+            { key: '', path: [], ids: ['29'] },
+            { key: '30', path: ['30'], ids: ['30:19', '30:20'] },
+            { key: '30:7', path: ['30', '7'], ids: ['30:7:4'] }
+        ]);
     });
 });

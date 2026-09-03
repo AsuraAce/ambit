@@ -4,6 +4,33 @@ use super::utils::{
 };
 use super::ImageMetadata;
 
+fn read_f32(root: &serde_json::Value, keys: &[&str]) -> Option<f32> {
+    keys.iter().find_map(|key| {
+        let value = root.get(*key)?;
+        let number = value.as_f64().or_else(|| {
+            let normalized = value.as_str()?.trim();
+            if normalized.is_empty() {
+                return None;
+            }
+            normalized
+                .parse::<f64>()
+                .ok()
+                .filter(|number| number.is_finite())
+        })?;
+        let number = number as f32;
+        number.is_finite().then_some(number)
+    })
+}
+
+fn read_model_name(value: &serde_json::Value) -> Option<&str> {
+    value.as_str().or_else(|| {
+        value
+            .get("model_name")
+            .and_then(|name| name.as_str())
+            .or_else(|| value.get("name").and_then(|name| name.as_str()))
+    })
+}
+
 pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     let mut meta = ImageMetadata::default();
     meta.tool = "InvokeAI".to_string();
@@ -30,8 +57,11 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
 
     let root_ref = temp_val.as_ref().unwrap_or(current_root);
 
-    // Handle root vs image wrapped (v2.x has metadata in "image" object)
-    let root = root_ref.get("image").unwrap_or(root_ref);
+    // Handle root vs image/generation wrapped metadata.
+    let root = root_ref
+        .get("image")
+        .or_else(|| root_ref.get("generation"))
+        .unwrap_or(root_ref);
 
     // ===== V2.x Format Support =====
     // model_weights is at the TOP level in v2.x, not inside "image"
@@ -97,10 +127,9 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     if let Some(steps) = root.get("steps").and_then(|v| v.as_u64()) {
         meta.steps = steps as u32;
     }
-    if let Some(cfg) = root.get("cfg_scale").and_then(|v| v.as_f64()) {
-        meta.cfg = cfg as f32;
-    } else if let Some(cfg) = root.get("cfg").and_then(|v| v.as_f64()) {
-        meta.cfg = cfg as f32;
+    if let Some(cfg) = read_f32(root, &["cfg_scale", "guidance", "cfg"]) {
+        meta.cfg = cfg;
+        meta.cfg_present = true;
     }
 
     if let Some(seed) = root.get("seed").and_then(|v| v.as_i64()) {
@@ -149,8 +178,18 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
     // Generation type - v2.x uses "type", v3.x uses "generation_mode"
     if let Some(gen_type) = root.get("generation_mode").and_then(|s| s.as_str()) {
         meta.generation_type = gen_type.to_string();
+    } else if let Some(gen_type) = root.get("generationType").and_then(|s| s.as_str()) {
+        meta.generation_type = gen_type.to_string();
     } else if let Some(gen_type) = root.get("type").and_then(|s| s.as_str()) {
         meta.generation_type = gen_type.to_string();
+    }
+
+    // VAE may be stored as a model name or as InvokeAI's model descriptor.
+    if let Some(vae) = root.get("vae").and_then(read_model_name) {
+        let vae = vae.trim();
+        if !vae.is_empty() {
+            meta.vae = Some(vae.to_string());
+        }
     }
 
     // Clip Skip (v3.x)
@@ -160,12 +199,14 @@ pub fn extract_invokeai_metadata(json: &serde_json::Value) -> ImageMetadata {
         }
     }
 
+    meta.denoising_strength = read_f32(
+        root,
+        &["denoising_strength", "denoisingStrength", "hrf_strength"],
+    );
+
     // Hires Fix (v3.x uses hrf_*)
     if let Some(enabled) = root.get("hrf_enabled").and_then(|v| v.as_bool()) {
         if enabled {
-            if let Some(strength) = root.get("hrf_strength").and_then(|v| v.as_f64()) {
-                meta.denoising_strength = Some(strength as f32);
-            }
             if let Some(method) = root.get("hrf_method").and_then(|s| s.as_str()) {
                 meta.hires_upscaler = Some(method.to_string());
             }
@@ -433,6 +474,111 @@ mod tests {
         assert_eq!(meta.hires_upscaler.as_deref(), Some("bilinear"));
         assert!(meta.positive_prompt.contains("kendo"));
         assert!(meta.negative_prompt.contains("worst quality"));
+    }
+
+    #[test]
+    fn test_extract_invokeai_high_value_generation_metadata() {
+        let payload = json!({
+            "generation": {
+                "cfg_scale": "0",
+                "guidance": 4.5,
+                "cfg": 8.0,
+                "denoising_strength": "0",
+                "denoisingStrength": 0.25,
+                "hrf_strength": 0.6,
+                "generation_mode": "sdxl_txt2img",
+                "vae": {
+                    "name": "FLUX.1-schnell_ae",
+                    "type": "vae"
+                },
+                "t2iAdapters": [
+                    { "model": { "name": "T2I-Adapter-Canny-SDXL-1.0.safetensors" } },
+                    "t2iadapter_depth_sd15v2.pth"
+                ],
+                "t2i_adapters": [
+                    {
+                        "t2i_adapter_model": {
+                            "model_name": "t2iadapter_sketch_sd15v2.ckpt"
+                        }
+                    },
+                    "t2iadapter_depth_sd15v2.pth"
+                ]
+            }
+        });
+
+        let meta = extract_invokeai_metadata(&payload);
+
+        assert_eq!(meta.cfg, 0.0);
+        assert_eq!(meta.denoising_strength, Some(0.0));
+        assert_eq!(meta.generation_type, "sdxl_txt2img");
+        assert_eq!(meta.vae.as_deref(), Some("FLUX.1-schnell_ae"));
+        assert_eq!(
+            meta.control_nets,
+            vec![
+                "t2i_adapter_canny_sdxl_1.0".to_string(),
+                "t2iadapter_depth_sd15v2".to_string(),
+                "t2iadapter_sketch_sd15v2".to_string(),
+            ]
+        );
+        assert!(meta.ip_adapters.is_empty());
+    }
+
+    #[test]
+    fn test_extract_invokeai_high_value_fallback_precedence() {
+        let guidance = extract_invokeai_metadata(&json!({
+            "guidance": "3.5",
+            "cfg": 7.0,
+            "hrf_strength": "0.45",
+            "generationType": "flux_txt2img",
+            "vae": "vae-ft-mse-840000-ema-pruned.ckpt"
+        }));
+        assert_eq!(guidance.cfg, 3.5);
+        assert_eq!(guidance.denoising_strength, Some(0.45));
+        assert_eq!(guidance.generation_type, "flux_txt2img");
+        assert_eq!(
+            guidance.vae.as_deref(),
+            Some("vae-ft-mse-840000-ema-pruned.ckpt")
+        );
+
+        let legacy = extract_invokeai_metadata(&json!({ "cfg": "6.25" }));
+        assert_eq!(legacy.cfg, 6.25);
+    }
+
+    #[test]
+    fn test_extract_invokeai_finite_decimal_numeric_strings() {
+        let normalized = extract_invokeai_metadata(&json!({
+            "cfg_scale": "   ",
+            "guidance": " 4.5e0 ",
+            "denoising_strength": "\t",
+            "denoisingStrength": " +3.5e-1 "
+        }));
+        assert_eq!(normalized.cfg, 4.5);
+        assert_eq!(normalized.denoising_strength, Some(0.35));
+
+        let no_js_only_forms = extract_invokeai_metadata(&json!({
+            "cfg_scale": "0x10",
+            "guidance": " 6.25 "
+        }));
+        assert_eq!(no_js_only_forms.cfg, 6.25);
+    }
+
+    #[test]
+    fn test_extract_invokeai_rejects_f32_overflow_and_uses_lower_priority_values() {
+        let overflow = extract_invokeai_metadata(&json!({
+            "cfg_scale": "1e100",
+            "guidance": "6.5",
+            "denoising_strength": -1e100,
+            "denoisingStrength": "0.4"
+        }));
+        assert_eq!(overflow.cfg, 6.5);
+        assert_eq!(overflow.denoising_strength, Some(0.4));
+
+        let boundary = extract_invokeai_metadata(&json!({
+            "cfg_scale": "3.4028236e38",
+            "guidance": "3.4028235e38"
+        }));
+        assert!(boundary.cfg.is_finite());
+        assert_eq!(boundary.cfg, f32::MAX);
     }
 
     #[test]

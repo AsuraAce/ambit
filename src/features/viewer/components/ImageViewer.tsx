@@ -21,14 +21,22 @@ import {
     getEffectiveAiThinkingMode,
     getEffectiveSystemPrompts
 } from '../../../utils/settingsUtils';
+import { MaskedViewerGate } from './MaskedViewerGate';
+import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
+import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
 
 interface ImageViewerProps {
     image: AIImage;
+    isMasked?: boolean;
+    initiallyRevealed?: boolean;
     availableTags?: string[];
-    onSetCollectionMembership: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
+    modelOptions?: readonly string[];
+    onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     onClose: () => void;
     onNext: () => void;
     onPrev: () => void;
+    canNavigateNext?: boolean;
+    canNavigatePrevious?: boolean;
     onSearch: (term: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
@@ -36,7 +44,7 @@ interface ImageViewerProps {
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (imageId: string, tool: GeneratorTool) => void;
     onSetImageKind?: (imageId: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
-    onToggleFavorite: (id: string) => void;
+    onToggleFavorite?: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
     onRecoverMetadata?: () => void;
     onRevertMetadata?: (imageId: string) => void;
@@ -47,6 +55,7 @@ interface ImageViewerProps {
     isSidebarOpen?: boolean;
     onToggleSidebar?: () => void;
     searchHighlights?: PromptHighlightSpec;
+    onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
 }
 
 import { AIResultModal } from './AIResultModal';
@@ -107,11 +116,16 @@ const ViewerStatusHud: React.FC<ViewerStatusHudProps> = ({ isFavorite, isPinned,
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
     image,
+    isMasked = false,
+    initiallyRevealed = false,
     availableTags = [],
+    modelOptions = [],
     onSetCollectionMembership,
     onClose,
     onNext,
     onPrev,
+    canNavigateNext = true,
+    canNavigatePrevious = true,
     onSearch,
     onUpdateNotes,
     onUpdatePrompt,
@@ -129,12 +143,21 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     isShortcutBlocked = false,
     isSidebarOpen = true,
     onToggleSidebar,
-    searchHighlights
+    searchHighlights,
+    onOpenReferencedImage
 }) => {
+    const metadataDisclosure = useMetadataDisclosureState();
     const settings = useSettingsStore(s => s.settings);
     const privacyExposureBlocked = useSettingsStore(state => (
         state.privacyEnabled && state.privacyMaskIndexStatus !== 'ready'
     ));
+    const [revealedImageId, setRevealedImageId] = useState<string | null>(
+        initiallyRevealed ? image.id : null
+    );
+    const itemExposureBlocked = isMasked
+        && !initiallyRevealed
+        && revealedImageId !== image.id;
+    const mediaExposureBlocked = privacyExposureBlocked || itemExposureBlocked;
     const collections = useCollectionStore(s => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
@@ -149,7 +172,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     // Reset local version and/or fetch full metadata when image or version changes
     useEffect(() => {
-        if (privacyExposureBlocked) {
+        if (mediaExposureBlocked) {
             setFullImage(null);
             setIsLoadingFull(false);
             return;
@@ -165,7 +188,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             if (res) setFullImage(res);
             setIsLoadingFull(false);
         }).catch(() => setIsLoadingFull(false));
-    }, [image.id, activeVersionId, privacyExposureBlocked]);
+    }, [image.id, activeVersionId, mediaExposureBlocked]);
 
     const versions = useMemo(() => {
         if (!image.stack || image.stack.length === 0) return [];
@@ -218,7 +241,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
     const { palette, isLoading: isPaletteLoading } = usePalette(
-        privacyExposureBlocked ? null : displayImage.url
+        mediaExposureBlocked ? null : displayImage.url
     );
     const { addToast } = useToast();
     const ai = useImageAI({
@@ -230,14 +253,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     });
 
     // --- UI State ---
-    const [activeTab, setActiveTab] = useState<'info' | 'edit' | 'workflow'>('info');
+    const [activeTab, setActiveTab] = useState<'details' | 'metadata' | 'workflow'>('metadata');
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showStatusHud, setShowStatusHud] = useState(true);
 
     useEffect(() => {
         if (getEffectiveSourceKind(displayImage) !== 'generated' && activeTab === 'workflow') {
-            setActiveTab('info');
+            setActiveTab('details');
         }
     }, [activeTab, displayImage]);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -257,6 +280,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         ai.closeModal();
     }, [
         displayImage.id,
+        displayImage.notes,
         displayImage.metadata.positivePrompt,
         displayImage.metadata.negativePrompt,
         displayImage.originalMetadata,
@@ -264,10 +288,15 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     ]);
 
     useEffect(() => {
+        setRevealedImageId(initiallyRevealed ? image.id : null);
+    }, [image.id, initiallyRevealed]);
+
+    useEffect(() => {
+        if (mediaExposureBlocked) return;
         void ensureAssetPathAccessible(displayImage.url).catch((error) => {
             console.warn('[ImageViewer] Failed to register image path for viewer', error);
         });
-    }, [displayImage.url]);
+    }, [displayImage.url, mediaExposureBlocked]);
 
     const revealStatusHud = useCallback((duration = 1600) => {
         setShowStatusHud(true);
@@ -283,6 +312,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     }, [displayImage.id, revealStatusHud]);
 
     const handleToggleFavorite = useCallback(() => {
+        if (!onToggleFavorite) return;
         onToggleFavorite(displayImage.id);
         revealStatusHud(2000);
     }, [displayImage.id, onToggleFavorite, revealStatusHud]);
@@ -303,13 +333,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         return () => { if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current); };
     }, [isSidebarOpen, isTheaterMode, scale]);
 
-    // Global Key Handlers for Viewer
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (!isOpen) return;
-            // Don't trigger shortcuts if user is typing in a field
-            if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-
+    const handleViewerKeyDown = useCallback((e: KeyboardEvent) => {
             if (ai.modalOpen) {
                 if (e.key === 'Escape') {
                     e.preventDefault();
@@ -317,8 +341,6 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 }
                 return;
             }
-
-            if (isShortcutBlocked) return;
 
             const key = e.key.toLowerCase();
 
@@ -335,12 +357,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             }
 
             // Navigation
-            if (e.key === 'ArrowRight') onNext();
-            if (e.key === 'ArrowLeft') onPrev();
+            if (e.key === 'ArrowRight' && canNavigateNext) onNext();
+            if (e.key === 'ArrowLeft' && canNavigatePrevious) onPrev();
 
             // Actions
-            if (key === 'f') handleToggleFavorite();
-            if (key === 'p') handleTogglePin();
+            if (key === 'f' && onToggleFavorite) handleToggleFavorite();
+            if (key === 'p' && onTogglePin) handleTogglePin();
             if (key === 'i') onToggleSidebar?.();
 
             if (e.key === 'Escape') {
@@ -348,16 +370,38 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode(p => !p);
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isOpen, ai.modalOpen, ai.closeModal, isShortcutBlocked, isTheaterMode, displayImage.id, onNext, onPrev, handleToggleFavorite, handleTogglePin, onToggleSidebar, onDelete, onClose]);
+    }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete, onClose]);
+
+    useViewerKeyboard({
+        enabled: isOpen,
+        blocked: isShortcutBlocked && !ai.modalOpen,
+        onKeyDown: handleViewerKeyDown,
+    });
 
     useEffect(() => {
         if (isOpen && privacyExposureBlocked) onClose();
     }, [isOpen, onClose, privacyExposureBlocked]);
 
     if (!isOpen || privacyExposureBlocked) return null;
+
+    if (itemExposureBlocked) {
+        return (
+            <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Hidden image"
+                initial={false}
+                animate={{ opacity: 1 }}
+                className="fixed inset-0 z-[100] flex bg-gray-950/95 backdrop-blur-md"
+            >
+                <MaskedViewerGate
+                    mediaLabel="image"
+                    onReveal={() => setRevealedImageId(image.id)}
+                    onClose={onClose}
+                />
+            </motion.div>
+        );
+    }
 
     const isSidebarVisible = isSidebarOpen && !isTheaterMode;
 
@@ -388,10 +432,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     return (
         <motion.div
-            initial={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Image viewer: ${displayImage.filename}`}
+            initial={false}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            className={`fixed inset-0 z-50 flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
+            className={`fixed inset-0 z-[100] flex bg-gray-950/95 ${isTheaterMode ? 'bg-black' : 'backdrop-blur-md'}`}
         >
 
             {/* Left Area: Canvas */}
@@ -414,7 +461,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onOpenExternal={handleOpenExternal}
                     onToggleTheater={() => setIsTheaterMode(!isTheaterMode)}
                     onShare={handleShare}
-                    onToggleFavorite={handleToggleFavorite}
+                    onToggleFavorite={onToggleFavorite ? handleToggleFavorite : undefined}
                     onTogglePin={onTogglePin ? handleTogglePin : undefined}
                     onDelete={onDelete ? () => onDelete(displayImage.id) : undefined}
                     onToggleSidebar={onToggleSidebar}
@@ -429,6 +476,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     showControls={showControls}
                     onPrev={onPrev}
                     onNext={onNext}
+                    canNavigatePrevious={canNavigatePrevious}
+                    canNavigateNext={canNavigateNext}
                     onClose={onClose}
                     onZoomIn={zoomIn}
                     onZoomOut={zoomOut}
@@ -465,17 +514,19 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     setActiveTab={setActiveTab}
                     collections={collections}
                     availableTags={availableTags}
+                    modelOptions={modelOptions}
+                    disclosure={metadataDisclosure}
                     notes={notes}
                     setNotes={setNotes}
                     promptValue={promptValue}
                     setPromptValue={setPromptValue}
                     negativePromptValue={negativePromptValue}
                     setNegativePromptValue={setNegativePromptValue}
-                    onUpdateNotes={(id, n) => onUpdateNotes?.(id, n)}
-                    onUpdatePrompt={(id, p) => onUpdatePrompt?.(id, p)}
-                    onUpdateNegativePrompt={(id, np) => onUpdateNegativePrompt?.(id, np)}
-                    onUpdateModel={(id, m) => onUpdateModel?.(id, m)}
-                    onUpdateTool={(id, t) => onUpdateTool?.(id, t)}
+                    onUpdateNotes={onUpdateNotes}
+                    onUpdatePrompt={onUpdatePrompt}
+                    onUpdateNegativePrompt={onUpdateNegativePrompt}
+                    onUpdateModel={onUpdateModel}
+                    onUpdateTool={onUpdateTool}
                     onSetImageKind={onSetImageKind}
                     onSetCollectionMembership={onSetCollectionMembership}
                     onSearch={onSearch}
@@ -490,6 +541,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     isPaletteLoading={isPaletteLoading}
                     isLoading={isReallyLoading}
                     searchHighlights={searchHighlights}
+                    onOpenReferencedImage={onOpenReferencedImage}
                 />
             </div>
 

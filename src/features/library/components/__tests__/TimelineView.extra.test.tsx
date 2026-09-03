@@ -104,7 +104,7 @@ describe('TimelineView component routing', () => {
         fireEvent.click(screen.getByText('favorite-b'));
         fireEvent.click(screen.getByText('pin-b'));
         fireEvent.contextMenu(screen.getByText('menu-b'));
-        expect(props.onImageClick).toHaveBeenCalledWith(expect.anything(), 'b', 1);
+        expect(props.onImageClick).toHaveBeenCalledWith(expect.anything(), 'b', 1, undefined);
         expect(props.onSelectionToggle).toHaveBeenCalledWith(expect.anything(), 'b');
         expect(props.onToggleFavorite).toHaveBeenCalledWith(expect.anything(), 'b');
         expect(props.onTogglePin).toHaveBeenCalledWith(expect.anything(), 'b');
@@ -149,7 +149,7 @@ describe('TimelineView component routing', () => {
         mocks.visibleItems = [{ type: 'row', y: 0, height: 100, items: [{ image: source, x: 0, width: 100, height: 100, globalIndex: 99 }] }];
         const { props } = setup([source]);
         fireEvent.click(screen.getByText('open-source'));
-        expect(props.onImageClick).toHaveBeenCalledWith(expect.anything(), 'source', 99);
+        expect(props.onImageClick).toHaveBeenCalledWith(expect.anything(), 'source', 99, undefined);
     });
 
     it('renders empty and drag-box states and handles optional callbacks', () => {

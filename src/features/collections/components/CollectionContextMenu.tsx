@@ -108,7 +108,7 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
             pressed={Boolean(isPinned)}
           />
           <ActionButton
-            icon={isArchived ? <ArchiveRestore className="w-4 h-4 text-yellow-400" /> : <Archive className="w-4 h-4 text-gray-400" />}
+            icon={isArchived ? <ArchiveRestore className="h-4 w-4 text-gray-500 dark:text-gray-300" /> : <Archive className="w-4 h-4 text-gray-400" />}
             onClick={onToggleArchive}
             label={isArchived ? "Unarchive" : "Archive"}
             pressed={Boolean(isArchived)}
@@ -127,7 +127,7 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
       {/* Management */}
       <MenuItem icon={<Pencil className="w-4 h-4 text-gray-400" />} label="Rename" onClick={onRename} />
       {onEditCollection && (
-        <MenuItem icon={<Settings className="w-4 h-4 text-gray-400" />} label="Edit Filters" onClick={onEditCollection} />
+        <MenuItem icon={<Settings className="w-4 h-4 text-gray-400" />} label="Edit Collection" onClick={onEditCollection} />
       )}
 
       {/* Color Tags */}

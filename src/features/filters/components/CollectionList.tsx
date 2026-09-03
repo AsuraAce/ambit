@@ -220,8 +220,8 @@ export function CollectionList<T extends Collection>({
                 <SortDropdown
                     title="Sort Collections"
                     options={[
-                        { id: 'recent_desc', label: 'Recently Used', icon: Clock },
-                        { id: 'recent_asc', label: 'Least Recently Used', icon: Clock },
+                        { id: 'recent_desc', label: 'Recently Updated', icon: Clock },
+                        { id: 'recent_asc', label: 'Least Recently Updated', icon: Clock },
                         { id: 'date_desc', label: 'Newest Created', icon: Calendar },
                         { id: 'date_asc', label: 'Oldest Created', icon: Calendar },
                         { id: 'name_asc', label: 'Name (A-Z)', icon: ArrowUpWideNarrow },

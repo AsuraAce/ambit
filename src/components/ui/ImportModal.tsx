@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight } from 'lucide-react';
+import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight, Video } from 'lucide-react';
 
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',
@@ -16,13 +16,15 @@ interface ImportModalProps {
     onClose: () => void;
     onOpenSettings: (tab: 'invokeai' | 'a1111' | 'comfyui' | 'folders') => void;
     onImportFiles: () => void;
+    onImportVideos: () => void;
 }
 
 export const ImportModal: React.FC<ImportModalProps> = ({
     isOpen,
     onClose,
     onOpenSettings,
-    onImportFiles
+    onImportFiles,
+    onImportVideos
 }) => {
     const dialogRef = React.useRef<HTMLDivElement>(null);
     const headingRef = React.useRef<HTMLHeadingElement>(null);
@@ -106,7 +108,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     tabIndex={-1}
                                     className="text-xl font-black text-gray-900 dark:text-white tracking-tight outline-none"
                                 >
-                                    Add Images to Your Library
+                                    Add Media to Your Library
                                 </h2>
                             </div>
                             <button
@@ -152,9 +154,9 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                             </ul>
 
                                             <div className="flex flex-wrap gap-2">
-                                                <IntegrationButton label="InvokeAI" onClick={() => handleOpenSettings('invokeai')} color="indigo" />
-                                                <IntegrationButton label="ComfyUI" onClick={() => handleOpenSettings('comfyui')} color="emerald" />
-                                                <IntegrationButton label="SD WebUI" onClick={() => handleOpenSettings('a1111')} color="amber" />
+                                                <IntegrationButton label="InvokeAI" onClick={() => handleOpenSettings('invokeai')} />
+                                                <IntegrationButton label="ComfyUI" onClick={() => handleOpenSettings('comfyui')} />
+                                                <IntegrationButton label="SD WebUI" onClick={() => handleOpenSettings('a1111')} />
                                             </div>
                                         </div>
                                     </div>
@@ -176,16 +178,23 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     <h3 className="font-black text-sm text-gray-900 dark:text-white tracking-tight">One-Time Import</h3>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
-                                    Add generated images, camera photos, screenshots, or other local images. Supported formats: PNG, JPEG, and WebP.
+                                    Add generated images, camera photos, screenshots, or supported videos. Image formats: PNG, JPEG, and WebP.
                                 </p>
 
-                                <div className="flex gap-3">
+                                <div className="grid grid-cols-3 gap-3">
                                     <button
                                         onClick={() => { onImportFiles(); onClose(); }}
                                         className="flex-1 px-4 py-4 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] hover:shadow-xl active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
                                     >
                                         <FileUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                                        Select Files
+                                        Select Images
+                                    </button>
+                                    <button
+                                        onClick={() => { onImportVideos(); onClose(); }}
+                                        className="flex-1 px-4 py-4 bg-sage-600 hover:bg-sage-500 text-white rounded-xl text-xs font-black transition-all hover:translate-y-[-2px] active:translate-y-0 active:scale-95 flex items-center justify-center gap-2 group shadow-lg"
+                                    >
+                                        <Video className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                        Select Videos
                                     </button>
                                     <button
                                         onClick={() => handleOpenSettings('folders')}
@@ -214,17 +223,12 @@ const FeatureItem = ({ text }: { text: string }) => (
     </li>
 );
 
-const IntegrationButton = ({ label, onClick, color }: { label: string, onClick: () => void, color: 'indigo' | 'emerald' | 'amber' }) => {
-    const styles = {
-        indigo: 'hover:bg-indigo-500 hover:text-white border-indigo-500/20 text-indigo-500 bg-indigo-500/5',
-        emerald: 'hover:bg-emerald-500 hover:text-white border-emerald-500/20 text-emerald-500 bg-emerald-500/5',
-        amber: 'hover:bg-amber-500 hover:text-white border-amber-500/20 text-amber-500 bg-amber-500/5',
-    }[color];
+const IntegrationButton = ({ label, onClick }: { label: string, onClick: () => void }) => {
 
     return (
         <button
             onClick={onClick}
-            className={`px-3 py-1.5 rounded-lg border text-[10px] font-black uppercase tracking-tight transition-all duration-300 active:scale-95 ${styles}`}
+            className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-tight text-gray-600 transition-all duration-300 hover:border-sage-300 hover:bg-sage-50 hover:text-sage-600 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-gray-300"
         >
             {label}
         </button>

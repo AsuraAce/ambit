@@ -122,27 +122,40 @@ fn resolve_thumbnail_candidate(
 ) -> Result<ThumbnailCandidate, String> {
     let image_match = conn
         .query_row(
-            "SELECT id, COALESCE(NULLIF(thumbnail_path, ''), path), privacy_hidden
-             FROM images
-             WHERE id = ?1 OR path = ?1 OR thumbnail_path = ?1
+            "SELECT i.id, COALESCE(NULLIF(i.thumbnail_path, ''), i.path), i.privacy_hidden,
+                    NOT EXISTS (SELECT 1 FROM scoped_images visible WHERE visible.id = i.id)
+             FROM images i
+             WHERE i.id = ?1 OR i.path = ?1 OR i.thumbnail_path = ?1
              LIMIT 1",
             params![requested_path],
             |row| {
-                Ok(ThumbnailCandidate {
-                    image_id: Some(row.get(0)?),
-                    path: row.get(1)?,
-                    privacy_hidden: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                })
+                Ok((
+                    ThumbnailCandidate {
+                        image_id: Some(row.get(0)?),
+                        path: row.get(1)?,
+                        privacy_hidden: row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                    },
+                    row.get::<_, i64>(3)?,
+                ))
             },
         )
         .optional()
         .map_err(|e| e.to_string())?;
 
-    Ok(image_match.unwrap_or_else(|| ThumbnailCandidate {
-        path: requested_path.to_string(),
-        image_id: None,
-        privacy_hidden: 1,
-    }))
+    if matches!(image_match.as_ref(), Some((_, owner_hidden)) if *owner_hidden != 0) {
+        return Err(
+            "Cannot use an image outside the active InvokeAI owner scope as a model thumbnail."
+                .to_string(),
+        );
+    }
+
+    Ok(image_match
+        .map(|(candidate, _)| candidate)
+        .unwrap_or_else(|| ThumbnailCandidate {
+            path: requested_path.to_string(),
+            image_id: None,
+            privacy_hidden: 1,
+        }))
 }
 
 fn best_resource_thumbnail(
@@ -162,13 +175,15 @@ fn best_resource_thumbnail(
     let query = match resource_type {
         "checkpoint" => format!(
             "SELECT i.thumbnail_path, i.id, i.privacy_hidden
-             FROM images i
+             FROM scoped_images i
              WHERE (
                 i.model_hash = ?2
                 OR i.model_name = ?1
                 OR i.resolved_model_name = ?1
              )
+             AND i.invoke_scope_hidden = 0
              AND i.is_deleted = 0
+             AND IFNULL(i.is_invoke_asset_gen, 0) = 0
              AND i.thumbnail_path IS NOT NULL
              AND i.thumbnail_path != ''
              {safe_clause}
@@ -220,9 +235,11 @@ fn format_resource_thumbnail_query(table: &str, name_col: &str, safe_clause: &st
     format!(
         "SELECT i.thumbnail_path, i.id, i.privacy_hidden
          FROM {table} jt
-         JOIN images i ON i.id = jt.image_id
+         JOIN scoped_images i ON i.id = jt.image_id
          WHERE jt.{name_col} = ?1
+         AND i.invoke_scope_hidden = 0
          AND i.is_deleted = 0
+         AND IFNULL(i.is_invoke_asset_gen, 0) = 0
          AND i.thumbnail_path IS NOT NULL
          AND i.thumbnail_path != ''
          {safe_clause}
@@ -726,7 +743,7 @@ fn set_resource_thumbnail_sensitivity_for_conn(
                     SELECT 1 FROM privacy_mask_keywords k
                     WHERE LOWER(facet_cache.resource_name) LIKE '%' || k.keyword || '%'
                 ) THEN 1
-                WHEN thumbnail_image_id IS NOT NULL THEN COALESCE((SELECT privacy_hidden FROM images WHERE id = thumbnail_image_id), 0)
+                WHEN thumbnail_image_id IS NOT NULL THEN COALESCE((SELECT privacy_hidden FROM scoped_images WHERE id = thumbnail_image_id), 0)
                 WHEN is_user_override = 1 THEN 1
                 WHEN has_sidecar = 1 THEN 1
                 WHEN preview_url IS NOT NULL AND preview_url != '' AND thumbnail_path = preview_url THEN 1
@@ -760,6 +777,21 @@ mod tests {
             conn.execute_batch(&migration.sql).expect("apply migration");
         }
         conn
+    }
+
+    #[test]
+    fn manual_thumbnail_rejects_images_outside_the_active_owner_scope() {
+        let conn = setup_conn();
+        conn.execute(
+            "INSERT INTO images (id, path, timestamp, thumbnail_path, invoke_scope_hidden)
+             VALUES ('hidden-image', 'hidden.png', 1, 'hidden.webp', 1)",
+            [],
+        )
+        .unwrap();
+
+        let error = resolve_thumbnail_candidate(&conn, "hidden-image").unwrap_err();
+
+        assert!(error.contains("outside the active InvokeAI owner scope"));
     }
 
     #[test]
@@ -832,19 +864,28 @@ mod tests {
         let conn = setup_conn();
 
         conn.execute(
-            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, model_hash, model_name, resolved_model_name)
-             VALUES ('checkpoint-img', 'checkpoint.png', 500, 1, 'checkpoint.webp', 'checkpoint_hash', 'Portrait', 'Portrait')",
+            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, model_hash, model_name, resolved_model_name, invoke_image_category)
+             VALUES
+                ('checkpoint-img', 'checkpoint.png', 500, 0, 'checkpoint.webp', 'checkpoint_hash', 'Portrait', 'Portrait', 'general'),
+                ('checkpoint-asset', 'checkpoint-asset.png', 600, 1, 'checkpoint-asset.webp', 'checkpoint_hash', 'Portrait', 'Portrait', 'control'),
+                ('checkpoint-asset-only', 'checkpoint-asset-only.png', 700, 1, 'checkpoint-asset-only.webp', 'asset-only-hash', 'AssetOnly', 'AssetOnly', 'mask')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path)
-             VALUES ('lora-img', 'lora.png', 100, 0, 'lora.webp')",
+            "INSERT INTO images (id, path, timestamp, is_pinned, thumbnail_path, invoke_image_category)
+             VALUES
+                ('lora-img', 'lora.png', 100, 0, 'lora.webp', 'general'),
+                ('lora-asset', 'lora-asset.png', 800, 1, 'lora-asset.webp', 'control'),
+                ('lora-asset-only', 'lora-asset-only.png', 900, 1, 'lora-asset-only.webp', 'mask')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO image_loras (image_id, lora_name) VALUES ('lora-img', 'Portrait')",
+            "INSERT INTO image_loras (image_id, lora_name) VALUES
+                ('lora-img', 'Portrait'),
+                ('lora-asset', 'Portrait'),
+                ('lora-asset-only', 'AssetOnly')",
             [],
         )
         .unwrap();
@@ -860,5 +901,16 @@ mod tests {
         assert_eq!(lora_thumb.image_id.as_deref(), Some("lora-img"));
         assert_eq!(checkpoint_thumb.path, "checkpoint.webp");
         assert_eq!(checkpoint_thumb.image_id.as_deref(), Some("checkpoint-img"));
+        assert!(best_resource_thumbnail(
+            &conn,
+            "AssetOnly",
+            "asset-only-hash",
+            "checkpoint",
+            false
+        )
+        .is_none());
+        assert!(
+            best_resource_thumbnail(&conn, "AssetOnly", "lora_AssetOnly", "loras", false).is_none()
+        );
     }
 }

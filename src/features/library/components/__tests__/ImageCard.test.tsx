@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { GeneratorTool, type AIImage } from '../../../../types';
+import { GeneratorTool, type AIImage, type VideoAsset } from '../../../../types';
 import { ImageCard } from '../ImageCard';
 
 const smartImageMocks = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
@@ -56,6 +56,18 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ImageCard>> = {}) 
     return { ...result, props };
 };
 
+const video = (overrides: Partial<VideoAsset> = {}): VideoAsset => ({
+    ...image({ id: 'video-1', url: 'source.mp4', thumbnailUrl: 'source.mp4', filename: 'source.mp4' }),
+    mediaType: 'video',
+    durationMs: 12_000,
+    videoCodec: 'AVC',
+    audioPresent: true,
+    rotationDegrees: 0,
+    probeStatus: 'ready',
+    playbackStatus: 'unknown',
+    ...overrides
+});
+
 describe('ImageCard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -100,7 +112,14 @@ describe('ImageCard', () => {
     it('reveals masked content and automatically hides it after leaving', () => {
         const { container, props } = setup({ isMasked: true, isSelected: true });
         const root = container.firstElementChild as HTMLElement;
+        const mediaClip = container.querySelector('[data-media-clip]') as HTMLElement;
+        const renderedImage = screen.getByAltText('image.png');
         expect(screen.getByText('Hidden Content')).toBeTruthy();
+        expect(mediaClip.contains(renderedImage)).toBe(true);
+        expect(mediaClip.contains(screen.getByText('Hidden Content'))).toBe(true);
+        expect(mediaClip.className).toContain('overflow-hidden');
+        expect(mediaClip.className).toContain('rounded-2xl');
+        expect(mediaClip.className).toContain('[clip-path:inset(0_round_1rem)]');
         expect(screen.queryByRole('button', { name: 'Hide Content' })).toBeNull();
         fireEvent.mouseLeave(root);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
@@ -108,6 +127,8 @@ describe('ImageCard', () => {
         fireEvent.click(screen.getByText('Reveal'));
         expect(screen.queryByText('Hidden Content')).toBeNull();
         expect(screen.getByRole('button', { name: 'Hide Content' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
+        expect(props.onClick).toHaveBeenCalledWith(expect.anything(), true);
         expect(root.className).toContain('border-sage-500');
 
         fireEvent.click(screen.getByRole('button', { name: 'Hide Content' }));
@@ -115,7 +136,37 @@ describe('ImageCard', () => {
         fireEvent.click(screen.getByText('Reveal'));
         fireEvent.mouseLeave(root);
         expect(screen.getByText('Hidden Content')).toBeTruthy();
+        expect(props.onClick).toHaveBeenCalledOnce();
+    });
+
+    it('never assigns a posterless video to an image element and requires a revealed card before opening', () => {
+        const { container, props } = setup({ image: video(), isMasked: true });
+        const mediaClip = container.querySelector('[data-media-clip]') as HTMLElement;
+
+        expect(smartImageMocks.props).toHaveLength(0);
+        expect(screen.getByText('Hidden Content')).toBeTruthy();
+        expect(mediaClip.contains(screen.getByText('Hidden Content'))).toBe(true);
+        expect(mediaClip.className).toContain('[clip-path:inset(0_round_1rem)]');
+        fireEvent.mouseEnter(container.firstElementChild as HTMLElement);
+        expect(screen.getByText('Hidden Content')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Reveal' }));
         expect(props.onClick).not.toHaveBeenCalled();
+        expect(screen.queryByText('Hidden Content')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /Open source\.mp4, Video/ }));
+        expect(props.onClick).toHaveBeenCalledWith(expect.anything(), true);
+        expect(screen.getByText('AVC')).toBeTruthy();
+        expect(screen.getByText('1024x768 · 0:12')).toBeTruthy();
+    });
+
+    it('uses only an Ambit poster for video cards and has no source-video fallback', () => {
+        setup({
+            image: video({
+                thumbnailUrl: 'poster.webp',
+                thumbnailSource: 'ambit-video-v1'
+            })
+        });
+
+        expect(smartImageMocks.props[0]).toMatchObject({ src: 'poster.webp', fallbackSrc: undefined });
     });
 
     it('disables unavailable actions and shows missing, deleted, thumbnail, pin, and favorite states', () => {
@@ -167,5 +218,26 @@ describe('ImageCard', () => {
 
         rerender(<ImageCard image={image({ metadata: { ...image().metadata, model: null as unknown as string } })} isSelected={false} {...callbacks} />);
         expect(screen.getByText('Model')).toBeTruthy();
+    });
+
+    it('labels only known InvokeAI image asset categories', () => {
+        const callbacks = { onClick: vi.fn(), onToggleSelection: vi.fn(), onToggleFavorite: vi.fn() };
+        const { rerender } = render(
+            <ImageCard image={image({ invokeImageCategory: ' CONTROL ' })} isSelected={false} {...callbacks} />
+        );
+
+        const marker = screen.getByText('Asset · Control');
+        expect(marker.getAttribute('title')).toBe('InvokeAI image asset category: Control');
+        expect(marker.getAttribute('aria-label')).toBe('InvokeAI image asset category: Control');
+        expect(marker.className).toContain('top-2');
+        expect(marker.className).toContain('left-1/2');
+        expect(marker.className).toContain('-translate-x-1/2');
+
+        rerender(<ImageCard image={image({ invokeImageCategory: 'general' })} isSelected={false} {...callbacks} />);
+        expect(screen.queryByText('Asset · Control')).toBeNull();
+        expect(screen.queryByText('General')).toBeNull();
+
+        rerender(<ImageCard image={image({ invokeImageCategory: 'future-category' })} isSelected={false} {...callbacks} />);
+        expect(screen.queryByText('future-category')).toBeNull();
     });
 });

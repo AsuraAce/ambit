@@ -1,4 +1,6 @@
-use super::{extract_a1111_metadata, is_missing_prompt_value, ImageMetadata};
+use super::{
+    extract_a1111_metadata, is_missing_prompt_value, ImageMetadata, CURRENT_PARSER_VERSION,
+};
 use std::collections::{BTreeMap, HashMap};
 
 mod conditioning;
@@ -10,15 +12,18 @@ mod graph;
 mod heuristics;
 mod parse_helper;
 mod strategies;
+mod traversal_diagnostics;
+pub(crate) mod workflow_inspector;
 mod workflow_normalizer;
 
 #[cfg(test)]
 mod tests;
 
 use self::diagnostics::{
-    ComfyMetadataField, ComfyMetadataSnapshot, ComfyParseDiagnostics, ComfyParseLayer,
+    metadata_resource_values, resource_fields, ComfyMetadataField, ComfyMetadataSnapshot,
+    ComfyParseDiagnostics, ComfyParseLayer,
 };
-use self::evaluator::ComfyEvaluator;
+use self::evaluator::{is_sampler_node, ComfyEvaluator};
 use self::graph::ComfyGraph;
 use self::strategies::{global_scan, scan_explicit_nodes};
 
@@ -30,6 +35,14 @@ pub(crate) fn merge_comfyui_metadata(
     base: &mut ImageMetadata,
     chunks: &HashMap<String, String>,
 ) -> ComfyParseDiagnostics {
+    merge_comfyui_metadata_internal(base, chunks, false)
+}
+
+fn merge_comfyui_metadata_internal(
+    base: &mut ImageMetadata,
+    chunks: &HashMap<String, String>,
+    collect_traversal_issues: bool,
+) -> ComfyParseDiagnostics {
     let mut diagnostics = ComfyParseDiagnostics::default();
 
     if let Some(parameters) = flat_parameters_chunk(chunks) {
@@ -39,7 +52,8 @@ pub(crate) fn merge_comfyui_metadata(
         record_flat_parameter_sources(&mut diagnostics, base, &flat_meta);
     }
 
-    let (mut graph_meta, graph_diagnostics) = extract_comfyui_graph_with_diagnostics(chunks);
+    let (mut graph_meta, graph_diagnostics) =
+        extract_comfyui_graph_with_diagnostics(chunks, collect_traversal_issues);
     diagnostics.graph_node_count = graph_diagnostics.graph_node_count;
     diagnostics.selected_output_candidate_count = graph_diagnostics.selected_output_candidate_count;
     diagnostics.unique_output_root_sampler_count =
@@ -56,6 +70,8 @@ pub(crate) fn merge_comfyui_metadata(
         clear_core_field_sources(&mut diagnostics);
     }
     merge_graph_metadata(base, &mut graph_meta, &graph_diagnostics, &mut diagnostics);
+    diagnostics.traversal_issues = graph_diagnostics.traversal_issues;
+    diagnostics.traversal_issues_truncated = graph_diagnostics.traversal_issues_truncated;
     base.tool = "ComfyUI".to_string();
 
     diagnostics
@@ -97,8 +113,9 @@ fn merge_flat_parameters(base: &mut ImageMetadata, flat: &ImageMetadata) {
     if base.steps == 0 && flat.steps > 0 {
         base.steps = flat.steps;
     }
-    if base.cfg == 0.0 && flat.cfg > 0.0 {
+    if !base.cfg_present && flat.cfg_present {
         base.cfg = flat.cfg;
+        base.cfg_present = true;
     }
     if base.seed.is_none() {
         base.seed = flat.seed;
@@ -176,7 +193,7 @@ fn record_flat_parameter_sources(
             .field_sources
             .insert(ComfyMetadataField::Steps, layer);
     }
-    if flat.cfg > 0.0 && selected.cfg == flat.cfg {
+    if flat.cfg_present && selected.cfg == flat.cfg {
         diagnostics
             .field_sources
             .insert(ComfyMetadataField::Cfg, layer);
@@ -237,6 +254,15 @@ fn record_flat_parameter_sources(
             diagnostics.field_sources.insert(field, layer);
         }
     }
+
+    for field in resource_fields() {
+        for value in metadata_resource_values(flat, field)
+            .iter()
+            .filter(|value| metadata_resource_values(selected, field).contains(value))
+        {
+            diagnostics.record_resource_source(field, value, layer, &[]);
+        }
+    }
 }
 
 fn merge_graph_metadata(
@@ -260,9 +286,12 @@ fn merge_graph_metadata(
             {
                 base.model_hash = None;
             }
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::Model, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::Model,
+                layer,
+            );
         }
     }
 
@@ -273,9 +302,12 @@ fn merge_graph_metadata(
             base.seed.is_none(),
         ) {
             base.seed = graph.seed;
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::Seed, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::Seed,
+                layer,
+            );
         }
     }
     if graph.steps > 0 {
@@ -285,9 +317,12 @@ fn merge_graph_metadata(
             base.steps == 0,
         ) {
             base.steps = graph.steps;
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::Steps, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::Steps,
+                layer,
+            );
         }
     }
     if graph.cfg > 0.0 {
@@ -295,9 +330,13 @@ fn merge_graph_metadata(
             selected_graph_layer(graph_diagnostics, ComfyMetadataField::Cfg, base.cfg == 0.0)
         {
             base.cfg = graph.cfg;
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::Cfg, layer);
+            base.cfg_present = true;
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::Cfg,
+                layer,
+            );
         }
     }
     if is_known_sampler(&graph.sampler) {
@@ -307,9 +346,12 @@ fn merge_graph_metadata(
             !is_known_sampler(&base.sampler),
         ) {
             base.sampler = std::mem::take(&mut graph.sampler);
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::Sampler, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::Sampler,
+                layer,
+            );
         }
     }
     if !is_missing_prompt_value(&graph.positive_prompt) {
@@ -319,9 +361,12 @@ fn merge_graph_metadata(
             is_missing_prompt_value(&base.positive_prompt),
         ) {
             base.positive_prompt = std::mem::take(&mut graph.positive_prompt);
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::PositivePrompt, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::PositivePrompt,
+                layer,
+            );
         }
     }
     if !is_missing_prompt_value(&graph.negative_prompt) {
@@ -331,9 +376,12 @@ fn merge_graph_metadata(
             is_missing_prompt_value(&base.negative_prompt),
         ) {
             base.negative_prompt = std::mem::take(&mut graph.negative_prompt);
-            diagnostics
-                .field_sources
-                .insert(ComfyMetadataField::NegativePrompt, layer);
+            copy_selected_graph_source(
+                diagnostics,
+                graph_diagnostics,
+                ComfyMetadataField::NegativePrompt,
+                layer,
+            );
         }
     }
 
@@ -433,6 +481,26 @@ fn is_strong_graph_layer(layer: ComfyParseLayer) -> bool {
     )
 }
 
+fn copy_selected_graph_source(
+    diagnostics: &mut ComfyParseDiagnostics,
+    graph_diagnostics: &ComfyParseDiagnostics,
+    field: ComfyMetadataField,
+    layer: ComfyParseLayer,
+) {
+    diagnostics.field_sources.insert(field, layer);
+    if let Some(node_ids) = graph_diagnostics
+        .field_source_node_ids
+        .get(&field)
+        .filter(|node_ids| !node_ids.is_empty())
+    {
+        diagnostics
+            .field_source_node_ids
+            .insert(field, node_ids.clone());
+    } else {
+        diagnostics.field_source_node_ids.remove(&field);
+    }
+}
+
 fn copy_graph_source(
     diagnostics: &mut ComfyParseDiagnostics,
     graph_diagnostics: &ComfyParseDiagnostics,
@@ -451,7 +519,21 @@ fn merge_graph_resources(
     diagnostics: &mut ComfyParseDiagnostics,
 ) {
     let contributed = !graph_values.is_empty();
-    merge_unique(selected, graph_values);
+    for value in graph_values {
+        if !selected.contains(&value) {
+            selected.push(value.clone());
+        }
+
+        if let Some(source) = graph_diagnostics
+            .resource_sources
+            .get(&field)
+            .and_then(|resources| resources.get(&value))
+        {
+            diagnostics.record_resource_source(field, &value, source.layer, &source.node_ids);
+        } else if let Some(layer) = graph_diagnostics.field_sources.get(&field) {
+            diagnostics.record_resource_source(field, &value, *layer, &[]);
+        }
+    }
     if !contributed {
         return;
     }
@@ -475,7 +557,7 @@ fn merge_unique(values: &mut Vec<String>, additions: impl IntoIterator<Item = St
     }
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyMetadataPreview {
     pub tool: String,
@@ -496,15 +578,45 @@ pub struct ComfyMetadataPreview {
     pub has_workflow_json: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, serde::Serialize, specta::Type)]
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ComfyTraversalIssueReport {
+    pub field: String,
+    pub node_id: String,
+    pub node_type: String,
+    pub input_name: Option<String>,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ComfyResourceSourceReport {
+    pub field: String,
+    pub value: String,
+    pub layer: Option<String>,
+    pub node_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct ComfyParserDiagnosticsReport {
+    pub app_version: String,
+    pub parser_version: u32,
     pub chunk_keys: Vec<String>,
     pub has_prompt_chunk: bool,
     pub has_workflow_chunk: bool,
     pub graph_node_count: usize,
+    pub selected_output_candidate_count: usize,
+    pub unique_output_root_sampler_count: usize,
+    pub output_ambiguous: bool,
+    pub traversal_issues: Vec<ComfyTraversalIssueReport>,
+    pub traversal_issues_truncated: bool,
     pub attempted_layers: Vec<String>,
     pub field_sources: BTreeMap<String, String>,
+    #[serde(default)]
+    pub field_source_node_ids: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub resource_sources: Vec<ComfyResourceSourceReport>,
     pub metadata: ComfyMetadataPreview,
 }
 
@@ -519,15 +631,36 @@ pub async fn inspect_comfyui_metadata_chunks(
 pub(crate) fn build_comfyui_diagnostics_report(
     chunks: &HashMap<String, String>,
 ) -> ComfyParserDiagnosticsReport {
-    let (metadata, diagnostics) = extract_comfyui_metadata_with_diagnostics(chunks);
+    let mut metadata = ImageMetadata {
+        tool: "ComfyUI".to_string(),
+        ..ImageMetadata::default()
+    };
+    let diagnostics = merge_comfyui_metadata_internal(&mut metadata, chunks, true);
     let mut chunk_keys: Vec<String> = chunks.keys().cloned().collect();
     chunk_keys.sort();
 
     ComfyParserDiagnosticsReport {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        parser_version: CURRENT_PARSER_VERSION,
         chunk_keys,
         has_prompt_chunk: chunks.contains_key("prompt"),
         has_workflow_chunk: chunks.contains_key("workflow"),
         graph_node_count: diagnostics.graph_node_count,
+        selected_output_candidate_count: diagnostics.selected_output_candidate_count,
+        unique_output_root_sampler_count: diagnostics.unique_output_root_sampler_count,
+        output_ambiguous: diagnostics.output_ambiguous,
+        traversal_issues: diagnostics
+            .traversal_issues
+            .iter()
+            .map(|issue| ComfyTraversalIssueReport {
+                field: metadata_field_label(issue.field).to_string(),
+                node_id: bounded_diagnostic_label(&issue.node_id),
+                node_type: bounded_diagnostic_label(&issue.node_type),
+                input_name: issue.input_name.as_deref().map(bounded_diagnostic_label),
+                reason: traversal_issue_reason_label(issue.reason).to_string(),
+            })
+            .collect(),
+        traversal_issues_truncated: diagnostics.traversal_issues_truncated,
         attempted_layers: diagnostics
             .attempted_layers
             .iter()
@@ -543,8 +676,68 @@ pub(crate) fn build_comfyui_diagnostics_report(
                 )
             })
             .collect(),
+        field_source_node_ids: diagnostics
+            .field_source_node_ids
+            .iter()
+            .filter(|(field, _)| is_core_source_field(**field))
+            .map(|(field, node_ids)| {
+                (
+                    metadata_field_label(*field).to_string(),
+                    node_ids
+                        .iter()
+                        .take(16)
+                        .map(|node_id| bounded_diagnostic_label(node_id))
+                        .collect(),
+                )
+            })
+            .collect(),
+        resource_sources: resource_source_reports(&metadata, &diagnostics),
         metadata: ComfyMetadataPreview::from_metadata(&metadata),
     }
+}
+
+fn resource_source_reports(
+    metadata: &ImageMetadata,
+    diagnostics: &ComfyParseDiagnostics,
+) -> Vec<ComfyResourceSourceReport> {
+    let mut reports = Vec::new();
+    for field in resource_fields() {
+        for value in metadata_resource_values(metadata, field) {
+            let source = diagnostics
+                .resource_sources
+                .get(&field)
+                .and_then(|resources| resources.get(value));
+            reports.push(ComfyResourceSourceReport {
+                field: metadata_field_label(field).to_string(),
+                value: value.clone(),
+                layer: source.map(|source| parse_layer_label(source.layer).to_string()),
+                node_ids: source
+                    .map(|source| {
+                        source
+                            .node_ids
+                            .iter()
+                            .take(16)
+                            .map(|node_id| bounded_diagnostic_label(node_id))
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            });
+        }
+    }
+    reports
+}
+
+fn is_core_source_field(field: ComfyMetadataField) -> bool {
+    matches!(
+        field,
+        ComfyMetadataField::Model
+            | ComfyMetadataField::Seed
+            | ComfyMetadataField::Steps
+            | ComfyMetadataField::Cfg
+            | ComfyMetadataField::Sampler
+            | ComfyMetadataField::PositivePrompt
+            | ComfyMetadataField::NegativePrompt
+    )
 }
 
 impl ComfyMetadataPreview {
@@ -600,6 +793,24 @@ fn metadata_field_label(field: ComfyMetadataField) -> &'static str {
     }
 }
 
+fn traversal_issue_reason_label(reason: diagnostics::ComfyTraversalIssueReason) -> &'static str {
+    match reason {
+        diagnostics::ComfyTraversalIssueReason::DeclaredLinkUnresolved => "unresolved_link",
+        diagnostics::ComfyTraversalIssueReason::MissingSourceNode => "missing_source_node",
+        diagnostics::ComfyTraversalIssueReason::UnsupportedNode => "unsupported_node",
+        diagnostics::ComfyTraversalIssueReason::GeneratedValueUnavailable => {
+            "generated_value_unavailable"
+        }
+        diagnostics::ComfyTraversalIssueReason::CycleDetected => "cycle_detected",
+        diagnostics::ComfyTraversalIssueReason::DepthLimit => "depth_limit",
+    }
+}
+
+fn bounded_diagnostic_label(value: &str) -> String {
+    const MAX_LABEL_CHARS: usize = 128;
+    value.chars().take(MAX_LABEL_CHARS).collect()
+}
+
 pub(crate) fn extract_comfyui_metadata_with_diagnostics(
     chunks: &HashMap<String, String>,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
@@ -613,10 +824,8 @@ pub(crate) fn extract_comfyui_metadata_with_diagnostics(
 
 fn extract_comfyui_graph_with_diagnostics(
     chunks: &HashMap<String, String>,
+    collect_traversal_issues: bool,
 ) -> (ImageMetadata, ComfyParseDiagnostics) {
-    // Breadcrumb for ComfyUI parsing
-    println!("[ComfyUI] Parsing metadata...");
-
     let mut meta = ImageMetadata {
         tool: "ComfyUI".to_string(),
         ..ImageMetadata::default()
@@ -645,37 +854,58 @@ fn extract_comfyui_graph_with_diagnostics(
 
     // Layer 2: Explicit Metadata Nodes (User Override)
     diagnostics.attempt(ComfyParseLayer::ExplicitNode);
-    if let Some(explicit) = scan_explicit_nodes(&graph) {
+    if let Some((explicit, explicit_sources)) = scan_explicit_nodes(&graph) {
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge(explicit);
-        diagnostics.record_diff(&before, &meta, ComfyParseLayer::ExplicitNode);
+        diagnostics.record_diff_with_sources(
+            &before,
+            &meta,
+            ComfyParseLayer::ExplicitNode,
+            &explicit_sources,
+        );
     }
 
     // Layer 3: Graph Evaluator (Smart Backtracking)
     // Only run if we are missing critical info, OR if we want to fill in gaps.
     diagnostics.attempt(ComfyParseLayer::SamplerTraversal);
     let evaluator = ComfyEvaluator::new(&graph);
-    let (traversal_meta, output_diagnostics) = evaluator.extract_with_output_diagnostics();
+    let (traversal_meta, output_diagnostics) = if collect_traversal_issues {
+        evaluator.extract_with_traversal_diagnostics()
+    } else {
+        evaluator.extract_with_output_diagnostics()
+    };
     diagnostics.selected_output_candidate_count =
         output_diagnostics.selected_output_candidate_count;
     diagnostics.unique_output_root_sampler_count = output_diagnostics.unique_root_sampler_count;
     diagnostics.output_ambiguous = output_diagnostics.ambiguous;
     diagnostics.authoritative_sampler_custom_path =
         output_diagnostics.authoritative_sampler_custom_path;
+    diagnostics.traversal_issues = output_diagnostics.traversal_issues;
+    diagnostics.traversal_issues_truncated = output_diagnostics.traversal_issues_truncated;
+    let selected_samplerless_output = output_diagnostics.selected_output_candidate_count > 0
+        && output_diagnostics.unique_root_sampler_count == 0
+        && !chunks_contain_sampler_definition(chunks);
     if output_diagnostics.authoritative_sampler_custom_path {
         clear_core_fields(&mut meta);
         clear_core_field_sources(&mut diagnostics);
     }
     let before = ComfyMetadataSnapshot::from_metadata(&meta);
     meta.merge_if_missing(traversal_meta);
-    diagnostics.record_diff(&before, &meta, ComfyParseLayer::SamplerTraversal);
+    diagnostics.record_diff_with_all_sources(
+        &before,
+        &meta,
+        ComfyParseLayer::SamplerTraversal,
+        &output_diagnostics.field_source_node_ids,
+        &output_diagnostics.resource_source_node_ids,
+    );
 
     // Layer 3.5: Sampler Scan (Fragment Fallback)
     // If output traversal didn't find specific generation data (common in fragments or tests),
     // scan specifically for standard KSamplers using the smart evaluator logic.
-    if meta.is_incomplete() {
+    if meta.is_incomplete() && !selected_samplerless_output {
         diagnostics.attempt(ComfyParseLayer::SamplerFallback);
-        let mut sampler_meta = evaluator.extract_from_all_samplers();
+        let (mut sampler_meta, sampler_sources, sampler_resource_sources) =
+            evaluator.extract_from_all_samplers();
         if output_diagnostics.authoritative_model {
             sampler_meta.model = "Unknown".to_string();
             sampler_meta.model_hash = None;
@@ -694,14 +924,20 @@ fn extract_comfyui_graph_with_diagnostics(
         }
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge_if_missing(sampler_meta);
-        diagnostics.record_diff(&before, &meta, ComfyParseLayer::SamplerFallback);
+        diagnostics.record_diff_with_all_sources(
+            &before,
+            &meta,
+            ComfyParseLayer::SamplerFallback,
+            &sampler_sources,
+            &sampler_resource_sources,
+        );
     }
 
     // Layer 4: Global Scan (Last Resort / Cleanup)
     // If we still found nothing (e.g. graph is totally disconnected or custom nodes unknown to evaluator)
-    if meta.is_incomplete() {
+    if meta.is_incomplete() && !selected_samplerless_output {
         diagnostics.attempt(ComfyParseLayer::GlobalScan);
-        let mut scan_meta = global_scan(&graph);
+        let (mut scan_meta, scan_sources) = global_scan(&graph);
         if output_diagnostics.authoritative_model {
             scan_meta.model = "Unknown".to_string();
             scan_meta.model_hash = None;
@@ -720,10 +956,61 @@ fn extract_comfyui_graph_with_diagnostics(
         }
         let before = ComfyMetadataSnapshot::from_metadata(&meta);
         meta.merge_if_missing(scan_meta);
-        diagnostics.record_diff(&before, &meta, ComfyParseLayer::GlobalScan);
+        diagnostics.record_diff_with_sources(
+            &before,
+            &meta,
+            ComfyParseLayer::GlobalScan,
+            &scan_sources,
+        );
     }
 
     (meta, diagnostics)
+}
+
+fn chunks_contain_sampler_definition(chunks: &HashMap<String, String>) -> bool {
+    chunks
+        .get("prompt")
+        .and_then(|raw| decode_chunk_envelope(raw))
+        .is_some_and(|value| prompt_contains_sampler_definition(&value))
+        || chunks
+            .get("workflow")
+            .and_then(|raw| decode_chunk_envelope(raw))
+            .is_some_and(|value| workflow_contains_sampler_definition(&value))
+}
+
+fn decode_chunk_envelope(raw: &str) -> Option<serde_json::Value> {
+    let mut value = serde_json::from_str(raw).ok()?;
+    for _ in 0..2 {
+        let serde_json::Value::String(encoded) = &value else {
+            break;
+        };
+        value = serde_json::from_str(encoded).ok()?;
+    }
+    Some(value)
+}
+
+fn prompt_contains_sampler_definition(value: &serde_json::Value) -> bool {
+    value
+        .as_object()
+        .is_some_and(|nodes| nodes.values().any(is_sampler_node))
+}
+
+fn workflow_contains_sampler_definition(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(object) => {
+            object
+                .get("nodes")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|nodes| nodes.iter().any(is_sampler_node))
+                || ["definitions", "subgraphs"].into_iter().any(|key| {
+                    object
+                        .get(key)
+                        .is_some_and(workflow_contains_sampler_definition)
+                })
+        }
+        serde_json::Value::Array(array) => array.iter().any(workflow_contains_sampler_definition),
+        _ => false,
+    }
 }
 
 fn clear_core_fields(meta: &mut ImageMetadata) {
@@ -732,6 +1019,7 @@ fn clear_core_fields(meta: &mut ImageMetadata) {
     meta.seed = None;
     meta.steps = 0;
     meta.cfg = 0.0;
+    meta.cfg_present = false;
     meta.sampler = "Unknown".to_string();
     meta.positive_prompt.clear();
     meta.negative_prompt.clear();
@@ -748,5 +1036,6 @@ fn clear_core_field_sources(diagnostics: &mut ComfyParseDiagnostics) {
         ComfyMetadataField::NegativePrompt,
     ] {
         diagnostics.field_sources.remove(&field);
+        diagnostics.field_source_node_ids.remove(&field);
     }
 }

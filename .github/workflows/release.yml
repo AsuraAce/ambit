@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
 
       - name: install pnpm
-        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
 
       - name: setup node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
@@ -58,8 +58,8 @@ jobs:
       - name: install cargo-audit
         run: cargo install cargo-audit --version 0.22.1 --locked
 
-      # RUSTSEC-2023-0071 is ignored by the audit wrapper because it is pulled
-      # through optional sqlx-mysql while Ambit only enables the SQLite beta path.
+      # The audit wrapper ignores advisories only after verifying the affected
+      # optional packages are absent from Ambit's compiled Windows graph.
       - name: run rust dependency advisory audit
         run: pnpm run audit:rust
 
@@ -119,3 +119,6 @@ jobs:
           prerelease: false
           updaterJsonPreferNsis: true
           args: --bundles nsis msi
+
+      - name: verify published updater release
+        run: pnpm run verify:published-updater ${{ github.ref_name }}

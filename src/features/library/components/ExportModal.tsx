@@ -66,7 +66,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Header Accent */}
-                        <div className="h-1.5 w-full bg-gradient-to-r from-sage-500 to-emerald-600" />
+                        <div className="h-1.5 w-full bg-gradient-to-r from-sage-500 to-sage-600" />
 
                         <div className="p-8">
                             <div className="flex flex-col items-center text-center mb-8">
@@ -75,7 +75,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                                 </div>
                                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">Export Selection</h3>
                                 <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                                    Export <strong>{count}</strong> images and metadata into a single ZIP archive.
+                                    Export <strong>{count}</strong> items and metadata into a single ZIP archive.
                                 </p>
                             </div>
 
@@ -120,7 +120,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                                 <button
                                     onClick={() => folder && onConfirm(filename, folder)}
                                     disabled={!filename.trim() || !folder || isExporting}
-                                    className="w-full py-4 px-6 bg-gradient-to-br from-sage-500 to-emerald-600 hover:shadow-[0_8px_20px_-4px_rgba(16,185,129,0.4)] text-white rounded-2xl text-sm font-bold shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    className="w-full py-4 px-6 bg-gradient-to-br from-sage-500 to-sage-600 hover:shadow-[0_8px_20px_-4px_rgba(115,140,85,0.4)] text-white rounded-2xl text-sm font-bold shadow-lg transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                 >
                                     {isExporting ? (
                                         <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>

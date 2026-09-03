@@ -1,11 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { InvokeDbSnapshotState } from '../../../types';
 import {
-    buildInvokeDbSnapshotState,
+    buildInvokeDbSnapshotState as buildInvokeDbSnapshotStateImpl,
+    getInvokeDbSnapshotForScope,
+    INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+    INVOKE_IMPORT_SCHEMA_VERSION,
     INVOKE_PATH_REPAIR_SNAPSHOT_VERSION,
     isInvokeDbSnapshotCurrent,
-    readInvokeDbSnapshotState,
+    isInvokeDbSnapshotScopeCurrent,
+    isInvokeBoardOwnerSnapshotCurrent,
+    isInvokeImportSchemaCurrent,
+    isInvokeSourceFingerprintCurrent,
+    readInvokeDbSnapshotState as readInvokeDbSnapshotStateImpl,
+    upsertInvokeDbSnapshot,
 } from '../dbSnapshot';
+
+type SnapshotConfig = Parameters<typeof buildInvokeDbSnapshotStateImpl>[1];
+const withLegacyScope = (config: Partial<SnapshotConfig>): SnapshotConfig => ({
+    scopeMode: 'legacy',
+    ...config,
+});
+const buildInvokeDbSnapshotState = (
+    snapshot: Parameters<typeof buildInvokeDbSnapshotStateImpl>[0],
+    config: Partial<SnapshotConfig> = {}
+) => buildInvokeDbSnapshotStateImpl(snapshot, withLegacyScope(config));
+const readInvokeDbSnapshotState = (
+    rootPath: string,
+    config: Partial<SnapshotConfig> = {}
+) => readInvokeDbSnapshotStateImpl(rootPath, withLegacyScope(config));
 
 const getInvokeDbSnapshot = vi.hoisted(() => vi.fn());
 
@@ -58,6 +80,8 @@ describe('Invoke DB startup snapshot matching', () => {
 
         expect(isInvokeDbSnapshotCurrent(saved, current)).toBe(true);
         expect(current.pathRepairVersion).toBe(INVOKE_PATH_REPAIR_SNAPSHOT_VERSION);
+        expect(current.importSchemaVersion).toBe(INVOKE_IMPORT_SCHEMA_VERSION);
+        expect(isInvokeImportSchemaCurrent(current)).toBe(true);
     });
 
     it('invalidates when sync cursor or import flags change', () => {
@@ -88,6 +112,143 @@ describe('Invoke DB startup snapshot matching', () => {
             importOrphans: true,
             syncBoardsToCollections: false
         }))).toBe(false);
+    });
+
+    it('invalidates when owner mode or selected owner changes', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+        });
+        const ownerB = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-b',
+        });
+        const allUsers = buildInvokeDbSnapshotState(baseSnapshot, { scopeMode: 'all' });
+
+        expect(isInvokeDbSnapshotCurrent(ownerA, ownerA)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(ownerA, ownerB)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(ownerA, allUsers)).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(true);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-b',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(ownerA, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: 'D:/Other/invokeai.db',
+            imagesRoot: 'D:/Other',
+        })).toBe(false);
+    });
+
+    it('stores and restores independent snapshots for each owner scope', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            lastSyncedAt: 100,
+        });
+        const ownerB = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-b',
+            lastSyncedAt: 200,
+        });
+        const snapshots = upsertInvokeDbSnapshot(
+            upsertInvokeDbSnapshot(undefined, ownerA),
+            ownerB
+        );
+
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(100);
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-b',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(200);
+    });
+
+    it('reuses the same Windows snapshot identity when only path casing changes', () => {
+        const ownerA = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            lastSyncedAt: 100,
+        });
+        const recased = {
+            ...ownerA,
+            dbPath: ownerA.dbPath.toLowerCase(),
+            lastSyncedAt: 200,
+        };
+        const recasedCurrent = {
+            ...ownerA,
+            dbPath: ownerA.dbPath.toLowerCase(),
+            files: ownerA.files.map(file => ({ ...file, path: file.path.toLowerCase() })),
+        };
+
+        const snapshots = upsertInvokeDbSnapshot([ownerA], recased);
+
+        expect(snapshots).toHaveLength(1);
+        expect(isInvokeDbSnapshotCurrent(ownerA, recasedCurrent)).toBe(true);
+        expect(getInvokeDbSnapshotForScope({ invokeDbSnapshots: snapshots }, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })?.lastSyncedAt).toBe(200);
+        expect(isInvokeDbSnapshotScopeCurrent(recased, {
+            mode: 'owner',
+            ownerId: 'owner-a',
+            dbPath: baseSnapshot.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(true);
+    });
+
+    it('compares owner source fingerprints independently from the shared database files', () => {
+        const ownerA = {
+            schemaVersion: 1 as const,
+            imageCount: 12,
+            imageUpdatedAt: '2026-08-08 10:00:00',
+            boardCount: 4,
+            boardUpdatedAt: '2026-08-08 09:00:00',
+            membershipCount: 31,
+            membershipMaxRowId: '44',
+        };
+
+        expect(isInvokeSourceFingerprintCurrent(ownerA, { ...ownerA })).toBe(true);
+        expect(isInvokeSourceFingerprintCurrent(ownerA, { ...ownerA, imageCount: 13 })).toBe(false);
+        expect(isInvokeSourceFingerprintCurrent(undefined, ownerA)).toBe(false);
+        expect(buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            sourceFingerprint: ownerA,
+        }).sourceFingerprint).toEqual(ownerA);
+    });
+
+    it('tracks board-owner repair independently from image import schema', () => {
+        const unrepaired = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+        });
+        const repaired = buildInvokeDbSnapshotState(baseSnapshot, {
+            scopeMode: 'owner',
+            scopeOwnerId: 'owner-a',
+            boardOwnerSchemaVersion: INVOKE_BOARD_OWNER_SCHEMA_VERSION,
+        });
+
+        expect(isInvokeImportSchemaCurrent(unrepaired)).toBe(true);
+        expect(isInvokeBoardOwnerSnapshotCurrent(unrepaired)).toBe(false);
+        expect(isInvokeBoardOwnerSnapshotCurrent(repaired)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(unrepaired, repaired)).toBe(false);
     });
 
     it('invalidates when a missing WAL appears', () => {
@@ -144,6 +305,31 @@ describe('Invoke DB startup snapshot matching', () => {
         expect(isInvokeDbSnapshotCurrent(oldRepairSnapshot, current)).toBe(false);
     });
 
+    it('invalidates snapshots that predate or use an older Invoke import schema', () => {
+        const current = buildInvokeDbSnapshotState(baseSnapshot, {
+            lastSyncedAt: 1000,
+            importIntermediates: false,
+            importOrphans: false,
+            syncBoardsToCollections: false
+        });
+        const legacySaved = { ...current } as Partial<InvokeDbSnapshotState>;
+        delete legacySaved.importSchemaVersion;
+        const oldSchemaSnapshot = {
+            ...current,
+            importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION - 1,
+        };
+
+        expect(isInvokeImportSchemaCurrent(legacySaved as InvokeDbSnapshotState)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(legacySaved as InvokeDbSnapshotState, current)).toBe(false);
+        expect(isInvokeImportSchemaCurrent(oldSchemaSnapshot)).toBe(false);
+        expect(isInvokeDbSnapshotCurrent(oldSchemaSnapshot, current)).toBe(false);
+        expect(isInvokeDbSnapshotScopeCurrent(oldSchemaSnapshot, {
+            mode: 'legacy',
+            dbPath: current.dbPath,
+            imagesRoot: 'D:/Invoke',
+        })).toBe(false);
+    });
+
     it('reads and normalizes snapshot state through the backend command', async () => {
         getInvokeDbSnapshot.mockResolvedValue({ status: 'ok', data: baseSnapshot });
 
@@ -153,6 +339,7 @@ describe('Invoke DB startup snapshot matching', () => {
             importIntermediates: false,
             importOrphans: false,
             syncBoardsToCollections: false,
+            importSchemaVersion: INVOKE_IMPORT_SCHEMA_VERSION,
             files: expect.arrayContaining([
                 expect.objectContaining({ path: 'D:/Invoke/databases/invokeai.db', modifiedMs: 100 }),
             ]),
@@ -181,13 +368,14 @@ describe('Invoke DB startup snapshot matching', () => {
         }
     });
 
-    it('matches legacy omitted options against current false defaults', () => {
+    it('invalidates snapshots that omit the captured owner scope', () => {
         const current = buildInvokeDbSnapshotState({ dbPath: 'invoke.db', files: [] }, {});
         const legacy = {
             dbPath: current.dbPath,
             pathRepairVersion: current.pathRepairVersion,
+            importSchemaVersion: current.importSchemaVersion,
         } as InvokeDbSnapshotState;
 
-        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(true);
+        expect(isInvokeDbSnapshotCurrent(legacy, current)).toBe(false);
     });
 });

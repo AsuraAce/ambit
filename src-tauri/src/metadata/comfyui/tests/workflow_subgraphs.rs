@@ -127,6 +127,91 @@ fn assert_traversal_source(
 }
 
 #[test]
+fn workflow_only_subgraph_resource_source_uses_namespaced_loader_id() {
+    let definition = json!({
+        "id": "lora_subgraph",
+        "inputNode": { "id": -10 },
+        "outputNode": { "id": -20 },
+        "inputs": [],
+        "outputs": [{ "name": "IMAGE", "type": "IMAGE" }],
+        "nodes": [
+            {
+                "id": 1,
+                "type": "UNETLoader",
+                "inputs": [],
+                "widgets_values": ["resource-model.safetensors", "default"]
+            },
+            {
+                "id": 2,
+                "type": "LoraLoaderModelOnly",
+                "inputs": [{ "name": "model", "type": "MODEL", "link": 1 }],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [2] }],
+                "widgets_values": ["subgraph-style.safetensors", 1.0]
+            },
+            {
+                "id": 3,
+                "type": "CLIPTextEncode",
+                "inputs": [],
+                "outputs": [{ "name": "CONDITIONING", "type": "CONDITIONING", "links": [3] }],
+                "widgets_values": ["subgraph resource prompt"]
+            },
+            {
+                "id": 4,
+                "type": "KSampler",
+                "inputs": [
+                    { "name": "model", "type": "MODEL", "link": 2 },
+                    { "name": "positive", "type": "CONDITIONING", "link": 3 }
+                ],
+                "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [4] }],
+                "widgets_values": [7, "fixed", 4, 1.0, "euler", "simple", 1.0]
+            },
+            {
+                "id": 5,
+                "type": "VAEDecode",
+                "inputs": [{ "name": "samples", "type": "LATENT", "link": 4 }],
+                "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [5] }],
+                "widgets_values": []
+            }
+        ],
+        "links": [
+            { "id": 1, "origin_id": 1, "origin_slot": 0, "target_id": 2, "target_slot": 0, "type": "MODEL" },
+            { "id": 2, "origin_id": 2, "origin_slot": 0, "target_id": 4, "target_slot": 0, "type": "MODEL" },
+            { "id": 3, "origin_id": 3, "origin_slot": 0, "target_id": 4, "target_slot": 1, "type": "CONDITIONING" },
+            { "id": 4, "origin_id": 4, "origin_slot": 0, "target_id": 5, "target_slot": 0, "type": "LATENT" },
+            { "id": 5, "origin_id": 5, "origin_slot": 0, "target_id": -20, "target_slot": 0, "type": "IMAGE" }
+        ]
+    });
+    let workflow = json!({
+        "nodes": [
+            {
+                "id": 30,
+                "type": "lora_subgraph",
+                "mode": 0,
+                "inputs": [],
+                "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [1] }],
+                "widgets_values": []
+            },
+            save_node(40, 1)
+        ],
+        "links": [[1, 30, 0, 40, 0, "IMAGE"]],
+        "definitions": { "subgraphs": [definition] },
+        "version": 0.4
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.loras, ["subgraph_style"]);
+    let source = diagnostics
+        .resource_sources
+        .get(&ComfyMetadataField::Loras)
+        .and_then(|resources| resources.get("subgraph_style"))
+        .expect("namespaced LoRA provenance");
+    assert_eq!(source.layer, ComfyParseLayer::SamplerTraversal);
+    assert_eq!(source.node_ids, ["30:2"]);
+}
+
+#[test]
 fn krea_workflow_only_expands_official_subgraph_metadata() {
     let raw: HashMap<String, Value> =
         serde_json::from_str(KREA_FIXTURE).expect("Krea chunk fixture");
@@ -170,7 +255,23 @@ fn krea_workflow_only_expands_official_subgraph_metadata() {
         ComfyMetadataField::PositivePrompt,
     ] {
         assert_traversal_source(&diagnostics, field);
+        let source_ids = diagnostics
+            .field_source_node_ids
+            .get(&field)
+            .unwrap_or_else(|| panic!("workflow-only {field:?} should expose source nodes"));
+        assert!(
+            source_ids.iter().all(|node_id| normalized_ids.contains(node_id)),
+            "workflow-only {field:?} source IDs must resolve in the normalized graph: {source_ids:?}"
+        );
     }
+    assert!(
+        diagnostics
+            .field_source_node_ids
+            .values()
+            .flatten()
+            .any(|node_id| node_id.contains(':')),
+        "expanded subgraph provenance should retain namespaced node IDs"
+    );
     assert_eq!(
         diagnostics
             .field_sources
@@ -192,6 +293,89 @@ fn subgraph_inputs_use_defaults_then_proxy_then_external_link() {
         assert_eq!(meta.seed, Some(expected_seed));
         assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
     }
+}
+
+#[test]
+fn singleton_object_definition_output_reaches_saved_output() {
+    let mut workflow = single_instance_workflow(None, None);
+    let mut output = workflow["definitions"]["subgraphs"][0]["outputs"][0].clone();
+    output["linkIds"] = json!([6]);
+    workflow["definitions"]["subgraphs"][0]["outputs"] = output;
+    workflow["definitions"]["subgraphs"][0]["links"][5]["target_slot"] = json!(-1);
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.model, "subgraph_model");
+    assert_eq!(meta.seed, Some(11));
+    assert_eq!(diagnostics.selected_output_candidate_count, 1);
+    assert_eq!(diagnostics.unique_output_root_sampler_count, 1);
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Model);
+}
+
+#[test]
+fn subgraph_inputs_without_proxy_widgets_use_definition_input_order() {
+    for (seed_override, external_seed, expected_seed) in [
+        (None, None, 11),
+        (Some(77), None, 77),
+        (Some(77), Some(99), 99),
+    ] {
+        let mut workflow = single_instance_workflow(seed_override, external_seed);
+        workflow["nodes"][0]["properties"] = json!({});
+
+        let (meta, diagnostics) =
+            extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+        assert_eq!(meta.seed, Some(expected_seed));
+        assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
+    }
+
+    let mut workflow = single_instance_workflow(Some(77), None);
+    workflow["nodes"][0]["properties"] = json!({});
+    workflow["nodes"][0]["widgets_values"] = json!([null]);
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+    assert_eq!(meta.seed, Some(11));
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
+}
+
+#[test]
+fn unlinked_boundary_input_removes_shadow_edges_before_using_the_default() {
+    let mut definition = basic_definition("basic", "subgraph-model", 11);
+    definition["nodes"]
+        .as_array_mut()
+        .expect("definition nodes")
+        .push(json!({
+            "id": 6,
+            "type": "PrimitiveInt",
+            "inputs": [],
+            "outputs": [{ "name": "INT", "type": "INT", "links": [7] }],
+            "widgets_values": [4]
+        }));
+    definition["links"]
+        .as_array_mut()
+        .expect("definition links")
+        .push(json!({
+            "id": 7,
+            "origin_id": 6,
+            "origin_slot": 0,
+            "target_id": 4,
+            "target_slot": 4,
+            "type": "INT"
+        }));
+    let workflow = json!({
+        "nodes": [
+            instance(30, "basic", None, 0),
+            save_node(40, 1)
+        ],
+        "links": [[1, 30, 0, 40, 0, "IMAGE"]],
+        "definitions": { "subgraphs": [definition] }
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.seed, Some(11));
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Seed);
 }
 
 #[test]
@@ -381,6 +565,125 @@ fn inactive_subgraph_cannot_pass_an_image_source_to_saved_output_traversal() {
     let (_, diagnostics) =
         extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
     assert_eq!(diagnostics.unique_output_root_sampler_count, 0);
+    assert_ne!(
+        diagnostics.field_sources.get(&ComfyMetadataField::Model),
+        Some(&ComfyParseLayer::SamplerTraversal)
+    );
+}
+
+#[test]
+fn bypassed_subgraph_uses_its_unique_type_matching_input() {
+    let passthrough = json!({
+        "id": "model_passthrough",
+        "inputNode": { "id": -10 },
+        "outputNode": { "id": -20 },
+        "inputs": [{ "name": "model", "type": "MODEL" }],
+        "outputs": [{ "name": "MODEL", "type": "MODEL" }],
+        "nodes": [],
+        "links": [{ "origin_id": -10, "origin_slot": 0, "target_id": -20, "target_slot": 0, "type": "MODEL" }]
+    });
+    let workflow = json!({
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "inputs": [], "widgets_values": ["base.safetensors", "default"] },
+            {
+                "id": 2,
+                "type": "LoraLoaderModelOnly",
+                "inputs": [{ "name": "model", "type": "MODEL", "link": 1 }],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [2] }],
+                "widgets_values": ["style.safetensors", 1.0]
+            },
+            {
+                "id": 30,
+                "type": "model_passthrough",
+                "mode": 4,
+                "inputs": [{ "name": "model", "type": "MODEL", "link": 2 }],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [3] }]
+            },
+            { "id": 31, "type": "CLIPTextEncode", "inputs": [], "widgets_values": ["bypass prompt"] },
+            {
+                "id": 32,
+                "type": "KSampler",
+                "inputs": [
+                    { "name": "model", "type": "MODEL", "link": 3 },
+                    { "name": "positive", "type": "CONDITIONING", "link": 4 }
+                ],
+                "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [5] }],
+                "widgets_values": [22, "fixed", 4, 1.0, "euler", "simple", 1.0]
+            },
+            { "id": 33, "type": "VAEDecode", "inputs": [{ "name": "samples", "type": "LATENT", "link": 5 }], "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [6] }] },
+            save_node(34, 6)
+        ],
+        "links": [
+            [1, 1, 0, 2, 0, "MODEL"],
+            [2, 2, 0, 30, 0, "MODEL"],
+            [3, 30, 0, 32, 0, "MODEL"],
+            [4, 31, 0, 32, 1, "CONDITIONING"],
+            [5, 32, 0, 33, 0, "LATENT"],
+            [6, 33, 0, 34, 0, "IMAGE"]
+        ],
+        "definitions": { "subgraphs": [passthrough] }
+    });
+
+    let (meta, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
+    assert_eq!(meta.model, "base");
+    assert_eq!(meta.loras, ["style"]);
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Model);
+    assert_traversal_source(&diagnostics, ComfyMetadataField::Loras);
+}
+
+#[test]
+fn bypassed_subgraph_with_ambiguous_matching_inputs_stays_opaque() {
+    let passthrough = json!({
+        "id": "ambiguous_model_passthrough",
+        "inputNode": { "id": -10 },
+        "outputNode": { "id": -20 },
+        "inputs": [
+            { "name": "model_a", "type": "MODEL" },
+            { "name": "model_b", "type": "MODEL" }
+        ],
+        "outputs": [{ "name": "MODEL", "type": "MODEL" }],
+        "nodes": [],
+        "links": []
+    });
+    let workflow = json!({
+        "nodes": [
+            { "id": 1, "type": "UNETLoader", "inputs": [], "widgets_values": ["first.safetensors", "default"] },
+            { "id": 2, "type": "UNETLoader", "inputs": [], "widgets_values": ["second.safetensors", "default"] },
+            {
+                "id": 30,
+                "type": "ambiguous_model_passthrough",
+                "mode": 4,
+                "inputs": [
+                    { "name": "model_a", "type": "MODEL", "link": 1 },
+                    { "name": "model_b", "type": "MODEL", "link": 2 }
+                ],
+                "outputs": [{ "name": "MODEL", "type": "MODEL", "links": [3] }]
+            },
+            {
+                "id": 31,
+                "type": "KSampler",
+                "inputs": [{ "name": "model", "type": "MODEL", "link": 3 }],
+                "outputs": [{ "name": "LATENT", "type": "LATENT", "links": [4] }],
+                "widgets_values": [22, "fixed", 4, 1.0, "euler", "simple", 1.0]
+            },
+            { "id": 32, "type": "VAEDecode", "inputs": [{ "name": "samples", "type": "LATENT", "link": 4 }], "outputs": [{ "name": "IMAGE", "type": "IMAGE", "links": [5] }] },
+            save_node(33, 5)
+        ],
+        "links": [
+            [1, 1, 0, 30, 0, "MODEL"],
+            [2, 2, 0, 30, 1, "MODEL"],
+            [3, 30, 0, 31, 0, "MODEL"],
+            [4, 31, 0, 32, 0, "LATENT"],
+            [5, 32, 0, 33, 0, "IMAGE"]
+        ],
+        "definitions": { "subgraphs": [passthrough] }
+    });
+
+    let (_, diagnostics) =
+        extract_comfyui_metadata_with_diagnostics(&chunks_from_workflow(workflow));
+
     assert_ne!(
         diagnostics.field_sources.get(&ComfyMetadataField::Model),
         Some(&ComfyParseLayer::SamplerTraversal)

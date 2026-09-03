@@ -232,6 +232,29 @@ describe('Metadata Worker Tests', () => {
             mergeMetadata(base, {});
             expect(base).toEqual({});
         });
+
+        it('preserves an explicit zero CFG when a later chunk has a nonzero value', () => {
+            const base: Partial<ImageMetadata> = { cfg: 0 };
+            mergeMetadata(base, { cfg: 7 });
+            expect(base.cfg).toBe(0);
+        });
+
+        it('replaces invalid f32 base values and ignores invalid secondary values', () => {
+            const base: Partial<ImageMetadata> = {
+                cfg: Number.NaN,
+                denoisingStrength: Number.MAX_VALUE
+            };
+            mergeMetadata(base, { cfg: 7, denoisingStrength: 0.45 });
+            expect(base).toMatchObject({ cfg: 7, denoisingStrength: 0.45 });
+
+            const missing: Partial<ImageMetadata> = {};
+            mergeMetadata(missing, {
+                cfg: Number.POSITIVE_INFINITY,
+                denoisingStrength: Number.MAX_VALUE
+            });
+            expect(missing.cfg).toBeUndefined();
+            expect(missing.denoisingStrength).toBeUndefined();
+        });
     });
 
     describe('parseExifData', () => {
@@ -395,16 +418,30 @@ describe('Metadata Worker Tests', () => {
             const response = await sendWorkerMessage({
                 requestId: 'invoke-request',
                 filename: 'invoke.png',
-                path: 'D:/Invoke/outputs/images/invoke.png',
+                path: 'D:/Invoke/outputs/txt2img/invoke.png',
                 chunks: {
                     invokeai_metadata: JSON.stringify({
                         positive_prompt: 'invoke prompt',
                         negative_prompt: 'invoke negative',
                         seed: 123,
                         steps: 28,
-                        cfg_scale: 6.5,
+                        cfg_scale: 0,
+                        guidance: 6.5,
+                        cfg: 8,
+                        denoising_strength: 0,
                         sampler_name: 'dpmpp_2m',
                         model: { model_name: 'Invoke Model' },
+                        vae: { name: 'Invoke VAE' },
+                        generation_mode: 'sdxl_txt2img',
+                        control_adapters: [
+                            'C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'
+                        ],
+                        t2iAdapters: [
+                            { model: { name: 'T2I-Adapter-Canny-SDXL.safetensors' } }
+                        ],
+                        t2i_adapter: {
+                            model: 'C:\\InvokeAI\\models\\T2I-Adapter-Depth.SAFETENSORS'
+                        },
                         loras: [
                             'string-lora',
                             { model: { name: 'model-lora' } },
@@ -425,11 +462,14 @@ describe('Metadata Worker Tests', () => {
                     negativePrompt: 'invoke negative',
                     seed: 123,
                     steps: 28,
-                    cfg: 6.5,
+                    cfg: 0,
+                    denoisingStrength: 0,
                     sampler: 'dpmpp_2m',
                     model: 'Invoke Model',
+                    vae: 'Invoke VAE',
+                    controlNets: ['t2i_adapter_depth', 't2i_adapter_canny_sdxl'],
                     workflowJson: JSON.stringify({ nodes: [] }),
-                    generationType: 'unknown'
+                    generationType: 'sdxl_txt2img'
                 }
             });
             expect((response.metadata as { loras?: string[] }).loras).toEqual([
@@ -438,6 +478,53 @@ describe('Metadata Worker Tests', () => {
                 'nested-lora',
                 'plain-lora'
             ]);
+        });
+
+        it('falls through invalid A1111 f32 values but preserves explicit zero across Invoke chunks', async () => {
+            const cases = [
+                {
+                    parameters: 'prompt\nSteps: 20, CFG scale: NaN, Denoising strength: 3.4028236e38',
+                    invoke: { cfg_scale: 7, denoising_strength: 0.45 },
+                    expected: { cfg: 7, denoisingStrength: 0.45 }
+                },
+                {
+                    parameters: 'prompt\nSteps: 20, CFG scale: 3.4028236e38, Denoising strength: NaN',
+                    invoke: { cfg_scale: 8, denoising_strength: 0.55 },
+                    expected: { cfg: 8, denoisingStrength: 0.55 }
+                },
+                {
+                    parameters: 'prompt\nSteps: 20, CFG scale: 7junk, Denoising strength: 0x10',
+                    invoke: { cfg_scale: 6.5, denoising_strength: 0.35 },
+                    expected: { cfg: 6.5, denoisingStrength: 0.35 }
+                },
+                {
+                    parameters: 'prompt\nSteps: 20, CFG scale: 0x10, Denoising strength: 4junk',
+                    invoke: { cfg_scale: 7.5, denoising_strength: 0.4 },
+                    expected: { cfg: 7.5, denoisingStrength: 0.4 }
+                },
+                {
+                    parameters: 'prompt\nSteps: 20, CFG scale: 0, Denoising strength: 0',
+                    invoke: { cfg_scale: 9, denoising_strength: 0.65 },
+                    expected: { cfg: 0, denoisingStrength: 0 }
+                },
+                {
+                    parameters: 'prompt\nSteps: 20, cFg: 0',
+                    invoke: { cfg_scale: 10 },
+                    expected: { cfg: 0 }
+                }
+            ];
+
+            for (const [index, testCase] of cases.entries()) {
+                postMessageMock.mockClear();
+                const response = await sendWorkerMessage({
+                    filename: `cumulative-${index}.png`,
+                    chunks: {
+                        parameters: testCase.parameters,
+                        invokeai_metadata: JSON.stringify(testCase.invoke)
+                    }
+                });
+                expect(response).toMatchObject({ metadata: testCase.expected });
+            }
         });
 
         it('handles sparse InvokeAI metadata, string models, graph strings, and fallback lora names', async () => {
@@ -461,7 +548,7 @@ describe('Metadata Worker Tests', () => {
                 metadata: {
                     tool: GeneratorTool.INVOKEAI,
                     model: 'String Model',
-                    loras: ['Unknown LoRA', 'lora-name'],
+                    loras: ['lora-name'],
                     workflowJson: 'graph-json'
                 }
             });
@@ -490,7 +577,7 @@ describe('Metadata Worker Tests', () => {
                 filename: 'invoke.png',
                 chunks: { invokeai_metadata: JSON.stringify({ model: {} }) }
             });
-            expect(unknown).toMatchObject({ metadata: { model: 'Unknown Model' } });
+            expect(unknown).toMatchObject({ metadata: { model: 'Unknown' } });
         });
 
         it('uses a valid default generator and uppercase parameter chunk', async () => {

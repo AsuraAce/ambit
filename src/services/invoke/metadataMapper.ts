@@ -3,6 +3,21 @@ import { GeneratorTool, ImageMetadata } from '../../types';
 type MetadataRecord = Record<string, unknown>;
 type ResourceArrays = 'loras' | 'controlNets' | 'ipAdapters' | 'embeddings' | 'hypernetworks';
 export type InvokeImageMetadata = ImageMetadata & Required<Pick<ImageMetadata, ResourceArrays>>;
+type RawInvokeImageMetadata = Omit<InvokeImageMetadata, 'cfg'> & Partial<Pick<ImageMetadata, 'cfg'>>;
+
+const DECIMAL_NUMBER_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+const parseDecimalNumber = (value: string): number | undefined => {
+    const normalized = value.trim();
+    if (!normalized || !DECIMAL_NUMBER_PATTERN.test(normalized)) return undefined;
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+export const parseFiniteDecimalF32 = (value: string): number | undefined => {
+    const parsed = parseDecimalNumber(value);
+    return parsed !== undefined && Number.isFinite(Math.fround(parsed)) ? parsed : undefined;
+};
 
 const isRecord = (value: unknown): value is MetadataRecord =>
     !!value && typeof value === 'object' && !Array.isArray(value);
@@ -22,7 +37,24 @@ const readNumber = (record: MetadataRecord, ...keys: string[]): number | undefin
     for (const key of keys) {
         const value = record[key];
         if (typeof value === 'number' && Number.isFinite(value)) return value;
-        if (typeof value === 'string' && value !== '' && Number.isFinite(Number(value))) return Number(value);
+        if (typeof value === 'string') {
+            const parsed = parseDecimalNumber(value);
+            if (parsed !== undefined) return parsed;
+        }
+    }
+    return undefined;
+};
+
+const readF32 = (record: MetadataRecord, ...keys: string[]): number | undefined => {
+    for (const key of keys) {
+        const rawValue = record[key];
+        if (typeof rawValue === 'string') {
+            const parsed = parseFiniteDecimalF32(rawValue);
+            if (parsed !== undefined) return parsed;
+        } else {
+            const value = readNumber(record, key);
+            if (value !== undefined && Number.isFinite(Math.fround(value))) return value;
+        }
     }
     return undefined;
 };
@@ -43,6 +75,19 @@ export function cleanModelName(name: string): string {
         .replace(".bin", "")
         .replace(".pt", "")
         .split('(')[0]
+        .trim();
+}
+
+function cleanGuidanceResourceName(name: string): string {
+    const basename = name.split(/[\\/]/).pop() || name;
+    const normalized = basename
+        .split('(')[0]
+        .toLowerCase()
+        .trim();
+    return normalized
+        .replace(/\.(safetensors|ckpt|pth|bin|pt)$/i, '')
+        .replace(/ /g, '_')
+        .replace(/-/g, '_')
         .trim();
 }
 
@@ -177,11 +222,38 @@ function scanForResources(val: unknown, res: Resources, depth = 0) {
                 }
 
                 if (name && typeof name === 'string') {
-                    const cleaned = cleanModelName(name);
+                    const cleaned = cleanGuidanceResourceName(name);
                     if (cleaned && !res.controlNets.includes(cleaned)) res.controlNets.push(cleaned);
                 }
             });
         }
+    });
+
+    // T2I adapters share Ambit's control-resource taxonomy, but retain their
+    // source-aware classification instead of being redirected as IP adapters.
+    const t2iKeys = ['t2iAdapters', 't2i_adapters', 't2i_adapter'];
+    t2iKeys.forEach(key => {
+        const adapters = obj[key];
+        if (!adapters) return;
+
+        const items = Array.isArray(adapters) ? adapters : [adapters];
+        items.forEach(item => {
+            if (!item) return;
+            let name = '';
+            if (typeof item === 'string') {
+                name = item;
+            } else {
+                const record = asRecord(item);
+                const explicitModel = record.t2i_adapter_model;
+                if (typeof explicitModel === 'string') name = explicitModel;
+                else if (isRecord(explicitModel)) name = readResourceName(explicitModel);
+                else if (typeof record.model === 'string') name = record.model;
+                else name = readResourceName(record);
+            }
+
+            const cleaned = cleanGuidanceResourceName(name);
+            if (cleaned && !res.controlNets.includes(cleaned)) res.controlNets.push(cleaned);
+        });
     });
 
     // Check for IP-Adapters
@@ -288,7 +360,7 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex:
         const mapped = mapRawInvokeMetadata(meta);
         // Overwrite hints from higher-level row if present
         if (rowRecord.has_workflow !== undefined) mapped.hasWorkflowHint = rowRecord.has_workflow === 1 || rowRecord.has_workflow === true;
-        return mapped;
+        return { ...baseMetadata, ...mapped };
     } catch (e) {
         return baseMetadata;
     }
@@ -298,12 +370,11 @@ export function mapInvokeMetadata(row: unknown, metaCol: string, processedIndex:
  * Standard mapper for raw InvokeAI metadata objects.
  * Used both during sync and when displaying "Original" metadata in the UI.
  */
-export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
+export function mapRawInvokeMetadata(meta: unknown): RawInvokeImageMetadata {
     if (!meta) return {
         tool: GeneratorTool.INVOKEAI,
         model: 'Unknown',
         steps: 0,
-        cfg: 0,
         sampler: 'Unknown',
         positivePrompt: '',
         negativePrompt: '',
@@ -338,11 +409,10 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     const workflow = rootRecord.workflow || metaRecord.workflow || rootRecord.graph || metaRecord.graph ||
         actualRoot.workflow || actualRoot.graph || metaRecord.has_workflow_data;
 
-    const mapped: InvokeImageMetadata = {
+    const mapped: RawInvokeImageMetadata = {
         tool: GeneratorTool.INVOKEAI,
         model: 'Unknown',
         steps: 0,
-        cfg: 0,
         sampler: 'Unknown',
         positivePrompt: '',
         negativePrompt: '',
@@ -363,7 +433,8 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
     if (positivePrompt) mapped.positivePrompt = positivePrompt.trim();
     if (negativePrompt) mapped.negativePrompt = negativePrompt.trim();
     mapped.steps = readNumber(actualRoot, 'steps') ?? mapped.steps;
-    mapped.cfg = readNumber(actualRoot, 'cfg_scale', 'cfg') ?? mapped.cfg;
+    const cfg = readF32(actualRoot, 'cfg_scale', 'guidance', 'cfg');
+    if (cfg !== undefined) mapped.cfg = cfg;
     mapped.seed = readNumber(actualRoot, 'seed') ?? mapped.seed;
     // Sampler - v2.x uses "sampler", v3.x uses "scheduler" or "sampler_name"
     const sampler = readString(actualRoot, 'scheduler', 'sampler', 'sampler_name');
@@ -382,11 +453,15 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
 
     // Additional fields for parity with Rust ImageMetadata
     mapped.clipSkip = readNumber(actualRoot, 'clip_skip', 'clipSkip') ?? mapped.clipSkip;
-    mapped.denoisingStrength = readNumber(actualRoot, 'hrf_strength', 'denoisingStrength') ?? mapped.denoisingStrength;
+    mapped.denoisingStrength = readF32(actualRoot, 'denoising_strength', 'denoisingStrength', 'hrf_strength') ?? mapped.denoisingStrength;
     const hiresUpscaler = readString(actualRoot, 'hrf_method', 'hiresUpscaler');
     if (hiresUpscaler) mapped.hiresUpscaler = hiresUpscaler;
     const generationType = readString(actualRoot, 'generation_mode', 'generationType', 'type');
-    if (generationType) mapped.generationType = generationType as ImageMetadata['generationType'];
+    if (generationType) mapped.generationType = generationType;
+
+    const vaeValue = actualRoot.vae;
+    const vae = typeof vaeValue === 'string' ? vaeValue : readResourceName(asRecord(vaeValue));
+    if (vae.trim()) mapped.vae = vae.trim();
 
     // Check for favorite status in legacy formats
     if (actualRoot.subject === 'favorite' || actualRoot.isFavorite) mapped.isFavorite = true;
@@ -409,7 +484,7 @@ export function mapRawInvokeMetadata(meta: unknown): InvokeImageMetadata {
 
     // Deep scan for resources (LoRAs, ControlNets, IP-Adapters, Embeddings, Hypernets)
     const resources: Resources = { loras: [], controlNets: [], ipAdapters: [], embeddings: [], hypernetworks: [] };
-    scanForResources(actualRoot, resources);
+    scanForResources(rootRecord, resources);
 
     mapped.loras = resources.loras;
     mapped.controlNets = resources.controlNets;

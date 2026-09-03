@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::graph::compare_node_ids;
 
@@ -67,6 +67,18 @@ impl ExpansionBudget {
             + edge.target_id.owned_len()
             + edge.link_type.len();
         self.reserve(0, 1, bytes)
+    }
+
+    fn reserve_raw_ue_link(&mut self, link: &BorrowedUeLink<'_>) -> bool {
+        let bytes = link.source_id.owned_len()
+            + link.target_id.owned_len()
+            + link.controller_id.owned_len()
+            + link.link_type.len();
+        self.reserve(0, 1, bytes)
+    }
+
+    fn reserve_wireless_block(&mut self, node_id: &str) -> bool {
+        self.reserve(0, 1, node_id.len())
     }
 
     fn reserve_value_clone(&mut self, value: &Value, extra_bytes: usize) -> bool {
@@ -212,6 +224,22 @@ impl BorrowedId<'_> {
             Self::Unsigned(value) => value.to_string(),
         }
     }
+
+    fn equals(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::String(left), Self::String(right)) => left == right,
+            (Self::Signed(left), Self::Signed(right)) => left == right,
+            (Self::Unsigned(left), Self::Unsigned(right)) => left == right,
+            (Self::Signed(left), Self::Unsigned(right))
+            | (Self::Unsigned(right), Self::Signed(left)) => {
+                u64::try_from(left).is_ok_and(|left| left == right)
+            }
+            (Self::String(left), Self::Signed(right))
+            | (Self::Signed(right), Self::String(left)) => left.parse::<i64>() == Ok(right),
+            (Self::String(left), Self::Unsigned(right))
+            | (Self::Unsigned(right), Self::String(left)) => left.parse::<u64>() == Ok(right),
+        }
+    }
 }
 
 struct BorrowedWorkflowEdge<'a> {
@@ -221,6 +249,37 @@ struct BorrowedWorkflowEdge<'a> {
     target_id: BorrowedId<'a>,
     target_slot: usize,
     link_type: &'a str,
+}
+
+struct BorrowedUeLink<'a> {
+    source_id: BorrowedId<'a>,
+    source_slot: usize,
+    target_id: BorrowedId<'a>,
+    target_slot: usize,
+    controller_id: BorrowedId<'a>,
+    link_type: &'a str,
+}
+
+struct UeLink {
+    source_id: String,
+    source_slot: usize,
+    target_id: String,
+    target_slot: usize,
+    controller_id: String,
+    link_type: String,
+}
+
+impl BorrowedUeLink<'_> {
+    fn into_owned(self) -> UeLink {
+        UeLink {
+            source_id: self.source_id.into_owned(),
+            source_slot: self.source_slot,
+            target_id: self.target_id.into_owned(),
+            target_slot: self.target_slot,
+            controller_id: self.controller_id.into_owned(),
+            link_type: self.link_type.to_string(),
+        }
+    }
 }
 
 impl BorrowedWorkflowEdge<'_> {
@@ -239,6 +298,7 @@ impl BorrowedWorkflowEdge<'_> {
 pub(crate) struct NormalizedWorkflow {
     pub nodes: Vec<Value>,
     pub edges: Vec<WorkflowEdge>,
+    pub blocked_wireless_targets: HashSet<(String, usize)>,
 }
 
 #[derive(Clone)]
@@ -259,6 +319,7 @@ struct BoundarySource {
 struct WorkflowFragment {
     nodes: HashMap<String, Value>,
     edges: Vec<WorkflowEdge>,
+    blocked_wireless_targets: HashSet<(String, usize)>,
     input_targets: HashMap<usize, Vec<BoundaryTarget>>,
     output_sources: HashMap<usize, Vec<BoundarySource>>,
 }
@@ -289,6 +350,7 @@ fn normalize_workflow_with_limits(
     Some(NormalizedWorkflow {
         nodes: fragment.nodes.into_values().collect(),
         edges: fragment.edges,
+        blocked_wireless_targets: fragment.blocked_wireless_targets,
     })
 }
 
@@ -328,7 +390,13 @@ fn flatten_container<'a>(
     let mut edges = Vec::new();
     if let Some(raw_edges) = container.get("links").and_then(Value::as_array) {
         for raw_edge in raw_edges {
-            let Some(raw_edge) = parse_borrowed_edge(raw_edge) else {
+            let Some(raw_edge) = parse_borrowed_edge(raw_edge).or_else(|| {
+                parse_borrowed_output_boundary_edge(
+                    raw_edge,
+                    output_id.as_deref(),
+                    container.get("outputs"),
+                )
+            }) else {
                 continue;
             };
             if !budget.reserve_raw_edge(&raw_edge) {
@@ -366,6 +434,20 @@ fn flatten_container<'a>(
         }
     }
 
+    let mut blocked_wireless_targets = HashSet::new();
+    if !append_resolved_ue_edges(
+        container,
+        &local_ids,
+        input_id.as_deref(),
+        output_id.as_deref(),
+        &nodes,
+        &mut edges,
+        &mut blocked_wireless_targets,
+        budget,
+    ) {
+        return None;
+    }
+
     let mut instance_ids = nodes
         .iter()
         .filter_map(|(id, node)| {
@@ -379,8 +461,16 @@ fn flatten_container<'a>(
         let Some(instance) = nodes.get(&instance_id) else {
             continue;
         };
-        if is_inactive(&instance) || depth >= MAX_SUBGRAPH_DEPTH {
+        if is_muted(instance) || depth >= MAX_SUBGRAPH_DEPTH {
             block_instance_inputs(&mut edges, &instance_id);
+            continue;
+        }
+        if is_bypassed(instance) {
+            if bypass_instance(instance, &instance_id, &mut edges, budget) {
+                nodes.remove(&instance_id);
+            } else {
+                block_instance_inputs(&mut edges, &instance_id);
+            }
             continue;
         }
 
@@ -429,14 +519,35 @@ fn flatten_container<'a>(
             continue;
         };
 
+        let blocked_instance_slots = blocked_wireless_targets
+            .iter()
+            .filter_map(|(node_id, slot)| (node_id == &instance_id).then_some(*slot))
+            .collect::<Vec<_>>();
+        blocked_wireless_targets.retain(|(node_id, _)| node_id != &instance_id);
+        block_child_inputs(
+            &blocked_instance_slots,
+            &mut child.nodes,
+            &mut child.edges,
+            &child.input_targets,
+            &mut child.blocked_wireless_targets,
+        );
+
         clear_unlinked_boundary_input_links(
             instance,
             definition,
             &mut child.nodes,
+            &mut child.edges,
             &child.input_targets,
         );
 
-        if !apply_proxy_widget_overrides(instance, &instance_id, &mut child.nodes, budget) {
+        if !apply_instance_widget_overrides(
+            instance,
+            definition,
+            &instance_id,
+            &mut child.nodes,
+            &child.input_targets,
+            budget,
+        ) {
             block_instance_inputs(&mut edges, &instance_id);
             continue;
         }
@@ -467,6 +578,7 @@ fn flatten_container<'a>(
         edges.extend(child.edges);
         edges.extend(input_bindings);
         edges.extend(output_bindings);
+        blocked_wireless_targets.extend(child.blocked_wireless_targets);
         nodes.remove(&instance_id);
         nodes.extend(child.nodes);
     }
@@ -516,15 +628,214 @@ fn flatten_container<'a>(
     Some(WorkflowFragment {
         nodes,
         edges: retained_edges,
+        blocked_wireless_targets,
         input_targets,
         output_sources,
     })
+}
+
+fn block_child_inputs(
+    blocked_slots: &[usize],
+    nodes: &mut HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    blocked_wireless_targets: &mut HashSet<(String, usize)>,
+) {
+    for slot in blocked_slots {
+        let Some(targets) = input_targets.get(slot) else {
+            continue;
+        };
+        for target in targets {
+            edges
+                .retain(|edge| edge.target_id != target.node_id || edge.target_slot != target.slot);
+            blocked_wireless_targets.insert((target.node_id.clone(), target.slot));
+            if let Some(input) = nodes
+                .get_mut(&target.node_id)
+                .and_then(Value::as_object_mut)
+                .and_then(|node| node.get_mut("inputs"))
+                .and_then(Value::as_array_mut)
+                .and_then(|inputs| inputs.get_mut(target.slot))
+                .and_then(Value::as_object_mut)
+            {
+                input.insert("link".to_string(), Value::Null);
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn append_resolved_ue_edges(
+    container: &Value,
+    local_ids: &HashMap<String, String>,
+    input_id: Option<&str>,
+    output_id: Option<&str>,
+    nodes: &HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
+    blocked_wireless_targets: &mut HashSet<(String, usize)>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(raw_links) = container
+        .get("extra")
+        .and_then(|extra| extra.get("ue_links"))
+        .and_then(Value::as_array)
+    else {
+        return true;
+    };
+
+    for (node_id, node) in nodes {
+        let input_count = node
+            .get("inputs")
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        for slot in 0..input_count {
+            if !budget.reserve_wireless_block(node_id) {
+                return false;
+            }
+            blocked_wireless_targets.insert((node_id.clone(), slot));
+        }
+    }
+
+    let mut candidates: HashMap<(String, usize), Option<WorkflowEdge>> = HashMap::new();
+
+    for raw_link in raw_links {
+        let Some(raw_link) = parse_borrowed_ue_link(raw_link) else {
+            if !budget.reserve(0, 1, 0) {
+                return false;
+            }
+            continue;
+        };
+        if !budget.reserve_raw_ue_link(&raw_link) {
+            return false;
+        }
+
+        let mut link = raw_link.into_owned();
+        let mapped_source = map_endpoint(&link.source_id, local_ids, input_id, output_id);
+        let mapped_target = map_endpoint(&link.target_id, local_ids, input_id, output_id);
+        let mapped_controller = local_ids.get(&link.controller_id);
+
+        let source_changed = mapped_source != link.source_id;
+        let target_changed = mapped_target != link.target_id;
+        let controller_changed = mapped_controller.is_some_and(|id| id != &link.controller_id);
+        let replacement_bytes = usize::from(source_changed) * mapped_source.len()
+            + usize::from(target_changed) * mapped_target.len()
+            + mapped_controller
+                .filter(|_| controller_changed)
+                .map_or(0, |id| id.len());
+        if !budget.reserve_auxiliary_clone(replacement_bytes) {
+            return false;
+        }
+        let source_replacement = source_changed.then(|| mapped_source.to_string());
+        let target_replacement = target_changed.then(|| mapped_target.to_string());
+        let controller_replacement = mapped_controller.filter(|_| controller_changed).cloned();
+        if let Some(source) = source_replacement {
+            link.source_id = source;
+        }
+        if let Some(target) = target_replacement {
+            link.target_id = target;
+        }
+        if let Some(controller) = controller_replacement {
+            link.controller_id = controller;
+        }
+
+        if edges
+            .iter()
+            .any(|edge| edge.target_id == link.target_id && edge.target_slot == link.target_slot)
+        {
+            continue;
+        }
+        if !endpoint_slot_exists(nodes, &link.target_id, link.target_slot, false, container) {
+            continue;
+        }
+        if !budget.reserve_auxiliary_clone(link.target_id.len()) {
+            return false;
+        }
+        let target = (link.target_id.clone(), link.target_slot);
+        if mapped_controller.is_none()
+            || !endpoint_slot_exists(nodes, &link.source_id, link.source_slot, true, container)
+            || !endpoint_is_active(nodes, &link.source_id)
+            || !endpoint_is_active(nodes, &link.target_id)
+            || !endpoint_is_active(nodes, &link.controller_id)
+        {
+            candidates.insert(target, None);
+            continue;
+        }
+
+        let edge = WorkflowEdge {
+            link_id: None,
+            source_id: link.source_id,
+            source_slot: link.source_slot,
+            target_id: link.target_id,
+            target_slot: link.target_slot,
+            link_type: link.link_type,
+        };
+        match candidates.entry(target) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(edge));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let is_duplicate = entry.get().as_ref().is_some_and(|existing| {
+                    existing.source_id == edge.source_id
+                        && existing.source_slot == edge.source_slot
+                        && existing.link_type == edge.link_type
+                });
+                if !is_duplicate {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
+
+    for (target, edge) in candidates {
+        if let Some(edge) = edge {
+            edges.push(edge);
+        } else {
+            blocked_wireless_targets.insert(target);
+        }
+    }
+    true
+}
+
+fn endpoint_slot_exists(
+    nodes: &HashMap<String, Value>,
+    node_id: &str,
+    slot: usize,
+    source: bool,
+    container: &Value,
+) -> bool {
+    if source && node_id == INPUT_BOUNDARY {
+        return container
+            .get("inputs")
+            .and_then(Value::as_array)
+            .is_some_and(|inputs| slot < inputs.len());
+    }
+    if !source && node_id == OUTPUT_BOUNDARY {
+        return container
+            .get("outputs")
+            .and_then(Value::as_array)
+            .is_some_and(|outputs| slot < outputs.len());
+    }
+    let slots_key = if source { "outputs" } else { "inputs" };
+    nodes
+        .get(node_id)
+        .and_then(|node| node.get(slots_key))
+        .and_then(Value::as_array)
+        .is_some_and(|slots| slot < slots.len())
+}
+
+fn endpoint_is_active(nodes: &HashMap<String, Value>, node_id: &str) -> bool {
+    if node_id == INPUT_BOUNDARY || node_id == OUTPUT_BOUNDARY {
+        return true;
+    }
+    nodes
+        .get(node_id)
+        .is_some_and(|node| !is_muted(node) && !is_bypassed(node))
 }
 
 fn clear_unlinked_boundary_input_links(
     instance: &Value,
     definition: &Value,
     nodes: &mut HashMap<String, Value>,
+    edges: &mut Vec<WorkflowEdge>,
     input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
 ) {
     let Some(instance_inputs) = instance.get("inputs").and_then(Value::as_array) else {
@@ -552,6 +863,8 @@ fn clear_unlinked_boundary_input_links(
         };
 
         for target in targets {
+            edges
+                .retain(|edge| edge.target_id != target.node_id || edge.target_slot != target.slot);
             if let Some(input) = nodes
                 .get_mut(&target.node_id)
                 .and_then(Value::as_object_mut)
@@ -568,6 +881,76 @@ fn clear_unlinked_boundary_input_links(
 
 fn block_instance_inputs(edges: &mut Vec<WorkflowEdge>, instance_id: &str) {
     edges.retain(|edge| edge.target_id != instance_id);
+}
+
+fn bypass_instance(
+    instance: &Value,
+    instance_id: &str,
+    edges: &mut Vec<WorkflowEdge>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(inputs) = instance.get("inputs").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(outputs) = instance.get("outputs").and_then(Value::as_array) else {
+        return false;
+    };
+    let incoming = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.target_id == instance_id)
+        .collect::<Vec<_>>();
+    let outgoing = edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.source_id == instance_id)
+        .collect::<Vec<_>>();
+    if outgoing.is_empty() {
+        return false;
+    }
+
+    let mut rewrites = Vec::with_capacity(outgoing.len());
+    for (outgoing_index, outgoing_edge) in outgoing {
+        let Some(output_type) = outputs
+            .get(outgoing_edge.source_slot)
+            .and_then(|output| output.get("type"))
+            .and_then(Value::as_str)
+        else {
+            return false;
+        };
+        let mut candidates = incoming.iter().filter(|(_, incoming_edge)| {
+            inputs
+                .get(incoming_edge.target_slot)
+                .and_then(|input| input.get("type"))
+                .and_then(Value::as_str)
+                == Some(output_type)
+        });
+        let Some((_, source)) = candidates.next() else {
+            return false;
+        };
+        if candidates.next().is_some() {
+            return false;
+        }
+        let link_type = stronger_link_type(&source.link_type, &outgoing_edge.link_type);
+        if !budget.reserve_auxiliary_clone(source.source_id.len() + link_type.len()) {
+            return false;
+        }
+        rewrites.push((
+            outgoing_index,
+            source.source_id.clone(),
+            source.source_slot,
+            link_type,
+        ));
+    }
+
+    for (index, source_id, source_slot, link_type) in rewrites {
+        let edge = &mut edges[index];
+        edge.source_id = source_id;
+        edge.source_slot = source_slot;
+        edge.link_type = link_type;
+    }
+    edges.retain(|edge| edge.target_id != instance_id);
+    true
 }
 
 fn bind_instance_inputs(
@@ -620,7 +1003,12 @@ fn bind_instance_outputs(
     budget: &mut ExpansionBudget,
 ) -> Option<Vec<WorkflowEdge>> {
     let instance_outputs = instance.get("outputs").and_then(Value::as_array);
-    let definition_outputs = definition.get("outputs").and_then(Value::as_array)?;
+    let definition_outputs = definition.get("outputs")?;
+    let definition_outputs = match definition_outputs {
+        Value::Array(outputs) => outputs.as_slice(),
+        output @ Value::Object(_) => std::slice::from_ref(output),
+        _ => return None,
+    };
     let mut bindings = Vec::new();
 
     for edge in outgoing {
@@ -661,6 +1049,88 @@ fn bind_instance_outputs(
     Some(bindings)
 }
 
+fn apply_instance_widget_overrides(
+    instance: &Value,
+    definition: &Value,
+    instance_id: &str,
+    nodes: &mut HashMap<String, Value>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    if instance
+        .get("properties")
+        .and_then(|value| value.get("proxyWidgets"))
+        .is_some()
+    {
+        return apply_proxy_widget_overrides(instance, instance_id, nodes, budget);
+    }
+
+    apply_definition_input_widget_overrides(instance, definition, nodes, input_targets, budget)
+}
+
+fn apply_definition_input_widget_overrides(
+    instance: &Value,
+    definition: &Value,
+    nodes: &mut HashMap<String, Value>,
+    input_targets: &HashMap<usize, Vec<BoundaryTarget>>,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    let Some(values) = instance.get("widgets_values").and_then(Value::as_array) else {
+        return true;
+    };
+    let Some(definition_inputs) = definition.get("inputs").and_then(Value::as_array) else {
+        return true;
+    };
+    let instance_inputs = instance.get("inputs").and_then(Value::as_array);
+    let mut values = values.iter();
+
+    for (definition_slot, definition_input) in definition_inputs.iter().enumerate() {
+        let Some(targets) = input_targets.get(&definition_slot) else {
+            continue;
+        };
+        if !targets
+            .iter()
+            .any(|target| target_widget_name(nodes, target).is_some())
+        {
+            continue;
+        }
+
+        let Some(value) = values.next() else {
+            break;
+        };
+        // ComfyUI uses null instance values to mean "use the definition default".
+        if value.is_null() {
+            continue;
+        }
+        let input_name = definition_input.get("name").and_then(Value::as_str);
+        if input_name.is_some_and(|name| {
+            instance_inputs
+                .and_then(|inputs| {
+                    inputs
+                        .iter()
+                        .find(|input| input.get("name").and_then(Value::as_str) == Some(name))
+                })
+                .and_then(|input| input.get("link"))
+                .is_some_and(|link| !link.is_null())
+        }) {
+            continue;
+        }
+
+        for target in targets {
+            let Some(widget_name) = target_widget_name(nodes, target) else {
+                continue;
+            };
+            if !budget.reserve_value_clone(value, widget_name.len()) {
+                return false;
+            }
+            let widget_name = widget_name.to_string();
+            insert_reserved_widget_override(nodes, &target.node_id, &widget_name, value);
+        }
+    }
+
+    true
+}
+
 fn apply_proxy_widget_overrides(
     instance: &Value,
     instance_id: &str,
@@ -696,21 +1166,56 @@ fn apply_proxy_widget_overrides(
         if !nodes.contains_key(&target_id) {
             continue;
         }
-        if !budget.reserve_value_clone(value, widget_name.len()) {
+        if !insert_widget_override(nodes, &target_id, widget_name, value, budget) {
             return false;
-        }
-        let target = nodes
-            .get_mut(&target_id)
-            .and_then(Value::as_object_mut)
-            .expect("checked subgraph proxy target should remain an object");
-        let overrides = target
-            .entry("_widget_overrides".to_string())
-            .or_insert_with(|| Value::Object(serde_json::Map::new()));
-        if let Some(overrides) = overrides.as_object_mut() {
-            overrides.insert(widget_name.to_string(), value.clone());
         }
     }
     true
+}
+
+fn insert_widget_override(
+    nodes: &mut HashMap<String, Value>,
+    target_id: &str,
+    widget_name: &str,
+    value: &Value,
+    budget: &mut ExpansionBudget,
+) -> bool {
+    if !budget.reserve_value_clone(value, widget_name.len()) {
+        return false;
+    }
+    insert_reserved_widget_override(nodes, target_id, widget_name, value);
+    true
+}
+
+fn insert_reserved_widget_override(
+    nodes: &mut HashMap<String, Value>,
+    target_id: &str,
+    widget_name: &str,
+    value: &Value,
+) {
+    let Some(target) = nodes.get_mut(target_id).and_then(Value::as_object_mut) else {
+        return;
+    };
+    let overrides = target
+        .entry("_widget_overrides".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(overrides) = overrides.as_object_mut() {
+        overrides.insert(widget_name.to_string(), value.clone());
+    }
+}
+
+fn target_widget_name<'a>(
+    nodes: &'a HashMap<String, Value>,
+    target: &BoundaryTarget,
+) -> Option<&'a str> {
+    nodes
+        .get(&target.node_id)?
+        .get("inputs")?
+        .as_array()?
+        .get(target.slot)?
+        .get("widget")?
+        .get("name")?
+        .as_str()
 }
 
 fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {
@@ -732,6 +1237,63 @@ fn parse_borrowed_edge(value: &Value) -> Option<BorrowedWorkflowEdge<'_>> {
         target_id: borrowed_id(value.get("target_id")?)?,
         target_slot: value_usize(value.get("target_slot")?)?,
         link_type: value.get("type").and_then(Value::as_str).unwrap_or("*"),
+    })
+}
+
+fn parse_borrowed_output_boundary_edge<'a>(
+    value: &'a Value,
+    output_id: Option<&str>,
+    definition_outputs: Option<&Value>,
+) -> Option<BorrowedWorkflowEdge<'a>> {
+    let output_id = output_id?;
+    let target_id = borrowed_id(value.get("target_id")?)?;
+    if !target_id.equals(BorrowedId::String(output_id))
+        || value.get("target_slot")?.as_i64() != Some(-1)
+    {
+        return None;
+    }
+
+    let link_id = value.get("id")?;
+    let borrowed_link_id = borrowed_id(link_id)?;
+    let output_slot = match definition_outputs? {
+        Value::Array(outputs) => outputs.iter().position(|output| {
+            output
+                .get("linkIds")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| {
+                    ids.iter()
+                        .any(|id| borrowed_id(id).is_some_and(|id| id.equals(borrowed_link_id)))
+                })
+        })?,
+        Value::Object(output) => output
+            .get("linkIds")
+            .and_then(Value::as_array)
+            .is_some_and(|ids| {
+                ids.iter()
+                    .any(|id| borrowed_id(id).is_some_and(|id| id.equals(borrowed_link_id)))
+            })
+            .then_some(0)?,
+        _ => return None,
+    };
+
+    Some(BorrowedWorkflowEdge {
+        link_id: Some(borrowed_link_id),
+        source_id: borrowed_id(value.get("origin_id")?)?,
+        source_slot: value_usize(value.get("origin_slot")?)?,
+        target_id,
+        target_slot: output_slot,
+        link_type: value.get("type").and_then(Value::as_str).unwrap_or("*"),
+    })
+}
+
+fn parse_borrowed_ue_link(value: &Value) -> Option<BorrowedUeLink<'_>> {
+    Some(BorrowedUeLink {
+        source_id: borrowed_id(value.get("upstream")?)?,
+        source_slot: value_usize(value.get("upstream_slot")?)?,
+        target_id: borrowed_id(value.get("downstream")?)?,
+        target_slot: value_usize(value.get("downstream_slot")?)?,
+        controller_id: borrowed_id(value.get("controller")?)?,
+        link_type: value.get("type")?.as_str()?,
     })
 }
 
@@ -790,8 +1352,12 @@ fn value_usize(value: &Value) -> Option<usize> {
         .or_else(|| value.as_i64().and_then(|value| usize::try_from(value).ok()))
 }
 
-fn is_inactive(node: &Value) -> bool {
-    matches!(node.get("mode").and_then(Value::as_i64), Some(2 | 4))
+fn is_muted(node: &Value) -> bool {
+    node.get("mode").and_then(Value::as_i64) == Some(2)
+}
+
+fn is_bypassed(node: &Value) -> bool {
+    node.get("mode").and_then(Value::as_i64) == Some(4)
 }
 
 fn stronger_link_type<'a>(left: &'a str, right: &'a str) -> String {

@@ -22,7 +22,7 @@ describe('VersionSelector', () => {
 
         const buttons = screen.getAllByRole('button');
         expect(buttons[0].className).toContain('border-sage-500');
-        expect(container.querySelector('.bg-amethyst-500')).toBeTruthy();
+        expect(container.querySelector('.bg-sage-500')).toBeTruthy();
         fireEvent.click(buttons[1]);
         expect(onVersionSelect).toHaveBeenCalledWith('b');
         expect(parentClick).not.toHaveBeenCalled();

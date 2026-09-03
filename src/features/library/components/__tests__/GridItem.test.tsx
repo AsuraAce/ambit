@@ -162,7 +162,7 @@ describe('GridItem memoized motion styles', () => {
 
         expect(card.isSelected).toBe(true);
         expect(card.isThumbnail).toBe(true);
-        expect(onClick).toHaveBeenCalledWith(event, image.id, 0);
+        expect(onClick).toHaveBeenCalledWith(event, image.id, 0, undefined);
         expect(onToggleSelection).toHaveBeenCalledWith(event, image.id);
         expect(onToggleFavorite).toHaveBeenCalledWith(event, image.id);
         expect(onTogglePin).toHaveBeenCalledWith(event, image.id);

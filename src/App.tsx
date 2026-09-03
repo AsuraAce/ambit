@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { useQueryClient } from '@tanstack/react-query';
 import { AppLayout } from './components/AppLayout';
 import { GlobalModals } from './components/GlobalModals';
 import { AppContextMenu } from './components/ui/AppContextMenu';
@@ -8,13 +9,16 @@ import { OnboardingWizard, type OnboardingSettingsUpdate } from './components/ui
 import { ImportModal } from './components/ui/ImportModal';
 import { TitleBar } from './components/ui/TitleBar';
 import { DragOverlay } from './components/ui/DragOverlay';
+import { InvokeOwnerScopeGate } from './components/ui/InvokeOwnerScopeGate';
+import { InvokeOwnerScopeOfflineBanner } from './components/ui/InvokeOwnerScopeOfflineBanner';
 import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
+import { useLibraryStore } from './stores/libraryStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
-import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection } from './types';
+import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, isVideoAsset, type InvokeOwnerSelection } from './types';
 
 // Hooks
 import { useSelection } from './hooks/useSelection';
@@ -31,18 +35,60 @@ import { useAppUpdater } from './hooks/useAppUpdater';
 import { useAppVersion } from './hooks/useAppVersion';
 import { useThumbnailQueue } from './hooks/useThumbnailQueue';
 import { useMetadataRefresh } from './hooks/useMetadataRefresh';
+import { useOwnerScopeTransitionPresentation } from './hooks/useOwnerScopeTransitionPresentation';
+import { useDelayedBusyPresentation } from './hooks/useDelayedBusyPresentation';
 import { useSync } from './contexts/SyncContext';
 import { useWatchers } from './contexts/WatcherContext';
 import { derivePromptHighlightSpec } from './features/viewer/utils/searchHighlights';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
+import { pickVideoPaths } from './services/videoService';
+import { getImageWithFullMetadata } from './services/db/imageRepo';
+import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
+import type { ActiveImageStateAdapter } from './hooks/activeImageState';
+import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
+import { useLibraryModelOptions } from './features/viewer/hooks/useLibraryModelOptions';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
+const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
 const UpdateDialog = React.lazy(() => import('./components/ui/UpdateDialog').then(module => ({ default: module.UpdateDialog })));
+const STARTUP_PREPARATION_REVEAL_DELAY_MS = 700;
+const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
+
+interface RetainedLibraryPresentation {
+    images: AIImage[];
+    totalImages: number;
+    scopeTotal: number;
+    scopeName: string;
+    availableTags: string[];
+    activeCollection: Collection | null;
+    activeSmartCollection: SmartCollection | null;
+}
+
+const dismissStaticLoader = (immediate = false) => {
+    const loader = document.getElementById('static-loading');
+    if (!loader || loader.dataset.ambitDismissed === 'true') return;
+
+    loader.dataset.ambitDismissed = 'true';
+    loader.style.pointerEvents = 'none';
+
+    if (immediate) {
+        loader.remove();
+        return;
+    }
+
+    loader.style.opacity = '0';
+
+    window.setTimeout(() => {
+        loader.remove();
+    }, 500);
+};
 
 export default function App() {
     const { addToast } = useToast();
+    const queryClient = useQueryClient();
     const modals = useModalManager();
     const appVersion = useAppVersion();
+    const modelOptions = useLibraryModelOptions();
 
     // --- Interaction State ---
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
@@ -50,6 +96,12 @@ export default function App() {
     const [selectedImageIndex, setSelectedImageIndexState] = useState<number | null>(null);
     const [viewingImageId, setViewingImageIdState] = useState<string | null>(null);
     const [viewerSessionImages, setViewerSessionImages] = useState<AIImage[] | null>(null);
+    const [viewerRevealGrantId, setViewerRevealGrantId] = useState<string | null>(null);
+    const [directViewerImage, setDirectViewerImage] = useState<AIImage | null>(null);
+    const referenceNavigationRequestRef = useRef(0);
+    const [isInitialStartupPresentation, setIsInitialStartupPresentation] = useState(
+        () => document.getElementById('static-loading') !== null
+    );
     const [isMaintenanceViewerOpen, setIsMaintenanceViewerOpen] = useState(false);
     const [showSupportPulse, setShowSupportPulse] = useState(true);
     const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -64,6 +116,9 @@ export default function App() {
     // --- Store Subscriptions ---
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
     const settings = useSettingsStore(s => s.settings);
+    const privacyMaskIndexStatus = useSettingsStore(s => s.privacyMaskIndexStatus);
+    const isStartupCatchupPending = useLibraryStore(s => s.isStartupCatchupPending);
+    const geminiApiKey = useSettingsStore(s => s.geminiApiKey);
     const setSettings = useSettingsStore(s => s.setSettings);
     const flushSettings = useSettingsStore(s => s.flushSettings);
 
@@ -83,7 +138,8 @@ export default function App() {
         toggleFavorite,
         clearAllFilters,
         recentSearches, setRecentSearches,
-        refreshMetadata
+        refreshMetadata,
+        refreshHiddenAvailability
     } = useSearch();
     const activeCollectionIdRef = useRef(filters.collectionId);
     const imagesRef = useRef(images);
@@ -139,6 +195,47 @@ export default function App() {
             return snapshot;
         });
     }, []);
+    const activeImageState = React.useMemo<ActiveImageStateAdapter>(() => ({
+        getImage: (imageId) => (
+            images.find(image => image.id === imageId)
+            ?? viewerSessionImages?.find(image => image.id === imageId)
+            ?? (directViewerImage?.id === imageId ? directViewerImage : undefined)
+        ),
+        updateImage: (imageId, updater) => {
+            setImages(previous => {
+                let changed = false;
+                const next = previous.map(image => {
+                    if (image.id !== imageId) return image;
+                    changed = true;
+                    return updater(image);
+                });
+                return changed ? next : previous;
+            });
+            setViewerSessionImages(previous => {
+                if (!previous) return previous;
+                let changed = false;
+                const next = previous.map(image => {
+                    if (image.id !== imageId) return image;
+                    changed = true;
+                    return updater(image);
+                });
+                if (changed) viewerSessionImagesRef.current = next;
+                return changed ? next : previous;
+            });
+            setDirectViewerImage(previous => (
+                previous?.id === imageId ? updater(previous) : previous
+            ));
+        },
+        removeImage: (imageId) => {
+            setDirectViewerImage(previous => previous?.id === imageId ? null : previous);
+            if (viewingImageIdRef.current === imageId) {
+                viewingImageIdRef.current = null;
+                selectedImageIndexRef.current = null;
+                setViewingImageId(null);
+                setSelectedImageIndex(null);
+            }
+        },
+    }), [directViewerImage, images, setImages, viewerSessionImages, setSelectedImageIndex, setViewingImageId]);
     // const images = useSearchStore(s => s.images);
     // const setImages = useSearchStore(s => s.setImages);
     // const filters = useSearchStore(s => s.filters);
@@ -173,12 +270,24 @@ export default function App() {
         selectedIds, setSelectedIds, lastSelectedId, setLastSelectedId,
         handleImageClick, handleSelectionToggle, handleRangeSelection, clearSelection
     } = useSelection(images);
+    const handleViewerImageClick = useCallback((
+        event: React.MouseEvent,
+        id: string,
+        index: number,
+        setViewerIndex: (nextIndex: number) => void,
+        revealGranted = false,
+    ) => {
+        handleImageClick(event, id, index, nextIndex => {
+            setViewerRevealGrantId(revealGranted ? id : null);
+            setViewerIndex(nextIndex);
+        });
+    }, [handleImageClick]);
 
     const setAllCollections = useCollectionStore(s => s.setCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
     const { refreshMaintenanceCounts } = useWatchers();
 
-    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts });
+    const handlers = useAppHandlers({ images, setImages, refreshMaintenanceCounts, refreshHiddenAvailability, activeImageState });
 
     const [availableTags, setAvailableTags] = useState<string[]>([]);
     const { toggleAiSearch, submitSearch, inputRef, isAiSearchEnabled, isSearchingAi } = useAiSearchLogic({
@@ -195,7 +304,8 @@ export default function App() {
         setImages,
         refreshCollections,
         refreshCollectionThumbnails,
-        settings
+        settings,
+        activeImageState
     });
 
     const colOps = useCollectionOperations({
@@ -219,7 +329,8 @@ export default function App() {
         setSelectedIds,
         lastSelectedId,
         imagesQueryKey,
-        modalManager: modals
+        modalManager: modals,
+        activeImageState
     });
 
     const handleImportFiles = useCallback((files: FileList) => {
@@ -231,7 +342,79 @@ export default function App() {
         onImportFiles: handleImportFiles
     });
 
-    const { startInvokeSync } = useSync();
+    const {
+        startInvokeSync,
+        isInvokeSyncActive,
+        isLiveSyncing,
+        invokeOwnerScopeState,
+        selectInvokeOwnerScope,
+        retryInvokeOwnerScope,
+    } = useSync();
+    const isInvokeCollectionCatchupPending = Boolean(settings.invokeAiPath?.trim())
+        && settings.invokeSyncBoards !== false
+        && settings.syncBoardsToCollections
+        && (isStartupCatchupPending || (isInvokeSyncActive && !isLiveSyncing));
+    const clearOwnerScopedView = useCallback(() => {
+        referenceNavigationRequestRef.current += 1;
+        selectedImageIndexRef.current = null;
+        viewingImageIdRef.current = null;
+        setSelectedImageIndex(null);
+        setViewingImageId(null);
+        setDirectViewerImage(null);
+        setContextMenu(null);
+        setExportIds(new Set());
+        setAvailableTags([]);
+        clearAllFilters();
+        clearSelection();
+    }, [clearAllFilters, clearSelection, setSelectedImageIndex, setViewingImageId]);
+    const {
+        isOwnerScopeAdmitted: isInvokeOwnerScopeAdmittedForRoot,
+        isOwnerScopeBlocking: isInvokeOwnerScopeBlocking,
+        isRuntimeTransition: isRuntimeOwnerScopeTransition,
+        isGateVisible: isRuntimeOwnerScopeGateVisible,
+        isRetainingPreviousView: isRetainingPreviousRuntimeView,
+        selectPresentation: selectOwnerScopePresentation,
+    } = useOwnerScopeTransitionPresentation<RetainedLibraryPresentation>({
+        configuredRoot: settings.invokeAiPath,
+        ownerScopeState: invokeOwnerScopeState,
+        isInitialStartupPresentation,
+        onClearStaleView: clearOwnerScopedView,
+    });
+    const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
+        && invokeOwnerScopeState.status === 'offline_ready';
+    const isInvokeOwnerScopeBusy = isInvokeOwnerScopeBlocking
+        && (invokeOwnerScopeState.status === 'idle'
+            || invokeOwnerScopeState.status === 'discovering'
+            || invokeOwnerScopeState.status === 'applying');
+    const isInitialPrivacyProtectionBusy = !isInvokeOwnerScopeBlocking
+        && privacyExposureBlocked
+        && privacyMaskIndexStatus !== 'failed';
+    const isInitialPrivacyPreparationVisible = useDelayedBusyPresentation(
+        isLoaded && isInitialStartupPresentation && isInitialPrivacyProtectionBusy,
+        {
+            revealDelayMs: STARTUP_PREPARATION_REVEAL_DELAY_MS,
+            minimumVisibleMs: STARTUP_PREPARATION_MIN_VISIBLE_MS,
+            resetKey: `${settings.invokeAiPath?.trim() || 'unconfigured'}:privacy`,
+        }
+    );
+    const shouldForceInitialPrivacyProtection = isInitialStartupPresentation
+        && isInitialPrivacyPreparationVisible
+        && !isInvokeOwnerScopeBlocking;
+    const shouldRenderInvokeOwnerScopeGate = isInvokeOwnerScopeBlocking
+        && (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation)
+        && (!isRuntimeOwnerScopeTransition || isRuntimeOwnerScopeGateVisible);
+    const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
+        await selectInvokeOwnerScope(selection);
+    }, [selectInvokeOwnerScope]);
+    const handleInvokeOwnerRetry = useCallback(async () => {
+        if (await retryInvokeOwnerScope()) {
+            await startInvokeSync({ mode: 'startup' });
+        }
+    }, [retryInvokeOwnerScope, startInvokeSync]);
+    const openInvokeSettings = useCallback(() => {
+        modals.setInitialSettingsTab('invokeai');
+        modals.openModal('settings');
+    }, [modals.openModal, modals.setInitialSettingsTab]);
 
     const handleSelectFilesImport = useCallback(async () => {
         const isTauriEnv = typeof window !== 'undefined' && !!(window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
@@ -265,6 +448,16 @@ export default function App() {
 
         fileOps.fileInputRef.current?.click();
     }, [fileOps]);
+
+    const handleSelectVideosImport = useCallback(async () => {
+        try {
+            const paths = await pickVideoPaths();
+            if (paths.length === 0) return;
+            await fileOps.handleImportPaths(paths);
+        } catch (error) {
+            addToast(`Video import failed: ${String(error)}`, 'error');
+        }
+    }, [addToast, fileOps]);
 
     useFolderMonitor({
         isLoaded,
@@ -311,11 +504,11 @@ export default function App() {
 
     const handleRemoveFromCollection = useCallback(async () => {
         if (filters.collectionId && selectedIds.size > 0) {
-            await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            const didRemove = await colOps.removeImagesFromCollection(Array.from(selectedIds), filters.collectionId);
+            if (!didRemove) return;
             clearSelection();
-            addToast(`Removed ${selectedIds.size} images from collection`, 'info');
         }
-    }, [filters.collectionId, selectedIds, colOps, clearSelection, addToast]);
+    }, [filters.collectionId, selectedIds, colOps, clearSelection]);
 
     const handleOpenCollectionModal = useCallback((mode: 'add' | 'move' = 'add') => {
         modals.setAddToCollectionMode(mode);
@@ -375,6 +568,12 @@ export default function App() {
                 collectionId,
                 () => reconcileGlobalViewerAfterRemoval(imageId, collectionId)
             ), [colOps, reconcileGlobalViewerAfterRemoval]);
+    const handleViewerSearch = useCallback((term: string) => {
+        void import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
+            parseAndApplyFilter(term, setFilters);
+        });
+        setRecentSearches(prev => [term, ...prev.filter(search => search !== term)].slice(0, 8));
+    }, [setFilters, setRecentSearches]);
     const submitNavbarSearch = useCallback((query: string) => {
         if (!query.trim()) {
             void submitSearch(query);
@@ -405,23 +604,94 @@ export default function App() {
         onOpenSearchHelp: openSearchHelp,
     }), [isAiSearchEnabled, isSearchingAi, inputRef, isSearchFocused, openSearchHelp, submitNavbarSearch, toggleAiSearch]);
 
-    const activeCollection = filters.collectionId ? collections.find(c => c.id === filters.collectionId) : null;
-    const activeSmartCollection = !activeCollection && filters.collectionId ? smartCollections.find(c => c.id === filters.collectionId) : null;
+    const activeCollection = filters.collectionId
+        ? (collections.find(c => c.id === filters.collectionId) ?? null)
+        : null;
+    const activeSmartCollection = !activeCollection && filters.collectionId
+        ? (smartCollections.find(c => c.id === filters.collectionId) ?? null)
+        : null;
     const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
     const scopeTotal = Math.max(
         activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
             (activeSmartCollection ? totalImages : globalTotal),
         totalImages
     );
+    const currentLibraryPresentation: RetainedLibraryPresentation = {
+        images,
+        totalImages,
+        scopeTotal,
+        scopeName,
+        availableTags,
+        activeCollection,
+        activeSmartCollection,
+    };
+    const libraryPresentation = selectOwnerScopePresentation(currentLibraryPresentation);
 
-    const viewerImages = viewerSessionImages ?? images;
+    const viewerImages = viewerSessionImages ?? libraryPresentation.images;
     const sessionViewerImage = viewingImageId
-        ? viewerImages.find(i => i.id === viewingImageId) ?? images.find(i => i.id === viewingImageId)
+        ? (directViewerImage?.id === viewingImageId
+            ? directViewerImage
+            : viewerImages.find(image => image.id === viewingImageId)
+                ?? libraryPresentation.images.find(image => image.id === viewingImageId))
         : (selectedImageIndex !== null ? viewerImages[selectedImageIndex] : null);
     const displayedViewerImage = sessionViewerImage
         && !privacyExposureBlocked
-        ? images.find(i => i.id === sessionViewerImage.id) ?? sessionViewerImage
+        && (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView)
+        ? (directViewerImage?.id === sessionViewerImage.id
+            ? directViewerImage
+            : libraryPresentation.images.find(image => image.id === sessionViewerImage.id) ?? sessionViewerImage)
         : null;
+    const handleOpenReferencedImage = useCallback(async (imageId: string): Promise<boolean> => {
+        const requestId = referenceNavigationRequestRef.current + 1;
+        referenceNavigationRequestRef.current = requestId;
+        const isCurrentlyPrivacyHidden = (image: AIImage): boolean => {
+            const currentPrivacyState = useSettingsStore.getState();
+            return currentPrivacyState.privacyEnabled
+                && currentPrivacyState.settings.maskingMode === 'hide'
+                && isImageMasked(
+                    image,
+                    true,
+                    getEffectiveMaskedKeywords(currentPrivacyState.settings)
+                );
+        };
+        const visibleIndex = images.findIndex(image => image.id === imageId);
+        if (visibleIndex !== -1) {
+            if (isCurrentlyPrivacyHidden(images[visibleIndex])) {
+                addToast('The referenced image is hidden by Privacy Mode.', 'warning');
+                return false;
+            }
+            setDirectViewerImage(null);
+            setViewingImageId(null);
+            setSelectedImageIndex(visibleIndex);
+            viewerSessionImagesRef.current = images;
+            setViewerSessionImages(images);
+            return true;
+        }
+
+        try {
+            const image = await getImageWithFullMetadata(imageId);
+            if (referenceNavigationRequestRef.current !== requestId) return false;
+            if (!image) {
+                addToast('The referenced image is no longer available in Ambit.', 'error');
+                await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
+                return false;
+            }
+            if (isCurrentlyPrivacyHidden(image)) {
+                addToast('The referenced image is hidden by Privacy Mode.', 'warning');
+                return false;
+            }
+
+            setDirectViewerImage(image);
+            setSelectedImageIndex(null);
+            setViewingImageId(image.id);
+            return true;
+        } catch (error) {
+            console.error('[Viewer] Failed to open referenced image', error);
+            addToast('Failed to open the referenced image.', 'error');
+            await queryClient.invalidateQueries({ queryKey: INVOKE_REFERENCE_QUERY_KEY });
+            return false;
+        }
+    }, [addToast, images, queryClient, setSelectedImageIndex, setViewingImageId]);
     const searchHighlights = React.useMemo(
         () => derivePromptHighlightSpec(filters.searchQuery),
         [filters.searchQuery]
@@ -430,11 +700,16 @@ export default function App() {
     // --- Effects ---
     useEffect(() => {
         if (!privacyExposureBlocked) return;
+        setViewerRevealGrantId(null);
         setSelectedImageIndex(null);
         setViewingImageId(null);
     }, [privacyExposureBlocked, setSelectedImageIndex, setViewingImageId]);
 
     useEffect(() => {
+        if (isInvokeOwnerScopeBlocking) {
+            setAvailableTags([]);
+            return;
+        }
         const timer = setTimeout(() => {
             const tags = new Set<string>();
             images.slice(0, 500).forEach(img => {
@@ -448,7 +723,7 @@ export default function App() {
             setAvailableTags(Array.from(tags).sort());
         }, 1000);
         return () => clearTimeout(timer);
-    }, [images]);
+    }, [images, isInvokeOwnerScopeBlocking]);
 
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const workspaceRef = useRef<HTMLElement>(null);
@@ -476,13 +751,17 @@ export default function App() {
     // --- Global Shortcuts Hook ---
     useGlobalShortcuts({
         viewMode,
+        disabled: isRetainingPreviousRuntimeView,
         selectedIds,
         filteredImages: images,
         lastSelectedId,
         isViewerOpen: viewingImageId !== null || selectedImageIndex !== null || isMaintenanceViewerOpen,
         gridRef,
         searchInputRef: inputRef,
-        setSelectedImageIndex,
+        setSelectedImageIndex: (index) => {
+            setViewerRevealGrantId(null);
+            setSelectedImageIndex(index);
+        },
         setSelectedIds,
         setLastSelectedId,
         clearSelection,
@@ -592,32 +871,67 @@ export default function App() {
 
 
 
-    // Handle static loading screen removal
+    // Saved-owner verification remains behind the neutral startup splash. Only
+    // an actionable owner state, explicit runtime switch, or sustained privacy
+    // preparation replaces it.
     useEffect(() => {
-        if (isLoaded) {
-            const loader = document.getElementById('static-loading');
-            if (loader) {
-                // Trigger fade out
-                loader.style.opacity = '0';
-                loader.style.pointerEvents = 'none';
+        if (!isLoaded || !isInitialStartupPresentation) return;
+        if (isInvokeOwnerScopeBusy) return;
+        if (isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) return;
 
-                // Remove from DOM after transition completes
-                setTimeout(() => {
-                    loader.remove();
-                }, 500); // slightly longer than CSS transition (0.4s) to be safe
-            }
+        const replacesSplash = isInitialPrivacyPreparationVisible
+            || isInvokeOwnerScopeBlocking
+            || (privacyExposureBlocked && privacyMaskIndexStatus === 'failed');
+        dismissStaticLoader(replacesSplash);
+
+        if (!isInvokeOwnerScopeBusy
+            && !isInitialPrivacyProtectionBusy
+            && !isInitialPrivacyPreparationVisible) {
+            setIsInitialStartupPresentation(false);
         }
-    }, [isLoaded]);
+    }, [
+        isInitialPrivacyPreparationVisible,
+        isInitialPrivacyProtectionBusy,
+        isInitialStartupPresentation,
+        isInvokeOwnerScopeBusy,
+        isInvokeOwnerScopeBlocking,
+        isLoaded,
+        privacyExposureBlocked,
+        privacyMaskIndexStatus,
+    ]);
 
     if (!isLoaded) return null;
 
 
     return (
-        <div className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30">
+        <div
+            className="h-screen bg-gray-50 dark:bg-zinc-950 text-gray-900 dark:text-white flex flex-col overflow-hidden font-sans selection:bg-sage-500/30"
+            aria-busy={isRuntimeOwnerScopeTransition || undefined}
+            data-owner-scope-transition={isRuntimeOwnerScopeTransition ? 'retained' : undefined}
+            inert={isRetainingPreviousRuntimeView ? true : undefined}
+        >
             <TitleBar />
 
-            <AppLayout
+            {isInvokeOwnerScopeOfflineReady && (
+                <InvokeOwnerScopeOfflineBanner
+                    isRetrying={invokeOwnerScopeState.isRetrying}
+                    onRetry={handleInvokeOwnerRetry}
+                    onOpenSettings={openInvokeSettings}
+                />
+            )}
 
+            {shouldRenderInvokeOwnerScopeGate ? (
+                <InvokeOwnerScopeGate
+                    state={invokeOwnerScopeState}
+                    onSelect={handleInvokeOwnerSelection}
+                    onRetry={handleInvokeOwnerRetry}
+                    onOpenSettings={openInvokeSettings}
+                />
+            ) : (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView) ? (
+                <div className="flex min-h-0 flex-1">
+                    <AppLayout
+                isInvokeCollectionCatchupPending={isInvokeCollectionCatchupPending}
+                forcePrivacyProtectionGate={shouldForceInitialPrivacyProtection}
                 filters={filters}
                 setFilters={setFilters}
                 isFilterPanelOpen={isFilterPanelOpen}
@@ -633,30 +947,33 @@ export default function App() {
                 setLayoutMode={setLayoutMode}
                 sortOption={sortOption}
                 setSortOption={setSortOption}
-                totalImages={totalImages}
-                scopeTotal={scopeTotal}
-                scopeName={scopeName}
+                displayedCount={libraryPresentation.totalImages}
+                scopeTotal={libraryPresentation.scopeTotal}
+                scopeName={libraryPresentation.scopeName}
                 isFiltering={isFiltering}
                 fileOps={fileOps}
                 onOpenImportModal={openImportModal}
                 clearAllFilters={clearAllFilters}
                 workspaceRef={workspaceRef}
                 scrollContainerRef={scrollContainerRef}
-                images={images}
+                images={libraryPresentation.images}
+                modelOptions={modelOptions}
                 handlers={{ ...handlers, setImages, setContextMenu }}
                 setViewingImageId={setViewingImageId}
                 onMaintenanceViewerOpenChange={setIsMaintenanceViewerOpen}
+                onOpenReferencedImage={handleOpenReferencedImage}
+                onViewerSearch={handleViewerSearch}
                 isViewerShortcutBlocked={isViewerShortcutBlocked}
 
                 toggleFavorite={toggleFavorite}
                 actions={actions}
-                availableTags={availableTags}
+                availableTags={libraryPresentation.availableTags}
                 selectedIds={selectedIds}
-                handleImageClick={handleImageClick}
+                handleImageClick={handleViewerImageClick}
                 setSelectedImageIndex={setSelectedImageIndex}
                 handleSelectionToggle={handleSelectionToggle}
-                activeCollection={activeCollection}
-                activeSmartCollection={activeSmartCollection}
+                activeCollection={libraryPresentation.activeCollection}
+                activeSmartCollection={libraryPresentation.activeSmartCollection}
                 handleRangeSelection={handleRangeSelection}
                 clearSelection={clearSelection}
                 gridRef={gridRef}
@@ -669,7 +986,9 @@ export default function App() {
                 handleOpenCollectionModal={handleOpenCollectionModal}
                 onSetCollectionMembership={handleSetCollectionMembership}
                 onEditCollection={(id) => { modals.setCollectionToEditId(id); modals.openModal('collectionEditor'); }}
-            />
+                    />
+                </div>
+            ) : null}
 
             {/* Overlays & Portals */}
             {shouldRenderOnboarding ? (
@@ -686,6 +1005,7 @@ export default function App() {
                 onClose={() => setIsImportModalOpen(false)}
                 onOpenSettings={(tab) => { modals.setInitialSettingsTab(tab); modals.openModal('settings'); }}
                 onImportFiles={() => { void handleSelectFilesImport(); }}
+                onImportVideos={() => { void handleSelectVideosImport(); }}
             />
             <input
                 type="file"
@@ -701,7 +1021,7 @@ export default function App() {
                 modals={modals.modals}
                 setModals={modals.setModals}
                 selectedIds={selectedIds}
-                filteredImages={images}
+                filteredImages={libraryPresentation.images}
                 canCheckForUpdates={updater.canCheckForUpdates}
                 onSettingsSave={setSettings}
                 onExportConfirm={(name, folder) => {
@@ -709,10 +1029,13 @@ export default function App() {
                     setExportIds(new Set());
                 }}
                 onDeleteConfirm={actions.executeDelete}
-                onDeleteCollectionConfirm={() => {
-                    if (modals.collectionToDelete) colOps.deleteCollection(modals.collectionToDelete);
-                    modals.closeModal('deleteCollection');
-                    modals.setCollectionToDelete(null);
+                onDeleteCollectionConfirm={async () => {
+                    if (!modals.collectionToDelete) return;
+                    const deleted = await colOps.deleteCollection(modals.collectionToDelete);
+                    if (deleted) {
+                        modals.closeModal('deleteCollection');
+                        modals.setCollectionToDelete(null);
+                    }
                 }}
                 onRecoverMetadata={actions.executeMetadataRecovery}
                 onCollectionAction={async (ids, targetId, mode, sourceId) => {
@@ -753,8 +1076,10 @@ export default function App() {
                 filters={filters}
                 collectionToEditId={modals.collectionToEditId}
                 onSaveCollectionFilters={colOps.updateCollectionFilters}
+                onUpdateCollectionScope={colOps.updateCollectionScope}
+                onResetInvokeCollection={colOps.resetInvokeCollection}
                 onScanFolder={fileOps.handleImportFolders}
-                onInvokeSync={fileOps.handleInvokeSync}
+                onInvokeSync={() => startInvokeSync({ mode: 'manual', afterTimestamp: 0 })}
                 hasPendingUpdate={Boolean(updater.update)}
                 pendingUpdateVersion={updater.update?.version ?? null}
                 updateErrorMessage={updater.errorMessage}
@@ -784,23 +1109,77 @@ export default function App() {
 
             <React.Suspense fallback={null}>
                 <AnimatePresence>
-                    {displayedViewerImage && (
-                        <ImageViewer
-                            key="image-viewer"
-                            image={displayedViewerImage}
-                            isOpen={true}
-                            isShortcutBlocked={isViewerShortcutBlocked}
-                            onClose={() => { setSelectedImageIndex(null); setViewingImageId(null); }}
+                    {displayedViewerImage && isVideoAsset(displayedViewerImage) ? (
+                        <VideoViewer
+                            key="video-viewer"
+                            video={displayedViewerImage}
+                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, getEffectiveMaskedKeywords(settings))}
+                            initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
+                            onClose={() => {
+                                referenceNavigationRequestRef.current += 1;
+                                setViewerRevealGrantId(null);
+                                setSelectedImageIndex(null);
+                                setViewingImageId(null);
+                                setDirectViewerImage(null);
+                            }}
                             onNext={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) {
+                                    setViewerRevealGrantId(null);
                                     setSelectedImageIndex(selectedImageIndex + 1);
                                 }
                             }}
                             onPrev={() => {
                                 if (selectedImageIndex !== null && selectedImageIndex > 0) {
+                                    setViewerRevealGrantId(null);
                                     setSelectedImageIndex(selectedImageIndex - 1);
                                 }
                             }}
+                            onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
+                            onTogglePin={(id, pinned) => actions.handlePinImage(id, pinned, { showToast: false })}
+                            onDelete={(id) => actions.handleDeleteViewerImage(id)}
+                            onUpdateNotes={(id, notes) => handlers.handleUpdateNotes(id, notes)}
+                            onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
+                            onUpdateNegativePrompt={(id, prompt) => handlers.handleUpdateNegativePrompt(id, prompt)}
+                            onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
+                            onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
+                            onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
+                            onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
+                            onSearch={handleViewerSearch}
+                            onSetCollectionMembership={handleSetViewerCollectionMembership}
+                            modelOptions={modelOptions}
+                            isShortcutBlocked={isViewerShortcutBlocked}
+                            canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
+                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1}
+                        />
+                    ) : displayedViewerImage ? (
+                        <ImageViewer
+                            key="image-viewer"
+                            image={displayedViewerImage}
+                            isOpen={true}
+                            isMasked={isImageMasked(displayedViewerImage, useSettingsStore.getState().privacyEnabled, getEffectiveMaskedKeywords(settings))}
+                            initiallyRevealed={viewerRevealGrantId === displayedViewerImage.id}
+                            isShortcutBlocked={isViewerShortcutBlocked}
+                            onClose={() => {
+                                referenceNavigationRequestRef.current += 1;
+                                setViewerRevealGrantId(null);
+                                setSelectedImageIndex(null);
+                                setViewingImageId(null);
+                                setDirectViewerImage(null);
+                            }}
+                            onNext={() => {
+                                if (selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1) {
+                                    setViewerRevealGrantId(null);
+                                    setSelectedImageIndex(selectedImageIndex + 1);
+                                }
+                            }}
+                            onPrev={() => {
+                                if (selectedImageIndex !== null && selectedImageIndex > 0) {
+                                    setViewerRevealGrantId(null);
+                                    setSelectedImageIndex(selectedImageIndex - 1);
+                                }
+                            }}
+                            canNavigateNext={selectedImageIndex !== null && selectedImageIndex < viewerImages.length - 1}
+                            canNavigatePrevious={selectedImageIndex !== null && selectedImageIndex > 0}
                             onUpdatePrompt={(id, prompt) => handlers.handleUpdatePrompt(id, prompt)}
                             onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
                             onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
@@ -811,28 +1190,25 @@ export default function App() {
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}
                             onOpenSettings={() => { modals.setInitialSettingsTab('intelligence'); modals.openModal('settings'); }}
                             onUpdateNotes={(id, n) => handlers.handleUpdateNotes(id, n)}
-                            onSearch={(term) => {
-                                import('./utils/filterUtils').then(({ parseAndApplyFilter }) => {
-                                    parseAndApplyFilter(term, setFilters);
-                                });
-                                setRecentSearches(prev => [term, ...prev.filter(s => s !== term)].slice(0, 8));
-                            }}
+                            onSearch={handleViewerSearch}
                             onRevertMetadata={(id) => handlers.handleRevertMetadata(id)}
                             onRecoverMetadata={() => actions.openMetadataRecovery()}
                             onSetCollectionMembership={handleSetViewerCollectionMembership}
-                            availableTags={availableTags}
+                            availableTags={libraryPresentation.availableTags}
+                            modelOptions={modelOptions}
                             isSidebarOpen={!settings.defaultTheaterMode}
                             onToggleSidebar={() => setSettings(p => ({ ...p, defaultTheaterMode: !p.defaultTheaterMode }))}
                             searchHighlights={searchHighlights}
+                            onOpenReferencedImage={handleOpenReferencedImage}
                         />
-                    )}
+                    ) : null}
                 </AnimatePresence>
             </React.Suspense>
 
             <AppContextMenu
                 contextMenu={contextMenu}
                 onClose={() => setContextMenu(null)}
-                images={images}
+                images={libraryPresentation.images}
                 actions={actions}
                 fileOps={fileOps}
                 colOps={colOps}

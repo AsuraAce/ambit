@@ -37,9 +37,41 @@ async saveImagesBatch(images: ImageRecord[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async reconcileInvokeOwnerInventory(input: InvokeImageOwnerInventoryInput) : Promise<Result<InvokeImageSourceReconcileResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_owner_inventory", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reconcileInvokeImageSources(updates: InvokeImageSourceUpdate[]) : Promise<Result<InvokeImageSourceReconcileResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_image_sources", { updates }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async replaceInvokeImageReferences(referenceSets: InvokeImageReferenceSet[]) : Promise<Result<InvokeImageReferenceReplaceResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("replace_invoke_image_references", { referenceSets }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveImagePathIdentities(moves: ImagePathIdentityMove[]) : Promise<Result<ImagePathIdentityMoveResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_image_path_identities", { moves }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async markImagePathIdentitiesMissing(ids: string[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_image_path_identities_missing", { ids }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -77,6 +109,62 @@ async resolveExactDuplicateGroups(resolutions: ExactDuplicateResolution[]) : Pro
     else return { status: "error", error: e  as any };
 }
 },
+async removeImagesFromLibrary(ids: string[]) : Promise<Result<RemovedLifecycleMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_images_from_library", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreRemovedImages(ids: string[]) : Promise<Result<RemovedLifecycleMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_removed_images", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async mutateCollectionMembership(input: CollectionMembershipMutationInput) : Promise<Result<CollectionMembershipMutationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mutate_collection_membership", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateInvokeCollectionOwnership(collectionId: string, action: InvokeCollectionOwnershipAction) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_invoke_collection_ownership", { collectionId, action }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async migrateLegacyCollections(input: LegacyCollectionMigrationInput) : Promise<Result<LegacyCollectionMigrationResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("migrate_legacy_collections", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateAmbitCollectionScope(input: UpdateAmbitCollectionScopeInput) : Promise<Result<UpdateAmbitCollectionScopeResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_ambit_collection_scope", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setCollectionCustomThumbnail(collectionId: string, imageId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_collection_custom_thumbnail", { collectionId, imageId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async backfillImageFileHashes(limit: number | null) : Promise<Result<FileHashBackfillResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("backfill_image_file_hashes", { limit }) };
@@ -107,6 +195,54 @@ async getImageCountForPathPrefix(path: string) : Promise<Result<number, string>>
 async refreshPrivacyMaskIndex(maskedKeywords: string[]) : Promise<Result<PrivacyMaskRefreshResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("refresh_privacy_mask_index", { maskedKeywords }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshInvokeOwnerScope(input: InvokeOwnerScopeInput) : Promise<Result<InvokeOwnerScopeRefreshResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_invoke_owner_scope", { input }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async setInvokeBoardVerification(dbPath: string, ownerId: string, verified: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_invoke_board_verification", { dbPath, ownerId, verified }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async beginActiveInvokeScopeCacheBuild() : Promise<Result<InvokeScopeCacheBuildClaim, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("begin_active_invoke_scope_cache_build") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async abortActiveInvokeScopeCacheBuild(ticket: InvokeScopeCacheBuildTicket) : Promise<Result<FacetScopeCacheStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("abort_active_invoke_scope_cache_build", { ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async commitActiveInvokeScopeCache(ticket: InvokeScopeCacheBuildTicket) : Promise<Result<FacetScopeCacheStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("commit_active_invoke_scope_cache", { ticket }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async reconcileInvokeBoardSnapshot(input: InvokeBoardSnapshotInput) : Promise<Result<InvokeBoardSnapshotResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reconcile_invoke_board_snapshot", { input }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -346,6 +482,14 @@ async getFileSizesBulk(paths: string[]) : Promise<Result<number[], string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async probeFileMetadataBulk(paths: string[]) : Promise<Result<FileMetadataProbe[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("probe_file_metadata_bulk", { paths }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async verifyImagePaths(paths: string[]) : Promise<Result<string[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("verify_image_paths", { paths }) };
@@ -480,6 +624,14 @@ async inspectComfyuiMetadataChunks(chunks: Partial<{ [key in string]: string }>)
     else return { status: "error", error: e  as any };
 }
 },
+async inspectComfyuiWorkflowGraph(chunks: Partial<{ [key in string]: string }>) : Promise<Result<ComfyWorkflowGraphReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("inspect_comfyui_workflow_graph", { chunks }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async clearModelCache() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("clear_model_cache") };
@@ -542,9 +694,65 @@ async setResourceThumbnailSensitivity(modelHash: string, modelName: string | nul
     else return { status: "error", error: e  as any };
 }
 },
+async importVideoAsset(path: string, operationId: string) : Promise<Result<VideoImportOutcome, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("import_video_asset", { path, operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async refreshVideoMetadata(filterRoot: string | null, forceReparse: boolean) : Promise<Result<ReparseJobResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_video_metadata", { filterRoot, forceReparse }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelVideoImport(operationId: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_video_import", { operationId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async storeVideoPoster(assetId: string, webpBase64: string) : Promise<Result<VideoPosterResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("store_video_poster", { assetId, webpBase64 }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async prepareVideoPlayback(assetId: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("prepare_video_playback", { assetId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportAssetOriginal(assetId: string, destinationDirectory: string) : Promise<Result<ExportOriginalResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_asset_original", { assetId, destinationDirectory }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async moveToTrash(path: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("move_to_trash", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteRemovedImagesFromDisk(ids: string[]) : Promise<Result<DeleteRemovedImagesResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_removed_images_from_disk", { ids }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -579,6 +787,11 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 /** user-defined events **/
 
 
+export const events = __makeEvents__<{
+folderChangeEvent: FolderChangeEvent
+}>({
+folderChangeEvent: "folder-change-event"
+})
 
 /** user-defined constants **/
 
@@ -588,18 +801,35 @@ async getInvokeDbSnapshot(rootPath: string) : Promise<Result<InvokeDbSnapshot, s
 
 export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: number; inferredType: string; isPriority: boolean; variant: string }
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
+export type AmbitCollectionScopeMode = "global" | "all" | "owner"
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
 export type CaptureTimeMetadata = { local: string; offset: string | null; subsecond: string | null }
+export type CollectionMembershipMutationInput = { operation: CollectionMembershipOperation; imageIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
+export type CollectionMembershipMutationResult = { affectedIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
+export type CollectionMembershipOperation = "add" | "remove" | "move"
 export type ComfyMetadataPreview = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; generationType: string; hasWorkflowHint: boolean; hasWorkflowJson: boolean }
-export type ComfyParserDiagnosticsReport = { chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; metadata: ComfyMetadataPreview }
+export type ComfyParserDiagnosticsReport = { appVersion: string; parserVersion: number; chunkKeys: string[]; hasPromptChunk: boolean; hasWorkflowChunk: boolean; graphNodeCount: number; selectedOutputCandidateCount: number; uniqueOutputRootSamplerCount: number; outputAmbiguous: boolean; traversalIssues: ComfyTraversalIssueReport[]; traversalIssuesTruncated: boolean; attemptedLayers: string[]; fieldSources: Partial<{ [key in string]: string }>; fieldSourceNodeIds?: Partial<{ [key in string]: string[] }>; resourceSources?: ComfyResourceSourceReport[]; metadata: ComfyMetadataPreview }
+export type ComfyResourceSourceReport = { field: string; value: string; layer: string | null; nodeIds: string[] }
+export type ComfyTraversalIssueReport = { field: string; nodeId: string; nodeType: string; inputName: string | null; reason: string }
+export type ComfyWorkflowDisplayEdge = { sourceNodeId: string; sourceOutputSlot: number | null; targetNodeId: string; targetInputName: string; targetInputSlot: number | null }
+export type ComfyWorkflowDisplayNode = { id: string; nodeType: string; title: string; inputs: Partial<{ [key in string]: string }>; subgraphPath: string[] }
+export type ComfyWorkflowGraphReport = { source: string; nodeCount: number; nodes: ComfyWorkflowDisplayNode[]; edges: ComfyWorkflowDisplayEdge[]; selectedOutputNodeIds: string[]; rootSamplerNodeIds: string[]; selectedBranchNodeIds: string[]; outputAmbiguous: boolean }
 export type DbDiagnostics = { dbPath: string; activeDbPath: string; localDbPath: string; roamingDbPath: string; appLogDir: string; appLogPath: string; isUsingRoamingFallback: boolean; imageCount: number; deletedCount: number; modelCount: number; cacheCount: number; toolNullCount: number }
+export type DeleteRemovedImagesResult = { clearedIds: string[]; trashedIds: string[]; alreadyMissingIds: string[]; failedIds: string[]; cleanupPendingIds: string[]; thumbnailWarningIds: string[]; notFoundIds: string[] }
 export type ExactDuplicateKeeperState = { id: string; isFavorite: boolean; isPinned: boolean; userMasked: boolean | null }
 export type ExactDuplicateResolution = { keepId: string; removeIds: string[] }
 export type ExactDuplicateResolutionResult = { resolvedGroups: number; removedIds: string[]; keepers: ExactDuplicateKeeperState[] }
+export type ExportOriginalResult = { assetId: string; outputPath: string; bytesCopied: number }
 export type FacetResourceTouches = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; controlNets: string[]; ipAdapters: string[]; tools: string[] }
-export type FileEntry = { path: string; modified: number; size: number }
+export type FacetScopeCacheState = "missing" | "dirty" | "building" | "ready"
+export type FacetScopeCacheStatus = { state: FacetScopeCacheState; generation: number; builtGeneration: number | null; facetCount: number; collectionCount: number }
+export type FileEntry = { path: string; modified: number; size: number; mediaType: MediaCandidateKind }
 export type FileHashBackfillResult = { scanned: number; updated: number; missing: number; errors: number; remaining: number; wasCancelled: boolean }
-export type FolderStats = { totalFiles: number; imageFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
+export type FileMetadataProbe = { status: "present"; size: number; isFile: boolean } | { status: "missing" } | { status: "error"; message: string }
+export type FolderChange = { kind: FolderChangeKind; paths: string[] }
+export type FolderChangeEvent = FolderChange[]
+export type FolderChangeKind = "create" | "modify" | "rename" | "remove"
+export type FolderStats = { totalFiles: number; imageFiles: number; videoFiles: number; thumbnailFiles: number; otherFiles: number; directoryChecked: string; subfolders: Partial<{ [key in string]: number }> }
 export type ImageMetadata = { tool: string; model: string; rawParameters?: string | null; steps: number; cfg: number; seed?: number | null; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; embeddings: string[]; hypernetworks: string[]; variationId?: string | null; isIntermediate?: boolean; isGrid?: boolean; workflowJson?: string | null; vae?: string | null; clipSkip?: number | null; denoisingStrength?: number | null; hiresUpscale?: number | null; hiresSteps?: number | null; hiresUpscaler?: string | null; modelHash?: string | null; generationType: string; isFavorite?: boolean; hasWorkflowHint?: boolean }
 export type ImagePathIdentityMove = { oldId: string; newId: string; thumbnailPath: string | null; thumbnailSource: string | null }
 export type ImagePathIdentityMoveResult = { moved: number; skippedTargetExists: number; skippedSourceMissing: number }
@@ -611,17 +841,43 @@ microThumbnail: string | null;
 /**
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
-thumbnailSource: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; sourceKindOverride: SourceKind | null; photoMetadata: PhotoMetadata | null; captureWallTimeMs: number | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null }
+thumbnailSource: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; sourceKindOverride: SourceKind | null; photoMetadata: PhotoMetadata | null; captureWallTimeMs: number | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null; invokeImageName: string | null; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
+export type InvokeBoardSnapshotBoard = { id: string; name: string; createdAt: number; ownerId: string | null }
+export type InvokeBoardSnapshotInput = { dbPath: string; mode: InvokeOwnerScopeMode; ownerId: string | null; boards: InvokeBoardSnapshotBoard[]; memberships: InvokeBoardSnapshotMembership[]; reconcileMemberships: boolean; deleteMissingCollections: boolean }
+export type InvokeBoardSnapshotMembership = { imageName: string; boardId: string }
+export type InvokeBoardSnapshotResult = { collectionsUpdated: number; collectionsDeleted: number; imagesUpdated: number; membershipsDeleted: number; membershipsInserted: number }
+export type InvokeCollectionOwnershipAction = "suppress" | "restore" | "reset"
 export type InvokeDbSnapshot = { dbPath: string; files: InvokeDbSnapshotFile[] }
 export type InvokeDbSnapshotFile = { path: string; exists: boolean; size: number; modifiedMs: number | null }
+export type InvokeImageOwnerInventoryInput = { dbPath: string; images: InvokeImageOwnerInventoryItem[] }
+export type InvokeImageOwnerInventoryItem = { id: string; invokeOwnerId: string | null }
+export type InvokeImageReferenceInput = { role: InvokeImageReferenceRole; targetInvokeImageName: string }
+export type InvokeImageReferenceReplaceResult = { sourcesReplaced: number; referencesWritten: number; skippedMissingSources: number }
+export type InvokeImageReferenceRole = "init_image" | "controlnet_image" | "controlnet_processed_image" | "ip_adapter_image" | "t2i_adapter_image" | "t2i_adapter_processed_image"
+export type InvokeImageReferenceSet = { sourceImageId: string; references: InvokeImageReferenceInput[] }
+export type InvokeImageSourceReconcileResult = { activeUpdated: number; removedUpdated: number }
+export type InvokeImageSourceUpdate = { id: string; invokeImageName: string; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
+export type InvokeOwnerScopeInput = { dbPath: string; imagesRoot: string; mode: InvokeOwnerScopeMode; ownerId: string | null; forceRefresh: boolean }
+export type InvokeOwnerScopeMode = "legacy" | "unselected" | "owner" | "all"
+export type InvokeOwnerScopeRefreshResult = { changed: boolean; activeUpdated: number; removedUpdated: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
+export type InvokeScopeCacheAction = "restored" | "selective" | "full"
+export type InvokeScopeCacheBuildClaim = { scopeKey: string; generation: number; cacheStatus: FacetScopeCacheStatus; cacheRepair: InvokeScopeCacheRepairPlan }
+export type InvokeScopeCacheBuildTicket = { scopeKey: string; generation: number }
+export type InvokeScopeCacheRepairPlan = { action: InvokeScopeCacheAction; resources: FacetResourceTouches; facetTypes: string[]; collectionsDirty: boolean }
+export type LegacyCollectionMigrationInput = { importKey: string; collections: LegacyCollectionMigrationItem[] }
+export type LegacyCollectionMigrationItem = { id: string; name: string; color: string | null; isArchived: boolean; isPinned: boolean; createdAt: number; updatedAt: number | null; filterState: string | null; manualExclusions: string | null; customThumbnail: string | null; imageIds: string[] }
+export type LegacyCollectionMigrationResult = { alreadyApplied: boolean; collectionsUpserted: number; membershipsInserted: number }
+export type MediaCandidateKind = "image" | "video"
+export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embedded" | "workflow_default" | "unknown"
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
 export type PhotoMetadata = { capturedAt: CaptureTimeMetadata | null; captureTimeRaw: string | null; cameraMake: string | null; cameraModel: string | null; lensMake: string | null; lensModel: string | null; focalLengthMm: number | null; focalLength35Mm: number | null; apertureFNumber: number | null; exposureTimeSeconds: number | null; iso: number | null; orientation: number | null; artist: string | null; copyright: string | null; gpsLatitude: number | null; gpsLongitude: number | null }
 export type PrivacyMaskRefreshResult = { changed: boolean; updated: number }
+export type RemovedLifecycleMutationResult = { affectedIds: string[]; notFoundIds: string[]; membershipWarningIds: string[]; touchedResources: FacetResourceTouches }
 export type ReparseBatchResult = { processed: number; updated: number; errors: number }
 /**
  * Result of a reparse job.
@@ -643,16 +899,25 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
  */
 error: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null }
 export type SourceKind = "generated" | "photograph" | "other"
-export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile }
+export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }
 export type ThumbnailOptimizationFailureList = { failures: ThumbnailOptimizationFailure[] }
 export type ThumbnailOptimizationProfile = "quiet" | "balanced" | "fast"
-export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
+export type ThumbnailOptimizationResult = { checked: number; optimized: number; reused: number; missing: number; failed: number; skipped: number; wasCancelled: boolean; durationMs: number }
 export type ThumbnailScanResult = { found: number; updated: number; cachedFiles: number; newOrChangedFiles: number; registeredModels: number; resources: FacetResourceTouches }
+export type UpdateAmbitCollectionScopeInput = { collectionId: string; mode: AmbitCollectionScopeMode; dbPath: string | null; ownerId: string | null }
+export type UpdateAmbitCollectionScopeResult = { collectionId: string; invokeSourceId: string | null; invokeOwnerId: string | null }
 /**
  * Valid facet names result - used for drill-down filtering
  */
 export type ValidFacetNames = { checkpoints: string[]; loras: string[]; embeddings: string[]; hypernetworks: string[]; tools: string[]; controlNets: string[]; ipAdapters: string[] }
+export type VideoAssetRecord = { id: string; path: string; width: number; height: number; fileSize: number; timestamp: number; mediaContainer: string | null; mediaMimeType: string | null; durationMs: number; videoCodec: string; videoProfile: string | null; audioPresent: boolean; audioCodec: string | null; frameRateNum: number | null; frameRateDen: number | null; rotationDegrees: number; metadata: VideoGenerationMetadata; originalMetadataJson: string }
+export type VideoGenerationMetadata = { tool: string; model: string; seed: number | null; steps: number; cfg: number; sampler: string; positivePrompt: string; negativePrompt: string; loras: string[]; controlNets: string[]; ipAdapters: string[]; generationType: string; generationMode: VideoGenerationMode; workflowJson: string | null; fieldSources: Partial<{ [key in string]: MetadataEvidenceSource }>; conflicts: VideoMetadataConflict[]; diagnostics: VideoMetadataDiagnostic[]; parserVersion: number }
+export type VideoGenerationMode = "text_to_video" | "image_to_video" | "first_last_frame_to_video" | "video_editing" | "audio_lip_sync" | "guided_video" | "unknown"
+export type VideoImportOutcome = { status: string; asset: VideoAssetRecord | null; reason: string | null }
+export type VideoMetadataConflict = { field: string; selectedValue: string; ignoredValue: string; ignoredSource: MetadataEvidenceSource }
+export type VideoMetadataDiagnostic = { code: string; message: string }
+export type VideoPosterResult = { assetId: string; thumbnailPath: string; thumbnailSource: string }
 
 /** tauri-specta globals **/
 

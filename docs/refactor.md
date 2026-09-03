@@ -5,6 +5,46 @@ Last reviewed: 2026-07-27
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Image-Named Mixed-Media Persistence Boundary
+Status: Deferred
+
+### Why Cleanup Is Needed
+- The compatibility-first video slice stores both images and videos in the historical `images` and `removed_images` tables and keeps several `AIImage`-named frontend boundaries.
+- Renaming the repository surface before mixed-media behavior is proven would create broad migration and API churn, but the names are now less precise.
+
+### Suggested Future Direction
+- After the mixed-media milestone is accepted, migrate shared callers toward `LibraryAsset` or narrower `ImageAsset` and `VideoAsset` contracts.
+- Consider table and command naming only with an explicit compatibility and migration plan; do not rename persisted tables opportunistically.
+- Keep image-only helpers visibly narrowed while this debt remains.
+
+### Related Code
+- `src/types.ts`
+- `src/services/db/repoUtils.ts`
+- `src/services/db/imageRepo.ts`
+- `src-tauri/src/db/migrations/m68_video_library_assets.rs`
+
+## Raw Metadata Chunk Type Contract
+Status: Deferred
+
+### Why Cleanup Is Needed
+- `AIImage.originalChunks` is typed as `Record<string, string>`, matching normal
+  embedded image chunks, but InvokeAI DB sync intentionally places its parsed
+  raw metadata object at `originalChunks.invokeai_metadata`.
+- The database adapter serializes the complete chunk map once, so converting
+  that inner InvokeAI object to a JSON string would change the established
+  persisted shape and break raw-metadata refresh behavior.
+
+### Suggested Future Direction
+- Define an explicit raw-chunk value union or a source-specific raw metadata
+  field, then update persistence, reparse, and viewer consumers together.
+- Until then, keep the localized compatibility cast in InvokeAI sync; do not
+  stringify the inner object merely to satisfy the current TypeScript type.
+
+### Related Code
+- `src/types.ts`
+- `src/services/invoke/syncService.ts`
+- `src/services/db/imageRepo.ts`
+
 ## Maintenance Query Ownership
 Status: Deferred
 

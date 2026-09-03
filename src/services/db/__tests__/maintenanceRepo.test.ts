@@ -122,6 +122,8 @@ describe('maintenanceRepo', () => {
             { id: 'metadata-intermediate', isMissing: false, isDeleted: false, isIntermediate: false, metadata: { positivePrompt: 'prompt', isIntermediate: true } },
             { id: 'untagged', isMissing: false, isDeleted: false, isIntermediate: false, metadata: {} },
             { id: 'regular', isMissing: false, isDeleted: false, isIntermediate: false, metadata: { positivePrompt: 'prompt' } },
+            { id: 'asset-untagged', isMissing: false, isDeleted: false, isIntermediate: false, invokeImageCategory: 'control', metadata: {} },
+            { id: 'unknown-untagged', isMissing: false, isDeleted: false, isIntermediate: false, invokeImageCategory: 'future-category', metadata: {} },
         ];
         mocks.getBrowserMockImages.mockReturnValue(browserImages);
 
@@ -147,8 +149,8 @@ describe('maintenanceRepo', () => {
         await expect(backfillParameterColumns()).resolves.toBe(0);
         await expect(normalizeAllPaths()).resolves.toBeUndefined();
         await expect(verifyLibraryIntegrity(progress, controller.signal)).resolves.toEqual({
-            scanned: 5,
-            total: 5,
+            scanned: 7,
+            total: 7,
             missingIds: [],
             sampleMissingPaths: [],
             wasCancelled: true,
@@ -157,7 +159,7 @@ describe('maintenanceRepo', () => {
         await expect(pruneMissingLinks(['missing', 'regular'])).resolves.toBe(2);
         await expect(getDeletedImages()).resolves.toEqual([browserImages[1]]);
         await expect(getIntermediateImages()).resolves.toEqual([browserImages[2], browserImages[3]]);
-        await expect(getUntaggedImages()).resolves.toEqual([browserImages[4]]);
+        await expect(getUntaggedImages()).resolves.toEqual([browserImages[4], browserImages[7]]);
         await expect(getUnoptimizedImages()).resolves.toEqual([]);
         await expect(getUnoptimizedImagesCount()).resolves.toBe(0);
         await expect(getUnoptimizedImageEntries(0, 10)).resolves.toEqual([]);
@@ -172,14 +174,14 @@ describe('maintenanceRepo', () => {
         await expect(cancelImageFileHashBackfill()).resolves.toBeUndefined();
         await expect(getDuplicateCandidates()).resolves.toEqual([]);
         await expect(getMaintenanceCounts()).resolves.toEqual({
-            untagged: 1,
+            untagged: 2,
             orphans: 0,
             intermediates: 2,
             missing: 1,
             trash: 1,
             duplicates: 0,
         });
-        expect(progress).toHaveBeenCalledWith(5, 5);
+        expect(progress).toHaveBeenCalledWith(7, 7);
         expect(mocks.updateBrowserMockImage).toHaveBeenCalledWith('missing', { isMissing: true });
         expect(mocks.updateBrowserMockImage).toHaveBeenCalledWith('regular', { isMissing: true });
         expect(mocks.getDb).not.toHaveBeenCalled();
@@ -346,13 +348,13 @@ describe('maintenanceRepo', () => {
         }]);
 
         expect(db.select.mock.calls[0][0]).toContain('WHERE is_missing = 1');
-        expect(db.select.mock.calls[1][0]).toContain('FROM removed_images');
+        expect(db.select.mock.calls[1][0]).toContain('FROM scoped_removed_images');
     });
 
     it('marks missing links in batches so very large audits stay under SQLite parameter limits', async () => {
         const db = {
             select: vi.fn(),
-            execute: vi.fn().mockResolvedValue(undefined),
+            execute: vi.fn(async (_sql: string, params: unknown[] = []) => ({ rowsAffected: params.length })),
         };
         mocks.getDb.mockResolvedValue(db);
         const ids = Array.from({ length: 501 }, (_, index) => `id-${index}`);
@@ -363,6 +365,20 @@ describe('maintenanceRepo', () => {
         expect(db.execute).toHaveBeenCalledTimes(2);
         expect(db.execute.mock.calls[0][1]).toHaveLength(500);
         expect(db.execute.mock.calls[1][1]).toEqual(['id-500']);
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
+    });
+
+    it('does not mark IDs hidden by an owner switch after discovery', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn().mockResolvedValue({ rowsAffected: 0 }),
+        };
+        mocks.getDb.mockResolvedValue(db);
+
+        const { pruneMissingLinks } = await import('../maintenanceRepo');
+        await expect(pruneMissingLinks(['stale-owner-id'])).resolves.toBe(0);
+
+        expect(db.execute.mock.calls[0][0]).toContain('id IN (SELECT id FROM scoped_images)');
     });
 
     it('skips missing-link writes when there is nothing to prune', async () => {
@@ -537,7 +553,9 @@ describe('maintenanceRepo', () => {
         expect(queries[1]).toMatch(/AND rating >= \?/);
         expect(queries[2]).not.toContain('AND    ');
         expect(queries[3]).not.toContain('AND    ');
+        expect(queries[3]).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
         expect(queries[4]).toMatch(/AND\s+rating >= \?/);
+        expect(queries[4]).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
         expect(queries[5]).not.toContain('AND    ');
         expect(queries[6]).toMatch(/AND rating >= \?/);
         expect(db.select.mock.calls[7][1]).toEqual([]);
@@ -596,9 +614,11 @@ describe('maintenanceRepo', () => {
 
         const [query] = db.select.mock.calls[0] as [string];
         expect(query).toContain('duplicate_hashes');
+        expect(query).toContain('invoke_scope_hidden = 0');
         expect(query).toContain("file_hash != ''");
         expect(query).not.toContain('LOWER(TRIM(file_hash))');
         expect(query).toContain('is_missing = 0');
+        expect(query).not.toContain("media_type = 'image'");
         expect(query).not.toContain('file_size, width, height');
         expect(db.select.mock.calls[0]).toHaveLength(1);
     });
@@ -668,6 +688,7 @@ describe('maintenanceRepo', () => {
             duplicates: 0,
         });
         expect(db.select).toHaveBeenCalledTimes(1);
+        expect(db.select.mock.calls[0]?.[0]).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
     });
 
     it('defaults missing maintenance counters to zero when the aggregate row is absent', async () => {

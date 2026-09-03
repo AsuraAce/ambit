@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AIImage, AppSettings, Collection, PaginationCursor, SortOption, SourceKindCounts } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { useImagesQuery, type ImagesQueryKey } from '../useImagesQuery';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
 type QueryPage = { images: AIImage[]; totalCount: number; globalCount: number; sourceKindCounts?: SourceKindCounts };
 type InfiniteQueryConfig = {
@@ -108,6 +109,7 @@ describe('useImagesQuery', () => {
         mocks.countGlobalImages.mockResolvedValue(20);
         mocks.countImagesBySourceKind.mockResolvedValue({ all: 7, generated: 4, photograph: 2, other: 1 });
         mocks.searchBrowserMockImages.mockReturnValue({ images: [], totalCount: 0, globalCount: 0 });
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
 
     it('builds a smart-collection-aware query key and honors the settings gate', () => {
@@ -129,17 +131,18 @@ describe('useImagesQuery', () => {
             true,
             'blur',
             ['secret'],
-            JSON.stringify(filters)
+            JSON.stringify(filters),
+            'invoke:none'
         ]);
         expect(config().enabled).toBe(false);
     });
 
     it('uses a null smart-filter fingerprint for regular and missing collections', () => {
         renderImagesHook('date_desc', [{ id: 'regular', name: 'Regular', imageIds: [], createdAt: 1 }]);
-        expect(config().queryKey.at(-1)).toBeNull();
+        expect(config().queryKey.at(-2)).toBeNull();
 
         renderImagesHook();
-        expect(config().queryKey.at(-1)).toBeNull();
+        expect(config().queryKey.at(-2)).toBeNull();
         expect(config().enabled).toBe(true);
     });
 
@@ -268,7 +271,8 @@ describe('useImagesQuery', () => {
             true,
             'blur',
             ['secret'],
-            null
+            null,
+            'invoke:none'
         ];
         const previousQuery = { queryKey: previousSearchKey };
 
@@ -292,5 +296,32 @@ describe('useImagesQuery', () => {
             queryKey: [...key.slice(0, 5), ['different'], ...key.slice(6)]
         })).toBeUndefined();
         expect(config().placeholderData(previousData)).toBeUndefined();
+    });
+
+    it('isolates cached pages when the admitted InvokeAI owner changes', () => {
+        const invokeSettings = { ...settings, invokeAiPath: 'C:/Invoke' };
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'C:/Invoke',
+            scope: { mode: 'all', dbPath: 'C:/Invoke/databases/invokeai.db', imagesRoot: 'C:/Invoke' },
+        });
+        renderImagesHook('date_desc', [], true, invokeSettings);
+        const allUsersKey = config().queryKey;
+        const allUsersData = { pages: [{ images: [image()], totalCount: 1, globalCount: 150_000 }] };
+
+        useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+            status: 'ready',
+            rootPath: 'C:/Invoke',
+            scope: {
+                mode: 'owner',
+                ownerId: 'jupiter',
+                dbPath: 'C:/Invoke/databases/invokeai.db',
+                imagesRoot: 'C:/Invoke',
+            },
+        });
+        renderImagesHook('date_desc', [], true, invokeSettings);
+
+        expect(config().queryKey).not.toEqual(allUsersKey);
+        expect(config().placeholderData(allUsersData, { queryKey: allUsersKey })).toBeUndefined();
     });
 });

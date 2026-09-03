@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "bundle": {
+    "externalBin": [
+      "binaries/mediainfo"
+    ],
+    "resources": [
+      "binaries/MediaInfo-LICENSE.txt",
+      "binaries/MediaInfo-PROVENANCE.md"
+    ]
+  }
+}

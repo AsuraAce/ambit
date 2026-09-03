@@ -1,12 +1,13 @@
 import React, { PropsWithChildren } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useParameterRangesQuery } from '../useParameterRangesQuery';
 import { createDefaultFilters } from '../../utils/filterState';
 import type { ParameterRanges } from '../../bindings';
 import { SIDE_QUERY_SEARCH_DEBOUNCE_MS } from '../useDebouncedSideQueryFilters';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
 const commandMocks = vi.hoisted(() => ({
     getParameterRanges: vi.fn(),
@@ -75,6 +76,7 @@ describe('useParameterRangesQuery', () => {
             data: emptyParameterRanges,
         });
         useSettingsStore.setState({ privacyMaskIndexStatus: 'ready' });
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
         settingsContext.current = {
             settings: { maskingMode: 'blur', maskedKeywords: [] },
             privacyEnabled: false,
@@ -99,6 +101,25 @@ describe('useParameterRangesQuery', () => {
         expect(result.current.data).toEqual(emptyParameterRanges);
         await new Promise(resolve => setTimeout(resolve, 0));
         expect(commandMocks.getParameterRanges).not.toHaveBeenCalled();
+    });
+
+    it('waits for matching InvokeAI admission before querying parameter ranges', async () => {
+        (settingsContext.current.settings as { invokeAiPath?: string }).invokeAiPath = 'D:/Invoke';
+        const { result } = renderHook(() => useParameterRangesQuery(createDefaultFilters()), {
+            wrapper: createWrapper(),
+        });
+
+        expect(result.current.data).toEqual(emptyParameterRanges);
+        expect(commandMocks.getParameterRanges).not.toHaveBeenCalled();
+
+        act(() => {
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                status: 'ready',
+                rootPath: 'D:/Invoke',
+            });
+        });
+
+        await waitFor(() => expect(commandMocks.getParameterRanges).toHaveBeenCalledOnce());
     });
 
     it('refetches parameter ranges when advanced date search syntax changes', async () => {

@@ -303,6 +303,9 @@ export const buildSqlWhereClause = (
     const conditions: string[] = [];
     const params: SqlParam[] = [];
 
+    // Owner scope applies to every library query, including recursive facet queries.
+    conditions.push('invoke_scope_hidden = 0');
+
     if (!isRecursive) {
         conditions.push('is_deleted = 0');
 
@@ -313,6 +316,15 @@ export const buildSqlWhereClause = (
             // Use indexed is_grid_gen column only - no json_extract needed
             conditions.push("IFNULL(is_grid_gen, 0) = 0");
         }
+        if (!filters.showInvokeImageAssets) {
+            // NULL means missing or unknown InvokeAI category and must remain visible.
+            conditions.push("IFNULL(is_invoke_asset_gen, 0) = 0");
+        }
+    }
+
+    if (filters.mediaType && filters.mediaType !== 'all') {
+        conditions.push('media_type = ?');
+        params.push(filters.mediaType);
     }
 
     // 1. Privacy Logic
@@ -324,6 +336,7 @@ export const buildSqlWhereClause = (
     if (filters.collectionId) {
         const col = collections?.find(c => c.id === filters.collectionId);
         const subConditions: string[] = [];
+        let collectionScopeCondition: string | null = null;
 
         if (col && col.filters) {
             const effectiveSmartFilters = { ...col.filters };
@@ -351,10 +364,19 @@ export const buildSqlWhereClause = (
                 subConditions.push(`(${smartWhere})`);
                 params.push(...smartParams);
             }
+
+            if (col.source === 'ambit' && col.invokeSourceId && col.invokeOwnerId) {
+                collectionScopeCondition = '(invoke_source_id IS NULL OR (invoke_source_id = ? AND invoke_owner_id = ?))';
+                params.push(col.invokeSourceId, col.invokeOwnerId);
+            }
         }
 
         if (subConditions.length > 0) {
             let combined = `(${subConditions.join(' OR ')})`;
+
+            if (collectionScopeCondition) {
+                combined = `(${combined} AND ${collectionScopeCondition})`;
+            }
 
             if (col && col.manualExclusions && col.manualExclusions.length > 0) {
                 const placeholders = col.manualExclusions.map(() => '?').join(',');

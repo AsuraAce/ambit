@@ -56,4 +56,33 @@ describe('thumbnail queue progress copy', () => {
             failed: 1
         })).toBe('Finished: 4 thumbnails optimized; 1 needs attention');
     });
+
+    it('reports reconciled missing files separately from failures', () => {
+        expect(formatThumbnailQueueRunningMessage({
+            checked: 340,
+            optimized: 38,
+            missing: 300,
+            failed: 2,
+        })).toBe('Optimized 38 thumbnails; marked 300 files missing; 2 need attention');
+        expect(formatThumbnailQueueCompleteMessage({
+            checked: 300,
+            optimized: 0,
+            missing: 300,
+            failed: 0,
+        })).toBe('Finished: marked 300 files missing');
+    });
+
+    it('reports files deferred because their source folder is unavailable', () => {
+        const counts = {
+            checked: 25,
+            optimized: 0,
+            skipped: 25,
+            failed: 0,
+        };
+
+        expect(formatThumbnailQueueRunningMessage(counts))
+            .toBe('Checked 25 images; deferred 25 files from unavailable folders');
+        expect(formatThumbnailQueueCompleteMessage(counts))
+            .toBe('Finished: deferred 25 files from unavailable folders');
+    });
 });
