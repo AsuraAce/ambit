@@ -88,6 +88,23 @@ describe('searchRepo basic queries', () => {
         await expect(countImages('WHERE is_deleted = ?', [0])).resolves.toBe(0);
     });
 
+    it.each([
+        ['global', undefined, undefined, 'FROM scoped_images AS images'],
+        ['collection', 'collection-1', undefined, 'CROSS JOIN scoped_images AS images ON images.id = ci.image_id'],
+        ['LoRA', undefined, 'Detailer', 'CROSS JOIN scoped_images AS images ON images.id = il.image_id'],
+        ['collection and LoRA', 'collection-1', 'Detailer', 'JOIN scoped_images AS images ON images.id = ci.image_id'],
+    ])('keeps %s source-kind counts inside the active owner scope', async (_, collectionId, loraName, scopedSource) => {
+        const db = { select: vi.fn().mockResolvedValue([]) };
+        getDbMock.mockResolvedValue(db);
+        const { countImagesBySourceKind } = await import('../searchRepo');
+
+        await countImagesBySourceKind('WHERE is_deleted = ?', [0], collectionId, loraName);
+
+        const sql = db.select.mock.calls[0]?.[0] as string;
+        expect(sql).toContain(scopedSource);
+        expect(sql).not.toMatch(/\b(?:FROM|JOIN|CROSS JOIN)\s+images\b/);
+    });
+
     it('uses default search ordering and supports an ascending pinned cursor without a pin value', async () => {
         const db = { select: vi.fn().mockResolvedValue([]) };
         getDbMock.mockResolvedValue(db);

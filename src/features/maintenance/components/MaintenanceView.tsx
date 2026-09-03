@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AIImage, GeneratorTool, isVideoAsset, type VideoGenerationMode } from '../../../types';
+import { AIImage, GeneratorTool, getDetectedSourceKind, isVideoAsset, type SourceKind, type VideoGenerationMode } from '../../../types';
 import { DuplicateFinder } from './DuplicateFinder';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { ImageViewer } from '../../../features/viewer/components/ImageViewer';
@@ -45,6 +45,7 @@ interface MaintenanceViewProps {
     onUpdateModel?: (id: string, model: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
     onUpdateGenerationMode?: (id: string, mode: VideoGenerationMode) => void;
+    onSetImageKind?: (id: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
     onUpdateNotes?: (id: string, notes: string) => void;
     onRevertMetadata?: (id: string) => void;
     onSearch: (term: string) => void;
@@ -76,6 +77,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     onUpdateModel,
     onUpdateTool,
     onUpdateGenerationMode,
+    onSetImageKind,
     onUpdateNotes,
     onRevertMetadata,
     onSearch,
@@ -198,6 +200,39 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             return next;
         });
     }, []);
+
+    const handleSetImageKind = useCallback(async (id: string, sourceKindOverride: SourceKind | null) => {
+        if (!onSetImageKind) return;
+        await onSetImageKind(id, sourceKindOverride);
+
+        const patchImage = (image: AIImage): AIImage => {
+            if (image.id !== id) return image;
+            const sourceKind = sourceKindOverride ?? getDetectedSourceKind(image);
+            return {
+                ...image,
+                sourceKindOverride: sourceKindOverride ?? undefined,
+                sourceKind,
+                displayTimestamp: sourceKind === 'photograph'
+                    ? (image.captureWallTimeMs ?? image.timestamp)
+                    : image.timestamp,
+            };
+        };
+        const patchImages = (previous: AIImage[]) => previous.map(patchImage);
+
+        setFetchedMissingImages(patchImages);
+        setLocalMissingImages(patchImages);
+        setLocalUntaggedImages(patchImages);
+        setLocalUnoptimizedImages(patchImages);
+        setLocalDuplicateCandidates(patchImages);
+        setLocalIntermediateImages(patchImages);
+        setRecoveredImages(previous => {
+            const recovered = previous.get(id);
+            if (!recovered) return previous;
+            const next = new Map(previous);
+            next.set(id, patchImage(recovered));
+            return next;
+        });
+    }, [onSetImageKind, setLocalDuplicateCandidates, setLocalIntermediateImages, setLocalMissingImages, setLocalUnoptimizedImages, setLocalUntaggedImages]);
 
     // --- Selection Hook ---
     const {
@@ -832,6 +867,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
                         onUpdateNegativePrompt={activeTab === 'trash' ? undefined : onUpdateNegativePrompt}
                         onUpdateModel={activeTab === 'trash' ? undefined : onUpdateModel}
                         onUpdateTool={activeTab === 'trash' ? undefined : onUpdateTool}
+                        onSetImageKind={activeTab === 'trash' ? undefined : handleSetImageKind}
                         onUpdateNotes={activeTab === 'trash' ? undefined : onUpdateNotes}
                         onRevertMetadata={activeTab === 'trash' ? undefined : onRevertMetadata}
                         onRecoverMetadata={activeTab === 'trash' || !onRecoverMetadata

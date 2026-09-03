@@ -37,21 +37,21 @@ Remove from Library removes the image record from Ambit's active library. It doe
 
 ## Metadata Sidebar
 
-The sidebar header shows the image filename, detected kind, generator or camera details when available, effective date, and dimensions.
+The toolbar shows the filename; the sidebar separates technical details from generation metadata and workflow data.
 
 Generated images can show three tabs:
 
-- Info: prompts, generation parameters, resources, palette, internal metadata, and optional AI tools
-- Edit: collection membership, prompt edits, negative prompt edits, and notes
+- Details: technical facts, palette, Image Kind, notes, and collection membership
+- Metadata: prompts and edits, generation parameters, resources, internal metadata, and optional AI tools
 - Workflow: workflow node inspection when workflow data exists or Ambit has not yet confirmed that none exists
 
 The Workflow tab may disappear for images that Ambit has already identified as having no recorded workflow.
 
 Photos and Other images use Details and Library tabs. Details shows camera, lens, exposure, capture time, dimensions, file information, and collapsed GPS coordinates when present. Ambit does not contact a map or network service for GPS data. Library includes collections, notes, and Image Kind without generator-only prompt or workflow controls. Raw file-modified time remains visible in technical details even when a photo capture date is used for browsing.
 
-## Info Tab
+## Metadata Tab
 
-Use Info for read-heavy inspection.
+Use Metadata to inspect and edit generation information.
 
 The Positive Prompt section can show:
 
@@ -63,11 +63,11 @@ The Positive Prompt section can show:
 
 The Negative Prompt section appears when negative prompt data exists.
 
-The Color Palette section shows extracted colors when Ambit can derive them from the image. Select a swatch to copy its color value.
+The Details tab's Color Palette section shows extracted colors when Ambit can derive them from the image. Select a swatch to copy its color value.
 
 For images imported with InvokeAI source facts, Source identifies InvokeAI and can show the original image name, category, and origin. This section is available even when the image has no generation parameters. Unrecognized source categories are displayed as recorded instead of being guessed or discarded.
 
-When InvokeAI recorded image-to-image inputs, the Info tab can also show:
+When InvokeAI recorded image-to-image inputs, the Metadata tab can also show:
 
 - Source Images: images used to produce the current image, labelled by their roles such as Initial image, ControlNet input, or IP-Adapter input
 - Used By: other Ambit images that used the current image as an input
@@ -88,17 +88,17 @@ Smart Tags are short prompt fragments extracted from the positive prompt. Select
 
 Internal Metadata opens a technical inspector with Parsed, Text, and, when workflow JSON exists, JSON views. This is useful when a generator embedded raw parameters or workflow data that is not shown elsewhere.
 
-## Edit Tab
+## Local Catalog Edits
 
-Use Edit for local catalog changes.
+Use Details (or Library for Photos and Other images) for notes, Image Kind, and collection membership. Generation fields are edited directly in Metadata.
 
 Collections lets you search collections and toggle whether the current image belongs to each collection.
 
 Image Kind offers Automatic, Generated, Photo, and Other. Automatic follows Ambit's conservative metadata detection. Manual choices are catalog-only and survive rescans; they do not rewrite the image file.
 
-Positive Prompt and Negative Prompt fields save local prompt corrections to Ambit's catalog. Dirty fields show an Unsaved marker and save on blur. For A1111, Forge, and unknown generator records, Parse from Clipboard can read A1111-style parameter text containing `Steps:` and apply the positive and negative prompts it finds.
+Positive Prompt and Negative Prompt fields save local prompt corrections to Ambit's catalog on blur. Unchanged fields do not create overrides. Imported original prompts remain available for read-only inspection.
 
-Notes stores local notes for the image. Notes save on blur or with the visible save button when the field is dirty.
+Notes stores local notes for the image and saves changed text on blur.
 
 These edits update Ambit's catalog. They do not rewrite the original image file or change the original generator workflow.
 
@@ -123,7 +123,7 @@ When an image has stack entries or related versions, the viewer shows a version 
 
 ## Optional Gemini Actions
 
-If Gemini-powered intelligence features are enabled, the Info tab can show Creative Assistant actions:
+If Gemini-powered intelligence features are enabled, the Metadata tab can show Creative Assistant actions:
 
 - Prompt Analysis: opens an analysis result and, when available, an Applied Example prompt
 - Variations: generates variation ideas with tabs for each result
@@ -135,7 +135,7 @@ AI result views include copy actions such as Copy, Copy All, or Copy This Variat
 
 If metadata is missing or looks wrong:
 
-1. Inspect Info and Internal Metadata to see what Ambit parsed.
+1. Inspect Metadata and Internal Metadata (or photo Details) to see what Ambit parsed.
 2. Open Workflow to check whether workflow JSON exists or can be loaded from file headers.
 3. Refresh metadata for the folder if the source file has newer metadata.
 4. Use AI Prompt Recovery only when you intentionally want Gemini to infer a prompt from the image.

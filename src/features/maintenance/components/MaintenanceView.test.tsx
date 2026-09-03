@@ -277,7 +277,7 @@ vi.mock('./ScanPlaceholder', () => ({
 }));
 
 vi.mock('../../../features/viewer/components/ImageViewer', () => ({
-    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, onUpdatePrompt, isShortcutBlocked }: {
+    ImageViewer: ({ image, onDelete, onNext, onPrev, onClose, onToggleFavorite, onTogglePin, onSetCollectionMembership, onSearch, onOpenSettings, onRecoverMetadata, onOpenReferencedImage, onUpdatePrompt, onSetImageKind, isShortcutBlocked }: {
         image: AIImage;
         onDelete?: () => void;
         onNext: () => void;
@@ -291,9 +291,10 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onOpenReferencedImage?: (imageId: string) => Promise<boolean>;
         onRecoverMetadata?: () => void;
         onUpdatePrompt?: (id: string, prompt: string) => void;
+        onSetImageKind?: (id: string, sourceKindOverride: 'generated' | 'photograph' | 'other' | null) => void | Promise<void>;
         isShortcutBlocked?: boolean;
     }) => (
-        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-editable={String(Boolean(onUpdatePrompt))} data-shortcuts-blocked={String(isShortcutBlocked)}>
+        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-editable={String(Boolean(onUpdatePrompt))} data-kind-editable={String(Boolean(onSetImageKind))} data-source-kind={image.sourceKind ?? ''} data-source-kind-override={image.sourceKindOverride ?? ''} data-display-timestamp={image.displayTimestamp ?? ''} data-shortcuts-blocked={String(isShortcutBlocked)}>
             {onDelete && <button onClick={onDelete}>Viewer Cleanup</button>}
             <button onClick={onNext}>Viewer Next</button>
             <button onClick={onPrev}>Viewer Previous</button>
@@ -306,6 +307,8 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
             <button onClick={onOpenSettings}>Viewer Settings</button>
             {onRecoverMetadata && <button onClick={onRecoverMetadata}>Recover Viewer Prompt</button>}
             {onOpenReferencedImage && <button onClick={() => void onOpenReferencedImage('hidden-reference')}>Open Viewer Reference</button>}
+            {onSetImageKind && <button onClick={() => void onSetImageKind(image.id, 'other')}>Set Viewer Other</button>}
+            {onSetImageKind && <button onClick={() => void onSetImageKind(image.id, null)}>Set Viewer Automatic</button>}
         </div>
     )
 }));
@@ -969,6 +972,50 @@ describe('MaintenanceView', () => {
 
         fireEvent.click(screen.getByText('Range Missing'));
         fireEvent.click(screen.getByText('Clear Missing Selection'));
+    });
+
+    it('updates the active maintenance viewer cache after correcting and restoring an automatic image kind', async () => {
+        maintenanceDataMock.localMissingImages = [createImage({
+            id: 'photo-missing',
+            detectedSourceKind: 'photograph',
+            sourceKind: 'photograph',
+            captureWallTimeMs: 456_789,
+            displayTimestamp: 1,
+        })];
+        const onSetImageKind = vi.fn().mockResolvedValue(undefined);
+        const view = renderView({ onSetImageKind });
+
+        fireEvent.click(screen.getByText('Open Missing Viewer'));
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-kind-editable')).toBe('true');
+
+        fireEvent.click(screen.getByText('Set Viewer Other'));
+        await waitFor(() => expect(onSetImageKind).toHaveBeenCalledWith('photo-missing', 'other'));
+        view.rerender(<MaintenanceView {...view.props} />);
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-source-kind')).toBe('other');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-source-kind-override')).toBe('other');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-display-timestamp')).toBe('1');
+
+        fireEvent.click(screen.getByText('Set Viewer Automatic'));
+        await waitFor(() => expect(onSetImageKind).toHaveBeenLastCalledWith('photo-missing', null));
+        view.rerender(<MaintenanceView {...view.props} />);
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-source-kind')).toBe('photograph');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-source-kind-override')).toBe('');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-display-timestamp')).toBe('456789');
+    });
+
+    it('does not expose source-kind editing for Removed viewer records', async () => {
+        maintenanceDataMock.initializedTabs = new Set(['missing', 'trash']);
+        maintenanceDataMock.localDeletedImages = [createImage({ id: 'removed-image', isDeleted: true })];
+        const onSetImageKind = vi.fn().mockResolvedValue(undefined);
+        renderView({ onSetImageKind });
+
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-kind-editable')).toBe('false');
+        expect(screen.queryByText('Set Viewer Other')).toBeNull();
+        expect(screen.queryByText('Set Viewer Automatic')).toBeNull();
+        expect(onSetImageKind).not.toHaveBeenCalled();
     });
 
     it('hands reference navigation to the global viewer and closes the maintenance viewer on success', async () => {

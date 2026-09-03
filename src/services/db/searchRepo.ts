@@ -484,28 +484,28 @@ export const countImagesBySourceKind = async (
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
     const select = 'SELECT images.source_kind, count(*) as count';
     const group = 'GROUP BY images.source_kind';
-    let query = `${select} FROM images ${finalWhere} ${group}`;
+    let query = `${select} FROM scoped_images AS images ${finalWhere} ${group}`;
     let queryParams = params;
 
     if (collectionId && loraName) {
         query = `${select}
             FROM collection_images ci
             JOIN image_loras il ON il.image_id = ci.image_id
-            JOIN images ON images.id = ci.image_id
+            JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
             ${group}`;
         queryParams = [collectionId, loraName, ...params];
     } else if (collectionId) {
         query = `${select}
             FROM collection_images ci
-            CROSS JOIN images ON images.id = ci.image_id
+            CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
             ${group}`;
         queryParams = [collectionId, ...params];
     } else if (loraName) {
         query = `${select}
             FROM image_loras il
-            CROSS JOIN images ON images.id = il.image_id
+            CROSS JOIN scoped_images AS images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
             ${group}`;
         queryParams = [loraName, ...params];

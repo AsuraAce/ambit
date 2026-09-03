@@ -10,7 +10,7 @@ import { TimelineView } from '../features/library/components/TimelineView';
 import { VirtualGrid, type VirtualGridHandle } from '../features/library/components/VirtualGrid';
 import { GridItem } from '../features/library/components/GridItem';
 import { ActivityDock } from './ui/ActivityDock';
-import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode } from '../types';
+import { AIImage, Collection, ContextMenuState, FilterState, LayoutMode, SmartCollection, SortOption, ToastMessage, ViewMode, type SourceKind } from '../types';
 import { Search } from 'lucide-react';
 import { useSearch } from '../contexts/SearchContext';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -111,6 +111,7 @@ interface AppLayoutProps {
     onOpenReferencedImage: (imageId: string) => Promise<boolean>;
     onViewerSearch: (term: string) => void;
     isViewerShortcutBlocked: boolean;
+    onSetImageKind: (id: string, sourceKindOverride: SourceKind | null) => Promise<void>;
     toggleFavorite: (id: string) => void | Promise<void>;
     actions: ReturnType<typeof useAppActions>;
     availableTags: string[];
@@ -143,7 +144,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, displayedCount, scopeTotal, scopeName,
     fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
-    handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, onViewerSearch, isViewerShortcutBlocked,
+    handlers, setViewingImageId, onMaintenanceViewerOpenChange, onOpenReferencedImage, onViewerSearch, isViewerShortcutBlocked, onSetImageKind,
     modelOptions = [],
     actions, availableTags, selectedIds,
     handleImageClick, setSelectedImageIndex, handleSelectionToggle,
@@ -437,6 +438,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onUpdateModel={handlers.handleUpdateModel}
                                         onUpdateTool={handlers.handleUpdateTool}
                                         onUpdateGenerationMode={(id, mode) => handlers.handleUpdateVideoGenerationMode(id, mode)}
+                                        onSetImageKind={onSetImageKind}
                                         onUpdateNotes={(id, n) => { handlers.handleUpdateNotes(id, n); }}
                                         onRevertMetadata={handlers.handleRevertMetadata}
                                         onSearch={(term) => {
