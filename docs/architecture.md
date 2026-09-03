@@ -39,6 +39,8 @@ Smart and Maintenance thumbnail repair share one native engine for source-root v
 
 The engine distinguishes three source outcomes. A readable source can be optimized or reused; an individually absent source is marked `is_missing` without deleting its cached thumbnail or database row; and a temporarily unavailable managed source root is skipped. It receives active monitored roots from the frontend, derives InvokeAI `outputs/images` roots from registered source identity, and caches unavailable roots before inspecting child files. Root probes are time-bounded, cancellation-aware, single-flight per root, and capped process-wide; a chunk containing absent children rechecks each affected root once before persistence so a drive disconnected during the run is deferred instead of marked missing. Mixed outcomes are staged and applied in one set-based transaction, with scope-cache triggers suppressed for the batch and each affected scope invalidated once. After an operation, image queries, library statistics, thumbnail facets, and collection thumbnails refresh once. Broken-reference repair, orphan cleanup, and developer-only database synchronization remain separate Maintenance tools.
 
+Rescans preserve an active replacement thumbnail only after bounded WebP decoding validates it; missing or invalid replacements yield to the canonical thumbnail returned by the rescan.
+
 ### Frontend App Shell and Feature Surfaces
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`

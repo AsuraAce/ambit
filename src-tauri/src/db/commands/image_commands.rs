@@ -375,11 +375,11 @@ pub fn refresh_privacy_mask_index_for_conn(
     })
 }
 
-fn readable_active_replacement_ids(
+fn valid_active_replacement_ids(
     conn: &Connection,
     images: &[ImageRecord],
 ) -> Result<BTreeSet<String>, String> {
-    let mut readable_ids = BTreeSet::new();
+    let mut valid_ids = BTreeSet::new();
 
     for chunk in images.chunks(500) {
         let placeholders = vec!["?"; chunk.len()].join(", ");
@@ -403,13 +403,33 @@ fn readable_active_replacement_ids(
 
         for row in rows {
             let (id, path) = row.map_err(|error| error.to_string())?;
-            if std::fs::File::open(path).is_ok() {
-                readable_ids.insert(id);
+            let Ok(file) = std::fs::File::open(path) else {
+                continue;
+            };
+            // Only preserve decodable generated thumbnails, not merely readable files.
+            // Bound validation to the 512px repair output and a small encoded file.
+            const MAX_THUMBNAIL_BYTES: u64 = 4 * 1024 * 1024;
+            if !file.metadata().is_ok_and(|metadata| {
+                metadata.is_file() && (1..=MAX_THUMBNAIL_BYTES).contains(&metadata.len())
+            }) {
+                continue;
+            }
+            let mut reader = image::ImageReader::with_format(
+                std::io::BufReader::new(file),
+                image::ImageFormat::WebP,
+            );
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(512);
+            limits.max_image_height = Some(512);
+            limits.max_alloc = Some(MAX_THUMBNAIL_BYTES);
+            reader.limits(limits);
+            if reader.decode().is_ok() {
+                valid_ids.insert(id);
             }
         }
     }
 
-    Ok(readable_ids)
+    Ok(valid_ids)
 }
 
 fn save_images_batch_inner(
@@ -421,7 +441,7 @@ fn save_images_batch_inner(
     {
         use crate::metadata::CURRENT_PARSER_VERSION;
 
-        let readable_replacement_ids = readable_active_replacement_ids(&tx, images)?;
+        let valid_replacement_ids = valid_active_replacement_ids(&tx, images)?;
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
         let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
@@ -705,7 +725,7 @@ fn save_images_batch_inner(
                     img.invoke_image_origin,
                     img.invoke_owner_id,
                     CURRENT_PARSER_VERSION,
-                    i64::from(readable_replacement_ids.contains(&img.id))
+                    i64::from(valid_replacement_ids.contains(&img.id))
                 ])
                 .map_err(|e| e.to_string())?;
 
@@ -4817,7 +4837,9 @@ mod tests {
         let canonical_path = thumbnail_dir.join("img-rescan.webp");
         let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
         std::fs::write(&canonical_path, b"canonical").expect("write canonical thumbnail");
-        std::fs::write(&replacement_path, b"replacement").expect("write replacement thumbnail");
+        image::RgbaImage::from_pixel(512, 512, image::Rgba([255, 0, 0, 255]))
+            .save(&replacement_path)
+            .expect("write valid replacement thumbnail");
 
         let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
         repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
@@ -4840,6 +4862,50 @@ mod tests {
             )
             .expect("rescanned metadata");
         assert_eq!(metadata, r#"{"positivePrompt":"rescanned"}"#);
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
+    }
+
+    #[test]
+    fn save_images_batch_replaces_invalid_active_replacements_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-invalid-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 255, 0, 255]))
+            .save(&canonical_path)
+            .expect("write valid canonical thumbnail");
+        let valid_webp = std::fs::read(&canonical_path).expect("read valid thumbnail");
+
+        for invalid in [b"".as_slice(), b"not a WebP".as_slice(), &valid_webp[..20]] {
+            std::fs::write(&replacement_path, invalid).expect("write invalid replacement");
+            let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+            repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+            super::save_images_batch_inner(&conn, &[repaired])
+                .expect("save damaged replacement row");
+
+            let mut rescanned = create_image_record("img-rescan", 100, 200, "{}");
+            rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+            super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+            let row = fetch_thumbnail_state(&conn, "img-rescan");
+            assert_eq!(
+                row.0,
+                canonical_path.to_string_lossy(),
+                "invalid bytes: {invalid:?}"
+            );
+            assert_eq!(row.1.as_deref(), Some("ambit"));
+            assert_eq!(row.2, 1);
+        }
 
         std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
     }
