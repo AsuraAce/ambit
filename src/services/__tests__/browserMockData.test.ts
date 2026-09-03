@@ -307,11 +307,15 @@ describe('browserMockData filtering', () => {
 
     it('controls intermediate, grid, deleted, date, and collection visibility', () => {
         updateBrowserMockImage('mock_2', { isDeleted: true });
-        expect(searchBrowserMockImages(createDefaultFilters({ searchQuery: 'file:0002' }), 'date_desc', 10).totalCount).toBe(0);
+        expect(searchBrowserMockImages(createDefaultFilters({
+            searchQuery: 'file:0002', sourceKind: 'generated'
+        }), 'date_desc', 10).totalCount).toBe(0);
 
-        const hiddenGenerated = searchBrowserMockImages(createDefaultFilters({ searchQuery: 'file:0001' }), 'date_desc', 10);
+        const hiddenGenerated = searchBrowserMockImages(createDefaultFilters({
+            searchQuery: 'file:0001', sourceKind: 'generated'
+        }), 'date_desc', 10);
         const shownGenerated = searchBrowserMockImages(createDefaultFilters({
-            searchQuery: 'file:0001', showIntermediates: true, showGrids: true
+            searchQuery: 'file:0001', sourceKind: 'generated', showIntermediates: true, showGrids: true
         }), 'date_desc', 10);
         expect(hiddenGenerated.totalCount).toBe(0);
         expect(shownGenerated.totalCount).toBe(1);
@@ -388,6 +392,36 @@ describe('browserMockData filtering', () => {
         addBrowserMockImagesToCollection('missing-collection', ['mock_1']);
         removeBrowserMockImagesFromCollection('missing-collection', ['mock_1']);
         updateBrowserMockImage('missing-image', { notes: 'ignored' });
+        deleteBrowserMockCollection(id);
+    });
+
+    it('matches native image-kind override and disjunctive-count behavior for smart collections', () => {
+        const id = 'photo-smart-browser-test';
+        upsertBrowserMockCollection({
+            id,
+            name: 'Photo Smart Browser Test',
+            filters: createDefaultFilters({ sourceKind: 'photograph' }),
+            imageIds: [],
+        });
+
+        const overridden = searchBrowserMockImages(createDefaultFilters({
+            collectionId: id,
+            sourceKind: 'other',
+            showIntermediates: true,
+            showGrids: true,
+        }), 'date_desc', 1000);
+        expect(overridden.totalCount).toBeGreaterThan(0);
+        expect(overridden.images.every(image => image.sourceKind === 'other')).toBe(true);
+
+        const scoped = searchBrowserMockImages(createDefaultFilters({
+            collectionId: id,
+            showIntermediates: true,
+            showGrids: true,
+        }), 'date_desc', 1000);
+        expect(scoped.images.every(image => image.sourceKind === 'photograph')).toBe(true);
+        expect(scoped.sourceKindCounts.generated).toBeGreaterThan(0);
+        expect(scoped.sourceKindCounts.photograph).toBeGreaterThan(0);
+        expect(scoped.sourceKindCounts.other).toBeGreaterThan(0);
         deleteBrowserMockCollection(id);
     });
 

@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { Workflow } from 'lucide-react';
-import { AIImage, Collection, GeneratorTool } from '../../../types';
+import { AIImage, Collection, GeneratorTool, getEffectiveSourceKind, type SourceKind } from '../../../types';
 import { WorkflowInspector } from './WorkflowInspector';
 import { getFilename } from '../../../utils/pathUtils';
 import { formatModelName } from '../../../utils/formatUtils';
 import { MetadataInfoTab } from './metadata/MetadataInfoTab';
 import { MetadataEditTab } from './metadata/MetadataEditTab';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
+import { PhotoDetailsTab } from './metadata/PhotoDetailsTab';
 
 interface MetadataSidebarProps {
     image: AIImage;
@@ -29,6 +30,7 @@ interface MetadataSidebarProps {
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (id: string, tool: GeneratorTool) => void;
+    onSetImageKind?: (imageId: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
     onSetCollectionMembership: (imageId: string, colId: string, shouldBelong: boolean) => Promise<boolean>;
     onSearch: (term: string) => void;
     onClose: () => void;
@@ -65,6 +67,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
+    onSetImageKind,
     onSetCollectionMembership,
     onSearch,
     onClose,
@@ -79,6 +82,14 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
     isLoading,
     searchHighlights
 }) => {
+    const sourceKind = getEffectiveSourceKind(image);
+    const isGenerated = sourceKind === 'generated';
+    const capture = image.photoMetadata?.capturedAt;
+    const photoDate = capture?.local.replace(
+        /^(\d{4}):(\d{2}):(\d{2}) (\d{2}:\d{2}:\d{2})$/,
+        '$1-$2-$3 $4'
+    );
+
     return (
         <div className="w-[420px] flex flex-col h-full bg-white dark:bg-zinc-900/95 backdrop-blur-xl border-l border-gray-200 dark:border-white/10 shadow-2xl">
             {/* Header */}
@@ -88,11 +99,11 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-zinc-400 mt-3">
                     <span className="px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-800 border border-gray-300 dark:border-white/10 text-sage-700 dark:text-sage-200 font-mono">
-                        {image.metadata.tool}
+                        {isGenerated ? image.metadata.tool : sourceKind === 'photograph' ? 'Photo' : 'Other'}
                     </span>
 
                     {/* Second Pill: Model Name or Hash */}
-                    {(image.metadata.overrideModel || image.metadata.model !== 'Unknown' || image.metadata.modelHash) && (
+                    {isGenerated && (image.metadata.overrideModel || image.metadata.model !== 'Unknown' || image.metadata.modelHash) && (
                         <span
                             className="px-2 py-0.5 rounded bg-gray-200 dark:bg-zinc-800 border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 font-mono truncate max-w-[200px]"
                             title={image.metadata.overrideModel || image.metadata.model !== 'Unknown' ? (image.metadata.overrideModel || image.metadata.model) : image.metadata.modelHash}
@@ -103,8 +114,14 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         </span>
                     )}
 
+                    {!isGenerated && image.photoMetadata?.cameraModel && (
+                        <span className="max-w-[200px] truncate rounded border border-gray-200 bg-gray-200 px-2 py-0.5 font-mono text-gray-600 dark:border-white/10 dark:bg-zinc-800 dark:text-gray-300">
+                            {image.photoMetadata.cameraModel}
+                        </span>
+                    )}
+
                     <span className="font-mono text-gray-400">•</span>
-                    <span>{new Date(image.timestamp).toLocaleDateString()}</span>
+                    <span>{sourceKind === 'photograph' && photoDate ? `${photoDate}${capture?.offset ? ` ${capture.offset}` : ''}` : new Date(image.timestamp).toLocaleDateString()}</span>
                     <span className="font-mono text-gray-400">•</span>
                     <span>{image.width}x{image.height}</span>
                 </div>
@@ -113,7 +130,9 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             {/* Tabs */}
             <div className="flex border-b border-gray-200 dark:border-white/5 shrink-0 bg-white dark:bg-zinc-900 p-2 gap-2">
                 {(['info', 'edit', 'workflow'] as const).map(tab => (
-                    (tab !== 'workflow' || image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false) && (
+                    (isGenerated
+                        ? tab !== 'workflow' || image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false
+                        : tab !== 'workflow') && (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -122,7 +141,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                             {tab === 'workflow' && (
                                 <Workflow className="w-3 h-3" />
                             )}
-                            {tab}
+                            {!isGenerated && tab === 'info' ? 'details' : !isGenerated && tab === 'edit' ? 'library' : tab}
                         </button>
                     )
                 ))}
@@ -131,7 +150,7 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
             {/* Content using new components */}
             <div className="flex-1 flex flex-col min-h-0 bg-gray-50/50 dark:bg-zinc-900/50 relative">
 
-                {activeTab === 'info' && (
+                {activeTab === 'info' && isGenerated && (
                     <MetadataInfoTab
                         image={image}
                         promptValue={promptValue}
@@ -154,6 +173,8 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                     />
                 )}
 
+                {activeTab === 'info' && !isGenerated && <PhotoDetailsTab image={image} />}
+
                 {activeTab === 'edit' && (
                     <MetadataEditTab
                         image={image}
@@ -169,10 +190,12 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
                         onUpdatePrompt={onUpdatePrompt}
                         onUpdateNegativePrompt={onUpdateNegativePrompt}
                         onUpdateNotes={onUpdateNotes}
+                        onSetImageKind={onSetImageKind}
+                        showGenerationFields={isGenerated}
                     />
                 )}
 
-                {activeTab === 'workflow' && <WorkflowInspector image={image} />}
+                {activeTab === 'workflow' && isGenerated && <WorkflowInspector image={image} />}
 
             </div>
         </div>

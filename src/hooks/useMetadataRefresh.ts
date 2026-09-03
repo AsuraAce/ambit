@@ -195,7 +195,8 @@ export function useMetadataRefresh() {
             const result = await invoke<RefreshResult>('start_reparse_job', {
                 forceReparse: false,
                 filterRoot: null,
-                filterTool: filterTool || null
+                filterTool: filterTool || null,
+                refreshPhotoMetadata: false
             });
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately
@@ -251,7 +252,8 @@ export function useMetadataRefresh() {
             const result = await invoke<RefreshResult>('start_reparse_job', {
                 forceReparse: force,
                 filterRoot: rootPath || null,
-                filterTool: filterTool || null
+                filterTool: filterTool || null,
+                refreshPhotoMetadata: !filterTool
             });
             console.log('[Refresh] Job returned:', result);
             // Safety reset in case events are missed or job returns immediately

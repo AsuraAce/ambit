@@ -1,4 +1,4 @@
-import { ImageMetadata, GeneratorTool, ParseResult, AIImage } from '../types';
+import { ImageMetadata, GeneratorTool, ParseResult, AIImage, type SourceKind } from '../types';
 import { commands, ScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { getFilename } from '../utils/pathUtils';
@@ -42,6 +42,24 @@ const toWorkerInput = (value: unknown): WorkerInput => {
         buffer: value.buffer instanceof Uint8Array ? value.buffer : undefined
     };
 };
+
+const hasGeneratedEvidence = (metadata: Partial<ImageMetadata>): boolean =>
+    (!!metadata.tool && metadata.tool !== GeneratorTool.UNKNOWN)
+    || !!metadata.workflowJson
+    || !!metadata.positivePrompt;
+
+const scanOrigin = (
+    info: ScanResult,
+    metadata?: Partial<ImageMetadata>
+): Pick<ParseResult, 'detectedSourceKind' | 'photoMetadata' | 'photoMetadataError' | 'captureWallTimeMs' | 'thumbnailVersion'> => ({
+    detectedSourceKind: metadata && hasGeneratedEvidence(metadata)
+        ? 'generated'
+        : info.detectedSourceKind as SourceKind,
+    photoMetadata: info.photoMetadata ?? undefined,
+    photoMetadataError: info.photoMetadataError ?? undefined,
+    captureWallTimeMs: info.captureWallTimeMs ?? undefined,
+    thumbnailVersion: info.thumbnailVersion
+});
 
 // Helper to wrap worker messaging in a Promise
 const parseInWorker = (chunks: unknown, filename: string, path?: string, defaultTool?: GeneratorTool): Promise<{ metadata: Partial<ImageMetadata>, extra: WorkerExtra, isIntermediate?: boolean }> => {
@@ -128,6 +146,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
     if (info.width === 0 && info.height === 0 && !info.metadata) {
         if (!process.env.TEST) console.warn(`Scan returned empty result for ${path}`);
         return {
+            ...scanOrigin(info),
             metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
             extra: {},
             width: 0,
@@ -142,6 +161,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
     // Fast Path: If Rust successfully parsed metadata (e.g. InvokeAI), use it directly.
     if (info.metadata) {
         return {
+            ...scanOrigin(info, info.metadata as Partial<ImageMetadata>),
             metadata: info.metadata as Partial<ImageMetadata>,
             extra: {},
             isIntermediate: info.metadata.isIntermediate,
@@ -172,6 +192,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
             workerMs: elapsedMs(workerStartedAt)
         });
         return {
+            ...scanOrigin(info, metadata),
             metadata: {
                 ...metadata,
                 isIntermediate: finalIsIntermediate,
@@ -197,6 +218,7 @@ const processScanResult = async (info: ScanResult, path: string, defaultTool?: G
         });
         console.error(`Worker parse failed/timed out for ${path}:`, workerError);
         return {
+            ...scanOrigin(info),
             metadata: { tool: GeneratorTool.UNKNOWN, model: 'Unknown' },
             extra: {},
             width: info.width,

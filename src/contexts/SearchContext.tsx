@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope } from '../types';
+import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope, type ImageKindFilter, type SourceKindCounts } from '../types';
 import { useSettings } from './SettingsContext';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { useCollections } from './CollectionContext';
@@ -23,7 +23,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
-import { shouldPrefetchResultPages } from '../utils/filterState';
+import { normalizeImageKindFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
@@ -44,6 +44,7 @@ interface SearchContextType {
     stats: LibraryStats;
     totalImages: number; // This is the MATCHING count
     globalTotal: number; // Total non-deleted images in library
+    sourceKindCounts?: SourceKindCounts;
     hasMoreImages: boolean;
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
@@ -123,6 +124,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const requiresPrivacyMaskIndex = privacyEnabled && !isBrowserMockMode();
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
+    const [sourceKindHydrated, setSourceKindHydrated] = useState(false);
+    const sourceKindHydrationTargetRef = useRef<ImageKindFilter | null>(null);
 
     const setSortOptionDispatch = useCallback((value: React.SetStateAction<SortOption>) => {
         const nextSortOption = typeof value === 'function'
@@ -192,7 +195,20 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         settingsLoaded,
     ]);
 
+    useEffect(() => {
+        if (!settingsLoaded || sourceKindHydrated) return;
+
+        const sourceKind = normalizeImageKindFilter(settings.librarySourceKind);
+        const currentSourceKind = normalizeImageKindFilter(filters.sourceKind);
+        sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind ? null : sourceKind;
+        if (currentSourceKind !== sourceKind) {
+            setFilters(previous => ({ ...previous, sourceKind }));
+        }
+        setSourceKindHydrated(true);
+    }, [filters.sourceKind, setFilters, settings.librarySourceKind, settingsLoaded, sourceKindHydrated]);
+
     const databaseQueriesEnabled = settingsLoaded
+        && sourceKindHydrated
         && collectionsLoaded
         && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
     const allCollections = React.useMemo(
@@ -264,6 +280,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const totalImagesCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
+    const firstPageSourceKindCounts = (queryData?.pages[0] as { sourceKindCounts?: SourceKindCounts } | undefined)?.sourceKindCounts;
+    const sourceKindCounts: SourceKindCounts = privacyExposureBlocked
+        ? { all: 0, generated: 0, photograph: 0, other: 0 }
+        : firstPageSourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 };
 
     // Stats & Facets Query
     const {
@@ -518,6 +538,20 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters.showGrids, filters.showIntermediates, setSettings, settings.libraryShowIntermediates, viewSettingsHydrated]);
 
+    // Persist the top-level library scope after its saved value has hydrated.
+    useEffect(() => {
+        if (!sourceKindHydrated) return;
+
+        const sourceKind = normalizeImageKindFilter(filters.sourceKind);
+        const hydrationTarget = sourceKindHydrationTargetRef.current;
+        if (hydrationTarget !== null && sourceKind !== hydrationTarget) return;
+
+        sourceKindHydrationTargetRef.current = null;
+        if (normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind) {
+            setSettings({ librarySourceKind: sourceKind });
+        }
+    }, [filters.sourceKind, setSettings, settings.librarySourceKind, sourceKindHydrated]);
+
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
         if (privacyExposureBlocked) return;
@@ -546,6 +580,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             stats: activeStats,
             totalImages: totalImagesCount,
             globalTotal: globalTotalCount,
+            sourceKindCounts,
             hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
             loadMoreImages: async () => {
                 if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {

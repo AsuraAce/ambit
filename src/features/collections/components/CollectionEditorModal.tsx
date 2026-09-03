@@ -70,6 +70,8 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 next.favoritesOnly = false;
             } else if (key === 'searchQuery') {
                 next.searchQuery = '';
+            } else if (key === 'sourceKind') {
+                next.sourceKind = 'all';
             } else if (key === 'minSteps') {
                 next.minSteps = undefined;
                 next.maxSteps = undefined;
@@ -94,6 +96,19 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                     <span className="font-semibold text-gray-500">Query:</span>
                     <span className="truncate max-w-[150px]">"{draftFilters.searchQuery}"</span>
                     <button type="button" aria-label="Remove Search Query Rule" onClick={() => removeFilter('searchQuery', null)} className="hover:text-red-500"><X className="w-3 h-3" /></button>
+                </div>
+            );
+        }
+
+        if ((draftFilters.sourceKind ?? 'all') !== 'all') {
+            const sourceKindLabel = draftFilters.sourceKind === 'photograph'
+                ? 'Photos'
+                : draftFilters.sourceKind === 'generated' ? 'Generated' : 'Other';
+            chips.push(
+                <div key="source-kind" className="flex items-center gap-1 rounded-md border border-sage-200 bg-sage-100 px-2 py-1 text-xs text-sage-700 dark:border-sage-500/30 dark:bg-sage-500/20 dark:text-sage-200">
+                    <span className="font-semibold">Image kind:</span>
+                    <span>{sourceKindLabel}</span>
+                    <button type="button" aria-label="Remove Image Kind Rule" onClick={() => removeFilter('sourceKind', null)} className="hover:opacity-70"><X className="h-3 w-3" /></button>
                 </div>
             );
         }

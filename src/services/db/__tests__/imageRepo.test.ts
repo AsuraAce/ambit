@@ -275,6 +275,10 @@ describe('imageRepo batch removal', () => {
             boardId: undefined,
             groupId: undefined,
             notes: 'note',
+            detectedSourceKind: 'generated',
+            sourceKindOverride: undefined,
+            photoMetadata: undefined,
+            captureWallTimeMs: undefined,
         });
         expect(existingMetadata.has('missing-source')).toBe(false);
 
@@ -640,7 +644,7 @@ describe('imageRepo batch removal', () => {
                 if (sql.includes('INSERT OR REPLACE INTO removed_images')) {
                     removedRows.set(params[0] as string, {
                         id: params[0] as string,
-                        collectionIdsJson: (params[22] as string | null) ?? null,
+                        collectionIdsJson: (params[30] as string | null) ?? null,
                     });
                     return;
                 }
@@ -1124,7 +1128,7 @@ describe('imageRepo batch removal', () => {
         expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ?');
         expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ?');
         expect(sqlCalls).toContain('INSERT OR IGNORE INTO collection_images (collection_id, image_id) VALUES (?, ?)');
-        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?');
+        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?');
     });
 
     it('returns without touching metadata when revert has no source row', async () => {
@@ -1245,6 +1249,19 @@ describe('imageRepo batch removal', () => {
                 thumbnail_path: null,
                 micro_thumbnail: null,
                 thumbnail_source: null,
+                thumbnail_version: 0,
+                detected_source_kind: 'photograph',
+                source_kind_override: 'other',
+                source_kind: 'other',
+                photo_metadata_json: JSON.stringify({
+                    capturedAt: null,
+                    captureTimeRaw: null,
+                    cameraMake: 'Test Camera Co',
+                    cameraModel: 'Camera One',
+                }),
+                capture_wall_time_ms: 1699999999000,
+                display_timestamp: 1700000000000,
+                photo_refresh_version: 0,
                 is_favorite: 0,
                 is_pinned: 0,
                 is_deleted: 0,
@@ -1269,6 +1286,19 @@ describe('imageRepo batch removal', () => {
         await restoreRemovedImages(['C:/removed/restore.png']);
 
         expect(commands.saveImagesBatch).toHaveBeenCalledTimes(1);
+        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                detectedSourceKind: 'photograph',
+                sourceKindOverride: 'other',
+                photoMetadata: expect.objectContaining({ cameraModel: 'Camera One' }),
+                captureWallTimeMs: 1699999999000,
+                thumbnailVersion: 0,
+            })
+        ]);
+        expect(db.execute).toHaveBeenCalledWith(
+            'UPDATE images SET photo_refresh_version = ? WHERE id = ?',
+            [0, 'C:/removed/restore.png']
+        );
         expect(db.execute).toHaveBeenCalledWith(
             expect.stringContaining('INSERT OR IGNORE INTO collection_images'),
             ['collection-a', 'C:/removed/restore.png', 'collection-a']
@@ -1670,7 +1700,8 @@ describe('imageRepo batch removal', () => {
         const row = {
             id: 'C:/member.png', path: 'C:/member.png', width: 1, height: 1, file_size: 1,
             timestamp: 1, metadata_json: '{}', thumbnail_path: null, micro_thumbnail: null,
-            thumbnail_source: null, is_favorite: 0, is_pinned: 0, is_missing: 0, user_masked: null,
+            thumbnail_source: null, photo_refresh_version: 1,
+            is_favorite: 0, is_pinned: 0, is_missing: 0, user_masked: null,
             group_id: null, board_id: null, notes: null, original_metadata_json: null,
             original_parsed_json: null, original_state_json: null, is_corrupt: 0
         };
@@ -1697,6 +1728,7 @@ describe('imageRepo batch removal', () => {
         const { removeImagesFromLibrary, deleteRemovedImagesFromDisk } = await import('../imageRepo');
         await removeImagesFromLibrary([row.id]);
         const tombstoneInsert = db.execute.mock.calls.find(([sql]) => String(sql).includes('INSERT OR REPLACE INTO removed_images'));
+        expect(tombstoneInsert?.[1]?.[17]).toBe(1);
         expect(tombstoneInsert?.[1]).toContain(JSON.stringify(['one', 'two']));
 
         const result = await deleteRemovedImagesFromDisk([row.id]);

@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import {
-    Layout, Search, Check, Plus, FileText, ClipboardList, AlertCircle, Save, Code
+    Layout, Search, Check, Plus, FileText, ClipboardList, AlertCircle, Save, Code, ImageIcon
 } from 'lucide-react';
-import { AIImage, GeneratorTool, Collection } from '../../../../types';
+import { AIImage, GeneratorTool, Collection, getDetectedSourceKind, type SourceKind } from '../../../../types';
 import { getCollectionsForImage } from '../../../../services/db/collectionRepo';
 import { TooltipButton } from '../../../../components/ui/InfoTooltip';
 
@@ -22,6 +22,8 @@ interface MetadataEditTabProps {
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
+    onSetImageKind?: (imageId: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
+    showGenerationFields?: boolean;
 }
 
 type MembershipLoadState = {
@@ -68,7 +70,9 @@ export const MetadataEditTab = ({
     onSetCollectionMembership,
     onUpdatePrompt,
     onUpdateNegativePrompt,
-    onUpdateNotes
+    onUpdateNotes,
+    onSetImageKind,
+    showGenerationFields = true
 }: MetadataEditTabProps) => {
     // Local State
     const [collectionQuery, setCollectionQuery] = useState('');
@@ -104,6 +108,8 @@ export const MetadataEditTab = ({
     const [isNotesDirty, setIsNotesDirty] = useState(false);
     const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
     const [notesSuggestions, setNotesSuggestions] = useState<string[]>([]);
+    const [isKindSaving, setIsKindSaving] = useState(false);
+    const detectedSourceKind = getDetectedSourceKind(image);
 
     // Fetch collections for this image on demand
     useEffect(() => {
@@ -172,6 +178,50 @@ export const MetadataEditTab = ({
 
     return (
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 animate-in fade-in slide-in-from-right-4 duration-300 pb-10">
+            {onSetImageKind && (
+                <fieldset className="mb-6" disabled={isKindSaving}>
+                    <legend className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
+                        <ImageIcon className="h-4 w-4 text-sage-500" />
+                        Image Kind
+                    </legend>
+                    <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Image kind">
+                        {([
+                            { value: null, label: `Automatic (${detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})` },
+                            { value: 'generated' as const, label: 'Generated' },
+                            { value: 'photograph' as const, label: 'Photo' },
+                            { value: 'other' as const, label: 'Other' },
+                        ]).map(option => {
+                            const checked = option.value === null
+                                ? image.sourceKindOverride === undefined
+                                : image.sourceKindOverride === option.value;
+                            return (
+                                <button
+                                    key={option.value ?? 'automatic'}
+                                    type="button"
+                                    role="radio"
+                                    aria-checked={checked}
+                                    disabled={isKindSaving}
+                                    onClick={async () => {
+                                        setIsKindSaving(true);
+                                        try {
+                                            await onSetImageKind(image.id, option.value);
+                                        } finally {
+                                            setIsKindSaving(false);
+                                        }
+                                    }}
+                                    className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 disabled:opacity-60 ${checked ? 'border-sage-400 bg-sage-50 text-sage-800 dark:border-sage-500/60 dark:bg-sage-900/20 dark:text-sage-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-zinc-800/50 dark:text-gray-300 dark:hover:bg-white/5'}`}
+                                >
+                                    {option.label}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-gray-400">
+                        Automatic follows metadata detection. A manual choice is preserved when the image is rescanned.
+                    </p>
+                </fieldset>
+            )}
+
             {/* Collections */}
             <div className="mb-6">
                 <div className="flex items-center justify-between mb-3">
@@ -285,7 +335,7 @@ export const MetadataEditTab = ({
             </div>
 
             {/* Edit Prompt */}
-            <div className="mb-6">
+            {showGenerationFields && <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2"><FileText className="w-3 h-3 text-sage-500" /><h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Positive Prompt</h3></div>
                     <div className="flex items-center gap-2">
@@ -377,10 +427,10 @@ export const MetadataEditTab = ({
                         </div>
                     )}
                 </div>
-            </div>
+            </div>}
 
             {/* Edit Negative Prompt */}
-            <div className="mb-6">
+            {showGenerationFields && <div className="mb-6">
                 <div className="flex items-center gap-2 mb-2"><FileText className="w-3 h-3 text-red-400" /><h3 className="text-xs font-bold uppercase text-gray-500 tracking-wider">Negative Prompt</h3></div>
                 <div className="relative">
                     <textarea
@@ -392,7 +442,7 @@ export const MetadataEditTab = ({
                     />
                     {isNegativePromptDirty && <div className="absolute bottom-2 right-2 text-[10px] text-amber-600 font-bold bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full flex items-center gap-1"><AlertCircle className="w-3 h-3" /> Unsaved</div>}
                 </div>
-            </div>
+            </div>}
 
             {/* Notes */}
             <div>

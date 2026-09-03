@@ -199,6 +199,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         images,
         totalImages,
         globalTotal,
+        sourceKindCounts,
         isFiltering,
         clearAllFilters,
         toggleFavorite,
@@ -374,6 +375,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     displayedCount={totalImages}
                     totalCount={scopeTotal}
                     scopeName={scopeName}
+                    sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
                     isFiltering={isSearchPending}
                     onSearchDraftPendingChange={setIsSearchDraftPending}
                     onImport={onOpenImportModal}
@@ -548,6 +550,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     onToggleFavorite={actions.handleBulkFavorite}
                     onTogglePin={actions.handleBulkPin}
                     onToggleMask={actions.handleBulkMask}
+                    onSetImageKind={(sourceKindOverride) => actions.handleSetImageSourceKind(Array.from(selectedIds), sourceKindOverride)}
                     onCompare={() => modals.openModal('compare')}
                     activeCollectionId={filters.collectionId}
                     onRemoveFromCollection={handleRemoveFromCollection}

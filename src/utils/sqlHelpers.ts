@@ -1,5 +1,6 @@
 import { FilterState, AppSettings, Collection } from '../types';
-import { getDateFilterBounds, getSearchDateBounds } from './dateFilters';
+import { getDateFilterBounds, getSearchDateBounds, type DateFilterBounds } from './dateFilters';
+import { toPhotoWallTimeBounds } from './imageDates';
 
 type SqlParam = string | number;
 
@@ -14,6 +15,26 @@ interface SearchCondition {
     params: SqlParam[];
     isPositivePrompt: boolean;
 }
+
+const buildEffectiveDateConditions = (bounds: DateFilterBounds): { conditions: string[]; params: SqlParam[] } => {
+    const wallBounds = toPhotoWallTimeBounds(bounds);
+    const conditions: string[] = [];
+    const params: SqlParam[] = [];
+
+    const appendBound = (operator: '>=' | '<', epochValue?: number, wallValue?: number) => {
+        if (epochValue === undefined || wallValue === undefined) return;
+        conditions.push(`(
+            (source_kind = 'photograph' AND capture_wall_time_ms IS NOT NULL AND display_timestamp ${operator} ?)
+            OR
+            ((source_kind != 'photograph' OR capture_wall_time_ms IS NULL) AND display_timestamp ${operator} ?)
+        )`);
+        params.push(wallValue, epochValue);
+    };
+
+    appendBound('>=', bounds.start, wallBounds.start);
+    appendBound('<', bounds.end, wallBounds.end);
+    return { conditions, params };
+};
 
 type AssetAliasFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
 
@@ -124,17 +145,7 @@ const parseSearchToken = (token: SearchToken): SearchCondition | null => {
 
         const dateBounds = getSearchDateBounds(key, val);
         if (dateBounds) {
-            const dateConditions: string[] = [];
-            const dateParams: SqlParam[] = [];
-
-            if (dateBounds.start !== undefined) {
-                dateConditions.push('timestamp >= ?');
-                dateParams.push(dateBounds.start);
-            }
-            if (dateBounds.end !== undefined) {
-                dateConditions.push('timestamp < ?');
-                dateParams.push(dateBounds.end);
-            }
+            const { conditions: dateConditions, params: dateParams } = buildEffectiveDateConditions(dateBounds);
 
             return {
                 sql: token.isNegative
@@ -322,6 +333,9 @@ export const buildSqlWhereClause = (
                 effectiveSmartFilters.dateFrom = undefined;
                 effectiveSmartFilters.dateTo = undefined;
             }
+            if ((filters.sourceKind ?? 'all') !== 'all') {
+                effectiveSmartFilters.sourceKind = 'all';
+            }
 
             const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
                 effectiveSmartFilters,
@@ -329,7 +343,8 @@ export const buildSqlWhereClause = (
                 'blur',
                 [],
                 [],
-                true
+                true,
+                excludeCategories.includes('sourceKind') ? ['sourceKind'] : []
             );
 
             if (smartWhere) {
@@ -360,6 +375,11 @@ export const buildSqlWhereClause = (
     // 4. Pinned Only
     if (filters.pinnedOnly) {
         conditions.push('is_pinned = 1');
+    }
+
+    if ((filters.sourceKind ?? 'all') !== 'all' && !excludeCategories.includes('sourceKind')) {
+        conditions.push('source_kind = ?');
+        params.push(filters.sourceKind as string);
     }
 
     // 5. Models (Array)
@@ -492,14 +512,9 @@ export const buildSqlWhereClause = (
 
     // 11. Date Range
     const dateBounds = getDateFilterBounds(filters);
-    if (dateBounds.start !== undefined) {
-        conditions.push('timestamp >= ?');
-        params.push(dateBounds.start);
-    }
-    if (dateBounds.end !== undefined) {
-        conditions.push('timestamp < ?');
-        params.push(dateBounds.end);
-    }
+    const effectiveDateBounds = buildEffectiveDateConditions(dateBounds);
+    conditions.push(...effectiveDateBounds.conditions);
+    params.push(...effectiveDateBounds.params);
 
     const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';
 

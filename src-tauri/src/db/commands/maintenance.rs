@@ -230,14 +230,20 @@ fn persist_removed_duplicate(
         .execute(
             "INSERT OR REPLACE INTO removed_images (
                 id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
-                micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
+                micro_thumbnail, thumbnail_source, thumbnail_version,
+                detected_source_kind, source_kind_override, source_kind, photo_metadata_json,
+                capture_wall_time_ms, display_timestamp, photo_refresh_version,
+                is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, removed_at,
                 collection_ids_json
              )
              SELECT
                 id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path,
-                micro_thumbnail, thumbnail_source, is_favorite, is_pinned, is_missing,
+                micro_thumbnail, thumbnail_source, thumbnail_version,
+                detected_source_kind, source_kind_override, source_kind, photo_metadata_json,
+                capture_wall_time_ms, display_timestamp, photo_refresh_version,
+                is_favorite, is_pinned, is_missing,
                 user_masked, group_id, board_id, notes, original_metadata_json,
                 original_parsed_json, original_state_json, is_corrupt, ?2,
                 CASE
@@ -852,6 +858,20 @@ mod tests {
             Some("removed-board"),
             Some("removed notes"),
         );
+        conn.execute(
+            "UPDATE images
+             SET thumbnail_version = 2,
+                 detected_source_kind = 'photograph',
+                 source_kind_override = 'other',
+                 source_kind = 'other',
+                 photo_metadata_json = '{\"cameraModel\":\"Camera One\",\"orientation\":6}',
+                 capture_wall_time_ms = 123456,
+                 display_timestamp = 1000,
+                 photo_refresh_version = 1
+             WHERE id = 'favorite-copy'",
+            [],
+        )
+        .expect("seed photography state");
         seed_image(
             &conn,
             "pinned-copy",
@@ -954,18 +974,60 @@ mod tests {
             .unwrap();
         assert_eq!(custom_thumbnail, "keeper");
 
-        let removed: (String, Option<String>, Option<String>, String) = conn
+        let removed: (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            i64,
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+            Option<i64>,
+            i64,
+            i64,
+        ) = conn
             .query_row(
-                "SELECT metadata_json, board_id, notes, collection_ids_json
+                "SELECT metadata_json, board_id, notes, collection_ids_json,
+                        thumbnail_version, detected_source_kind, source_kind_override,
+                        source_kind, photo_metadata_json, capture_wall_time_ms,
+                        display_timestamp, photo_refresh_version
                  FROM removed_images WHERE id = 'favorite-copy'",
                 [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                        row.get(11)?,
+                    ))
+                },
             )
             .expect("removed state");
         assert_eq!(removed.0, r#"{"positivePrompt":"removed metadata"}"#);
         assert_eq!(removed.1.as_deref(), Some("removed-board"));
         assert_eq!(removed.2.as_deref(), Some("removed notes"));
         assert_eq!(removed.3, r#"["favorite-collection"]"#);
+        assert_eq!(removed.4, 2);
+        assert_eq!(removed.5, "photograph");
+        assert_eq!(removed.6.as_deref(), Some("other"));
+        assert_eq!(removed.7, "other");
+        assert_eq!(
+            removed.8.as_deref(),
+            Some(r#"{"cameraModel":"Camera One","orientation":6}"#)
+        );
+        assert_eq!(removed.9, Some(123_456));
+        assert_eq!(removed.10, 1000);
+        assert_eq!(removed.11, 1);
         let active_removed_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM images WHERE id IN ('favorite-copy', 'pinned-copy')",

@@ -68,6 +68,11 @@ const scanResult = (overrides: Record<string, unknown> = {}) => ({
     thumbnail: 'C:/thumbs/a.webp',
     microThumbnail: 'data:image/webp;base64,abc',
     thumbnailSource: 'ambit',
+    thumbnailVersion: 2,
+    detectedSourceKind: 'generated',
+    photoMetadata: null,
+    photoMetadataError: null,
+    captureWallTimeMs: null,
     chunks: { parameters: 'prompt' },
     metadata: null,
     error: null,
@@ -110,6 +115,37 @@ describe('metadataParser', () => {
         expect(result.metadata).toBe(metadata);
         expect(result.isIntermediate).toBe(true);
         expect(mocks.workerMessages).toEqual([]);
+    });
+
+    it('keeps native photo metadata and its diagnostic separate from hard scan errors', async () => {
+        const photoMetadata = {
+            capturedAt: { local: '2026:07:29 14:15:16', offset: null, subsecond: null },
+            captureTimeRaw: '2026:07:29 14:15:16',
+            cameraMake: 'Test Camera Co', cameraModel: 'Camera One',
+            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
+            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: 6,
+            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+        };
+        mocks.commands.scanImage.mockResolvedValue({
+            status: 'ok',
+            data: scanResult({
+                chunks: {},
+                detectedSourceKind: 'photograph',
+                photoMetadata,
+                photoMetadataError: 'partial EXIF warning',
+                captureWallTimeMs: 1700000000123,
+            }),
+        });
+        mocks.workerResponses.push({ metadata: {}, extra: {} });
+
+        const { scanImageNative } = await import('../metadataParser');
+        const result = await scanImageNative('C:/images/photo.jpg');
+
+        expect(result.detectedSourceKind).toBe('photograph');
+        expect(result.photoMetadata).toEqual(photoMetadata);
+        expect(result.photoMetadataError).toBe('partial EXIF warning');
+        expect(result.captureWallTimeMs).toBe(1700000000123);
+        expect(result.errorReason).toBeUndefined();
     });
 
     it('returns a structured error result for empty bulk-scan placeholders', async () => {

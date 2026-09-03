@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Pin } from 'lucide-react';
-import { AIImage, GeneratorTool } from '../../../types';
+import { AIImage, GeneratorTool, getEffectiveSourceKind, type SourceKind } from '../../../types';
 import { useZoomPan } from '../../../hooks/useZoomPan';
 import { ImageCanvas } from './ImageCanvas';
 import { MetadataSidebar } from './MetadataSidebar';
@@ -35,6 +35,7 @@ interface ImageViewerProps {
     onUpdateNegativePrompt?: (imageId: string, negativePrompt: string) => void;
     onUpdateModel?: (imageId: string, newModel: string) => void;
     onUpdateTool?: (imageId: string, tool: GeneratorTool) => void;
+    onSetImageKind?: (imageId: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
     onToggleFavorite: (id: string) => void;
     onTogglePin?: (id: string, isPinned: boolean) => void;
     onRecoverMetadata?: () => void;
@@ -117,6 +118,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     onUpdateNegativePrompt,
     onUpdateModel,
     onUpdateTool,
+    onSetImageKind,
     onToggleFavorite,
     onTogglePin,
     onRecoverMetadata,
@@ -193,6 +195,17 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
             originalMetadata: image.originalMetadata ?? fullImage.originalMetadata,
             originalChunks: image.originalChunks ?? fullImage.originalChunks,
             originalState: image.originalState ?? fullImage.originalState,
+            photoMetadata: image.photoMetadata ?? fullImage.photoMetadata,
+            captureWallTimeMs: image.captureWallTimeMs ?? fullImage.captureWallTimeMs,
+            // These scalar fields are present in current lightweight rows.
+            // Preserve legacy callers that omit them, while keeping an own
+            // undefined override authoritative after Automatic is restored.
+            sourceKindOverride: 'sourceKindOverride' in image
+                ? image.sourceKindOverride
+                : fullImage.sourceKindOverride,
+            detectedSourceKind: image.detectedSourceKind ?? fullImage.detectedSourceKind,
+            sourceKind: image.sourceKind ?? fullImage.sourceKind,
+            displayTimestamp: image.displayTimestamp ?? fullImage.displayTimestamp,
         } : image;
 
         if (!activeVersionId) return base;
@@ -221,6 +234,12 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showStatusHud, setShowStatusHud] = useState(true);
+
+    useEffect(() => {
+        if (getEffectiveSourceKind(displayImage) !== 'generated' && activeTab === 'workflow') {
+            setActiveTab('info');
+        }
+    }, [activeTab, displayImage]);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const statusHudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -457,6 +476,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                     onUpdateNegativePrompt={(id, np) => onUpdateNegativePrompt?.(id, np)}
                     onUpdateModel={(id, m) => onUpdateModel?.(id, m)}
                     onUpdateTool={(id, t) => onUpdateTool?.(id, t)}
+                    onSetImageKind={onSetImageKind}
                     onSetCollectionMembership={onSetCollectionMembership}
                     onSearch={onSearch}
                     onClose={onClose}

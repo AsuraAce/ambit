@@ -70,12 +70,25 @@ pub fn scan_image_internal(
         })
         .unwrap_or(0);
 
+    let (photo_metadata, photo_metadata_error) =
+        match metadata::photo::probe_photo_metadata(&path_buf) {
+            Ok(value) => (value, None),
+            Err(error) => {
+                log::warn!("[Scan] Photo metadata probe failed for {}: {}", path, error);
+                (None, Some(error.to_string()))
+            }
+        };
+    let capture_wall_time_ms = photo_metadata
+        .as_ref()
+        .and_then(metadata::photo::PhotoMetadata::capture_wall_time_ms);
+
     // Try to read dimensions - if this fails, we may still be able to return a cached thumbnail
     // Optimization: When generating a thumbnail, we capture dimensions from that decode,
     // avoiding a second file open.
 
     let mut generated_thumbnail_path = String::new();
     let mut generated_micro_thumbnail: Option<String> = None;
+    let mut generated_thumbnail_version = 0;
     let mut dimensions: (u32, u32) = (0, 0);
     let mut thumbnail_error: Option<String> = None;
 
@@ -94,6 +107,7 @@ pub fn scan_image_internal(
                     Ok(result) => {
                         generated_thumbnail_path = result.thumbnail_path;
                         generated_micro_thumbnail = result.micro_thumbnail;
+                        generated_thumbnail_version = crate::thumb::CURRENT_THUMBNAIL_VERSION;
 
                         // Use dimensions from thumbnail generation (avoids second file open)
                         if let Some(dims) = result.original_dimensions {
@@ -118,7 +132,10 @@ pub fn scan_image_internal(
             .and_then(|r| r.into_dimensions().map_err(|e| e.to_string()));
 
         dimensions = match dimensions_result {
-            Ok(dims) => dims,
+            Ok(dims) => crate::thumb::oriented_dimensions(
+                dims,
+                photo_metadata.as_ref().and_then(|photo| photo.orientation),
+            ),
             Err(e) => {
                 // If we have a thumbnail, return a partial result instead of failing completely
                 if !generated_thumbnail_path.is_empty() {
@@ -130,6 +147,14 @@ pub fn scan_image_internal(
                         thumbnail: generated_thumbnail_path,
                         micro_thumbnail: generated_micro_thumbnail,
                         thumbnail_source: Some("ambit".to_string()),
+                        thumbnail_version: generated_thumbnail_version,
+                        detected_source_kind: metadata::photo::classify_source_kind(
+                            false,
+                            photo_metadata.as_ref(),
+                        ),
+                        photo_metadata,
+                        photo_metadata_error,
+                        capture_wall_time_ms,
                         chunks: HashMap::new(),
                         metadata: None,
                         error: Some(format!("Failed to read image dimensions: {}", e)),
@@ -145,6 +170,9 @@ pub fn scan_image_internal(
 
     let mut parsed_metadata = metadata::ImageMetadata::default();
     let mut found_metadata = false;
+    let mut has_generated_evidence = default_tool
+        .as_deref()
+        .is_some_and(|tool| !tool.trim().is_empty() && !tool.eq_ignore_ascii_case("unknown"));
 
     // 1. A1111/Forge (Compatibility)
     if let Some(params) = chunks
@@ -154,6 +182,7 @@ pub fn scan_image_internal(
     {
         parsed_metadata = metadata::extract_a1111_metadata(params, default_tool.clone());
         found_metadata = true;
+        has_generated_evidence = true;
     }
 
     // 2. InvokeAI (Cumulative Merge & Tool Finalization)
@@ -168,6 +197,7 @@ pub fn scan_image_internal(
             // Finalize tool label: InvokeAI chunks exist, so it's an InvokeAI generation
             parsed_metadata.tool = "InvokeAI".to_string();
             found_metadata = true;
+            has_generated_evidence = true;
         }
     }
 
@@ -178,6 +208,7 @@ pub fn scan_image_internal(
         // Finalize tool label
         parsed_metadata.tool = "ComfyUI".to_string();
         found_metadata = true;
+        has_generated_evidence = true;
     }
 
     if let Some(workflow) = chunks
@@ -191,6 +222,7 @@ pub fn scan_image_internal(
             parsed_metadata.tool = "InvokeAI".to_string();
         }
         found_metadata = true;
+        has_generated_evidence = true;
     }
 
     if parsed_metadata.generation_type == "unknown" {
@@ -250,6 +282,8 @@ pub fn scan_image_internal(
     };
 
     let has_thumbnail = !generated_thumbnail_path.is_empty();
+    let detected_source_kind =
+        metadata::photo::classify_source_kind(has_generated_evidence, photo_metadata.as_ref());
 
     Ok(ScanResult {
         width: dimensions.0,
@@ -267,6 +301,11 @@ pub fn scan_image_internal(
         } else {
             None
         },
+        thumbnail_version: generated_thumbnail_version,
+        detected_source_kind,
+        photo_metadata,
+        photo_metadata_error,
+        capture_wall_time_ms,
         chunks: chunks_to_return,
         metadata: metadata_obj,
         error: thumbnail_error,
@@ -353,7 +392,9 @@ pub fn read_image_metadata(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use exif::experimental::Writer as ExifWriter;
+    use exif::{Field, In, Tag, Value};
+    use std::io::{Cursor, Write};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -431,6 +472,28 @@ mod tests {
         result.extend_from_slice(exif_payload);
         result.extend_from_slice(&jpeg[2..]);
         result
+    }
+
+    fn exif_fields_payload(fields: &[Field]) -> Vec<u8> {
+        let mut writer = ExifWriter::new();
+        for field in fields {
+            writer.push_field(field);
+        }
+        let mut cursor = Cursor::new(Vec::new());
+        writer.write(&mut cursor, true).expect("write test EXIF");
+        let mut payload = b"Exif\0\0".to_vec();
+        payload.extend_from_slice(&cursor.into_inner());
+        payload
+    }
+
+    fn exif_ascii_field(tag: Tag, value: &str) -> Field {
+        let mut bytes = value.as_bytes().to_vec();
+        bytes.push(0);
+        Field {
+            tag,
+            ifd_num: In::PRIMARY,
+            value: Value::Ascii(vec![bytes]),
+        }
     }
 
     #[test]
@@ -526,6 +589,74 @@ mod tests {
         assert_eq!(metadata.model, "test_model");
         assert_eq!(metadata.positive_prompt, "positive prompt");
         assert_eq!(metadata.negative_prompt, "negative prompt");
+        assert_eq!(
+            result.detected_source_kind,
+            metadata::photo::SourceKind::Generated
+        );
+    }
+
+    #[test]
+    fn test_scan_image_internal_classifies_camera_jpeg_and_keeps_capture_wall_time() {
+        let exif = exif_fields_payload(&[
+            exif_ascii_field(Tag::Make, "Test Camera Co"),
+            exif_ascii_field(Tag::Model, "Camera One"),
+            exif_ascii_field(Tag::DateTimeOriginal, "2026:07:29 14:15:16"),
+        ]);
+        let jpeg = jpeg_image_with_exif(&exif);
+        let path = unique_test_path("camera_photo.jpg");
+        std::fs::write(&path, jpeg).expect("write test jpeg");
+
+        let result =
+            scan_image_internal(path.to_string_lossy().to_string(), None, true, true, None)
+                .expect("scan camera jpeg");
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            result.detected_source_kind,
+            metadata::photo::SourceKind::Photograph
+        );
+        assert_eq!(
+            result
+                .photo_metadata
+                .as_ref()
+                .and_then(|photo| photo.camera_model.as_deref()),
+            Some("Camera One")
+        );
+        assert!(result.capture_wall_time_ms.is_some());
+        assert_eq!(result.photo_metadata_error, None);
+    }
+
+    #[test]
+    fn cached_thumbnail_without_catalog_version_remains_upgradeable() {
+        let path = unique_test_path("cached_thumbnail.jpg");
+        let thumbnail_dir = unique_test_path("cached_thumbnail_dir");
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail directory");
+        let image = image::RgbImage::from_pixel(2, 1, image::Rgb([8, 16, 24]));
+        image
+            .save_with_format(&path, image::ImageFormat::Jpeg)
+            .expect("write source jpeg");
+        let cached_path = crate::thumb::get_thumbnail_path(
+            path.to_string_lossy().as_ref(),
+            thumbnail_dir.to_string_lossy().as_ref(),
+        );
+        std::fs::write(&cached_path, b"legacy cached thumbnail").expect("write cached thumbnail");
+
+        let result = scan_image_internal(
+            path.to_string_lossy().to_string(),
+            Some(thumbnail_dir.to_string_lossy().to_string()),
+            false,
+            false,
+            None,
+        )
+        .expect("scan image with cached thumbnail");
+
+        assert_eq!(result.thumbnail.as_str(), cached_path.to_string_lossy());
+        assert_eq!(
+            result.thumbnail_version, 0,
+            "a cache file without a trusted catalog version must be regenerated"
+        );
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir_all(thumbnail_dir);
     }
 
     #[test]

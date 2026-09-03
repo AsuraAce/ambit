@@ -48,6 +48,7 @@ describe('filterState', () => {
 
         expect(nextFilters).toMatchObject({
             searchQuery: '',
+            sourceKind: 'all',
             models: [],
             tools: [],
             loras: [],
@@ -92,6 +93,11 @@ describe('filterState', () => {
     it('identifies default browsing as unfiltered for prefetching', () => {
         expect(hasActiveResultFilters(createDefaultFilters())).toBe(false);
         expect(hasActiveResultFilters(createDefaultFilters({ minSteps: null as unknown as number }))).toBe(false);
+    });
+
+    it('normalizes persisted image-kind filters at the query boundary', () => {
+        expect(createDefaultFilters({ sourceKind: 'photograph' }).sourceKind).toBe('photograph');
+        expect(createDefaultFilters({ sourceKind: 'invalid' as FilterState['sourceKind'] }).sourceKind).toBe('all');
     });
 
     it('identifies result filters that should disable proactive prefetching', () => {

@@ -126,6 +126,8 @@ Local markers mean Ambit found the asset on disk. A local-only inventory item ha
 
 The Filters tab groups generation metadata filters.
 
+Image Kind is controlled from the library header rather than the generation-metadata sections. All, Generated, Photos, and Other combine with the current search and filters, and the selected kind can be persisted in a smart collection.
+
 Generator filters show detected generator tools. When another active filter leaves no matching images for a tool, that tool can appear unavailable until the surrounding filter context changes.
 
 Parameters appear when Ambit has matching metadata for them:

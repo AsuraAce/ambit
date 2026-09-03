@@ -239,6 +239,56 @@ describe('ImageViewer full metadata loading', () => {
         });
     });
 
+    it('keeps an Automatic kind reset authoritative over stale full metadata', async () => {
+        const staleFullImage: AIImage = {
+            ...lightImage,
+            detectedSourceKind: 'photograph',
+            sourceKindOverride: 'other',
+            sourceKind: 'other',
+            displayTimestamp: 1,
+        };
+        mockGetImageWithFullMetadata.mockResolvedValue(staleFullImage);
+
+        const { rerender } = render(<ImageViewer
+            image={staleFullImage}
+            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+            onClose={vi.fn()}
+            onNext={vi.fn()}
+            onPrev={vi.fn()}
+            onSearch={vi.fn()}
+            onToggleFavorite={vi.fn()}
+            onOpenSettings={vi.fn()}
+            isOpen
+        />);
+
+        await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalled());
+
+        const automaticImage: AIImage = {
+            ...staleFullImage,
+            sourceKindOverride: undefined,
+            sourceKind: 'photograph',
+            displayTimestamp: 456_789,
+        };
+        rerender(<ImageViewer
+            image={automaticImage}
+            onSetCollectionMembership={vi.fn().mockResolvedValue(true)}
+            onClose={vi.fn()}
+            onNext={vi.fn()}
+            onPrev={vi.fn()}
+            onSearch={vi.fn()}
+            onToggleFavorite={vi.fn()}
+            onOpenSettings={vi.fn()}
+            isOpen
+        />);
+
+        await waitFor(() => {
+            const latestProps = mockMetadataSidebar.mock.calls.at(-1)?.[0] as { image: AIImage };
+            expect(latestProps.image.sourceKindOverride).toBeUndefined();
+            expect(latestProps.image.sourceKind).toBe('photograph');
+            expect(latestProps.image.displayTimestamp).toBe(456_789);
+        });
+    });
+
     it('renders nothing while closed and ignores viewer shortcuts', () => {
         const onNext = vi.fn();
         const { container } = renderViewer({ isOpen: false, onNext });

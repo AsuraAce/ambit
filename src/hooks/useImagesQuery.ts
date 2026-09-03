@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { FilterState, SortOption, AppSettings, AIImage, Collection, PaginationCursor } from '../types';
-import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
+import { searchImages, countImages, countGlobalImages, countImagesBySourceKind } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { searchBrowserMockImages } from '../services/browserMockData';
@@ -93,35 +93,48 @@ export const useImagesQuery = ({
                 effectiveMaskedKeywords,
                 allCollections
             );
+            const sourceCountQuery = buildSqlWhereClause(
+                filters,
+                privacyEnabled,
+                settings.maskingMode,
+                effectiveMaskedKeywords,
+                allCollections,
+                false,
+                ['sourceKind']
+            );
 
-            let sortField = 'timestamp';
+            let sortField = 'display_timestamp';
             let sortOrder: 'ASC' | 'DESC' = 'DESC';
 
             switch (sortOption) {
-                case 'date_asc': sortField = 'timestamp'; sortOrder = 'ASC'; break;
+                case 'date_asc': sortField = 'display_timestamp'; sortOrder = 'ASC'; break;
                 case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break;
                 case 'name_desc': sortField = 'path'; sortOrder = 'DESC'; break;
                 case 'size_desc': sortField = 'file_size'; sortOrder = 'DESC'; break;
                 case 'size_asc': sortField = 'file_size'; sortOrder = 'ASC'; break;
-                case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
+                case 'date_desc': default: sortField = 'display_timestamp'; sortOrder = 'DESC'; break;
             }
 
             const prioritizePinned = filters.collectionId !== null;
 
-            // Parallelize count and search for the first page
-            // collectionId/loraName enables INNER JOIN optimization for filtered queries
             // parallelize count and search for the first page
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
                 const startedAt = performance.now();
-                const [images, totalCount, globalCount] = await Promise.all([
+                const [images, totalCount, globalCount, sourceKindCounts] = await Promise.all([
                     searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
                     countImages(where, params, collectionId, loraName),
-                    countGlobalImages() // Fast path: no JOIN, simple indexed count
+                    countGlobalImages(), // Fast path: no JOIN, simple indexed count
+                    countImagesBySourceKind(
+                        sourceCountQuery.where,
+                        sourceCountQuery.params,
+                        sourceCountQuery.collectionId,
+                        sourceCountQuery.loraName
+                    )
                 ]);
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
-                return { images, totalCount, globalCount };
+                return { images, totalCount, globalCount, sourceKindCounts };
             } else {
                 const cursor = pageParam as PaginationCursor;
                 const startedAt = performance.now();
@@ -138,12 +151,12 @@ export const useImagesQuery = ({
 
             // Determine sort value based on current sort
             // This needs access to 'sortOption' which is in closure scope
-            let val: string | number = lastImage.timestamp;
+            let val: string | number = lastImage.displayTimestamp ?? lastImage.timestamp;
 
             // Map sort options to field values
             if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.filename;
             else if (sortOption === 'size_asc' || sortOption === 'size_desc') val = lastImage.fileSize || 0;
-            else val = lastImage.timestamp;
+            else val = lastImage.displayTimestamp ?? lastImage.timestamp;
 
             return {
                 val,

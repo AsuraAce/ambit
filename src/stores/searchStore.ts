@@ -35,6 +35,7 @@ interface SearchState {
 
 const INITIAL_FILTERS: FilterState = {
     searchQuery: '',
+    sourceKind: 'all',
     models: [],
     tools: [],
     loras: [],

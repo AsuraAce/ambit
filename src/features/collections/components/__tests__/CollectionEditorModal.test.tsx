@@ -27,6 +27,7 @@ vi.mock('../../../../utils/dateFilters', () => ({
 
 const createFilters = (overrides: Partial<FilterState> = {}): FilterState => ({
     searchQuery: '',
+    sourceKind: 'all',
     models: [],
     tools: [],
     loras: [],
@@ -119,6 +120,7 @@ describe('CollectionEditorModal', () => {
     it('renders every saved rule type and removes each from the saved draft', async () => {
         const draft = createFilters({
             searchQuery: 'castle',
+            sourceKind: 'photograph',
             dateRange: 'custom',
             dateFrom: '2025-01-01',
             dateTo: '2025-02-01',
@@ -147,6 +149,7 @@ describe('CollectionEditorModal', () => {
         await waitFor(() => expect(screen.getByText('Dynamic')).toBeTruthy());
 
         expect(screen.getByText(/castle/)).toBeTruthy();
+        expect(screen.getByText('Photos')).toBeTruthy();
         expect(screen.getByText('Date:custom')).toBeTruthy();
         expect(screen.getByText('Favorites')).toBeTruthy();
         expect(screen.getByText('Steps: 2-40')).toBeTruthy();
@@ -156,6 +159,7 @@ describe('CollectionEditorModal', () => {
         }
 
         clickRemoveForText(/castle/);
+        fireEvent.click(screen.getByRole('button', { name: 'Remove Image Kind Rule' }));
         clickRemoveForText('Date:custom');
         clickRemoveForText('Favorites');
         clickRemoveForText('Steps: 2-40');
@@ -170,6 +174,7 @@ describe('CollectionEditorModal', () => {
         const saved = onSave.mock.calls.at(-1)?.[1] as FilterState;
         expect(saved).toMatchObject({
             searchQuery: '',
+            sourceKind: 'all',
             dateRange: 'all',
             dateFrom: undefined,
             dateTo: undefined,

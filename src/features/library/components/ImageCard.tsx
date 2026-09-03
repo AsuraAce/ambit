@@ -3,10 +3,11 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2 } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { AIImage, getEffectiveSourceKind } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { formatModelName } from '../../../utils/formatUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
+import { formatImageDisplayDate } from '../../../utils/imageDates';
 
 interface ImageCardProps {
   image: AIImage;
@@ -45,6 +46,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
   const shouldBlur = isMasked && !isRevealed;
   const isMissing = !!image.isMissing;
+  const sourceKind = getEffectiveSourceKind(image);
 
   // Auto-blur when mouse leaves the card area for privacy
   const handleMouseLeave = () => {
@@ -65,7 +67,6 @@ export const ImageCard: React.FC<ImageCardProps> = ({
         ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
       `}
       onMouseDown={onMouseDown}
-      onClick={onClick}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
@@ -76,6 +77,13 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       onDrag={onDrag}
       onDragEnd={onDragEnd}
     >
+      <button
+        type="button"
+        aria-label={`Open ${image.filename}, ${sourceKind === 'photograph' ? 'Photo' : sourceKind === 'generated' ? 'Generated image' : 'Other image'}`}
+        disabled={isMissing}
+        onClick={onClick}
+        className="absolute inset-0 z-[1] cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-400 disabled:cursor-not-allowed"
+      />
       <SmartImage
         src={image.thumbnailUrl}
         fallbackSrc={image.url}
@@ -173,11 +181,13 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {/* Hover Overlay - Only show if not blurred and not missing */}
       {!shouldBlur && !isMissing && (
-        <div className={`absolute inset-0 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+        <div className={`pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
           <div className="flex justify-between items-end translate-y-4 group-hover:translate-y-0 focus-within:translate-y-0 transition-transform duration-500 ease-spring">
             <div className="min-w-0">
               <div className="text-xs font-bold text-white truncate drop-shadow-md font-sans">
                 {(() => {
+                  if (sourceKind === 'photograph') return image.photoMetadata?.cameraModel || 'Photo';
+                  if (sourceKind === 'other') return 'Other';
                   const modelValue = image.metadata.model as unknown;
                   const model = typeof modelValue === 'string'
                     ? modelValue
@@ -190,9 +200,13 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                   return 'Model';
                 })()}
               </div>
-              <div className="text-[10px] text-gray-300 font-mono">{image.width}x{image.height}</div>
+              <div className="text-[10px] text-gray-300 font-mono">
+                {sourceKind === 'generated'
+                  ? `${image.width}x${image.height}`
+                  : `${formatImageDisplayDate(image)} · ${image.width}x${image.height}`}
+              </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="pointer-events-auto flex items-center gap-1 shrink-0">
               {/* Manual Hide Button (Only if it was masked originally) */}
               {isMasked && (
                 <TooltipButton

@@ -1,5 +1,5 @@
-import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
-import { AIImage } from '../../../types';
+import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Share, Trash2, X, Eye } from 'lucide-react';
+import { AIImage, type SourceKind } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -27,6 +27,7 @@ interface SelectionBarProps {
     onToggleFavorite: () => void;
     onTogglePin: () => void;
     onToggleMask: (targetId?: string, overrideValue?: boolean | null) => void;
+    onSetImageKind?: (sourceKindOverride: SourceKind | null) => void | Promise<void>;
     onCompare: () => void;
 }
 
@@ -45,6 +46,7 @@ export function SelectionBar({
     onToggleFavorite,
     onTogglePin,
     onToggleMask,
+    onSetImageKind,
     onCompare,
     activeCollectionId
 }: SelectionBarProps) {
@@ -128,6 +130,25 @@ export function SelectionBar({
                 >
                     {nextIcon}
                 </TooltipButton>
+
+                {onSetImageKind && (
+                    <select
+                        aria-label="Set image kind for selected images"
+                        value=""
+                        onChange={(event) => {
+                            const value = event.target.value;
+                            if (!value) return;
+                            void onSetImageKind(value === 'automatic' ? null : value as SourceKind);
+                        }}
+                        className="max-w-28 rounded-full border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 dark:border-white/10 dark:bg-zinc-800 dark:text-gray-300"
+                    >
+                        <option value="">Image kind…</option>
+                        <option value="automatic">Automatic</option>
+                        <option value="generated">Generated</option>
+                        <option value="photograph">Photo</option>
+                        <option value="other">Other</option>
+                    </select>
+                )}
 
                 <TooltipButton label="Add Selected to Collection" content="Add Selected to Collection" onClick={onAddToCollection} className={NEUTRAL_BUTTON_CLASS}>
                     <Folder className="w-5 h-5" />

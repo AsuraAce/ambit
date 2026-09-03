@@ -2,7 +2,7 @@
 
 [Back to manual index](index.md)
 
-Ambit builds its library by scanning local image folders and selected files. It catalogs supported image files, parses generation metadata when available, and keeps the original files on disk.
+Ambit builds its library by scanning local image folders and selected files. It catalogs PNG, JPEG, and WebP images, parses generation or camera metadata when available, and keeps the original files on disk.
 
 ## Import Choices
 
@@ -19,7 +19,7 @@ flowchart TD
     C --> H["Add Folder"]
 ```
 
-Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for downloaded packs, screenshots, archives, or individual files.
+Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for camera folders, downloaded packs, screenshots, archives, or individual files. Import completion reports how many images Ambit detected as Generated, Photo, and Other.
 
 ## Monitored Image Folders
 
@@ -27,7 +27,7 @@ Open Settings > Connections > Folders to manage image folders.
 
 In the Folders section you can:
 
-- add folders containing AI-generated images
+- add folders containing generated images, camera photos, and other local images
 - review folders Ambit is monitoring
 - rescan a single folder
 - refresh metadata across all folders
@@ -55,7 +55,7 @@ For details, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## During Scans
 
-Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later.
+Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later. Refresh All Metadata also adopts camera metadata for older library records in restart-safe batches; manual Image Kind choices remain unchanged.
 
 ## Next Step
 

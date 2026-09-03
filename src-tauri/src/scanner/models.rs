@@ -36,6 +36,16 @@ pub struct ScanResult {
     pub metadata: Option<metadata::ImageMetadata>,
     /// Error message if scan failed or resulted in a partial result
     pub error: Option<String>,
+    #[serde(rename = "thumbnailVersion")]
+    pub thumbnail_version: u32,
+    #[serde(rename = "detectedSourceKind")]
+    pub detected_source_kind: metadata::photo::SourceKind,
+    #[serde(rename = "photoMetadata")]
+    pub photo_metadata: Option<metadata::photo::PhotoMetadata>,
+    #[serde(rename = "photoMetadataError")]
+    pub photo_metadata_error: Option<String>,
+    #[serde(rename = "captureWallTimeMs")]
+    pub capture_wall_time_ms: Option<i64>,
 }
 
 #[derive(Serialize, Type)]

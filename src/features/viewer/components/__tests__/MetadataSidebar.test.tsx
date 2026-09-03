@@ -63,4 +63,33 @@ describe('MetadataSidebar', () => {
         setup('info', image({ model: 'Unknown', modelHash: undefined, hasWorkflowHint: false }));
         expect(screen.queryByText(/Hash:/)).toBeNull();
     });
+
+    it('renders a photograph as Details and Library without generation controls', () => {
+        setup('info', {
+            ...image({ workflowJson: '{}' }),
+            detectedSourceKind: 'photograph',
+            sourceKind: 'photograph',
+            width: 4000,
+            height: 6000,
+            photoMetadata: {
+                capturedAt: { local: '2026:07:29 14:15:16', offset: '+02:00', subsecond: null },
+                captureTimeRaw: '2026:07:29 14:15:16',
+                cameraMake: 'Test Camera Co', cameraModel: 'Camera One',
+                lensMake: null, lensModel: 'Prime 50', focalLengthMm: 50,
+                focalLength35Mm: 50, apertureFNumber: 2.8, exposureTimeSeconds: 0.008,
+                iso: 200, orientation: 6, artist: null, copyright: null,
+                gpsLatitude: null, gpsLongitude: null
+            }
+        });
+
+        expect(screen.getByText('Photo')).toBeTruthy();
+        expect(screen.getByText('Camera One')).toBeTruthy();
+        expect(screen.getByText('details')).toBeTruthy();
+        expect(screen.getByText('library')).toBeTruthy();
+        expect(screen.queryByText('workflow')).toBeNull();
+        expect(screen.queryByText('info-content')).toBeNull();
+        expect(screen.getByText('Capture details')).toBeTruthy();
+        expect(screen.queryByText('ComfyUI')).toBeNull();
+        expect(screen.queryByText('flux_dev')).toBeNull();
+    });
 });

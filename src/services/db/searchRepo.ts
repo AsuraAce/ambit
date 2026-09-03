@@ -1,4 +1,4 @@
-import { AIImage, AssetScope, FacetType } from '../../types';
+import { AIImage, AssetScope, FacetType, type SourceKindCounts } from '../../types';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
@@ -480,6 +480,65 @@ export const countImages = async (whereClause: string, params: unknown[], collec
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
     return result[0]?.count || 0;
+};
+
+interface SourceKindCountRow {
+    source_kind: string;
+    count: number;
+}
+
+const mapSourceKindCounts = (rows: SourceKindCountRow[]): SourceKindCounts => {
+    const counts: SourceKindCounts = { all: 0, generated: 0, photograph: 0, other: 0 };
+    rows.forEach((row) => {
+        if (row.source_kind === 'generated' || row.source_kind === 'photograph' || row.source_kind === 'other') {
+            counts[row.source_kind] += row.count;
+            counts.all += row.count;
+        }
+    });
+    return counts;
+};
+
+export const countImagesBySourceKind = async (
+    whereClause: string,
+    params: unknown[],
+    collectionId?: string,
+    loraName?: string
+): Promise<SourceKindCounts> => {
+    const db = await getDb();
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const select = 'SELECT images.source_kind, count(*) as count';
+    const group = 'GROUP BY images.source_kind';
+    let query = `${select} FROM images ${finalWhere} ${group}`;
+    let queryParams = params;
+
+    if (collectionId && loraName) {
+        query = `${select}
+            FROM collection_images ci
+            JOIN image_loras il ON il.image_id = ci.image_id
+            JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
+            ${group}`;
+        queryParams = [collectionId, loraName, ...params];
+    } else if (collectionId) {
+        query = `${select}
+            FROM collection_images ci
+            CROSS JOIN images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${group}`;
+        queryParams = [collectionId, ...params];
+    } else if (loraName) {
+        query = `${select}
+            FROM image_loras il
+            CROSS JOIN images ON images.id = il.image_id
+            ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
+            ${group}`;
+        queryParams = [loraName, ...params];
+    }
+
+    const rows = await timeDbCall('countImagesBySourceKind', 'source-kind', () => (
+        db.select<SourceKindCountRow[]>(query, queryParams)
+    ));
+    return mapSourceKindCounts(rows);
 };
 
 /**

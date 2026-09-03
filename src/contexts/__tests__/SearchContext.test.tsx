@@ -64,7 +64,12 @@ vi.mock('../../bindings', () => ({ commands: { refreshPrivacyMaskIndex: mocks.re
 vi.mock('../../utils/spectaUtils', () => ({ unwrap: mocks.unwrap }));
 vi.mock('../../services/runtime', () => ({ isBrowserMockMode: () => mocks.browserMockMode.current }));
 vi.mock('../../utils/sqlHelpers', () => ({ buildSqlWhereClause: mocks.buildSqlWhereClause }));
-vi.mock('../../utils/filterState', () => ({ shouldPrefetchResultPages: mocks.shouldPrefetchResultPages }));
+vi.mock('../../utils/filterState', () => ({
+    normalizeImageKindFilter: (value: unknown) => (
+        value === 'generated' || value === 'photograph' || value === 'other' ? value : 'all'
+    ),
+    shouldPrefetchResultPages: mocks.shouldPrefetchResultPages
+}));
 vi.mock('../../services/db/imageRepo', () => ({
     checkHiddenContentAvailability: mocks.checkHiddenContentAvailability,
     rebuildThumbnailFacetCache: mocks.rebuildThumbnailFacetCache,
@@ -104,7 +109,8 @@ const baseFilters: FilterState = {
     favoritesOnly: false,
     collectionId: null,
     showGrids: false,
-    showIntermediates: false
+    showIntermediates: false,
+    sourceKind: 'all'
 };
 
 const image = (overrides: Partial<AIImage> = {}): AIImage => ({
@@ -124,6 +130,7 @@ const settings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
     maskedKeywords: [],
     libraryShowGrids: false,
     libraryShowIntermediates: false,
+    librarySourceKind: 'all',
     ...overrides
 } as AppSettings);
 
@@ -567,6 +574,48 @@ describe('SearchProvider', () => {
             showIntermediates: false
         }));
         expect(setSettings).not.toHaveBeenCalled();
+    });
+
+    it('hydrates a saved image kind before enabling queries without writing it back', async () => {
+        const setSettings = vi.fn();
+        const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
+        mocks.settings.current = {
+            settings: settings({ librarySourceKind: 'photograph' }),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true
+        };
+
+        renderProvider();
+
+        await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
+        const hydratedSourceKind = setFilters.mock.calls
+            .map(([update]) => (update as (value: FilterState) => FilterState)(baseFilters))
+            .find(filters => filters.sourceKind === 'photograph');
+        expect(hydratedSourceKind?.sourceKind).toBe('photograph');
+        expect(setSettings).not.toHaveBeenCalled();
+    });
+
+    it('persists an image-kind change after the saved value has hydrated', async () => {
+        const setSettings = vi.fn();
+        mocks.settings.current = {
+            settings: settings({ librarySourceKind: 'all' }),
+            setSettings,
+            privacyEnabled: false,
+            isLoaded: true
+        };
+        const rendered = renderProvider();
+
+        await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
+        expect(setSettings).not.toHaveBeenCalled();
+
+        mocks.searchState.current = {
+            ...(mocks.searchState.current as object),
+            filters: { ...baseFilters, sourceKind: 'photograph' }
+        };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+
+        await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ librarySourceKind: 'photograph' }));
     });
 
     it('falls back to the current grid value when only intermediates were persisted', async () => {

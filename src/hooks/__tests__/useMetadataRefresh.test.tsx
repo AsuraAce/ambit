@@ -149,7 +149,8 @@ describe('useMetadataRefresh', () => {
         expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
             forceReparse: false,
             filterRoot: null,
-            filterTool: null
+            filterTool: null,
+            refreshPhotoMetadata: false
         });
     });
 
@@ -586,7 +587,8 @@ describe('useMetadataRefresh', () => {
         expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
             forceReparse: false,
             filterRoot: 'D:/Images',
-            filterTool: 'ComfyUI'
+            filterTool: 'ComfyUI',
+            refreshPhotoMetadata: false
         });
         await act(async () => result.current.forceRefresh());
         expect(mockAddToast).toHaveBeenCalledWith('Failed to force refresh: force failed', 'error');

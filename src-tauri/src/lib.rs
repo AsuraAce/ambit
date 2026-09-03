@@ -7,6 +7,9 @@ mod security;
 mod thumb;
 mod watcher;
 
+#[cfg(all(feature = "qa-profile", not(debug_assertions)))]
+compile_error!("the qa-profile feature is restricted to debug builds");
+
 #[cfg(not(test))]
 use db::commands::maintenance::FileHashBackfillState;
 #[cfg(not(test))]
@@ -49,6 +52,7 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
         db::facets::refresh_facet_cache_for_resources,
         db::facets::get_valid_facet_names,
         db::commands::image_commands::mark_images_corrupt,
+        db::commands::image_commands::set_image_source_kind,
         db::commands::image_commands::verify_library_integrity,
         // db reparse commands
         db::reparse::start_reparse_job,
@@ -115,10 +119,13 @@ pub fn run() {
         app_data_migration::migrate_legacy_identifier_data();
     }
 
-    // Check for deferred purge request BEFORE initializing the database.
-    if let Err(error) = app_data_migration::check_and_execute_deferred_purge() {
-        eprintln!("[Purge] {error}");
-        return;
+    #[cfg(not(feature = "qa-profile"))]
+    {
+        // Check for deferred purge request BEFORE initializing the database.
+        if let Err(error) = app_data_migration::check_and_execute_deferred_purge() {
+            eprintln!("[Purge] {error}");
+            return;
+        }
     }
 
     // Move the production SQLite catalog from Roaming AppData to Local AppData
@@ -127,6 +134,9 @@ pub fn run() {
         app_data_migration::migrate_current_database_to_local_app_data();
     }
 
+    // The QA profile must never enumerate or mutate historical production or
+    // development profiles while exercising native acceptance flows.
+    #[cfg(not(feature = "qa-profile"))]
     repair_known_migration_metadata();
 
     let sql_builder = db::main_database_migration_urls()
@@ -237,6 +247,18 @@ mod startup_order_tests {
             single_instance < sql,
             "same-profile process exclusion must be active before SQLite opens"
         );
+    }
+
+    #[test]
+    fn qa_profile_guards_cross_profile_startup_maintenance() {
+        let source = include_str!("lib.rs");
+
+        assert!(source.contains(
+            "#[cfg(not(feature = \"qa-profile\"))]\n    {\n        // Check for deferred purge"
+        ));
+        assert!(source.contains(
+            "#[cfg(not(feature = \"qa-profile\"))]\n    repair_known_migration_metadata();"
+        ));
     }
 }
 

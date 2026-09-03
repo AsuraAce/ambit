@@ -46,6 +46,7 @@ interface HarnessProps {
     onUpdatePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNegativePrompt?: (imageId: string, prompt: string) => void;
     onUpdateNotes?: (imageId: string, notes: string) => void;
+    onSetImageKind?: (imageId: string, sourceKindOverride: 'generated' | 'photograph' | 'other' | null) => void | Promise<void>;
 }
 
 const EditorHarness = ({
@@ -56,6 +57,7 @@ const EditorHarness = ({
     onUpdatePrompt,
     onUpdateNegativePrompt,
     onUpdateNotes,
+    onSetImageKind,
 }: HarnessProps) => {
     const [notes, setNotes] = React.useState('initial notes');
     const [promptValue, setPromptValue] = React.useState('initial prompt');
@@ -76,6 +78,7 @@ const EditorHarness = ({
             onUpdatePrompt={onUpdatePrompt}
             onUpdateNegativePrompt={onUpdateNegativePrompt}
             onUpdateNotes={onUpdateNotes}
+            onSetImageKind={onSetImageKind}
         />
     );
 };
@@ -98,6 +101,16 @@ describe('MetadataEditTab', () => {
             configurable: true,
             value: { readText: clipboardReadText },
         });
+    });
+
+    it('shows the detected automatic kind and persists a manual photo correction', async () => {
+        const onSetImageKind = vi.fn().mockResolvedValue(undefined);
+        render(<EditorHarness onSetImageKind={onSetImageKind} />);
+
+        expect(screen.getByRole('radio', { name: 'Automatic (Generated)' }).getAttribute('aria-checked')).toBe('true');
+        fireEvent.click(screen.getByRole('radio', { name: 'Photo' }));
+
+        await waitFor(() => expect(onSetImageKind).toHaveBeenCalledWith('image-1', 'photograph'));
     });
 
     afterAll(() => {

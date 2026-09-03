@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Import } from 'lucide-react';
-import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode } from '../../types';
+import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode, type SourceKindCounts } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { ViewControls } from '../../features/library/components/ViewControls';
@@ -8,6 +8,7 @@ import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
 import { isBrowserMockMode } from '../../services/runtime';
 import { ToastContext } from '../../contexts/ToastContext';
 import { TooltipButton } from './InfoTooltip';
+import { ImageKindScopeDropdown } from '../../features/filters/components/ImageKindScopeDropdown';
 
 const SearchBar = React.lazy(() => import('../../features/filters/components/SearchBar').then(module => ({ default: module.SearchBar })));
 
@@ -37,6 +38,7 @@ interface AppHeaderProps {
     displayedCount: number;
     totalCount: number;
     scopeName: string;
+    sourceKindCounts?: SourceKindCounts;
     onImport: () => void;
     onSlideshow: () => void;
     clearAllFilters: () => void;
@@ -56,6 +58,7 @@ export const AppHeader = React.memo(({
     displayedCount,
     totalCount,
     scopeName,
+    sourceKindCounts = { all: 0, generated: 0, photograph: 0, other: 0 },
     onImport,
     onSlideshow,
     clearAllFilters,
@@ -142,6 +145,13 @@ export const AppHeader = React.memo(({
                             onDraftPendingChange={onSearchDraftPendingChange}
                         />
                     </React.Suspense>
+                    {(viewMode === 'grid' || viewMode === 'timeline') && (
+                        <ImageKindScopeDropdown
+                            value={filters.sourceKind ?? 'all'}
+                            counts={sourceKindCounts}
+                            onChange={(sourceKind) => setFilters(previous => ({ ...previous, sourceKind }))}
+                        />
+                    )}
                     {browserMockMode && (
                         <span className="shrink-0 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
                             Browser Mock

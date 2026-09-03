@@ -132,6 +132,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
     // Check for Manual Edits (ignoring the collection ID itself)
     const hasManualEdits = !!(
         filters.searchQuery ||
+        (filters.sourceKind ?? 'all') !== 'all' ||
         filters.models.length > 0 ||
         filters.tools.length > 0 ||
         filters.loras.length > 0 ||
@@ -166,6 +167,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
                 searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
+                sourceKind: (manual.sourceKind ?? 'all') !== 'all' ? manual.sourceKind : saved.sourceKind,
                 dateRange: hasManualDateFilter ? manual.dateRange : saved.dateRange,
                 dateFrom: hasManualDateFilter ? manual.dateFrom : saved.dateFrom,
                 dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
@@ -202,6 +204,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             setFilters(prev => ({
                 ...prev,
                 searchQuery: '',
+                sourceKind: 'all',
                 models: [],
                 tools: [],
                 loras: [],

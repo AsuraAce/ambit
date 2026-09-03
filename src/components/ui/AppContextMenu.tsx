@@ -4,7 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import { getEffectiveMaskedKeywords, isImageMasked } from '../../utils/maskingUtils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useCollectionStore } from '../../stores/collectionStore';
-import { AIImage, ContextMenuState, FilterState } from '../../types';
+import { AIImage, ContextMenuState, FilterState, getDetectedSourceKind, getEffectiveSourceKind } from '../../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { isBrowserMockMode } from '../../services/runtime';
 import { isOsOpenUnavailable, openFileInDefaultApp, showPathInFolder } from '../../services/osOpen';
@@ -52,6 +52,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     if (!contextMenu) return null;
 
     const activeImage = images.find(i => i.id === contextMenu.imageId);
+    const isGenerated = activeImage ? getEffectiveSourceKind(activeImage) === 'generated' : false;
     const collectionId = filters.collectionId;
     const activeCollection = collectionId
         ? (collections.find((c) => c.id === collectionId) || smartCollections.find((c) => c.id === collectionId))
@@ -69,19 +70,25 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
             enableAI={settings.enableAI}
             activeCollectionName={activeCollection?.name}
             onClose={onClose}
-            onCopyPrompt={() => {
+            detectedSourceKind={activeImage ? getDetectedSourceKind(activeImage) : undefined}
+            sourceKindOverride={activeImage?.sourceKindOverride}
+            onSetImageKind={activeImage ? async sourceKindOverride => {
+                await actions.handleSetImageSourceKind([activeImage.id], sourceKindOverride);
+                onClose();
+            } : undefined}
+            onCopyPrompt={isGenerated ? () => {
                 if (activeImage?.metadata.positivePrompt) {
                     navigator.clipboard.writeText(activeImage.metadata.positivePrompt);
                     addToast('Prompt copied', 'success');
                 }
                 onClose();
-            }}
-            onCopySeed={activeImage?.metadata.seed !== undefined ? () => {
+            } : undefined}
+            onCopySeed={isGenerated && activeImage?.metadata.seed !== undefined ? () => {
                 navigator.clipboard.writeText(String(activeImage.metadata.seed));
                 addToast('Seed copied', 'success');
                 onClose();
             } : undefined}
-            onCopyGenerationInfo={() => {
+            onCopyGenerationInfo={isGenerated ? () => {
                 const meta = activeImage?.metadata;
                 if (!meta) return;
 
@@ -97,7 +104,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 navigator.clipboard.writeText(text);
                 addToast('Generation info copied', 'success');
                 onClose();
-            }}
+            } : undefined}
             onCopyImage={async () => {
                 if (activeImage?.url) {
                     try {
@@ -153,14 +160,14 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 actions.handleBulkMask(contextMenu.imageId, val);
                 onClose();
             }}
-            onToggleIntermediate={async () => {
+            onToggleIntermediate={isGenerated ? async () => {
                 if (contextMenu.imageId) {
                     await toggleImageIntermediate(contextMenu.imageId, !activeImage?.metadata?.isIntermediate);
                     // We might need to refresh state here, but let's assume watchers handle it
                     addToast(activeImage?.metadata?.isIntermediate ? "Unmarked as intermediate" : "Marked as intermediate", "info");
                 }
                 onClose();
-            }}
+            } : undefined}
             onDelete={() => {
                 if (contextMenu.imageId) {
                     actions.requestDeleteForId(contextMenu.imageId);

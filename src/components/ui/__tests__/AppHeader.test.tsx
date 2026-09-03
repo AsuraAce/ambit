@@ -234,6 +234,27 @@ describe('AppHeader', () => {
         expect(onImport).toHaveBeenCalledTimes(1);
     });
 
+    it('places the persistent image-kind dropdown immediately after search', () => {
+        const setFilters = vi.fn();
+        render(
+            <AppHeader
+                {...defaultProps}
+                setFilters={setFilters}
+                sourceKindCounts={{ all: 618, generated: 0, photograph: 3, other: 615 }}
+            />
+        );
+
+        const searchBar = screen.getByTestId('search-bar');
+        const scope = screen.getByTestId('image-kind-scope');
+        expect(searchBar.nextElementSibling).toBe(scope);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Image kind: All, 618. Change image kind' }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+
+        const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
+        expect(update(defaultProps.filters).sourceKind).toBe('photograph');
+    });
+
     it('toggles Live Watch and forwards view-control commands', () => {
         const setLayoutMode = vi.fn();
         const setSortOption = vi.fn();

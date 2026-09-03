@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Emitter;
 
-const CURRENT_THUMBNAIL_VERSION: i64 = 1;
+const CURRENT_THUMBNAIL_VERSION: i64 = super::CURRENT_THUMBNAIL_VERSION as i64;
 const FAILURE_BACKOFF_MS: i64 = 60 * 60 * 1000;
 const DB_FLUSH_LIMIT: usize = 100;
 const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
@@ -140,6 +140,7 @@ struct ThumbnailCandidate {
     id: String,
     path: String,
     timestamp: i64,
+    thumbnail_version: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -731,7 +732,8 @@ fn optimize_thumbnail_candidate(
         return ThumbnailItemResult::Skipped;
     }
 
-    match super::generate_thumbnail(&candidate.path, thumbnail_dir) {
+    let force_regenerate = candidate.thumbnail_version < CURRENT_THUMBNAIL_VERSION;
+    match super::generate_thumbnail_with_options(&candidate.path, thumbnail_dir, force_regenerate) {
         Ok(thumbnail) => ThumbnailItemResult::Success {
             id: candidate.id.clone(),
             thumbnail_path: thumbnail.thumbnail_path,
@@ -829,7 +831,8 @@ fn fetch_thumbnail_candidates(
     now_ms: i64,
 ) -> Result<Vec<ThumbnailCandidate>, String> {
     let mut query = format!(
-        "SELECT id, path, COALESCE(timestamp, 0) AS timestamp
+        "SELECT id, path, COALESCE(timestamp, 0) AS timestamp,
+                COALESCE(thumbnail_version, 0) AS thumbnail_version
          FROM images
          WHERE {}",
         thumbnail_queue_condition(include_upgradeable, now_ms)
@@ -850,6 +853,7 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                thumbnail_version: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -861,6 +865,7 @@ fn fetch_thumbnail_candidates(
                 id: row.get(0)?,
                 path: row.get(1)?,
                 timestamp: row.get(2)?,
+                thumbnail_version: row.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?

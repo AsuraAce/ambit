@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { commands } from '../../bindings';
+import { commands, type ImageRecord } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, getDetectedSourceKind, type PhotoMetadata, type SourceKind } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
@@ -23,30 +23,9 @@ import {
 } from './collectionRepo';
 import { scanImageNative } from '../metadataParser';
 
-type PersistableImageRecord = {
-    id: string;
-    path: string;
-    width: number;
-    height: number;
-    fileSize: number;
-    fileHash: string | null;
-    timestamp: number;
-    metadataJson: string;
-    thumbnailPath: string;
-    microThumbnail: string | null;
-    thumbnailSource: string | null;
-    isFavorite: boolean;
-    isPinned: boolean;
-    isDeleted: boolean;
-    isMissing: boolean;
-    userMasked: boolean | null;
-    groupId: string | null;
-    boardId: string | null;
-    notes: string | null;
-    originalMetadataJson: string | null;
-    originalStateJson: string | null;
-    isCorrupt: boolean;
-};
+type PersistableImageRecord = ImageRecord;
+
+const CURRENT_THUMBNAIL_VERSION = 2;
 
 export interface DeleteRemovedImagesResult {
     deletedIds: string[];
@@ -71,9 +50,39 @@ type RemovedImageRow = ImageRow & {
     path: string;
     thumbnail_path?: string | null;
     collection_ids_json?: string | null;
+    photo_refresh_version?: number | null;
 };
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
+
+export const setImageSourceKind = async (
+    imageIds: string[],
+    sourceKindOverride: SourceKind | null
+): Promise<number> => {
+    if (imageIds.length === 0) return 0;
+
+    if (isBrowserMockMode()) {
+        const idSet = new Set(imageIds);
+        getBrowserMockImages().forEach(image => {
+            if (!idSet.has(image.id)) return;
+            const effectiveKind = sourceKindOverride ?? getDetectedSourceKind(image);
+            updateBrowserMockImage(image.id, {
+                sourceKindOverride: sourceKindOverride ?? undefined,
+                sourceKind: effectiveKind,
+                displayTimestamp: effectiveKind === 'photograph'
+                    ? (image.captureWallTimeMs ?? image.timestamp)
+                    : image.timestamp,
+            });
+        });
+        clearLibraryStatsCache();
+        return imageIds.length;
+    }
+
+    const updated = await unwrap(commands.setImageSourceKind(imageIds, sourceKindOverride));
+    clearLibraryStatsCache();
+    await clearCollectionThumbnailCacheForImages(imageIds);
+    return updated;
+};
 
 const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] => {
     const chunks: T[][] = [];
@@ -104,10 +113,15 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     fileSize: image.fileSize || 0,
     fileHash: image.fileHash || null,
     timestamp: image.timestamp,
-    metadataJson: JSON.stringify(image.metadata),
+    metadataJson: getDetectedSourceKind(image) === 'generated' ? JSON.stringify(image.metadata) : '{}',
     thumbnailPath: urlToPath(image.thumbnailUrl),
     microThumbnail: image.microThumbnail || null,
     thumbnailSource: image.thumbnailSource || null,
+    thumbnailVersion: image.thumbnailVersion ?? CURRENT_THUMBNAIL_VERSION,
+    detectedSourceKind: getDetectedSourceKind(image),
+    sourceKindOverride: image.sourceKindOverride ?? null,
+    photoMetadata: image.photoMetadata ?? null,
+    captureWallTimeMs: image.captureWallTimeMs ?? null,
     isFavorite: !!image.isFavorite,
     isPinned: !!image.isPinned,
     isDeleted: !!image.isDeleted,
@@ -862,7 +876,8 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
         for (const chunk of chunkItems(normalizedIds)) {
             const placeholders = chunk.map(() => '?').join(',');
             const chunkRows = await db.select<RemovedImageRow[]>(
-                `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
+                `SELECT id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version,
+                        detected_source_kind, source_kind_override, source_kind, photo_metadata_json, capture_wall_time_ms, display_timestamp, photo_refresh_version,
                         is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
                         original_metadata_json, original_parsed_json, original_state_json, is_corrupt
                  FROM images
@@ -898,10 +913,11 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
         for (const row of rows) {
             await db.execute(
                 `INSERT OR REPLACE INTO removed_images (
-                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source,
+                    id, path, width, height, file_size, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version,
+                    detected_source_kind, source_kind_override, source_kind, photo_metadata_json, capture_wall_time_ms, display_timestamp, photo_refresh_version,
                     is_favorite, is_pinned, is_missing, user_masked, group_id, board_id, notes,
                     original_metadata_json, original_parsed_json, original_state_json, is_corrupt, removed_at, collection_ids_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
                     row.id,
                     row.path,
@@ -913,6 +929,14 @@ export const removeImagesFromLibrary = async (ids: string[]) => {
                     row.thumbnail_path ?? null,
                     row.micro_thumbnail ?? null,
                     row.thumbnail_source ?? null,
+                    row.thumbnail_version ?? CURRENT_THUMBNAIL_VERSION,
+                    row.detected_source_kind ?? 'generated',
+                    row.source_kind_override ?? null,
+                    row.source_kind ?? row.detected_source_kind ?? 'generated',
+                    row.photo_metadata_json ?? null,
+                    row.capture_wall_time_ms ?? null,
+                    row.display_timestamp ?? row.timestamp,
+                    row.photo_refresh_version ?? 0,
                     row.is_favorite ?? 0,
                     row.is_pinned ?? 0,
                     row.is_missing ?? 0,
@@ -970,6 +994,12 @@ export const restoreRemovedImages = async (ids: string[]) => {
         const restoreStartedAt = liveWatchNow();
         const records = restoredImages.map(buildPersistableImageRecord);
         await persistImageRecords(records, db);
+        for (const row of rows) {
+            await db.execute(
+                'UPDATE images SET photo_refresh_version = ? WHERE id = ?',
+                [row.photo_refresh_version ?? 0, row.id]
+            );
+        }
         infoLiveWatchPerf('restoreRemovedImages persisted restored records', {
             imageCount: restoredImages.length,
             totalMs: elapsedMs(restoreStartedAt)
@@ -1289,7 +1319,7 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
     await db.execute(
-        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?',
+        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ?`,
         [normalizedThumb, 'ambit', normalizedId]
     );
     await clearCollectionThumbnailCacheForImages([normalizedId]);
@@ -1333,7 +1363,7 @@ export const updateThumbnailPathsBatch = async (updates: {
                      SET thumbnail_path = ?,
                          micro_thumbnail = COALESCE(?, micro_thumbnail),
                          thumbnail_source = COALESCE(?, thumbnail_source),
-                         thumbnail_version = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 1 ELSE thumbnail_version END,
+                         thumbnail_version = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN ${CURRENT_THUMBNAIL_VERSION} ELSE thumbnail_version END,
                          thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
                          thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
                          thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
@@ -1382,6 +1412,10 @@ export interface ExistingMetadata {
     boardId?: string;
     groupId?: string;
     notes?: string;
+    detectedSourceKind: SourceKind;
+    sourceKindOverride?: SourceKind;
+    photoMetadata?: PhotoMetadata;
+    captureWallTimeMs?: number;
 }
 
 export const getExistingMetadata = async (ids: string[]): Promise<Map<string, ExistingMetadata>> => {
@@ -1399,7 +1433,11 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
                 isPinned: image.isPinned ?? false,
                 boardId: image.boardId,
                 groupId: image.groupId,
-                notes: image.notes
+                notes: image.notes,
+                detectedSourceKind: getDetectedSourceKind(image),
+                sourceKindOverride: image.sourceKindOverride,
+                photoMetadata: image.photoMetadata,
+                captureWallTimeMs: image.captureWallTimeMs
             }));
         return map;
     }
@@ -1413,8 +1451,10 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
         const placeholders = chunk.map(() => '?').join(',');
 
         try {
-            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string, is_favorite: number, is_pinned: number, board_id?: string | null, group_id?: string | null, notes?: string | null }[]>(
-                `SELECT id, timestamp, file_size, metadata_json, is_favorite, is_pinned, board_id, group_id, notes FROM images WHERE id IN (${placeholders})`,
+            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string, is_favorite: number, is_pinned: number, board_id?: string | null, group_id?: string | null, notes?: string | null, detected_source_kind: SourceKind, source_kind_override?: SourceKind | null, photo_metadata_json?: string | null, capture_wall_time_ms?: number | null }[]>(
+                `SELECT id, timestamp, file_size, metadata_json, is_favorite, is_pinned, board_id, group_id, notes,
+                        detected_source_kind, source_kind_override, photo_metadata_json, capture_wall_time_ms
+                 FROM images WHERE id IN (${placeholders})`,
                 chunk
             );
 
@@ -1427,7 +1467,11 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
                     isPinned: !!r.is_pinned,
                     boardId: r.board_id ?? undefined,
                     groupId: r.group_id ?? undefined,
-                    notes: r.notes ?? undefined
+                    notes: r.notes ?? undefined,
+                    detectedSourceKind: r.detected_source_kind,
+                    sourceKindOverride: r.source_kind_override ?? undefined,
+                    photoMetadata: r.photo_metadata_json ? JSON.parse(r.photo_metadata_json) as PhotoMetadata : undefined,
+                    captureWallTimeMs: r.capture_wall_time_ms ?? undefined
                 });
             });
         } catch (e) {

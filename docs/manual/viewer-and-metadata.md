@@ -2,7 +2,7 @@
 
 [Back to manual index](index.md)
 
-The image viewer is where Ambit shows a large preview, parsed generation metadata, local notes, collection membership, workflow data, and optional AI actions for one image or version.
+The image viewer is where Ambit shows a large preview, parsed generation or camera metadata, local notes, collection membership, workflow data, and optional AI actions for one image or version.
 
 ## Open And Navigate The Viewer
 
@@ -37,15 +37,17 @@ Remove from Library removes the image record from Ambit's active library. It doe
 
 ## Metadata Sidebar
 
-The sidebar header shows the image filename, generator tool, model name or model hash when available, date, and dimensions.
+The sidebar header shows the image filename, detected kind, generator or camera details when available, effective date, and dimensions.
 
-The sidebar can show three tabs:
+Generated images can show three tabs:
 
 - Info: prompts, generation parameters, resources, palette, internal metadata, and optional AI tools
 - Edit: collection membership, prompt edits, negative prompt edits, and notes
 - Workflow: workflow node inspection when workflow data exists or Ambit has not yet confirmed that none exists
 
 The Workflow tab may disappear for images that Ambit has already identified as having no recorded workflow.
+
+Photos and Other images use Details and Library tabs. Details shows camera, lens, exposure, capture time, dimensions, file information, and collapsed GPS coordinates when present. Ambit does not contact a map or network service for GPS data. Library includes collections, notes, and Image Kind without generator-only prompt or workflow controls. Raw file-modified time remains visible in technical details even when a photo capture date is used for browsing.
 
 ## Info Tab
 
@@ -82,6 +84,8 @@ Internal Metadata opens a technical inspector with Parsed, Text, and, when workf
 Use Edit for local catalog changes.
 
 Collections lets you search collections and toggle whether the current image belongs to each collection.
+
+Image Kind offers Automatic, Generated, Photo, and Other. Automatic follows Ambit's conservative metadata detection. Manual choices are catalog-only and survive rescans; they do not rewrite the image file.
 
 Positive Prompt and Negative Prompt fields save local prompt corrections to Ambit's catalog. Dirty fields show an Unsaved marker and save on blur. For A1111, Forge, and unknown generator records, Parse from Clipboard can read A1111-style parameter text containing `Steps:` and apply the positive and negative prompts it finds.
 

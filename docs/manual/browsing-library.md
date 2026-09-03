@@ -15,6 +15,8 @@ Use the left sidebar to switch between:
 
 The filter button opens or closes the library panel. Favorites Only and Pinned Only buttons narrow the current view without changing your source files.
 
+The Image Kind bar below the header switches between All, Generated, Photos, and Other. Its counts reflect the surrounding search, collection, and metadata filters, so changing Image Kind does not erase the rest of the current view. Image Kind also appears as a removable active-filter chip and can be saved in a smart collection.
+
 ## Grid Browsing
 
 Grid View is designed for large libraries. Ambit uses virtualized rendering so it can browse many images without drawing every record at once.
@@ -26,10 +28,11 @@ Typical grid actions:
 - mark images as favorites
 - pin images for quick resurfacing
 - right-click images for context-specific actions
+- correct a misclassified image from Image Kind in the context menu
 
 ## Timeline Browsing
 
-Timeline View is useful when you remember when a batch was generated. It uses the same library data and filters as Grid View, but presents images around time.
+Timeline View is useful when you remember when an image was created or captured. Generated and Other images use file-modified time. Photos use their embedded capture date when available, while technical details retain the raw file-modified time.
 
 ## Statistics
 
@@ -43,6 +46,8 @@ Ambit supports common selection patterns:
 - `Shift + Click` selects a range.
 - `Ctrl + A` selects all visible items.
 - `Esc` clears selection or closes an open dialog.
+
+The selection bar can apply Image Kind to every selected image. Automatic restores metadata detection; Generated, Photo, and Other create a manual choice that survives metadata refreshes.
 
 Open the Help button in the sidebar for the current shortcut reference.
 

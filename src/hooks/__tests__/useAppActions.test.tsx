@@ -3,7 +3,13 @@ import { renderHook, act, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useAppActions } from '../useAppActions';
 import type { ImagesQueryKey } from '../useImagesQuery';
-import type { AIImage } from '../../types';
+import type { AIImage, SourceKind } from '../../types';
+
+type MockImage = Pick<AIImage, 'id' | 'filename' | 'timestamp'> & Partial<AIImage> & {
+    detectedSourceKind?: SourceKind;
+    sourceKind?: SourceKind;
+    sourceKindOverride?: SourceKind;
+};
 
 const mockAddToast = vi.fn();
 vi.mock('../useToast', () => ({
@@ -16,15 +22,16 @@ const mockSetImages = vi.fn();
 const mockToggleImageFavorite = vi.fn();
 const mockToggleImagePin = vi.fn();
 const mockToggleImageMask = vi.fn();
+const mockSetImageSourceKind = vi.fn();
 const mockRebuildThumbnailFacetCache = vi.fn();
 const mockBackfillParameterColumns = vi.fn();
 const mockIncrementFacetCacheVersion = vi.fn();
 const mockRefreshCollections = vi.fn();
 const mockRefreshSmartCounts = vi.fn();
 const mockSetPrivacyEnabled = vi.fn();
-let mockStoreImages = [
-    { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
-    { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
+let mockStoreImages: MockImage[] = [
+    { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 100 },
+    { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 200 },
 ];
 let mockStoreFilters = { collectionId: 'col1' as string | null };
 let mockSettings = { confirmDelete: true, enableAI: false, maskingMode: 'blur' };
@@ -35,6 +42,7 @@ vi.mock('../../services/db/imageRepo', () => ({
     toggleImageFavorite: (id: string, isFavorite: boolean) => mockToggleImageFavorite(id, isFavorite),
     toggleImagePin: (id: string, isPinned: boolean) => mockToggleImagePin(id, isPinned),
     toggleImageMask: (id: string, value: boolean | null) => mockToggleImageMask(id, value),
+    setImageSourceKind: (ids: string[], value: string | null) => mockSetImageSourceKind(ids, value),
     rebuildThumbnailFacetCache: () => mockRebuildThumbnailFacetCache(),
     markAsDeleted: vi.fn(),
     deleteImage: vi.fn(),
@@ -108,8 +116,8 @@ describe('useAppActions', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mockStoreImages = [
-            { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100 },
-            { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200 },
+            { id: '1', isFavorite: false, isPinned: false, filename: '1.png', timestamp: 100, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 100 },
+            { id: '2', isFavorite: true, isPinned: true, filename: '2.png', timestamp: 200, detectedSourceKind: 'generated', sourceKind: 'generated', sourceKindOverride: undefined, captureWallTimeMs: undefined, displayTimestamp: 200 },
         ];
         mockStoreFilters = { collectionId: 'col1' };
         mockSettings = { confirmDelete: true, enableAI: false, maskingMode: 'blur' };
@@ -118,6 +126,7 @@ describe('useAppActions', () => {
         mockToggleImageFavorite.mockResolvedValue(undefined);
         mockToggleImagePin.mockResolvedValue(undefined);
         mockToggleImageMask.mockResolvedValue(undefined);
+        mockSetImageSourceKind.mockResolvedValue(1);
         mockRebuildThumbnailFacetCache.mockResolvedValue(undefined);
         mockBackfillParameterColumns.mockResolvedValue(0);
         mockRefreshCollections.mockResolvedValue(undefined);
@@ -249,6 +258,41 @@ describe('useAppActions', () => {
         expect(mockSetImages).toHaveBeenCalled();
         expect(mockSetImages.mock.calls[0][0].map((img: { id: string }) => img.id)).toEqual(['2', '1']);
         expect(mockAddToast).toHaveBeenCalledWith('Pinned to top', 'info');
+    });
+
+    it('resets the materialized image kind when Automatic restores detection', async () => {
+        mockStoreImages = [{
+            ...mockStoreImages[0],
+            detectedSourceKind: 'photograph',
+            sourceKindOverride: 'other',
+            sourceKind: 'other',
+            captureWallTimeMs: 456_789,
+            displayTimestamp: 100,
+        }];
+        const { result } = renderHook(() => useAppActions(props));
+
+        await act(async () => {
+            await result.current.handleSetImageSourceKind(['1'], null);
+        });
+
+        expect(mockSetImageSourceKind).toHaveBeenCalledWith(['1'], null);
+        const updateImages = mockSetImages.mock.calls[0][0] as (images: MockImage[]) => MockImage[];
+        const [updated] = updateImages(mockStoreImages);
+        expect(updated).toMatchObject({
+            detectedSourceKind: 'photograph',
+            sourceKindOverride: undefined,
+            sourceKind: 'photograph',
+            displayTimestamp: 456_789,
+        });
+
+        const updateViewer = mockSetViewerSessionImages.mock.calls[0][0] as (
+            images: MockImage[] | null
+        ) => MockImage[] | null;
+        expect(updateViewer(mockStoreImages)?.[0]).toMatchObject({
+            sourceKindOverride: undefined,
+            sourceKind: 'photograph',
+            displayTimestamp: 456_789,
+        });
     });
 
     it('should preserve current order for single-image pins outside collections', async () => {

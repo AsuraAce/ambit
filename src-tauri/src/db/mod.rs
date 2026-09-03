@@ -109,6 +109,16 @@ pub struct ImageRecord {
     /// Source of the thumbnail: 'ambit', 'invokeai', etc.
     #[serde(rename = "thumbnailSource")]
     pub thumbnail_source: Option<String>,
+    #[serde(rename = "thumbnailVersion")]
+    pub thumbnail_version: u32,
+    #[serde(rename = "detectedSourceKind")]
+    pub detected_source_kind: crate::metadata::photo::SourceKind,
+    #[serde(rename = "sourceKindOverride")]
+    pub source_kind_override: Option<crate::metadata::photo::SourceKind>,
+    #[serde(rename = "photoMetadata")]
+    pub photo_metadata: Option<crate::metadata::photo::PhotoMetadata>,
+    #[serde(rename = "captureWallTimeMs")]
+    pub capture_wall_time_ms: Option<i64>,
     #[serde(rename = "isFavorite")]
     pub is_favorite: bool,
     #[serde(rename = "isPinned")]

@@ -125,6 +125,8 @@ const isPersistedFilterState = (value: unknown): boolean => {
     const aliasKeys = ['models', 'loras', 'embeddings', 'hypernetworks', 'controlNets', 'ipAdapters'];
 
     return hasValidOptionalValue(value, 'searchQuery', item => typeof item === 'string')
+        && hasValidOptionalValue(value, 'sourceKind', item =>
+            isEnumValue(item, ['all', 'generated', 'photograph', 'other']))
         && stringArrayKeys.every(key => hasValidOptionalValue(value, key, isStringArray))
         && hasValidOptionalValue(value, 'tools', item =>
             Array.isArray(item)
@@ -221,6 +223,8 @@ const isPersistedSettings = (value: unknown): boolean => {
             ['favorite', 'pin', 'both', 'none'].includes(String(item)))
         && hasValidOptionalValue(value, 'libraryLayoutMode', item =>
             ['grid', 'masonry', 'justified'].includes(String(item)))
+        && hasValidOptionalValue(value, 'librarySourceKind', item =>
+            ['all', 'generated', 'photograph', 'other'].includes(String(item)))
         && hasValidOptionalValue(value, 'thumbnailOptimizationProfile', item =>
             ['quiet', 'balanced', 'fast'].includes(String(item)))
         && hasValidOptionalValue(value, 'logLevel', item =>

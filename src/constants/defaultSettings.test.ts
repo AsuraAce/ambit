@@ -23,4 +23,10 @@ describe('createDefaultAppSettings', () => {
         expect(settings.resourceSortOptions).not.toBe(defaults.resourceSortOptions);
         expect(settings.systemPrompts).not.toBe(defaults.systemPrompts);
     });
+
+    it('defaults the library image kind to All and preserves valid saved choices', () => {
+        expect(createDefaultAppSettings().librarySourceKind).toBe('all');
+        expect(createDefaultAppSettings({ librarySourceKind: 'photograph' }).librarySourceKind).toBe('photograph');
+        expect(createDefaultAppSettings({ librarySourceKind: 'invalid' as AppSettings['librarySourceKind'] }).librarySourceKind).toBe('all');
+    });
 });

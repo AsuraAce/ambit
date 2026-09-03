@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { AIImage, AppSettings, RecoveryStyle } from '../types';
 import { useToast } from './useToast';
-import { imageToBase64 } from '../services/imageService';
+import { imageToAnalysisBase64 } from '../services/imageService';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { urlToPath } from '../utils/pathUtils';
@@ -104,7 +104,7 @@ export const useMaintenanceOps = ({
                 return null;
             }
 
-            const base64 = await imageToBase64(img.id);
+            const base64 = await imageToAnalysisBase64(img.id);
             const apiKey = useSettingsStore.getState().geminiApiKey;
             if (!apiKey) throw new Error("No API Key");
 

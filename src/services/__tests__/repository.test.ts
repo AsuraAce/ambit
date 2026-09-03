@@ -373,6 +373,7 @@ describe('TauriFsRepository', () => {
         expect(state.settings.hasCompletedOnboarding).toBe(true);
         expect(state.settings.promptMaskingEnabled).toBe(false);
         expect(state.settings.resourceFolders).toEqual([]);
+        expect(state.settings.librarySourceKind).toBe('all');
         expect(fsMocks.writeTextFile).toHaveBeenCalled();
         const [, serialized] = fsMocks.writeTextFile.mock.calls.find(([fileName]) => fileName === 'library.json') as [string, string, unknown];
         expect(JSON.parse(serialized).images).toEqual([]);
@@ -401,10 +402,35 @@ describe('TauriFsRepository', () => {
             createdAt: expect.any(Number),
             filters: expect.objectContaining({
                 searchQuery: 'portrait',
+                sourceKind: 'all',
                 loras: [],
                 dateRange: 'all',
             }),
         }));
+    });
+
+    it('rejects an invalid persisted image-kind filter', async () => {
+        fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
+            ...stateFixture(),
+            images: [],
+            smartCollections: [{
+                id: 'invalid-smart',
+                name: 'Invalid Smart',
+                filters: { searchQuery: '', sourceKind: 'camera' },
+            }],
+        }));
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+
+        const state = await new TauriFsRepository().load();
+
+        expect(state.smartCollections).toEqual([]);
+        expect(error).toHaveBeenCalledWith(
+            '[TauriFsRepository] Failed to read library.json:',
+            expect.any(Error)
+        );
+        error.mockRestore();
     });
 
     it('creates a recovery backup without rewriting clean main state', async () => {

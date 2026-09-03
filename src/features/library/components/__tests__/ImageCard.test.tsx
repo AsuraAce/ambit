@@ -74,7 +74,7 @@ describe('ImageCard', () => {
         expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png', fallbackSrc: 'source.png', microSrc: 'micro', loading: 'lazy' });
 
         fireEvent.mouseDown(root);
-        fireEvent.click(root);
+        fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
         fireEvent.contextMenu(root);
         fireEvent.dragStart(root);
         fireEvent.drag(root);

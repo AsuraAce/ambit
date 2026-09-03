@@ -1,6 +1,6 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { normalizePath, getFilename } from '../../utils/pathUtils';
-import { AIImage, GeneratorTool, ImageMetadata, OriginalState } from '../../types';
+import { AIImage, GeneratorTool, ImageMetadata, OriginalState, type PhotoMetadata, type SourceKind } from '../../types';
 
 // Lightweight column set for grid/listing views. Keep this scalar-only: large
 // JSON blobs are loaded by detail/viewer flows on demand.
@@ -8,7 +8,9 @@ export const getImageFieldsLight = (alias = 'images'): string => {
     const prefix = alias ? `${alias}.` : '';
     return `
         ${prefix}id, ${prefix}path, ${prefix}width, ${prefix}height, ${prefix}file_size, ${prefix}timestamp,
-        ${prefix}thumbnail_path, ${prefix}micro_thumbnail, ${prefix}thumbnail_source,
+        ${prefix}thumbnail_path, ${prefix}micro_thumbnail, ${prefix}thumbnail_source, ${prefix}thumbnail_version,
+        ${prefix}detected_source_kind, ${prefix}source_kind_override, ${prefix}source_kind,
+        ${prefix}capture_wall_time_ms, ${prefix}display_timestamp,
         ${prefix}is_favorite, ${prefix}is_pinned, ${prefix}is_deleted, ${prefix}is_missing, ${prefix}is_corrupt,
         ${prefix}user_masked, ${prefix}group_id, ${prefix}board_id, ${prefix}notes,
         ${prefix}is_intermediate_gen, ${prefix}is_grid_gen,
@@ -22,15 +24,16 @@ export const getImageFieldsFull = (alias = 'images'): string => {
     const prefix = alias ? `${alias}.` : '';
     return `
         ${getImageFieldsLight(alias)},
-        ${prefix}metadata_json, ${prefix}original_metadata_json, ${prefix}original_parsed_json, ${prefix}original_state_json
+        ${prefix}metadata_json, ${prefix}photo_metadata_json, ${prefix}original_metadata_json, ${prefix}original_parsed_json, ${prefix}original_state_json
     `;
 };
 
 export const REMOVED_IMAGE_FIELDS = `
-    id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source,
+    id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version,
+    detected_source_kind, source_kind_override, source_kind, capture_wall_time_ms, display_timestamp, photo_refresh_version,
     is_favorite, is_pinned, 0 as is_deleted, is_missing, user_masked, group_id, board_id, notes,
     0 as is_intermediate_gen, 0 as is_grid_gen,
-    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
+    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json, photo_metadata_json,
     NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
     NULL as steps, NULL as seed, NULL as cfg, NULL as sampler, NULL as generation_type,
     NULL as positive_prompt, NULL as negative_prompt
@@ -48,6 +51,9 @@ const asNumber = (value: unknown): number | undefined =>
 
 const asBoolean = (value: unknown): boolean =>
     value === true || value === 1 || value === '1';
+
+const asSourceKind = (value: unknown): SourceKind | undefined =>
+    value === 'generated' || value === 'photograph' || value === 'other' ? value : undefined;
 
 const parseJson = <T>(value: unknown): T | undefined => {
     if (typeof value !== 'string' || value.length === 0) return undefined;
@@ -100,10 +106,17 @@ export function mapRowToImage(row: ImageRow): AIImage {
         thumbnailUrl: thumbPath ? (thumbPath.startsWith('http') || thumbPath.startsWith('data:') || thumbPath.startsWith('blob:') ? thumbPath : convertFileSrc(thumbPath)) : convertFileSrc(normalizedPath),
         microThumbnail: asString(row.micro_thumbnail),
         thumbnailSource: asString(row.thumbnail_source),
+        thumbnailVersion: asNumber(row.thumbnail_version),
         filename: getFilename(normalizedPath),
         fileSize: asNumber(row.file_size),
         fileHash: asString(row.file_hash),
         timestamp: asNumber(row.timestamp) ?? 0,
+        displayTimestamp: asNumber(row.display_timestamp) ?? asNumber(row.timestamp) ?? 0,
+        detectedSourceKind: asSourceKind(row.detected_source_kind) ?? 'generated',
+        sourceKindOverride: asSourceKind(row.source_kind_override),
+        sourceKind: asSourceKind(row.source_kind) ?? asSourceKind(row.detected_source_kind) ?? 'generated',
+        photoMetadata: parseJson<PhotoMetadata>(row.photo_metadata_json),
+        captureWallTimeMs: asNumber(row.capture_wall_time_ms),
         width: asNumber(row.width) ?? 0,
         height: asNumber(row.height) ?? 0,
         isFavorite: asBoolean(row.is_favorite),

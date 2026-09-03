@@ -1,43 +1,55 @@
-import { FilterState } from '../types';
+import { FilterState, type ImageKindFilter } from '../types';
 
 type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'sortOption'>;
 
+export const normalizeImageKindFilter = (value: unknown): ImageKindFilter => (
+    value === 'generated' || value === 'photograph' || value === 'other'
+        ? value
+        : 'all'
+);
+
 export const createDefaultFilters = (
     overrides: Partial<FilterState> = {}
-): FilterState => ({
-    searchQuery: '',
-    models: [],
-    tools: [],
-    loras: [],
-    embeddings: [],
-    hypernetworks: [],
-    controlNets: [],
-    ipAdapters: [],
-    samplers: [],
-    generationTypes: [],
-    dateRange: 'all',
-    dateFrom: undefined,
-    dateTo: undefined,
-    favoritesOnly: false,
-    collectionId: null,
-    minSteps: undefined,
-    maxSteps: undefined,
-    minCfg: undefined,
-    maxCfg: undefined,
-    pinnedOnly: false,
-    showIntermediates: false,
-    showGrids: false,
-    sortOption: undefined,
-    matchModes: undefined,
-    assetFilterAliases: undefined,
-    ...overrides,
-});
+): FilterState => {
+    const normalizedSourceKind = normalizeImageKindFilter(overrides.sourceKind);
+
+    return {
+        searchQuery: '',
+        models: [],
+        tools: [],
+        loras: [],
+        embeddings: [],
+        hypernetworks: [],
+        controlNets: [],
+        ipAdapters: [],
+        samplers: [],
+        generationTypes: [],
+        dateRange: 'all',
+        dateFrom: undefined,
+        dateTo: undefined,
+        favoritesOnly: false,
+        collectionId: null,
+        minSteps: undefined,
+        maxSteps: undefined,
+        minCfg: undefined,
+        maxCfg: undefined,
+        pinnedOnly: false,
+        showIntermediates: false,
+        showGrids: false,
+        sortOption: undefined,
+        matchModes: undefined,
+        assetFilterAliases: undefined,
+        ...overrides,
+        sourceKind: normalizedSourceKind,
+    };
+};
 
 const hasRangeFilter = (value: number | null | undefined): boolean =>
     value !== undefined && value !== null;
 
 export const hasActiveResultFilters = (filters: FilterState): boolean => (
     filters.searchQuery.trim().length > 0 ||
+    (filters.sourceKind ?? 'all') !== 'all' ||
     filters.models.length > 0 ||
     filters.tools.length > 0 ||
     filters.loras.length > 0 ||

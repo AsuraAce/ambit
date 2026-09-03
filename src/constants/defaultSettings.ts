@@ -1,4 +1,5 @@
 import type { AppSettings } from '../types';
+import { normalizeImageKindFilter } from '../utils/filterState';
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   hasCompletedOnboarding: false,
@@ -19,6 +20,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   importOrphans: false,
   starredAs: 'favorite',
   libraryLayoutMode: 'masonry',
+  librarySourceKind: 'all',
   resourceViewModes: {},
   enableAutoThumbnailHealing: true,
   enforceHighQualityThumbnails: false,
@@ -28,22 +30,27 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 
 export const createDefaultAppSettings = (
   overrides: Partial<AppSettings> = {}
-): AppSettings => ({
-  ...DEFAULT_APP_SETTINGS,
-  monitoredFolders: [...DEFAULT_APP_SETTINGS.monitoredFolders],
-  maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
-  resourceFolders: DEFAULT_APP_SETTINGS.resourceFolders
-    ? [...DEFAULT_APP_SETTINGS.resourceFolders]
-    : undefined,
-  resourceViewModes: { ...DEFAULT_APP_SETTINGS.resourceViewModes },
-  resourceSortOptions: DEFAULT_APP_SETTINGS.resourceSortOptions
-    ? { ...DEFAULT_APP_SETTINGS.resourceSortOptions }
-    : undefined,
-  systemPrompts: DEFAULT_APP_SETTINGS.systemPrompts
-    ? { ...DEFAULT_APP_SETTINGS.systemPrompts }
-    : undefined,
-  ...overrides,
-});
+): AppSettings => {
+  const settings: AppSettings = {
+    ...DEFAULT_APP_SETTINGS,
+    monitoredFolders: [...DEFAULT_APP_SETTINGS.monitoredFolders],
+    maskedKeywords: [...DEFAULT_APP_SETTINGS.maskedKeywords],
+    resourceFolders: DEFAULT_APP_SETTINGS.resourceFolders
+      ? [...DEFAULT_APP_SETTINGS.resourceFolders]
+      : undefined,
+    resourceViewModes: { ...DEFAULT_APP_SETTINGS.resourceViewModes },
+    resourceSortOptions: DEFAULT_APP_SETTINGS.resourceSortOptions
+      ? { ...DEFAULT_APP_SETTINGS.resourceSortOptions }
+      : undefined,
+    systemPrompts: DEFAULT_APP_SETTINGS.systemPrompts
+      ? { ...DEFAULT_APP_SETTINGS.systemPrompts }
+      : undefined,
+    ...overrides,
+  };
+
+  settings.librarySourceKind = normalizeImageKindFilter(settings.librarySourceKind);
+  return settings;
+};
 
 export const inferPromptMaskingEnabled = (
   settings: Pick<Partial<AppSettings>, 'promptMaskingEnabled' | 'maskedKeywords'>

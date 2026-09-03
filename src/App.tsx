@@ -805,6 +805,7 @@ export default function App() {
                             onUpdateNegativePrompt={(id, neg) => handlers.handleUpdateNegativePrompt(id, neg)}
                             onUpdateModel={(id, model) => handlers.handleUpdateModel(id, model)}
                             onUpdateTool={(id, tool) => handlers.handleUpdateTool(id, tool)}
+                            onSetImageKind={(id, sourceKindOverride) => actions.handleSetImageSourceKind([id], sourceKindOverride)}
                             onToggleFavorite={(id) => actions.handleFavoriteImage(id, { showToast: false })}
                             onTogglePin={(id, p) => actions.handlePinImage(id, p, { showToast: false })}
                             onDelete={(id) => actions.handleDeleteViewerImage(id)}

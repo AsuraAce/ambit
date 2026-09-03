@@ -176,7 +176,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     <h3 className="font-black text-sm text-gray-900 dark:text-white tracking-tight">One-Time Import</h3>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
-                                    For images from downloaded packs, other apps, or screenshots.
+                                    Add generated images, camera photos, screenshots, or other local images. Supported formats: PNG, JPEG, and WebP.
                                 </p>
 
                                 <div className="flex gap-3">

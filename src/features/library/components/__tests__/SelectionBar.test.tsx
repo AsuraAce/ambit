@@ -89,6 +89,16 @@ describe('SelectionBar', () => {
         expect(callbacks.onToggleMask).toHaveBeenCalledWith(undefined, true);
     });
 
+    it('applies a bulk image-kind correction from the native selector', () => {
+        const onSetImageKind = vi.fn();
+        renderBar([image('one'), image('two')], { onSetImageKind });
+
+        fireEvent.change(screen.getByRole('combobox', { name: 'Set image kind for selected images' }), {
+            target: { value: 'photograph' },
+        });
+        expect(onSetImageKind).toHaveBeenCalledWith('photograph');
+    });
+
     it('keeps idle utilities neutral while reserving red for library removal', () => {
         renderBar([image('one'), image('two')], {
             activeCollectionId: 'collection-1',
