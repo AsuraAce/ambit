@@ -398,33 +398,23 @@ Status: In transition
 - Do not remove legacy `com.ambit.app` or Roaming fallback checks until the public-beta upgrade window is intentionally closed.
 
 ## Smart Thumbnail Optimization and Thumbnail Maintenance Ownership
-Status: Deferred
+Status: Resolved (2026-09-01)
 
-### Why Cleanup Is Needed
-- Product rule: thumbnail repair is currently split between visible Maintenance tools and background healing. `MaintenanceTabs.tsx` exposes a `Thumbnails` tab, while import/native generation, lazy gallery healing, and background Smart Thumbnail Optimization can also create or improve thumbnails.
-- `src/hooks/useThumbnailQueue.ts` still starts Smart Thumbnail Optimization automatically after a short startup delay when `enableAutoThumbnailHealing` is enabled.
-- The queue processes thumbnails in small batches and pauses during import or sync, but it begins by running full-library unoptimized-thumbnail count queries. On large production libraries, those count scans can still compete with normal browsing and search.
-- The visible `ThumbnailsTab` owns manual regeneration, broken-reference repair, developer-only thumbnail DB sync, and orphan thumbnail cleanup. Background healing owns automatic optimization.
-- This split keeps confusing maintainers and agents because thumbnail repair paths span visible UI, background startup work, services, and maintenance state.
+### Resolution
+- Smart and Maintenance regeneration now share the native candidate-processing, root-revalidation, outcome-persistence, cancellation, and diagnostics engine.
+- Migration 79 provides canonical required and upgradeable candidate views over disjoint partial indexes. Smart uses incremental keyset discovery without a full-library startup count; Maintenance preserves its exact scoped count and submits keyset-paged IDs.
+- Maintenance runs at Fast priority and retries failures immediately. Regenerate Selected force-overwrites cached thumbnails. Smart keeps idle/throttled orchestration and retry backoff.
+- A shared native job lease prevents overlapping Smart and Maintenance work. Set-based persistence suppresses per-row scope-cache trigger work, invalidates each affected scope once, and restores suppression atomically.
+- Image queries, library statistics, thumbnail facets, and collection thumbnails refresh once after a committed operation.
 
-### Current Pain Points
-- Startup can feel responsive overall while background thumbnail work still creates intermittent SQLite load shortly after launch.
-- The initial `getUnoptimizedImagesCount` query answers "how many total?" before doing useful work, which is expensive for large libraries and not always necessary.
-- Multiple active thumbnail repair paths make it harder to know which path is canonical for a given user problem.
+### Deliberate Separate Tools
+- Broken-reference repair, orphan thumbnail cleanup, and developer-only thumbnail database synchronization remain distinct Maintenance operations because they solve different data-integrity problems.
+- Lazy single-thumbnail generation remains a foreground gallery fallback rather than a repair-job orchestrator.
 
-### Safe-Change Warning
+### Ongoing Safe-Change Warning
 - Thumbnail work touches SQLite, filesystem scope, scanner commands, React Query image caches, and user-facing thumbnails. Avoid mixing this cleanup with unrelated maintenance UI work.
 - Do not remove visible Maintenance thumbnail actions or Advanced maintenance navigation unless a replacement workflow is explicitly designed.
 - Do not move all thumbnail repair into background healing unless the product decision is explicitly reopened.
-
-### Suggested Future Direction
-- Make Smart Thumbnail Optimization more incremental: fetch and process small candidate batches first, and avoid full-library count scans on startup.
-- Consider deferring background thumbnail healing until the app is idle for longer, until the user enables it explicitly, or until recent startup/import/sync work has settled.
-- Add an indexed or materialized thumbnail-repair candidate path if full scans remain necessary.
-- Clarify ownership between visible thumbnail maintenance, Advanced maintenance navigation, and background healing in a dedicated cleanup.
-
-### Not Part of the Current Task
-- Do not change thumbnail behavior while stabilizing prod startup and search migration fixes.
 
 ### Related Code
 - `src/hooks/useThumbnailQueue.ts`

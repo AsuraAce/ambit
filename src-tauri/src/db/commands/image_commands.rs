@@ -375,6 +375,63 @@ pub fn refresh_privacy_mask_index_for_conn(
     })
 }
 
+fn valid_active_replacement_ids(
+    conn: &Connection,
+    images: &[ImageRecord],
+) -> Result<BTreeSet<String>, String> {
+    let mut valid_ids = BTreeSet::new();
+
+    for chunk in images.chunks(500) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let query = format!(
+            "SELECT id, thumbnail_path
+             FROM images
+             WHERE thumbnail_source = 'ambit'
+               AND LOWER(thumbnail_path) LIKE '%.replacement.webp'
+               AND id IN ({placeholders})"
+        );
+        let ids = chunk
+            .iter()
+            .map(|image| image.id.as_str())
+            .collect::<Vec<_>>();
+        let mut stmt = conn.prepare(&query).map_err(|error| error.to_string())?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(ids), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|error| error.to_string())?;
+
+        for row in rows {
+            let (id, path) = row.map_err(|error| error.to_string())?;
+            let Ok(file) = std::fs::File::open(path) else {
+                continue;
+            };
+            // Only preserve decodable generated thumbnails, not merely readable files.
+            // Bound validation to the 512px repair output and a small encoded file.
+            const MAX_THUMBNAIL_BYTES: u64 = 4 * 1024 * 1024;
+            if !file.metadata().is_ok_and(|metadata| {
+                metadata.is_file() && (1..=MAX_THUMBNAIL_BYTES).contains(&metadata.len())
+            }) {
+                continue;
+            }
+            let mut reader = image::ImageReader::with_format(
+                std::io::BufReader::new(file),
+                image::ImageFormat::WebP,
+            );
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(512);
+            limits.max_image_height = Some(512);
+            limits.max_alloc = Some(MAX_THUMBNAIL_BYTES);
+            reader.limits(limits);
+            if reader.decode().is_ok() {
+                valid_ids.insert(id);
+            }
+        }
+    }
+
+    Ok(valid_ids)
+}
+
 fn save_images_batch_inner(
     conn: &rusqlite::Connection,
     images: &[ImageRecord],
@@ -384,8 +441,18 @@ fn save_images_batch_inner(
     {
         use crate::metadata::CURRENT_PARSER_VERSION;
 
+        let valid_replacement_ids = valid_active_replacement_ids(&tx, images)?;
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
+        let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
+            AND excluded.thumbnail_source = 'ambit'
+            AND ?28 = 1
+            AND LOWER(excluded.thumbnail_path) LIKE '%.webp'
+            AND LOWER(excluded.thumbnail_path) NOT LIKE '%.replacement.webp'
+            AND LOWER(images.thumbnail_path) = LOWER(
+                SUBSTR(excluded.thumbnail_path, 1, LENGTH(excluded.thumbnail_path) - 5)
+                || '.replacement.webp'
+            )";
         let save_sql =
             "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
@@ -415,34 +482,43 @@ fn save_images_batch_inner(
                     file_size=excluded.file_size,
                     file_hash=excluded.file_hash,
                     metadata_json=excluded.metadata_json,
-                    thumbnail_path=COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path),
+                    thumbnail_path=CASE
+                        WHEN (__PRESERVE_ACTIVE_REPLACEMENT__) THEN images.thumbnail_path
+                        ELSE COALESCE(NULLIF(excluded.thumbnail_path, ''), images.thumbnail_path)
+                    END,
                     micro_thumbnail=COALESCE(excluded.micro_thumbnail, images.micro_thumbnail),
                     thumbnail_source=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN excluded.thumbnail_source
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN excluded.thumbnail_source
                         ELSE images.thumbnail_source
                     END,
                     thumbnail_version=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
                              AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__)
                              AND excluded.thumbnail_source = 'ambit' THEN excluded.thumbnail_version
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN 0
                         ELSE images.thumbnail_version
                     END,
                     thumbnail_failure_count=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN 0
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN 0
                         ELSE images.thumbnail_failure_count
                     END,
                     thumbnail_last_error=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN NULL
                         ELSE images.thumbnail_last_error
                     END,
                     thumbnail_last_attempt_at=CASE
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
-                             AND images.thumbnail_path IS NOT excluded.thumbnail_path THEN NULL
+                             AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN NULL
                         ELSE images.thumbnail_last_attempt_at
                     END,
                     is_favorite=excluded.is_favorite,
@@ -490,7 +566,8 @@ fn save_images_batch_inner(
                     OR images.timestamp != excluded.timestamp
                     OR images.file_size != excluded.file_size
                     OR images.file_hash IS NOT excluded.file_hash
-                    OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path)
+                    OR (NULLIF(excluded.thumbnail_path, '') IS NOT NULL AND images.thumbnail_path IS NOT excluded.thumbnail_path
+                             AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__))
                     OR images.is_favorite IS NOT excluded.is_favorite
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.is_missing IS NOT excluded.is_missing
@@ -505,7 +582,11 @@ fn save_images_batch_inner(
                     OR (excluded.invoke_source_id IS NOT NULL AND images.invoke_source_id IS NOT excluded.invoke_source_id)
                     OR images.original_metadata_json IS NULL
                     OR images.original_metadata_json != excluded.original_metadata_json"
-        .replace("__INVOKE_SOURCE_PATH_MATCHES_SCOPE__", &invoke_source_path_matches_scope);
+        .replace("__INVOKE_SOURCE_PATH_MATCHES_SCOPE__", &invoke_source_path_matches_scope)
+        .replace(
+            "__PRESERVE_ACTIVE_REPLACEMENT__",
+            preserve_active_replacement_sql,
+        );
         let mut stmt = tx.prepare_cached(&save_sql).map_err(|e| e.to_string())?;
 
         let mut delete_loras = tx
@@ -643,7 +724,8 @@ fn save_images_batch_inner(
                     img.invoke_image_category,
                     img.invoke_image_origin,
                     img.invoke_owner_id,
-                    CURRENT_PARSER_VERSION
+                    CURRENT_PARSER_VERSION,
+                    i64::from(valid_replacement_ids.contains(&img.id))
                 ])
                 .map_err(|e| e.to_string())?;
 
@@ -4745,6 +4827,131 @@ mod tests {
         let row = fetch_thumbnail_state(&conn, "img-same");
         assert_eq!(row.1.as_deref(), Some("ambit"));
         assert_eq!(row.2, 1);
+    }
+
+    #[test]
+    fn save_images_batch_preserves_active_replacement_slot_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        std::fs::write(&canonical_path, b"canonical").expect("write canonical thumbnail");
+        image::RgbaImage::from_pixel(512, 512, image::Rgba([255, 0, 0, 255]))
+            .save(&replacement_path)
+            .expect("write valid replacement thumbnail");
+
+        let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+        repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[repaired]).expect("save repaired row");
+
+        let mut rescanned =
+            create_image_record("img-rescan", 101, 201, r#"{"positivePrompt":"rescanned"}"#);
+        rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-rescan");
+        assert_eq!(row.0, replacement_path.to_string_lossy());
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+        let metadata: String = conn
+            .query_row(
+                "SELECT metadata_json FROM images WHERE id = 'img-rescan'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rescanned metadata");
+        assert_eq!(metadata, r#"{"positivePrompt":"rescanned"}"#);
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
+    }
+
+    #[test]
+    fn save_images_batch_replaces_invalid_active_replacements_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-invalid-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        image::RgbaImage::from_pixel(8, 8, image::Rgba([0, 255, 0, 255]))
+            .save(&canonical_path)
+            .expect("write valid canonical thumbnail");
+        let valid_webp = std::fs::read(&canonical_path).expect("read valid thumbnail");
+
+        for invalid in [b"".as_slice(), b"not a WebP".as_slice(), &valid_webp[..20]] {
+            std::fs::write(&replacement_path, invalid).expect("write invalid replacement");
+            let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+            repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+            super::save_images_batch_inner(&conn, &[repaired])
+                .expect("save damaged replacement row");
+
+            let mut rescanned = create_image_record("img-rescan", 100, 200, "{}");
+            rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+            super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+            let row = fetch_thumbnail_state(&conn, "img-rescan");
+            assert_eq!(
+                row.0,
+                canonical_path.to_string_lossy(),
+                "invalid bytes: {invalid:?}"
+            );
+            assert_eq!(row.1.as_deref(), Some("ambit"));
+            assert_eq!(row.2, 1);
+        }
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
+    }
+
+    #[test]
+    fn save_images_batch_replaces_a_missing_active_replacement_during_rescan() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let thumbnail_dir = std::env::temp_dir().join(format!(
+            "ambit-rescan-missing-replacement-{}-{unique}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&thumbnail_dir).expect("create thumbnail fixture directory");
+        let canonical_path = thumbnail_dir.join("img-rescan.webp");
+        let replacement_path = thumbnail_dir.join("img-rescan.replacement.webp");
+        std::fs::write(&canonical_path, b"canonical").expect("write canonical thumbnail");
+
+        let mut repaired = create_image_record("img-rescan", 100, 200, "{}");
+        repaired.thumbnail_path = replacement_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[repaired]).expect("save broken replacement row");
+
+        let mut rescanned =
+            create_image_record("img-rescan", 101, 201, r#"{"positivePrompt":"rescanned"}"#);
+        rescanned.thumbnail_path = canonical_path.to_string_lossy().to_string();
+        super::save_images_batch_inner(&conn, &[rescanned]).expect("rescan row");
+
+        let row = fetch_thumbnail_state(&conn, "img-rescan");
+        assert_eq!(row.0, canonical_path.to_string_lossy());
+        assert_eq!(row.1.as_deref(), Some("ambit"));
+        assert_eq!(row.2, 1);
+
+        std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
     }
 
     #[test]

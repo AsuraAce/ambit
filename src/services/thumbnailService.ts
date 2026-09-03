@@ -5,14 +5,70 @@ import { scanImageNative, scanImagesBulk } from './metadataParser';
 import { AIImage } from '../types';
 import { getDb } from './db/connection';
 import { getUnoptimizedImagesCount, getUnoptimizedImageEntries } from './db/maintenanceRepo';
+import type { UnoptimizedImageCursor } from './db/maintenanceRepo';
 import { updateThumbnailPathsBatch } from './db/imageRepo';
 import { normalizePath } from '../utils/pathUtils';
+import { commands, type ThumbnailRepairBatchResult } from '../bindings';
+import { unwrap } from '../utils/spectaUtils';
+import { useSettingsStore } from '../stores/settingsStore';
 
 let cachedThumbnailDir: string | null = null;
+const thumbnailRepairOwnerId = `thumbnail-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+export const getThumbnailRepairOwnerId = (): string => thumbnailRepairOwnerId;
 
 // Throttling: Track in-progress generation to prevent memory spikes
 const generationInProgress = new Set<string>();
 const MAX_CONCURRENT_SINGLE = 5;
+
+const repairThumbnailBatch = async (
+    operationId: number,
+    ids: string[],
+    thumbnailDir: string,
+    force: boolean,
+): Promise<ThumbnailRepairBatchResult | null> => {
+    if (ids.length === 0) return null;
+
+    const sourceRoots = useSettingsStore.getState().settings.monitoredFolders
+        .filter(folder => folder.isActive)
+        .map(folder => folder.path);
+    return await unwrap(commands.repairThumbnailBatch({
+        operationId,
+        ids,
+        thumbnailDir,
+        sourceRoots,
+        force,
+        respectBackoff: false,
+    }));
+};
+
+const withThumbnailRepairOperation = async <T>(
+    signal: AbortSignal | undefined,
+    work: (operationId: number) => Promise<T>
+): Promise<T> => {
+    const operationId = await unwrap(commands.beginThumbnailRepairOperation(thumbnailRepairOwnerId));
+    const requestCancellation = () => {
+        void commands.cancelThumbnailOptimizationJob(operationId).catch(error => {
+            console.error('[Thumb] Failed to request thumbnail repair cancellation', error);
+        });
+    };
+    signal?.addEventListener('abort', requestCancellation, { once: true });
+    let operationError: unknown;
+    try {
+        return await work(operationId);
+    } catch (error) {
+        operationError = error;
+        throw error;
+    } finally {
+        signal?.removeEventListener('abort', requestCancellation);
+        try {
+            await unwrap(commands.finishThumbnailRepairOperation(operationId));
+        } catch (finishError) {
+            if (operationError === undefined) throw finishError;
+            console.error('[Thumb] Failed to release thumbnail repair operation', finishError);
+        }
+    }
+};
 
 export const getThumbnailDir = async (): Promise<string | undefined> => {
     if (cachedThumbnailDir) return cachedThumbnailDir;
@@ -74,54 +130,44 @@ export const regenerateThumbnailsForImages = async (
 ): Promise<AIImage[]> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir || candidates.length === 0) return [];
+    if (signal?.aborted) return [];
 
-    let processed = 0;
-    const total = candidates.length;
-    const updates: AIImage[] = [];
-    const dbUpdates: { id: string; thumbnailPath: string; thumbnailSource: string }[] = [];
-    const BATCH_SIZE = 100;
+    return withThumbnailRepairOperation(signal, async operationId => {
+        let processed = 0;
+        const total = candidates.length;
+        const updates: AIImage[] = [];
+        const BATCH_SIZE = 100;
+        const candidatesById = new Map(candidates.map(candidate => [candidate.id, candidate]));
 
-    // Process in batches
-    for (let i = 0; i < total; i += BATCH_SIZE) {
-        // Check for cancellation between batches
-        if (signal?.aborted) {
-            console.log('[Thumb] Regeneration cancelled by user');
-            break;
-        }
+        // Process in batches
+        for (let i = 0; i < total; i += BATCH_SIZE) {
+            // Check for cancellation between batches
+            if (signal?.aborted) {
+                console.log('[Thumb] Regeneration cancelled by user');
+                break;
+            }
 
-        const batch = candidates.slice(i, i + BATCH_SIZE);
-        const paths = batch.map(img => img.id);
+            const batch = candidates.slice(i, i + BATCH_SIZE);
+            const ids = batch.map(img => img.id);
 
-        try {
-            // fast-scan with extractWorkflow: false
-            const results = await scanImagesBulk(paths, thumbDir, false, false);
-
-            // Match results back to images
-            results.forEach((res, idx) => {
-                if (res.thumbnail) {
-                    updates.push({ ...batch[idx], thumbnailUrl: res.thumbnail });
-                    dbUpdates.push({ id: batch[idx].id, thumbnailPath: res.thumbnail, thumbnailSource: 'ambit' });
+            const result = await repairThumbnailBatch(operationId, ids, thumbDir, true);
+            if (!result) break;
+            result.updates.forEach(update => {
+                const candidate = candidatesById.get(update.id);
+                if (candidate) {
+                    updates.push({ ...candidate, thumbnailUrl: update.thumbnailPath });
                 }
             });
 
-        } catch (e) {
-            console.error(`Failed to bulk gen thumbs for batch starting at ${i}`, e);
+            processed += result.checked;
+            if (onProgress && result.checked > 0) {
+                onProgress(Math.min(processed, total), total);
+            }
+            if (result.wasCancelled) break;
         }
 
-        processed += batch.length;
-        if (onProgress) onProgress(Math.min(processed, total), total);
-    }
-
-    // Persist all updates to DB in one batch
-    if (dbUpdates.length > 0) {
-        try {
-            await updateThumbnailPathsBatch(dbUpdates);
-        } catch (e) {
-            console.error('[Thumb] Failed to persist thumbnail updates to DB', e);
-        }
-    }
-
-    return updates;
+        return updates;
+    });
 };
 
 /**
@@ -138,64 +184,54 @@ export const regenerateAllUnoptimized = async (
 ): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
+    if (signal?.aborted) return 0;
 
-    // Get total count first
-    const total = await getUnoptimizedImagesCount(whereClause, params, includeUpgradeable);
-    if (total === 0) return 0;
+    return withThumbnailRepairOperation(signal, async operationId => {
+        // Count and page while one native owner excludes Smart repairs.
+        const total = await getUnoptimizedImagesCount(whereClause, params, includeUpgradeable);
+        if (total === 0) return 0;
 
-    let processed = 0;
-    let generated = 0;
-    const PAGE_SIZE = 500; // Fetch 500 IDs at a time from DB
-    const BATCH_SIZE = 150; // Process 150 at a time for thumbnail generation
+        let processed = 0;
+        let generated = 0;
+        const PAGE_SIZE = 500; // Fetch 500 IDs at a time from DB
+        const BATCH_SIZE = 150; // Process 150 at a time for thumbnail generation
 
-    // Process in pages
-    for (let offset = 0; offset < total; offset += PAGE_SIZE) {
-        if (signal?.aborted) {
-            console.log('[Thumb] Regeneration cancelled by user');
-            break;
-        }
+        let cursor: UnoptimizedImageCursor | null = null;
 
-        // Fetch next page of IDs
-        const entries = await getUnoptimizedImageEntries(offset, PAGE_SIZE, whereClause, params, includeUpgradeable);
-        if (entries.length === 0) break;
-
-        // Process this page in batches
-        for (let i = 0; i < entries.length; i += BATCH_SIZE) {
-            if (signal?.aborted) break;
-
-            const batchEntries = entries.slice(i, i + BATCH_SIZE);
-            const batchIds = batchEntries.map(e => e.id);
-            const batchPaths = batchEntries.map(e => e.path);
-            const dbUpdates: { id: string; thumbnailPath: string; thumbnailSource: string }[] = [];
-
-            try {
-                const results = await scanImagesBulk(batchPaths, thumbDir, false, false);
-                results.forEach((res, idx) => {
-                    if (res.thumbnail) {
-                        dbUpdates.push({ id: batchIds[idx], thumbnailPath: res.thumbnail, thumbnailSource: 'ambit' });
-                        generated++;
-                    }
-                });
-            } catch (e) {
-                console.error(`[Thumb] Batch failed at offset ${offset + i}`, e);
+        // Keyset pagination remains stable as successful rows leave the candidate set.
+        while (processed < total) {
+            if (signal?.aborted) {
+                console.log('[Thumb] Regeneration cancelled by user');
+                break;
             }
 
-            // Persist batch to DB immediately (don't accumulate all in memory)
-            if (dbUpdates.length > 0) {
-                try {
-                    await updateThumbnailPathsBatch(dbUpdates);
-                } catch (e) {
-                    console.error('[Thumb] DB persist failed', e);
+            // Fetch next page of IDs
+            const entries = await getUnoptimizedImageEntries(cursor, PAGE_SIZE, whereClause, params, includeUpgradeable);
+            if (entries.length === 0) break;
+            const lastEntry = entries[entries.length - 1];
+            cursor = { timestamp: lastEntry.timestamp, id: lastEntry.id };
+
+            // Process this page in batches
+            for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+                if (signal?.aborted) break;
+
+                const batchEntries = entries.slice(i, i + BATCH_SIZE);
+                const batchIds = batchEntries.map(e => e.id);
+
+                const result = await repairThumbnailBatch(operationId, batchIds, thumbDir, false);
+                if (!result) break;
+                generated += result.optimized;
+                processed += result.checked;
+                if (result.checked > 0) {
+                    onProgress?.(Math.min(processed, total), total);
                 }
+                if (result.wasCancelled) break;
             }
-
-            processed += batchIds.length;
-            onProgress?.(Math.min(processed, total), total);
         }
-    }
 
-    console.log(`[Thumb] Regeneration complete: ${generated} thumbnails generated`);
-    return generated;
+        console.log(`[Thumb] Regeneration complete: ${generated} thumbnails generated`);
+        return generated;
+    });
 };
 
 /**
@@ -206,48 +242,50 @@ export const cleanupOrphanThumbnails = async (): Promise<number> => {
     const thumbDir = await getThumbnailDir();
     if (!thumbDir) return 0;
 
-    // Get all thumbnail files on disk
-    let files: { name: string }[];
-    try {
-        files = await readDir(thumbDir);
-    } catch {
-        return 0; // Directory doesn't exist yet
-    }
+    return withThumbnailRepairOperation(undefined, async () => {
+        // Get all thumbnail files on disk only after native publication has settled.
+        let files: { name: string }[];
+        try {
+            files = await readDir(thumbDir);
+        } catch {
+            return 0; // Directory doesn't exist yet
+        }
 
-    // Get all valid thumbnail paths from DB
-    const db = await getDb();
-    const rows = await db.select<{ thumbnail_path: string }[]>(
-        'SELECT thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
-    );
+        // Get all valid thumbnail paths from DB
+        const db = await getDb();
+        const rows = await db.select<{ thumbnail_path: string }[]>(
+            'SELECT thumbnail_path FROM images WHERE thumbnail_path IS NOT NULL AND thumbnail_path != ""'
+        );
 
-    // Build set of valid thumbnail filenames (not full paths, just filenames for comparison)
-    const validFilenames = new Set<string>();
-    for (const row of rows) {
-        const fullPath = normalizePath(row.thumbnail_path);
-        const parts = fullPath.split(/[\\/]/);
-        const filename = parts[parts.length - 1];
-        if (filename) validFilenames.add(filename.toLowerCase());
-    }
+        // Build set of valid thumbnail filenames (not full paths, just filenames for comparison)
+        const validFilenames = new Set<string>();
+        for (const row of rows) {
+            const fullPath = normalizePath(row.thumbnail_path);
+            const parts = fullPath.split(/[\\/]/);
+            const filename = parts[parts.length - 1];
+            if (filename) validFilenames.add(filename.toLowerCase());
+        }
 
-    // Delete orphans
-    let cleaned = 0;
-    for (const file of files) {
-        if (!validFilenames.has(file.name.toLowerCase())) {
-            try {
-                const fullPath = await join(thumbDir, file.name);
-                await remove(fullPath);
-                cleaned++;
-            } catch (e) {
-                console.warn(`[Thumb] Failed to remove orphan: ${file.name}`, e);
+        // Delete orphans
+        let cleaned = 0;
+        for (const file of files) {
+            if (!validFilenames.has(file.name.toLowerCase())) {
+                try {
+                    const fullPath = await join(thumbDir, file.name);
+                    await remove(fullPath);
+                    cleaned++;
+                } catch (e) {
+                    console.warn(`[Thumb] Failed to remove orphan: ${file.name}`, e);
+                }
             }
         }
-    }
 
-    if (cleaned > 0) {
-        console.log(`[Thumb] Cleaned up ${cleaned} orphan thumbnails`);
-    }
+        if (cleaned > 0) {
+            console.log(`[Thumb] Cleaned up ${cleaned} orphan thumbnails`);
+        }
 
-    return cleaned;
+        return cleaned;
+    });
 };
 
 /**

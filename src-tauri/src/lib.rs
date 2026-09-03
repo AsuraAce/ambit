@@ -109,6 +109,9 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             scanner::scan_directory_since,
             scanner::a1111::discover_a1111_folders,
             thumb::optimizer::start_thumbnail_optimization_job,
+            thumb::optimizer::begin_thumbnail_repair_operation,
+            thumb::optimizer::finish_thumbnail_repair_operation,
+            thumb::optimizer::repair_thumbnail_batch,
             thumb::optimizer::cancel_thumbnail_optimization_job,
             thumb::optimizer::set_thumbnail_optimization_throttled,
             thumb::optimizer::get_thumbnail_optimization_failures,
@@ -143,7 +146,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             fs_commands::register_library_path,
             fs_commands::get_invoke_db_snapshot,
         ])
-        .events(tauri_specta::collect_events![watcher::FolderChangeEvent])
+        .events(tauri_specta::collect_events![
+            watcher::FolderChangeEvent,
+            thumb::optimizer::ThumbnailOptimizationProgress,
+            thumb::optimizer::ThumbnailOptimizationComplete
+        ])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
