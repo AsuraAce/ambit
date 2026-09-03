@@ -744,7 +744,14 @@ export const upsertInvokeBoardCollection = async (board: InvokeBoardCollectionIn
                 invoke_source_name = excluded.invoke_source_name,
                 invoke_source_present = 1,
                 updated_at = CASE
+                    WHEN collections.invoke_source_name IS NULL
+                     AND collections.source IS 'invoke'
+                     AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                     AND collections.invoke_source_id IS excluded.invoke_source_id
+                     AND collections.invoke_source_present = 1
+                    THEN collections.updated_at
                     WHEN collections.invoke_source_name IS excluded.invoke_source_name
+                     AND collections.source IS 'invoke'
                      AND collections.invoke_owner_id IS excluded.invoke_owner_id
                      AND collections.invoke_source_id IS excluded.invoke_source_id
                      AND collections.invoke_source_present = 1
@@ -820,7 +827,15 @@ export const upsertInvokeBoardCollections = async (
                     invoke_source_id = excluded.invoke_source_id,
                     invoke_source_name = excluded.invoke_source_name,
                     invoke_source_present = 1,
-                    updated_at = MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+                    updated_at = CASE
+                        WHEN collections.invoke_source_name IS NULL
+                         AND collections.source IS 'invoke'
+                         AND collections.invoke_owner_id IS excluded.invoke_owner_id
+                         AND collections.invoke_source_id IS excluded.invoke_source_id
+                         AND collections.invoke_source_present = 1
+                        THEN collections.updated_at
+                        ELSE MAX(COALESCE(collections.updated_at, 0) + 1, excluded.updated_at)
+                    END
                  WHERE collections.source IS NOT 'invoke'
                     OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
                     OR collections.invoke_source_id IS NOT excluded.invoke_source_id
