@@ -5,7 +5,7 @@ import {
 import { unwrap } from '../../utils/spectaUtils';
 import { isVideoAsset, type AIImage, type MissingFileAuditResult } from '../../types';
 import { getDb, dbMutex } from './connection';
-import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
+import { mapRowToImage, getImageFieldsLight, REMOVED_IMAGE_FIELDS_LIGHT, type ImageRow } from './repoUtils';
 import { isBrowserMockMode } from '../runtime';
 import {
     getBrowserMockImages,
@@ -166,7 +166,7 @@ export const getDeletedImages = async (): Promise<AIImage[]> => {
     }
 
     const db = await getDb();
-    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS} FROM scoped_removed_images AS removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
+    const rows = await db.select<ImageRow[]>(`SELECT ${REMOVED_IMAGE_FIELDS_LIGHT} FROM scoped_removed_images AS removed_images WHERE invoke_scope_hidden = 0 ORDER BY removed_at DESC`);
     return rows.map(mapRowToImage);
 };
 

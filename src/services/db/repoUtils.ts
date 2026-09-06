@@ -40,17 +40,38 @@ export const getImageFieldsFull = (alias = 'images'): string => {
     `;
 };
 
-export const REMOVED_IMAGE_FIELDS = `
+const REMOVED_IMAGE_FIELDS_BASE = `
     id, path, width, height, file_size, timestamp, thumbnail_path, micro_thumbnail, thumbnail_source,
     is_favorite, is_pinned, 0 as is_deleted, is_missing, user_masked, group_id, board_id, notes,
     ${INVOKE_IMAGE_SOURCE_FIELDS},
     0 as is_intermediate_gen, 0 as is_grid_gen,
-    original_metadata_json, original_parsed_json, original_state_json, is_corrupt, metadata_json,
+    is_corrupt,
     NULL as model_name, NULL as model_hash, NULL as tool, NULL as resolved_model_name, NULL as file_hash,
     NULL as steps, NULL as seed, NULL as cfg, NULL as sampler, NULL as generation_type,
-    NULL as positive_prompt, NULL as negative_prompt,
+    NULL as negative_prompt,
     media_type, media_container, media_mime_type, duration_ms, video_codec, video_profile,
     audio_present, audio_codec, frame_rate_num, frame_rate_den, rotation_degrees, probe_status, playback_status
+`;
+
+// Removed lists must not send archival JSON blobs across IPC (#308). Extract only
+// the positive prompt needed for privacy masking, matching mapRowToImage's sparse
+// fallback to originalMetadata (no current prompt, sampler, or nonzero steps).
+export const REMOVED_IMAGE_FIELDS_LIGHT = `
+    ${REMOVED_IMAGE_FIELDS_BASE},
+    CASE
+        WHEN json_extract(NULLIF(metadata_json, ''), '$.positivePrompt') NOT IN ('', 0)
+        THEN CASE WHEN json_type(NULLIF(metadata_json, ''), '$.positivePrompt') = 'text'
+            THEN json_extract(NULLIF(metadata_json, ''), '$.positivePrompt') END
+        WHEN COALESCE(json_extract(NULLIF(metadata_json, ''), '$.sampler'), 'Unknown') IN ('Unknown', '', 0)
+         AND COALESCE(json_extract(NULLIF(metadata_json, ''), '$.steps'), 0) IN (0, '')
+        THEN CASE WHEN json_type(NULLIF(original_parsed_json, ''), '$.positivePrompt') = 'text'
+            THEN json_extract(NULLIF(original_parsed_json, ''), '$.positivePrompt') END
+    END AS positive_prompt
+`;
+
+export const REMOVED_IMAGE_FIELDS = `
+    ${REMOVED_IMAGE_FIELDS_BASE}, NULL as positive_prompt,
+    original_metadata_json, original_parsed_json, original_state_json, metadata_json
 `;
 
 export type ImageRow = Record<string, unknown>;

@@ -31,6 +31,7 @@ const maintenanceDataMock = vi.hoisted(() => ({
 
 const imageRepoMock = vi.hoisted(() => ({
     getImagesByIds: vi.fn().mockResolvedValue([]),
+    getRemovedImagesByIds: vi.fn().mockResolvedValue([]),
     toggleImageIntermediate: vi.fn().mockResolvedValue(undefined)
 }));
 
@@ -293,7 +294,7 @@ vi.mock('../../../features/viewer/components/ImageViewer', () => ({
         onUpdatePrompt?: (id: string, prompt: string) => void;
         isShortcutBlocked?: boolean;
     }) => (
-        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-editable={String(Boolean(onUpdatePrompt))} data-shortcuts-blocked={String(isShortcutBlocked)}>
+        <div data-testid="maintenance-viewer" data-image-id={image.id} data-prompt={image.metadata.positivePrompt} data-metadata={JSON.stringify(image.metadata)} data-original-chunks={JSON.stringify(image.originalChunks)} data-editable={String(Boolean(onUpdatePrompt))} data-shortcuts-blocked={String(isShortcutBlocked)}>
             {onDelete && <button onClick={onDelete}>Viewer Cleanup</button>}
             <button onClick={onNext}>Viewer Next</button>
             <button onClick={onPrev}>Viewer Previous</button>
@@ -320,7 +321,7 @@ vi.mock('../../../features/viewer/components/VideoViewer', () => ({
         onUpdateNotes?: (id: string, notes: string) => void;
         onSetCollectionMembership?: (imageId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     }) => (
-        <div data-testid="maintenance-video-viewer" data-video-id={video.id} data-editable={String(Boolean(onUpdateNotes))}>
+        <div data-testid="maintenance-video-viewer" data-video-id={video.id} data-metadata={JSON.stringify(video.metadata)} data-original-chunks={JSON.stringify(video.originalChunks)} data-editable={String(Boolean(onUpdateNotes))}>
             {onDelete && <button onClick={() => onDelete(video.id)}>Video Cleanup</button>}
             <button onClick={onClose}>Close Video Viewer</button>
             {onToggleFavorite && <button onClick={() => onToggleFavorite(video.id)}>Favorite Video Viewer</button>}
@@ -350,6 +351,7 @@ vi.mock('../../../features/viewer/components/CompareModal', () => ({
 
 vi.mock('../../../services/db/imageRepo', () => ({
     getImagesByIds: imageRepoMock.getImagesByIds,
+    getRemovedImagesByIds: imageRepoMock.getRemovedImagesByIds,
     toggleImageIntermediate: imageRepoMock.toggleImageIntermediate
 }));
 
@@ -416,6 +418,7 @@ describe('MaintenanceView', () => {
                 : update;
         });
         imageRepoMock.getImagesByIds.mockResolvedValue([]);
+        imageRepoMock.getRemovedImagesByIds.mockImplementation(async (ids: string[]) => maintenanceDataMock.localDeletedImages.filter(image => ids.includes(image.id)));
         imageRepoMock.toggleImageIntermediate.mockResolvedValue(undefined);
         thumbnailServiceMock.regenerateAllUnoptimized.mockResolvedValue(0);
         thumbnailConsumerRefreshMock.refreshThumbnailConsumers.mockResolvedValue(undefined);
@@ -424,6 +427,67 @@ describe('MaintenanceView', () => {
 
     afterEach(() => {
         vi.restoreAllMocks();
+    });
+
+    it.each(['image', 'video'] as const)('hydrates only the opened Removed %s for its viewer', async mediaType => {
+        const light = mediaType === 'video' ? createVideo() : createImage();
+        const full = {
+            ...light,
+            metadata: {
+                ...light.metadata, model: 'Archived model', tool: GeneratorTool.COMFYUI,
+                positivePrompt: 'Current prompt', negativePrompt: 'Original negative',
+                steps: 28, workflowJson: '{"nodes":[]}',
+            },
+            originalChunks: { workflow: 'archived workflow' },
+        };
+        maintenanceDataMock.initializedTabs.add('trash');
+        maintenanceDataMock.localDeletedImages = [light];
+        imageRepoMock.getRemovedImagesByIds.mockResolvedValue([full]);
+        renderView();
+        fireEvent.click(screen.getByText('Tab trash'));
+        expect(imageRepoMock.getRemovedImagesByIds).not.toHaveBeenCalled();
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        const viewerId = mediaType === 'video' ? 'maintenance-video-viewer' : 'maintenance-viewer';
+        await waitFor(() => expect(screen.getByTestId(viewerId).getAttribute('data-metadata'))
+            .toBe(JSON.stringify(full.metadata)));
+        expect(screen.getByTestId(viewerId).getAttribute('data-original-chunks')).toBe(JSON.stringify(full.originalChunks));
+        expect(imageRepoMock.getRemovedImagesByIds).toHaveBeenCalledExactlyOnceWith([light.id]);
+        expect(maintenanceDataMock.localDeletedImages[0]).toBe(light);
+    });
+
+    it('ignores a late Removed detail response after navigating to another item', async () => {
+        const first = createImage({ id: 'first' });
+        const second = createImage({ id: 'second' });
+        maintenanceDataMock.initializedTabs.add('trash');
+        maintenanceDataMock.localDeletedImages = [first, second];
+        let resolveFirst!: (images: AIImage[]) => void;
+        imageRepoMock.getRemovedImagesByIds
+            .mockImplementationOnce(() => new Promise<AIImage[]>(resolve => { resolveFirst = resolve; }))
+            .mockResolvedValueOnce([{ ...second, metadata: { ...second.metadata, positivePrompt: 'Second full prompt' } }]);
+        renderView();
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        fireEvent.click(screen.getByText('Viewer Next'));
+        await waitFor(() => expect(screen.getByTestId('maintenance-viewer').getAttribute('data-prompt')).toBe('Second full prompt'));
+        await act(async () => resolveFirst([{ ...first, metadata: { ...first.metadata, positivePrompt: 'Late first prompt' } }]));
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-image-id')).toBe('second');
+        expect(screen.getByTestId('maintenance-viewer').getAttribute('data-prompt')).toBe('Second full prompt');
+        fireEvent.click(screen.getByText('Close Viewer'));
+        expect(screen.queryByTestId('maintenance-viewer')).toBeNull();
+    });
+
+    it('reports failed Removed hydration and allows retry by reopening the viewer', async () => {
+        const image = createImage();
+        maintenanceDataMock.initializedTabs.add('trash');
+        maintenanceDataMock.localDeletedImages = [image];
+        imageRepoMock.getRemovedImagesByIds.mockRejectedValueOnce(new Error('sqlite busy'));
+        renderView();
+        fireEvent.click(screen.getByText('Tab trash'));
+        fireEvent.click(await screen.findByText('Open Trash Viewer'));
+        await waitFor(() => expect(toastMock.addToast).toHaveBeenCalledWith('Could not load removed item details. Close and reopen the viewer to retry.', 'error'));
+        fireEvent.click(screen.getByText('Close Viewer'));
+        fireEvent.click(screen.getByText('Open Trash Viewer'));
+        await waitFor(() => expect(imageRepoMock.getRemovedImagesByIds).toHaveBeenCalledTimes(2));
     });
 
     it('does not derive Missing tab results from gallery search images', () => {
