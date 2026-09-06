@@ -8,7 +8,7 @@ This page lists common first-run and library issues. When in doubt, prefer actio
 
 Confirm that you added image sources:
 
-- use Add Images, then Add Folder for a normal folder
+- use Import Images, then One-Time Import > Add Folder in the Add Media dialog for a normal folder
 - use Settings > Connections > Folders for monitored folders
 - use Settings > Connections > ComfyUI for a ComfyUI output folder
 - use Settings > Connections > SD WebUI for A1111, Forge, SD.Next, Anapnoe, or archive folders
@@ -33,7 +33,7 @@ Metadata depends on what the generator embedded in the file. Some images do not 
 
 Useful checks:
 
-- open the image viewer and inspect Info, Internal Metadata, and Workflow tabs
+- open the image viewer and inspect the Metadata tab, its Internal Metadata inspector for images, and the Workflow tab
 - check whether the image came from a supported generator output
 - refresh metadata for the folder
 - use AI Prompt Recovery only when you intentionally want Gemini to infer a prompt from the image

@@ -2,7 +2,7 @@
 
 [Back to manual index](index.md)
 
-Ambit builds its library by scanning local image folders and selected files. It catalogs supported image files, accepts supported videos through manual selection, and keeps the original files on disk.
+Ambit builds its library by scanning local image folders and selected files. It catalogs supported images and videos through file selection and folder scans, and keeps the original files on disk.
 
 ## Import Choices
 
@@ -22,15 +22,15 @@ flowchart TD
 
 Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for downloaded packs, screenshots, archives, or individual files.
 
-Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder monitoring and Live Watch remain image-only in this phase.
+Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder scans and Live Watch also discover supported videos, including create, modify, rename, and removal changes. A video whose poster cannot be generated remains cataloged with a generic placeholder.
 
-## Monitored Image Folders
+## Monitored Folders
 
-Open Settings > Connections > Folders to manage image folders.
+Open Settings > Connections > Folders to manage monitored media folders.
 
 In the Folders section you can:
 
-- add folders containing AI-generated images
+- add folders containing images and supported videos
 - review folders Ambit is monitoring
 - rescan a single folder
 - refresh metadata across all folders

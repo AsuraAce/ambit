@@ -1,9 +1,9 @@
 # Architecture
 Status: Canonical
-Last reviewed: 2026-08-09
+Last reviewed: 2026-09-06
 
 ## System Overview
-Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Library assets and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring. Images remain the default asset type; manually imported videos use an explicit discriminator and bounded native probe.
+Ambit is a Tauri v2 desktop app with a React/TypeScript frontend and a Rust backend exposed through Tauri commands. Library assets and heavy metadata live in SQLite under Local AppData, lightweight app state lives in `library.json` under app-local data, and sensitive secrets such as the Gemini API key live in the OS keyring. Images remain the default asset type; videos use an explicit discriminator and bounded native probe through manual import, folder scans, and Live Watch.
 
 ## Major Subsystems
 
@@ -22,11 +22,20 @@ Risks: PRAGMA or migration changes affect startup, large-library performance, an
 Related docs: `docs/refactor.md#persistence-boundary-cleanup`
 
 ### Metadata Extraction, Scanning, and Watcher Flows
-Purpose: scan image files, extract metadata and workflows, resolve models, and watch library folders.
+Purpose: scan image and video files, extract metadata and workflows, resolve models, and watch library folders.
 Code: `src-tauri/src/scanner/`, `src-tauri/src/metadata/`, `src-tauri/src/media.rs`, `src-tauri/src/watcher.rs`, `src-tauri/src/fs_commands.rs`, `src-tauri/src/security.rs`
 Interacts with: frontend import, settings, maintenance, and viewer flows
 Risks: parser heuristics and watcher behavior can create wrong metadata or miss library changes; external path handling must stay scoped and local
 Related docs: `docs/manual/adding-folders.md`, `docs/manual/generator-integrations.md`, `docs/comfyui-support-workflow.md`
+
+### Video Assets and Metadata
+Purpose: probe local video candidates, generate static posters, scope playback/export, and preserve ComfyUI generation evidence.
+Code: `src-tauri/src/media.rs`, `src-tauri/src/metadata/video.rs`, `src/services/videoService.ts`, `src/services/importService.ts`, `src/features/viewer/components/VideoViewer.tsx`
+Interacts with: typed folder events, SQLite media columns, resource facets, metadata refresh, and shared viewer controls
+Risks: admission does not guarantee runtime codec support; image-only operations must exclude videos; masked videos must not create a player before reveal
+Related docs: `docs/manual/viewer-and-metadata.md`, `docs/plans/genai-video-library-support.md`
+
+MP4, WebM, MOV, M4V, and MKV candidates are probed through the bundled Windows MediaInfo executable. Poster extraction uses the Windows media path; browser playback success or failure determines playback status. Grid and timeline use static posters, with a generic fallback when extraction fails. Video metadata has its own `VIDEO_PARSER_VERSION`, independent of image reparsing. A validated exact sibling `<stem>.workflow.json` takes precedence over embedded evidence; original evidence and conflicts are retained, and explicit user overrides survive refresh. Sidecar changes route back to the associated video through the import service. The active video plan records remaining owner acceptance and later assurance work separately from implemented behavior.
 
 ### Thumbnail Generation and Optimization
 Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in the background, expose maintenance controls, and throttle or cancel native work around foreground activity.
@@ -45,7 +54,7 @@ Rescans preserve an active replacement thumbnail only after bounded WebP decodin
 Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/statistics views, maintenance screens, and settings flows.
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`
 Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, and Tauri plugins
-Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature. Gallery and Maintenance both render the shared `src/features/viewer/components/ImageViewer.tsx`, but each owns context-specific session navigation and action wiring; viewer feature changes must verify both entry points.
+Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature. Gallery and Maintenance both route to shared `ImageViewer.tsx` and `VideoViewer.tsx` components under `src/features/viewer/components/`, but each owns context-specific session navigation and action wiring; viewer feature changes must verify both entry points.
 Related docs: `docs/refactor.md#frontend-state-and-shell-coordination`, `docs/refactor.md#shared-image-viewer-integration-boundary`
 
 ### Query, State, and Persistence Adapters
@@ -72,8 +81,8 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - Large library browsing paths must remain virtualized and performance-conscious.
 - Removed listings exclude archival JSON blobs from IPC. SQLite extracts the positive prompt needed for privacy masking with the same sparse-metadata fallback as full row mapping; full ID lookups retain archival metadata for lifecycle and InvokeAI consumers. Maintenance hydrates only the currently opened Removed viewer item, with no retained detail cache after closing or navigating away.
 - Gallery and timeline results for videos render static posters or a generic placeholder; they must not instantiate background video players.
-- The bundled MediaInfo sidecar is invoked only by Rust-owned fixed arguments against canonical picker-scoped regular files, with bounded output, timeout, cancellation, and single-process concurrency.
-- Gallery and Maintenance should reuse the shared `ImageViewer` presentation instead of developing separate viewer implementations. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.
+- The bundled MediaInfo sidecar is invoked only by Rust-owned fixed arguments against canonical, authorized regular files from picker or monitored-folder scopes, with bounded output, timeout, cancellation, and single-process concurrency.
+- Gallery and Maintenance reuse `ImageViewer` and `VideoViewer` according to the media discriminator. The viewers share sidebar, tab, metadata-field, collection-picker, and toolbar components while retaining image canvas and video playback behavior. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.
 - Removal is a recoverable database lifecycle: active images are transactionally tombstoned in `removed_images`, including their file hash and parser version, and restore reconstructs the active row plus supported memberships/resources in one transaction. Remove, restore, duplicate tombstoning, and final deletion share a process-wide coordinator so restore cannot race a source-file trash operation. Final deletion clears the tombstone only after OS-trash success (or when the source is already missing). Collection membership moves are likewise native transactions rather than frontend SQL sequences.
 - Missing-source reconciliation is not deletion. It preserves the active database row and cached thumbnail so temporary storage outages are recoverable. User-requested removal is reversible and keeps its tombstone; user-requested final deletion OS-trashes the source and eligible thumbnail before clearing that tombstone.
 - Full facet rebuilds populate a temporary staging table and swap into the live cache in a short transaction. Full and incremental refreshes share one coordinator so a queued targeted refresh cannot be overwritten by an older full-build snapshot.
