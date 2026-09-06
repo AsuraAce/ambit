@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/AsuraAce/ambit/compare/v0.13.1...v0.13.2) (2026-09-06)
+
+
+### Performance Improvements
+
+* keep maintenance counts on compact scoped indexes ([#313](https://github.com/AsuraAce/ambit/issues/313)) ([38171c5](https://github.com/AsuraAce/ambit/commit/38171c5b28b3657df70331b141df9b8721912937))
+
 ## [0.13.1](https://github.com/AsuraAce/ambit/compare/v0.13.0...v0.13.1) (2026-09-06)
 
 
