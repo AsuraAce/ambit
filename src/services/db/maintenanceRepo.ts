@@ -466,21 +466,21 @@ export const getMaintenanceCounts = async () => {
 
     const db = await getDb();
 
-    // Batch all counts into a single query to reduce IPC overhead
+    // Migration 80's narrow views require compact indexes even after ANALYZE.
+    // Compare the indexed prompt-empty Boolean with = 1 to avoid reading prompt text.
     const res = await db.select<MaintenanceCountRow[]>(`
-        SELECT 
+        SELECT
             COUNT(*) FILTER (
-                WHERE (positive_prompt IS NULL OR positive_prompt = '')
+                WHERE positive_prompt_empty = 1
                   AND media_type = 'image'
-                  AND invoke_scope_hidden = 0
-                  AND is_deleted = 0
-                  AND IFNULL(is_intermediate_gen, 0) = 0
-                  AND IFNULL(is_invoke_asset_gen, 0) = 0
+                  AND is_intermediate = 0
+                  AND is_invoke_asset = 0
             ) as untagged,
-            COUNT(*) FILTER (WHERE invoke_scope_hidden = 0 AND is_missing = 1 AND is_deleted = 0) as missing,
-            COUNT(*) FILTER (WHERE media_type = 'image' AND invoke_scope_hidden = 0 AND IFNULL(is_intermediate_gen, 0) = 1 AND is_deleted = 0) as intermediates,
-            (SELECT COUNT(*) FROM scoped_removed_images WHERE invoke_scope_hidden = 0) as trash
-        FROM scoped_images AS images
+            COUNT(*) FILTER (WHERE is_missing = 1) as missing,
+            COUNT(*) FILTER (WHERE media_type = 'image' AND is_intermediate = 1) as intermediates,
+            (SELECT COUNT(*) FROM scoped_maintenance_removed_images WHERE invoke_scope_hidden = 0) as trash
+        FROM scoped_maintenance_images
+        WHERE invoke_scope_hidden = 0 AND is_deleted = 0
     `);
 
     const counts = res[0] || {};

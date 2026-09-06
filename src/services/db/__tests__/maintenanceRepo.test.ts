@@ -698,7 +698,7 @@ describe('maintenanceRepo', () => {
             duplicates: 0,
         });
         expect(db.select).toHaveBeenCalledTimes(1);
-        expect(db.select.mock.calls[0]?.[0]).toContain('IFNULL(is_invoke_asset_gen, 0) = 0');
+        expect(db.select.mock.calls[0]?.[0]).toContain('is_invoke_asset = 0');
     });
 
     it('defaults missing maintenance counters to zero when the aggregate row is absent', async () => {
