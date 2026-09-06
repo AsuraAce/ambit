@@ -47,7 +47,7 @@ vi.mock('../../browserMockData', () => ({
 
 vi.mock('../repoUtils', () => ({
     getImageFieldsLight: () => 'id, path',
-    REMOVED_IMAGE_FIELDS: 'id, path',
+    REMOVED_IMAGE_FIELDS_LIGHT: 'id, path',
     mapRowToImage: mocks.mapRowToImage,
 }));
 

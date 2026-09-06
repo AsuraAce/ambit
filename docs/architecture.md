@@ -70,6 +70,7 @@ Related docs: `README.md#privacy-and-network-behavior`, `SECURITY.md`
 - API keys are stored via Rust keyring commands, not persisted in `library.json`.
 - Passive visual assets must be bundled locally. Network calls should be limited to the documented updater, Gemini, CivitAI, and user-clicked external-link paths.
 - Large library browsing paths must remain virtualized and performance-conscious.
+- Removed listings exclude archival JSON blobs from IPC. SQLite extracts the positive prompt needed for privacy masking with the same sparse-metadata fallback as full row mapping; full ID lookups retain archival metadata for lifecycle and InvokeAI consumers. Maintenance hydrates only the currently opened Removed viewer item, with no retained detail cache after closing or navigating away.
 - Gallery and timeline results for videos render static posters or a generic placeholder; they must not instantiate background video players.
 - The bundled MediaInfo sidecar is invoked only by Rust-owned fixed arguments against canonical picker-scoped regular files, with bounded output, timeout, cancellation, and single-process concurrency.
 - Gallery and Maintenance should reuse the shared `ImageViewer` presentation instead of developing separate viewer implementations. Their navigation, deletion, recovery, and other context-dependent policies remain owned by their respective controllers.

@@ -795,6 +795,10 @@ export const getFlatInvokeImageIdsForRoot = async (invokeRoot: string): Promise<
 
 export const getRemovedImagesByIds = async (ids: string[]): Promise<AIImage[]> => {
     if (ids.length === 0) return [];
+    if (isBrowserMockMode()) {
+        const normalizedIds = new Set(ids.map(normalizePath));
+        return getBrowserMockImages().filter(image => image.isDeleted && normalizedIds.has(normalizePath(image.id)));
+    }
     const db = await getDb();
 
     const CHUNK_SIZE = 900;

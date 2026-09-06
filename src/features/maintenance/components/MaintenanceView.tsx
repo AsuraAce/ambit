@@ -19,12 +19,12 @@ import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { useSelection } from '../../../hooks/useSelection';
 import { useLibraryStore } from '../../../stores/libraryStore';
 import { useLibraryContext } from '../../../contexts/LibraryContext';
-import { getImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
+import { getImagesByIds, getRemovedImagesByIds, toggleImageIntermediate } from '../../../services/db/imageRepo';
 import { regenerateAllUnoptimized } from '../../../services/thumbnailService';
 import type { DeleteRemovedImagesResult, ExactDuplicateResolution } from '../../../bindings';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { refreshThumbnailConsumers } from '../../../services/thumbnailConsumerRefresh';
 import { useToast } from '../../../hooks/useToast';
@@ -175,6 +175,29 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         return lists[activeTab];
     }, [activeTab, localDeletedImages, localUntaggedImages, localUnoptimizedImages, missingImages, localIntermediateImages, localDuplicateCandidates]);
 
+    const removedViewerId = viewingImageId && localDeletedImages.some(image => image.id === viewingImageId)
+        ? viewingImageId : null;
+    // Keep Removed browsing light; retain full metadata only for the current viewer.
+    const { data: removedViewerImage, error: removedViewerError } = useQuery({
+        queryKey: ['removed-image-detail', removedViewerId],
+        queryFn: async () => {
+            if (!removedViewerId) return null;
+            const [image] = await getRemovedImagesByIds([removedViewerId]);
+            if (!image) throw new Error('Removed item is no longer available');
+            return image;
+        },
+        enabled: removedViewerId !== null,
+        gcTime: 0,
+        retry: false,
+        refetchOnWindowFocus: false,
+    });
+
+    useEffect(() => {
+        if (removedViewerError) {
+            addToast('Could not load removed item details. Close and reopen the viewer to retry.', 'error');
+        }
+    }, [removedViewerError, addToast]);
+
     const targetImage = useMemo(() => {
         if (!viewingImageId) return null;
         // Search in all pools to find the image object
@@ -188,8 +211,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
             ...activeImages
         ];
         const image = allPool.find(i => i.id === viewingImageId) || null;
-        return image ? recoveredImages.get(image.id) ?? image : null;
-    }, [viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates, localIntermediateImages, activeImages, recoveredImages]);
+        if (!image) return null;
+        if (image.id === removedViewerId) return removedViewerImage ?? image;
+        return recoveredImages.get(image.id) ?? image;
+    }, [removedViewerId, removedViewerImage, viewingImageId, missingImages, localUntaggedImages, localDeletedImages, localUnoptimizedImages, localDuplicateCandidates, localIntermediateImages, activeImages, recoveredImages]);
 
     const handleRecoveredImage = useCallback((image: AIImage) => {
         setRecoveredImages(previous => {
