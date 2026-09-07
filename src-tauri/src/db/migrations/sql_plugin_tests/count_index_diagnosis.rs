@@ -300,6 +300,7 @@ fn diagnostic_series_rejects_missing_invalid_and_unpaired_evidence() {
 #[test]
 #[ignore = "fixed diagnosis campaign only; COUNT_DIAG_BLOCK must be 0 or 1; not qualification"]
 fn count_diagnostic_reproduction_block() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let block: u8 = std::env::var("COUNT_DIAG_BLOCK")
         .expect("explicit block identifier")
         .parse()

@@ -119,7 +119,7 @@ fn retained_screen(log: &str) -> Option<Vec<ScreenArm>> {
         || h["query_sha256"]
             != json!([
                 digest(production_collection_stats_query().as_bytes()),
-                digest(maintenance_count_sql().as_bytes())
+                crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256
             ])
     {
         return None;
@@ -161,6 +161,7 @@ fn retained_screen(log: &str) -> Option<Vec<ScreenArm>> {
 #[test]
 #[ignore = "controller-only upstream IPC generated screen worker"]
 fn connection_policy_screen_worker() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let root = worker_root();
     let input: Value = serde_json::from_slice(&fs::read(root.join("input.json")).unwrap()).unwrap();
     assert_eq!(
@@ -318,7 +319,7 @@ fn connection_policy_screen_evidence_gates() {
         assert!(valid_cell(group, cell));
     }
     let header = json!({"kind":"connection-policy-screen-start","mmap_bytes":MMAP,"fixture":"wide-80-char-skew-v1",
-        "query_sha256":[digest(production_collection_stats_query().as_bytes()),digest(maintenance_count_sql().as_bytes())],"prior_elapsed_ms":1.});
+        "query_sha256":[digest(production_collection_stats_query().as_bytes()),crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256],"prior_elapsed_ms":1.});
     let records = |arms: &[ScreenArm]| {
         let mut records = vec![header.clone()];
         records.extend(
@@ -337,6 +338,12 @@ fn connection_policy_screen_evidence_gates() {
     };
     let values = records(&arms);
     assert!(retained_screen(&log(&values)).is_some());
+    let mut current_query = values.clone();
+    current_query[0]["query_sha256"][1] = json!(digest(maintenance_count_sql().as_bytes()));
+    assert!(
+        retained_screen(&log(&current_query)).is_none(),
+        "m80 evidence is not historical evidence"
+    );
     assert!(
         retained_screen(&log(&records(&arms[..12]))).is_none(),
         "passing prefix is incomplete, not a successful screen"
@@ -395,6 +402,7 @@ fn connection_policy_validate_screen_log() {
 #[test]
 #[ignore = "one selected-candidate IPC screen; stop at the first complete failed cell"]
 fn connection_policy_screen_campaign() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     let log = fs::read_to_string(target.join("connection-policy-small.jsonl")).unwrap();
     let small = retained_small(&log).expect("validated small evidence required");
@@ -427,7 +435,7 @@ fn connection_policy_screen_campaign() {
     let start = Instant::now();
     emit(
         json!({"kind":"connection-policy-screen-start","mmap_bytes":MMAP,"fixture":"wide-80-char-skew-v1",
-        "query_sha256":[digest(production_collection_stats_query().as_bytes()),digest(maintenance_count_sql().as_bytes())],"prior_elapsed_ms":prior}),
+        "query_sha256":[digest(production_collection_stats_query().as_bytes()),crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256],"prior_elapsed_ms":prior}),
     );
     let mut results = Vec::new();
     for size in 0..2 {

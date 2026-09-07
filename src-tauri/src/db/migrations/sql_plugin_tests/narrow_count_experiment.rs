@@ -135,6 +135,7 @@ fn narrow_count_projection_preserves_scope_results() {
 #[test]
 #[ignore = "generated 150k-row four-configuration access-path gate; no app or real catalog"]
 fn narrow_count_access_path_gate() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let directory = GeneratedBenchmarkDir::new();
     let path = directory.path.join("access.db");
     seed_catalog(

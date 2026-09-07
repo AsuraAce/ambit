@@ -1,7 +1,17 @@
 # Startup readiness and performance
 
-Status: 60-minute campaign implemented and run once — timed out with valid partial evidence; ownership attribution remains incomplete
-Baseline: `20cd2390` (latest main checked 2026-09-03)
+Status: Pinned main integration verified; owner startup check pending
+Baseline: source checkpoint `0bada870`; integrating main `e50926487c68e433b85009628705832a9d6be039` (v0.13.2, verified 2026-09-07)
+
+## Current package: integrate upstream maintenance-count fix
+
+- User-approved local checkpoint preserves the accumulated startup work; nothing is pushed. The integration includes PR #313 and migration 80 plus the preceding Removed-listing fix. Upstream SQL, index definitions and ownership semantics are retained; the maintenance query uses the existing optional tracing wrapper.
+- Historical measurements below are **pre-migration-80 / old maintenance query**. The failed index/policy gates and incomplete ownership campaigns remain historical, not automatically requalified. Old campaign entrypoints now reject migration 80 before preparation; the controller rejects before report creation or worker launch. Historical policy validators retain their original query digest rather than adopting current SQL.
+- No new performance policy, library copy/access, app launch, production operation or retained-artifact cleanup is part of implementation. Normal `pnpm run app:dev` remains tracing-disabled. Migration 80 will first affect regular dev when the owner explicitly launches it after verification.
+- Verification: targeted frontend integration 44 passed; full frontend 3,531 passed, one skipped. Normal native 984 library + 18 utility tests passed (28 ignored); diagnostic-feature native 1,026 library + 18 utility tests passed (33 ignored). Actual MockRuntime plugin coverage verifies migration 79-to-80 upgrade, prior checksums, reload and maintenance tracing enabled/disabled/unavailable. Typecheck, lint, versions, binding drift, scoped formatting/whitespace, controller self-tests, guarded frontend and serial default release-profile no-bundle desktop build passed. Existing native dead-code and frontend build advisories remain. No installer publication or owner acceptance was run.
+- Initial native verification exposed an existing uptime-dependent test: subtracting an hour from Windows' monotonic clock could underflow. The generated preparation helper now accepts an explicit limit; only the expiry test uses zero, all campaign/other callers retain the approved limit. The final suites pass. Independent migration/lifecycle and specification closure reviews are clean; historical report hashes are unchanged.
+- Owner check after verification: All users, regular dev, one first-after-upgrade launch, two unchanged launches, then one launch after eight new Odin images. Read each automatic journal before continuing. The first launch includes one-time index creation; keep it separate. Owner reports responsiveness, maintenance badges and image arrival; no stopwatch. If blank, leave open about 60 seconds and stop. Stop on migration/visibility/count errors; no automatic repair or downgrade.
+- Latest historical readiness/catch-up remains 37.422s/57.076s. No post-integration timing exists yet. Targets remain under 10s warm and under 30s changed-source readiness; this small batch does not establish general performance or reliability acceptance.
 
 ## Outcome and invariants
 

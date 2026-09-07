@@ -11,6 +11,12 @@ const ROUND_LIMIT = 60000;
 const ROUND_COUNT = 96;
 const OWNERSHIP_BUDGET_MS = 3600000;
 
+function requirePreM80Campaign(source) {
+    if (source.includes('m80_maintenance_count_indexes::migration80()')) {
+        throw new Error('Historical count campaign is incompatible with migration 80; separate approval required.');
+    }
+}
+
 function campaignExpired(start, budget, now) { return now - start >= budget; }
 
 function requestWorkerTermination(worker, status) {
@@ -259,6 +265,8 @@ function selfTest() {
     assert.equal(clock.expired(60010), true);
     assert.equal(clock.accept({ kind: 'overlap-round-end', roundId: 0 }, 60010), false);
     assert.equal(ROUND_LIMIT, 60000);
+    assert.doesNotThrow(() => requirePreM80Campaign('migrations.push(m79_thumbnail_repair_candidates::migration79());'));
+    assert.throws(() => requirePreM80Campaign('migrations.push(m80_maintenance_count_indexes::migration80());'), /incompatible with migration 80/);
     assert.equal(campaignExpired(10, OWNERSHIP_BUDGET_MS, 10 + OWNERSHIP_BUDGET_MS - 1), false);
     assert.equal(campaignExpired(10, OWNERSHIP_BUDGET_MS, 10 + OWNERSHIP_BUDGET_MS), true);
     const worker = { reason: null, finished: false, terminated: 0,
@@ -314,6 +322,8 @@ function run() {
     const qualification = process.argv[2] === '--qualify';
     const roundSupervision = overlap || qualification || ownership;
     const root = fileURLToPath(new URL('../', import.meta.url));
+    // Reject even an older executable before creating reports or starting a worker.
+    requirePreM80Campaign(readFileSync(join(root, 'src-tauri/src/db/migrations/mod.rs'), 'utf8'));
     const deps = realpathSync(resolve(root, 'src-tauri/target/debug/deps'));
     const executable = realpathSync(process.argv[roundSupervision ? 3 : 2] ?? '');
     if (dirname(executable).toLowerCase() !== deps.toLowerCase() || !/^app_lib-[a-f0-9]+\.exe$/.test(basename(executable))) {

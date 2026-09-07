@@ -161,7 +161,7 @@ fn retained_small(log: &str) -> Option<Vec<SmallArm>> {
         || header["query_sha256"]
             != json!([
                 digest(production_collection_stats_query().as_bytes()),
-                digest(maintenance_count_sql().as_bytes())
+                crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256
             ])
     {
         return None;
@@ -228,6 +228,7 @@ fn worker_root() -> std::path::PathBuf {
 #[test]
 #[ignore = "controller-only generated small mmap worker"]
 fn connection_policy_small_worker() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let root = worker_root();
     let input: Value = serde_json::from_slice(&fs::read(root.join("input.json")).unwrap()).unwrap();
     assert_eq!(
@@ -453,7 +454,7 @@ fn connection_policy_small_evidence_and_selection() {
     );
     let mut records = vec![
         json!({"kind":"connection-policy-small-start","fixture":"wide-80-char-skew-v1","images":10000,"memberships":1000,
-        "query_sha256":[digest(production_collection_stats_query().as_bytes()),digest(maintenance_count_sql().as_bytes())],
+        "query_sha256":[digest(production_collection_stats_query().as_bytes()),crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256],
         "memory_allowance_bytes":MEMORY_ALLOWANCE,"levels":LEVELS,"prior_elapsed_ms":1.}),
     ];
     records.extend(
@@ -469,6 +470,12 @@ fn connection_policy_small_evidence_and_selection() {
             .join("\n")
     };
     assert!(retained_small(&log(&records)).is_some());
+    let mut current_query = records.clone();
+    current_query[0]["query_sha256"][1] = json!(digest(maintenance_count_sql().as_bytes()));
+    assert!(
+        retained_small(&log(&current_query)).is_none(),
+        "m80 evidence is not historical evidence"
+    );
     let mut extra = records.clone();
     extra[0]["extra"] = json!(1);
     assert!(retained_small(&log(&extra)).is_none());
@@ -503,6 +510,7 @@ fn connection_policy_validate_small_log() {
 #[test]
 #[ignore = "one approved fresh-process bounded mmap campaign; no reruns"]
 fn connection_policy_small_campaign() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     let prior = fs::read_to_string(target.join("connection-policy-attribution.jsonl")).unwrap();
     let arms = retained_arms(&prior).expect("complete attribution required");
@@ -545,7 +553,7 @@ fn connection_policy_small_campaign() {
     };
     emit(
         json!({"kind":"connection-policy-small-start","fixture":"wide-80-char-skew-v1","images":10000,"memberships":1000,
-        "query_sha256":[digest(production_collection_stats_query().as_bytes()),digest(maintenance_count_sql().as_bytes())],
+        "query_sha256":[digest(production_collection_stats_query().as_bytes()),crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256],
         "memory_allowance_bytes":MEMORY_ALLOWANCE,"levels":LEVELS,"prior_elapsed_ms":prior_end["elapsed_ms"]}),
     );
     let mut results = Vec::new();

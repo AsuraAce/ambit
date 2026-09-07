@@ -13,6 +13,106 @@ use tauri_plugin_sql::{
 const LAUNCH: &str = "00000000-0000-4000-8000-000000000000";
 
 #[test]
+fn maintenance_m80_upgrade_and_reload_preserve_counts_with_optional_tracing() {
+    for enabled in [false, true] {
+        let directory = GeneratedBenchmarkDir::new();
+        let path = directory.path.join("maintenance-upgrade.db");
+        let db = fixture_url(&path);
+        let collector = Collector::new(LAUNCH.into(), vec![db.clone()], Instant::now());
+        let old = MockSql::with_builder(
+            &directory.path,
+            tauri_plugin_sql::Builder::new().add_migrations(
+                &db,
+                crate::db::migrations::get_migrations()
+                    .into_iter()
+                    .filter(|migration| migration.version <= 79)
+                    .collect(),
+            ),
+            &[],
+        );
+        old.load(&path);
+        ipc(
+            &old.webview,
+            "execute",
+            json!({"db":db,"query":
+            "INSERT INTO images(id, path, positive_prompt) VALUES ('generated', 'generated.png', '')",
+            "values":[]}),
+        );
+        let history_query =
+            "SELECT version, hex(checksum) AS checksum FROM _sqlx_migrations ORDER BY version";
+        let history = ipc(
+            &old.webview,
+            "select",
+            json!({"db":db,"query":history_query,"values":[]}),
+        );
+        ipc(&old.webview, "close", json!({"db":db}));
+        drop(old);
+
+        let builder = tauri_plugin_sql::Builder::new()
+            .add_migrations(&db, crate::db::migrations::get_migrations());
+        let builder = if enabled {
+            builder.startup_trace(collector.clone())
+        } else {
+            builder
+        };
+        let sql = MockSql::with_builder(&directory.path, builder, &[]);
+        sql.load(&path);
+        let query = super::maintenance_count_sql();
+        let expected = json!([{"untagged":1,"missing":0,"intermediates":0,"trash":0}]);
+        for trace in [
+            json!(null),
+            json!({"launchId":LAUNCH,"callId":1,"label":"maintenance"}),
+            json!({"launchId":"unavailable","callId":2,"label":"maintenance"}),
+        ] {
+            assert_eq!(
+                ipc(
+                    &sql.webview,
+                    "select",
+                    json!({"db":db,"query":query,
+                "values":[],"startupTrace":trace})
+                ),
+                expected
+            );
+        }
+        let upgraded = ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":history_query,"values":[]}),
+        );
+        assert_eq!(
+            &upgraded.as_array().unwrap()[..history.as_array().unwrap().len()],
+            history.as_array().unwrap()
+        );
+        assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 80);
+        ipc(&sql.webview, "close", json!({"db":db}));
+        sql.load(&path);
+        assert_eq!(
+            ipc(
+                &sql.webview,
+                "select",
+                json!({"db":db,"query":history_query,"values":[]})
+            ),
+            upgraded
+        );
+        assert_eq!(
+            ipc(
+                &sql.webview,
+                "select",
+                json!({"db":db,"query":query,"values":[]})
+            ),
+            expected
+        );
+        let batch = collector.drain().unwrap();
+        assert_eq!(batch.details.len(), usize::from(enabled));
+        if enabled {
+            assert_eq!(batch.details[0].label, Some(Label::Maintenance));
+            assert_eq!(batch.details[0].status, Status::Completed);
+        }
+        ipc(&sql.webview, "close", json!({"db":db}));
+    }
+}
+
+#[test]
 fn external_sqlite_lock_delays_fetch_not_registry_or_pool_acquisition() {
     let runtime = tauri::async_runtime::handle();
     let _context = runtime.inner().enter();

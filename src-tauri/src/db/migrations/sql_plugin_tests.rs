@@ -267,6 +267,26 @@ const MAINTENANCE_SOURCE: &str = include_str!(concat!(
     "/../src/services/db/maintenanceRepo.ts"
 ));
 
+// Historical campaigns assumed the pre-m80 schema and metadata-heavy count.
+// Keep their evidence, but require a separately approved protocol before new runs.
+pub(super) const PRE_M80_MAINTENANCE_SHA256: &str =
+    "35504c2bf7e8a653249709dc1fea683088fa9d9172322b2b841c9b0f919a0118";
+
+pub(super) fn require_pre_m80_campaign() {
+    assert!(
+        super::get_migrations()
+            .iter()
+            .all(|migration| migration.version < 80),
+        "historical count campaign is incompatible with migration 80; separate approval required"
+    );
+}
+
+#[test]
+#[should_panic(expected = "historical count campaign is incompatible with migration 80")]
+fn historical_campaign_rejects_current_schema_before_preparation() {
+    require_pre_m80_campaign();
+}
+
 pub(super) fn maintenance_count_sql() -> &'static str {
     MAINTENANCE_SOURCE
         .split("startupTracedSelect<MaintenanceCountRow[]>(db, 'maintenance', `")
@@ -332,6 +352,7 @@ fn timed_select(sql: &MockSql, db: &str, query: &str) -> (Vec<Value>, f64) {
 #[test]
 #[ignore = "opt-in installed SQL-plugin IPC/pool measurement on a generated 150k-row catalog"]
 fn benchmark_sql_plugin_representative_generated_catalog() {
+    require_pre_m80_campaign();
     use super::collection_stats_query_tests::{seed_catalog, set_scope, SHAPES};
     let directory = GeneratedBenchmarkDir::new();
     let path = directory.path.join("representative.db");

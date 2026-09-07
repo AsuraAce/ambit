@@ -672,6 +672,7 @@ fn measure_cell(path: &Path, shape: Shape, scope: &str, source: Option<&Path>) -
 #[test]
 #[ignore = "opt-in generated-only query feasibility benchmark; primary gate rejects without running unnecessary matrix cells"]
 fn benchmark_collection_stats_query_only_generated_catalogs() {
+    super::sql_plugin_tests::require_pre_m80_campaign();
     assert_eq!(
         normalized(BASELINE),
         normalized(super::tests::production_collection_stats_query())

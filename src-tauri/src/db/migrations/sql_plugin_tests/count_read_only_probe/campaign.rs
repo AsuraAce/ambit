@@ -782,6 +782,7 @@ fn provenance(queries: &[String; 4]) -> ProbeResult<Json> {
 #[test]
 #[ignore = "one explicit regular-dev read-only campaign via AMBIT_COUNT_PROBE_DB; close Ambit first"]
 fn measure_regular_dev_counts_read_only() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let artifact_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
     reject_redirection(&artifact_dir).expect("probe artifact directory must be physical");
     let filename = format!("count-read-only-{}.jsonl", uuid::Uuid::new_v4());

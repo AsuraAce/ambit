@@ -6,6 +6,7 @@ use std::{path::Path, time::Instant};
 #[test]
 #[ignore = "generated aggregate-shaped catalog through upstream MockRuntime IPC; not app acceptance"]
 fn measure_aggregate_shaped_catalog_ipc() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     // Returning SQLx pool connections on drop requires the runtime to stay entered.
     let runtime = tauri::async_runtime::handle();
     let _runtime_context = runtime.inner().enter();

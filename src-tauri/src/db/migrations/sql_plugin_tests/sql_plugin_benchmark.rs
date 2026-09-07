@@ -408,6 +408,7 @@ pub(super) fn peak_process_memory_bytes() -> Value {
 #[test]
 #[ignore = "opt-in A/B SQL-plugin IPC measurement; generated data only, not OS-cold startup"]
 fn benchmark_sql_plugin_connection_candidate() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let mode = BenchmarkMode::from_environment();
     let profile = benchmark_profile(mode);
     let directory = GeneratedBenchmarkDir::new();

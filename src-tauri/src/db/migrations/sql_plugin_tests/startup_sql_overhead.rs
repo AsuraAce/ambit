@@ -1471,6 +1471,7 @@ fn overlap_gate_requires_absolute_relative_and_paired_penalty() {
 #[test]
 #[ignore = "explicit post-fix qualification via deadline controller; historical failed gate remains retained"]
 fn overlap_generated_arm_evidence_smoke() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let id = uuid::Uuid::parse_str(
         &std::env::var("AMBIT_SQL_TRACE_QUALIFICATION_ID").expect("use qualification controller"),
     )
@@ -1709,6 +1710,7 @@ fn vendor_digest() -> String {
 #[test]
 #[ignore = "one approved generated-only overlap campaign; controller opt-in and deadlines required"]
 fn measure_startup_sql_overlap_once() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     assert_eq!(std::env::var("AMBIT_SQL_TRACE_OVERLAP").as_deref(), Ok("1"));
     run_overlap_campaign(false);
 }
@@ -1716,6 +1718,7 @@ fn measure_startup_sql_overlap_once() {
 #[test]
 #[ignore = "one approved uniform-default generated overlap campaign; explicit controller required"]
 fn measure_startup_sql_uniform_overlap_once() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     assert_eq!(
         std::env::var("AMBIT_SQL_TRACE_UNIFORM_OVERLAP").as_deref(),
         Ok("1")
@@ -2441,6 +2444,7 @@ fn ownership_fixture_diagnosed(
 // guarded copy through ownership_arm.
 fn with_prepared_ownership_templates<T>(
     preparation: &mut OwnershipPreparation<'_>,
+    limit: Duration,
     base: &Path,
     images: usize,
     memberships: usize,
@@ -2454,7 +2458,7 @@ fn with_prepared_ownership_templates<T>(
         &mut OwnershipPreparation<'_>,
     ) -> Result<T, OwnershipCampaignFailure>,
 ) -> Result<T, OwnershipCampaignFailure> {
-    if preparation.campaign.elapsed() >= OWNERSHIP_LIMIT {
+    if preparation.campaign.elapsed() >= limit {
         return Err("timed-out".into());
     }
     if next_template == OWNERSHIP_ORDER.len() {
@@ -2485,11 +2489,12 @@ fn with_prepared_ownership_templates<T>(
             "exactResultEqual":true
         }));
         templates[condition] = Some(fixture);
-        if preparation.campaign.elapsed() >= OWNERSHIP_LIMIT {
+        if preparation.campaign.elapsed() >= limit {
             return Err("timed-out".into());
         }
         with_prepared_ownership_templates(
             preparation,
+            limit,
             base,
             images,
             memberships,
@@ -3151,6 +3156,7 @@ fn prepared_ownership_templates_reuse_validated_small_fixtures_without_mutation(
     let mut templates = std::array::from_fn(|_| None);
     with_prepared_ownership_templates(
         &mut prep,
+        OWNERSHIP_LIMIT,
         &base,
         600,
         500,
@@ -3344,6 +3350,7 @@ fn prepared_ownership_template_cleanup_survives_error_and_panic() {
     let mut error_templates = std::array::from_fn(|_| None);
     let error = with_prepared_ownership_templates(
         &mut prep,
+        OWNERSHIP_LIMIT,
         &base,
         600,
         500,
@@ -3360,6 +3367,7 @@ fn prepared_ownership_template_cleanup_survives_error_and_panic() {
     let mut panic_templates = std::array::from_fn(|_| None);
     let panic = with_prepared_ownership_templates(
         &mut prep,
+        OWNERSHIP_LIMIT,
         &base,
         600,
         500,
@@ -3501,7 +3509,7 @@ fn prepared_ownership_templates_stop_before_expired_preparation_starts() {
     let queries = super::super::count_read_only_probe::generated_trace_queries();
     let mut prep = OwnershipPreparation {
         report: Some(&mut report),
-        campaign: Instant::now() - OWNERSHIP_LIMIT,
+        campaign: Instant::now(),
         condition: None,
         block: None,
         last_stage: None,
@@ -3510,6 +3518,7 @@ fn prepared_ownership_templates_stop_before_expired_preparation_starts() {
     let mut templates = std::array::from_fn(|_| None);
     let failure = with_prepared_ownership_templates(
         &mut prep,
+        Duration::ZERO,
         &artifacts.path.join("unread-base.db"),
         600,
         500,
@@ -3524,6 +3533,7 @@ fn prepared_ownership_templates_stop_before_expired_preparation_starts() {
     assert_eq!(failure.status(), "timed-out");
     let final_handoff = with_prepared_ownership_templates(
         &mut prep,
+        Duration::ZERO,
         &artifacts.path.join("unread-base.db"),
         600,
         500,
@@ -3883,6 +3893,7 @@ fn ownership_report_full_campaign_shape_fits_and_partial_drop_is_terminal() {
 #[test]
 #[ignore = "one approved generated-only ownership campaign; controller opt-in and deadlines required"]
 fn measure_startup_sql_ownership_once() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     assert_eq!(
         std::env::var("AMBIT_SQL_TRACE_OWNERSHIP").as_deref(),
         Ok("1")
@@ -3973,6 +3984,7 @@ fn measure_startup_sql_ownership_once() {
             let mut templates = std::array::from_fn(|_| None);
             with_prepared_ownership_templates(
                 preparation,
+                OWNERSHIP_LIMIT,
                 &base,
                 146182,
                 131741,
@@ -4060,6 +4072,7 @@ fn measure_startup_sql_ownership_once() {
 #[test]
 #[ignore = "one approved generated-only SQL diagnostic overhead campaign; explicit opt-in"]
 fn measure_startup_sql_trace_overhead_once() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     assert_eq!(
         std::env::var("AMBIT_SQL_TRACE_OVERHEAD").as_deref(),
         Ok("1")

@@ -441,6 +441,7 @@ fn probe_sample(
 #[test]
 #[ignore = "one fixed generated-only attribution campaign; not qualification"]
 fn count_diagnostic_probe_campaign() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let runtime = tauri::async_runtime::handle();
     let _context = runtime.inner().enter();
     let directory = GeneratedBenchmarkDir::new();

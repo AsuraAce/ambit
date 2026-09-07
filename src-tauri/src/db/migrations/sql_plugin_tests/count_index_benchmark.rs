@@ -206,6 +206,7 @@ fn sample(
 #[test]
 #[ignore = "six paired actual IPC comparisons on generated wide catalogs; no app launch"]
 fn count_index_primary_qualification() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let runtime = tauri::async_runtime::handle();
     let _runtime_context = runtime.inner().enter();
     let directory = GeneratedBenchmarkDir::new();
@@ -280,6 +281,7 @@ fn qualify_scope(template: &Path, mode: &str, primary_gate: bool) {
 #[test]
 #[ignore = "rejected index: small All-users maintenance gate failed; no automatic retry"]
 fn count_index_secondary_qualification() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     let runtime = tauri::async_runtime::handle();
     let _runtime_context = runtime.inner().enter();
     for small in [true, false] {

@@ -199,7 +199,8 @@ fn retained_arms(log: &str) -> Option<Vec<Arm>> {
         || header["indexed"] != false
         || header["journal_mode"] != "wal"
         || header["fixture"] != "wide-80-char-skew-v1"
-        || header["query_sha256"] != digest(maintenance_count_sql().as_bytes())
+        || header["query_sha256"]
+            != crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256
         || header["database_bytes"].as_u64()? == 0
     {
         return None;
@@ -313,7 +314,7 @@ fn connection_policy_evidence_rejects_missing_mispaired_and_invalid_arms() {
         "a pooled median cannot bypass five improving pairs"
     );
     let header = json!({"kind":"connection-policy-start","images":10000,"memberships":1000,
-        "query_sha256":digest(maintenance_count_sql().as_bytes()),"indexed":false,"journal_mode":"wal",
+        "query_sha256":crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256,"indexed":false,"journal_mode":"wal",
         "fixture":"wide-80-char-skew-v1","database_bytes":4096});
     let mut records = vec![header];
     records.extend(
@@ -329,6 +330,12 @@ fn connection_policy_evidence_rejects_missing_mispaired_and_invalid_arms() {
             .join("\n")
     };
     assert!(retained_arms(&log(&records)).is_some());
+    let mut current_query = records.clone();
+    current_query[0]["query_sha256"] = json!(digest(maintenance_count_sql().as_bytes()));
+    assert!(
+        retained_arms(&log(&current_query)).is_none(),
+        "m80 evidence is not historical evidence"
+    );
     let mut extra = records.clone();
     extra[0]["extra"] = json!(1);
     assert!(retained_arms(&log(&extra)).is_none());
@@ -364,6 +371,7 @@ fn connection_policy_validate_attribution_log() {
 #[test]
 #[ignore = "one approved generated attribution campaign; no timing-driven reruns"]
 fn connection_policy_attribution() {
+    crate::db::migrations::sql_plugin_tests::require_pre_m80_campaign();
     use std::io::Write;
     let output =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("target/connection-policy-attribution.jsonl");
@@ -392,7 +400,7 @@ fn connection_policy_attribution() {
     };
     emit(
         json!({"kind":"connection-policy-start","images":10000,"memberships":1000,
-        "query_sha256":digest(maintenance_count_sql().as_bytes()),"indexed":false,"journal_mode":"wal",
+        "query_sha256":crate::db::migrations::sql_plugin_tests::PRE_M80_MAINTENANCE_SHA256,"indexed":false,"journal_mode":"wal",
         "fixture":"wide-80-char-skew-v1","database_bytes":std::fs::metadata(&template).unwrap().len()}),
     );
     let mut arms = Vec::new();
