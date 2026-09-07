@@ -14,9 +14,6 @@ use std::{path::Path, time::Instant};
 
 #[path = "count_index_diagnosis.rs"]
 mod diagnosis;
-#[cfg(feature = "startup-sql-trace")]
-#[path = "startup_sql_overhead.rs"]
-mod startup_sql_overhead;
 
 fn seed_wide(path: &Path, images: usize, memberships: usize) {
     seed_catalog(

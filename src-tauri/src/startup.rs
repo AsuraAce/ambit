@@ -439,43 +439,6 @@ pub fn record_startup_diagnostic(
 pub struct StartupLaunch {
     pub launch_id: String,
     pub process_elapsed_ms: u64,
-    pub sql_trace_enabled: bool,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum StartupSqlLabel {
-    Collection,
-    Maintenance,
-    Gallery,
-    GlobalGallery,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "kebab-case")]
-pub enum StartupSqlStatus {
-    Completed,
-    Failed,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, Type)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct StartupSqlFrontend {
-    pub launch_id: String,
-    pub call_id: u32,
-    pub label: StartupSqlLabel,
-    pub duration_ms: u64,
-    pub status: StartupSqlStatus,
-}
-
-/// Best effort only: reporting never authorizes another SQL operation.
-#[tauri::command]
-#[specta::specta]
-pub fn record_startup_sql_frontend(
-    report: StartupSqlFrontend,
-    state: tauri::State<'_, StartupState>,
-) {
-    state.journal.sql_frontend(report);
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -503,7 +466,6 @@ pub fn get_startup_launch(state: tauri::State<'_, StartupState>) -> StartupLaunc
     StartupLaunch {
         launch_id: state.journal.launch_id.clone(),
         process_elapsed_ms: state.journal.elapsed_ms(),
-        sql_trace_enabled: state.journal.sql_trace_enabled(),
     }
 }
 

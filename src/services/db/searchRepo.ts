@@ -6,7 +6,6 @@ import { getAssetMatchKey, resolveAssetMatchKey, uniqueAssetAliases } from '../.
 import { describeDbQueryReason, timeDbCall } from '../../utils/dbTiming';
 import { commands } from '../../bindings';
 import { resourceReferenceEqualsSql, resourceReferenceSql } from '../../utils/sqlHelpers';
-import { startupTracedSelect } from '../../utils/startupSqlTrace';
 
 export interface LibraryStats {
     totalItems?: number;
@@ -423,7 +422,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
         `;
-        const result = await timeDbCall('countImages', reason, () => startupTracedSelect<CountRow[]>(db, 'gallery', query, [collectionId, loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -435,7 +434,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             CROSS JOIN scoped_images AS images ON images.id = ci.image_id
             ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
         `;
-        const result = await timeDbCall('countImages', reason, () => startupTracedSelect<CountRow[]>(db, 'gallery', query, [collectionId, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [collectionId, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -447,7 +446,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
             CROSS JOIN scoped_images AS images ON images.id = il.image_id
             ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
         `;
-        const result = await timeDbCall('countImages', reason, () => startupTracedSelect<CountRow[]>(db, 'gallery', query, [loraName, ...params]));
+        const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, [loraName, ...params]));
         return result[0]?.count || 0;
     }
 
@@ -455,7 +454,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     const fromClause = 'FROM scoped_images AS images';
     const query = `SELECT count(*) as count ${fromClause} ${finalWhere}`;
 
-    const result = await timeDbCall('countImages', reason, () => startupTracedSelect<CountRow[]>(db, 'gallery', query, params));
+    const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
     return result[0]?.count || 0;
 };
 
@@ -465,9 +464,7 @@ export const countImages = async (whereClause: string, params: unknown[], collec
  */
 export const countGlobalImages = async (): Promise<number> => {
     const db = await getDb();
-    const result = await timeDbCall('countGlobalImages', 'default', () => startupTracedSelect<CountRow[]>(
-        db,
-        'global-gallery',
+    const result = await timeDbCall('countGlobalImages', 'default', () => db.select<CountRow[]>(
         `SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0`
     ));
     return result[0]?.count || 0;

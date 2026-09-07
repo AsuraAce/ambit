@@ -3,8 +3,6 @@
 mod count_index_benchmark;
 mod count_read_only_probe;
 mod narrow_count_experiment;
-#[cfg(feature = "startup-sql-trace")]
-mod startup_trace_tests;
 
 // MockRuntime still links Tauri's Windows menu support. Unlike the desktop binary,
 // the Rust lib-test executable does not receive Tauri's Common Controls v6 manifest.
@@ -289,7 +287,7 @@ fn historical_campaign_rejects_current_schema_before_preparation() {
 
 pub(super) fn maintenance_count_sql() -> &'static str {
     MAINTENANCE_SOURCE
-        .split("startupTracedSelect<MaintenanceCountRow[]>(db, 'maintenance', `")
+        .split("db.select<MaintenanceCountRow[]>(`")
         .nth(1)
         .expect("actual maintenance count query")
         .split('`')
@@ -452,3 +450,201 @@ fn benchmark_sql_plugin_representative_generated_catalog() {
 
 #[cfg(test)]
 mod sql_plugin_benchmark;
+
+// Business regressions retained from the retired diagnostic-only suite.
+#[test]
+fn maintenance_m80_upgrade_and_reload_preserve_counts() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("maintenance-upgrade.db");
+    let db = fixture_url(&path);
+    let old = MockSql::with_builder(
+        &directory.path,
+        tauri_plugin_sql::Builder::new().add_migrations(
+            &db,
+            crate::db::migrations::get_migrations()
+                .into_iter()
+                .filter(|migration| migration.version <= 79)
+                .collect(),
+        ),
+        &[],
+    );
+    old.load(&path);
+    ipc(
+        &old.webview,
+        "execute",
+        json!({"db":db,"query":
+            "INSERT INTO images(id, path, positive_prompt) VALUES ('generated', 'generated.png', '')",
+            "values":[]}),
+    );
+    let history_query =
+        "SELECT version, hex(checksum) AS checksum FROM _sqlx_migrations ORDER BY version";
+    let history = ipc(
+        &old.webview,
+        "select",
+        json!({"db":db,"query":history_query,"values":[]}),
+    );
+    ipc(&old.webview, "close", json!({"db":db}));
+    drop(old);
+
+    let builder = tauri_plugin_sql::Builder::new()
+        .add_migrations(&db, crate::db::migrations::get_migrations());
+    let sql = MockSql::with_builder(&directory.path, builder, &[]);
+    sql.load(&path);
+    let query = maintenance_count_sql();
+    let expected = json!([{"untagged":1,"missing":0,"intermediates":0,"trash":0}]);
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":query,
+                "values":[]})
+        ),
+        expected
+    );
+    let upgraded = ipc(
+        &sql.webview,
+        "select",
+        json!({"db":db,"query":history_query,"values":[]}),
+    );
+    assert_eq!(
+        &upgraded.as_array().unwrap()[..history.as_array().unwrap().len()],
+        history.as_array().unwrap()
+    );
+    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 80);
+    ipc(&sql.webview, "close", json!({"db":db}));
+    sql.load(&path);
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":history_query,"values":[]})
+        ),
+        upgraded
+    );
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":query,"values":[]})
+        ),
+        expected
+    );
+    ipc(&sql.webview, "close", json!({"db":db}));
+}
+
+#[test]
+fn preload_migrations_and_replacement_loading_keep_existing_pools_usable() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("preload.db");
+    let db = fixture_url(&path);
+    let builder = tauri_plugin_sql::Builder::new().add_migrations(
+        &db,
+        vec![tauri_plugin_sql::Migration {
+            version: 1,
+            description: "generated sentinel",
+            sql: "CREATE TABLE sentinel(value INTEGER); INSERT INTO sentinel VALUES(11);",
+            kind: tauri_plugin_sql::MigrationKind::Up,
+        }],
+    );
+    let sql = MockSql::with_builder(&directory.path, builder, &[db.clone()]);
+    let old_pool = sql.pool(&db);
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":"SELECT value FROM sentinel","values":[]})
+        ),
+        json!([{"value":11}])
+    );
+    sql.load(&path);
+    assert_eq!(
+        tauri::async_runtime::block_on(
+            sqlx::query_scalar::<_, i64>("SELECT value FROM sentinel").fetch_one(&old_pool)
+        )
+        .unwrap(),
+        11
+    );
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":"SELECT version, success FROM _sqlx_migrations","values":[]})
+        ),
+        json!([{"version":1,"success":1}])
+    );
+    tauri::async_runtime::block_on(old_pool.close());
+    ipc(&sql.webview, "close", json!({"db":db}));
+}
+
+#[test]
+fn upstream_select_preserves_typed_results_and_errors() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("typed-results.db");
+    let sql = MockSql::new(&directory.path);
+    let db = sql.load(&path);
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,
+            "query":"SELECT ? AS empty, ? AS name, ? AS amount, ? AS fraction, 43 AS integer_literal, X'0102' AS bytes",
+            "values":[null,"generated",42,1.25]})
+        ),
+        // The upstream plugin binds JSON numbers as f64, while SQLite integer literals
+        // retain INTEGER decoding. Preserve both representations, not just numeric equality.
+        json!([{"empty":null,"name":"generated","amount":42.0,"fraction":1.25,"integer_literal":43,"bytes":[1,2]}])
+    );
+    assert!(ipc_result(
+        &sql.webview,
+        "select",
+        json!({"db":db,"query":"SELECT absent_column","values":[]})
+    )
+    .is_err());
+    ipc(&sql.webview, "close", json!({"db":db}));
+}
+
+#[test]
+fn close_during_checkout_preserves_upstream_failure_and_completion() {
+    let runtime = tauri::async_runtime::handle();
+    let _context = runtime.inner().enter();
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("close-checkout.db");
+    let sql = MockSql::new(&directory.path);
+    let db = sql.load(&path);
+    let pool = sql.pool(&db);
+    let held = acquire_connections(&pool, 10);
+    let view = sql.webview.clone();
+    let select_db = db.clone();
+    let select = std::thread::spawn(move || {
+        ipc_result(
+            &view,
+            "select",
+            json!({"db":select_db,"query":"SELECT 1","values":[]}),
+        )
+    });
+    // With the pool exhausted, the sole registry reader is the pending SELECT.
+    // Capture synchronization failures so held leases are released before unwinding.
+    let reached_checkout = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wait_until("select holds registry while awaiting checkout", || {
+            sql.app
+                .state::<tauri_plugin_sql::DbInstances>()
+                .0
+                .try_write()
+                .is_err()
+        });
+    }));
+    let view = sql.webview.clone();
+    let close = std::thread::spawn(move || ipc_result(&view, "close", json!({"db":db})));
+    let close_started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        wait_until("upstream pool close started", || pool.is_closed());
+    }));
+    let close_waited_for_leases = !close.is_finished();
+    drop(held);
+    let select_result = select.join().unwrap();
+    let close_result = close.join().unwrap();
+    assert!(reached_checkout.is_ok());
+    assert!(close_started.is_ok());
+    assert!(close_waited_for_leases);
+    assert!(select_result.is_err());
+    assert!(close_result.is_ok());
+}

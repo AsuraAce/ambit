@@ -13,7 +13,6 @@ import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
 import { measureStartupPhase } from '../../utils/startupDiagnostics';
-import { startupTracedSelect } from '../../utils/startupSqlTrace';
 import { buildSqlWhereClause } from '../../utils/sqlHelpers';
 import { unwrap } from '../../utils/spectaUtils';
 import { assertMutationMatched } from './mutationGuard';
@@ -1063,9 +1062,7 @@ export const moveImagesBetweenCollections = async (
 export const getOrdinaryCollectionCounts = async (): Promise<Map<string, number>> => {
     const startedAt = nowMs();
     const db = await getDb();
-    const counts = await measureStartupPhase('collection-counts', () => startupTracedSelect<{ collection_id: string, count: number }[]>(
-        db,
-        'collection',
+    const counts = await measureStartupPhase('collection-counts', () => db.select<{ collection_id: string, count: number }[]>(
         `SELECT ci.collection_id, COUNT(*) as count
          FROM scoped_collections c
          JOIN collection_images ci ON ci.collection_id = c.id

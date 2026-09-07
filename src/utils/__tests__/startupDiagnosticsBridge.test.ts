@@ -177,38 +177,4 @@ describe('startup diagnostic bridge', () => {
         expect(bridge.getLaunchId()).toBeNull();
     });
 
-    it('admits opt-in SQL tracing only during the renderer startup window', async () => {
-        let now = 0;
-        const recordSqlFrontend = vi.fn(() => Promise.reject(new Error('diagnostic transport')));
-        const bridge = createStartupDiagnosticBridge({
-            now: () => now,
-            send: vi.fn(),
-            recordSqlFrontend,
-            getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 1, sqlTraceEnabled: true }),
-        });
-
-        await bridge.connect();
-        expect(bridge.getSqlTraceCapability()).toBeUndefined();
-        bridge.mark('frontend-entry');
-        expect(bridge.getSqlTraceCapability()).toEqual({ launchId: 'native-launch' });
-        bridge.recordSqlFrontend({
-            launchId: 'native-launch', callId: 1, label: 'gallery', durationMs: 0, status: 'completed',
-        });
-        now = 179_999;
-        expect(bridge.getSqlTraceCapability()).toEqual({ launchId: 'native-launch' });
-        now = 180_000;
-        expect(bridge.getSqlTraceCapability()).toBeUndefined();
-
-        const readyBridge = createStartupDiagnosticBridge({
-            now: () => 0,
-            send: vi.fn(),
-            getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 1, sqlTraceEnabled: true }),
-        });
-        await readyBridge.connect();
-        readyBridge.mark('frontend-entry');
-        readyBridge.mark('ready');
-        expect(readyBridge.getSqlTraceCapability()).toBeUndefined();
-        await Promise.resolve();
-        expect(recordSqlFrontend).toHaveBeenCalledOnce();
-    });
 });
