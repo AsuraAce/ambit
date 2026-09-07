@@ -202,3 +202,84 @@ fn narrow_count_access_path_gate() {
     );
     assert!(table_columns.is_empty(), "STOP: combined candidate still reads image-table columns; do not integrate or expand candidate");
 }
+
+#[test]
+fn post_m80_collection_index_preserves_visibility_and_membership_transitions() {
+    crate::db::migrations::collection_stats_query_tests::visibility_and_membership_transitions(
+        Some(INDEX),
+    );
+}
+
+#[test]
+fn post_m80_collection_index_access_gate() {
+    let directory = GeneratedBenchmarkDir::new();
+    let path = directory.path.join("post-m80-access.db");
+    seed_catalog(
+        &path,
+        Shape {
+            name: "post-m80-access",
+            images: 600,
+            memberships: 500,
+        },
+        false,
+    );
+    let conn = Connection::open(&path).unwrap();
+    set_scope(&conn, "all", "", true);
+    let query = production_collection_stats_query();
+    let expected = counts(&conn, query);
+    let gallery = "SELECT id, path FROM scoped_images
+        WHERE invoke_scope_hidden = 0 AND is_deleted = 0
+          AND IFNULL(is_intermediate_gen, 0) = 0 AND IFNULL(is_grid_gen, 0) = 0
+          AND IFNULL(is_invoke_asset_gen, 0) = 0
+        ORDER BY timestamp DESC, id DESC LIMIT 100";
+    let gallery_plan = |conn: &Connection| {
+        conn.prepare(&format!("EXPLAIN QUERY PLAN {gallery}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+    };
+    let uses_gallery_sort = |plan: Vec<String>| {
+        plan.iter()
+            .any(|step| step.contains("idx_images_invoke_scope_fast_sort_v1"))
+            && !plan
+                .iter()
+                .any(|step| step.contains("TEMP B-TREE FOR ORDER BY"))
+    };
+    assert!(uses_gallery_sort(gallery_plan(&conn)));
+    let maintenance_expected = super::direct_count_rows(&conn, super::maintenance_count_sql());
+    assert!(
+        !image_table_column_reads(&conn, query).is_empty(),
+        "baseline must reproduce image-table access"
+    );
+    // The exact approved candidate; no narrow view or query substitution.
+    conn.execute_batch(INDEX).unwrap();
+    for refreshed in [false, true] {
+        if refreshed {
+            conn.execute_batch("ANALYZE; PRAGMA optimize;").unwrap();
+        }
+        assert_eq!(counts(&conn, query), expected);
+        // Statistics may change the one-row scope-state join without changing gallery sorting.
+        assert!(uses_gallery_sort(gallery_plan(&conn)));
+        assert_eq!(
+            super::direct_count_rows(&conn, super::maintenance_count_sql()),
+            maintenance_expected
+        );
+        let columns = image_table_column_reads(&conn, query);
+        println!(
+            "{}",
+            json!({"kind":"post-m80-access", "sqlite":rusqlite::version(),
+            "statistics_refreshed":refreshed,"exact_results":true,
+            "image_table_column_operations":columns.len()})
+        );
+        assert!(
+            columns.is_empty(),
+            "STOP: approved index still reads image-table columns after migration 80"
+        );
+        assert!(
+            image_table_column_reads(&conn, super::maintenance_count_sql()).is_empty(),
+            "m80 maintenance remains compact"
+        );
+    }
+}

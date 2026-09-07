@@ -133,8 +133,15 @@ fn check_counts(conn: &Connection, expected: &[(&str, i64)]) {
 
 #[test]
 fn query_only_candidates_preserve_visibility_and_membership_transitions() {
+    visibility_and_membership_transitions(None);
+}
+
+pub(super) fn visibility_and_membership_transitions(index: Option<&str>) {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn);
+    if let Some(index) = index {
+        conn.execute_batch(index).unwrap();
+    }
     conn.execute_batch("INSERT INTO images
         (id, path, timestamp, invoke_source_id, invoke_owner_id, invoke_scope_hidden) VALUES
         ('local', 'C:/Library/local.png', 1, NULL, NULL, 0),

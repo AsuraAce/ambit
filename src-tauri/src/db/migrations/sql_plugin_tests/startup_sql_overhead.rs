@@ -12,6 +12,9 @@ use tauri_plugin_sql::startup_trace::Collector;
 const LABELS: [&str; 4] = ["collection", "maintenance", "gallery", "global-gallery"];
 const LIMIT: Duration = Duration::from_secs(20 * 60);
 
+#[path = "post_m80_index.rs"]
+mod post_m80_index;
+
 // Owner-approved generated-only lifetime marker. Its unused collation is never named
 // by a measured query. The closure's destruction detects handle closure even if SQLite
 // subsequently reuses the same address. Neither addresses nor marker names are evidence.
@@ -1063,11 +1066,43 @@ fn overlap_arm_in<E: Evidence>(
     paired_settings: Option<&[Value]>,
     uniform_defaults: bool,
 ) -> Result<OverlapArm, &'static str> {
-    let path = arm_directory.path.join("overlap.db");
+    overlap_arm_at(
+        &arm_directory.path,
+        queries,
+        expected,
+        catalog,
+        pair,
+        concurrent,
+        round,
+        campaign,
+        campaign_limit,
+        report,
+        paired_settings,
+        uniform_defaults,
+    )
+}
+
+// The post-m80 controller retains ownership of this directory until its child exits.
+// Existing in-process callers retain their original RAII directory owner above.
+fn overlap_arm_at<E: Evidence>(
+    arm_directory: &Path,
+    queries: &[String; 4],
+    expected: &[Vec<Value>],
+    catalog: usize,
+    pair: usize,
+    concurrent: bool,
+    round: &mut usize,
+    campaign: Instant,
+    campaign_limit: Duration,
+    report: &mut E,
+    paired_settings: Option<&[Value]>,
+    uniform_defaults: bool,
+) -> Result<OverlapArm, &'static str> {
+    let path = arm_directory.join("overlap.db");
     let origin = Instant::now();
     let journal = std::sync::Arc::new(crate::startup_log::StartupJournal::new(
         origin,
-        Some(&arm_directory.path.join("logs")),
+        Some(&arm_directory.join("logs")),
     ));
     let launch = journal.launch_id.clone();
     let collector = Collector::new(
@@ -1079,7 +1114,7 @@ fn overlap_arm_in<E: Evidence>(
     journal.start_observer();
     let _observer = Observer(journal.clone());
     let sql = MockSql::with_builder(
-        &arm_directory.path,
+        arm_directory,
         tauri_plugin_sql::Builder::default().startup_trace(collector),
         &[],
     );
@@ -1102,7 +1137,6 @@ fn overlap_arm_in<E: Evidence>(
     }
     let mut samples = [OverlapSample::default(); 16];
     let journal_path = arm_directory
-        .path
         .join("logs")
         .join(format!("startup-{launch}.jsonl"));
     for repetition in 0..4 {
@@ -1219,7 +1253,6 @@ fn overlap_arm_in<E: Evidence>(
     });
     let text = std::fs::read_to_string(
         arm_directory
-            .path
             .join("logs")
             .join(format!("startup-{launch}.jsonl")),
     )

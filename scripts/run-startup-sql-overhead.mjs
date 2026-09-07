@@ -1,7 +1,7 @@
 // Supervises only already-compiled generated-data tests. Never launches Ambit.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
-import { realpathSync, readFileSync, openSync, writeSync, closeSync, statSync } from 'node:fs';
+import { realpathSync, readFileSync, openSync, writeSync, closeSync, statSync, renameSync } from 'node:fs';
 import { resolve, basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -10,6 +10,25 @@ const PREFIX = 'AMBIT_OVERLAP_CONTROL ';
 const ROUND_LIMIT = 60000;
 const ROUND_COUNT = 96;
 const OWNERSHIP_BUDGET_MS = 3600000;
+const POST_M80_BUDGET_MS = 1800000;
+
+function validPostM80Request(request, id, arm) {
+    return request && Object.keys(request).sort().join(',') === 'arm,candidate,cell,directory,expected,id,pair'
+        && request.id === id && request.arm === arm && Number.isInteger(arm) && arm >= 0 && arm < 48
+        && request.cell === Math.floor(arm / 12) && request.pair === Math.floor(arm % 12 / 2)
+        && request.candidate === ((arm % 2 === 1) !== (request.pair % 2 === 1))
+        && typeof request.directory === 'string' && request.directory.length > 0 && request.directory.length < 1024
+        && Array.isArray(request.expected) && request.expected.length === 4 && request.expected.every(Array.isArray);
+}
+
+function stopPostM80OwnedProcesses(active, parent, parentClosed, schedule) {
+    if (active) {
+        active.kill();
+        return schedule(() => { if (!parentClosed()) parent.kill(); }, 10000);
+    }
+    if (!parentClosed()) parent.kill();
+    return null;
+}
 
 function requirePreM80Campaign(source) {
     if (source.includes('m80_maintenance_count_indexes::migration80()')) {
@@ -153,6 +172,34 @@ function terminalEvidence(text, byteLimit = 256 * 1024) {
 }
 
 function selfTest() {
+    assert.equal(POST_M80_BUDGET_MS, 1800000);
+    assert.equal(ROUND_LIMIT, 60000);
+    const postRounds = new RoundDeadline(192);
+    for (let arm = 0; arm < 48; arm += 1) {
+        const pair = Math.floor(arm % 12 / 2);
+        const request = { id: 'generated', arm, cell: Math.floor(arm / 12), pair,
+            candidate: (arm % 2 === 1) !== (pair % 2 === 1), directory: 'generated', expected: [[], [], [], []] };
+        assert.equal(validPostM80Request(request, 'generated', arm), true);
+        assert.equal(validPostM80Request({ ...request, id: 'foreign' }, 'generated', arm), false);
+        assert.equal(validPostM80Request({ ...request, private: 'no' }, 'generated', arm), false);
+        assert.equal(validPostM80Request(request, 'generated', arm + 1), false);
+        for (let read = 0; read < 4; read += 1) {
+            const roundId = arm * 4 + read;
+            assert.equal(postRounds.accept({ kind: 'overlap-round-start', roundId }, roundId * 10), true);
+            assert.equal(postRounds.accept({ kind: 'overlap-round-end', roundId }, roundId * 10 + 1), true);
+        }
+    }
+    assert.equal(postRounds.complete(), true);
+    const killed = [];
+    const ownedParent = { kill: () => killed.push('parent') };
+    const ownedChild = { kill: () => killed.push('child') };
+    let closed = false; let fallback;
+    stopPostM80OwnedProcesses(ownedChild, ownedParent, () => closed,
+        (callback, delay) => { assert.equal(delay, 10000); fallback = callback; return 1; });
+    assert.deepEqual(killed, ['child']);
+    closed = true; fallback(); assert.deepEqual(killed, ['child']);
+    closed = false; fallback(); assert.deepEqual(killed, ['child', 'parent']);
+    assert.equal(campaignExpired(0, POST_M80_BUDGET_MS, POST_M80_BUDGET_MS), true);
     const templateOrder = [0, 1, 5, 2, 4, 3];
     const templateConditions = ['local-shipping', 'local-bypass', 'invoke-all-shipping', 'invoke-all-bypass',
         'invoke-selected-shipping', 'invoke-selected-bypass'];
@@ -315,7 +362,135 @@ function selfTest() {
     console.info('Generated SQL controller deadline/evidence tests passed.');
 }
 
+function runPostM80(smoke = false) {
+    const root = fileURLToPath(new URL('../', import.meta.url));
+    const deps = realpathSync(join(root, 'src-tauri/target/debug/deps'));
+    const executable = realpathSync(process.argv[3] ?? '');
+    if (dirname(executable).toLowerCase() !== deps.toLowerCase() || !/^app_lib-[a-f0-9]+\.exe$/.test(basename(executable))) {
+        throw new Error('Only the generated-test executable is allowed');
+    }
+    const id = randomUUID();
+    const base = join(root, `src-tauri/target/startup-sql-post-m80-index${smoke ? '-smoke' : ''}-${id}`);
+    const file = openSync(`${base}-controller.jsonl`, 'wx');
+    const hash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
+    const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', windowsHide: true }).trim();
+    assert.match(revision, /^[a-f0-9]{40}$/);
+    let sequence = 0;
+    const record = value => writeSync(file, `${JSON.stringify({ ...value, sequence: sequence++ })}\n`);
+    const start = performance.now();
+    const budget = POST_M80_BUDGET_MS;
+    const armCount = smoke ? 2 : 48;
+    record({ kind: 'header', protocol: 'post-m80-index-v1', evidenceId: id, revision,
+        executableHash: hash(executable), controllerHash: hash(fileURLToPath(import.meta.url)),
+        purpose: smoke ? 'protocol-verification-only' : 'qualification',
+        budgetMs: budget, roundDeadlineMs: ROUND_LIMIT, expectedArms: armCount, expectedRounds: armCount * 4 });
+    const prefix = 'db::migrations::sql_plugin_tests::count_index_benchmark::startup_sql_overhead::post_m80_index::';
+    const options = { cwd: root, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, AMBIT_POST_M80_ID: id, ...(smoke ? { AMBIT_POST_M80_SMOKE: '1' } : {}),
+            PATH: `${deps};${process.env.PATH ?? ''}` } };
+    const launch = name => spawn(executable, [`${prefix}${name}`, '--exact', '--ignored', '--nocapture', '--test-threads=1'], options);
+    const parent = launch(smoke ? 'post_m80_index_protocol_smoke' : 'measure_post_m80_index_once');
+    parent.stdin.end();
+    const rounds = new RoundDeadline(armCount * 4);
+    let active = null;
+    let nextArm = 0;
+    let reason = null;
+    let parentClosed = false;
+    let parentCode = null;
+    let finished = false;
+    let teardownTimer = null;
+    const stop = status => {
+        if (reason !== null || finished) return;
+        reason = status;
+        // Both handles were created here, and both run only generated tests.
+        teardownTimer = stopPostM80OwnedProcesses(active, parent, () => parentClosed, setTimeout);
+    };
+    const interrupt = () => stop('interrupted');
+    process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
+    const timer = setInterval(() => {
+        const now = performance.now();
+        if (campaignExpired(start, budget, now)) stop('timed-out');
+        else if (rounds.expired(now)) stop('round-timed-out');
+    }, 25);
+    const finish = () => {
+        if (!parentClosed || active || finished) return;
+        finished = true; clearInterval(timer);
+        if (teardownTimer) clearTimeout(teardownTimer);
+        process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
+        let evidence = { status: 'incomplete' };
+        try { evidence = terminalEvidence(readFileSync(`${base}.jsonl`, 'utf8'), 1024 * 1024); } catch { /* partial */ }
+        const complete = parentCode === 0 && evidence.status === 'completed' && !evidence.evidenceIncomplete
+            && nextArm === armCount && rounds.complete();
+        const status = reason ?? (complete ? 'completed' : 'failed');
+        record({ kind: 'terminal', status, childStatus: evidence.status, completedRounds: rounds.next,
+            startedArms: nextArm, pendingRound: rounds.active, elapsedMs: performance.now() - start,
+            cleanupAfterTermination: reason === null ? 'not-forced' : 'unobserved' });
+        closeSync(file);
+        console.info(`SQL post-m80-index campaign ${id}: ${status} (${evidence.status}).`);
+        process.exitCode = status === 'completed' ? 0 : 1;
+    };
+    const lines = (stream, limit, accept) => {
+        let line = ''; let discarding = false;
+        stream.on('data', chunk => {
+            for (const character of chunk.toString('utf8')) {
+                if (character === '\n') {
+                    if (!discarding && !reason) accept(line);
+                    line = ''; discarding = false;
+                } else if (!discarding) {
+                    if (line.length >= limit) { line = ''; discarding = true; stop('invalid-control'); }
+                    else line += character;
+                }
+            }
+        });
+    };
+    lines(parent.stdout, 65536, line => {
+        const at = line.indexOf('AMBIT_POST_M80_ARM ');
+        if (at < 0) return;
+        let request;
+        try { request = JSON.parse(line.slice(at + 'AMBIT_POST_M80_ARM '.length)); } catch { stop('invalid-control'); return; }
+        if (campaignExpired(start, budget, performance.now())) { stop('timed-out'); return; }
+        if (active || nextArm >= armCount || !validPostM80Request(request, id, nextArm)) { stop('invalid-control'); return; }
+        const arm = nextArm++;
+        const child = launch('post_m80_index_worker'); active = child;
+        child.stdin.on('error', () => stop('worker-unavailable'));
+        child.stdin.end(JSON.stringify(request));
+        lines(child.stdout, 4096, value => {
+            const marker = value.indexOf(PREFIX); if (marker < 0) return;
+            let control;
+            try { control = JSON.parse(value.slice(marker + PREFIX.length)); } catch { stop('invalid-control'); return; }
+            if (!rounds.accept(control, performance.now())) stop('invalid-control');
+        });
+        child.stderr.on('data', () => {});
+        child.on('error', () => stop('worker-unavailable'));
+        child.on('close', code => {
+            active = null;
+            if (!parentClosed) {
+                let evidence = { status: 'incomplete' };
+                try { evidence = terminalEvidence(readFileSync(`${base}-arm-${arm}.jsonl`, 'utf8'), 1024 * 1024); } catch { /* partial */ }
+                const completed = !reason && code === 0 && evidence.status === 'completed' && !evidence.evidenceIncomplete
+                    && rounds.next === (arm + 1) * 4 && rounds.active === null;
+                try {
+                    const staging = `${base}-arm-${arm}-done-writing.jsonl`;
+                    const done = openSync(staging, 'wx');
+                    try { writeSync(done, JSON.stringify({ completed })); } finally { closeSync(done); }
+                    renameSync(staging, `${base}-arm-${arm}-done.jsonl`);
+                } catch { stop('completion-storage-unavailable'); }
+            }
+            finish();
+        });
+    });
+    parent.stderr.on('data', () => {});
+    parent.on('error', () => stop('worker-unavailable'));
+    parent.on('close', code => {
+        parentClosed = true; parentCode = code;
+        if (active && reason === null) stop('parent-interrupted');
+        finish();
+    });
+}
+
 function run() {
+    if (process.argv[2] === '--post-m80-smoke') { runPostM80(true); return; }
+    if (process.argv[2] === '--post-m80-index') { runPostM80(); return; }
     const ownership = process.argv[2] === '--ownership';
     const uniform = process.argv[2] === '--overlap-defaults';
     const overlap = process.argv[2] === '--overlap' || uniform;
