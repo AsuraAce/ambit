@@ -426,18 +426,12 @@ pub fn record_startup_diagnostic(
     event: StartupDiagnosticEvent,
     state: tauri::State<'_, StartupState>,
 ) -> Result<(), String> {
+    let receipt_ms = state.journal.elapsed_ms();
     if event.launch_id != state.journal.launch_id {
         return Err("Startup diagnostic launch ID does not match this process".to_string());
     }
     state.record_diagnostic(&event)?;
-    state.journal.renderer(&event);
-
-    let diagnostic = serde_json::json!({
-        "event": event,
-        "processElapsedMs": elapsed_ms(state.process_started),
-    });
-    log::info!("[Startup] {diagnostic}");
-    Ok(())
+    state.journal.enqueue_renderer(event, receipt_ms)
 }
 
 #[derive(Serialize, Type)]

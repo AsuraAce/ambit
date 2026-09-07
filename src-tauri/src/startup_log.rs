@@ -17,6 +17,9 @@ const FILE_LIMIT: usize = 256 * 1024;
 const TERMINAL_RESERVE: usize = 32 * 1024;
 const REPAIR_RESERVE: usize = 8 * 1024;
 const RETAIN_LAUNCHES: usize = 20;
+// StartupState admits at most 256 ordinary + 8*4 reserved + 7 repair events.
+// Even a completely blocked writer cannot let ordinary events consume reserves.
+const RENDERER_QUEUE_LIMIT: usize = 320;
 static ACTIVE: OnceLock<Arc<StartupJournal>> = OnceLock::new();
 const OBSERVATION_TIMES: [u64; 4] = [15_000, 30_000, 60_000, 120_000];
 const WEBVIEW_OBSERVATIONS: &[&str] = &[
@@ -60,6 +63,8 @@ pub struct StartupJournal {
     pub launch_id: String,
     started: Instant,
     inner: Mutex<JournalInner>,
+    renderer_pending: Mutex<Vec<PendingRendererEvent>>,
+    frontend_entry_received: AtomicBool,
     last_heartbeat_ms: AtomicU64,
     observer_started: AtomicBool,
     observer_ended: AtomicBool,
@@ -67,6 +72,11 @@ pub struct StartupJournal {
     webview_pending: AtomicU64,
     webview_first_ms: [AtomicU64; OBSERVATION_COUNT],
     webview_exit_codes: [AtomicU64; OBSERVATION_COUNT],
+}
+
+struct PendingRendererEvent {
+    event: StartupDiagnosticEvent,
+    receipt_ms: u64,
 }
 
 #[derive(Default)]
@@ -143,6 +153,8 @@ impl StartupJournal {
                 file,
                 ..Default::default()
             }),
+            renderer_pending: Mutex::new(Vec::new()),
+            frontend_entry_received: AtomicBool::new(false),
             last_heartbeat_ms: AtomicU64::new(u64::MAX),
             observer_started: AtomicBool::new(false),
             observer_ended: AtomicBool::new(false),
@@ -155,6 +167,58 @@ impl StartupJournal {
 
     pub fn elapsed_ms(&self) -> u64 {
         self.started.elapsed().as_millis().min(u64::MAX as u128) as u64
+    }
+
+    // This short queue lock is never held during storage, logging, or callbacks.
+    // Only validated events from StartupState may enter this fixed-size queue.
+    pub(crate) fn enqueue_renderer(
+        &self,
+        event: StartupDiagnosticEvent,
+        receipt_ms: u64,
+    ) -> Result<(), String> {
+        let mut pending = self
+            .renderer_pending
+            .lock()
+            .map_err(|_| "Startup diagnostic delivery is unavailable".to_owned())?;
+        if self.observer_ended.load(Ordering::Acquire) {
+            return Err("Startup diagnostic observation has ended".into());
+        }
+        if pending.len() >= RENDERER_QUEUE_LIMIT {
+            return Err("Startup diagnostic delivery limit reached".into());
+        }
+        self.observe_renderer_receipt(&event);
+        pending.push(PendingRendererEvent { event, receipt_ms });
+        drop(pending);
+        if let Some(thread) = self.observer_thread.get() {
+            thread.unpark();
+        }
+        Ok(())
+    }
+
+    fn observe_renderer_receipt(&self, event: &StartupDiagnosticEvent) {
+        if matches!(event.phase, StartupPhase::FrontendEntry)
+            && matches!(event.status, crate::startup::StartupPhaseStatus::Completed)
+        {
+            self.frontend_entry_received.store(true, Ordering::Release);
+        }
+        if matches!(
+            event.phase,
+            StartupPhase::Ready | StartupPhase::StartupFailure
+        ) {
+            self.sql_trace.stop();
+        }
+    }
+
+    fn flush_renderer_events(&self) {
+        let batch = match self.renderer_pending.lock() {
+            Ok(mut pending) => std::mem::take(&mut *pending),
+            Err(_) => return,
+        };
+        for pending in batch {
+            self.renderer_at(&pending.event, pending.receipt_ms);
+            let diagnostic = json!({"event":pending.event,"processElapsedMs":pending.receipt_ms});
+            log::info!("[Startup] {diagnostic}");
+        }
     }
 
     pub fn sql_trace_enabled(&self) -> bool {
@@ -312,6 +376,7 @@ impl StartupJournal {
                 let _ = journal.observer_thread.set(std::thread::current());
                 let mut next = 0;
                 while !journal.observer_ended.load(Ordering::Acquire) {
+                    journal.flush_renderer_events();
                     journal.flush_webview_observations();
                     journal.flush_sql_trace(false);
                     let now = journal.elapsed_ms();
@@ -337,6 +402,7 @@ impl StartupJournal {
             })
             .is_err()
         {
+            self.observer_ended.store(true, Ordering::Release);
             eprintln!(
                 "[Startup diagnostics] Native observation is unavailable; startup will continue."
             );
@@ -408,13 +474,13 @@ impl StartupJournal {
         );
     }
 
-    pub fn renderer(&self, event: &StartupDiagnosticEvent) {
-        if matches!(
-            event.phase,
-            StartupPhase::Ready | StartupPhase::StartupFailure
-        ) {
-            self.sql_trace.stop();
-        }
+    #[cfg(test)]
+    pub(crate) fn renderer(&self, event: &StartupDiagnosticEvent) {
+        self.renderer_at(event, self.elapsed_ms());
+    }
+
+    fn renderer_at(&self, event: &StartupDiagnosticEvent, receipt_ms: u64) {
+        self.observe_renderer_receipt(event);
         let phase = serde_json::to_value(event.phase).unwrap_or(Value::Null);
         let status = serde_json::to_value(event.status).unwrap_or(Value::Null);
         self.record(
@@ -430,7 +496,7 @@ impl StartupJournal {
             } else {
                 JournalRecordKind::Ordinary
             },
-            None,
+            Some(receipt_ms),
         );
         if let Some(report) = event.repair_report.as_ref() {
             self.log_repair_report(report);
@@ -566,12 +632,8 @@ impl StartupJournal {
     }
 
     pub fn missing_renderer(&self) {
-        let missing = self
-            .inner
-            .lock()
-            .map(|inner| !inner.milestones.contains_key("frontend-entry"))
-            .unwrap_or(false);
-        if missing {
+        // Receipt is known before persistence; a delayed writer is not a missing renderer.
+        if !self.frontend_entry_received.load(Ordering::Acquire) {
             self.native("renderer-missing", "not-recorded", None);
         }
     }
@@ -588,6 +650,7 @@ impl StartupJournal {
 
     fn end(&self) {
         self.request_end();
+        self.flush_renderer_events();
         self.flush_webview_observations();
         self.flush_sql_trace(true);
         let Ok(mut inner) = self.inner.lock() else {
@@ -794,6 +857,178 @@ fn open_log_with_remove(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn renderer_command_returns_while_diagnostic_storage_is_locked() {
+        use tauri::Manager;
+        let journal = Arc::new(StartupJournal::new(Instant::now(), None));
+        let held = journal.inner.lock().unwrap();
+        let worker_journal = journal.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let app = tauri::test::mock_builder()
+                .manage(crate::startup::StartupState::with_journal(
+                    Instant::now(),
+                    worker_journal.clone(),
+                ))
+                .build(tauri::test::mock_context(tauri::test::noop_assets()))
+                .unwrap();
+            started_tx.send(()).unwrap();
+            let result = crate::startup::record_startup_diagnostic(
+                renderer_event(&worker_journal, "collection-counts", "started"),
+                app.state::<crate::startup::StartupState>(),
+            );
+            // Subsequent command work on the dispatch thread must remain reachable.
+            let heartbeat = worker_journal.heartbeat(&worker_journal.launch_id);
+            done_tx.send((result, heartbeat)).unwrap();
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let returned = done_rx.recv_timeout(Duration::from_secs(1));
+        drop(held);
+        worker.join().unwrap();
+        let (result, heartbeat) =
+            returned.expect("diagnostic dispatch must not wait for journal storage");
+        assert!(result.is_ok());
+        assert!(heartbeat.is_ok());
+    }
+
+    #[test]
+    fn queued_renderer_preserves_receipt_order_and_drains_before_final_summary() {
+        let directory = TestLogs::new();
+        let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
+        for (status, receipt) in [("started", 11), ("completed", 22)] {
+            journal
+                .enqueue_renderer(
+                    renderer_event(&journal, "collection-counts", status),
+                    receipt,
+                )
+                .unwrap();
+        }
+        journal
+            .enqueue_renderer(renderer_event(&journal, "ready", "completed"), 33)
+            .unwrap();
+        assert_eq!(
+            journal.inner.lock().unwrap().bytes,
+            0,
+            "admission must do no disk work"
+        );
+        journal.end();
+        let records = events(&directory.0);
+        let receipts: Vec<_> = records
+            .iter()
+            .filter(|r| r["kind"] == "event")
+            .map(|r| r["processElapsedMs"].as_u64().unwrap())
+            .collect();
+        assert_eq!(receipts, vec![11, 22, 33]);
+        assert_eq!(
+            records.last().unwrap()["milestones"]["ready"]["nativeMs"],
+            33
+        );
+        assert_eq!(records.last().unwrap()["outcome"], "ready");
+        assert!(journal
+            .enqueue_renderer(
+                renderer_event(&journal, "collection-counts", "completed"),
+                44
+            )
+            .is_err());
+        assert!(journal.renderer_pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn admitted_frontend_entry_is_not_missing_while_waiting_for_the_writer() {
+        let directory = TestLogs::new();
+        let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
+        journal
+            .enqueue_renderer(renderer_event(&journal, "frontend-entry", "completed"), 1)
+            .unwrap();
+        journal.missing_renderer();
+        journal.end();
+        assert!(!events(&directory.0)
+            .iter()
+            .any(|r| r["event"]["phase"] == "renderer-missing"));
+    }
+
+    #[test]
+    fn validated_queue_reserves_terminal_and_repair_records_under_saturation() {
+        use tauri::Manager;
+        assert!(RENDERER_QUEUE_LIMIT >= 256 + 8 * 4 + 7);
+        let directory = TestLogs::new();
+        let journal = Arc::new(StartupJournal::new(Instant::now(), Some(&directory.0)));
+        let app = tauri::test::mock_builder()
+            .manage(crate::startup::StartupState::with_journal(
+                Instant::now(),
+                journal.clone(),
+            ))
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let dispatch = |event| {
+            crate::startup::record_startup_diagnostic(
+                event,
+                app.state::<crate::startup::StartupState>(),
+            )
+        };
+        let mut foreign = renderer_event(&journal, "collection-counts", "completed");
+        foreign.launch_id = "foreign".into();
+        assert!(dispatch(foreign).is_err());
+        let mut malformed = renderer_event(&journal, "collection-counts", "completed");
+        malformed.elapsed_ms = u64::MAX;
+        assert!(dispatch(malformed).is_err());
+        assert!(journal.renderer_pending.lock().unwrap().is_empty());
+        for _ in 0..256 {
+            dispatch(renderer_event(&journal, "collection-counts", "completed")).unwrap();
+        }
+        assert!(dispatch(renderer_event(&journal, "collection-counts", "completed")).is_err());
+        dispatch(repair_report_event(&journal, "completed")).unwrap();
+        dispatch(renderer_event(&journal, "ready", "completed")).unwrap();
+        assert!(dispatch(renderer_event(&journal, "ready", "completed")).is_err());
+        assert_eq!(journal.renderer_pending.lock().unwrap().len(), 258);
+        journal.end();
+        let records = events(&directory.0);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r["event"]["phase"] == "owner-repair-report")
+                .count(),
+            1
+        );
+        assert_eq!(records.last().unwrap()["outcome"], "ready");
+        assert!(journal.inner.lock().unwrap().bytes <= FILE_LIMIT);
+    }
+
+    #[test]
+    fn observer_wakes_for_post_ready_renderer_events_without_storage() {
+        let journal = Arc::new(StartupJournal::new(Instant::now(), None));
+        journal.start_observer();
+        journal
+            .enqueue_renderer(renderer_event(&journal, "ready", "completed"), 1)
+            .unwrap();
+        let wait_for = |phase: &str| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !journal.inner.lock().unwrap().milestones.contains_key(phase) {
+                assert!(Instant::now() < deadline, "observer did not drain {phase}");
+                std::thread::yield_now();
+            }
+        };
+        wait_for("ready");
+        journal
+            .enqueue_renderer(
+                renderer_event(&journal, "collection-counts", "completed"),
+                2,
+            )
+            .unwrap();
+        wait_for("collection-counts");
+        journal.request_end();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !journal.inner.lock().unwrap().ended {
+            assert!(Instant::now() < deadline, "observer did not finish");
+            std::thread::yield_now();
+        }
+        assert_eq!(
+            journal.inner.lock().unwrap().milestones["collection-counts"].0,
+            2
+        );
+    }
+
     #[test]
     fn exit_details_and_close_timeline_are_nonblocking_bounded_and_reserved() {
         assert!(OBSERVATION_COUNT <= u64::BITS as usize);

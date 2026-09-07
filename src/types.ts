@@ -250,7 +250,8 @@ export interface Collection {
   name: string;
   description?: string;
   imageIds: string[];
-  count?: number;
+    count?: number;
+    countState?: 'pending' | 'ready' | 'failed';
   thumbnail?: string;
   customThumbnail?: string;
   safeThumbnail?: string;

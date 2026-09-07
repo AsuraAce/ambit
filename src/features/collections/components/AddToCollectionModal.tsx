@@ -8,7 +8,7 @@ import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbn
 import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
-import { compareCollectionsByCount, getCollectionCount } from '../../../utils/collectionCount';
+import { compareCollectionsByCount, getCollectionCount, getCollectionCountLabel } from '../../../utils/collectionCount';
 
 interface AddToCollectionModalProps {
     isOpen: boolean;
@@ -251,8 +251,8 @@ export const AddToCollectionModal: React.FC<AddToCollectionModalProps> = ({
                                                 </div>
                                                 <div
                                                     className="text-[10px] text-gray-500 dark:text-gray-500 uppercase tracking-wider"
-                                                    aria-label={count === undefined ? 'Count not calculated' : undefined}
-                                                    title={count === undefined ? 'Count not calculated' : undefined}
+                                                    aria-label={getCollectionCountLabel(col)}
+                                                    title={getCollectionCountLabel(col)}
                                                 >
                                                     {count === undefined ? '\u2014' : `${count} images`}
                                                 </div>

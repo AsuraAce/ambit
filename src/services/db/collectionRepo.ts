@@ -150,6 +150,8 @@ const dynamicCountCacheWriteTails = new Map<string, Promise<void>>();
 
 interface CollectionStatsOptions {
     includeThumbnails?: boolean;
+    includeCounts?: boolean;
+    readCounts?: () => Promise<Map<string, number>>;
 }
 
 export interface ScopedCollectionRow {
@@ -1058,18 +1060,9 @@ export const moveImagesBetweenCollections = async (
     }));
 };
 
-export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
-    if (isBrowserMockMode()) {
-        return getBrowserMockCollections();
-    }
-
-    const includeThumbnails = options.includeThumbnails !== false;
+export const getOrdinaryCollectionCounts = async (): Promise<Map<string, number>> => {
     const startedAt = nowMs();
     const db = await getDb();
-
-    const collections = await readScopedCollectionRows(db);
-
-    // Get counts from junction table
     const counts = await measureStartupPhase('collection-counts', () => startupTracedSelect<{ collection_id: string, count: number }[]>(
         db,
         'collection',
@@ -1080,7 +1073,22 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
          WHERE i.invoke_scope_hidden = 0
          GROUP BY ci.collection_id`
     ));
-    const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
+    logStartupDuration('ordinary collection counts', startedAt);
+    return new Map(counts.map(c => [c.collection_id, c.count]));
+};
+
+export const getAllCollectionsWithStats = async (options: CollectionStatsOptions = {}): Promise<Collection[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections();
+    }
+
+    const includeThumbnails = options.includeThumbnails !== false;
+    const startedAt = nowMs();
+    const db = await getDb();
+    const collections = await readScopedCollectionRows(db);
+    const countMap = options.includeCounts === false
+        ? undefined
+        : await (options.readCounts ?? getOrdinaryCollectionCounts)();
 
     let mappedCollections: Collection[] = collections.map(c => {
         const filters = parsePersistedCollectionFilters(c.filter_state);
@@ -1092,7 +1100,8 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             isPinned: !!c.is_pinned,
             createdAt: c.created_at,
             updatedAt: c.updated_at || c.created_at, // Fallback to created_at if updated_at is null
-            count: filters ? c.dynamic_count ?? undefined : countMap.get(c.id) || 0,
+            count: filters ? c.dynamic_count ?? undefined : countMap ? countMap.get(c.id) ?? 0 : undefined,
+            ...(!filters ? { countState: countMap ? 'ready' as const : 'pending' as const } : {}),
             imageIds: [],
             customThumbnail: c.custom_thumbnail,
             filters,
@@ -1115,7 +1124,7 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
                 if (collection.customThumbnail) return true;
                 if (collection.filters || collection.thumbnail) return false;
 
-                return collection.count! > 0;
+                return collection.countState === 'pending' || collection.count! > 0;
             })
             .map(collection => ({
                 id: collection.id,

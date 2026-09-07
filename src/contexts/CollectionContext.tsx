@@ -22,7 +22,7 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
     const isLoaded = useCollectionStore(s => s.isLoaded);
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
-    // SyncProvider owns startup ordering; a counted load must follow owner admission.
+    // SyncProvider owns scoped metadata readiness; ordinary counts may finish after the safe gallery opens.
 
     const collections = allCollections.filter(c => !c.filters);
     const smartCollections = allCollections.filter(c => !!c.filters) as SmartCollection[];

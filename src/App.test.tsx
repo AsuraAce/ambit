@@ -161,6 +161,7 @@ const mocks = vi.hoisted(() => ({
     setCollections: vi.fn(),
     refreshCollections: vi.fn().mockResolvedValue(undefined),
     refreshCollectionThumbnails: vi.fn().mockResolvedValue(undefined),
+    setOrdinaryCountsReady: vi.fn(),
     images: [] as AIImage[],
     privacyExposureBlocked: false,
     filters: null as unknown as FilterState,
@@ -334,12 +335,14 @@ vi.mock('./stores/collectionStore', () => ({
         setCollections: typeof mocks.setCollections;
         refreshCollections: typeof mocks.refreshCollections;
         refreshCollectionThumbnails: typeof mocks.refreshCollectionThumbnails;
+        setOrdinaryCountsReady: typeof mocks.setOrdinaryCountsReady;
     }) => unknown) => selector({
         isLoaded: mocks.collectionsLoaded,
         collections: mocks.collections,
         setCollections: mocks.setCollections,
         refreshCollections: mocks.refreshCollections,
-        refreshCollectionThumbnails: mocks.refreshCollectionThumbnails
+        refreshCollectionThumbnails: mocks.refreshCollectionThumbnails,
+        setOrdinaryCountsReady: mocks.setOrdinaryCountsReady,
     })
 }));
 vi.mock('./contexts/SearchContext', () => ({
@@ -587,6 +590,7 @@ describe('App orchestration', () => {
         expect(captured.appLayout).toBeNull();
         expect(mocks.thumbnailQueue).toHaveBeenCalledWith(mocks.addToast, false);
         expect(mocks.metadataRefresh).toHaveBeenCalledWith(false);
+        expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(false);
     });
 
     it('wires loaded stores, background hooks, tags, and the static loader lifecycle', async () => {
@@ -614,6 +618,7 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(4000);
         });
         expect(document.getElementById('static-loading')).toBeNull();
+        expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(true);
     });
 
     it('keeps a fatal bootstrap fallback and does not admit background startup work', async () => {
@@ -628,6 +633,7 @@ describe('App orchestration', () => {
         expect(staticLoader.dataset.ambitDismissed).toBeUndefined();
         expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
         expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
+        expect(mocks.setOrdinaryCountsReady).not.toHaveBeenCalledWith(true);
     });
 
     it('does not remove a fatal fallback raised during the splash fade', async () => {

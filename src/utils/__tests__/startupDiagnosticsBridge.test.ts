@@ -2,6 +2,21 @@ import { describe, expect, it, vi } from 'vitest';
 import { createStartupDiagnosticBridge } from '../startupDiagnostics';
 
 describe('startup diagnostic bridge', () => {
+    it('records count completion after readiness without changing the readiness milestone', async () => {
+        let now = 100;
+        const send = vi.fn();
+        const bridge = createStartupDiagnosticBridge({ now: () => now, send,
+            getLaunch: async () => ({ launchId: 'native-launch', processElapsedMs: 0 }), originMs: 0 });
+        await bridge.connect();
+        bridge.mark('ready');
+        const finish = bridge.start('collection-counts');
+        now = 2100;
+        finish();
+        expect(send.mock.calls.map(([event]) => [event.phase, event.status, event.elapsedMs])).toEqual([
+            ['ready', 'completed', 100], ['collection-counts', 'started', 100], ['collection-counts', 'completed', 2100],
+        ]);
+        expect(send.mock.calls[2][0].durationMs).toBe(2000);
+    });
     it('keeps renderer elapsed times while launch identity resolves asynchronously', async () => {
         const send = vi.fn();
         let resolveLaunch: ((value: { launchId: string; processElapsedMs: number }) => void) | undefined;

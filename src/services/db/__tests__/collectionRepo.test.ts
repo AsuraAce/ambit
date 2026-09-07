@@ -281,6 +281,17 @@ describe('collectionRepo filter normalization', () => {
         expect(params.at(-1)).toBeGreaterThan(10);
     });
 
+    it('can publish scoped metadata without executing ordinary counts or inventing zero', async () => {
+        dbMocks.select.mockImplementation(async (sql: string) => {
+            if (sql === 'SELECT * FROM scoped_collections') return [makeCollectionRow()];
+            throw new Error('Unexpected read: deferred metadata must not count');
+        });
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        const rows = await getAllCollectionsWithStats({ includeCounts: false, includeThumbnails: false });
+        expect(dbMocks.select).toHaveBeenCalledOnce();
+        expect(rows[0]).toMatchObject({ count: undefined, countState: 'pending' });
+    });
+
     it('adds and backfills updated_at when older collection databases lack it', async () => {
         dbMocks.select.mockResolvedValue([{ name: 'id' }, { name: 'created_at' }]);
 

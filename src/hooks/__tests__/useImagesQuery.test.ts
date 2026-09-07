@@ -93,6 +93,14 @@ const renderImagesHook = (
 const config = (): InfiniteQueryConfig => mocks.config as InfiniteQueryConfig;
 
 describe('useImagesQuery', () => {
+    it('keeps the query identity when only an ordinary count becomes ready', () => {
+        const row: Collection = { id: 'ordinary', name: 'Ordinary', createdAt: 1, imageIds: [], countState: 'pending' };
+        renderImagesHook('date_desc', [row]);
+        const pendingKey = config().queryKey;
+        renderImagesHook('date_desc', [{ ...row, count: 14, countState: 'ready' }]);
+        expect(config().queryKey).toEqual(pendingKey);
+        expect(mocks.searchImages).not.toHaveBeenCalled();
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.browserMockMode = false;

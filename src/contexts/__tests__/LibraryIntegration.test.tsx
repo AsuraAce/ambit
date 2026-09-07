@@ -4625,7 +4625,7 @@ describe('Library Integration (Provider Stack)', () => {
         }]);
         expect(boardCollections).toEqual(expect.arrayContaining([
             expect.objectContaining({ id: 'existing-board', name: 'Renamed board' }),
-            expect.objectContaining({ id: 'new-board', name: 'New board' }),
+            expect.objectContaining({ id: 'new-board', name: 'New board', count: undefined, countState: 'pending' }),
         ]));
     });
 

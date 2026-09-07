@@ -8,6 +8,7 @@ import {
     deleteCollectionFromDb,
     ensureCollectionSchema,
     getAllCollectionsWithStats,
+    getOrdinaryCollectionCounts,
     getCollectionImageIdsStrict,
     getCollectionThumbnailSummaries,
     getScopedCollectionRows,
@@ -16,6 +17,8 @@ import {
 } from '../services/db/collectionRepo';
 import { useLibraryStore } from './libraryStore';
 import { startupDiagnostics } from '../utils/startupDiagnostics';
+import { getCollectionCount } from '../utils/collectionCount';
+import { isBrowserMockMode } from '../services/runtime';
 
 let preparationPromise: Promise<void> | null = null;
 let initPromise: Promise<boolean> | null = null;
@@ -27,6 +30,34 @@ let collectionRefreshRunId = 0;
 let smartCountRunId = 0;
 const smartCountRunsByCollection = new Map<string, { runId: number; includesPromptSearch: boolean }>();
 let thumbnailRefreshRunId = 0;
+type CountTicket = { generation: number; revision: number };
+let ordinaryCountRead: { ticket: CountTicket; promise: Promise<Map<string, number>> } | null = null;
+let pendingOrdinaryCounts: CountTicket | null = null;
+let ordinaryCountHydration: Promise<void> | null = null;
+
+const isCurrentCountTicket = (ticket: CountTicket) => (
+    ticket.generation === initializationGeneration && ticket.revision === collectionRefreshRunId
+);
+
+// Runtime authoritative reads and deferred reads share the same physical operation
+// only for the same revision. Superseded waiters never start another query.
+const readOrdinaryCounts = async (ticket: CountTicket): Promise<Map<string, number>> => {
+    while (ordinaryCountRead) {
+        const running = ordinaryCountRead;
+        if (running.ticket.generation === ticket.generation && running.ticket.revision === ticket.revision) {
+            return running.promise;
+        }
+        try { await running.promise; } catch { /* The next revision has its own outcome. */ }
+    }
+    if (!isCurrentCountTicket(ticket)) throw new Error(COLLECTION_REFRESH_SUPERSEDED_ERROR);
+    const read = { ticket, promise: getOrdinaryCollectionCounts() };
+    ordinaryCountRead = read;
+    try {
+        return await read.promise;
+    } finally {
+        if (ordinaryCountRead === read) ordinaryCountRead = null;
+    }
+};
 
 const invalidateCollectionRefreshes = () => {
     collectionRefreshRunId += 1;
@@ -108,11 +139,11 @@ const shouldShowThumbnailHydrationPending = (collection: Collection, force: bool
     if (collection.filters) return false;
     if (collection.customThumbnail) return true;
 
-    const imageCount = collection.count ?? collection.imageIds.length;
-    if (force) return imageCount > 0;
+    const imageCount = getCollectionCount(collection);
+    if (force) return imageCount === undefined || imageCount > 0;
     if (collection.thumbnail) return false;
 
-    return imageCount > 0;
+    return imageCount === undefined || imageCount > 0;
 };
 
 const shouldHydrateCollectionThumbnail = (collection: Collection, force: boolean): boolean => (
@@ -161,6 +192,8 @@ interface CollectionState {
     collections: Collection[];
     isLoaded: boolean;
     initializationError: boolean;
+    hasOpenedGallery: boolean;
+    ordinaryCountsReady: boolean;
     thumbnailHydrationPendingIds: Record<string, true>;
     smartSummaryPendingIds: Record<string, true>;
 
@@ -168,6 +201,9 @@ interface CollectionState {
     prepareInitialization: () => Promise<void>;
     invalidateInitialization: () => number;
     getInitializationGeneration: () => number;
+    setOrdinaryCountsReady: (ready: boolean) => void;
+    refreshPendingOrdinaryCounts: () => Promise<void>;
+    retryOrdinaryCounts: () => void;
     initialize: (options?: CollectionInitializationOptions) => Promise<boolean>;
     finishInitializationHydration: (generation: number, authoritativeSummaries?: boolean) => void;
     refreshCollections: (debounced?: boolean, options?: CollectionRefreshOptions) => Promise<void>;
@@ -219,12 +255,68 @@ export const useCollectionStore = create<CollectionState>()(
             collections: [],
             isLoaded: false,
             initializationError: false,
+            hasOpenedGallery: false,
+            ordinaryCountsReady: false,
             thumbnailHydrationPendingIds: {},
             smartSummaryPendingIds: {},
+
+            setOrdinaryCountsReady: (ready) => {
+                set({ ordinaryCountsReady: ready, hasOpenedGallery: get().hasOpenedGallery || ready });
+                if (ready) void get().refreshPendingOrdinaryCounts();
+            },
+
+            refreshPendingOrdinaryCounts: async () => {
+                if (!get().ordinaryCountsReady || !pendingOrdinaryCounts) return;
+                if (ordinaryCountHydration) return ordinaryCountHydration;
+                const hydration = (async () => {
+                    while (get().ordinaryCountsReady && pendingOrdinaryCounts) {
+                        const ticket: CountTicket = pendingOrdinaryCounts;
+                        pendingOrdinaryCounts = null;
+                        if (!isCurrentCountTicket(ticket)) continue;
+                        try {
+                            const counts = await readOrdinaryCounts(ticket);
+                            if (!isCurrentCountTicket(ticket)) continue;
+                            if (!get().ordinaryCountsReady) {
+                                pendingOrdinaryCounts = ticket;
+                                return;
+                            }
+                            set(state => ({ collections: state.collections.map(collection => (
+                                collection.filters ? collection : {
+                                    ...collection, count: counts.get(collection.id) ?? 0, countState: 'ready',
+                                }
+                            )) }));
+                        } catch {
+                            if (!isCurrentCountTicket(ticket)) continue;
+                            set(state => ({ collections: state.collections.map(collection => (
+                                collection.filters ? collection : { ...collection, count: undefined, countState: 'failed' }
+                            )) }));
+                            // The repository retains classified timing evidence. No automatic retry.
+                            console.warn('[Collections] Ordinary counts unavailable.');
+                        }
+                    }
+                })();
+                ordinaryCountHydration = hydration;
+                try { await hydration; } finally {
+                    if (ordinaryCountHydration === hydration) ordinaryCountHydration = null;
+                    if (get().ordinaryCountsReady && pendingOrdinaryCounts) void get().refreshPendingOrdinaryCounts();
+                }
+            },
+
+            retryOrdinaryCounts: () => {
+                if (!get().collections.some(collection => !collection.filters && collection.countState === 'failed')) return;
+                pendingOrdinaryCounts = { generation: initializationGeneration, revision: collectionRefreshRunId };
+                set(state => ({ collections: state.collections.map(collection => (
+                    collection.filters ? collection : { ...collection, count: undefined, countState: 'pending' }
+                )) }));
+                void get().refreshPendingOrdinaryCounts();
+            },
 
             refreshCollections: async (debounced = false, options = {}) => {
                 const isAuthoritative = options.consistency === 'authoritative';
                 const refreshGeneration = initializationGeneration;
+                const deferCounts = !get().hasOpenedGallery && !isBrowserMockMode();
+                const requestedRunId = invalidateCollectionRefreshes();
+                pendingOrdinaryCounts = null;
                 const run = async (initialRunId: number) => {
                     let currentRunId = initialRunId;
                     try {
@@ -233,9 +325,22 @@ export const useCollectionStore = create<CollectionState>()(
                                 if (isAuthoritative) throw new Error(COLLECTION_REFRESH_SUPERSEDED_ERROR);
                                 return;
                             }
-                            const cols = await getAllCollectionsWithStats({
-                                includeThumbnails: options.includeThumbnails,
-                            });
+                            let cols: Collection[];
+                            try {
+                                cols = await getAllCollectionsWithStats({
+                                    includeThumbnails: options.includeThumbnails,
+                                    ...(deferCounts ? { includeCounts: false } : {
+                                        readCounts: () => readOrdinaryCounts({ generation: refreshGeneration, revision: currentRunId }),
+                                    }),
+                                });
+                            } catch (error) {
+                                if (isAuthoritative && refreshGeneration === initializationGeneration
+                                    && currentRunId !== collectionRefreshRunId) {
+                                    currentRunId = invalidateCollectionRefreshes();
+                                    continue;
+                                }
+                                throw error;
+                            }
                             if (refreshGeneration !== initializationGeneration) {
                                 if (isAuthoritative) throw new Error(COLLECTION_REFRESH_SUPERSEDED_ERROR);
                                 return;
@@ -249,6 +354,10 @@ export const useCollectionStore = create<CollectionState>()(
                             }
 
                             set({ collections: cols });
+                            if (deferCounts && cols.some(collection => !collection.filters)) {
+                                pendingOrdinaryCounts = { generation: refreshGeneration, revision: currentRunId };
+                                void get().refreshPendingOrdinaryCounts();
+                            }
 
                             // Lazily fetch visible smart counts in the background.
                             if (options.scheduleSmartRefresh !== false) {
@@ -257,6 +366,16 @@ export const useCollectionStore = create<CollectionState>()(
                             return;
                         }
                     } catch (e) {
+                        // A replacement owns the pending badges once it supersedes
+                        // their background read. Failure must leave a retryable state,
+                        // but must never publish into a newer refresh or owner scope.
+                        if (isCurrentCountTicket({ generation: refreshGeneration, revision: currentRunId })) {
+                            set(state => ({ collections: state.collections.map(collection => (
+                                !collection.filters && collection.countState === 'pending'
+                                    ? { ...collection, count: undefined, countState: 'failed' }
+                                    : collection
+                            )) }));
+                        }
                         console.error('[CollectionStore] Failed to refresh collections', e);
                         if (isAuthoritative) throw e;
                     }
@@ -271,12 +390,10 @@ export const useCollectionStore = create<CollectionState>()(
                     return;
                 }
 
-                const runId = invalidateCollectionRefreshes();
-
                 if (debounced) {
-                    return scheduleSupersedingDebounce(collectionDebounce, () => run(runId));
+                    return scheduleSupersedingDebounce(collectionDebounce, () => run(requestedRunId));
                 }
-                await run(runId);
+                await run(requestedRunId);
             },
 
             refreshCollectionThumbnails: async (debounced = false, force = false, options = {}) => {
@@ -538,10 +655,14 @@ export const useCollectionStore = create<CollectionState>()(
 
                     if (nextCollections !== state.collections) {
                         invalidateCollectionRefreshes();
+                        if (nextCollections.some(collection => collection.countState === 'pending')) {
+                            pendingOrdinaryCounts = { generation: initializationGeneration, revision: collectionRefreshRunId };
+                        }
                     }
 
                     return { collections: nextCollections };
                 });
+                void get().refreshPendingOrdinaryCounts();
             },
 
             prepareInitialization: async () => {
@@ -558,6 +679,7 @@ export const useCollectionStore = create<CollectionState>()(
 
             invalidateInitialization: () => {
                 invalidateCollectionRefreshes();
+                pendingOrdinaryCounts = null;
                 thumbnailRefreshRunId += 1;
                 smartCountRunId += 1;
                 smartCountRunsByCollection.clear();

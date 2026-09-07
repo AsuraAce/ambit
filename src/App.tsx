@@ -15,6 +15,7 @@ import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
+import { getCollectionCount } from './utils/collectionCount';
 import { useLibraryStore } from './stores/libraryStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
@@ -60,7 +61,7 @@ const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
 interface RetainedLibraryPresentation {
     images: AIImage[];
     totalImages: number;
-    scopeTotal: number;
+    scopeTotal: number | null;
     scopeName: string;
     availableTags: string[];
     activeCollection: Collection | null;
@@ -129,6 +130,7 @@ export default function App() {
     const flushSettings = useSettingsStore(s => s.flushSettings);
 
     const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
+    const setOrdinaryCountsReady = useCollectionStore(s => s.setOrdinaryCountsReady);
     const allCollections = useCollectionStore(s => s.collections);
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters) as SmartCollection[], [allCollections]);
@@ -419,6 +421,10 @@ export default function App() {
             });
         }
     }, [backgroundStartupReady]);
+    useEffect(() => {
+        setOrdinaryCountsReady(backgroundStartupReady && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true');
+        return () => setOrdinaryCountsReady(false);
+    }, [backgroundStartupReady, setOrdinaryCountsReady]);
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         await selectInvokeOwnerScope(selection);
     }, [selectInvokeOwnerScope]);
@@ -627,8 +633,9 @@ export default function App() {
         ? (smartCollections.find(c => c.id === filters.collectionId) ?? null)
         : null;
     const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
-    const scopeTotal = Math.max(
-        activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
+    const activeCollectionCount = activeCollection ? getCollectionCount(activeCollection) : undefined;
+    const scopeTotal = activeCollection && activeCollectionCount === undefined ? null : Math.max(
+        activeCollection ? activeCollectionCount! :
             (activeSmartCollection ? totalImages : globalTotal),
         totalImages
     );
