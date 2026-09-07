@@ -20,6 +20,7 @@ const browserMocks = vi.hoisted(() => ({
 }));
 
 const bindingMocks = vi.hoisted(() => ({
+    recordStartupDiagnostic: vi.fn().mockResolvedValue(undefined),
     mutateCollectionMembership: vi.fn(),
     setCollectionCustomThumbnail: vi.fn(),
     updateAmbitCollectionScope: vi.fn(),
@@ -29,6 +30,8 @@ const bindingMocks = vi.hoisted(() => ({
 
 vi.mock('../../../bindings', () => ({
     commands: {
+        getStartupLaunch: vi.fn().mockResolvedValue({ launchId: 'a0', processElapsedMs: 0 }),
+        recordStartupDiagnostic: bindingMocks.recordStartupDiagnostic,
         mutateCollectionMembership: bindingMocks.mutateCollectionMembership,
         setCollectionCustomThumbnail: bindingMocks.setCollectionCustomThumbnail,
         updateAmbitCollectionScope: bindingMocks.updateAmbitCollectionScope,
@@ -39,9 +42,11 @@ vi.mock('../../../bindings', () => ({
 
 vi.mock('@tauri-apps/api/core', () => ({
     convertFileSrc: (path: string) => `asset://${path}`,
+    invoke: vi.fn(),
 }));
 
 vi.mock('../../runtime', () => ({
+    isTauriRuntime: () => true,
     isBrowserMockMode: browserMocks.isBrowserMockMode,
 }));
 
@@ -324,6 +329,18 @@ describe('collectionRepo filter normalization', () => {
         errorSpy.mockRestore();
     });
 
+    it('attributes a failed collection count without logging SQL or library data', async () => {
+        dbMocks.select.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('database is locked'));
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        await expect(getAllCollectionsWithStats({ includeThumbnails: false })).rejects.toThrow('database is locked');
+        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+            phase: 'collection-rows', status: 'completed', databaseRole: 'ambit',
+        }));
+        expect(bindingMocks.recordStartupDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+            phase: 'collection-counts', status: 'failed', failureKind: 'database-busy', databaseRole: 'ambit',
+        }));
+    });
+
     it('stringifies non-Error schema migration failures', async () => {
         dbMocks.select.mockResolvedValue([{ name: 'id' }, { name: 'created_at' }]);
         dbMocks.execute.mockRejectedValueOnce('database read-only');
@@ -440,6 +457,48 @@ describe('collectionRepo thumbnail hydration', () => {
         expect(queries.join('\n')).not.toContain('ranked_thumbnails');
         expect(queries.join('\n')).not.toContain('WHERE id IN');
         expect(queries.join('\n')).not.toContain('WHERE path IN');
+    });
+
+    it('reads scoped rows without the collection count query during startup preparation', async () => {
+        dbMocks.select.mockResolvedValueOnce([makeCollectionRow({ id: 'prepared', name: 'Prepared' })]);
+        const { getScopedCollectionRows } = await import('../collectionRepo');
+
+        await expect(getScopedCollectionRows()).resolves.toEqual([
+            expect.objectContaining({ id: 'prepared', name: 'Prepared' }),
+        ]);
+
+        expect(dbMocks.select).toHaveBeenCalledOnce();
+        expect(dbMocks.select).toHaveBeenCalledWith('SELECT * FROM scoped_collections');
+    });
+
+    it('propagates failed strict membership lookups so cleanup cannot treat them as empty', async () => {
+        const error = new Error('sqlite busy');
+        dbMocks.select.mockRejectedValueOnce(error);
+        const { getCollectionImageIdsStrict } = await import('../collectionRepo');
+
+        await expect(getCollectionImageIdsStrict('c1')).rejects.toThrow(error);
+    });
+
+    it('counts only visible images in collections visible to the active owner scope', async () => {
+        const queries: string[] = [];
+        dbMocks.select.mockImplementation(async (query: string) => {
+            queries.push(query);
+            if (query.includes('SELECT * FROM scoped_collections')) {
+                return [makeCollectionRow()];
+            }
+            if (query.includes('COUNT(*) as count')) return [{ collection_id: 'c1', count: 3 }];
+            return [];
+        });
+
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        await getAllCollectionsWithStats({ includeThumbnails: false });
+
+        const countQuery = queries.find(query => query.includes('COUNT(*) as count'));
+        expect(countQuery).toContain('FROM scoped_collections c');
+        expect(countQuery).toContain('JOIN collection_images ci ON ci.collection_id = c.id');
+        expect(countQuery).toContain('JOIN scoped_images i ON i.id = ci.image_id');
+        expect(countQuery).toContain('WHERE i.invoke_scope_hidden = 0');
+        expect(countQuery).toContain('GROUP BY ci.collection_id');
     });
 
     it('maps cached dynamic thumbnails without running thumbnail hydration queries when thumbnails are included', async () => {

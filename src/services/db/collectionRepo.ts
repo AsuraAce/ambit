@@ -12,6 +12,8 @@ import { createDefaultFilters } from '../../utils/filterState';
 import { dbMutex } from './connection';
 import { isBrowserMockMode } from '../runtime';
 import { timeDbCall } from '../../utils/dbTiming';
+import { measureStartupPhase } from '../../utils/startupDiagnostics';
+import { startupTracedSelect } from '../../utils/startupSqlTrace';
 import { buildSqlWhereClause } from '../../utils/sqlHelpers';
 import { unwrap } from '../../utils/spectaUtils';
 import { assertMutationMatched } from './mutationGuard';
@@ -148,6 +150,11 @@ const dynamicCountCacheWriteTails = new Map<string, Promise<void>>();
 
 interface CollectionStatsOptions {
     includeThumbnails?: boolean;
+}
+
+export interface ScopedCollectionRow {
+    id: string;
+    name: string;
 }
 
 interface SmartCollectionSummaryOptions {
@@ -1060,16 +1067,19 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
     const startedAt = nowMs();
     const db = await getDb();
 
-    const collections = await db.select<DbCollection[]>('SELECT * FROM scoped_collections');
+    const collections = await readScopedCollectionRows(db);
 
     // Get counts from junction table
-    const counts = await db.select<{ collection_id: string, count: number }[]>(
+    const counts = await measureStartupPhase('collection-counts', () => startupTracedSelect<{ collection_id: string, count: number }[]>(
+        db,
+        'collection',
         `SELECT ci.collection_id, COUNT(*) as count
-         FROM collection_images ci
-         INNER JOIN scoped_images i ON i.id = ci.image_id
+         FROM scoped_collections c
+         JOIN collection_images ci ON ci.collection_id = c.id
+         JOIN scoped_images i ON i.id = ci.image_id
          WHERE i.invoke_scope_hidden = 0
          GROUP BY ci.collection_id`
-    );
+    ));
     const countMap = new Map(counts.map(c => [c.collection_id, c.count]));
 
     let mappedCollections: Collection[] = collections.map(c => {
@@ -1122,6 +1132,19 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
 
     logStartupDuration('collection load', startedAt);
     return mappedCollections;
+};
+
+const readScopedCollectionRows = async (db: Awaited<ReturnType<typeof getDb>>): Promise<DbCollection[]> => (
+    measureStartupPhase('collection-rows', () => db.select<DbCollection[]>('SELECT * FROM scoped_collections'))
+);
+
+export const getScopedCollectionRows = async (): Promise<ScopedCollectionRow[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections().map(({ id, name }) => ({ id, name }));
+    }
+
+    const db = await getDb();
+    return readScopedCollectionRows(db);
 };
 
 export const getCollectionThumbnailSummaries = async (
@@ -1429,6 +1452,19 @@ export const getCollectionImageIds = async (collectionId: string): Promise<strin
         console.error('[DB] Failed to get collection image IDs', e);
         return [];
     }
+};
+
+export const getCollectionImageIdsStrict = async (collectionId: string): Promise<string[]> => {
+    if (isBrowserMockMode()) {
+        return getBrowserMockCollections().find(collection => collection.id === collectionId)?.imageIds ?? [];
+    }
+
+    const db = await getDb();
+    const res = await db.select<{ image_id: string }[]>(
+        'SELECT image_id FROM collection_images WHERE collection_id = ?',
+        [collectionId]
+    );
+    return res.map(row => row.image_id);
 };
 
 // Legacy shim to satisfy existing imports

@@ -6,6 +6,7 @@ import { getDb } from '../db/connection';
 import { insertImagesBatch } from '../db/imageRepo';
 import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
+import { getInvokeSourceDatabase } from './connection';
 
 const normalizeRelativePath = (path: string): string =>
     normalizePath(path).replace(/^\/+/, '');
@@ -67,7 +68,7 @@ export const scanForOrphans = async (
     if (!options.importIntermediates) {
         try {
             const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
-            const invokeDb = await Database.load(`sqlite:${dbPath.replace(/\\/g, '/')}`);
+            const invokeDb = await getInvokeSourceDatabase(dbPath);
             const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
             const hasImageSubfolder = tableInfo.some(column => column.name === 'image_subfolder');
             const interRows = await invokeDb.select<Array<{ image_name: string, image_subfolder?: string | null }>>(

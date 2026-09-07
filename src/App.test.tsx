@@ -616,6 +616,31 @@ describe('App orchestration', () => {
         expect(document.getElementById('static-loading')).toBeNull();
     });
 
+    it('keeps a fatal bootstrap fallback and does not admit background startup work', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        staticLoader.dataset.ambitFatal = 'true';
+        document.body.appendChild(staticLoader);
+        render(<App />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
+        expect(staticLoader.dataset.ambitDismissed).toBeUndefined();
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
+    });
+
+    it('does not remove a fatal fallback raised during the splash fade', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        render(<App />);
+        staticLoader.dataset.ambitFatal = 'true';
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
+    });
+
     it('keeps quick initial InvokeAI admission behind the splash without flashing preparation', async () => {
         vi.useFakeTimers();
         const staticLoader = document.createElement('div');
@@ -707,6 +732,19 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(1);
         });
         expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('keeps an admitted owner behind the splash until collection counts load', () => {
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.collectionsLoaded = false;
+        mocks.settings = createDefaultAppSettings({ invokeAiPath: 'D:/Invoke' });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(expect.any(Function), false);
     });
 
     it('keeps owner admission and a brief privacy handoff behind the startup splash', async () => {
@@ -1544,7 +1582,8 @@ describe('App orchestration', () => {
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
     });
 
-    it('keeps selection and blocking errors in front of the library', () => {
+    it.each([true, false])('keeps owner recovery reachable with collections loaded=%s', (collectionsLoaded) => {
+        mocks.collectionsLoaded = collectionsLoaded;
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
             invokeAiPath: 'D:/Invoke',

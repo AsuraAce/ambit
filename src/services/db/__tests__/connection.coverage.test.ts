@@ -92,7 +92,7 @@ describe('database connection', () => {
         expect(onPhase).toHaveBeenCalledWith('Optimizing database');
         expect(onPhase).toHaveBeenCalledWith('Loading library');
         expect(databaseLoadMock).toHaveBeenCalledTimes(1);
-        expect(database.execute).toHaveBeenCalledWith('PRAGMA journal_mode=WAL');
+        expect(database.execute).toHaveBeenCalledTimes(12);
     });
 
     it('retries database URL lookup after a transient backend failure', async () => {
@@ -121,16 +121,68 @@ describe('database connection', () => {
         expect(getMainDatabaseUrlMock).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps the loaded database available when optimization fails', async () => {
+    it('keeps the loaded database available when optional optimization fails', async () => {
         const database = createDatabaseMock();
-        database.execute.mockRejectedValueOnce(new Error('pragma unsupported'));
+        database.execute.mockImplementation(async (statement: string) => {
+            if (statement.startsWith('CREATE INDEX')) throw new Error('index creation failed');
+        });
+        databaseLoadMock.mockResolvedValue(database);
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const { getDb } = await import('../connection');
+
+        await expect(getDb()).resolves.toBe(database);
+        await expect(getDb()).resolves.toBe(database);
+
+        expect(error).toHaveBeenCalledWith('[DB] Failed to create optional indexes', expect.any(Error));
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
+        expect(database.execute).toHaveBeenCalledTimes(7);
+        error.mockRestore();
+    });
+    it.each([1, 6])('holds every caller until optional index operation %i settles', async (heldCall) => {
+        const database = createDatabaseMock();
+        let releaseInitialization!: () => void;
+        const initializationGate = new Promise<void>(resolve => {
+            releaseInitialization = resolve;
+        });
+        let calls = 0;
+        database.execute.mockImplementation(async () => {
+            calls += 1;
+            if (calls === 6 + heldCall) await initializationGate;
+        });
+        databaseLoadMock.mockResolvedValue(database);
+        const { getDb } = await import('../connection');
+
+        const returned = vi.fn();
+        const load = () => getDb().then(db => { returned(); return db; });
+        const first = load();
+        const second = load();
+        await vi.waitFor(() => expect(database.execute).toHaveBeenCalledTimes(6 + heldCall));
+        const lateCaller = load();
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(returned).not.toHaveBeenCalled();
+        expect(getMainDatabaseUrlMock).toHaveBeenCalledTimes(1);
+        expect(databaseLoadMock).toHaveBeenCalledTimes(1);
+
+        releaseInitialization();
+        await expect(Promise.all([first, second, lateCaller])).resolves.toEqual([database, database, database]);
+        expect(database.execute).toHaveBeenCalledTimes(12);
+    });
+
+    it('continues to indexes when legacy PRAGMA setup fails', async () => {
+        const database = createDatabaseMock();
+        database.execute.mockRejectedValueOnce(new Error('pragma failed'));
         databaseLoadMock.mockResolvedValue(database);
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         const { getDb } = await import('../connection');
 
         await expect(getDb()).resolves.toBe(database);
 
-        expect(error).toHaveBeenCalledWith('[DB] Failed to set PRAGMAs or Indexes', expect.any(Error));
+        expect(error).toHaveBeenCalledWith('[DB] Failed to set optional PRAGMAs', expect.any(Error));
+        expect(database.execute).toHaveBeenCalledTimes(7);
+        for (const [statement] of database.execute.mock.calls.slice(1)) {
+            expect(statement).toMatch(/^CREATE INDEX IF NOT EXISTS /);
+        }
         error.mockRestore();
     });
 
@@ -146,7 +198,6 @@ describe('database connection', () => {
         await getDb();
 
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('[Startup DB] Database.load completed'));
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining('[Startup DB] Performance PRAGMAs completed'));
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('[Startup DB] Frontend covering indexes completed'));
         warn.mockRestore();
     });

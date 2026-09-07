@@ -70,6 +70,7 @@ interface RetainedLibraryPresentation {
 const dismissStaticLoader = (immediate = false) => {
     const loader = document.getElementById('static-loading');
     if (!loader || loader.dataset.ambitDismissed === 'true') return;
+    if (loader.dataset.ambitFatal === 'true') return;
 
     loader.dataset.ambitDismissed = 'true';
     startupDiagnostics.mark('splash');
@@ -83,6 +84,7 @@ const dismissStaticLoader = (immediate = false) => {
     loader.style.opacity = '0';
 
     window.setTimeout(() => {
+        if (loader.dataset.ambitFatal === 'true') return;
         loader.remove();
     }, 500);
 };
@@ -409,6 +411,7 @@ export default function App() {
     useMetadataRefresh(backgroundStartupReady);
     useEffect(() => {
         if (!backgroundStartupReady) return;
+        if (document.getElementById('static-loading')?.dataset.ambitFatal === 'true') return;
         startupDiagnostics.mark('ready');
         if (isTauriRuntime()) {
             void commands.completeStartup().catch(() => {
@@ -888,7 +891,9 @@ export default function App() {
     // an actionable owner state, explicit runtime switch, or sustained privacy
     // preparation replaces it.
     useEffect(() => {
-        if (!isLoaded || !isInitialStartupPresentation) return;
+        if (!isSettingsLoaded || !isInitialStartupPresentation) return;
+        if (!isCollectionsLoaded && !shouldRenderInvokeOwnerScopeGate) return;
+        if (document.getElementById('static-loading')?.dataset.ambitFatal === 'true') return;
         if (isInvokeOwnerScopeBusy) return;
         if (isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) return;
 
@@ -909,11 +914,14 @@ export default function App() {
         isInvokeOwnerScopeBusy,
         isInvokeOwnerScopeBlocking,
         isLoaded,
+        isSettingsLoaded,
+        isCollectionsLoaded,
+        shouldRenderInvokeOwnerScopeGate,
         privacyExposureBlocked,
         privacyMaskIndexStatus,
     ]);
 
-    if (!isLoaded) return null;
+    if (!isLoaded && !(isSettingsLoaded && shouldRenderInvokeOwnerScopeGate)) return null;
 
 
     return (
@@ -1092,7 +1100,7 @@ export default function App() {
                 onUpdateCollectionScope={colOps.updateCollectionScope}
                 onResetInvokeCollection={colOps.resetInvokeCollection}
                 onScanFolder={fileOps.handleImportFolders}
-                onInvokeSync={() => startInvokeSync({ mode: 'manual', afterTimestamp: 0 })}
+                onInvokeSync={async () => { await startInvokeSync({ mode: 'manual', afterTimestamp: 0 }); }}
                 hasPendingUpdate={Boolean(updater.update)}
                 pendingUpdateVersion={updater.update?.version ?? null}
                 updateErrorMessage={updater.errorMessage}

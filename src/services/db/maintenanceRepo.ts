@@ -12,6 +12,7 @@ import {
     updateBrowserMockImage,
 } from '../browserMockData';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
+import { startupTracedSelect } from '../../utils/startupSqlTrace';
 
 interface ImagePathRow {
     id: string;
@@ -467,7 +468,7 @@ export const getMaintenanceCounts = async () => {
     const db = await getDb();
 
     // Batch all counts into a single query to reduce IPC overhead
-    const res = await db.select<MaintenanceCountRow[]>(`
+    const res = await startupTracedSelect<MaintenanceCountRow[]>(db, 'maintenance', `
         SELECT 
             COUNT(*) FILTER (
                 WHERE (positive_prompt IS NULL OR positive_prompt = '')

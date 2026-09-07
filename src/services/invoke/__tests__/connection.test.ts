@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from '@tauri-apps/plugin-sql';
-import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
+import { startupDiagnostics } from '../../../utils/startupDiagnostics';
+import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, getInvokeSourceDatabase, invalidateInvokeSourceDatabase, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
 
 const fetchBoardMappings = (db: Database) => fetchBoardMappingsImpl(db, {
     mode: 'legacy',
@@ -23,7 +24,28 @@ const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
 });
 
 describe('InvokeAI connection helpers', () => {
+    it('separates source opening from schema discovery without logging source values', async () => {
+        const finish = vi.fn();
+        const start = vi.spyOn(startupDiagnostics, 'start').mockReturnValue(finish);
+        sqlMock.load.mockResolvedValue(createDb(async () => [{ name: 'image_name' }]));
+        await expect(discoverInvokeOwners('D:/PrivateSource')).resolves.toMatchObject({ schemaMode: 'legacy' });
+        expect(start.mock.calls.map(([phase]) => phase)).toEqual(['owner-source-open', 'owner-source-schema']);
+        expect(finish).toHaveBeenCalledTimes(2);
+        expect(JSON.stringify(start.mock.calls)).not.toContain('PrivateSource');
+    });
+
+    it('attributes source-open failures without continuing discovery or replacing the error', async () => {
+        const failure = new Error('database is locked: D:/PrivateSource');
+        const finish = vi.fn();
+        const start = vi.spyOn(startupDiagnostics, 'start').mockReturnValue(finish);
+        sqlMock.load.mockRejectedValue(failure);
+        await expect(discoverInvokeOwners('D:/PrivateSource')).rejects.toBe(failure);
+        expect(start).toHaveBeenCalledExactlyOnceWith('owner-source-open', null);
+        expect(finish).toHaveBeenCalledExactlyOnceWith('failed', failure);
+    });
+
     beforeEach(() => {
+        invalidateInvokeSourceDatabase();
         sqlMock.load.mockReset();
         vi.spyOn(console, 'log').mockImplementation(() => undefined);
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -33,6 +55,86 @@ describe('InvokeAI connection helpers', () => {
         vi.restoreAllMocks();
     });
 
+    it('shares one source open for equivalent resolved database paths', async () => {
+        const db = createDb(async () => []);
+        sqlMock.load.mockResolvedValue(db);
+
+        await expect(Promise.all([
+            getInvokeSourceDatabase('D:/Invoke'),
+            getInvokeSourceDatabase('d:\\invoke\\databases\\invokeai.db'),
+        ])).resolves.toEqual([db, db]);
+
+        expect(sqlMock.load).toHaveBeenCalledOnce();
+        expect(sqlMock.load).toHaveBeenCalledWith('sqlite:D:/Invoke/databases/invokeai.db');
+    });
+
+    it('evicts a failed source open so the next caller retries', async () => {
+        const failure = new Error('locked');
+        const db = createDb(async () => []);
+        sqlMock.load.mockRejectedValueOnce(failure).mockResolvedValueOnce(db);
+
+        await expect(getInvokeSourceDatabase('D:/Invoke')).rejects.toBe(failure);
+        await expect(getInvokeSourceDatabase('D:/Invoke')).resolves.toBe(db);
+
+        expect(sqlMock.load).toHaveBeenCalledTimes(2);
+    });
+
+    it('isolates different sources and invalidates only the selected source identity', async () => {
+        const firstDb = createDb(async () => []);
+        const otherDb = createDb(async () => []);
+        sqlMock.load.mockResolvedValueOnce(firstDb).mockResolvedValueOnce(otherDb);
+        await expect(Promise.all([
+            getInvokeSourceDatabase('D:/First'), getInvokeSourceDatabase('D:/Other'),
+        ])).resolves.toEqual([firstDb, otherDb]);
+        invalidateInvokeSourceDatabase('D:/First');
+        await expect(getInvokeSourceDatabase('D:/Other')).resolves.toBe(otherDb);
+        expect(sqlMock.load).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not evict a replacement when an older invalidated open fails late', async () => {
+        let rejectOld!: (reason: Error) => void;
+        const oldOpen = new Promise<Database>((_resolve, reject) => { rejectOld = reject; });
+        const replacement = createDb(async () => []);
+        sqlMock.load.mockReturnValueOnce(oldOpen).mockResolvedValueOnce(replacement);
+        const oldCaller = getInvokeSourceDatabase('D:/Invoke');
+        const rejection = expect(oldCaller).rejects.toThrow('old open failed');
+        invalidateInvokeSourceDatabase('D:/Invoke');
+        await expect(getInvokeSourceDatabase('D:/Invoke')).resolves.toBe(replacement);
+        rejectOld(new Error('old open failed'));
+        await rejection;
+        await expect(getInvokeSourceDatabase('D:/Invoke')).resolves.toBe(replacement);
+        expect(sqlMock.load).toHaveBeenCalledTimes(2);
+    });
+
+    it('opens a fresh handle for an explicit connection test at the same source', async () => {
+        const oldDb = createDb(async () => []);
+        const freshDb = createDb(async () => [{ count: 4 }]);
+        sqlMock.load.mockResolvedValueOnce(oldDb).mockResolvedValueOnce(freshDb);
+        await getInvokeSourceDatabase('D:/Invoke');
+
+        await expect(testConnection('D:/Invoke')).resolves.toMatchObject({ success: true, count: 4 });
+        await expect(getInvokeSourceDatabase('D:/Invoke')).resolves.toBe(freshDb);
+        expect(sqlMock.load).toHaveBeenCalledTimes(2);
+    });
+
+    it('invalidates future source lookups without closing an in-flight open', async () => {
+        let finishFirst!: (db: ReturnType<typeof createDb>) => void;
+        const firstOpen = new Promise<ReturnType<typeof createDb>>(resolve => {
+            finishFirst = resolve;
+        });
+        const firstDb = createDb(async () => []);
+        const replacementDb = createDb(async () => []);
+        sqlMock.load.mockReturnValueOnce(firstOpen).mockResolvedValueOnce(replacementDb);
+
+        const inFlight = getInvokeSourceDatabase('D:/Invoke');
+        invalidateInvokeSourceDatabase('D:/Invoke/databases/invokeai.db');
+        const replacement = getInvokeSourceDatabase('D:/Invoke');
+        finishFirst(firstDb);
+
+        await expect(inFlight).resolves.toBe(firstDb);
+        await expect(replacement).resolves.toBe(replacementDb);
+        expect(sqlMock.load).toHaveBeenCalledTimes(2);
+    });
     it('canonicalizes root, databases-directory, and direct database paths consistently', () => {
         expect(resolveInvokePaths('D:\\Invoke\\')).toEqual({
             dbPath: 'D:/Invoke/databases/invokeai.db',

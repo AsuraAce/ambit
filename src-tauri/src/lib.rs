@@ -1,3 +1,6 @@
+#[cfg(all(feature = "startup-sql-trace", not(debug_assertions)))]
+compile_error!("startup-sql-trace is restricted to debug regular-dev diagnostics");
+
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
@@ -7,6 +10,10 @@ mod metadata;
 mod scanner;
 mod security;
 mod startup;
+mod startup_log;
+mod startup_sql_trace;
+#[cfg(windows)]
+mod startup_webview;
 mod thumb;
 mod watcher;
 
@@ -97,6 +104,10 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::backup::check_and_run_autobackup,
             // startup readiness commands
             startup::record_startup_diagnostic,
+            startup::record_startup_heartbeat,
+            startup::record_startup_lifecycle,
+            startup::get_startup_launch,
+            startup::record_startup_sql_frontend,
             startup::complete_startup,
             // scanner commands
             scanner::scan_image,
@@ -166,6 +177,22 @@ pub fn run() {
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
+    #[cfg(feature = "startup-sql-trace")]
+    if active_identifier != "com.ambit.dev" {
+        eprintln!("SQL tracing requires the existing regular-dev configuration; startup stopped.");
+        return;
+    }
+    let startup_journal = startup_log::install(process_started, &active_identifier);
+    #[cfg(feature = "startup-sql-trace")]
+    let sql_trace = {
+        let collector = tauri_plugin_sql::startup_trace::Collector::new(
+            startup_journal.launch_id.clone(),
+            db::main_database_migration_urls(),
+            process_started,
+        );
+        startup_journal.install_sql_trace(collector.clone());
+        collector
+    };
 
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {
@@ -174,6 +201,7 @@ pub fn run() {
 
     // Check for deferred purge request BEFORE initializing the database.
     if let Err(error) = app_data_migration::check_and_execute_deferred_purge(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[Purge] {error}");
         return;
     }
@@ -185,6 +213,7 @@ pub fn run() {
     }
 
     if let Err(error) = repair_known_migration_metadata(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[DB] {error}");
         return;
     }
@@ -194,6 +223,8 @@ pub fn run() {
         .fold(tauri_plugin_sql::Builder::default(), |builder, db_url| {
             builder.add_migrations(&db_url, db::migrations::init_db())
         });
+    #[cfg(feature = "startup-sql-trace")]
+    let sql_builder = sql_builder.startup_trace(sql_trace);
 
     let log_level = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "info".to_string())
@@ -235,9 +266,44 @@ pub fn run() {
         .manage(FileHashBackfillState::default())
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
-        .manage(StartupState::new(process_started))
+        .manage(StartupState::with_journal(
+            process_started,
+            startup_journal.clone(),
+        ))
+        .on_page_load(|webview, payload| {
+            use tauri::webview::PageLoadEvent;
+            let phase = match payload.event() {
+                PageLoadEvent::Started => "page-loading",
+                PageLoadEvent::Finished => "page-loaded",
+            };
+            webview
+                .state::<StartupState>()
+                .journal
+                .webview_observation(phase);
+        })
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            app.state::<StartupState>().journal.start_observer();
+            #[cfg(windows)]
+            {
+                let observer = startup_webview::ProcessFailedObserver::new(
+                    app.state::<StartupState>().journal.clone(),
+                );
+                if let Some(window) = app.get_webview_window("main") {
+                    observer.register(&window);
+                } else {
+                    observer.registration_unavailable();
+                }
+                app.manage(observer);
+            }
+            app.state::<StartupState>()
+                .journal
+                .native("native-initialization", "completed", None);
+            let diagnostic_journal = app.state::<StartupState>().journal.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                diagnostic_journal.missing_renderer();
+            });
             builder.mount_events(app);
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -245,9 +311,20 @@ pub fn run() {
             // 1. Initialize DB settings (WAL mode, etc.)
             let handle_for_db = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let started = std::time::Instant::now();
                 if let Err(e) = db::init_db_connection(&handle_for_db) {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "failed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::error!("[DB] Failed to initialize database settings: {}", e);
                 } else {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "completed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::info!("[DB] Database initialized and optimized (WAL=ON)");
                 }
             });
@@ -255,8 +332,45 @@ pub fn run() {
             Ok(())
         })
         .build(context)
-        .expect("error while building tauri application")
+        .unwrap_or_else(|error| {
+            startup_journal.native("startup-failure", "failed", None);
+            panic!("error while building tauri application: {error}");
+        })
         .run(|app_handle, event| {
+            let lifecycle = match &event {
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::CloseRequested { .. },
+                    ..
+                } if label == "main" => Some("native-close-requested"),
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == "main" => Some("native-window-destroyed"),
+                tauri::RunEvent::ExitRequested { .. } => Some("native-exit-requested"),
+                tauri::RunEvent::Exit => Some("native-exit"),
+                _ => None,
+            };
+            if let Some(stage) = lifecycle {
+                app_handle
+                    .state::<StartupState>()
+                    .journal
+                    .webview_observation(stage);
+            }
+            #[cfg(windows)]
+            if matches!(&event, tauri::RunEvent::WindowEvent {
+                label, event: tauri::WindowEvent::Destroyed, ..
+            } if label == "main")
+                || matches!(&event, tauri::RunEvent::Exit)
+            {
+                app_handle
+                    .state::<startup_webview::ProcessFailedObserver>()
+                    .teardown_on_current_thread();
+            }
+            if let tauri::RunEvent::Exit = event {
+                app_handle.state::<StartupState>().journal.request_end();
+            }
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Err(e) = db::optimize_on_shutdown(app_handle) {
                     log::error!("[DB] Failed to run shutdown optimization: {}", e);

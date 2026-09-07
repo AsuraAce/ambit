@@ -12,7 +12,8 @@ const collectionRepoMocks = vi.hoisted(() => ({
     mockGetCollectionThumbnailSummaries: vi.fn(),
     mockEnsureCollectionSchema: vi.fn(),
     mockMigrateLegacyCollections: vi.fn(),
-    mockGetCollectionImageIds: vi.fn(),
+    mockGetScopedCollectionRows: vi.fn(),
+    mockGetCollectionImageIdsStrict: vi.fn(),
     mockDeleteCollectionFromDb: vi.fn()
 }));
 const appRepositoryMocks = vi.hoisted(() => ({
@@ -46,7 +47,8 @@ vi.mock('../../services/db/collectionRepo', () => ({
     getCollectionThumbnailSummaries: collectionRepoMocks.mockGetCollectionThumbnailSummaries,
     ensureCollectionSchema: collectionRepoMocks.mockEnsureCollectionSchema,
     migrateLegacyCollections: collectionRepoMocks.mockMigrateLegacyCollections,
-    getCollectionImageIds: collectionRepoMocks.mockGetCollectionImageIds,
+    getScopedCollectionRows: collectionRepoMocks.mockGetScopedCollectionRows,
+    getCollectionImageIdsStrict: collectionRepoMocks.mockGetCollectionImageIdsStrict,
     deleteCollectionFromDb: collectionRepoMocks.mockDeleteCollectionFromDb
 }));
 
@@ -93,7 +95,8 @@ describe('collectionStore smart count refresh', () => {
         mockGetCollectionThumbnailSummaries.mockResolvedValue({});
         collectionRepoMocks.mockEnsureCollectionSchema.mockResolvedValue(undefined);
         collectionRepoMocks.mockMigrateLegacyCollections.mockResolvedValue(undefined);
-        collectionRepoMocks.mockGetCollectionImageIds.mockResolvedValue([]);
+        collectionRepoMocks.mockGetScopedCollectionRows.mockResolvedValue([]);
+        collectionRepoMocks.mockGetCollectionImageIdsStrict.mockResolvedValue([]);
         collectionRepoMocks.mockDeleteCollectionFromDb.mockResolvedValue(undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue({ collections: [], smartCollections: [] });
         appRepositoryMocks.mockSave.mockResolvedValue(undefined);
@@ -148,6 +151,26 @@ describe('collectionStore smart count refresh', () => {
                 name: 'Assets: Showcase'
             })
         ]);
+    });
+
+    it('rejects an authoritative refresh when its initialization generation is invalidated', async () => {
+        const rows = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats.mockReturnValueOnce(rows.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ id: 'existing' })],
+            isLoaded: true,
+        });
+
+        const refresh = useCollectionStore.getState().refreshCollections(false, { consistency: 'authoritative' });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce());
+        useCollectionStore.getState().invalidateInitialization();
+        rows.resolve([makeStaticCollection({ id: 'stale' })]);
+
+        await expect(refresh).rejects.toThrow('Collection refresh was superseded by initialization generation.');
+        expect(useCollectionStore.getState()).toMatchObject({
+            collections: [expect.objectContaining({ id: 'existing' })],
+            isLoaded: true,
+        });
     });
 
     it('retries a required collection refresh when a competing refresh supersedes it', async () => {
@@ -1558,9 +1581,8 @@ describe('collectionStore smart count refresh', () => {
         const regular = makeStaticCollection({ id: 'legacy', imageIds: ['one'] });
         const regularWithoutImageIds = { ...makeStaticCollection({ id: 'legacy-empty' }), imageIds: undefined } as unknown as Collection;
         const smart = { ...makeStaticCollection({ id: 'smart' }), filters: createDefaultFilters() };
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([regular, regularWithoutImageIds, smart]);
+        collectionRepoMocks.mockGetScopedCollectionRows.mockResolvedValueOnce([]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([regular, regularWithoutImageIds, smart]);
         appRepositoryMocks.mockLoad.mockResolvedValueOnce({ collections: [regular, regularWithoutImageIds], smartCollections: [smart] });
 
         await freshStore.getState().initialize();
@@ -1590,9 +1612,7 @@ describe('collectionStore smart count refresh', () => {
             persistedState = updater(concurrentState);
             return persistedState;
         });
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([legacy]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
 
         vi.resetModules();
         const { useCollectionStore: freshStore } = await import('../collectionStore');
@@ -1613,19 +1633,17 @@ describe('collectionStore smart count refresh', () => {
         const migrationError = new Error('membership unavailable');
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue(legacyState);
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([legacy]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
         collectionRepoMocks.mockMigrateLegacyCollections
             .mockRejectedValueOnce(migrationError)
             .mockResolvedValueOnce(undefined);
 
         vi.resetModules();
         let module = await import('../collectionStore');
-        await module.useCollectionStore.getState().initialize();
+        await expect(module.useCollectionStore.getState().initialize()).resolves.toBe(true);
 
         expect(appRepositoryMocks.mockUpdate).not.toHaveBeenCalled();
+        expect(module.useCollectionStore.getState()).toMatchObject({ isLoaded: true, initializationError: false });
         expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Migration failed', migrationError);
 
         vi.resetModules();
@@ -1644,14 +1662,11 @@ describe('collectionStore smart count refresh', () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         appRepositoryMocks.mockLoad.mockResolvedValue(legacyState);
         appRepositoryMocks.mockUpdate.mockRejectedValueOnce(markerError);
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([legacy]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
 
         vi.resetModules();
         let module = await import('../collectionStore');
-        await module.useCollectionStore.getState().initialize();
+        await expect(module.useCollectionStore.getState().initialize()).resolves.toBe(true);
 
         expect(collectionRepoMocks.mockMigrateLegacyCollections).toHaveBeenCalledOnce();
         expect(appRepositoryMocks.mockUpdate).toHaveBeenCalledOnce();
@@ -1669,9 +1684,7 @@ describe('collectionStore smart count refresh', () => {
 
     it('does not replay completed legacy migration after all SQLite collections are deleted', async () => {
         const legacy = makeStaticCollection({ id: 'legacy-once', imageIds: ['one'] });
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([])
-            .mockResolvedValueOnce([legacy]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([legacy]);
         appRepositoryMocks.mockLoad.mockResolvedValueOnce({
             collections: [legacy],
             smartCollections: [],
@@ -1704,10 +1717,9 @@ describe('collectionStore smart count refresh', () => {
         const emptyLegacy = makeStaticCollection({ id: 'c1', name: 'Empty Legacy' });
         const usedLegacy = makeStaticCollection({ id: 'c2', name: 'Used Legacy' });
         const normal = makeStaticCollection({ id: 'normal', name: 'Normal' });
-        mockGetAllCollectionsWithStats
-            .mockResolvedValueOnce([emptyLegacy, usedLegacy, normal])
-            .mockResolvedValueOnce([usedLegacy, normal]);
-        collectionRepoMocks.mockGetCollectionImageIds
+        collectionRepoMocks.mockGetScopedCollectionRows.mockResolvedValueOnce([emptyLegacy, usedLegacy, normal]);
+        mockGetAllCollectionsWithStats.mockResolvedValueOnce([usedLegacy, normal]);
+        collectionRepoMocks.mockGetCollectionImageIdsStrict
             .mockResolvedValueOnce([])
             .mockResolvedValueOnce(['image']);
 
@@ -1721,16 +1733,16 @@ describe('collectionStore smart count refresh', () => {
         expect(collectionRepoMocks.mockEnsureCollectionSchema).toHaveBeenCalledOnce();
     });
 
-    it('marks initialization loaded when schema setup fails', async () => {
+    it('keeps initialization retryable when schema setup fails', async () => {
         vi.resetModules();
         const { useCollectionStore: freshStore } = await import('../collectionStore');
         const error = new Error('schema failed');
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         collectionRepoMocks.mockEnsureCollectionSchema.mockRejectedValueOnce(error);
 
-        await freshStore.getState().initialize();
+        await expect(freshStore.getState().initialize()).rejects.toThrow(error);
 
-        expect(freshStore.getState().isLoaded).toBe(true);
+        expect(freshStore.getState()).toMatchObject({ isLoaded: false, initializationError: true });
         expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Failed to initialize', error);
         consoleError.mockRestore();
     });
@@ -1889,9 +1901,195 @@ describe('collectionStore smart count refresh', () => {
         const error = new Error('legacy unavailable');
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         appRepositoryMocks.mockLoad.mockRejectedValueOnce(error);
-        await module.useCollectionStore.getState().initialize();
+        await expect(module.useCollectionStore.getState().initialize()).resolves.toBe(true);
         expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Migration failed', error);
         consoleError.mockRestore();
+    });
+
+    it('prepares storage without issuing a collection count query', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+
+        await freshStore.getState().prepareInitialization();
+
+        expect(collectionRepoMocks.mockEnsureCollectionSchema).toHaveBeenCalledOnce();
+        expect(collectionRepoMocks.mockGetScopedCollectionRows).toHaveBeenCalledOnce();
+        expect(mockGetAllCollectionsWithStats).not.toHaveBeenCalled();
+    });
+
+    it('shares a counted initialization after preparation has completed', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const rows = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats.mockReturnValueOnce(rows.promise);
+
+        const first = freshStore.getState().initialize({ deferHydration: true });
+        const second = freshStore.getState().initialize({ deferHydration: true });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce());
+        rows.resolve([makeStaticCollection({ id: 'counted' })]);
+
+        await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+        expect(freshStore.getState().collections).toEqual([expect.objectContaining({ id: 'counted' })]);
+    });
+
+    it('does not publish a counted snapshot after its generation is invalidated', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const rows = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats.mockReturnValueOnce(rows.promise);
+        const generation = freshStore.getState().getInitializationGeneration();
+        const stale = freshStore.getState().initialize({ generation, deferHydration: true });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce());
+
+        const currentGeneration = freshStore.getState().invalidateInitialization();
+        rows.resolve([makeStaticCollection({ id: 'stale' })]);
+
+        await expect(stale).resolves.toBe(false);
+        expect(freshStore.getState()).toMatchObject({
+            collections: [],
+            isLoaded: false,
+            initializationError: false,
+        });
+        expect(currentGeneration).toBe(generation + 1);
+    });
+
+    it('does not delete legacy mock collections when strict membership inspection fails', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const error = new Error('membership unavailable');
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        collectionRepoMocks.mockGetScopedCollectionRows.mockResolvedValueOnce([{ id: 'c1', name: 'Mock' }]);
+        collectionRepoMocks.mockGetCollectionImageIdsStrict.mockRejectedValueOnce(error);
+
+        await expect(freshStore.getState().initialize({ deferHydration: true })).resolves.toBe(true);
+
+        expect(collectionRepoMocks.mockDeleteCollectionFromDb).not.toHaveBeenCalled();
+        expect(consoleError).toHaveBeenCalledWith('[CollectionStore] Failed to inspect legacy mock collection', error);
+        consoleError.mockRestore();
+    });
+
+    it('hydrates initial summaries only once across later initialization generations', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const refreshSmartCounts = vi.fn().mockResolvedValue(undefined);
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
+        freshStore.setState({ refreshSmartCounts, refreshCollectionThumbnails });
+
+        await freshStore.getState().initialize({ deferHydration: true });
+        const generation = freshStore.getState().getInitializationGeneration();
+        freshStore.getState().finishInitializationHydration(generation);
+        freshStore.getState().finishInitializationHydration(generation);
+        await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledTimes(2));
+        await Promise.resolve();
+        await Promise.resolve();
+        await new Promise(resolve => setTimeout(resolve, 0));
+        const laterGeneration = freshStore.getState().invalidateInitialization();
+        freshStore.getState().finishInitializationHydration(laterGeneration);
+
+        expect(refreshSmartCounts).toHaveBeenCalledTimes(2);
+        expect(refreshCollectionThumbnails).toHaveBeenCalledOnce();
+    });
+
+    it('does not start the delayed smart follow-up after its initialization generation is invalidated', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const firstSmartRefresh = createDeferred<void>();
+        const refreshSmartCounts = vi.fn().mockReturnValueOnce(firstSmartRefresh.promise);
+        const refreshCollectionThumbnails = vi.fn().mockResolvedValue(undefined);
+        freshStore.setState({ refreshSmartCounts, refreshCollectionThumbnails });
+
+        await freshStore.getState().initialize({ deferHydration: true });
+        const generation = freshStore.getState().getInitializationGeneration();
+        freshStore.getState().finishInitializationHydration(generation);
+        expect(refreshSmartCounts).toHaveBeenCalledOnce();
+
+        freshStore.getState().invalidateInitialization();
+        firstSmartRefresh.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(refreshSmartCounts).toHaveBeenCalledOnce();
+    });
+
+    it('hydrates the winning restored scope after rapid startup supersession, then never repeats it', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const staleThumbnail = createDeferred<void>();
+        const winningThumbnail = createDeferred<void>();
+        const staleSmart = createDeferred<void>();
+        const winningSmartFirst = createDeferred<void>();
+        const winningSmartSecond = createDeferred<void>();
+        const refreshCollectionThumbnails = vi.fn()
+            .mockReturnValueOnce(staleThumbnail.promise)
+            .mockReturnValueOnce(winningThumbnail.promise);
+        const refreshSmartCounts = vi.fn()
+            .mockReturnValueOnce(staleSmart.promise)
+            .mockReturnValueOnce(winningSmartFirst.promise)
+            .mockReturnValueOnce(winningSmartSecond.promise);
+        freshStore.setState({ refreshCollectionThumbnails, refreshSmartCounts });
+
+        await freshStore.getState().initialize({ deferHydration: true });
+        const staleGeneration = freshStore.getState().getInitializationGeneration();
+        freshStore.getState().finishInitializationHydration(staleGeneration);
+        expect(refreshCollectionThumbnails).toHaveBeenCalledOnce();
+        expect(refreshSmartCounts).toHaveBeenCalledOnce();
+
+        const winningGeneration = freshStore.getState().invalidateInitialization();
+        freshStore.getState().finishInitializationHydration(winningGeneration);
+        expect(refreshCollectionThumbnails).toHaveBeenCalledTimes(2);
+        expect(refreshSmartCounts).toHaveBeenCalledTimes(2);
+
+        staleThumbnail.resolve();
+        staleSmart.resolve();
+        winningThumbnail.resolve();
+        winningSmartFirst.resolve();
+        await waitFor(() => expect(refreshSmartCounts).toHaveBeenCalledTimes(3));
+        winningSmartSecond.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        const laterGeneration = freshStore.getState().invalidateInitialization();
+        freshStore.getState().finishInitializationHydration(laterGeneration);
+        expect(refreshCollectionThumbnails).toHaveBeenCalledTimes(2);
+        expect(refreshSmartCounts).toHaveBeenCalledTimes(3);
+    });
+
+    it('rejects authoritative smart summaries after their initialization generation is invalidated', async () => {
+        const summaries = createDeferred<Record<string, { count: number; thumbnailSourceKind: 'dynamic' }>>();
+        mockGetSmartCollectionSummaries.mockReturnValueOnce(summaries.promise);
+        useCollectionStore.setState({
+            collections: [makeStaticCollection({ id: 'smart', filters: createDefaultFilters({ dateRange: 'today' }) })],
+            isLoaded: true,
+        });
+
+        const refresh = useCollectionStore.getState().refreshSmartCounts({
+            includePromptSearch: true,
+            consistency: 'authoritative',
+        });
+        await waitFor(() => expect(mockGetSmartCollectionSummaries).toHaveBeenCalledOnce());
+        useCollectionStore.getState().invalidateInitialization();
+        summaries.resolve({ smart: { count: 1, thumbnailSourceKind: 'dynamic' } });
+
+        await expect(refresh).rejects.toThrow('Collection summary refresh was superseded by initialization generation.');
+    });
+
+    it('retries the initial authoritative snapshot when same-generation collection work supersedes it', async () => {
+        vi.resetModules();
+        const { useCollectionStore: freshStore } = await import('../collectionStore');
+        const staleRows = createDeferred<Collection[]>();
+        mockGetAllCollectionsWithStats
+            .mockReturnValueOnce(staleRows.promise)
+            .mockResolvedValueOnce([makeStaticCollection({ id: 'authoritative' })]);
+
+        const initialization = freshStore.getState().initialize({ deferHydration: true });
+        await waitFor(() => expect(mockGetAllCollectionsWithStats).toHaveBeenCalledOnce());
+        freshStore.getState().setCollections([makeStaticCollection({ id: 'mutation' })]);
+        staleRows.resolve([makeStaticCollection({ id: 'stale' })]);
+
+        await expect(initialization).resolves.toBe(true);
+        expect(mockGetAllCollectionsWithStats).toHaveBeenCalledTimes(2);
+        expect(freshStore.getState().collections).toEqual([expect.objectContaining({ id: 'authoritative' })]);
     });
 
     it('shares an in-flight initialization and schedules both startup smart refreshes', async () => {

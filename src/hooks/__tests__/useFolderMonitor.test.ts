@@ -9,6 +9,8 @@ import { useSettingsStore } from '../../stores/settingsStore';
 const mocks = vi.hoisted(() => ({
     scanDirectorySince: vi.fn(),
     refreshStartupFacetCache: vi.fn(),
+    startDiagnostic: vi.fn(),
+    finishDiagnostic: vi.fn(),
     browserMockMode: false
 }));
 
@@ -25,6 +27,10 @@ vi.mock('../../bindings', () => ({
 
 vi.mock('../../utils/startupFacetRefresh', () => ({
     refreshStartupFacetCache: mocks.refreshStartupFacetCache
+}));
+
+vi.mock('../../utils/startupDiagnostics', () => ({
+    startupDiagnostics: { start: mocks.startDiagnostic }
 }));
 
 vi.mock('../../contexts/WatcherContext', () => ({
@@ -78,6 +84,7 @@ describe('useFolderMonitor', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.startDiagnostic.mockReturnValue(mocks.finishDiagnostic);
         mocks.browserMockMode = false;
         mockOnScan.mockReset();
         mockAddToast.mockReset();
@@ -907,6 +914,84 @@ describe('useFolderMonitor', () => {
         expect(updateFolderLastScanned).toHaveBeenCalledWith('empty', expect.any(Number));
         expect(updateFolderLastScanned).toHaveBeenCalledWith('full', expect.any(Number));
         expect(mockOnScan).toHaveBeenCalledWith([{ path: 'C:/full', variant: undefined }], { mode: 'startup' });
+    });
+
+    it.each([
+        ['blocked', { status: 'blocked', message: 'private user path' }],
+        ['queued', { status: 'queued' }],
+        ['failed', { status: 'failed', message: 'private failure detail' }],
+        ['busy', { status: 'busy', message: 'private busy detail' }],
+        ['completed', { status: 'completed' }],
+    ] as const)('logs startup Invoke outcome %s without claiming success', async (status, outcome) => {
+        const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const startInvokeSync = vi.fn().mockResolvedValue(outcome);
+
+        try {
+            renderHook(() => useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+                invokeAiPath: 'C:/invokeai',
+                startInvokeSync
+            }));
+
+            await waitFor(() => expect(startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+            await waitFor(() => expect(useLibraryStore.getState().isStartupCatchupPending).toBe(false));
+
+            const invokeEndedCall = consoleInfo.mock.calls.find(([message]) => message === '[Startup Catch-up] Invoke phase ended.');
+            const completeCall = consoleInfo.mock.calls.find(([message]) => message === '[Startup Catch-up] Workflow ended.');
+            expect(invokeEndedCall).toBeDefined();
+            expect(completeCall).toBeDefined();
+            expect(invokeEndedCall?.slice(1).every(value => typeof value === 'string')).toBe(true);
+            expect(completeCall?.slice(1).every(value => typeof value === 'string')).toBe(true);
+            expect(invokeEndedCall?.join(' ')).toContain(`status=${status}`);
+            expect(invokeEndedCall?.join(' ')).toContain(`successful=${status === 'completed'}`);
+            expect(completeCall?.join(' ')).toContain(`status=${status}`);
+            expect(completeCall?.join(' ')).toContain(`successful=${status === 'completed'}`);
+            expect(JSON.stringify(consoleInfo.mock.calls)).not.toContain('private');
+            expect(mocks.startDiagnostic).toHaveBeenCalledWith('invoke-catch-up');
+            expect(mocks.finishDiagnostic).toHaveBeenCalledWith(status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'cancelled');
+        } finally {
+            consoleInfo.mockRestore();
+        }
+    });
+
+    it('logs a rejected startup Invoke sync as ended and unsuccessful without raw error details', async () => {
+        const consoleInfo = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const startInvokeSync = vi.fn().mockRejectedValue(new Error('private rejection detail'));
+
+        try {
+            renderHook(() => useFolderMonitor({
+                isLoaded: true,
+                monitoredFolders: [],
+                onScan: mockOnScan,
+                addToast: mockAddToast,
+                handleImportPaths: vi.fn(),
+                refreshMetadata: vi.fn(),
+                invokeAiPath: 'C:/invokeai',
+                startInvokeSync
+            }));
+
+            await waitFor(() => expect(startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+            await waitFor(() => expect(useLibraryStore.getState().isStartupCatchupPending).toBe(false));
+
+            const invokeEndedCall = consoleInfo.mock.calls.find(([message]) => message === '[Startup Catch-up] Invoke phase ended.');
+            const completeCall = consoleInfo.mock.calls.find(([message]) => message === '[Startup Catch-up] Workflow ended.');
+            expect(invokeEndedCall?.join(' ')).toContain('status=rejected');
+            expect(invokeEndedCall?.join(' ')).toContain('successful=false');
+            expect(completeCall?.join(' ')).toContain('status=rejected');
+            expect(mocks.finishDiagnostic).toHaveBeenCalledWith('failed');
+            expect(completeCall?.join(' ')).toContain('successful=false');
+            expect(consoleError.mock.calls.every(call => call.every(value => typeof value === 'string'))).toBe(true);
+            expect(JSON.stringify([...consoleInfo.mock.calls, ...consoleError.mock.calls])).not.toContain('private rejection detail');
+        } finally {
+            consoleInfo.mockRestore();
+            consoleError.mockRestore();
+        }
     });
 
     it('skips a startup incremental import when another owner holds the import run', async () => {

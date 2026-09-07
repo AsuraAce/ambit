@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { createContext, useContext, useEffect, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
 import { Collection, SmartCollection } from '../types';
 import { useCollectionStore } from '../stores/collectionStore';
 import type { CollectionRefreshOptions } from '../stores/collectionStore';
@@ -22,11 +22,7 @@ export const CollectionProvider: React.FC<{ children: ReactNode }> = ({ children
     const isLoaded = useCollectionStore(s => s.isLoaded);
     const refreshCollections = useCollectionStore(s => s.refreshCollections);
     const refreshCollectionThumbnails = useCollectionStore(s => s.refreshCollectionThumbnails);
-    const initialize = useCollectionStore(s => s.initialize);
-
-    useEffect(() => {
-        initialize();
-    }, [initialize]);
+    // SyncProvider owns startup ordering; a counted load must follow owner admission.
 
     const collections = allCollections.filter(c => !c.filters);
     const smartCollections = allCollections.filter(c => !!c.filters) as SmartCollection[];
