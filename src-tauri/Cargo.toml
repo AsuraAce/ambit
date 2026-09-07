@@ -9,12 +9,6 @@ repository = "https://github.com/AsuraAce/ambit"
 edition = "2021"
 rust-version = "1.88.0"
 
-[features]
-startup-sql-trace = ["tauri-plugin-sql/ambit-startup-trace"]
-
-[patch.crates-io]
-tauri-plugin-sql = { path = "vendor/tauri-plugin-sql" }
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]

@@ -3,7 +3,6 @@ import { isTauriRuntime } from '../services/runtime';
 import { createStartupHeartbeat, type StartupHeartbeat } from './startupHeartbeat';
 import type { StartupRepairDecision } from '../bindings';
 import { createStartupRepairCollector } from './startupRepairDiagnostics';
-import type { StartupSqlFrontendReport, StartupSqlTraceCapability } from './startupSqlTrace';
 
 type DiagnosticSink = (event: StartupDiagnosticEvent) => void | Promise<unknown>;
 type FinishPhase = (status?: StartupPhaseStatus, error?: unknown) => void;
@@ -12,7 +11,6 @@ type PendingDiagnosticEvent = Omit<StartupDiagnosticEvent, 'launchId'>;
 interface StartupLaunch {
     launchId: string;
     processElapsedMs: number;
-    sqlTraceEnabled?: boolean;
 }
 
 interface BootstrapDiagnosticEvent {
@@ -31,7 +29,6 @@ interface StartupDiagnosticBridgeOptions {
     maxBufferedEvents?: number;
     originMs?: number;
     onMark?: (phase: StartupPhase) => void;
-    recordSqlFrontend?: (report: StartupSqlFrontendReport) => void | Promise<unknown>;
 }
 
 interface StartupBootstrap {
@@ -104,7 +101,6 @@ export function createStartupDiagnosticBridge({
     maxBufferedEvents = 256,
     originMs = 0,
     onMark,
-    recordSqlFrontend,
 }: StartupDiagnosticBridgeOptions) {
     const buffered: PendingDiagnosticEvent[] = [];
     const marks = new Set<StartupPhase>();
@@ -119,8 +115,6 @@ export function createStartupDiagnosticBridge({
     const repairEvents = new Map<string, PendingDiagnosticEvent>();
     const deliveredRepairEvents = new Set<string>();
     let repairClaimed = false;
-    let sqlTraceEnabled = false;
-    let rendererEntryAt: number | null = null;
 
     const deliverRepair = (key: string, event: PendingDiagnosticEvent) => {
         if (!launchId || deliveredRepairEvents.has(key)) return;
@@ -204,7 +198,6 @@ export function createStartupDiagnosticBridge({
                 }
                 connecting = launchPromise.then(launch => {
                     launchId = launch.launchId;
-                    sqlTraceEnabled = launch.sqlTraceEnabled === true;
                     launchIdListeners.forEach(listener => {
                         try {
                             listener(launch.launchId);
@@ -227,19 +220,6 @@ export function createStartupDiagnosticBridge({
             await connecting;
         },
         getLaunchId: () => launchId,
-        getSqlTraceCapability(): StartupSqlTraceCapability | undefined {
-            if (!launchId || !sqlTraceEnabled || rendererEntryAt === null
-                || marks.has('ready') || startupFailureObserved
-                || now() - rendererEntryAt >= 180_000) return undefined;
-            return { launchId };
-        },
-        recordSqlFrontend(report: StartupSqlFrontendReport) {
-            try {
-                void Promise.resolve(recordSqlFrontend?.(report)).catch(() => undefined);
-            } catch {
-                // Startup tracing is diagnostic-only and must not affect library work.
-            }
-        },
         repairDecision(decision: StartupRepairDecision) {
             if (marks.has('ready') || startupFailureObserved) return;
             sendRepair('decision', { ...makeEvent('owner-repair-decision', 'completed', null, null), repairDecision: decision });
@@ -306,7 +286,6 @@ export function createStartupDiagnosticBridge({
         mark(phase: StartupPhase) {
             if (marks.has(phase)) return;
             marks.add(phase);
-            if (phase === 'frontend-entry') rendererEntryAt = now();
             admit(makeEvent(phase, 'completed', null, null));
             markListeners.forEach(listener => {
                 try {
@@ -393,7 +372,6 @@ export const startupDiagnostics = createStartupDiagnosticBridge({
     onMark: phase => {
         if (phase === 'ready') window.__AMBIT_STARTUP_BOOTSTRAP__?.markReady();
     },
-    recordSqlFrontend: report => commands.recordStartupSqlFrontend(report),
 });
 
 let startupHeartbeat: StartupHeartbeat | null = null;

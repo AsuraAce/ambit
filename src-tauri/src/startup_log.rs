@@ -59,7 +59,6 @@ const LIFECYCLE_OBSERVATIONS: &[&str] = &[
 const OBSERVATION_COUNT: usize = WEBVIEW_OBSERVATIONS.len() + LIFECYCLE_OBSERVATIONS.len();
 
 pub struct StartupJournal {
-    sql_trace: crate::startup_sql_trace::JournalTrace,
     pub launch_id: String,
     started: Instant,
     inner: Mutex<JournalInner>,
@@ -81,8 +80,6 @@ struct PendingRendererEvent {
 
 #[derive(Default)]
 struct JournalInner {
-    sql_bytes: usize,
-    sql_storage_dropped: usize,
     file: Option<File>,
     bytes: usize,
     repair_bytes: usize,
@@ -106,7 +103,6 @@ enum JournalRecordKind {
     Ordinary,
     Repair,
     Terminal,
-    SqlTrace,
 }
 
 pub fn install(started: Instant, identifier: &str) -> Arc<StartupJournal> {
@@ -146,7 +142,6 @@ impl StartupJournal {
             eprintln!("[Startup diagnostics] Local diagnostic storage is unavailable; startup will continue.");
         }
         Self {
-            sql_trace: crate::startup_sql_trace::JournalTrace::default(),
             launch_id,
             started,
             inner: Mutex::new(JournalInner {
@@ -201,12 +196,6 @@ impl StartupJournal {
         {
             self.frontend_entry_received.store(true, Ordering::Release);
         }
-        if matches!(
-            event.phase,
-            StartupPhase::Ready | StartupPhase::StartupFailure
-        ) {
-            self.sql_trace.stop();
-        }
     }
 
     fn flush_renderer_events(&self) {
@@ -218,47 +207,6 @@ impl StartupJournal {
             self.renderer_at(&pending.event, pending.receipt_ms);
             let diagnostic = json!({"event":pending.event,"processElapsedMs":pending.receipt_ms});
             log::info!("[Startup] {diagnostic}");
-        }
-    }
-
-    pub fn sql_trace_enabled(&self) -> bool {
-        self.sql_trace.enabled()
-    }
-
-    #[cfg(all(test, feature = "startup-sql-trace"))]
-    pub(crate) fn sql_observation_finished(&self) -> bool {
-        self.inner.lock().map(|inner| inner.ended).unwrap_or(false)
-    }
-
-    #[cfg(feature = "startup-sql-trace")]
-    pub fn install_sql_trace(&self, collector: Arc<tauri_plugin_sql::startup_trace::Collector>) {
-        self.sql_trace.install(collector);
-    }
-
-    pub fn sql_frontend(&self, report: crate::startup::StartupSqlFrontend) {
-        self.sql_trace
-            .frontend(&self.launch_id, self.elapsed_ms(), report);
-    }
-
-    fn flush_sql_trace(&self, teardown: bool) {
-        self.flush_sql_trace_at(self.elapsed_ms(), teardown);
-    }
-
-    pub(crate) fn flush_sql_trace_at(&self, elapsed_ms: u64, teardown: bool) {
-        let records = self.sql_trace.poll(elapsed_ms, teardown);
-        if records.is_empty() {
-            return;
-        }
-        let Ok(mut inner) = self.inner.lock() else {
-            return;
-        };
-        for mut record in records {
-            record["launchId"] = json!(self.launch_id);
-            record["observerElapsedMs"] = json!(elapsed_ms);
-            if record["kind"] == "sql-count" {
-                log::info!("[Startup SQL count] {}", record);
-            }
-            append(&mut inner, &record, JournalRecordKind::SqlTrace);
         }
     }
 
@@ -378,7 +326,6 @@ impl StartupJournal {
                 while !journal.observer_ended.load(Ordering::Acquire) {
                     journal.flush_renderer_events();
                     journal.flush_webview_observations();
-                    journal.flush_sql_trace(false);
                     let now = journal.elapsed_ms();
                     while next < OBSERVATION_TIMES.len() && now >= OBSERVATION_TIMES[next] {
                         journal
@@ -390,11 +337,6 @@ impl StartupJournal {
                         .get(next)
                         .map(|deadline| deadline.saturating_sub(journal.elapsed_ms()))
                         .unwrap_or(3_600_000);
-                    let wait_ms = if journal.sql_trace.observing() {
-                        wait_ms.min(250)
-                    } else {
-                        wait_ms
-                    };
                     // Once the startup budget ends, only native callbacks/teardown wake this thread.
                     std::thread::park_timeout(Duration::from_millis(wait_ms));
                 }
@@ -447,9 +389,6 @@ impl StartupJournal {
     }
 
     pub fn native(&self, phase: &'static str, status: &'static str, duration_ms: Option<u64>) {
-        if phase == "startup-failure" {
-            self.sql_trace.stop();
-        }
         let reserved = matches!(
             phase,
             "native-boot"
@@ -641,7 +580,6 @@ impl StartupJournal {
     // Exit must never wait for a diagnostic disk flush. The observer may be
     // terminated before its final write; missing tail evidence remains unknown.
     pub fn request_end(&self) {
-        self.sql_trace.stop();
         self.observer_ended.store(true, Ordering::Release);
         if let Some(thread) = self.observer_thread.get() {
             thread.unpark();
@@ -652,7 +590,6 @@ impl StartupJournal {
         self.request_end();
         self.flush_renderer_events();
         self.flush_webview_observations();
-        self.flush_sql_trace(true);
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
@@ -701,7 +638,7 @@ impl StartupJournal {
         slowest.truncate(5);
         let repair = json!({"records":inner.repair_events.len(),"lastStage":inner.last_repair_stage,
             "boundary":"repair reports are bounded evidence; report aggregates and nested filesystem enumeration are excluded from work ranking"});
-        let summary = json!({"kind":"summary","launchId":self.launch_id,"outcome":outcome,"processElapsedMs":self.elapsed_ms(),"milestones":milestones,"slowestPhases":slowest,"repair":repair,"sqlTraceStorageDropped":inner.sql_storage_dropped,"boundary":"native boot excludes compilation; renderer events use native receipt and renderer elapsed clocks; splash is dismissal start, not painted pixels; catch-up is separate; phases can overlap; renderer stall is observation, not work"});
+        let summary = json!({"kind":"summary","launchId":self.launch_id,"outcome":outcome,"processElapsedMs":self.elapsed_ms(),"milestones":milestones,"slowestPhases":slowest,"repair":repair,"boundary":"native boot excludes compilation; renderer events use native receipt and renderer elapsed clocks; splash is dismissal start, not painted pixels; catch-up is separate; phases can overlap; renderer stall is observation, not work"});
         append(inner, &summary, JournalRecordKind::Terminal);
         let timing = |phase: &str| {
             inner
@@ -751,29 +688,14 @@ fn append(inner: &mut JournalInner, value: &Value, record_kind: JournalRecordKin
     let limit = match record_kind {
         JournalRecordKind::Terminal => FILE_LIMIT,
         JournalRecordKind::Ordinary => {
-            FILE_LIMIT
-                - TERMINAL_RESERVE
-                - REPAIR_RESERVE.saturating_sub(inner.repair_bytes)
-                - crate::startup_sql_trace::RESERVE.saturating_sub(inner.sql_bytes)
-        }
-        JournalRecordKind::Repair => {
-            FILE_LIMIT
-                - TERMINAL_RESERVE
-                - crate::startup_sql_trace::RESERVE.saturating_sub(inner.sql_bytes)
-        }
-        JournalRecordKind::SqlTrace => {
             FILE_LIMIT - TERMINAL_RESERVE - REPAIR_RESERVE.saturating_sub(inner.repair_bytes)
         }
+        JournalRecordKind::Repair => FILE_LIMIT - TERMINAL_RESERVE,
     };
     if inner.bytes + bytes.len() > limit
         || (record_kind == JournalRecordKind::Repair
             && inner.repair_bytes + bytes.len() > REPAIR_RESERVE)
-        || (record_kind == JournalRecordKind::SqlTrace
-            && inner.sql_bytes + bytes.len() > crate::startup_sql_trace::RESERVE)
     {
-        if record_kind == JournalRecordKind::SqlTrace {
-            inner.sql_storage_dropped += 1;
-        }
         return;
     }
     if let Some(file) = inner.file.as_mut() {
@@ -784,9 +706,6 @@ fn append(inner: &mut JournalInner, value: &Value, record_kind: JournalRecordKin
         inner.bytes += bytes.len();
         if record_kind == JournalRecordKind::Repair {
             inner.repair_bytes += bytes.len();
-        }
-        if record_kind == JournalRecordKind::SqlTrace {
-            inner.sql_bytes += bytes.len();
         }
     }
 }
@@ -1248,49 +1167,6 @@ mod tests {
             events(&directory.0).last().unwrap()["outcome"],
             "interrupted"
         );
-    }
-
-    #[cfg(feature = "startup-sql-trace")]
-    #[test]
-    fn sql_storage_saturation_preserves_repair_and_terminal_capacity_in_either_order() {
-        for sql_first in [false, true] {
-            let directory = TestLogs::new();
-            let journal = StartupJournal::new(Instant::now(), Some(&directory.0));
-            {
-                let mut inner = journal.inner.lock().unwrap();
-                for kind in if sql_first {
-                    [JournalRecordKind::SqlTrace, JournalRecordKind::Ordinary]
-                } else {
-                    [JournalRecordKind::Ordinary, JournalRecordKind::SqlTrace]
-                } {
-                    for _ in 0..300 {
-                        append(&mut inner, &json!({"padding":"x".repeat(1024)}), kind);
-                    }
-                }
-                assert!(inner.sql_bytes <= crate::startup_sql_trace::RESERVE);
-                assert!(inner.sql_storage_dropped > 0);
-                append(
-                    &mut inner,
-                    &json!({"repairSentinel":true}),
-                    JournalRecordKind::Repair,
-                );
-                assert!(inner.repair_bytes > 0);
-            }
-            journal.renderer(&renderer_event(&journal, "ready", "completed"));
-            journal.end();
-            let records = events(&directory.0);
-            assert!(records
-                .iter()
-                .any(|record| record["repairSentinel"] == true));
-            assert_eq!(records.last().unwrap()["outcome"], "ready");
-            assert!(
-                records.last().unwrap()["sqlTraceStorageDropped"]
-                    .as_u64()
-                    .unwrap()
-                    > 0
-            );
-            assert!(journal.inner.lock().unwrap().bytes <= FILE_LIMIT);
-        }
     }
 
     #[test]

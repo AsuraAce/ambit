@@ -165,8 +165,3 @@ fn probe_connection_cannot_change_a_catalog() {
 }
 
 mod campaign;
-
-#[cfg(feature = "startup-sql-trace")]
-pub(super) fn generated_trace_queries() -> [String; 4] {
-    campaign::generated_trace_queries()
-}

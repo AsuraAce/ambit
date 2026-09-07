@@ -3,19 +3,8 @@ import type { FacetType } from '../../../types';
 
 const getDbMock = vi.hoisted(() => vi.fn());
 const getValidFacetNamesMock = vi.hoisted(() => vi.fn());
-const startupTracedSelectMock = vi.hoisted(() => vi.fn(async (
-    db: { select: (query: string, values?: unknown[]) => Promise<unknown> },
-    _label: unknown,
-    query: string,
-    values?: unknown[],
-) => (values === undefined ? db.select(query) : db.select(query, values))));
-
 vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
-}));
-
-vi.mock('../../../utils/startupSqlTrace', () => ({
-    startupTracedSelect: startupTracedSelectMock,
 }));
 
 vi.mock('../../../bindings', () => ({
@@ -98,7 +87,7 @@ describe('searchRepo basic queries', () => {
         await expect(countImages('WHERE is_deleted = ?', [0])).resolves.toBe(0);
     });
 
-    it('sends each selected-filter count through the gallery trace with unchanged query arguments', async () => {
+    it('sends each selected-filter count directly with unchanged query arguments', async () => {
         const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
         getDbMock.mockResolvedValue(db);
         const { countGlobalImages, countImages } = await import('../searchRepo');
@@ -109,15 +98,15 @@ describe('searchRepo basic queries', () => {
         await countImages('WHERE is_deleted = ?', [0]);
         await countGlobalImages();
 
-        expect(startupTracedSelectMock.mock.calls.map(([, label, query, values]) => ({ label, query, values }))).toEqual([
-            expect.objectContaining({ label: 'gallery', values: ['collection-1', 'Detailer', 0] }),
-            expect.objectContaining({ label: 'gallery', values: ['collection-1', 0] }),
-            expect.objectContaining({ label: 'gallery', values: ['Detailer', 0] }),
-            expect.objectContaining({ label: 'gallery', values: [0] }),
-            expect.objectContaining({ label: 'global-gallery', values: undefined }),
+        expect(db.select.mock.calls.map(([query, values]) => ({ query, values }))).toEqual([
+            expect.objectContaining({ values: ['collection-1', 'Detailer', 0] }),
+            expect.objectContaining({ values: ['collection-1', 0] }),
+            expect.objectContaining({ values: ['Detailer', 0] }),
+            expect.objectContaining({ values: [0] }),
+            expect.objectContaining({ values: undefined }),
         ]);
-        expect(startupTracedSelectMock.mock.calls.slice(0, 4).every(([, , query]) => query.includes('SELECT count(*) as count'))).toBe(true);
-        expect(startupTracedSelectMock.mock.calls[4]?.[2]).toBe('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
+        expect(db.select.mock.calls.slice(0, 4).every(([query]) => query.includes('SELECT count(*) as count'))).toBe(true);
+        expect(db.select.mock.calls[4]?.[0]).toBe('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
     });
 
     it('uses default search ordering and supports an ascending pinned cursor without a pin value', async () => {
