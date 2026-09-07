@@ -3,6 +3,7 @@ Status: Current
 Last reviewed: 2026-09-07
 
 ## Current Baseline
+- PR #317 CI follow-up: the Rust job failed during compilation, not a startup assertion. The test runner now retains required Tauri capability generation, and the generated probe uses an explicit module import compatible with CI's Rust 1.88. A runner regression protects against inherited `SKIP_TAURI_BUILD`. Rust 1.88 passed 991 library and 18 utility tests without competing frontend work; the first run hit the existing root-probe test's 20ms healthy-worker deadline, which passed in isolation. Frontend tests passed 3,555 with one intentional skip; 43 script tests, lint/typecheck and both scoped reviews passed. No startup, query or library behavior changes; SQL-tracer retirement remains a separate branch.
 - The integrated release manifests are version `0.13.2`: `package.json`, both Tauri configuration files, `src-tauri/Cargo.toml`, the local `app` package in `src-tauri/Cargo.lock`, and `.github/.release-please-manifest.json` agree. Hosted release state still belongs to GitHub rather than this file.
 - Release builds remain Windows-only. Linux and macOS packages are manual, unsigned or non-updater experimental artifacts as documented in `docs/experimental-unix-builds.md`.
 - Production packaging runs `verify:release` before Tauri builds. The gate checks version consistency, generated binding drift, lint, TypeScript, guarded frontend output, coverage, Rust tests, and a no-bundle Tauri compatibility build.

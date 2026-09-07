@@ -1,6 +1,6 @@
 //! One fixed, opt-in probe campaign. All tuning is confined to generated held connections.
-use super::super::super as plugin;
 use super::super::*;
+use crate::db::migrations::sql_plugin_tests as plugin;
 use sqlx::{Column, Row};
 use std::time::Duration;
 
