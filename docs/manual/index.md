@@ -6,7 +6,7 @@ Ambit is currently a public beta. Official public beta builds are Windows-only w
 
 ## How Ambit Works
 
-Ambit catalogs local image folders. It does not need to move your original image files into a managed library folder.
+Ambit catalogs local folders containing images and supported videos. It does not need to move your original image files into a managed library folder.
 
 ```mermaid
 flowchart LR
@@ -23,12 +23,12 @@ The core app is local-first. Image records, metadata, thumbnails, and settings a
 ## Manual Pages
 
 - [Getting Started](getting-started.md): install the public beta, launch Ambit, and complete the first-run wizard.
-- [Adding Folders](adding-folders.md): add monitored image folders and run one-time imports.
+- [Adding Folders](adding-folders.md): add monitored media folders and run one-time image or video imports.
 - [Generator Integrations](generator-integrations.md): connect InvokeAI, ComfyUI, SD WebUI, A1111, Forge, SD.Next, and Anapnoe output locations.
 - [Browsing The Library](browsing-library.md): use grid, timeline, statistics, selection, favorites, pins, and the viewer.
 - [Search, Filters, And Collections](search-filters-collections.md): use search syntax, filter facets, date ranges, and manual or smart collections.
 - [Assets And Resource Discovery](assets-resource-discovery.md): understand used assets, local disk inventory, resource folders, and Assets tab scopes.
-- [Viewer And Metadata](viewer-and-metadata.md): inspect prompts, resources, workflow data, notes, and image versions.
+- [Viewer And Metadata](viewer-and-metadata.md): inspect prompts, resources, workflow data, notes, image versions, and video playback.
 - [Maintenance](maintenance.md): choose safe repair, recovery, removal, thumbnail, duplicate, and file-deletion workflows.
 - [Settings And Privacy](settings-and-privacy.md): understand folders, privacy controls, AI features, update checks, and network behavior.
 - [Troubleshooting](troubleshooting.md): diagnose common first-run, scan, metadata, thumbnail, and privacy issues.

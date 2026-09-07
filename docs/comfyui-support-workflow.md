@@ -7,7 +7,7 @@ Last reviewed: 2026-08-09
 
 Use this workflow to turn a real ComfyUI parser problem into a reviewable,
 offline regression fixture without sharing image pixels or committing a private
-support bundle. The desktop export and all three package commands are local-only.
+support bundle. The desktop export and all four package commands are local-only.
 
 This process does not automatically redact private data or decide that a fixture
 is safe to publish. Human review remains mandatory.

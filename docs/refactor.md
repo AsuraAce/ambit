@@ -70,12 +70,12 @@ Status: Deferred
 
 ### Why Cleanup Is Needed
 - Startup/sidebar work can still issue expensive collection queries even when no image filter is active.
-- Smart collection counts can block SQLite on `positive_prompt LIKE '%term%'` scans.
-- Collection thumbnail hydration runs multiple correlated ordered subqueries per collection.
+- Smart collection counts are persisted in `dynamic_count`; recomputation after invalidation can still block SQLite on `positive_prompt LIKE '%term%'` scans.
+- Dynamic thumbnails are cached. Uncached ordinary collections and custom-thumbnail lookups still need hydration; measure that path separately from warm-cache startup before changing it.
 
 ### Suggested Future Direction
 - Handle this in a separate performance worktree from asset discovery.
-- Evaluate cached or materialized smart collection membership before changing prompt-search semantics.
+- Evaluate materialized smart collection membership beyond the existing count cache before changing prompt-search semantics.
 - Replace collection thumbnail hydration with a batched query shape that avoids repeated per-collection ordered subqueries.
 
 ### Related Code
@@ -330,8 +330,8 @@ Status: Deferred
 - Windows app data still has a legacy Local/Roaming compatibility boundary. The active SQLite library now prefers Local AppData, while Roaming remains only as a fallback for older data that could not be moved automatically.
 
 ### Current Classification
-- `src/services/repository.ts` is not the canonical desktop persistence path today; it exports `TauriFsRepository` for the shipping app while still carrying a LocalStorage or mock fallback.
-- Treat that fallback path as ambiguous legacy surface unless a dedicated task explicitly keeps, validates, or removes non-Tauri mode.
+- `src/services/repository.ts` selects `TauriFsRepository` for Tauri and `BrowserMockRepository` otherwise. Plain Vite development uses deterministic browser mocks, with dedicated mock tests.
+- The separately exported and tested `LocalStorageRepository` is not selected by `appRepository`. Its retention is the legacy cleanup decision; browser-mock mode is an explicit development path.
 - `src/services/TauriFsRepository.ts` writes `library.json` to `BaseDirectory.AppLocalData`; `src/services/thumbnailService.ts` stores generated thumbnails under `appLocalDataDir()/.thumbnails`; Tauri fs and asset scopes are centered on `$APPLOCALDATA`.
 - `src-tauri/src/db/mod.rs` resolves the production `images.db` by checking Local AppData first, then Roaming AppData as a legacy fallback. Development builds keep the legacy dev-profile SQL URL so local development does not touch production user data.
 - `src-tauri/src/lib.rs` and `src-tauri/src/db/commands/maintenance.rs` already contain reset/purge behavior that accounts for both possible database locations.

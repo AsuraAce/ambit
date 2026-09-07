@@ -31,6 +31,10 @@ Typical grid actions:
 
 Revealed InvokeAI image assets carry an `Asset · User`, `Asset · Control`, `Asset · Mask`, or `Asset · Other` badge centered along the top of the card. The badge stays in place when the selection control appears in the upper-left corner. Missing or unrecognized InvokeAI categories are not hidden or marked.
 
+## Videos In The Library
+
+Use the media selector in the view controls to choose All, Images, or Videos. Video cards show a static poster or placeholder with duration; browsing does not start background players. Open a video for playback, metadata, notes, collections, or original-file export. Media type can also be saved in a smart collection's filters.
+
 ## Timeline Browsing
 
 Timeline View is useful when you remember when a batch was generated. It uses the same library data and filters as Grid View, but presents images around time.

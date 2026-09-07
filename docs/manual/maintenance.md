@@ -67,6 +67,8 @@ Use the thumbnail controls this way:
 
 Ambit can also heal thumbnails in the background during normal use. Smart and Maintenance use the same repair and filesystem-safety rules, but Smart works incrementally at lower priority, waits before retrying recent failures, and throttles while you browse. Only one thumbnail repair job runs at a time, so manual controls may be disabled until background work finishes.
 
+Video records open in the video viewer from Maintenance. The Thumbnails repair engine is image-only; it does not regenerate video posters. Other applicable catalog operations, including missing-file audit, exact duplicates, Removed, and restore, also handle videos.
+
 ## Duplicates
 
 The Duplicates tab scans the entire library for byte-for-byte matches using SHA-256 content hashes. File size is used only to avoid hashing files that cannot be duplicates; matching size, dimensions, or metadata alone does not create a duplicate group.

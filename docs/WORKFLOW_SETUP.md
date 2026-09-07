@@ -1,6 +1,6 @@
 # GitHub Workflow Setup
 
-This document is the operational source of truth for Ambit's pull request, dependency, release, and updater workflows.
+This document explains Ambit's pull request, dependency, release, and updater workflows. Executable commands and gates in `package.json` and `.github/workflows/` are authoritative; hosted GitHub settings require separate verification.
 
 ## Toolchain Policy
 
