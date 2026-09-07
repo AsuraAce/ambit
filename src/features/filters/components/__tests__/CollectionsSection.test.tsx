@@ -1,9 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GeneratorTool, type Collection, type FilterState } from '../../../../types';
 import { CollectionsSection } from '../CollectionsSection';
 
-const probe = vi.hoisted(() => ({ props: null as null | Record<string, unknown> }));
+const probe = vi.hoisted(() => ({ props: null as null | Record<string, unknown>, retryCounts: vi.fn() }));
+vi.mock('../../../../stores/collectionStore', () => ({
+    useCollectionStore: <T,>(selector: (state: { retryOrdinaryCounts: () => void }) => T) => selector({ retryOrdinaryCounts: probe.retryCounts }),
+}));
 vi.mock('../CollectionList', () => ({
     CollectionList: (props: Record<string, unknown>) => {
         probe.props = props;
@@ -30,6 +33,15 @@ const setup = (overrides: Partial<React.ComponentProps<typeof CollectionsSection
 };
 
 describe('CollectionsSection', () => {
+    beforeEach(() => { probe.props = null; });
+    it('offers one accessible retry action for unavailable counts', () => {
+        probe.retryCounts.mockClear();
+        setup({ collections: [{ ...collection, countState: 'failed' }, { ...collection, id: 'second', countState: 'failed' }] });
+        const retries = screen.getAllByRole('button', { name: 'Retry counts' });
+        expect(retries).toHaveLength(1);
+        fireEvent.click(retries[0]);
+        expect(probe.retryCounts).toHaveBeenCalledOnce();
+    });
     it('collapses content and toggles the header', () => {
         setup({ isOpen: false });
         expect(screen.queryByTitle('New Empty Collection')).toBeNull();

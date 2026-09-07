@@ -17,6 +17,8 @@ import { syncImages as syncImagesImpl, type InvokeSyncOptions } from '../syncSer
 import { reconcileInvokeSourceFacts } from '../sourceReconciliation';
 import { GeneratorTool, type AIImage } from '../../../types';
 
+const invokeSourceDatabaseMock = vi.hoisted(() => vi.fn());
+
 const legacyScope = {
     mode: 'legacy' as const,
     dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
@@ -83,6 +85,7 @@ vi.mock('../metadataMapper', () => ({
 
 vi.mock('../connection', () => ({
     fetchBoardMappings: vi.fn(),
+    getInvokeSourceDatabase: invokeSourceDatabaseMock,
     resolveInvokePaths: vi.fn((rootPath: string) => {
         let imagesRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
         const isFile = /\.db$/i.test(imagesRoot);
@@ -236,6 +239,7 @@ const arrangeManualRepair = async ({
 describe('syncImages live mode', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        invokeSourceDatabaseMock.mockImplementation((path: string) => Database.load(`sqlite:${path}`));
         vi.mocked(commands.getFileSizesBulk).mockImplementation(async (paths: string[]) => ({
             status: 'ok',
             data: paths.map(() => 123)
@@ -1502,6 +1506,78 @@ describe('syncImages live mode', () => {
             'D:/AmbitFixtures/InvokeAI/outputs/images/startup-image.png'
         ]);
         expect(reconcileInvokeBoardSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it('catches up new All users rows by timestamp without reconciling unrelated owners', async () => {
+        const afterTimestamp = 100;
+        const expectedCursor = '1970-01-01 00:00:00.100';
+        const odinRows = [
+            { image_name: 'odin-1.png', created_at: '2026-04-18 12:00:01', user_id: 'odin' },
+            { image_name: 'odin-2.png', created_at: '2026-04-18 12:00:02', user_id: 'odin' },
+            { image_name: 'odin-3.png', created_at: '2026-04-18 12:00:03', user_id: 'odin' },
+            { image_name: 'odin-4.png', created_at: '2026-04-18 12:00:04', user_id: 'odin' },
+        ].map(row => ({
+            ...row,
+            metadata_blob: { positive_prompt: row.image_name },
+            width: 512,
+            height: 512,
+            is_intermediate: 0,
+        }));
+        const selectMock = vi.fn(async (query: string, params?: unknown[]) => {
+            if (query.includes('PRAGMA table_info(images)')) {
+                return [{ name: 'metadata_json' }, { name: 'is_intermediate' }, { name: 'user_id' }];
+            }
+            if (query.includes("SELECT name FROM sqlite_master WHERE type='table'")) {
+                return [{ name: 'images' }];
+            }
+            if (query.includes('FROM images i') && !query.includes('i.created_at > ?')) {
+                throw new Error(`Unexpected full source inventory query: ${query}`);
+            }
+            if (query.includes('SELECT 1 as found FROM images i')) {
+                expect(params).toEqual([expectedCursor]);
+                return [{ found: 1 }];
+            }
+            if (query.includes('SELECT count(*) as count FROM images i')) {
+                expect(params).toEqual([expectedCursor]);
+                return [{ count: odinRows.length }];
+            }
+            if (query.includes('FROM images i') && query.includes('OFFSET 0')) {
+                expect(params).toEqual([expectedCursor]);
+                return odinRows;
+            }
+            if (query.includes('FROM images i') && query.includes('OFFSET 4')) return [];
+            return [];
+        });
+        vi.mocked(Database.load).mockResolvedValue(createInvokeDb(selectMock) as never);
+
+        const result = await syncImagesImpl('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            scope: {
+                mode: 'all',
+                dbPath: 'D:/AmbitFixtures/InvokeAI/databases/invokeai.db',
+                imagesRoot: 'D:/AmbitFixtures/InvokeAI',
+            },
+            mode: 'startup',
+            afterTimestamp,
+            syncBoards: false,
+            syncFavorites: false,
+            reconcileSourceFacts: false,
+        });
+
+        const odinIds = odinRows.map(({ image_name }) => (
+            `D:/AmbitFixtures/InvokeAI/outputs/images/${image_name}`
+        ));
+        expect(result).toMatchObject({ imported: 4, updated: 0 });
+        expect(getImagesByIds).toHaveBeenCalledWith(odinIds, { includeOwnerHidden: true });
+        expect(insertImagesBatch).toHaveBeenCalledWith(expect.arrayContaining([
+            expect.objectContaining({ id: odinIds[0], invokeImageName: 'odin-1.png', invokeOwnerId: 'odin' }),
+            expect.objectContaining({ id: odinIds[1], invokeImageName: 'odin-2.png', invokeOwnerId: 'odin' }),
+            expect.objectContaining({ id: odinIds[2], invokeImageName: 'odin-3.png', invokeOwnerId: 'odin' }),
+            expect.objectContaining({ id: odinIds[3], invokeImageName: 'odin-4.png', invokeOwnerId: 'odin' }),
+        ]));
+        expect(vi.mocked(insertImagesBatch).mock.calls[0][0]).toHaveLength(4);
+        expect(reconcileInvokeSourceFacts).not.toHaveBeenCalled();
+        expect(fetchBoardMappings).not.toHaveBeenCalled();
+        expect(syncCollectionImages).not.toHaveBeenCalled();
     });
 
     it('resolves flat, date, type, hash, custom, and relative InvokeAI subfolder paths during DB sync', async () => {

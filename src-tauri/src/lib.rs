@@ -1,3 +1,6 @@
+#[cfg(all(feature = "startup-sql-trace", not(debug_assertions)))]
+compile_error!("startup-sql-trace is restricted to debug regular-dev diagnostics");
+
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
@@ -6,6 +9,11 @@ mod media;
 mod metadata;
 mod scanner;
 mod security;
+mod startup;
+mod startup_log;
+mod startup_sql_trace;
+#[cfg(windows)]
+mod startup_webview;
 mod thumb;
 mod watcher;
 
@@ -25,6 +33,8 @@ use db::reparse::ReparseState;
 use media::VideoImportState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
+#[cfg(not(test))]
+use startup::StartupState;
 #[cfg(not(test))]
 use tauri::Manager;
 #[cfg(not(test))]
@@ -92,6 +102,13 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::backup::get_backups,
             db::backup::backup_database,
             db::backup::check_and_run_autobackup,
+            // startup readiness commands
+            startup::record_startup_diagnostic,
+            startup::record_startup_heartbeat,
+            startup::record_startup_lifecycle,
+            startup::get_startup_launch,
+            startup::record_startup_sql_frontend,
+            startup::complete_startup,
             // scanner commands
             scanner::scan_image,
             scanner::scan_images_bulk,
@@ -156,9 +173,26 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    let process_started = std::time::Instant::now();
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
+    #[cfg(feature = "startup-sql-trace")]
+    if active_identifier != "com.ambit.dev" {
+        eprintln!("SQL tracing requires the existing regular-dev configuration; startup stopped.");
+        return;
+    }
+    let startup_journal = startup_log::install(process_started, &active_identifier);
+    #[cfg(feature = "startup-sql-trace")]
+    let sql_trace = {
+        let collector = tauri_plugin_sql::startup_trace::Collector::new(
+            startup_journal.launch_id.clone(),
+            db::main_database_migration_urls(),
+            process_started,
+        );
+        startup_journal.install_sql_trace(collector.clone());
+        collector
+    };
 
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {
@@ -167,6 +201,7 @@ pub fn run() {
 
     // Check for deferred purge request BEFORE initializing the database.
     if let Err(error) = app_data_migration::check_and_execute_deferred_purge(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[Purge] {error}");
         return;
     }
@@ -178,6 +213,7 @@ pub fn run() {
     }
 
     if let Err(error) = repair_known_migration_metadata(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[DB] {error}");
         return;
     }
@@ -187,6 +223,8 @@ pub fn run() {
         .fold(tauri_plugin_sql::Builder::default(), |builder, db_url| {
             builder.add_migrations(&db_url, db::migrations::init_db())
         });
+    #[cfg(feature = "startup-sql-trace")]
+    let sql_builder = sql_builder.startup_trace(sql_trace);
 
     let log_level = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "info".to_string())
@@ -228,8 +266,44 @@ pub fn run() {
         .manage(FileHashBackfillState::default())
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
+        .manage(StartupState::with_journal(
+            process_started,
+            startup_journal.clone(),
+        ))
+        .on_page_load(|webview, payload| {
+            use tauri::webview::PageLoadEvent;
+            let phase = match payload.event() {
+                PageLoadEvent::Started => "page-loading",
+                PageLoadEvent::Finished => "page-loaded",
+            };
+            webview
+                .state::<StartupState>()
+                .journal
+                .webview_observation(phase);
+        })
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            app.state::<StartupState>().journal.start_observer();
+            #[cfg(windows)]
+            {
+                let observer = startup_webview::ProcessFailedObserver::new(
+                    app.state::<StartupState>().journal.clone(),
+                );
+                if let Some(window) = app.get_webview_window("main") {
+                    observer.register(&window);
+                } else {
+                    observer.registration_unavailable();
+                }
+                app.manage(observer);
+            }
+            app.state::<StartupState>()
+                .journal
+                .native("native-initialization", "completed", None);
+            let diagnostic_journal = app.state::<StartupState>().journal.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                diagnostic_journal.missing_renderer();
+            });
             builder.mount_events(app);
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -237,37 +311,66 @@ pub fn run() {
             // 1. Initialize DB settings (WAL mode, etc.)
             let handle_for_db = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let started = std::time::Instant::now();
                 if let Err(e) = db::init_db_connection(&handle_for_db) {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "failed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::error!("[DB] Failed to initialize database settings: {}", e);
                 } else {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "completed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::info!("[DB] Database initialized and optimized (WAL=ON)");
                 }
             });
 
-            // 2. Run auto-backup check in background for production builds only,
-            // after startup has settled. Large production libraries can spend
-            // the first minute catching up sync state and warming query caches;
-            // VACUUM INTO during that window competes for SQLite I/O.
-            if cfg!(debug_assertions) {
-                log::info!("[Backup] Auto-backup skipped in development build");
-            } else {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-                    match db::backup::check_and_run_autobackup(handle).await {
-                        Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                        Ok(None) => {
-                            log::info!("[Backup] Auto-backup skipped (recent backup exists)")
-                        }
-                        Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
-                    }
-                });
-            }
             Ok(())
         })
         .build(context)
-        .expect("error while building tauri application")
+        .unwrap_or_else(|error| {
+            startup_journal.native("startup-failure", "failed", None);
+            panic!("error while building tauri application: {error}");
+        })
         .run(|app_handle, event| {
+            let lifecycle = match &event {
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::CloseRequested { .. },
+                    ..
+                } if label == "main" => Some("native-close-requested"),
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == "main" => Some("native-window-destroyed"),
+                tauri::RunEvent::ExitRequested { .. } => Some("native-exit-requested"),
+                tauri::RunEvent::Exit => Some("native-exit"),
+                _ => None,
+            };
+            if let Some(stage) = lifecycle {
+                app_handle
+                    .state::<StartupState>()
+                    .journal
+                    .webview_observation(stage);
+            }
+            #[cfg(windows)]
+            if matches!(&event, tauri::RunEvent::WindowEvent {
+                label, event: tauri::WindowEvent::Destroyed, ..
+            } if label == "main")
+                || matches!(&event, tauri::RunEvent::Exit)
+            {
+                app_handle
+                    .state::<startup_webview::ProcessFailedObserver>()
+                    .teardown_on_current_thread();
+            }
+            if let tauri::RunEvent::Exit = event {
+                app_handle.state::<StartupState>().journal.request_end();
+            }
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Err(e) = db::optimize_on_shutdown(app_handle) {
                     log::error!("[DB] Failed to run shutdown optimization: {}", e);
@@ -612,6 +715,103 @@ mod migration_history_tests {
         (root, db_path)
     }
 
+    fn create_repairable_migration55_history(conn: &rusqlite::Connection) {
+        create_migration_table(conn);
+        conn.execute_batch(
+            "CREATE TABLE images (thumbnail_path TEXT);
+             CREATE INDEX idx_images_thumbnail_path_lookup_v1 ON images(thumbnail_path);",
+        )
+        .expect("manual thumbnail lookup index");
+        insert_row(conn, 55, "add_manual_thumbnail_lookup_index", 1, &[0; 48]);
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn development_repair_does_not_modify_repairable_inactive_production_history() {
+        let (active_root, active_path) = profile_db_path("active-development");
+        let (inactive_root, inactive_path) = profile_db_path("inactive-production");
+        let active = rusqlite::Connection::open(&active_path).expect("active database");
+        create_repairable_migration55_history(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("inactive database");
+        create_repairable_migration55_history(&inactive);
+        let inactive_rows_before = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_before = std::fs::read(&inactive_path).expect("inactive database bytes");
+
+        repair_known_migration_metadata_at_paths(
+            &[active_path.clone(), inactive_path.clone()],
+            &active_path,
+            true,
+        )
+        .expect("active development history should repair");
+
+        let active = rusqlite::Connection::open(&active_path).expect("reopen active");
+        let active_rows = migration_rows(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
+        let inactive_rows = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_after = std::fs::read(&inactive_path).expect("inactive database bytes");
+        std::fs::remove_dir_all(active_root).expect("remove active profile");
+        std::fs::remove_dir_all(inactive_root).expect("remove inactive profile");
+
+        let expected_checksum = Sha384::digest(
+            crate::db::migrations::m55_manual_thumbnail_lookup_index::migration55()
+                .sql
+                .as_bytes(),
+        )
+        .to_vec();
+        assert_eq!(
+            active_rows[0].3, expected_checksum,
+            "active checksum must repair"
+        );
+        assert_eq!(
+            inactive_rows, inactive_rows_before,
+            "inactive rows must not change"
+        );
+        assert_eq!(
+            inactive_bytes_after, inactive_bytes_before,
+            "inactive file must not change"
+        );
+    }
+
+    #[test]
+    fn release_repair_repairs_compatible_inactive_history() {
+        let (active_root, active_path) = profile_db_path("active-release");
+        let (inactive_root, inactive_path) = profile_db_path("inactive-compatible");
+        let active = rusqlite::Connection::open(&active_path).expect("active database");
+        create_repairable_migration55_history(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("inactive database");
+        create_repairable_migration55_history(&inactive);
+        drop(inactive);
+
+        repair_known_migration_metadata_at_paths(
+            &[active_path.clone(), inactive_path.clone()],
+            &active_path,
+            false,
+        )
+        .expect("release-compatible histories should repair");
+
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
+        let inactive_rows = migration_rows(&inactive);
+        drop(inactive);
+        std::fs::remove_dir_all(active_root).expect("remove active profile");
+        std::fs::remove_dir_all(inactive_root).expect("remove inactive profile");
+
+        let expected_checksum = Sha384::digest(
+            crate::db::migrations::m55_manual_thumbnail_lookup_index::migration55()
+                .sql
+                .as_bytes(),
+        )
+        .to_vec();
+        assert_eq!(
+            inactive_rows[0].3, expected_checksum,
+            "release repair must retain compatible-profile repair"
+        );
+    }
+
     #[test]
     fn invalid_inactive_profile_does_not_block_valid_active_profile() {
         let (active_root, active_path) = profile_db_path("active-valid");
@@ -627,6 +827,7 @@ mod migration_history_tests {
         let result = repair_known_migration_metadata_at_paths(
             &[active_path.clone(), inactive_path.clone()],
             &active_path,
+            false,
         );
         let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
         let rows = migration_rows(&inactive);
@@ -649,6 +850,7 @@ mod migration_history_tests {
         let result = repair_known_migration_metadata_at_paths(
             std::slice::from_ref(&active_path),
             &active_path,
+            true,
         );
         let active = rusqlite::Connection::open(&active_path).expect("reopen active");
         let rows = migration_rows(&active);
@@ -827,15 +1029,21 @@ fn relocate_development_invoke_migration_history(
 #[cfg(not(test))]
 fn repair_known_migration_metadata(active_identifier: &str) -> Result<(), String> {
     let active_db_path = startup_active_database_path(active_identifier);
-    let mut db_paths: Vec<std::path::PathBuf> = app_data_migration::app_identifier_dirs_to_check()
-        .into_iter()
-        .map(|app_dir| app_dir.join(db::MAIN_DB_FILE_NAME))
-        .collect();
-    if !db_paths.iter().any(|path| path == &active_db_path) {
-        db_paths.push(active_db_path.clone());
-    }
+    let db_paths = if cfg!(debug_assertions) {
+        vec![active_db_path.clone()]
+    } else {
+        let mut db_paths: Vec<std::path::PathBuf> =
+            app_data_migration::app_identifier_dirs_to_check()
+                .into_iter()
+                .map(|app_dir| app_dir.join(db::MAIN_DB_FILE_NAME))
+                .collect();
+        if !db_paths.iter().any(|path| path == &active_db_path) {
+            db_paths.push(active_db_path.clone());
+        }
+        db_paths
+    };
 
-    repair_known_migration_metadata_at_paths(&db_paths, &active_db_path)
+    repair_known_migration_metadata_at_paths(&db_paths, &active_db_path, cfg!(debug_assertions))
 }
 
 /// Mirrors `db::resolve_db_path_info` while startup still has no `AppHandle`.
@@ -895,6 +1103,7 @@ fn reconcile_invoke_history_for_profile(
 fn repair_known_migration_metadata_at_paths(
     db_paths: &[std::path::PathBuf],
     active_db_path: &std::path::Path,
+    is_debug_build: bool,
 ) -> Result<(), String> {
     use sha2::{Digest, Sha384};
 
@@ -903,7 +1112,10 @@ fn repair_known_migration_metadata_at_paths(
     let migration56 = db::migrations::m56_thumbnail_optimization::migration56();
     let expected_m56_checksum = Sha384::digest(migration56.sql.as_bytes()).to_vec();
 
-    for db_path in db_paths {
+    for db_path in db_paths
+        .iter()
+        .filter(|db_path| !is_debug_build || db_path.as_path() == active_db_path)
+    {
         if !db_path.exists() {
             continue;
         }

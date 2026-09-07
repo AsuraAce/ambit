@@ -5,10 +5,10 @@ import './index.css';
 import { ToastProvider } from './contexts/ToastContext';
 import { LibraryProvider } from './contexts/LibraryContext';
 import { StartupMaintenanceGate } from './components/StartupMaintenanceGate';
-
-import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { StartupBoundary } from './components/StartupBoundary';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { isCaptureMode } from './utils/buildFlags';
+import { markReactMounted } from './utils/startupDiagnostics';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,23 +33,32 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
+
+const StartupMountMarker = () => {
+  React.useEffect(() => {
+    markReactMounted();
+  }, []);
+  return null;
+};
+
 root.render(
   <React.StrictMode>
-    <ToastProvider>
-      <QueryClientProvider client={queryClient}>
-        <StartupMaintenanceGate>
-          <LibraryProvider>
-            <ErrorBoundary>
+    <StartupBoundary>
+      <StartupMountMarker />
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <StartupMaintenanceGate>
+            <LibraryProvider>
               <App />
-            </ErrorBoundary>
-          </LibraryProvider>
-        </StartupMaintenanceGate>
-        {import.meta.env.DEV && !isCaptureMode() && (
-          <React.Suspense fallback={null}>
-            <ReactQueryDevtools initialIsOpen={false} />
-          </React.Suspense>
-        )}
-      </QueryClientProvider>
-    </ToastProvider>
+            </LibraryProvider>
+          </StartupMaintenanceGate>
+          {import.meta.env.DEV && !isCaptureMode() && (
+            <React.Suspense fallback={null}>
+              <ReactQueryDevtools initialIsOpen={false} />
+            </React.Suspense>
+          )}
+        </QueryClientProvider>
+      </ToastProvider>
+    </StartupBoundary>
   </React.StrictMode>
 );

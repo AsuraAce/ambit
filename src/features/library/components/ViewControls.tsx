@@ -12,7 +12,7 @@ const COUNT_LOADING_MIN_VISIBLE_MS = 300;
 
 interface CountPresentation {
     displayedCount: number;
-    totalCount: number;
+    totalCount: number | null;
     scopeName: string;
     ownerPresentationKey: string;
 }
@@ -28,7 +28,7 @@ interface ViewControlsProps {
     thumbnailSize: number;
     setThumbnailSize: (size: number) => void;
     displayedCount: number;
-    totalCount: number;
+    totalCount: number | null;
     scopeName: string;
     ownerPresentationKey?: string;
     isFiltering?: boolean;
@@ -331,7 +331,11 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                         <div className="flex items-center gap-1">
                             <span className="text-sage-600 dark:text-sage-400">{countPresentation.displayedCount.toLocaleString()}</span>
                             <span className="opacity-40">/</span>
-                            <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount.toLocaleString()}</span>
+                            <span className="text-gray-600 dark:text-gray-300"
+                                aria-label={countPresentation.totalCount === null ? 'Collection total not available' : undefined}
+                                title={countPresentation.totalCount === null ? 'Collection total not available' : undefined}>
+                                {countPresentation.totalCount?.toLocaleString() ?? '\u2014'}
+                            </span>
                         </div>
                         <span
                             className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
@@ -342,7 +346,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                     </>
                 ) : (
                     <>
-                        <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount.toLocaleString()}</span>
+                        <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount?.toLocaleString() ?? '\u2014'}</span>
                         <span
                             className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
                             title={countPresentation.scopeName}

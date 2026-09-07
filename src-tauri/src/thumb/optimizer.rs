@@ -1751,10 +1751,71 @@ fn persist_thumbnail_results(
 
     if let Some(previous_suppression) = previous_suppression {
         tx.execute_batch(
-            "INSERT OR IGNORE INTO invoke_scope_cache_dirty_items
+            "INSERT INTO invoke_scope_cache_dirty_items
                  (scope_key, domain, facet_type, resource_name)
-             SELECT scope_key, 'full', '', ''
-             FROM thumbnail_optimizer_affected_scopes;
+             SELECT visible.scope_key, 'facet_resource', 'checkpoints',
+                    COALESCE(NULLIF(TRIM(images.resolved_model_name), ''),
+                             NULLIF(TRIM(images.model_name), ''), 'Unknown')
+             FROM thumbnail_optimizer_results result
+             JOIN images ON images.id = result.id
+             JOIN invoke_scope_cache_visible_image_scopes visible
+               ON visible.image_id = result.id
+             WHERE result.outcome IN ('success', 'missing')
+             ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
+
+             INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+             SELECT visible.scope_key, 'facet_resource', 'tools',
+                    COALESCE(NULLIF(TRIM(images.tool), ''), 'Unknown')
+             FROM thumbnail_optimizer_results result
+             JOIN images ON images.id = result.id
+             JOIN invoke_scope_cache_visible_image_scopes visible
+               ON visible.image_id = result.id
+             WHERE result.outcome IN ('success', 'missing')
+             ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
+
+             INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+             SELECT visible.scope_key, 'facet_resource', resources.facet_type,
+                    resources.resource_name
+             FROM (
+                 SELECT result.id AS image_id, 'loras' AS facet_type,
+                        resource.lora_name AS resource_name
+                 FROM thumbnail_optimizer_results result
+                 JOIN image_loras resource ON resource.image_id = result.id
+                 WHERE result.outcome IN ('success', 'missing')
+                 UNION
+                 SELECT result.id, 'embeddings', resource.embedding_name
+                 FROM thumbnail_optimizer_results result
+                 JOIN image_embeddings resource ON resource.image_id = result.id
+                 WHERE result.outcome IN ('success', 'missing')
+                 UNION
+                 SELECT result.id, 'hypernetworks', resource.hypernetwork_name
+                 FROM thumbnail_optimizer_results result
+                 JOIN image_hypernetworks resource ON resource.image_id = result.id
+                 WHERE result.outcome IN ('success', 'missing')
+                 UNION
+                 SELECT result.id, 'control_nets', resource.controlnet_name
+                 FROM thumbnail_optimizer_results result
+                 JOIN image_controlnets resource ON resource.image_id = result.id
+                 WHERE result.outcome IN ('success', 'missing')
+                 UNION
+                 SELECT result.id, 'ip_adapters', resource.ipadapter_name
+                 FROM thumbnail_optimizer_results result
+                 JOIN image_ipadapters resource ON resource.image_id = result.id
+                 WHERE result.outcome IN ('success', 'missing')
+             ) resources
+             JOIN invoke_scope_cache_visible_image_scopes visible
+               ON visible.image_id = resources.image_id
+             WHERE 1
+             ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
+
+             INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+             SELECT scope_key, 'collections', '', ''
+             FROM thumbnail_optimizer_affected_scopes
+             WHERE 1
+             ON CONFLICT(scope_key, domain, facet_type, resource_name) DO NOTHING;
 
              UPDATE invoke_scope_cache_state
              SET status = 'dirty',
@@ -2020,7 +2081,10 @@ mod tests {
                 is_intermediate_gen INTEGER NOT NULL DEFAULT 0,
                 is_corrupt INTEGER DEFAULT 0,
                 timestamp INTEGER NOT NULL,
-                invoke_source_id TEXT
+                invoke_source_id TEXT,
+                model_name TEXT,
+                tool TEXT,
+                resolved_model_name TEXT
             );
             CREATE VIEW scoped_images AS
                 SELECT * FROM images WHERE invoke_scope_hidden = 0;
@@ -2075,6 +2139,11 @@ mod tests {
                 db_path TEXT NOT NULL,
                 images_root TEXT NOT NULL
             );
+            CREATE TABLE image_loras (image_id TEXT NOT NULL, lora_name TEXT NOT NULL);
+            CREATE TABLE image_embeddings (image_id TEXT NOT NULL, embedding_name TEXT NOT NULL);
+            CREATE TABLE image_hypernetworks (image_id TEXT NOT NULL, hypernetwork_name TEXT NOT NULL);
+            CREATE TABLE image_controlnets (image_id TEXT NOT NULL, controlnet_name TEXT NOT NULL);
+            CREATE TABLE image_ipadapters (image_id TEXT NOT NULL, ipadapter_name TEXT NOT NULL);
             ",
         )
         .expect("schema");
@@ -3420,10 +3489,242 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("dirty count");
+        let selective_dirty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'scope-a'
+                   AND (domain, facet_type, resource_name) IN (
+                       ('facet_resource', 'checkpoints', 'Unknown'),
+                       ('facet_resource', 'tools', 'Unknown'),
+                       ('collections', '', '')
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("selective dirty count");
 
         assert_eq!(row_trigger_count, 0);
         assert_eq!(scope, ("dirty".to_string(), 5));
-        assert_eq!(full_dirty_count, 1);
+        assert_eq!(full_dirty_count, 0);
+        assert_eq!(selective_dirty_count, 3);
+    }
+
+    #[test]
+    fn migrated_repair_batch_marks_only_visible_scopes_with_selective_dirty_items() {
+        let mut conn = Connection::open_in_memory().expect("in-memory db");
+        for migration in crate::db::migrations::init_db() {
+            conn.execute_batch(&migration.sql)
+                .expect("apply production migration");
+        }
+        conn.execute_batch(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, owner_id, updated_at
+             ) VALUES ('current', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                       'owner', 'owner-a', 1);
+             INSERT INTO invoke_scope_cache_state (
+                 scope_key, db_path, images_root, scope_mode, owner_id,
+                 status, generation, built_generation, updated_at
+             ) VALUES
+                 ('all', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                  'all', NULL, 'ready', 4, 4, 1),
+                 ('owner-a', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                  'owner', 'owner-a', 'ready', 4, 4, 1),
+                 ('owner-b', 'D:/Invoke/databases/invokeai.db', 'D:/Invoke',
+                  'owner', 'owner-b', 'ready', 4, 4, 1);
+             UPDATE invoke_scope_cache_control
+             SET active_scope_key = 'owner-a'
+             WHERE state_key = 'current';
+
+             INSERT INTO images (
+                 id, path, timestamp, invoke_source_id, invoke_owner_id,
+                 model_name, resolved_model_name, tool
+             ) VALUES
+                 ('success', 'D:/Invoke/outputs/images/success.png', 3,
+                  'D:/Invoke/databases/invokeai.db', 'owner-a',
+                  'fallback-checkpoint', 'Checkpoint A', 'Invoke'),
+                 ('missing', 'D:/Invoke/outputs/images/missing.png', 2,
+                  'D:/Invoke/databases/invokeai.db', 'owner-a', NULL, NULL, NULL),
+                 ('failure', 'D:/Invoke/outputs/images/failure.png', 1,
+                  'D:/Invoke/databases/invokeai.db', 'owner-a',
+                  'Failure Checkpoint', NULL, 'ComfyUI');
+             INSERT INTO image_loras VALUES ('success', 'LoRA A');
+             INSERT INTO image_embeddings VALUES ('success', 'Embedding A');
+             INSERT INTO image_hypernetworks VALUES ('success', 'Hypernetwork A');
+             INSERT INTO image_controlnets VALUES ('success', 'ControlNet A');
+             INSERT INTO image_ipadapters VALUES ('success', 'IP Adapter A');
+
+             UPDATE invoke_scope_cache_state
+             SET status = 'ready', generation = 4, built_generation = 4;
+             DELETE FROM invoke_scope_cache_dirty_items;
+             INSERT INTO invoke_scope_cache_dirty_items
+                 (scope_key, domain, facet_type, resource_name)
+             VALUES ('all', 'full', '', '');",
+        )
+        .expect("seed scoped cache fixture");
+
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER fail_thumbnail_cache_persistence
+             BEFORE UPDATE OF thumbnail_path ON images
+             WHEN OLD.id = 'success'
+             BEGIN
+                 SELECT RAISE(ABORT, 'forced cache persistence failure');
+             END;",
+        )
+        .expect("failure trigger");
+        let rollback_error = match persist_thumbnail_results(
+            &mut conn,
+            &[ThumbnailItemResult::Success {
+                id: "success".to_string(),
+                thumbnail_path: "C:/thumbs/rollback.webp".to_string(),
+                micro_thumbnail: None,
+                reused: false,
+                processing_ms: 1,
+            }],
+            99,
+        ) {
+            Ok(_) => panic!("persistence must fail"),
+            Err(error) => error,
+        };
+        assert!(rollback_error.contains("forced cache persistence failure"));
+        let rollback_scope_states = conn
+            .prepare(
+                "SELECT scope_key, status, generation
+                 FROM invoke_scope_cache_state ORDER BY scope_key",
+            )
+            .expect("rollback scope query")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .expect("rollback scope states")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect rollback scope states");
+        assert_eq!(
+            rollback_scope_states,
+            vec![
+                ("all".to_string(), "ready".to_string(), 4),
+                ("owner-a".to_string(), "ready".to_string(), 4),
+                ("owner-b".to_string(), "ready".to_string(), 4),
+            ]
+        );
+        let suppression_after_rollback: i64 = conn
+            .query_row(
+                "SELECT suppress_invalidation FROM invoke_scope_cache_control
+                 WHERE state_key = 'current'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rollback suppression");
+        assert_eq!(suppression_after_rollback, 0);
+        conn.execute_batch("DROP TRIGGER fail_thumbnail_cache_persistence;")
+            .expect("remove failure trigger");
+
+        let stats = persist_thumbnail_results(
+            &mut conn,
+            &[
+                ThumbnailItemResult::Success {
+                    id: "success".to_string(),
+                    thumbnail_path: "C:/thumbs/success.webp".to_string(),
+                    micro_thumbnail: None,
+                    reused: false,
+                    processing_ms: 2,
+                },
+                ThumbnailItemResult::MissingSource {
+                    id: "missing".to_string(),
+                    source_root: None,
+                },
+                ThumbnailItemResult::Failed {
+                    id: "failure".to_string(),
+                    error: "decode failed".to_string(),
+                },
+                ThumbnailItemResult::Skipped,
+            ],
+            100,
+        )
+        .expect("persist mixed repair batch");
+
+        assert_eq!((stats.optimized, stats.missing, stats.failed), (1, 1, 1));
+
+        let scope_states = conn
+            .prepare(
+                "SELECT scope_key, status, generation
+                 FROM invoke_scope_cache_state ORDER BY scope_key",
+            )
+            .expect("scope state query")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .expect("scope states")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect scope states");
+        assert_eq!(
+            scope_states,
+            vec![
+                ("all".to_string(), "dirty".to_string(), 5),
+                ("owner-a".to_string(), "dirty".to_string(), 5),
+                ("owner-b".to_string(), "ready".to_string(), 4),
+            ]
+        );
+
+        let dirty_items = conn
+            .prepare(
+                "SELECT scope_key, domain, facet_type, resource_name
+                 FROM invoke_scope_cache_dirty_items
+                 ORDER BY scope_key, domain, facet_type, resource_name",
+            )
+            .expect("dirty item query")
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                ))
+            })
+            .expect("dirty items")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect dirty items");
+        let selective_items = [
+            ("collections", "", ""),
+            ("facet_resource", "checkpoints", "Checkpoint A"),
+            ("facet_resource", "checkpoints", "Unknown"),
+            ("facet_resource", "control_nets", "ControlNet A"),
+            ("facet_resource", "embeddings", "Embedding A"),
+            ("facet_resource", "hypernetworks", "Hypernetwork A"),
+            ("facet_resource", "ip_adapters", "IP Adapter A"),
+            ("facet_resource", "loras", "LoRA A"),
+            ("facet_resource", "tools", "Invoke"),
+            ("facet_resource", "tools", "Unknown"),
+        ];
+        let mut expected_dirty_items = selective_items
+            .iter()
+            .flat_map(|(domain, facet_type, resource_name)| {
+                ["all", "owner-a"].into_iter().map(move |scope_key| {
+                    (
+                        scope_key.to_string(),
+                        (*domain).to_string(),
+                        (*facet_type).to_string(),
+                        (*resource_name).to_string(),
+                    )
+                })
+            })
+            .chain(std::iter::once((
+                "all".to_string(),
+                "full".to_string(),
+                "".to_string(),
+                "".to_string(),
+            )))
+            .collect::<Vec<_>>();
+        expected_dirty_items.sort();
+        assert_eq!(dirty_items, expected_dirty_items);
     }
 
     #[test]
@@ -3554,6 +3855,20 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("dirty count");
+        let selective_dirty_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM invoke_scope_cache_dirty_items
+                 WHERE scope_key = 'scope-a'
+                   AND (domain, facet_type, resource_name) IN (
+                       ('facet_resource', 'checkpoints', 'Unknown'),
+                       ('facet_resource', 'tools', 'Unknown'),
+                       ('collections', '', '')
+                   )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("selective dirty count");
         let missing_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM images WHERE is_missing = 1",
@@ -3574,7 +3889,8 @@ mod tests {
         assert_eq!(stats.missing, IMAGE_COUNT);
         assert_eq!(missing_count, IMAGE_COUNT as i64);
         assert_eq!(scope_state, ("dirty".to_string(), 8));
-        assert_eq!(full_dirty_count, 1);
+        assert_eq!(full_dirty_count, 0);
+        assert_eq!(selective_dirty_count, 3);
         assert_eq!(suppression, 0);
     }
 

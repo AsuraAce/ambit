@@ -5,6 +5,11 @@ Last reviewed: 2026-07-27
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## InvokeAI Timestamp Cursor Completeness
+Status: Deferred
+
+InvokeAI incremental import selects rows newer than the saved timestamp. Newly inserted rows with older timestamps can therefore be missed; full source-fact reconciliation only repairs existing Ambit records and is not a remedy for absent imports. This predates the All users startup shortcut. A future cursor/reconciliation design must explicitly cover backdated inserts, replacements, owner transitions, and tombstones before changing snapshot or cursor formats. Relevant boundaries: `src/services/invoke/syncService.ts`, `src/services/invoke/sourceReconciliation.ts`, and `src/contexts/SyncContext.tsx`.
+
 ## Image-Named Mixed-Media Persistence Boundary
 Status: Deferred
 

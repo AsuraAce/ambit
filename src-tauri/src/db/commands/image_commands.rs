@@ -1,13 +1,19 @@
 use super::run_blocking;
 use crate::db::facets::FacetResourceTouches;
 use crate::db::ImageRecord;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::AppHandle;
 
 const PRIVACY_KEYWORDS_FINGERPRINT_KEY: &str = "masked_keywords_fingerprint";
+// The visibility owner-scope refresh and board snapshot reconciliation each
+// receive this 2.5-second entry budget (5 seconds combined). It limits only
+// their targeted SQLite preparation locks, not either complete startup stage.
+const OWNER_PREPARATION_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(2_500);
+const OWNER_SCOPE_REFRESH_OPERATION: &str = "refresh_invoke_owner_scope";
+const BOARD_SNAPSHOT_RECONCILIATION_OPERATION: &str = "reconcile_invoke_board_snapshot";
 const PRIVACY_HIDDEN_CASE_SQL: &str = "CASE
     WHEN user_masked = 1 THEN 1
     WHEN user_masked = 0 THEN 0
@@ -18,6 +24,72 @@ const PRIVACY_HIDDEN_CASE_SQL: &str = "CASE
     ) THEN 1
     ELSE 0
 END";
+
+struct ScopedBusyTimeout<'connection> {
+    conn: &'connection Connection,
+    previous_timeout: std::time::Duration,
+}
+
+impl Drop for ScopedBusyTimeout<'_> {
+    fn drop(&mut self) {
+        let _ = self.conn.busy_timeout(self.previous_timeout);
+    }
+}
+
+fn sqlite_extended_code(error: &rusqlite::Error) -> i32 {
+    match error {
+        rusqlite::Error::SqliteFailure(sqlite_error, _) => sqlite_error.extended_code,
+        _ => 0,
+    }
+}
+
+fn begin_owner_preparation_transaction_with_timeout<'connection>(
+    conn: &'connection Connection,
+    operation: &'static str,
+    timeout: std::time::Duration,
+) -> Result<(ScopedBusyTimeout<'connection>, Transaction<'connection>), String> {
+    let previous_timeout_ms: u64 = conn
+        .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+        .map_err(|error| error.to_string())?;
+    conn.busy_timeout(timeout)
+        .map_err(|error| error.to_string())?;
+    let scoped_timeout = ScopedBusyTimeout {
+        conn,
+        previous_timeout: std::time::Duration::from_millis(previous_timeout_ms),
+    };
+    let transaction_entry_started = Instant::now();
+    let transaction = Transaction::new_unchecked(conn, TransactionBehavior::Immediate).map_err(|error| {
+        crate::startup_log::owner_stage(operation, false, transaction_entry_started.elapsed().as_millis() as u64);
+        log::warn!(
+            "[DB] owner preparation transaction entry failed operation={operation} database_role=ambit_local sqlite_extended_code={} wait_ms={}",
+            sqlite_extended_code(&error),
+            transaction_entry_started.elapsed().as_millis()
+        );
+        error.to_string()
+    })?;
+    crate::startup_log::owner_stage(
+        operation,
+        true,
+        transaction_entry_started.elapsed().as_millis() as u64,
+    );
+    log::info!(
+        "[DB] owner preparation transaction entry succeeded operation={operation} database_role=ambit_local sqlite_extended_code=0 wait_ms={}",
+        transaction_entry_started.elapsed().as_millis()
+    );
+
+    Ok((scoped_timeout, transaction))
+}
+
+fn begin_owner_preparation_transaction<'connection>(
+    conn: &'connection Connection,
+    operation: &'static str,
+) -> Result<(ScopedBusyTimeout<'connection>, Transaction<'connection>), String> {
+    begin_owner_preparation_transaction_with_timeout(
+        conn,
+        operation,
+        OWNER_PREPARATION_BUSY_TIMEOUT,
+    )
+}
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1127,16 +1199,44 @@ fn canonicalize_windows_invoke_identity(
     }
 
     for table in ["images", "removed_images", "collections"] {
-        tx.execute(
-            &format!(
-                "UPDATE {table}
-                 SET invoke_source_id = ?1
+        let started = Instant::now();
+        // Discover distinct aliases using the source-identity index, not wide
+        // image records. Never UPDATE already-canonical rows: even assigning
+        // the same value executes SQLite's row-update triggers.
+        let aliases = {
+            let mut statement = tx
+                .prepare(&format!(
+                    "SELECT DISTINCT invoke_source_id FROM {table}
                  WHERE invoke_source_id IS NOT NULL
+                   AND invoke_source_id COLLATE BINARY != ?1
                    AND LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
-            ),
-            [db_path],
-        )
-        .map_err(|error| error.to_string())?;
+                ))
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map([db_path], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| error.to_string())?;
+            rows
+        };
+        let mut updated_rows = 0;
+        for alias in aliases {
+            updated_rows += tx
+                .execute(
+                    &format!(
+                        "UPDATE {table} SET invoke_source_id = ?1
+                          WHERE invoke_source_id COLLATE BINARY = ?2"
+                    ),
+                    params![db_path, alias],
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        log::info!(
+            "[DB] owner identity normalization table={} updated_rows={} duration_ms={}",
+            table,
+            updated_rows,
+            started.elapsed().as_millis()
+        );
     }
     tx.execute(
         "UPDATE invoke_owner_scope_state
@@ -1528,6 +1628,27 @@ fn abort_active_scope_cache_build_for_session_inner(
     read_scope_cache_status(conn, &ticket.scope_key)
 }
 
+fn measure_owner_preparation_stage<T>(
+    stage: &'static str,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let started = Instant::now();
+    let result = work();
+    log::info!(
+        "[DB] owner preparation operation={} stage={} database_role=ambit_local status={} duration_ms={}",
+        OWNER_SCOPE_REFRESH_OPERATION,
+        stage,
+        if result.is_ok() { "completed" } else { "failed" },
+        started.elapsed().as_millis()
+    );
+    crate::startup_log::owner_stage(
+        stage,
+        result.is_ok(),
+        started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+    );
+    result
+}
+
 fn refresh_invoke_owner_scope_inner(
     conn: &rusqlite::Connection,
     input: &InvokeOwnerScopeInput,
@@ -1547,14 +1668,19 @@ fn refresh_invoke_owner_scope_inner(
         return Err("Owner scope requires a non-empty owner ID".to_string());
     }
 
-    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-    snapshot_active_scope_cache_if_ready(&tx)?;
+    let (_busy_timeout, tx) =
+        begin_owner_preparation_transaction(conn, OWNER_SCOPE_REFRESH_OPERATION)?;
+    measure_owner_preparation_stage("cache-snapshot", || {
+        snapshot_active_scope_cache_if_ready(&tx)
+    })?;
     tx.execute(
         "UPDATE invoke_scope_cache_control SET suppress_invalidation = 1 WHERE state_key = 'current'",
         [],
     )
     .map_err(|error| error.to_string())?;
-    canonicalize_windows_invoke_identity(&tx, &db_path, &images_root)?;
+    measure_owner_preparation_stage("identity-normalization", || {
+        canonicalize_windows_invoke_identity(&tx, &db_path, &images_root)
+    })?;
     let previous: Option<(String, String, String, Option<String>)> = tx
         .query_row(
             "SELECT db_path, images_root, scope_mode, owner_id
@@ -1598,7 +1724,9 @@ fn refresh_invoke_owner_scope_inner(
         let status = read_scope_cache_status(&tx, &scope_key)?;
         let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &status)?;
         if cache_repair.action != InvokeScopeCacheAction::Full {
-            restore_scope_cache(&tx, &scope_key)?;
+            measure_owner_preparation_stage("cache-restore", || {
+                restore_scope_cache(&tx, &scope_key)
+            })?;
         }
         tx.execute(
             "UPDATE invoke_scope_cache_control
@@ -1607,7 +1735,7 @@ fn refresh_invoke_owner_scope_inner(
             [&scope_key],
         )
         .map_err(|error| error.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
+        measure_owner_preparation_stage("commit", || tx.commit().map_err(|e| e.to_string()))?;
         return Ok(InvokeOwnerScopeRefreshResult {
             cache_repair,
             cache_status: status,
@@ -1699,7 +1827,7 @@ fn refresh_invoke_owner_scope_inner(
     let cache_status = read_scope_cache_status(&tx, &scope_key)?;
     let cache_repair = read_scope_cache_repair_plan(&tx, &scope_key, &cache_status)?;
     if cache_repair.action != InvokeScopeCacheAction::Full {
-        restore_scope_cache(&tx, &scope_key)?;
+        measure_owner_preparation_stage("cache-restore", || restore_scope_cache(&tx, &scope_key))?;
     }
     tx.execute(
         "UPDATE invoke_scope_cache_control
@@ -1709,7 +1837,7 @@ fn refresh_invoke_owner_scope_inner(
     )
     .map_err(|error| error.to_string())?;
 
-    tx.commit().map_err(|e| e.to_string())?;
+    measure_owner_preparation_stage("commit", || tx.commit().map_err(|e| e.to_string()))?;
 
     Ok(InvokeOwnerScopeRefreshResult {
         changed: previous.as_ref() != Some(&next),
@@ -2418,9 +2546,8 @@ fn reconcile_invoke_board_snapshot_inner(
         return Err("Boards cannot be reconciled before an owner scope is selected".to_string());
     }
 
-    let tx = conn
-        .unchecked_transaction()
-        .map_err(|error| error.to_string())?;
+    let (_busy_timeout, tx) =
+        begin_owner_preparation_transaction(conn, BOARD_SNAPSHOT_RECONCILIATION_OPERATION)?;
     tx.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS temp_invoke_board_snapshot (
              board_id TEXT PRIMARY KEY,
@@ -2984,7 +3111,19 @@ pub async fn verify_library_integrity(app: AppHandle) -> Result<IntegrityResult,
 #[cfg(test)]
 mod tests {
     use crate::db::{migrations::init_db, ImageRecord};
-    use rusqlite::{params, Connection};
+    use rusqlite::{params, Connection, Transaction, TransactionBehavior};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            mpsc, Arc,
+        },
+        thread,
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    };
+
+    const TEST_COLLECTION_CACHE_WRITER_HOLD: Duration = Duration::from_millis(250);
 
     fn create_image_record(
         id: &str,
@@ -3027,6 +3166,244 @@ mod tests {
             conn.execute_batch(&migration.sql)
                 .expect("apply migrations");
         }
+    }
+
+    struct TemporaryDatabase {
+        root: PathBuf,
+    }
+
+    impl Drop for TemporaryDatabase {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn migrated_file_database(test_name: &str) -> (TemporaryDatabase, PathBuf) {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "ambit-image-command-lock-{test_name}-{}-{timestamp}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&root).expect("temporary database directory");
+        let path = root.join("ambit.db");
+        let conn = Connection::open(&path).expect("open temporary database");
+        crate::db::configure_connection(&conn).expect("configure temporary database");
+        apply_all_migrations(&conn);
+        drop(conn);
+
+        (TemporaryDatabase { root }, path)
+    }
+
+    fn start_collection_cache_writer(db_path: &Path) -> (Arc<AtomicBool>, thread::JoinHandle<()>) {
+        let db_path = db_path.to_owned();
+        let writer_active = Arc::new(AtomicBool::new(false));
+        let worker_active = Arc::clone(&writer_active);
+        let (ready, locked) = mpsc::sync_channel(0);
+        let writer = thread::spawn(move || {
+            let conn = Connection::open(&db_path).expect("open competing writer");
+            crate::db::configure_connection(&conn).expect("configure competing writer");
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .expect("start competing writer transaction");
+            conn.execute(
+                "UPDATE collections
+                 SET dynamic_thumbnail_path = 'writer.webp', dynamic_count = 42
+                 WHERE id = 'cache-target'",
+                [],
+            )
+            .expect("write collection cache fields");
+            worker_active.store(true, Ordering::SeqCst);
+            ready.send(()).expect("signal competing writer lock");
+            thread::sleep(TEST_COLLECTION_CACHE_WRITER_HOLD);
+            conn.execute_batch("COMMIT")
+                .expect("commit competing writer transaction");
+            worker_active.store(false, Ordering::SeqCst);
+        });
+        locked
+            .recv_timeout(Duration::from_secs(1))
+            .expect("competing writer acquired its lock");
+        (writer_active, writer)
+    }
+
+    fn seed_collection_cache_target(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO collections (id, name, created_at, dynamic_thumbnail_path, dynamic_count)
+             VALUES ('cache-target', 'Cache target', 1, 'before.webp', 1)",
+            [],
+        )
+        .expect("seed collection cache target");
+    }
+
+    fn connection_busy_timeout_ms(conn: &Connection) -> u64 {
+        conn.query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .expect("read busy timeout")
+    }
+
+    #[test]
+    fn immediate_owner_preparation_exhausts_an_injected_short_lock_budget() {
+        let (_temporary_database, db_path) = migrated_file_database("lock-budget-exhaustion");
+        let seed_conn = Connection::open(&db_path).expect("open seed connection");
+        seed_collection_cache_target(&seed_conn);
+        drop(seed_conn);
+
+        let conn = Connection::open(&db_path).expect("open owner preparation connection");
+        crate::db::configure_connection(&conn).expect("configure owner preparation connection");
+        let (writer_active, writer) = start_collection_cache_writer(&db_path);
+        assert!(
+            writer_active.load(Ordering::SeqCst),
+            "the competing writer must remain active at transaction entry"
+        );
+        let started = Instant::now();
+        let result = super::begin_owner_preparation_transaction_with_timeout(
+            &conn,
+            super::OWNER_SCOPE_REFRESH_OPERATION,
+            Duration::from_millis(20),
+        );
+        let elapsed = started.elapsed();
+        writer.join().expect("competing writer completed");
+
+        assert!(
+            result.is_err(),
+            "a writer that outlasts the test budget must fail entry"
+        );
+        assert!(
+            elapsed < TEST_COLLECTION_CACHE_WRITER_HOLD,
+            "the injected timeout must bound entry waiting, elapsed: {elapsed:?}"
+        );
+        assert_eq!(
+            connection_busy_timeout_ms(&conn),
+            60_000,
+            "the scoped entry timeout must restore the configured connection timeout"
+        );
+    }
+
+    #[test]
+    fn immediate_owner_preparation_does_not_retry_non_lock_entry_errors() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.busy_timeout(Duration::from_millis(321))
+            .expect("configure test timeout");
+        let outer = Transaction::new_unchecked(&conn, TransactionBehavior::Immediate)
+            .expect("start outer transaction");
+
+        let result = super::begin_owner_preparation_transaction_with_timeout(
+            &conn,
+            super::OWNER_SCOPE_REFRESH_OPERATION,
+            Duration::from_millis(20),
+        );
+
+        assert!(
+            result.is_err(),
+            "nested transaction entry must fail without retrying"
+        );
+        drop(outer);
+        assert_eq!(connection_busy_timeout_ms(&conn), 321);
+    }
+
+    #[test]
+    fn uncommitted_immediate_owner_preparation_rolls_back_before_timeout_restoration() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        seed_collection_cache_target(&conn);
+        conn.busy_timeout(Duration::from_millis(321))
+            .expect("configure test timeout");
+
+        let (timeout, transaction) = super::begin_owner_preparation_transaction_with_timeout(
+            &conn,
+            super::OWNER_SCOPE_REFRESH_OPERATION,
+            Duration::from_millis(20),
+        )
+        .expect("begin immediate transaction");
+        transaction
+            .execute(
+                "UPDATE collections SET dynamic_count = 99 WHERE id = 'cache-target'",
+                [],
+            )
+            .expect("write inside transaction");
+        drop(transaction);
+        drop(timeout);
+
+        let dynamic_count: i64 = conn
+            .query_row(
+                "SELECT dynamic_count FROM collections WHERE id = 'cache-target'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read rolled back collection cache");
+        assert_eq!(dynamic_count, 1);
+        assert_eq!(connection_busy_timeout_ms(&conn), 321);
+    }
+
+    #[test]
+    fn owner_scope_refresh_completes_after_a_brief_collection_cache_writer() {
+        let (_temporary_database, db_path) = migrated_file_database("owner-scope-refresh");
+        let seed_conn = Connection::open(&db_path).expect("open seed connection");
+        seed_collection_cache_target(&seed_conn);
+        drop(seed_conn);
+
+        let conn = Connection::open(&db_path).expect("open owner scope connection");
+        crate::db::configure_connection(&conn).expect("configure owner scope connection");
+        let (writer_active, writer) = start_collection_cache_writer(&db_path);
+        assert!(
+            writer_active.load(Ordering::SeqCst),
+            "the competing writer must remain active at owner scope entry"
+        );
+        let result = super::refresh_invoke_owner_scope_inner(
+            &conn,
+            &super::InvokeOwnerScopeInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                images_root: "C:/Invoke".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("owner-a".to_string()),
+                force_refresh: false,
+            },
+        );
+        writer.join().expect("competing writer completed");
+
+        assert!(
+            result.is_ok(),
+            "owner scope preparation must recover after a short collection cache write: {result:?}"
+        );
+    }
+
+    #[test]
+    fn board_snapshot_reconciliation_completes_after_a_brief_collection_cache_writer() {
+        let (_temporary_database, db_path) = migrated_file_database("board-snapshot");
+        let seed_conn = Connection::open(&db_path).expect("open seed connection");
+        seed_collection_cache_target(&seed_conn);
+        drop(seed_conn);
+
+        let conn = Connection::open(&db_path).expect("open board reconciliation connection");
+        crate::db::configure_connection(&conn).expect("configure board reconciliation connection");
+        let (writer_active, writer) = start_collection_cache_writer(&db_path);
+        assert!(
+            writer_active.load(Ordering::SeqCst),
+            "the competing writer must remain active at board reconciliation entry"
+        );
+        let result = super::reconcile_invoke_board_snapshot_inner(
+            &conn,
+            &super::InvokeBoardSnapshotInput {
+                db_path: "C:/Invoke/databases/invokeai.db".to_string(),
+                mode: super::InvokeOwnerScopeMode::Owner,
+                owner_id: Some("owner-a".to_string()),
+                boards: vec![super::InvokeBoardSnapshotBoard {
+                    id: "owner-board".to_string(),
+                    name: "Owner board".to_string(),
+                    created_at: 1,
+                    owner_id: Some("owner-a".to_string()),
+                }],
+                memberships: Vec::new(),
+                reconcile_memberships: true,
+                delete_missing_collections: false,
+            },
+        );
+        writer.join().expect("competing writer completed");
+
+        assert!(
+            result.is_ok(),
+            "board snapshot preparation must recover after a short collection cache write: {result:?}"
+        );
     }
 
     #[test]
@@ -4089,6 +4466,84 @@ mod tests {
             )
             .expect("visible newly synced image");
         assert_eq!(visible_count, 1);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn owner_scope_normalizes_only_different_source_aliases_on_repeated_startup() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        let canonical = "C:/Invoke/databases/invokeai.db";
+        conn.execute(
+            "INSERT INTO invoke_owner_scope_state (
+                 state_key, db_path, images_root, scope_mode, boards_verified, updated_at
+             ) VALUES ('current', ?1, 'C:/Invoke', 'all', 1, 1)",
+            [canonical],
+        )
+        .expect("current canonical scope");
+        let fixtures = [
+            ("canonical", Some(canonical)),
+            ("case-alias", Some("c:/invoke/databases/invokeai.db")),
+            ("slash-alias", Some("C:\\Invoke\\databases\\invokeai.db\\")),
+            ("unrelated", Some("C:/Other/databases/invokeai.db")),
+            ("local", None),
+        ];
+        conn.execute_batch("CREATE TABLE normalization_audit (table_name TEXT, id TEXT);")
+            .expect("normalization audit");
+        for table in ["images", "removed_images", "collections"] {
+            for (id, source) in fixtures {
+                let sql = match table {
+                    "collections" => "INSERT INTO collections (id, name, source, invoke_source_id)
+                                      VALUES (?1, ?1, CASE WHEN ?2 IS NULL THEN 'ambit' ELSE 'invoke' END, ?2)",
+                    "removed_images" => "INSERT INTO removed_images (id, path, timestamp, removed_at, invoke_source_id)
+                                         VALUES (?1, 'C:/Library/' || ?1 || '.png', 1, 2, ?2)",
+                    _ => "INSERT INTO images (id, path, timestamp, invoke_source_id)
+                          VALUES (?1, 'C:/Library/' || ?1 || '.png', 1, ?2)",
+                };
+                conn.execute(sql, params![id, source])
+                    .expect("source fixture");
+            }
+            conn.execute_batch(&format!(
+                "CREATE TRIGGER audit_{table}_normalization AFTER UPDATE OF invoke_source_id ON {table}
+                 BEGIN INSERT INTO normalization_audit VALUES ('{table}', NEW.id); END;"
+            )).expect("observe actual source updates");
+        }
+        let input = super::InvokeOwnerScopeInput {
+            db_path: canonical.into(),
+            images_root: "C:/Invoke".into(),
+            mode: super::InvokeOwnerScopeMode::All,
+            owner_id: None,
+            force_refresh: false,
+        };
+        for _ in 0..2 {
+            super::refresh_invoke_owner_scope_inner(&conn, &input)
+                .expect("repeat owner preparation");
+        }
+        for table in ["images", "removed_images", "collections"] {
+            let updates: Vec<String> = conn
+                .prepare("SELECT id FROM normalization_audit WHERE table_name = ?1 ORDER BY id")
+                .expect("audit query")
+                .query_map([table], |row| row.get(0))
+                .expect("audit rows")
+                .collect::<Result<_, _>>()
+                .expect("audit results");
+            assert_eq!(updates, ["case-alias", "slash-alias"],
+                "{table}: canonical rows must not be rewritten and each alias needs only one update");
+            for (id, original) in fixtures {
+                let source: Option<String> = conn
+                    .query_row(
+                        &format!("SELECT invoke_source_id FROM {table} WHERE id = ?1"),
+                        [id],
+                        |row| row.get(0),
+                    )
+                    .expect("retained source identity");
+                let expected = match id {
+                    "case-alias" | "slash-alias" => Some(canonical),
+                    _ => original,
+                };
+                assert_eq!(source.as_deref(), expected, "{table}/{id}");
+            }
+        }
     }
 
     #[cfg(windows)]

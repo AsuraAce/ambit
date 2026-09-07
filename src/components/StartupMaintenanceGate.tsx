@@ -4,6 +4,7 @@ import { getDb, type StartupDbPhase } from '../services/db/connection';
 import { isBrowserMockMode } from '../services/runtime';
 import { useDelayedBusyPresentation } from '../hooks/useDelayedBusyPresentation';
 import { StartupPreparationCard } from './ui/StartupPreparationCard';
+import { measureStartupPhase } from '../utils/startupDiagnostics';
 
 interface StartupMaintenanceGateProps {
     children: React.ReactNode;
@@ -43,11 +44,11 @@ export const StartupMaintenanceGate: React.FC<StartupMaintenanceGateProps> = ({ 
         const prepareDatabase = async () => {
             try {
                 setPhase('Preparing library database');
-                await getDb({
+                await measureStartupPhase('database', () => getDb({
                     onPhase: (nextPhase) => {
                         if (isMounted) setPhase(nextPhase);
                     }
-                });
+                }));
                 if (isMounted) {
                     setIsReady(true);
                 }

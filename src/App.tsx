@@ -15,6 +15,7 @@ import { useToast } from './hooks/useToast';
 import { useSearch } from './contexts/SearchContext';
 import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
+import { getCollectionCount } from './utils/collectionCount';
 import { useLibraryStore } from './stores/libraryStore';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
@@ -47,6 +48,9 @@ import { INVOKE_REFERENCE_QUERY_KEY } from './services/db/invokeReferenceRepo';
 import type { ActiveImageStateAdapter } from './hooks/activeImageState';
 import { getEffectiveMaskedKeywords, isImageMasked } from './utils/maskingUtils';
 import { useLibraryModelOptions } from './features/viewer/hooks/useLibraryModelOptions';
+import { startupDiagnostics } from './utils/startupDiagnostics';
+import { commands } from './bindings';
+import { isTauriRuntime } from './services/runtime';
 
 const ImageViewer = React.lazy(() => import('./features/viewer/components/ImageViewer').then(module => ({ default: module.ImageViewer })));
 const VideoViewer = React.lazy(() => import('./features/viewer/components/VideoViewer').then(module => ({ default: module.VideoViewer })));
@@ -57,7 +61,7 @@ const STARTUP_PREPARATION_MIN_VISIBLE_MS = 500;
 interface RetainedLibraryPresentation {
     images: AIImage[];
     totalImages: number;
-    scopeTotal: number;
+    scopeTotal: number | null;
     scopeName: string;
     availableTags: string[];
     activeCollection: Collection | null;
@@ -67,8 +71,10 @@ interface RetainedLibraryPresentation {
 const dismissStaticLoader = (immediate = false) => {
     const loader = document.getElementById('static-loading');
     if (!loader || loader.dataset.ambitDismissed === 'true') return;
+    if (loader.dataset.ambitFatal === 'true') return;
 
     loader.dataset.ambitDismissed = 'true';
+    startupDiagnostics.mark('splash');
     loader.style.pointerEvents = 'none';
 
     if (immediate) {
@@ -79,6 +85,7 @@ const dismissStaticLoader = (immediate = false) => {
     loader.style.opacity = '0';
 
     window.setTimeout(() => {
+        if (loader.dataset.ambitFatal === 'true') return;
         loader.remove();
     }, 500);
 };
@@ -123,6 +130,7 @@ export default function App() {
     const flushSettings = useSettingsStore(s => s.flushSettings);
 
     const isCollectionsLoaded = useCollectionStore(s => s.isLoaded);
+    const setOrdinaryCountsReady = useCollectionStore(s => s.setOrdinaryCountsReady);
     const allCollections = useCollectionStore(s => s.collections);
     const collections = React.useMemo(() => allCollections.filter(c => !c.filters), [allCollections]);
     const smartCollections = React.useMemo(() => allCollections.filter(c => !!c.filters) as SmartCollection[], [allCollections]);
@@ -134,7 +142,7 @@ export default function App() {
         filters, setFilters,
         sortOption, setSortOption,
         totalImages, globalTotal,
-        isFiltering, privacyExposureBlocked,
+        isFiltering, privacyExposureBlocked, isLibraryReady,
         toggleFavorite,
         clearAllFilters,
         recentSearches, setRecentSearches,
@@ -257,12 +265,6 @@ export default function App() {
         autoCheckEnabled: settings.autoCheckForUpdates !== false,
         isSettingsLoaded,
     });
-
-    // --- Background Processes ---
-    // Initialize background thumbnail auto-healing (runs after app startup delay)
-    useThumbnailQueue(addToast);
-    // Initialize background metadata refresh (runs after app startup delay)
-    useMetadataRefresh();
 
     // --- UI Logic Hooks ---
     const { toggleTheme } = useTheme(settings.theme, setSettings);
@@ -403,6 +405,26 @@ export default function App() {
     const shouldRenderInvokeOwnerScopeGate = isInvokeOwnerScopeBlocking
         && (!isInvokeOwnerScopeBusy || !isInitialStartupPresentation)
         && (!isRuntimeOwnerScopeTransition || isRuntimeOwnerScopeGateVisible);
+    // Optional maintenance must never race owner/privacy preparation or its first safe page.
+    const backgroundStartupReady = isLoaded && isLibraryReady
+        && !isInitialStartupPresentation && !isInvokeOwnerScopeBlocking
+        && !isRuntimeOwnerScopeTransition && !privacyExposureBlocked;
+    useThumbnailQueue(addToast, backgroundStartupReady);
+    useMetadataRefresh(backgroundStartupReady);
+    useEffect(() => {
+        if (!backgroundStartupReady) return;
+        if (document.getElementById('static-loading')?.dataset.ambitFatal === 'true') return;
+        startupDiagnostics.mark('ready');
+        if (isTauriRuntime()) {
+            void commands.completeStartup().catch(() => {
+                console.warn('[Startup] Could not notify automatic backup that startup is ready.');
+            });
+        }
+    }, [backgroundStartupReady]);
+    useEffect(() => {
+        setOrdinaryCountsReady(backgroundStartupReady && document.getElementById('static-loading')?.dataset.ambitFatal !== 'true');
+        return () => setOrdinaryCountsReady(false);
+    }, [backgroundStartupReady, setOrdinaryCountsReady]);
     const handleInvokeOwnerSelection = useCallback(async (selection: InvokeOwnerSelection) => {
         await selectInvokeOwnerScope(selection);
     }, [selectInvokeOwnerScope]);
@@ -611,8 +633,9 @@ export default function App() {
         ? (smartCollections.find(c => c.id === filters.collectionId) ?? null)
         : null;
     const scopeName = activeCollection ? activeCollection.name : (activeSmartCollection ? activeSmartCollection.name : "Library");
-    const scopeTotal = Math.max(
-        activeCollection ? (activeCollection.count ?? activeCollection.imageIds.length) :
+    const activeCollectionCount = activeCollection ? getCollectionCount(activeCollection) : undefined;
+    const scopeTotal = activeCollection && activeCollectionCount === undefined ? null : Math.max(
+        activeCollection ? activeCollectionCount! :
             (activeSmartCollection ? totalImages : globalTotal),
         totalImages
     );
@@ -875,7 +898,9 @@ export default function App() {
     // an actionable owner state, explicit runtime switch, or sustained privacy
     // preparation replaces it.
     useEffect(() => {
-        if (!isLoaded || !isInitialStartupPresentation) return;
+        if (!isSettingsLoaded || !isInitialStartupPresentation) return;
+        if (!isCollectionsLoaded && !shouldRenderInvokeOwnerScopeGate) return;
+        if (document.getElementById('static-loading')?.dataset.ambitFatal === 'true') return;
         if (isInvokeOwnerScopeBusy) return;
         if (isInitialPrivacyProtectionBusy && !isInitialPrivacyPreparationVisible) return;
 
@@ -896,11 +921,14 @@ export default function App() {
         isInvokeOwnerScopeBusy,
         isInvokeOwnerScopeBlocking,
         isLoaded,
+        isSettingsLoaded,
+        isCollectionsLoaded,
+        shouldRenderInvokeOwnerScopeGate,
         privacyExposureBlocked,
         privacyMaskIndexStatus,
     ]);
 
-    if (!isLoaded) return null;
+    if (!isLoaded && !(isSettingsLoaded && shouldRenderInvokeOwnerScopeGate)) return null;
 
 
     return (
@@ -1079,7 +1107,7 @@ export default function App() {
                 onUpdateCollectionScope={colOps.updateCollectionScope}
                 onResetInvokeCollection={colOps.resetInvokeCollection}
                 onScanFolder={fileOps.handleImportFolders}
-                onInvokeSync={() => startInvokeSync({ mode: 'manual', afterTimestamp: 0 })}
+                onInvokeSync={async () => { await startInvokeSync({ mode: 'manual', afterTimestamp: 0 }); }}
                 hasPendingUpdate={Boolean(updater.update)}
                 pendingUpdateVersion={updater.update?.version ?? null}
                 updateErrorMessage={updater.errorMessage}

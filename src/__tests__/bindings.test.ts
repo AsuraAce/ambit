@@ -13,11 +13,28 @@ type CommandCase = {
     args: unknown[];
     payload?: Record<string, unknown>;
     returnsResult: boolean;
+    returnsValue?: boolean;
 };
 
 const okResult = { value: 'ok' };
 
 const commandCases: CommandCase[] = [
+    { name: 'recordStartupLifecycle', invokeName: 'record_startup_lifecycle', args: ['ab-cd', 'settings-flush-completed'], payload: { launchId: 'ab-cd', stage: 'settings-flush-completed' }, returnsResult: true },
+    { name: 'recordStartupHeartbeat', invokeName: 'record_startup_heartbeat', args: ['ab-cd'], payload: { launchId: 'ab-cd' }, returnsResult: true },
+    { name: 'getStartupLaunch', invokeName: 'get_startup_launch', args: [], returnsResult: false, returnsValue: true },
+    { name: 'completeStartup', invokeName: 'complete_startup', args: [], returnsResult: false },
+    {
+        name: 'recordStartupSqlFrontend', invokeName: 'record_startup_sql_frontend',
+        args: [{ launchId: 'ab-cd', callId: 1, label: 'gallery', durationMs: 25, status: 'completed' }],
+        payload: { report: { launchId: 'ab-cd', callId: 1, label: 'gallery', durationMs: 25, status: 'completed' } },
+        returnsResult: false,
+    },
+    {
+        name: 'recordStartupDiagnostic', invokeName: 'record_startup_diagnostic',
+        args: [{ launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null }],
+        payload: { event: { launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null } },
+        returnsResult: true,
+    },
     { name: 'saveApiKey', invokeName: 'save_api_key', args: ['key'], payload: { key: 'key' }, returnsResult: true },
     { name: 'loadApiKey', invokeName: 'load_api_key', args: [], returnsResult: true },
     { name: 'deleteApiKey', invokeName: 'delete_api_key', args: [], returnsResult: true },
@@ -259,6 +276,15 @@ const commandCases: CommandCase[] = [
 ];
 
 describe('generated Tauri bindings', () => {
+    it('carries additive repair evidence through the unchanged diagnostic command', async () => {
+        const { commands } = await import('../bindings');
+        const event = { launchId: 'ab-cd', phase: 'owner-repair-stage' as const,
+            status: 'completed' as const, elapsedMs: 25, durationMs: null, cacheAction: null,
+            repairStage: 'facts' as const };
+        invokeMock.mockResolvedValueOnce(undefined);
+        await commands.recordStartupDiagnostic(event);
+        expect(invokeMock).toHaveBeenCalledWith('record_startup_diagnostic', { event });
+    });
     beforeEach(() => {
         invokeMock.mockReset();
     });
@@ -277,6 +303,8 @@ describe('generated Tauri bindings', () => {
 
             if (testCase.returnsResult) {
                 expect(result).toEqual({ status: 'ok', data: okResult });
+            } else if (testCase.returnsValue) {
+                expect(result).toEqual(okResult);
             } else {
                 expect(result).toBeUndefined();
             }

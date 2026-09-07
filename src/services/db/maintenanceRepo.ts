@@ -12,6 +12,7 @@ import {
     updateBrowserMockImage,
 } from '../browserMockData';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
+import { startupTracedSelect } from '../../utils/startupSqlTrace';
 
 interface ImagePathRow {
     id: string;
@@ -468,7 +469,7 @@ export const getMaintenanceCounts = async () => {
 
     // Migration 80's narrow views require compact indexes even after ANALYZE.
     // Compare the indexed prompt-empty Boolean with = 1 to avoid reading prompt text.
-    const res = await db.select<MaintenanceCountRow[]>(`
+    const res = await startupTracedSelect<MaintenanceCountRow[]>(db, 'maintenance', `
         SELECT
             COUNT(*) FILTER (
                 WHERE positive_prompt_empty = 1

@@ -18,7 +18,11 @@ vi.mock('./App', () => ({ default: () => null }));
 vi.mock('./contexts/ToastContext', () => ({ ToastProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('./contexts/LibraryContext', () => ({ LibraryProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock('./components/StartupMaintenanceGate', () => ({ StartupMaintenanceGate: ({ children }: { children: React.ReactNode }) => children }));
-vi.mock('./components/ui/ErrorBoundary', () => ({ ErrorBoundary: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock('./components/StartupBoundary', () => ({ StartupBoundary: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock('./utils/startupDiagnostics', () => ({
+    startupDiagnostics: { mark: vi.fn() },
+    markReactMounted: vi.fn(),
+}));
 vi.mock('@tanstack/react-query-devtools', () => ({ ReactQueryDevtools: () => null }));
 
 describe('application bootstrap', () => {

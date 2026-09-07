@@ -77,7 +77,10 @@ vi.mock('../../services/db/collectionRepo', () => ({
     clearAllCollectionThumbnailCaches: mocks.clearAllCollectionThumbnailCaches
 }));
 vi.mock('../../stores/libraryStore', () => ({
-    useLibraryStore: { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion }) }
+    useLibraryStore: Object.assign(
+        (selector: (state: { keywordStatsEnabled: boolean }) => unknown) => selector({ keywordStatsEnabled: false }),
+        { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion }) }
+    )
 }));
 vi.mock('../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: { refreshSmartCounts: typeof mocks.refreshSmartCounts }) => unknown) =>
@@ -216,6 +219,36 @@ describe('SearchProvider', () => {
     });
 
     afterEach(() => vi.useRealTimers());
+
+    it('admits background work only after a successful current safe page, including an empty library', async () => {
+        const view = renderProvider();
+        expect(latest.isLibraryReady).toBe(false);
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), status: 'error' };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.isLibraryReady).toBe(false);
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] },
+            status: 'success',
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.isLibraryReady).toBe(true);
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isPlaceholderData: true };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        // Normal filtering must retain the existing foreground-query throttle, not cancel maintenance.
+        expect(latest.isLibraryReady).toBe(true);
+        mocks.imagesQuery.current = { ...(mocks.imagesQuery.current as object), isPlaceholderData: false, status: 'error' };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.isLibraryReady).toBe(true);
+        mocks.imagesQuery.current = {
+            ...(mocks.imagesQuery.current as object),
+            queryKey: ['images', baseFilters, 'date_desc', false, 'blur', [], null, 'invoke:different-owner'],
+            isPlaceholderData: true,
+        };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.isLibraryReady).toBe(false);
+        await act(async () => { await Promise.resolve(); });
+    });
 
     it('requires consumers to be rendered within the provider', () => {
         expect(() => render(<Consumer />)).toThrow('useSearch must be used within SearchProvider');
@@ -775,6 +808,7 @@ describe('SearchProvider', () => {
         expect(latest.images).toEqual([]);
         expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
         view.unmount();
+        expect(latest.isLibraryReady).toBe(false);
         await act(async () => resolveRefresh?.({ changed: false, updated: 0 }));
     });
 

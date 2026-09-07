@@ -9,6 +9,12 @@ repository = "https://github.com/AsuraAce/ambit"
 edition = "2021"
 rust-version = "1.88.0"
 
+[features]
+startup-sql-trace = ["tauri-plugin-sql/ambit-startup-trace"]
+
+[patch.crates-io]
+tauri-plugin-sql = { path = "vendor/tauri-plugin-sql" }
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -31,11 +37,12 @@ webp = "0.3"
 base64 = "0.22"
 rayon = "1.12"
 flate2 = "1.1.5"
-tauri-plugin-sql = { version = "2.4.0", features = ["sqlite"] }
+tauri-plugin-sql = { version = "=2.4.0", features = ["sqlite"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 notify = { version = "8.2.0", features = ["serde"] }
 regex = "1.12.2"
 tokio = { version = "1", features = ["sync", "time"] }
+uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "native-tls", "http2"] }
 thiserror = "2"
 specta = "=2.0.0-rc.22"
@@ -55,3 +62,11 @@ tauri-plugin-updater = "2"
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+windows-core = "=0.61.2"
+
+[dev-dependencies]
+tauri = { version = "2.11.2", features = ["test"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }

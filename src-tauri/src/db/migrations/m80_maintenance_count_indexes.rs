@@ -52,7 +52,7 @@ mod tests {
     // Exercise the actual frontend statement with the bundled desktop SQLite engine.
     fn count_sql() -> &'static str {
         include_str!("../../../../src/services/db/maintenanceRepo.ts")
-            .split("const res = await db.select<MaintenanceCountRow[]>(`")
+            .split("startupTracedSelect<MaintenanceCountRow[]>(db, 'maintenance', `")
             .nth(1)
             .expect("maintenance query")
             .split("`);")
