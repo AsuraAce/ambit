@@ -134,11 +134,6 @@ fn queries() -> ProbeResult<[String; 4]> {
     ])
 }
 
-#[cfg(feature = "startup-sql-trace")]
-pub(super) fn generated_trace_queries() -> [String; 4] {
-    queries().expect("unchanged shipping count query definitions")
-}
-
 fn reject_redirection(path: &Path) -> ProbeResult<()> {
     for ancestor in path.ancestors() {
         let metadata = std::fs::symlink_metadata(ancestor).map_err(|_| Failure::InvalidTarget)?;

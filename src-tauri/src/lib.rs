@@ -1,6 +1,3 @@
-#[cfg(all(feature = "startup-sql-trace", not(debug_assertions)))]
-compile_error!("startup-sql-trace is restricted to debug regular-dev diagnostics");
-
 mod app_data_migration;
 mod comfy_support_replay;
 mod db;
@@ -11,7 +8,6 @@ mod scanner;
 mod security;
 mod startup;
 mod startup_log;
-mod startup_sql_trace;
 #[cfg(windows)]
 mod startup_webview;
 mod thumb;
@@ -107,7 +103,6 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             startup::record_startup_heartbeat,
             startup::record_startup_lifecycle,
             startup::get_startup_launch,
-            startup::record_startup_sql_frontend,
             startup::complete_startup,
             // scanner commands
             scanner::scan_image,
@@ -177,23 +172,7 @@ pub fn run() {
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
-    #[cfg(feature = "startup-sql-trace")]
-    if active_identifier != "com.ambit.dev" {
-        eprintln!("SQL tracing requires the existing regular-dev configuration; startup stopped.");
-        return;
-    }
     let startup_journal = startup_log::install(process_started, &active_identifier);
-    #[cfg(feature = "startup-sql-trace")]
-    let sql_trace = {
-        let collector = tauri_plugin_sql::startup_trace::Collector::new(
-            startup_journal.launch_id.clone(),
-            db::main_database_migration_urls(),
-            process_started,
-        );
-        startup_journal.install_sql_trace(collector.clone());
-        collector
-    };
-
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {
         app_data_migration::migrate_legacy_identifier_data();
@@ -223,8 +202,6 @@ pub fn run() {
         .fold(tauri_plugin_sql::Builder::default(), |builder, db_url| {
             builder.add_migrations(&db_url, db::migrations::init_db())
         });
-    #[cfg(feature = "startup-sql-trace")]
-    let sql_builder = sql_builder.startup_trace(sql_trace);
 
     let log_level = std::env::var("RUST_LOG")
         .unwrap_or_else(|_| "info".to_string())

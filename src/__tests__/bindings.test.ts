@@ -24,12 +24,6 @@ const commandCases: CommandCase[] = [
     { name: 'getStartupLaunch', invokeName: 'get_startup_launch', args: [], returnsResult: false, returnsValue: true },
     { name: 'completeStartup', invokeName: 'complete_startup', args: [], returnsResult: false },
     {
-        name: 'recordStartupSqlFrontend', invokeName: 'record_startup_sql_frontend',
-        args: [{ launchId: 'ab-cd', callId: 1, label: 'gallery', durationMs: 25, status: 'completed' }],
-        payload: { report: { launchId: 'ab-cd', callId: 1, label: 'gallery', durationMs: 25, status: 'completed' } },
-        returnsResult: false,
-    },
-    {
         name: 'recordStartupDiagnostic', invokeName: 'record_startup_diagnostic',
         args: [{ launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null }],
         payload: { event: { launchId: 'ab-cd', phase: 'ready', status: 'completed', elapsedMs: 25, durationMs: null, cacheAction: null } },

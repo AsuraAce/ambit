@@ -461,12 +461,6 @@ async recordStartupLifecycle(launchId: string, stage: StartupLifecycleStage) : P
 async getStartupLaunch() : Promise<StartupLaunch> {
     return await TAURI_INVOKE("get_startup_launch");
 },
-/**
- * Best effort only: reporting never authorizes another SQL operation.
- */
-async recordStartupSqlFrontend(report: StartupSqlFrontend) : Promise<void> {
-    await TAURI_INVOKE("record_startup_sql_frontend", { report });
-},
 async completeStartup() : Promise<void> {
     await TAURI_INVOKE("complete_startup");
 },
@@ -956,7 +950,7 @@ export type StartupCacheAction = "restored" | "selective" | "full"
 export type StartupDatabaseRole = "ambit" | "invoke-source" | "mixed"
 export type StartupDiagnosticEvent = { launchId: string; phase: StartupPhase; status: StartupPhaseStatus; elapsedMs: number; durationMs: number | null; cacheAction: StartupCacheAction | null; databaseRole?: StartupDatabaseRole | null; attempt?: number | null; failureKind?: StartupFailureKind | null; repairDecision?: StartupRepairDecision | null; repairStage?: StartupRepairStage | null; repairReport?: StartupRepairReport | null }
 export type StartupFailureKind = "script-load" | "uncaught-error" | "unhandled-rejection" | "render-error" | "database-busy" | "database-locked" | "other"
-export type StartupLaunch = { launchId: string; processElapsedMs: number; sqlTraceEnabled: boolean }
+export type StartupLaunch = { launchId: string; processElapsedMs: number }
 export type StartupLifecycleStage = "close-requested" | "settings-drain-started" | "settings-drain-completed" | "settings-drain-failed" | "settings-flush-started" | "settings-flush-completed" | "settings-flush-failed" | "exit-invoked" | "exit-failed"
 export type StartupPhase = "frontend-entry" | "react-mount" | "startup-failure" | "renderer-stall" | "maintenance-counts" | "invoke-catch-up" | "database" | "database-schema" | "database-optimization" | "database-pragmas" | "database-indexes" | "owner-discovery" | "owner-source-open" | "owner-source-schema" | "owner-source-images" | "owner-source-boards" | "owner-fingerprint" | "owner-source-repair" | "owner-board-read" | "owner-board-write" | "owner-visibility" | "owner-board-verification" | "owner-preparation" | "owner-cache" | "facets" | "collections" | "collection-rows" | "collection-counts" | "privacy" | "first-page" | "gallery-rows" | "gallery-count" | "gallery-global-count" | "statistics-media" | "statistics-steps" | "statistics-models" | "facet-counts" | "splash" | "ready" | "thumbnail-maintenance" | "metadata-maintenance" | "owner-repair-decision" | "owner-repair-stage" | "owner-repair-report"
 export type StartupPhaseStatus = "started" | "completed" | "failed" | "cancelled"
@@ -973,9 +967,6 @@ export type StartupRepairSnapshot = "missing" | "compatible" | "incompatible"
 export type StartupRepairStage = "setup" | "identity" | "legacy-paths" | "inventory" | "facts"
 export type StartupRepairStatus = "completed" | "failed" | "cancelled"
 export type StartupRepairTimestampComparison = "unavailable" | "saved-absent" | "current-absent" | "decreased" | "equal" | "increased"
-export type StartupSqlFrontend = { launchId: string; callId: number; label: StartupSqlLabel; durationMs: number; status: StartupSqlStatus }
-export type StartupSqlLabel = "collection" | "maintenance" | "gallery" | "global-gallery"
-export type StartupSqlStatus = "completed" | "failed"
 export type ThumbnailOptimizationComplete = ThumbnailOptimizationResult
 export type ThumbnailOptimizationConfig = { thumbnailDir: string; includeUpgradeable: boolean; profile: ThumbnailOptimizationProfile; sourceRoots?: string[] }
 export type ThumbnailOptimizationFailure = { id: string; path: string; thumbnailPath: string | null; failureCount: number; lastError: string | null; lastAttemptAt: number | null }

@@ -23,7 +23,6 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app:dev": "tauri dev --config src-tauri/tauri.dev.json",
-    "app:dev:sql-trace": "node scripts/startup-sql-trace.mjs",
     "app:video-smoke": "tauri dev --config src-tauri/tauri.video-smoke.json",
     "app:build": "corepack pnpm run verify:release && tauri build --ci --bundles nsis msi",
     "app:build:no-bundle": "corepack pnpm run verify:release",
