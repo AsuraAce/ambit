@@ -24,6 +24,7 @@ Ambit is a local-first desktop app for organizing large AI-generated image libra
 ## Key Features
 
 *   **Local library management**: Catalog image folders without moving your source files, then review, remove, recover, and maintain records from one desktop workspace.
+*   **Video library support**: Import supported local videos individually or through monitored folders, browse static posters, inspect ComfyUI metadata, and play or export originals. Playback depends on the Windows media runtime.
 *   **Generation-aware metadata**: Parse prompts, workflows, resources, dimensions, hashes, and model references from common AI image outputs.
 *   **Fast search and filtering**: Use SQLite-backed queries, facets, collections, and saved search state to stay responsive across large libraries.
 *   **Performance-focused browsing**: Virtualized grids, thumbnail handling, and minimized IPC keep day-to-day browsing usable as collections grow.

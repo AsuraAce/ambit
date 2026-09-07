@@ -66,7 +66,7 @@ Open Settings > Connections > ComfyUI.
 
 Select the `output` folder where ComfyUI saves generated images, then use Link Output Folder. Ambit adds that folder as an active monitored image folder tagged for ComfyUI output. If the folder is already monitored, Ambit reports that instead of adding a duplicate.
 
-After linking, scans and rescans behave like other monitored image folders.
+After linking, scans and rescans behave like other monitored folders and also admit supported video files. Live Watch tracks media and matching video workflow-sidecar changes. InvokeAI database synchronization remains an image integration.
 
 ## SD WebUI, A1111, Forge, SD.Next, And Anapnoe
 
