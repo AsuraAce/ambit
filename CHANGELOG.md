@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.3](https://github.com/AsuraAce/ambit/compare/v0.13.2...v0.13.3) (2026-09-07)
+
+
+### Performance Improvements
+
+* **startup:** open the safe gallery before collection counts finish ([#317](https://github.com/AsuraAce/ambit/issues/317)) ([cf10378](https://github.com/AsuraAce/ambit/commit/cf10378522019a1ede0c31322f0c96e3cdbf3b8b))
+
 ## [0.13.2](https://github.com/AsuraAce/ambit/compare/v0.13.1...v0.13.2) (2026-09-06)
 
 
