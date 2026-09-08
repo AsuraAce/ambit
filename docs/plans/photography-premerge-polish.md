@@ -1,6 +1,6 @@
 # Photography pre-merge reliability and UI polish
 
-Status: Active — implementation verified; owner QA acceptance pending
+Status: Complete — implementation verified and owner QA accepted; not merged to main
 Approved: 2026-09-08
 
 ## Outcome and boundaries
@@ -35,9 +35,9 @@ No main merge, release publication, QA reset, or source-photo modification.
    controls. Normal row: search/AI, scope, Import/Watch, Sort, View, compact count.
    Workspace below 900 px: Import/Watch in overflow, retaining watch indicator;
    below 700 px: Sort also in overflow. No permanent second row.
-5. **Integration acceptance (in progress):** independent parser/refresh and combined
+5. **Integration acceptance (complete):** independent parser/refresh and combined
    reviews are clean after remediation. Full frontend coverage and Rust suites
-   pass, including release-profile desktop compilation. Owner QA acceptance remains.
+   pass, including release-profile desktop compilation. Owner QA accepted on 2026-09-08.
 
 ## Interfaces and compatibility
 
@@ -79,7 +79,7 @@ No main merge, release publication, QA reset, or source-photo modification.
   pre-hydration selection, saved preference recovery, and cross-viewer changes.
 - VIS-1 (closed): constrain search wrapper so scope stays beside search at wide
   widths; empty metadata card remains top-flow content with centered copy.
-- VIEW-2 (owner retest pending): photo metadata no longer renders the empty card
+- VIEW-2 (closed): photo metadata no longer renders the empty card
   while its full record is loading. Null/failed requests settle, and superseded
   callbacks cannot clear the next image's loading state. Targeted viewer tests
   pass (28); independent closure and the complete release recheck pass.
@@ -102,12 +102,13 @@ No main merge, release publication, QA reset, or source-photo modification.
   and reports unavailable playback; tab/scope behavior was verified, not playback.
 - Read-only QA baseline: 618 scoped records, 3 Photos, 6 missing, no manual kinds
   or collections/memberships; integrity and foreign-key checks pass. No reset,
-  legacy marking, or source-photo changes. Owner desktop smoke remains required.
+  legacy marking, or source-photo changes. Owner desktop smoke is accepted.
 - Isolated Ambit (QA) launched successfully on 2026-09-08 using its existing QA
   frontend and `--no-watch`; no profile reset or automatic main merge. Owner was
   asked to verify Metadata persistence and Photos → All media → Images restoration.
 - Owner confirmed persistence, then reported a brief metadata-content flash.
-  VIEW-2 addresses premature empty-state rendering; owner retest is outstanding.
+  VIEW-2 addresses premature empty-state rendering; owner confirmed the fix works
+  on 2026-09-08. Implementation checkpoint: `3e6855c1`. No main merge or release.
 - Post-launch read-only QA comparison matches baseline counts, organization,
   manual-note state and migrations; SQLite integrity remains clean.
 - Release gate environment: nested `pnpm` initially selected a global v12 shim.
