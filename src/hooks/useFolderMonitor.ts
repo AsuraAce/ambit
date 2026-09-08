@@ -4,6 +4,7 @@ import { useSettingsStore } from '../stores/settingsStore';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { refreshStartupFacetCache } from '../utils/startupFacetRefresh';
+import { startupDiagnostics } from '../utils/startupDiagnostics';
 import {
     createEmptyTouchedFacetResources,
     mergeTouchedFacetResources,
@@ -16,6 +17,7 @@ import { isImportSourceCancelled, isImportSourceCompleted } from '../utils/impor
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
 import type { ImportProgressCallback, ImportResult } from '../services/importService';
+import type { InvokeSyncOutcome } from '../contexts/SyncContext';
 
 interface ImportOptions {
     mode?: ImportMode;
@@ -31,6 +33,8 @@ interface FolderScanOptions {
     mode?: ImportMode;
 }
 
+type InvokeSyncOutcomeStatus = InvokeSyncOutcome['status'] | 'rejected' | 'not-reported';
+
 interface UseFolderMonitorProps {
     isLoaded: boolean;
     monitoredFolders: MonitoredFolder[];
@@ -39,7 +43,7 @@ interface UseFolderMonitorProps {
     addToast: (msg: string, type: 'info' | 'success' | 'error') => void;
     refreshMetadata: () => Promise<void>;
     invokeAiPath?: string;
-    startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<void>;
+    startInvokeSync?: (options?: { mode?: 'startup' }) => Promise<InvokeSyncOutcome | void>;
 }
 
 const isCompleteImport = (result: ImportResult | void): boolean =>
@@ -262,18 +266,38 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
 
                 // Unconditionally catch up InvokeAI DB if configured
                 // Fires synchronously at the end as part of startup catchup sequence
-                if (invokeAiPath && startInvokeSync) {
-                    const invokeStartedAt = Date.now();
+                  if (invokeAiPath && startInvokeSync) {
+                      const invokeStartedAt = Date.now();
+                      const finishInvokeCatchUp = startupDiagnostics.start('invoke-catch-up');
+                    let invokeStatus: InvokeSyncOutcomeStatus = 'not-reported';
+                    let invokeSuccessful = false;
                     console.log('[FolderMonitor] Triggering startup catch-up sync for InvokeAI DB...');
-                    await startInvokeSync({ mode: 'startup' }).catch(e => console.error("Startup Invoke sync failed", e));
-                    console.info('[Startup Catch-up] Invoke phase complete.', {
-                        durationMs: Date.now() - invokeStartedAt
-                    });
+                    try {
+                        const outcome = await startInvokeSync({ mode: 'startup' });
+                        if (outcome) {
+                            invokeStatus = outcome.status;
+                            invokeSuccessful = outcome.status === 'completed';
+                        }
+                    } catch {
+                        invokeStatus = 'rejected';
+                        invokeSuccessful = false;
+                        console.error('[Startup Catch-up] Invoke sync rejected.', 'status=rejected');
+                    }
+                      console.info(
+                          '[Startup Catch-up] Invoke phase ended.',
+                        `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - invokeStartedAt}`
+                      );
+                      finishInvokeCatchUp(invokeSuccessful ? 'completed' : invokeStatus === 'rejected' || invokeStatus === 'failed' || invokeStatus === 'source_unavailable' ? 'failed' : 'cancelled');
+                    console.info(
+                        '[Startup Catch-up] Workflow ended.',
+                        `status=${invokeStatus} successful=${invokeSuccessful} durationMs=${Date.now() - startupStartedAt}`
+                    );
+                } else {
+                    console.info(
+                        '[Startup Catch-up] Workflow ended.',
+                        `invokeStatus=not-configured durationMs=${Date.now() - startupStartedAt}`
+                    );
                 }
-
-                    console.info('[Startup Catch-up] Complete.', {
-                        durationMs: Date.now() - startupStartedAt
-                    });
                 } finally {
                     useLibraryStore.getState().setStartupCatchupPending(false);
                 }

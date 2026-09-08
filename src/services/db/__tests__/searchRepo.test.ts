@@ -3,7 +3,6 @@ import type { FacetType } from '../../../types';
 
 const getDbMock = vi.hoisted(() => vi.fn());
 const getValidFacetNamesMock = vi.hoisted(() => vi.fn());
-
 vi.mock('../connection', () => ({
     getDb: () => getDbMock(),
 }));
@@ -103,6 +102,28 @@ describe('searchRepo basic queries', () => {
         const sql = db.select.mock.calls[0]?.[0] as string;
         expect(sql).toContain(scopedSource);
         expect(sql).not.toMatch(/\b(?:FROM|JOIN|CROSS JOIN)\s+images\b/);
+    });
+
+    it('sends each selected-filter count directly with unchanged query arguments', async () => {
+        const db = { select: vi.fn().mockResolvedValue([{ count: 1 }]) };
+        getDbMock.mockResolvedValue(db);
+        const { countGlobalImages, countImages } = await import('../searchRepo');
+
+        await countImages('WHERE is_deleted = ?', [0], 'collection-1', 'Detailer');
+        await countImages('WHERE is_deleted = ?', [0], 'collection-1');
+        await countImages('WHERE is_deleted = ?', [0], undefined, 'Detailer');
+        await countImages('WHERE is_deleted = ?', [0]);
+        await countGlobalImages();
+
+        expect(db.select.mock.calls.map(([query, values]) => ({ query, values }))).toEqual([
+            expect.objectContaining({ values: ['collection-1', 'Detailer', 0] }),
+            expect.objectContaining({ values: ['collection-1', 0] }),
+            expect.objectContaining({ values: ['Detailer', 0] }),
+            expect.objectContaining({ values: [0] }),
+            expect.objectContaining({ values: undefined }),
+        ]);
+        expect(db.select.mock.calls.slice(0, 4).every(([query]) => query.includes('SELECT count(*) as count'))).toBe(true);
+        expect(db.select.mock.calls[4]?.[0]).toBe('SELECT count(*) as count FROM scoped_images WHERE invoke_scope_hidden = 0 AND is_deleted = 0');
     });
 
     it('uses default search ordering and supports an ascending pinned cursor without a pin value', async () => {

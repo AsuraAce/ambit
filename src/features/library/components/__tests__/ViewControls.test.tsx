@@ -39,6 +39,12 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {
 };
 
 describe('ViewControls', () => {
+    it('preserves verified matches while the collection total is pending', () => {
+        setup({ displayedCount: 7, totalCount: null, scopeName: 'Pending collection' });
+        expect(screen.getByText('7')).toBeTruthy();
+        expect(screen.getByLabelText('Collection total not available').textContent).toBe('\u2014');
+        expect(screen.queryByText('0')).toBeNull();
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: false, hasInvokeImageAssets: false };

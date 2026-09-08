@@ -6,6 +6,10 @@ mod media;
 mod metadata;
 mod scanner;
 mod security;
+mod startup;
+mod startup_log;
+#[cfg(windows)]
+mod startup_webview;
 mod thumb;
 mod watcher;
 
@@ -27,6 +31,8 @@ use db::reparse::ReparseState;
 use media::VideoImportState;
 #[cfg(not(test))]
 use metadata::models::{ModelDiscoveryState, ModelResolutionState};
+#[cfg(not(test))]
+use startup::StartupState;
 #[cfg(not(test))]
 use tauri::Manager;
 #[cfg(not(test))]
@@ -95,6 +101,12 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
             db::backup::get_backups,
             db::backup::backup_database,
             db::backup::check_and_run_autobackup,
+            // startup readiness commands
+            startup::record_startup_diagnostic,
+            startup::record_startup_heartbeat,
+            startup::record_startup_lifecycle,
+            startup::get_startup_launch,
+            startup::complete_startup,
             // scanner commands
             scanner::scan_image,
             scanner::scan_images_bulk,
@@ -159,10 +171,11 @@ pub fn create_builder() -> tauri_specta::Builder<tauri::Wry> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(not(test))]
 pub fn run() {
+    let process_started = std::time::Instant::now();
     let builder = create_builder();
     let context = tauri::generate_context!();
     let active_identifier = context.config().identifier.clone();
-
+    let startup_journal = startup_log::install(process_started, &active_identifier);
     // Move legacy production app-data before the SQL plugin resolves images.db.
     if !cfg!(debug_assertions) {
         app_data_migration::migrate_legacy_identifier_data();
@@ -170,6 +183,7 @@ pub fn run() {
 
     // Check for deferred purge request BEFORE initializing the database.
     if let Err(error) = app_data_migration::check_and_execute_deferred_purge(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[Purge] {error}");
         return;
     }
@@ -181,6 +195,7 @@ pub fn run() {
     }
 
     if let Err(error) = repair_known_migration_metadata(&active_identifier) {
+        startup_journal.native("startup-failure", "failed", None);
         eprintln!("[DB] {error}");
         return;
     }
@@ -231,8 +246,44 @@ pub fn run() {
         .manage(FileHashBackfillState::default())
         .manage(VideoImportState::new())
         .manage(thumb::optimizer::ThumbnailOptimizationState::default())
+        .manage(StartupState::with_journal(
+            process_started,
+            startup_journal.clone(),
+        ))
+        .on_page_load(|webview, payload| {
+            use tauri::webview::PageLoadEvent;
+            let phase = match payload.event() {
+                PageLoadEvent::Started => "page-loading",
+                PageLoadEvent::Finished => "page-loaded",
+            };
+            webview
+                .state::<StartupState>()
+                .journal
+                .webview_observation(phase);
+        })
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
+            app.state::<StartupState>().journal.start_observer();
+            #[cfg(windows)]
+            {
+                let observer = startup_webview::ProcessFailedObserver::new(
+                    app.state::<StartupState>().journal.clone(),
+                );
+                if let Some(window) = app.get_webview_window("main") {
+                    observer.register(&window);
+                } else {
+                    observer.registration_unavailable();
+                }
+                app.manage(observer);
+            }
+            app.state::<StartupState>()
+                .journal
+                .native("native-initialization", "completed", None);
+            let diagnostic_journal = app.state::<StartupState>().journal.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                diagnostic_journal.missing_renderer();
+            });
             builder.mount_events(app);
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -240,37 +291,66 @@ pub fn run() {
             // 1. Initialize DB settings (WAL mode, etc.)
             let handle_for_db = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let started = std::time::Instant::now();
                 if let Err(e) = db::init_db_connection(&handle_for_db) {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "failed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::error!("[DB] Failed to initialize database settings: {}", e);
                 } else {
+                    handle_for_db.state::<StartupState>().journal.native(
+                        "native-database",
+                        "completed",
+                        Some(started.elapsed().as_millis() as u64),
+                    );
                     log::info!("[DB] Database initialized and optimized (WAL=ON)");
                 }
             });
 
-            // 2. Run auto-backup check in background for production builds only,
-            // after startup has settled. Large production libraries can spend
-            // the first minute catching up sync state and warming query caches;
-            // VACUUM INTO during that window competes for SQLite I/O.
-            if cfg!(debug_assertions) {
-                log::info!("[Backup] Auto-backup skipped in development build");
-            } else {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-                    match db::backup::check_and_run_autobackup(handle).await {
-                        Ok(Some(info)) => log::info!("[Backup] Auto-backup created: {}", info.name),
-                        Ok(None) => {
-                            log::info!("[Backup] Auto-backup skipped (recent backup exists)")
-                        }
-                        Err(e) => log::error!("[Backup] Auto-backup failed: {}", e),
-                    }
-                });
-            }
             Ok(())
         })
         .build(context)
-        .expect("error while building tauri application")
+        .unwrap_or_else(|error| {
+            startup_journal.native("startup-failure", "failed", None);
+            panic!("error while building tauri application: {error}");
+        })
         .run(|app_handle, event| {
+            let lifecycle = match &event {
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::CloseRequested { .. },
+                    ..
+                } if label == "main" => Some("native-close-requested"),
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == "main" => Some("native-window-destroyed"),
+                tauri::RunEvent::ExitRequested { .. } => Some("native-exit-requested"),
+                tauri::RunEvent::Exit => Some("native-exit"),
+                _ => None,
+            };
+            if let Some(stage) = lifecycle {
+                app_handle
+                    .state::<StartupState>()
+                    .journal
+                    .webview_observation(stage);
+            }
+            #[cfg(windows)]
+            if matches!(&event, tauri::RunEvent::WindowEvent {
+                label, event: tauri::WindowEvent::Destroyed, ..
+            } if label == "main")
+                || matches!(&event, tauri::RunEvent::Exit)
+            {
+                app_handle
+                    .state::<startup_webview::ProcessFailedObserver>()
+                    .teardown_on_current_thread();
+            }
+            if let tauri::RunEvent::Exit = event {
+                app_handle.state::<StartupState>().journal.request_end();
+            }
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 if let Err(e) = db::optimize_on_shutdown(app_handle) {
                     log::error!("[DB] Failed to run shutdown optimization: {}", e);
@@ -417,26 +497,54 @@ mod migration_history_tests {
             .expect("collect migration rows")
     }
 
-    fn photography_specs() -> Vec<(i64, &'static str, Vec<u8>)> {
+    fn photography_migrations() -> [tauri_plugin_sql::Migration; 4] {
         [
-            crate::db::migrations::m80_photography::migration80(),
-            crate::db::migrations::m81_photo_refresh::migration81(),
+            crate::db::migrations::m81_photography::migration81(),
+            crate::db::migrations::m82_photo_refresh::migration82(),
+            crate::db::migrations::m83_photo_scope_invalidation::migration83(),
+            crate::db::migrations::m84_thumbnail_repair_version::migration84(),
         ]
-        .into_iter()
-        .enumerate()
-        .map(|(index, migration)| {
-            (
-                63 + index as i64,
-                migration.description,
-                Sha384::digest(migration.sql.as_bytes()).to_vec(),
-            )
-        })
-        .collect()
+    }
+
+    fn photography_specs(start_version: i64) -> Vec<(i64, &'static str, Vec<u8>)> {
+        photography_migrations()
+            .into_iter()
+            .enumerate()
+            .map(|(index, migration)| {
+                (
+                    start_version + index as i64,
+                    migration.description,
+                    Sha384::digest(migration.sql.as_bytes()).to_vec(),
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn relocates_photo_qa_prefixes_and_rejects_unknown_history() {
-        let specs = photography_specs();
+    fn relocates_legacy_photo_qa_prefixes_from_63_to_81() {
+        let specs = photography_specs(63);
+        for prefix_len in 1..=2 {
+            let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+            create_migration_table(&conn);
+            for (version, description, checksum) in specs.iter().take(prefix_len) {
+                insert_row(&conn, *version, description, 1, checksum);
+            }
+            assert!(relocate_photography_migration_history(&conn)
+                .expect("verified legacy photo prefix should relocate"));
+            for (index, (version, description, success, checksum)) in
+                migration_rows(&conn).iter().enumerate()
+            {
+                assert_eq!(*version, 81 + index as i64);
+                assert_eq!(description, specs[index].1);
+                assert_eq!(*success, 1);
+                assert_eq!(checksum, &specs[index].2);
+            }
+        }
+    }
+
+    #[test]
+    fn relocates_every_verified_photo_qa_prefix_from_80_to_81() {
+        let specs = photography_specs(80);
         for prefix_len in 1..=specs.len() {
             let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
             create_migration_table(&conn);
@@ -448,29 +556,53 @@ mod migration_history_tests {
             for (index, (version, description, success, checksum)) in
                 migration_rows(&conn).iter().enumerate()
             {
-                assert_eq!(*version, 80 + index as i64);
+                assert_eq!(*version, 81 + index as i64);
                 assert_eq!(description, specs[index].1);
                 assert_eq!(*success, 1);
                 assert_eq!(checksum, &specs[index].2);
             }
         }
-
-        let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
-        create_migration_table(&conn);
-        insert_row(&conn, 63, "unknown", 1, &[0; 48]);
-        let before = migration_rows(&conn);
-        assert!(relocate_photography_migration_history(&conn).is_err());
-        assert_eq!(migration_rows(&conn), before);
     }
 
     #[test]
-    fn leaves_mainline_photo_versions_untouched() {
+    fn rejects_unknown_gapped_failed_and_bad_checksum_photo_histories_without_mutation() {
+        let specs = photography_specs(80);
+        let cases = [
+            vec![(80, "unknown", 1, vec![0; 48])],
+            vec![(81, specs[1].1, 1, specs[1].2.clone())],
+            vec![(80, specs[0].1, 0, specs[0].2.clone())],
+            vec![(80, specs[0].1, 1, vec![0; 48])],
+        ];
+        for rows in cases {
+            let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+            create_migration_table(&conn);
+            for (version, description, success, checksum) in rows {
+                insert_row(&conn, version, description, success, &checksum);
+            }
+            let before = migration_rows(&conn);
+            assert!(relocate_photography_migration_history(&conn).is_err());
+            assert_eq!(migration_rows(&conn), before);
+        }
+    }
+
+    #[test]
+    fn leaves_released_mainline_and_final_photography_histories_untouched() {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
         create_migration_table(&conn);
         for migration in [
             crate::db::migrations::m63_invoke_image_source::migration63(),
             crate::db::migrations::m64_invoke_image_references::migration64(),
+            crate::db::migrations::m80_maintenance_count_indexes::migration80(),
         ] {
+            insert_row(
+                &conn,
+                migration.version,
+                migration.description,
+                1,
+                &Sha384::digest(migration.sql.as_bytes()),
+            );
+        }
+        for migration in photography_migrations() {
             insert_row(
                 &conn,
                 migration.version,
@@ -485,12 +617,25 @@ mod migration_history_tests {
     }
 
     #[test]
-    fn photo_qa_schema_upgrades_through_mainline_79_and_cache_82_without_replaying_photo_columns() {
-        let photo = [
-            crate::db::migrations::m80_photography::migration80(),
-            crate::db::migrations::m81_photo_refresh::migration81(),
-        ];
-        for prefix_len in 1..=photo.len() {
+    fn relocated_photo_history_without_m80_is_restart_safe() {
+        let specs = photography_specs(81);
+        for prefix_len in 1..=specs.len() {
+            let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+            create_migration_table(&conn);
+            for (version, description, checksum) in specs.iter().take(prefix_len) {
+                insert_row(&conn, *version, description, 1, checksum);
+            }
+            let before = migration_rows(&conn);
+            assert!(!relocate_photography_migration_history(&conn)
+                .expect("verified interrupted relocation should be a no-op"));
+            assert_eq!(migration_rows(&conn), before);
+        }
+    }
+
+    #[test]
+    fn legacy_photo_qa_schema_upgrades_through_mainline_80_without_replaying_photo_columns() {
+        let photo = photography_migrations();
+        for prefix_len in 1..=2 {
             let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
             for migration in crate::db::migrations::init_db()
                 .into_iter()
@@ -522,7 +667,7 @@ mod migration_history_tests {
                 .expect("relocate historical photo ledger"));
             for migration in crate::db::migrations::init_db()
                 .into_iter()
-                .filter(|migration| (63..=79).contains(&migration.version))
+                .filter(|migration| (63..=80).contains(&migration.version))
             {
                 conn.execute_batch(migration.sql).unwrap_or_else(|error| {
                     panic!("apply mainline migration {}: {error}", migration.version)
@@ -531,13 +676,6 @@ mod migration_history_tests {
             for migration in photo.iter().skip(prefix_len) {
                 conn.execute_batch(migration.sql)
                     .expect("apply still-pending photo migration");
-            }
-            for migration in [
-                crate::db::migrations::m82_photo_scope_invalidation::migration82(),
-                crate::db::migrations::m83_thumbnail_repair_version::migration83(),
-            ] {
-                conn.execute_batch(migration.sql)
-                    .expect("apply post-photo migration");
             }
             for column in [
                 "invoke_image_name",
@@ -608,11 +746,91 @@ mod migration_history_tests {
     }
 
     #[test]
-    fn mainline_79_schema_upgrades_through_photography_and_thumbnail_repair() {
+    fn photo_qa_80_through_83_prefixes_upgrade_through_released_mainline_80() {
+        let photo = photography_migrations();
+        for prefix_len in 1..=photo.len() {
+            let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
+            for migration in crate::db::migrations::init_db()
+                .into_iter()
+                .filter(|migration| migration.version <= 79)
+            {
+                conn.execute_batch(migration.sql)
+                    .expect("apply mainline 79 schema");
+            }
+            conn.execute(
+                "INSERT INTO images (id, path, timestamp) VALUES ('qa-photo', 'qa-photo.png', 84)",
+                [],
+            )
+            .expect("QA photo fixture");
+            for migration in photo.iter().take(prefix_len) {
+                conn.execute_batch(migration.sql)
+                    .expect("apply historical photography QA migration");
+            }
+            create_migration_table(&conn);
+            for (index, migration) in photo.iter().take(prefix_len).enumerate() {
+                insert_row(
+                    &conn,
+                    80 + index as i64,
+                    migration.description,
+                    1,
+                    &Sha384::digest(migration.sql.as_bytes()),
+                );
+            }
+
+            assert!(relocate_photography_migration_history(&conn)
+                .expect("relocate photography QA history"));
+            conn.execute_batch(
+                crate::db::migrations::m80_maintenance_count_indexes::migration80().sql,
+            )
+            .expect("apply released mainline migration 80");
+            for migration in photo.iter().skip(prefix_len) {
+                conn.execute_batch(migration.sql)
+                    .expect("apply pending photography migration");
+            }
+
+            let versions: Vec<i64> = migration_rows(&conn)
+                .into_iter()
+                .map(|(version, _, _, _)| version)
+                .collect();
+            assert_eq!(versions, (81..81 + prefix_len as i64).collect::<Vec<_>>());
+            let photo_columns: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('images')
+                     WHERE name IN ('source_kind', 'photo_refresh_version')",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("photo columns");
+            assert_eq!(photo_columns, 2);
+            let maintenance_indexes: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'index'
+                       AND name IN ('idx_images_maintenance_counts_v1',
+                                    'idx_removed_images_maintenance_counts_v1')",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("maintenance indexes");
+            assert_eq!(maintenance_indexes, 2);
+            let repair_view: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master
+                     WHERE type = 'view' AND name = 'thumbnail_repair_required'",
+                    [],
+                    |row| row.get(0),
+                )
+                .expect("thumbnail repair view");
+            assert_eq!(repair_view, 1);
+        }
+    }
+
+    #[test]
+    fn released_mainline_80_schema_upgrades_through_photography_and_thumbnail_repair() {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory database");
         for migration in crate::db::migrations::init_db()
             .into_iter()
-            .filter(|migration| migration.version <= 79)
+            .filter(|migration| migration.version <= 80)
         {
             conn.execute_batch(migration.sql).unwrap_or_else(|error| {
                 panic!("apply mainline migration {}: {error}", migration.version)
@@ -623,12 +841,7 @@ mod migration_history_tests {
             [],
         )
         .expect("mainline image");
-        for migration in [
-            crate::db::migrations::m80_photography::migration80(),
-            crate::db::migrations::m81_photo_refresh::migration81(),
-            crate::db::migrations::m82_photo_scope_invalidation::migration82(),
-            crate::db::migrations::m83_thumbnail_repair_version::migration83(),
-        ] {
+        for migration in photography_migrations() {
             conn.execute_batch(migration.sql)
                 .unwrap_or_else(|error| panic!("apply migration {}: {error}", migration.version));
         }
@@ -879,6 +1092,65 @@ mod migration_history_tests {
         (root, db_path)
     }
 
+    fn create_repairable_migration55_history(conn: &rusqlite::Connection) {
+        create_migration_table(conn);
+        conn.execute_batch(
+            "CREATE TABLE images (thumbnail_path TEXT);
+             CREATE INDEX idx_images_thumbnail_path_lookup_v1 ON images(thumbnail_path);",
+        )
+        .expect("manual thumbnail lookup index");
+        insert_row(conn, 55, "add_manual_thumbnail_lookup_index", 1, &[0; 48]);
+    }
+
+    #[test]
+    fn repair_is_scoped_to_active_profile_and_does_not_modify_compatible_inactive_history() {
+        let (active_root, active_path) = profile_db_path("active-development");
+        let (inactive_root, inactive_path) = profile_db_path("inactive-production");
+        let active = rusqlite::Connection::open(&active_path).expect("active database");
+        create_repairable_migration55_history(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("inactive database");
+        create_repairable_migration55_history(&inactive);
+        let inactive_rows_before = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_before = std::fs::read(&inactive_path).expect("inactive database bytes");
+
+        repair_known_migration_metadata_at_paths(
+            &[active_path.clone(), inactive_path.clone()],
+            &active_path,
+        )
+        .expect("active history should repair");
+
+        let active = rusqlite::Connection::open(&active_path).expect("reopen active");
+        let active_rows = migration_rows(&active);
+        drop(active);
+        let inactive = rusqlite::Connection::open(&inactive_path).expect("reopen inactive");
+        let inactive_rows = migration_rows(&inactive);
+        drop(inactive);
+        let inactive_bytes_after = std::fs::read(&inactive_path).expect("inactive database bytes");
+        std::fs::remove_dir_all(active_root).expect("remove active profile");
+        std::fs::remove_dir_all(inactive_root).expect("remove inactive profile");
+
+        let expected_checksum = Sha384::digest(
+            crate::db::migrations::m55_manual_thumbnail_lookup_index::migration55()
+                .sql
+                .as_bytes(),
+        )
+        .to_vec();
+        assert_eq!(
+            active_rows[0].3, expected_checksum,
+            "active checksum must repair"
+        );
+        assert_eq!(
+            inactive_rows, inactive_rows_before,
+            "inactive rows must not change"
+        );
+        assert_eq!(
+            inactive_bytes_after, inactive_bytes_before,
+            "inactive file must not change"
+        );
+    }
+
     #[test]
     fn invalid_inactive_profile_does_not_block_valid_active_profile() {
         let (active_root, active_path) = profile_db_path("active-valid");
@@ -1089,19 +1361,22 @@ fn relocate_development_invoke_migration_history(
     }
 }
 
-/// Relocate the short-lived photography migrations that occupied mainline
-/// versions 63 and 64 in the QA branch. SQLx validates both version and SQL
-/// checksum before it can apply mainline migration 65, so the old rows must
-/// move aside before the plugin starts.
+/// Relocate the verified photography QA histories that collided first with
+/// mainline versions 63 and 64, and later with released migration 80. SQLx
+/// validates version and SQL checksum before applying migrations, so these
+/// known histories must move to the final photography range before startup.
 fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result<bool, String> {
     use sha2::{Digest, Sha384};
 
     let photo_migrations = [
-        db::migrations::m80_photography::migration80(),
-        db::migrations::m81_photo_refresh::migration81(),
+        db::migrations::m81_photography::migration81(),
+        db::migrations::m82_photo_refresh::migration82(),
+        db::migrations::m83_photo_scope_invalidation::migration83(),
+        db::migrations::m84_thumbnail_repair_version::migration84(),
     ];
-    let old_photo_history: Vec<(i64, &str, Vec<u8>)> = photo_migrations
+    let legacy_photo_history: Vec<(i64, &str, Vec<u8>)> = photo_migrations
         .iter()
+        .take(2)
         .enumerate()
         .map(|(index, migration)| {
             (
@@ -1111,7 +1386,7 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
             )
         })
         .collect();
-    let relocated_photo_history: Vec<(i64, &str, Vec<u8>)> = photo_migrations
+    let qa_photo_history: Vec<(i64, &str, Vec<u8>)> = photo_migrations
         .iter()
         .enumerate()
         .map(|(index, migration)| {
@@ -1122,11 +1397,22 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
             )
         })
         .collect();
-    let mainline_history = [
+    let final_photo_history: Vec<(i64, &str, Vec<u8>)> = photo_migrations
+        .iter()
+        .enumerate()
+        .map(|(index, migration)| {
+            (
+                81 + index as i64,
+                migration.description,
+                Sha384::digest(migration.sql.as_bytes()).to_vec(),
+            )
+        })
+        .collect();
+    let low_mainline_history = [
         db::migrations::m63_invoke_image_source::migration63(),
         db::migrations::m64_invoke_image_references::migration64(),
     ];
-    let mainline_history: Vec<(i64, &str, Vec<u8>)> = mainline_history
+    let low_mainline_history: Vec<(i64, &str, Vec<u8>)> = low_mainline_history
         .iter()
         .map(|migration| {
             (
@@ -1136,6 +1422,13 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
             )
         })
         .collect();
+    let maintenance = db::migrations::m80_maintenance_count_indexes::migration80();
+    let mut final_upper_history = vec![(
+        maintenance.version,
+        maintenance.description,
+        Sha384::digest(maintenance.sql.as_bytes()).to_vec(),
+    )];
+    final_upper_history.extend(final_photo_history.iter().cloned());
 
     let read_rows = |versions: &[i64]| -> Result<Vec<(i64, String, i64, Vec<u8>)>, String> {
         let placeholders = versions.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
@@ -1154,7 +1447,7 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
         .map_err(|error| error.to_string())
     };
     let low_rows = read_rows(&[63, 64])?;
-    let high_rows = read_rows(&[80, 81])?;
+    let upper_rows = read_rows(&[80, 81, 82, 83, 84])?;
     let is_verified_prefix = |rows: &[(i64, String, i64, Vec<u8>)],
                               expected: &[(i64, &str, Vec<u8>)]| {
         rows.len() <= expected.len()
@@ -1171,17 +1464,16 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
             )
     };
 
-    let old_photo_prefix = is_verified_prefix(&low_rows, &old_photo_history);
-    let mainline_prefix = is_verified_prefix(&low_rows, &mainline_history);
-    let relocated_photo_prefix = is_verified_prefix(&high_rows, &relocated_photo_history);
-
-    if old_photo_prefix && !low_rows.is_empty() && high_rows.is_empty() {
+    let relocate_verified_rows = |rows: &[(i64, String, i64, Vec<u8>)],
+                                  old_start: i64,
+                                  new_start: i64|
+     -> Result<bool, String> {
         conn.execute_batch("BEGIN IMMEDIATE")
             .map_err(|error| error.to_string())?;
         let relocation = (|| -> Result<(), String> {
-            for (index, (_, description, _, checksum)) in low_rows.iter().enumerate().rev() {
-                let old_version = 63 + index as i64;
-                let new_version = 80 + index as i64;
+            for (index, (_, description, _, checksum)) in rows.iter().enumerate().rev() {
+                let old_version = old_start + index as i64;
+                let new_version = new_start + index as i64;
                 let updated = conn
                     .execute(
                         "UPDATE _sqlx_migrations
@@ -1197,9 +1489,26 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
                     ));
                 }
             }
+            for (index, (_, description, _, checksum)) in rows.iter().enumerate() {
+                let new_version = new_start + index as i64;
+                let verified = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM _sqlx_migrations
+                         WHERE version = ?1 AND description = ?2
+                           AND success = 1 AND checksum = ?3",
+                        rusqlite::params![new_version, description, checksum],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| error.to_string())?;
+                if verified != 1 {
+                    return Err(format!(
+                        "relocated photography migration {new_version} did not verify"
+                    ));
+                }
+            }
             Ok(())
         })();
-        return match relocation {
+        match relocation {
             Ok(()) => {
                 conn.execute_batch("COMMIT")
                     .map_err(|error| error.to_string())?;
@@ -1209,14 +1518,46 @@ fn relocate_photography_migration_history(conn: &rusqlite::Connection) -> Result
                 let _ = conn.execute_batch("ROLLBACK");
                 Err(error)
             }
-        };
+        }
+    };
+
+    let legacy_photo_prefix =
+        !low_rows.is_empty() && is_verified_prefix(&low_rows, &legacy_photo_history);
+    let low_mainline_prefix = is_verified_prefix(&low_rows, &low_mainline_history);
+    let qa_photo_prefix =
+        !upper_rows.is_empty() && is_verified_prefix(&upper_rows, &qa_photo_history);
+    let final_upper_prefix = is_verified_prefix(&upper_rows, &final_upper_history);
+    let relocated_photo_prefix =
+        !upper_rows.is_empty() && is_verified_prefix(&upper_rows, &final_photo_history);
+
+    if legacy_photo_prefix {
+        let upper_is_empty_or_maintenance_only =
+            upper_rows.is_empty() || (upper_rows.len() == 1 && final_upper_prefix);
+        if !upper_is_empty_or_maintenance_only {
+            return Err(
+                "legacy photography migration history cannot be safely combined with the rows in versions 80 through 84"
+                    .to_string(),
+            );
+        }
+        return relocate_verified_rows(&low_rows, 63, 81);
     }
 
-    if (mainline_prefix || low_rows.is_empty()) && relocated_photo_prefix {
+    if !low_mainline_prefix {
+        return Err(
+            "migration history in versions 63 and 64 is not a verified photography or mainline prefix"
+                .to_string(),
+        );
+    }
+
+    if qa_photo_prefix {
+        return relocate_verified_rows(&upper_rows, 80, 81);
+    }
+
+    if final_upper_prefix || relocated_photo_prefix {
         return Ok(false);
     }
 
-    Err("migration history in versions 63, 64, 80, and 81 is not a verified old photography, mainline, or relocated photography prefix".to_string())
+    Err("migration history in versions 80 through 84 is not a verified photography QA, released mainline, or relocated photography prefix".to_string())
 }
 /// Repair historical migration metadata for a known development/mainline collision.
 ///
@@ -1300,7 +1641,10 @@ fn repair_known_migration_metadata_at_paths(
     let migration56 = db::migrations::m56_thumbnail_optimization::migration56();
     let expected_m56_checksum = Sha384::digest(migration56.sql.as_bytes()).to_vec();
 
-    for db_path in db_paths {
+    for db_path in db_paths
+        .iter()
+        .filter(|db_path| db_path.as_path() == active_db_path)
+    {
         if !db_path.exists() {
             continue;
         }

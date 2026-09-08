@@ -35,7 +35,7 @@ describe('CollectionContext', () => {
         expect(() => renderHook(() => useCollections())).toThrow('useCollections must be used within CollectionProvider');
     });
 
-    it('initializes, partitions collections, and forwards refresh actions', async () => {
+    it('leaves initialization to startup orchestration, partitions collections, and forwards refresh actions', async () => {
         const smart: SmartCollection = {
             ...baseCollection('smart'),
             filters: {
@@ -48,7 +48,7 @@ describe('CollectionContext', () => {
         const wrapper = ({ children }: { children: React.ReactNode }) => <CollectionProvider>{children}</CollectionProvider>;
         const { result } = renderHook(() => useCollections(), { wrapper });
 
-        expect(store.initialize).toHaveBeenCalledOnce();
+        expect(store.initialize).not.toHaveBeenCalled();
         expect(result.current.collections.map(item => item.id)).toEqual(['regular']);
         expect(result.current.smartCollections.map(item => item.id)).toEqual(['smart']);
         await act(() => result.current.refreshCollections(true));

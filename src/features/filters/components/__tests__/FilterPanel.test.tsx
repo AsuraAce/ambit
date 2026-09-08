@@ -126,6 +126,7 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     sortOption: 'date_desc' as SortOption,
     setSortOption: vi.fn() as Dispatch<SetStateAction<SortOption>>,
     privacyExposureBlocked: false,
+    isLibraryReady: true,
     facets: emptyFacets(),
     stats: {
         totalImages: 0,

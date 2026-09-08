@@ -92,7 +92,7 @@ interface AppLayoutProps {
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
     displayedCount: number;
-    scopeTotal: number;
+    scopeTotal: number | null;
     scopeName: string;
     isFiltering: boolean;
     fileOps: ReturnType<typeof useFileOperations>;

@@ -1,3 +1,23 @@
+import type { StartupPhase } from '../bindings';
+import { measureStartupPhase } from './startupDiagnostics';
+
+// Only fixed, known query labels reach persistent startup diagnostics.
+const startupQueryPhases: ReadonlyMap<string, StartupPhase> = new Map([
+    ['searchImages', 'gallery-rows'],
+    ['countImages', 'gallery-count'],
+    ['countGlobalImages', 'gallery-global-count'],
+    ['libraryStats.mediaStats', 'statistics-media'],
+    ['libraryStats.avgSteps', 'statistics-steps'],
+    ['libraryStats.modelStats', 'statistics-models'],
+    ['facets.scoped.checkpoints', 'facet-counts'],
+    ['facets.scoped.loras', 'facet-counts'],
+    ['facets.scoped.embeddings', 'facet-counts'],
+    ['facets.scoped.hypernetworks', 'facet-counts'],
+    ['facets.scoped.control_nets', 'facet-counts'],
+    ['facets.scoped.ip_adapters', 'facet-counts'],
+    ['facets.scoped.tools', 'facet-counts'],
+]);
+
 const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 const summarizeDuration = (startedAt: number) => Math.round(nowMs() - startedAt);
@@ -29,7 +49,8 @@ export const timeDbCall = async <T>(
     const startedAt = nowMs();
 
     try {
-        return await fn();
+        const phase = startupQueryPhases.get(label);
+        return await (phase ? measureStartupPhase(phase, fn) : fn());
     } finally {
         console.info(`[DB] ${label} (${reason}) completed in ${summarizeDuration(startedAt)}ms`);
     }

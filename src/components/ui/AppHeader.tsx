@@ -38,7 +38,7 @@ interface AppHeaderProps {
     sortOption: SortOption;
     setSortOption: (opt: SortOption) => void;
     displayedCount: number;
-    totalCount: number;
+    totalCount: number | null;
     scopeName: string;
     sourceKindCounts?: SourceKindCounts;
     onImport: () => void;

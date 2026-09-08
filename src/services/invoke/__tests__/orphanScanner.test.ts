@@ -4,6 +4,7 @@ import { commands } from '../../../bindings';
 import { getDb } from '../../db/connection';
 import { insertImagesBatch } from '../../db/imageRepo';
 import { scanForOrphans } from '../orphanScanner';
+import { invalidateInvokeSourceDatabase } from '../connection';
 
 vi.mock('@tauri-apps/plugin-sql', () => ({
     default: {
@@ -41,6 +42,7 @@ const createDb = (rows: Array<{ image_name: string, image_subfolder?: string | n
 
 describe('scanForOrphans', () => {
     beforeEach(() => {
+        invalidateInvokeSourceDatabase();
         vi.clearAllMocks();
         vi.mocked(getDb).mockResolvedValue({
             select: vi.fn().mockResolvedValue([])

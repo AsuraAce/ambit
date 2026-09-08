@@ -71,6 +71,50 @@ describe('useMetadataRefresh', () => {
         vi.useRealTimers();
     });
 
+    it('does not count or reparse metadata until the library is ready', async () => {
+        vi.mocked(invoke).mockResolvedValue(0);
+        const { rerender } = renderHook(({ ready }) => useMetadataRefresh(ready), {
+            initialProps: { ready: false },
+        });
+        await act(async () => vi.advanceTimersByTimeAsync(8 * 60_000));
+        expect(invoke).not.toHaveBeenCalledWith('get_reparse_count');
+        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+        rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(3_000));
+        expect(invoke).toHaveBeenCalledWith('get_reparse_count');
+    });
+
+    it('does not start a second automatic reparse when readiness changes during a native run', async () => {
+        let finishReparse!: (value: TestRefreshResult) => void;
+        const reparse = new Promise<TestRefreshResult>(resolve => { finishReparse = resolve; });
+        vi.mocked(invoke).mockImplementation(command => {
+            if (command === 'get_reparse_count') return Promise.resolve(12);
+            if (command === 'start_reparse_job') return reparse;
+            return Promise.resolve({ processed: 0, updated: 0, errors: 0, wasCancelled: false });
+        });
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        await act(async () => vi.advanceTimersByTimeAsync(3_000));
+        view.rerender({ ready: false });
+        view.rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(30_000));
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'start_reparse_job')).toHaveLength(1);
+        await act(async () => finishReparse({ processed: 12, updated: 0, errors: 0, wasCancelled: false }));
+        await act(async () => vi.advanceTimersByTimeAsync(30_000));
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'start_reparse_job')).toHaveLength(1);
+    });
+
+    it('does not retry a stale count failure after readiness is withdrawn', async () => {
+        let rejectCount!: (reason: string) => void;
+        vi.mocked(invoke).mockReturnValue(new Promise((_, reject) => { rejectCount = reject; }));
+        const view = renderHook(({ ready }) => useMetadataRefresh(ready), { initialProps: { ready: true } });
+        await act(async () => vi.advanceTimersByTimeAsync(3_000));
+        view.rerender({ ready: false });
+        await act(async () => rejectCount('SQLITE_BUSY'));
+        await act(async () => vi.advanceTimersByTimeAsync(60_000));
+        expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === 'get_reparse_count')).toHaveLength(1);
+        expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
+    });
+
     it('retries automatic startup refresh when the database is temporarily locked', async () => {
         let startAttempts = 0;
         vi.mocked(invoke).mockImplementation((command) => {
@@ -92,7 +136,7 @@ describe('useMetadataRefresh', () => {
             return Promise.resolve(undefined);
         });
 
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(3000);
@@ -136,7 +180,7 @@ describe('useMetadataRefresh', () => {
         });
         useLibraryStore.setState({ isStartupCatchupPending: true });
 
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(3000);
@@ -175,7 +219,7 @@ describe('useMetadataRefresh', () => {
             return Promise.resolve(undefined);
         });
 
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(3000);
@@ -278,7 +322,7 @@ describe('useMetadataRefresh', () => {
             return Promise.resolve(undefined);
         });
 
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(3000);
@@ -301,7 +345,7 @@ describe('useMetadataRefresh', () => {
     });
 
     it('refreshes parser-derived facets after metadata refresh updates records', async () => {
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         act(() => {
             listenerCallbacks.get('refresh-complete')?.({
@@ -333,7 +377,7 @@ describe('useMetadataRefresh', () => {
     });
 
     it('skips facet refresh when metadata refresh has no updates', async () => {
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         act(() => {
             listenerCallbacks.get('refresh-complete')?.({
@@ -351,7 +395,7 @@ describe('useMetadataRefresh', () => {
     });
 
     it('refreshes facets after a cancelled metadata refresh that updated records', async () => {
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         act(() => {
             listenerCallbacks.get('refresh-complete')?.({
@@ -392,7 +436,7 @@ describe('useMetadataRefresh', () => {
                 message: 'Processing'
             }
         });
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
 
         act(() => {
             listenerCallbacks.get('refresh-complete')?.({
@@ -424,7 +468,7 @@ describe('useMetadataRefresh', () => {
             errors: 0,
             wasCancelled: false
         });
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await result.current.startRefresh();
@@ -451,7 +495,7 @@ describe('useMetadataRefresh', () => {
             }
             return Promise.resolve(undefined);
         });
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
 
         let refreshPromise: Promise<unknown> | undefined;
         act(() => {
@@ -487,7 +531,7 @@ describe('useMetadataRefresh', () => {
             errors: 0,
             wasCancelled: false
         });
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await result.current.forceRefresh(undefined, true);
@@ -508,7 +552,7 @@ describe('useMetadataRefresh', () => {
             }
             return Promise.resolve(undefined);
         });
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
 
         const startPromise = act(async () => {
             await result.current.startRefresh();
@@ -560,7 +604,7 @@ describe('useMetadataRefresh', () => {
     it('still reports manual refresh failures immediately', async () => {
         vi.mocked(invoke).mockRejectedValue('database is locked');
 
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
 
         await act(async () => {
             await result.current.startRefresh();
@@ -574,7 +618,7 @@ describe('useMetadataRefresh', () => {
 
     it('disables refresh controls and listeners in browser mock mode', async () => {
         runtimeMock.browserMode = true;
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
         expect(listenerCallbacks.size).toBe(0);
 
         await act(async () => {
@@ -589,14 +633,14 @@ describe('useMetadataRefresh', () => {
     });
 
     it('cleans up both backend listeners on unmount', () => {
-        const { unmount } = renderHook(() => useMetadataRefresh());
+        const { unmount } = renderHook(() => useMetadataRefresh(true));
         expect(listenerCleanups).toHaveLength(2);
         unmount();
         expect(listenerCleanups.every(cleanup => cleanup.mock.calls.length === 1)).toBe(true);
     });
 
     it('reports completion warnings and suppresses empty completion toasts', () => {
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         act(() => listenerCallbacks.get('refresh-complete')?.({
             payload: { processed: 5, updated: 0, errors: 2, wasCancelled: false }
         }));
@@ -610,7 +654,7 @@ describe('useMetadataRefresh', () => {
 
     it('starts a tool-filtered refresh without showing a suppressed failure toast', async () => {
         vi.mocked(invoke).mockRejectedValueOnce(new Error('tool failed'));
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
         await act(async () => {
             const response = await result.current.startRefresh('ComfyUI', { showFailureToast: false });
             expect(response.ok).toBe(false);
@@ -622,7 +666,7 @@ describe('useMetadataRefresh', () => {
     it('cancels refresh jobs and logs cancellation failures', async () => {
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         vi.mocked(invoke).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('cancel failed'));
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
         await act(async () => result.current.cancelRefresh());
         await act(async () => result.current.cancelRefresh());
         expect(invoke).toHaveBeenCalledWith('cancel_reparse_job');
@@ -634,7 +678,7 @@ describe('useMetadataRefresh', () => {
         vi.mocked(invoke)
             .mockResolvedValueOnce({ processed: 1, updated: 0, errors: 0, wasCancelled: false })
             .mockRejectedValueOnce(new Error('force failed'));
-        const { result } = renderHook(() => useMetadataRefresh());
+        const { result } = renderHook(() => useMetadataRefresh(true));
         await act(async () => result.current.forceRefresh('D:/Images', false, 'ComfyUI'));
         expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
             forceReparse: false,
@@ -650,7 +694,7 @@ describe('useMetadataRefresh', () => {
 
     it('clears startup pending state when no images require reparsing', async () => {
         vi.mocked(invoke).mockResolvedValueOnce(0);
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
         expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
@@ -664,7 +708,7 @@ describe('useMetadataRefresh', () => {
             ? Promise.resolve(2)
             : Promise.resolve({ processed: 2, updated: 0, errors: 0, wasCancelled: false }));
         useLibraryStore.setState(busyState);
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(invoke).not.toHaveBeenCalledWith('start_reparse_job', expect.anything());
     });
@@ -678,7 +722,7 @@ describe('useMetadataRefresh', () => {
         vi.mocked(invoke)
             .mockRejectedValueOnce(error)
             .mockResolvedValueOnce(0);
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(true);
         await act(async () => vi.advanceTimersByTimeAsync(15000));
@@ -689,7 +733,7 @@ describe('useMetadataRefresh', () => {
         const error = new Error('count unavailable');
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
         vi.mocked(invoke).mockRejectedValueOnce(error);
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         expect(useLibraryStore.getState().isMetadataRefreshPending).toBe(false);
         expect(consoleError).toHaveBeenCalledWith('[Refresh] Startup check failed:', error);
@@ -700,7 +744,7 @@ describe('useMetadataRefresh', () => {
         vi.mocked(invoke).mockImplementation(command => command === 'get_reparse_count'
             ? Promise.resolve(2)
             : Promise.reject('permission denied'));
-        renderHook(() => useMetadataRefresh());
+        renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.runAllTimersAsync());
         expect(mockAddToast).toHaveBeenCalledWith('Failed to start refresh: permission denied', 'error');
     });
@@ -708,7 +752,7 @@ describe('useMetadataRefresh', () => {
     it('ignores a startup count result that resolves after unmount', async () => {
         let resolveCount!: (count: number) => void;
         vi.mocked(invoke).mockReturnValueOnce(new Promise(resolve => { resolveCount = resolve; }));
-        const view = renderHook(() => useMetadataRefresh());
+        const view = renderHook(() => useMetadataRefresh(true));
         await act(async () => vi.advanceTimersByTimeAsync(3000));
         view.unmount();
         await act(async () => {

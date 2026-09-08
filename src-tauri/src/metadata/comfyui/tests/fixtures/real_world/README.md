@@ -7,7 +7,7 @@ workflow bloat.
 
 Rules:
 
-- Store only `prompt` and/or `workflow` chunks.
+- Store only the metadata chunks needed by the regression, such as `prompt`, `workflow`, or flat `parameters` chunks for saver/EXIF format-parity cases.
 - Do not vendor PNG, WebP, or other image files.
 - Keep assertions exact when a field has a deterministic expected value.
 - Add parser fixes only for narrow local gaps proven by a fixture.

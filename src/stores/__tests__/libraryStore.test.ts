@@ -47,6 +47,20 @@ describe('libraryStore live watch session', () => {
         expect(useLibraryStore.getState().thumbnailMaintenanceOperation).toBeNull();
     });
 
+    it('keeps keyword analysis demand transient and disabled by default', () => {
+        expect(useLibraryStore.getState().keywordStatsEnabled).toBe(false);
+
+        act(() => {
+            useLibraryStore.getState().setKeywordStatsEnabled(true);
+        });
+        expect(useLibraryStore.getState().keywordStatsEnabled).toBe(true);
+
+        act(() => {
+            useLibraryStore.getState().setKeywordStatsEnabled(false);
+        });
+        expect(useLibraryStore.getState().keywordStatsEnabled).toBe(false);
+    });
+
     it('resets the idle timer when new live activity arrives', async () => {
         act(() => {
             useLibraryStore.getState().setIsLiveWatching(true);

@@ -1,11 +1,11 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 83: The released thumbnail repair candidate view predates the
+/// Migration 84: The released thumbnail repair candidate view predates the
 /// photography thumbnail format upgrade. Keep its canonical candidate policy,
 /// but require regeneration for Ambit thumbnails below the current version.
-pub fn migration83() -> Migration {
+pub fn migration84() -> Migration {
     Migration {
-        version: 83,
+        version: 84,
         description: "repair_thumbnail_candidate_version_threshold",
         sql: r#"
             DROP VIEW IF EXISTS thumbnail_repair_required;
@@ -60,7 +60,7 @@ pub fn migration83() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration83;
+    use super::migration84;
     use rusqlite::Connection;
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
             crate::db::migrations::m79_thumbnail_repair_candidates::migration79().sql,
         )
         .expect("apply released migration 79");
-        conn.execute_batch(migration83().sql)
+        conn.execute_batch(migration84().sql)
             .expect("apply thumbnail version correction");
         conn.execute_batch(
             "

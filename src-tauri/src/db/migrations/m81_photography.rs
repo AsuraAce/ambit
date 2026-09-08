@@ -1,10 +1,10 @@
 use tauri_plugin_sql::{Migration, MigrationKind};
 
-/// Migration 80: Persist detected and effective image origins plus normalized
+/// Migration 81: Persist detected and effective image origins plus normalized
 /// camera-photo metadata without changing the existing generation metadata.
-pub fn migration80() -> Migration {
+pub fn migration81() -> Migration {
     Migration {
-        version: 80,
+        version: 81,
         description: "add_photography_catalog_fields",
         sql: r#"
             ALTER TABLE images ADD COLUMN detected_source_kind TEXT NOT NULL DEFAULT 'other'
@@ -84,7 +84,7 @@ pub fn migration80() -> Migration {
 
 #[cfg(test)]
 mod tests {
-    use super::migration80;
+    use super::migration81;
 
     fn setup() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().expect("in-memory db");
@@ -123,7 +123,7 @@ mod tests {
     #[test]
     fn backfills_only_strong_generated_evidence_and_preserves_dates() {
         let conn = setup();
-        conn.execute_batch(migration80().sql)
+        conn.execute_batch(migration81().sql)
             .expect("apply migration");
 
         let rows: Vec<(String, String, String, i64, i64)> = conn
@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn creates_covering_source_and_date_indexes() {
         let conn = setup();
-        conn.execute_batch(migration80().sql)
+        conn.execute_batch(migration81().sql)
             .expect("apply migration");
         conn.execute_batch(
             r#"

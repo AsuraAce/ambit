@@ -1,7 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { describeDbQueryReason, timeDbCall } from '../dbTiming';
+import { startupDiagnostics } from '../startupDiagnostics';
 
 describe('dbTiming', () => {
+    it('attributes gallery queries with fixed phases, preserving results and failures', async () => {
+        const finish = vi.fn();
+        const start = vi.spyOn(startupDiagnostics, 'start').mockReturnValue(finish);
+        await expect(timeDbCall('searchImages', 'private-reason', async () => 7)).resolves.toBe(7);
+        expect(start).toHaveBeenCalledWith('gallery-rows', null);
+        expect(finish).toHaveBeenCalledWith();
+        const failure = new Error('database is locked: private-path');
+        await expect(timeDbCall('countImages', 'private-reason', async () => { throw failure; })).rejects.toBe(failure);
+        expect(start).toHaveBeenLastCalledWith('gallery-count', null);
+        expect(finish).toHaveBeenLastCalledWith('failed', failure);
+        expect(JSON.stringify(start.mock.calls)).not.toContain('private');
+        start.mockClear();
+        await timeDbCall('unknown-private-label', 'default', async () => 0);
+        expect(start).not.toHaveBeenCalled();
+    });
+
     afterEach(() => vi.unstubAllGlobals());
 
     it('describes every query cost reason and the default', () => {

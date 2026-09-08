@@ -12,6 +12,7 @@ import { useToast } from './useToast';
 import { isBrowserMockMode } from '../services/runtime';
 import { listenWithCleanup } from '../utils/tauriListener';
 import { rebuildFacetCacheIncrementalBatchStrict } from '../services/db/imageRepo';
+import { measureStartupPhase } from '../utils/startupDiagnostics';
 
 interface RefreshProgress {
     current: number;
@@ -69,7 +70,7 @@ const isTransientDatabaseLock = (err: unknown): boolean => {
         || message.includes('sqlite_busy');
 };
 
-export function useMetadataRefresh() {
+export function useMetadataRefresh(startupReady = false) {
     const { addToast } = useToast();
     const browserMockMode = isBrowserMockMode();
     const startupAnnouncementCountRef = useRef<number | null>(null);
@@ -77,6 +78,8 @@ export function useMetadataRefresh() {
     const deferStartupVisibilityUntilProcessingRef = useRef(false);
     const metadataFacetRefreshHandledRef = useRef(false);
     const combinedRefreshInFlightRef = useRef(false);
+    const startupRefreshCompletedRef = useRef(false);
+    const startupRefreshInFlightRef = useRef(false);
 
     const {
         setMetadataRefreshPending,
@@ -128,12 +131,12 @@ export function useMetadataRefresh() {
     ): Promise<RefreshResult> => {
         combinedRefreshInFlightRef.current = true;
         try {
-            const result = await invoke<RefreshResult>('start_reparse_job', {
+            const result = await measureStartupPhase('metadata-maintenance', () => invoke<RefreshResult>('start_reparse_job', {
                 forceReparse,
                 filterRoot,
                 filterTool,
                 refreshPhotoMetadata
-            });
+            }));
             if (!result.wasCancelled) {
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 setMetadataRefreshPending(false);
@@ -154,7 +157,7 @@ export function useMetadataRefresh() {
                         'info'
                     );
                 }
-                const videoResult = await refreshVideoMetadata(filterRoot, forceReparse) ?? {
+                const videoResult = await measureStartupPhase('metadata-maintenance', () => refreshVideoMetadata(filterRoot, forceReparse)) ?? {
                     processed: 0,
                     updated: 0,
                     errors: 0,
@@ -315,17 +318,24 @@ export function useMetadataRefresh() {
 
     // Auto-detect stale metadata on startup
     useEffect(() => {
-        if (browserMockMode) return;
+        if (browserMockMode || !startupReady || startupRefreshCompletedRef.current) return;
 
         let isCancelled = false;
         let retryTimer: number | undefined;
 
         const runStartupRefresh = async (attempt: number) => {
+            if (isCancelled || startupRefreshCompletedRef.current) return;
+            if (startupRefreshInFlightRef.current) {
+                retryTimer = window.setTimeout(() => { void runStartupRefresh(attempt); }, STARTUP_REFRESH_RETRY_DELAY_MS);
+                return;
+            }
+            startupRefreshInFlightRef.current = true;
             try {
                 setMetadataRefreshPending(true);
-                const countRes = await invoke<number>('get_reparse_count');
+                const countRes = await measureStartupPhase('metadata-maintenance', () => invoke<number>('get_reparse_count'));
                 if (isCancelled) return;
                 if (countRes <= 0) {
+                    startupRefreshCompletedRef.current = true;
                     setMetadataRefreshPending(false);
                     startupAnnouncementCountRef.current = null;
                     startupAnnouncementShownRef.current = false;
@@ -347,6 +357,7 @@ export function useMetadataRefresh() {
                     showFailureToast: false,
                     deferActiveUntilProgress: true
                 });
+                if (result.ok) startupRefreshCompletedRef.current = true;
                 if (result.ok || isCancelled) return;
 
                 if (isTransientDatabaseLock(result.error) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
@@ -366,6 +377,7 @@ export function useMetadataRefresh() {
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 addToast(`Failed to start refresh: ${getErrorMessage(result.error)}`, 'error');
             } catch (err) {
+                if (isCancelled) return;
                 if (isTransientDatabaseLock(err) && attempt < STARTUP_REFRESH_MAX_ATTEMPTS) {
                     setMetadataRefreshPending(true);
                     console.info(
@@ -382,6 +394,8 @@ export function useMetadataRefresh() {
                 startupAnnouncementShownRef.current = false;
                 deferStartupVisibilityUntilProcessingRef.current = false;
                 console.error('[Refresh] Startup check failed:', err);
+            } finally {
+                startupRefreshInFlightRef.current = false;
             }
         };
 
@@ -392,16 +406,19 @@ export function useMetadataRefresh() {
 
         return () => {
             isCancelled = true;
-            setMetadataRefreshPending(false);
-            startupAnnouncementCountRef.current = null;
-            startupAnnouncementShownRef.current = false;
-            deferStartupVisibilityUntilProcessingRef.current = false;
+            // A running native refresh owns its progress until its completion handler.
+            if (!combinedRefreshInFlightRef.current) {
+                setMetadataRefreshPending(false);
+                startupAnnouncementCountRef.current = null;
+                startupAnnouncementShownRef.current = false;
+                deferStartupVisibilityUntilProcessingRef.current = false;
+            }
             window.clearTimeout(timer);
             if (retryTimer !== undefined) {
                 window.clearTimeout(retryTimer);
             }
         };
-    }, [setMetadataRefreshPending, startRefresh, addToast, browserMockMode]);
+    }, [setMetadataRefreshPending, startRefresh, addToast, browserMockMode, startupReady]);
 
     return {
         startRefresh,

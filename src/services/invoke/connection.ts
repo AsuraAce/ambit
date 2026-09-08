@@ -1,6 +1,8 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { InvokeOwnerDiscovery, InvokeOwnerSummary, InvokeSourceFingerprint } from '../../types';
 import type { InvokeSyncScope } from './syncScope';
+import { measureStartupPhase } from '../../utils/startupDiagnostics';
+import { getInvokePathIdentity } from './pathIdentity';
 
 interface BoardRow {
     board_id: string;
@@ -72,27 +74,54 @@ export const resolveInvokePaths = (rootPath: string): InvokePaths => {
         imagesRoot,
     };
 };
+const sourceDatabasePromises = new Map<string, Promise<Database>>();
 
+export const getInvokeSourceDatabase = (rootPath: string): Promise<Database> => {
+    const { dbPath } = resolveInvokePaths(rootPath);
+    const identity = getInvokePathIdentity(dbPath);
+    const existing = sourceDatabasePromises.get(identity);
+    if (existing) return existing;
+
+    const opening = Database.load(`sqlite:${dbPath}`).catch((error) => {
+        if (sourceDatabasePromises.get(identity) === opening) {
+            sourceDatabasePromises.delete(identity);
+        }
+        throw error;
+    });
+    sourceDatabasePromises.set(identity, opening);
+    return opening;
+};
+
+// Invalidating only removes future lookups from the cache. Existing callers keep
+// their handle, including an open still in flight, because closing it can disrupt
+// a concurrent source read.
+export const invalidateInvokeSourceDatabase = (rootPath?: string): void => {
+    if (!rootPath) {
+        sourceDatabasePromises.clear();
+        return;
+    }
+    sourceDatabasePromises.delete(getInvokePathIdentity(resolveInvokePaths(rootPath).dbPath));
+};
 export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwnerDiscovery> => {
     if (!rootPath) throw new Error('No InvokeAI path provided.');
 
     const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
-    const db = await Database.load(`sqlite:${dbPath}`);
+    const db = await measureStartupPhase('owner-source-open', () => getInvokeSourceDatabase(dbPath));
     const imageColumns = new Set(
-        (await db.select<TableRow[]>('PRAGMA table_info(images)')).map(column => column.name)
+        (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(images)'))).map(column => column.name)
     );
     if (!imageColumns.has('user_id')) {
         return { schemaMode: 'legacy', dbPath, imagesRoot, owners: [], unassignedImageCount: 0 };
     }
 
     const tables = new Set(
-        (await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'"))
+        (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'")))
             .map(table => table.name)
     );
     let canReadDisplayNames = false;
     if (tables.has('users')) {
         const userColumns = new Set(
-            (await db.select<TableRow[]>('PRAGMA table_info(users)')).map(column => column.name)
+            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(users)'))).map(column => column.name)
         );
         canReadDisplayNames = userColumns.has('user_id') && userColumns.has('display_name');
     }
@@ -101,8 +130,8 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
         ? ', SUM(CASE WHEN COALESCE(i.is_intermediate, 0) = 1 THEN 1 ELSE 0 END) AS intermediate_count'
         : '';
 
-    const ownerRows = canReadDisplayNames
-        ? await db.select<OwnerRow[]>(`
+    const ownerRows = await measureStartupPhase('owner-source-images', () => canReadDisplayNames
+        ? db.select<OwnerRow[]>(`
             SELECT CAST(i.user_id AS TEXT) AS owner_id,
                    MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
                    count(*) AS count${intermediateCountSelect}
@@ -111,12 +140,12 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
             GROUP BY i.user_id
             ORDER BY display_name COLLATE NOCASE, owner_id
         `)
-        : await db.select<OwnerRow[]>(`
+        : db.select<OwnerRow[]>(`
             SELECT CAST(i.user_id AS TEXT) AS owner_id, count(*) AS count${intermediateCountSelect}
             FROM images i
             GROUP BY i.user_id
             ORDER BY owner_id
-        `);
+        `));
     let unassignedImageCount = 0;
     let unassignedBoardCount = 0;
     const ownersById = new Map<string, InvokeOwnerSummary>();
@@ -140,11 +169,11 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
 
     if (tables.has('boards')) {
         const boardColumns = new Set(
-            (await db.select<TableRow[]>('PRAGMA table_info(boards)')).map(column => column.name)
+            (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(boards)'))).map(column => column.name)
         );
         if (boardColumns.has('user_id')) {
-            const boardOwnerRows = canReadDisplayNames
-                ? await db.select<OwnerRow[]>(`
+            const boardOwnerRows = await measureStartupPhase('owner-source-boards', () => canReadDisplayNames
+                ? db.select<OwnerRow[]>(`
                     SELECT CAST(b.user_id AS TEXT) AS owner_id,
                            MAX(NULLIF(TRIM(u.display_name), '')) AS display_name,
                            count(*) AS count
@@ -153,12 +182,12 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
                     GROUP BY b.user_id
                     ORDER BY display_name COLLATE NOCASE, owner_id
                 `)
-                : await db.select<OwnerRow[]>(`
+                : db.select<OwnerRow[]>(`
                     SELECT CAST(user_id AS TEXT) AS owner_id, count(*) AS count
                     FROM boards
                     GROUP BY user_id
                     ORDER BY owner_id
-                `);
+                `));
             boardOwnerRows.forEach(row => {
                 const ownerId = row.owner_id?.trim() ?? '';
                 if (!ownerId) {
@@ -175,7 +204,7 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
                 });
             });
         } else {
-            const [row] = await db.select<CountRow[]>('SELECT count(*) AS count FROM boards');
+            const [row] = await measureStartupPhase('owner-source-boards', () => db.select<CountRow[]>('SELECT count(*) AS count FROM boards'));
             unassignedBoardCount = row?.count ?? 0;
         }
     }
@@ -206,7 +235,7 @@ export const readInvokeSourceFingerprint = async (
     scope: InvokeSyncScope
 ): Promise<InvokeSourceFingerprint> => {
     const { dbPath } = resolveInvokePaths(rootPath);
-    const db = await Database.load(`sqlite:${dbPath}`);
+    const db = await getInvokeSourceDatabase(dbPath);
     const tables = new Set(
         (await db.select<TableRow[]>("SELECT name FROM sqlite_master WHERE type='table'"))
             .map(table => table.name)
@@ -399,12 +428,16 @@ export const testConnection = async (rootPath: string): Promise<{ success: boole
     ];
     const candidates = Array.from(new Set(rawCandidates.map(path => path.replace(/\\/g, '/'))));
 
+    // A user-requested connection test must not reuse a handle to a source file
+    // that was replaced at the same path. In-flight readers keep their handles.
+    candidates.forEach(invalidateInvokeSourceDatabase);
+
     for (const path of candidates) {
         try {
             const connectionString = `sqlite:${path}`;
 
             console.log(`[InvokeAI] Testing connection to ${connectionString}`);
-            const db = await Database.load(connectionString);
+            const db = await getInvokeSourceDatabase(path);
             const result = await db.select<CountRow[]>('SELECT count(*) as count FROM images');
             const count = result[0]?.count || 0;
 
@@ -429,10 +462,9 @@ export const diagnoseInvokeAI = async (rootPath: string): Promise<InvokeDiagnost
     if (!rootPath) return { error: "No path provided." };
 
     const { dbPath, imagesRoot } = resolveInvokePaths(rootPath);
-    const connectionString = `sqlite:${dbPath}`;
 
     try {
-        const db = await Database.load(connectionString);
+        const db = await getInvokeSourceDatabase(dbPath);
         const tableInfo = await db.select<TableRow[]>('PRAGMA table_info(images)');
         const columns = tableInfo.map((c) => c.name);
 

@@ -4,6 +4,7 @@ import { AppSettings, AppSettingsUpdate } from '../types';
 import { useSettingsStore } from '../stores/settingsStore';
 import { isTauriRuntime } from '../services/runtime';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
+import { startupLifecycle } from '../utils/startupLifecycle';
 import { exit } from '@tauri-apps/plugin-process';
 
 interface SettingsContextType {
@@ -46,23 +47,32 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
                 event.preventDefault();
                 if (closePending) return;
                 closePending = true;
+                startupLifecycle.record('close-requested');
                 const closeAdmission = settingsPersistenceCoordinator.closeAdmission();
 
+                startupLifecycle.record('settings-drain-started');
                 try {
                     await closeAdmission.drain();
+                    startupLifecycle.record('settings-drain-completed');
                 } catch (error) {
+                    startupLifecycle.record('settings-drain-failed');
                     console.error('[SettingsStore] Settings transaction drain failed before close', error);
                 }
 
+                startupLifecycle.record('settings-flush-started');
                 try {
                     await flushSettings();
+                    startupLifecycle.record('settings-flush-completed');
                 } catch (error) {
+                    startupLifecycle.record('settings-flush-failed');
                     console.error('[SettingsStore] Failed to flush settings before close', error);
                 }
 
                 try {
+                    startupLifecycle.record('exit-invoked');
                     await exit(0);
                 } catch (error) {
+                    startupLifecycle.record('exit-failed');
                     closePending = false;
                     closeAdmission.restore();
                     console.error('[SettingsStore] Failed to exit app process', error);

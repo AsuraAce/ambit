@@ -2,7 +2,7 @@
 
 [Back to manual index](index.md)
 
-Ambit builds its library by scanning local folders and selected files. It catalogs PNG, JPEG, and WebP images and supported videos, parses generation or camera metadata when available, and keeps the original files on disk.
+Ambit builds its library by scanning local image folders and selected files. It catalogs supported images and videos through file selection and folder scans, parses generation or camera metadata when available, and keeps the original files on disk.
 
 ## Import Choices
 
@@ -22,15 +22,15 @@ flowchart TD
 
 Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for camera folders, downloaded packs, screenshots, archives, or individual files. Import completion reports how many images Ambit detected as Generated, Photo, and Other.
 
-Video import accepts MP4, WebM, MOV, M4V, and MKV candidates through manual selection, folder discovery, and Live Watch. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app.
+Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder scans and Live Watch also discover supported videos, including create, modify, rename, and removal changes. A video whose poster cannot be generated remains cataloged with a generic placeholder.
 
-## Monitored Image Folders
+## Monitored Folders
 
-Open Settings > Connections > Folders to manage image folders.
+Open Settings > Connections > Folders to manage monitored media folders.
 
 In the Folders section you can:
 
-- add folders containing generated images, camera photos, and other local images
+- add folders containing generated images, camera photos, other local images, and supported videos
 - review folders Ambit is monitoring
 - rescan a single folder
 - refresh metadata across all folders

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react';
 import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import {
     commands,
@@ -19,6 +19,7 @@ import { refreshThumbnailConsumers as refreshCommittedThumbnailConsumers } from 
 import { useCollectionStore } from '../stores/collectionStore';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
 import { listenWithCleanup } from '../utils/tauriListener';
+import { startupDiagnostics } from '../utils/startupDiagnostics';
 
 const STARTUP_DELAY_MS = 30000;
 const RESUME_DELAY_MS = 5000;
@@ -60,7 +61,7 @@ const hasVisibleThumbnailResult = (result: ThumbnailOptimizationResult): boolean
  * and cancellation. The hook only coordinates Settings, blocking activity, and the
  * ActivityDock presentation.
  */
-export function useThumbnailQueue(addToast?: ToastFn): void {
+export function useThumbnailQueue(addToast?: ToastFn, startupReady = false): void {
     const queryClient = useQueryClient();
     const activeImageQueryCount = useIsFetching({ queryKey: ['images'] });
     const isRunningRef = useRef(false);
@@ -71,6 +72,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const restartRequestedRef = useRef(false);
     const retryAfterCurrentRunRef = useRef(false);
     const isImageQueryFetchingRef = useRef(false);
+    const startupReadyRef = useRef(startupReady);
     const mountedRef = useRef(true);
     const scheduledIdleCancelRef = useRef<(() => void) | null>(null);
     const jobDiagnosticRef = useRef<BackgroundDiagnosticHandle | null>(null);
@@ -107,7 +109,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const isSettingsLoaded = useSettingsStore(s => s.isLoaded);
 
     const isImageQueryFetching = activeImageQueryCount > 0;
-    const isHardBlocked = isImporting
+    const isHardBlocked = !startupReady || isImporting
         || isRegeneratingThumbnails
         || syncStatus === 'syncing'
         || isResolvingModels
@@ -124,9 +126,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
         isImageQueryFetchingRef.current = isImageQueryFetching;
     }, [isImageQueryFetching]);
 
+    useLayoutEffect(() => {
+        startupReadyRef.current = startupReady;
+    }, [startupReady]);
+
     const shouldPauseForActivity = useCallback(() => {
         const store = useLibraryStore.getState();
-        return store.isImporting
+        return !startupReadyRef.current || store.isImporting
             || store.isRegeneratingThumbnails
             || store.syncStatus === 'syncing'
             || store.isResolvingModels
@@ -519,6 +525,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             throttledAtStart: shouldStartThrottled
         });
 
+        const finishStartupTrace = startupDiagnostics.start('thumbnail-maintenance');
         try {
             const jobPromise = unwrap(commands.startThumbnailOptimizationJob({
                 thumbnailDir,
@@ -531,11 +538,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
             setBackendThrottled(shouldStartThrottled);
 
             const result = await jobPromise;
+            finishStartupTrace(result.wasCancelled ? 'cancelled' : 'completed');
 
             cancelRequestedRef.current = false;
             await handleCompletion(result);
         } catch (error) {
             if (cancelRequestedRef.current) {
+                finishStartupTrace('cancelled');
                 isRunningRef.current = false;
                 runningConfigRef.current = null;
                 lastThrottleRef.current = null;
@@ -549,6 +558,7 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
                 return;
             }
 
+            finishStartupTrace('failed');
             console.error('[ThumbnailQueue] Backend thumbnail optimization failed', error);
             addToast?.(`Smart thumbnail optimization failed: ${String(error)}`, 'error');
             jobDiagnosticRef.current?.finish('failed', {
@@ -581,13 +591,13 @@ export function useThumbnailQueue(addToast?: ToastFn): void {
     const [isStartupDelayComplete, setStartupDelayComplete] = useState(false);
 
     useEffect(() => {
-        if (browserMockMode) return;
+        if (browserMockMode || !startupReady) return;
 
         const timer = setTimeout(() => {
             setStartupDelayComplete(true);
         }, STARTUP_DELAY_MS);
         return () => clearTimeout(timer);
-    }, [browserMockMode]);
+    }, [browserMockMode, startupReady]);
 
     useEffect(() => {
         if (browserMockMode) return;

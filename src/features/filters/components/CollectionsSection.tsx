@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useState } from 'react';
 import { Plus, Save, FolderOpen, Loader2 } from 'lucide-react';
 import { Collection, FilterState } from '../../../types';
+import { useCollectionStore } from '../../../stores/collectionStore';
 import { SectionHeader } from './FilterPrimitives';
 import { CollectionList } from './CollectionList';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -50,6 +51,7 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
     const [isCreating, setIsCreating] = useState(false);
     const [isSavingSearch, setIsSavingSearch] = useState(false);
     const [newName, setNewName] = useState('');
+    const retryCounts = useCollectionStore(state => state.retryOrdinaryCounts);
 
     const handleCreate = (e: React.FormEvent) => {
         e.preventDefault();
@@ -75,6 +77,12 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                 onToggle={onToggle}
             />
 
+            {collections.some(collection => collection.countState === 'failed') && (
+                <button type="button" onClick={retryCounts}
+                    className="text-xs text-sage-600 dark:text-sage-400 underline">
+                    Retry counts
+                </button>
+            )}
             {isOpen && (
                 <CollectionList
                     collections={collections}

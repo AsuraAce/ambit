@@ -1,10 +1,9 @@
-import Database from '@tauri-apps/plugin-sql';
+import type Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands, type FileMetadataProbe, type InvokeImageReferenceSet } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
 import { mapInvokeMetadata } from './metadataMapper';
-import { fetchBoardMappings, type InvokeBoardInfo } from './connection';
-import { resolveInvokePaths } from './connection';
+import { fetchBoardMappings, getInvokeSourceDatabase, resolveInvokePaths, type InvokeBoardInfo } from './connection';
 import { APP_NAME } from '../../constants/app';
 import { AIImage, FacetType } from '../../types';
 import {
@@ -113,13 +112,12 @@ export const syncImages = async (
         throw new Error('InvokeAI sync scope does not match the configured database and image root.');
     }
     const { dbPath, imagesRoot } = scope;
-    const connectionString = `sqlite:${dbPath}`;
 
     onProgress(0, 0, 'Connecting to InvokeAI database...');
     let invokeDb: Database;
     const connectStartedAt = liveWatchNow();
     try {
-        invokeDb = await Database.load(connectionString);
+        invokeDb = await getInvokeSourceDatabase(dbPath);
     } catch (e) {
         throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
     }

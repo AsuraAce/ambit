@@ -5,7 +5,7 @@ import { PrivacyAwareThumbnail } from '../../../components/ui/PrivacyAwareThumbn
 import { CollectionThumbnailSkeleton } from '../../../components/ui/CollectionThumbnailSkeleton';
 import { formatCountCompact } from '../../../utils/formatUtils';
 import { createCollectionSelectionFilters } from '../../../utils/filterState';
-import { getCollectionCount } from '../../../utils/collectionCount';
+import { getCollectionCount, getCollectionCountLabel } from '../../../utils/collectionCount';
 
 interface CollectionItemProps {
     col: Collection;
@@ -69,7 +69,7 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     const showThumbnailSkeleton = isThumbnailPending && !thumbUrl;
     const count = getCollectionCount(col);
     const countText = count === undefined ? '\u2014' : formatCountCompact(count);
-    const unknownCountLabel = count === undefined ? 'Count not calculated' : undefined;
+    const unknownCountLabel = getCollectionCountLabel(col);
     return (
         <div
             key={col.id}

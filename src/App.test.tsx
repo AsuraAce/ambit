@@ -161,6 +161,7 @@ const mocks = vi.hoisted(() => ({
     setCollections: vi.fn(),
     refreshCollections: vi.fn().mockResolvedValue(undefined),
     refreshCollectionThumbnails: vi.fn().mockResolvedValue(undefined),
+    setOrdinaryCountsReady: vi.fn(),
     images: [] as AIImage[],
     privacyExposureBlocked: false,
     filters: null as unknown as FilterState,
@@ -334,12 +335,14 @@ vi.mock('./stores/collectionStore', () => ({
         setCollections: typeof mocks.setCollections;
         refreshCollections: typeof mocks.refreshCollections;
         refreshCollectionThumbnails: typeof mocks.refreshCollectionThumbnails;
+        setOrdinaryCountsReady: typeof mocks.setOrdinaryCountsReady;
     }) => unknown) => selector({
         isLoaded: mocks.collectionsLoaded,
         collections: mocks.collections,
         setCollections: mocks.setCollections,
         refreshCollections: mocks.refreshCollections,
-        refreshCollectionThumbnails: mocks.refreshCollectionThumbnails
+        refreshCollectionThumbnails: mocks.refreshCollectionThumbnails,
+        setOrdinaryCountsReady: mocks.setOrdinaryCountsReady,
     })
 }));
 vi.mock('./contexts/SearchContext', () => ({
@@ -355,6 +358,7 @@ vi.mock('./contexts/SearchContext', () => ({
         globalTotal: mocks.images.length + 5,
         isFiltering: false,
         privacyExposureBlocked: mocks.privacyExposureBlocked,
+        isLibraryReady: !mocks.privacyExposureBlocked,
         toggleFavorite: mocks.toggleFavorite,
         clearAllFilters: mocks.churnClearAllFiltersIdentity
             ? () => mocks.clearAllFilters()
@@ -584,8 +588,9 @@ describe('App orchestration', () => {
 
         expect(container.textContent).toBe('');
         expect(captured.appLayout).toBeNull();
-        expect(mocks.thumbnailQueue).toHaveBeenCalledWith(mocks.addToast);
-        expect(mocks.metadataRefresh).toHaveBeenCalled();
+        expect(mocks.thumbnailQueue).toHaveBeenCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenCalledWith(false);
+        expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(false);
     });
 
     it('wires loaded stores, background hooks, tags, and the static loader lifecycle', async () => {
@@ -613,6 +618,33 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(4000);
         });
         expect(document.getElementById('static-loading')).toBeNull();
+        expect(mocks.setOrdinaryCountsReady).toHaveBeenLastCalledWith(true);
+    });
+
+    it('keeps a fatal bootstrap fallback and does not admit background startup work', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        staticLoader.dataset.ambitFatal = 'true';
+        document.body.appendChild(staticLoader);
+        render(<App />);
+        await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
+        expect(staticLoader.dataset.ambitDismissed).toBeUndefined();
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
+        expect(mocks.setOrdinaryCountsReady).not.toHaveBeenCalledWith(true);
+    });
+
+    it('does not remove a fatal fallback raised during the splash fade', async () => {
+        vi.useFakeTimers();
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        render(<App />);
+        staticLoader.dataset.ambitFatal = 'true';
+        await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+        expect(document.getElementById('static-loading')).toBe(staticLoader);
     });
 
     it('keeps quick initial InvokeAI admission behind the splash without flashing preparation', async () => {
@@ -628,6 +660,8 @@ describe('App orchestration', () => {
 
         const view = render(<App />);
         expect(staticLoader.style.opacity).toBe('');
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(mocks.addToast, false);
+        expect(mocks.metadataRefresh).toHaveBeenLastCalledWith(false);
         expect(view.container.querySelector('[data-testid="invoke-owner-scope-gate"]')).toBeNull();
         expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
 
@@ -704,6 +738,19 @@ describe('App orchestration', () => {
             await vi.advanceTimersByTimeAsync(1);
         });
         expect(requireProbe(captured.appLayout, 'AppLayout').forcePrivacyProtectionGate).toBe(false);
+    });
+
+    it('keeps an admitted owner behind the splash until collection counts load', () => {
+        const staticLoader = document.createElement('div');
+        staticLoader.id = 'static-loading';
+        document.body.appendChild(staticLoader);
+        mocks.collectionsLoaded = false;
+        mocks.settings = createDefaultAppSettings({ invokeAiPath: 'D:/Invoke' });
+        mocks.invokeOwnerScopeState = { status: 'ready', rootPath: 'D:/Invoke' };
+        const view = render(<App />);
+        expect(view.container.querySelector('[data-testid="app-layout"]')).toBeNull();
+        expect(document.getElementById('static-loading')).not.toBeNull();
+        expect(mocks.thumbnailQueue).toHaveBeenLastCalledWith(expect.any(Function), false);
     });
 
     it('keeps owner admission and a brief privacy handoff behind the startup splash', async () => {
@@ -1541,7 +1588,8 @@ describe('App orchestration', () => {
         expect(view.container.querySelector('[data-testid="app-layout"]')).not.toBeNull();
     });
 
-    it('keeps selection and blocking errors in front of the library', () => {
+    it.each([true, false])('keeps owner recovery reachable with collections loaded=%s', (collectionsLoaded) => {
+        mocks.collectionsLoaded = collectionsLoaded;
         mocks.settings = createDefaultAppSettings({
             hasCompletedOnboarding: true,
             invokeAiPath: 'D:/Invoke',

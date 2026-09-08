@@ -25,6 +25,10 @@ const lifecycle = vi.hoisted(() => ({
     closeHandler: undefined as undefined | ((event: { preventDefault: () => void }) => Promise<void>),
 }));
 
+const startupLifecycle = vi.hoisted(() => ({
+    record: vi.fn(),
+}));
+
 vi.mock('../../stores/settingsStore', () => ({
     useSettingsStore: (selector: (state: typeof store) => unknown) => selector(store),
 }));
@@ -46,6 +50,10 @@ vi.mock('@tauri-apps/plugin-process', () => ({
     exit: lifecycle.exit,
 }));
 
+vi.mock('../../utils/startupLifecycle', () => ({
+    startupLifecycle,
+}));
+
 describe('SettingsContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -57,6 +65,7 @@ describe('SettingsContext', () => {
         lifecycle.tauriRuntime = false;
         lifecycle.closeHandler = undefined;
         lifecycle.exit.mockResolvedValue(undefined);
+        startupLifecycle.record.mockReset();
     });
 
     it('requires a provider', () => {
@@ -114,6 +123,44 @@ describe('SettingsContext', () => {
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
     });
 
+    it('records a bounded successful close timeline without changing drain, flush, or exit order', async () => {
+        lifecycle.tauriRuntime = true;
+        const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
+        renderHook(() => useSettings(), { wrapper });
+        await waitFor(() => expect(lifecycle.closeHandler).toBeDefined());
+
+        await act(async () => {
+            await lifecycle.closeHandler?.({ preventDefault: vi.fn() });
+        });
+
+        expect(startupLifecycle.record.mock.calls).toEqual([
+            ['close-requested'],
+            ['settings-drain-started'],
+            ['settings-drain-completed'],
+            ['settings-flush-started'],
+            ['settings-flush-completed'],
+            ['exit-invoked'],
+        ]);
+        expect(store.flushSettings.mock.invocationCallOrder[0]).toBeLessThan(
+            lifecycle.exit.mock.invocationCallOrder[0]
+        );
+    });
+
+    it('does not delay close when lifecycle diagnostic requests never settle', async () => {
+        lifecycle.tauriRuntime = true;
+        startupLifecycle.record.mockImplementation(() => new Promise<void>(() => undefined));
+        const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
+        renderHook(() => useSettings(), { wrapper });
+        await waitFor(() => expect(lifecycle.closeHandler).toBeDefined());
+
+        await act(async () => {
+            await lifecycle.closeHandler?.({ preventDefault: vi.fn() });
+        });
+
+        expect(store.flushSettings).toHaveBeenCalledOnce();
+        expect(lifecycle.exit).toHaveBeenCalledWith(0);
+    });
+
     it('allows close and cleans up the listener when settings flush rejects', async () => {
         lifecycle.tauriRuntime = true;
         const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -137,6 +184,34 @@ describe('SettingsContext', () => {
         expect(lifecycle.unlisten).not.toHaveBeenCalled();
         unmount();
         expect(lifecycle.unlisten).toHaveBeenCalledOnce();
+        error.mockRestore();
+    });
+
+    it('records only fixed failure stages and preserves exit retry admission when close work fails', async () => {
+        lifecycle.tauriRuntime = true;
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        store.flushSettings.mockRejectedValueOnce(new Error('disk full'));
+        lifecycle.exit.mockRejectedValueOnce(new Error('exit cancelled'));
+        const wrapper = ({ children }: { children: React.ReactNode }) => <SettingsProvider>{children}</SettingsProvider>;
+        renderHook(() => useSettings(), { wrapper });
+        await waitFor(() => expect(lifecycle.closeHandler).toBeDefined());
+
+        await act(async () => {
+            await lifecycle.closeHandler?.({ preventDefault: vi.fn() });
+        });
+
+        expect(startupLifecycle.record.mock.calls).toEqual([
+            ['close-requested'],
+            ['settings-drain-started'],
+            ['settings-drain-completed'],
+            ['settings-flush-started'],
+            ['settings-flush-failed'],
+            ['exit-invoked'],
+            ['exit-failed'],
+        ]);
+        const admittedAfterCancellation = vi.fn(async () => undefined);
+        await expect(settingsPersistenceCoordinator.run(admittedAfterCancellation)).resolves.toBeUndefined();
+        expect(admittedAfterCancellation).toHaveBeenCalledOnce();
         error.mockRestore();
     });
 
@@ -213,6 +288,14 @@ describe('SettingsContext', () => {
             '[SettingsStore] Settings transaction drain failed before close',
             expect.any(AggregateError)
         );
+        expect(startupLifecycle.record.mock.calls).toEqual([
+            ['close-requested'],
+            ['settings-drain-started'],
+            ['settings-drain-failed'],
+            ['settings-flush-started'],
+            ['settings-flush-completed'],
+            ['exit-invoked'],
+        ]);
         expect(store.flushSettings).toHaveBeenCalledOnce();
         expect(lifecycle.exit).toHaveBeenCalledOnce();
         error.mockRestore();

@@ -176,11 +176,27 @@ describe('useThumbnailQueue behavioral contract', () => {
         return { promise, resolve, reject };
     };
 
+    it('waits for library readiness before starting the startup delay', async () => {
+        vi.useFakeTimers();
+        const { useThumbnailQueue } = await import('../useThumbnailQueue');
+        const { rerender } = renderHook(({ ready }) => useThumbnailQueue(undefined, ready), {
+            initialProps: { ready: false },
+        });
+        await act(async () => vi.advanceTimersByTimeAsync(8 * 60_000));
+        expect(mocks.startThumbnailOptimizationJob).not.toHaveBeenCalled();
+        rerender({ ready: true });
+        await act(async () => vi.advanceTimersByTimeAsync(29_999));
+        expect(mocks.startThumbnailOptimizationJob).not.toHaveBeenCalled();
+        await act(async () => vi.advanceTimersByTimeAsync(1));
+        await act(async () => vi.advanceTimersByTimeAsync(50));
+        expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
+    });
+
     it('starts the backend optimizer after startup delay and clears visible completion progress', async () => {
         vi.useFakeTimers();
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(30000);
@@ -219,7 +235,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.spyOn(console, 'debug').mockImplementation(() => undefined);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
         expect(progressHandler).toBeDefined();
 
@@ -269,7 +285,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.useFakeTimers();
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue(), { reactStrictMode: true });
+        renderHook(() => useThumbnailQueue(undefined, true), { reactStrictMode: true });
 
         await advanceStartup();
 
@@ -279,7 +295,7 @@ describe('useThumbnailQueue behavioral contract', () => {
     it('ignores invisible backend progress instead of showing empty thumbnail work', async () => {
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
 
         act(() => {
@@ -330,7 +346,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             },
         });
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
 
         await act(async () => {
@@ -382,7 +398,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             },
         });
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
 
         await act(async () => {
@@ -436,7 +452,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(30000);
@@ -461,7 +477,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
 
-        renderHook(() => useThumbnailQueue(addToast));
+        renderHook(() => useThumbnailQueue(addToast, true));
 
         await act(async () => {
             await vi.advanceTimersByTimeAsync(30000);
@@ -488,7 +504,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             backgroundHealingProgress: { current: 1, total: 2, message: 'Working' },
         });
 
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         hook.unmount();
 
         expect(mocks.listenerHandlers.size).toBe(0);
@@ -510,7 +526,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.stubGlobal('requestIdleCallback', requestIdle);
         vi.stubGlobal('cancelIdleCallback', cancelIdle);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
 
         await act(async () => vi.advanceTimersByTimeAsync(30000));
         expect(requestIdle).toHaveBeenCalledTimes(1);
@@ -532,7 +548,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             backgroundHealingProgress: { current: 1, total: 2, message: 'Working' },
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
 
         await advanceStartup();
 
@@ -548,7 +564,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const firstDir = deferred<string | null>();
         mocks.getThumbnailDir.mockReturnValueOnce(firstDir.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const first = renderHook(() => useThumbnailQueue());
+        const first = renderHook(() => useThumbnailQueue(undefined, true));
         await act(async () => vi.advanceTimersByTimeAsync(30000));
         await act(async () => vi.advanceTimersByTimeAsync(50));
         act(() => useLibraryStore.setState({ isImporting: true }));
@@ -559,7 +575,7 @@ describe('useThumbnailQueue behavioral contract', () => {
 
         useLibraryStore.setState({ isImporting: false, backgroundHealingPaused: false });
         mocks.getThumbnailDir.mockClear();
-        const second = renderHook(() => useThumbnailQueue());
+        const second = renderHook(() => useThumbnailQueue(undefined, true));
         await act(async () => vi.advanceTimersByTimeAsync(30000));
         act(() => useLibraryStore.setState({ isImporting: true }));
         await act(async () => vi.advanceTimersByTimeAsync(50));
@@ -582,7 +598,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             },
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         expect(mocks.setThumbnailOptimizationThrottled).toHaveBeenCalledWith(true);
@@ -600,7 +616,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         act(() => useSettingsStore.setState(state => ({
@@ -622,7 +638,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         act(() => useLibraryStore.setState({ isScanningDuplicates: true }));
@@ -642,7 +658,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         act(() => useLibraryStore.setState({ isImporting: true }));
         await act(async () => Promise.resolve());
@@ -661,7 +677,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         mocks.rebuildThumbnailFacetCache.mockRejectedValueOnce(new Error('cache failed'));
         const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         await act(async () => Promise.resolve());
         expect(warnSpy).toHaveBeenCalledWith('[ThumbnailQueue] Thumbnail facet cache refresh failed', expect.any(Error));
@@ -672,7 +688,7 @@ describe('useThumbnailQueue behavioral contract', () => {
     it('shows the zero-count discovery event immediately without inventing a total', async () => {
         const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => undefined);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
 
         act(() => progressHandler?.({ payload: {
@@ -695,7 +711,7 @@ describe('useThumbnailQueue behavioral contract', () => {
     it('ignores duplicate completion events and avoids consumer refresh without optimizations', async () => {
         vi.useFakeTimers();
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
         const payload = {
             checked: 1, optimized: 0, reused: 1, failed: 0, skipped: 0,
@@ -717,7 +733,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.useFakeTimers();
         useLibraryStore.setState({ backgroundHealingPaused: true });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
 
         await act(async () => completeHandler?.({ payload: {
@@ -736,7 +752,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<{ status: 'ok'; data: { checked: number; optimized: number; reused: number; failed: number; skipped: number; durationMs: number; wasCancelled: boolean } }>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
@@ -755,7 +771,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.useFakeTimers();
         useLibraryStore.setState({ isImporting: true });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
         await act(async () => Promise.resolve());
         expect(useLibraryStore.getState().backgroundHealingPaused).toBe(true);
@@ -771,7 +787,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         act(() => useLibraryStore.setState({ isImporting: true }));
         await act(async () => Promise.resolve());
@@ -786,7 +802,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         const progressHandler = mocks.listenerHandlers.get('thumbnail-optimization-progress');
@@ -830,7 +846,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             },
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         expect(mocks.setThumbnailOptimizationThrottled).toHaveBeenCalledWith(true);
 
@@ -845,7 +861,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         vi.useFakeTimers();
         useLibraryStore.setState({ isImporting: true, backgroundHealingPaused: true });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
 
         act(() => {
@@ -865,7 +881,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<{ status: 'ok'; data: { checked: number; optimized: number; reused: number; failed: number; skipped: number; durationMs: number; wasCancelled: boolean } }>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
         job.resolve({ status: 'ok', data: {
@@ -894,7 +910,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         }));
         vi.stubGlobal('cancelIdleCallback', vi.fn());
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         await act(async () => vi.advanceTimersByTimeAsync(30000));
         hook.unmount();
         idleCallback?.({ didTimeout: false, timeRemaining: () => 10 });
@@ -907,7 +923,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         useSettingsStore.setState({ isLoaded: false });
         useLibraryStore.setState({ thumbnailMaintenanceOperation: 'repair' });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
         await act(async () => vi.advanceTimersByTimeAsync(35000));
         expect(mocks.startThumbnailOptimizationJob).not.toHaveBeenCalled();
@@ -919,7 +935,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             settings: { ...state.settings, thumbnailOptimizationProfile: undefined },
         }));
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledWith(
             expect.objectContaining({ profile: 'balanced' }),
@@ -932,7 +948,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const cancelledJob = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(cancelledJob.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const first = renderHook(() => useThumbnailQueue());
+        const first = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         act(() => useLibraryStore.setState({ isImporting: true }));
         await act(async () => Promise.resolve());
@@ -942,7 +958,7 @@ describe('useThumbnailQueue behavioral contract', () => {
 
         useLibraryStore.setState({ isImporting: false, backgroundHealingPaused: false });
         mocks.startThumbnailOptimizationJob.mockRejectedValueOnce(new Error('failed'));
-        const second = renderHook(() => useThumbnailQueue());
+        const second = renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
         second.unmount();
@@ -955,7 +971,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             data: { checked: 1, optimized: 0, reused: 0, failed: 0, skipped: 0, durationMs: 100, wasCancelled: true },
         });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         expect(useLibraryStore.getState().isBackgroundHealingActive).toBe(false);
     });
@@ -965,7 +981,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<{ status: 'ok'; data: { checked: number; optimized: number; reused: number; failed: number; skipped: number; durationMs: number; wasCancelled: boolean } }>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         act(() => useLibraryStore.getState().requestThumbnailOptimizationRun());
         job.resolve({ status: 'ok', data: {
@@ -982,7 +998,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         useSettingsStore.setState(state => ({ settings: { ...state.settings, enableAutoThumbnailHealing: false } }));
         useLibraryStore.setState({ backgroundHealingPaused: true });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         const completeHandler = mocks.listenerHandlers.get('thumbnail-optimization-complete');
         await act(async () => completeHandler?.({ payload: {
             checked: 1, optimized: 0, reused: 0, failed: 0, skipped: 0,
@@ -996,7 +1012,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
         useLibraryStore.setState({ backgroundHealingPaused: true });
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        const hook = renderHook(() => useThumbnailQueue());
+        const hook = renderHook(() => useThumbnailQueue(undefined, true));
         const resumeTimer = timeoutSpy.mock.calls.find(([, delay]) => delay === 5000)?.[0] as (() => void) | undefined;
         expect(resumeTimer).toBeDefined();
         hook.unmount();
@@ -1013,7 +1029,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         }));
         vi.stubGlobal('cancelIdleCallback', vi.fn());
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await act(async () => vi.advanceTimersByTimeAsync(30000));
         act(() => useSettingsStore.setState(state => ({ settings: { ...state.settings, enableAutoThumbnailHealing: false } })));
         idleCallback?.({ didTimeout: false, timeRemaining: () => 10 });
@@ -1029,7 +1045,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         mocks.cancelThumbnailOptimizationJob.mockReturnValueOnce(cancel.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
 
         act(() => useSettingsStore.setState(state => ({ settings: { ...state.settings, enableAutoThumbnailHealing: false } })));
@@ -1042,7 +1058,7 @@ describe('useThumbnailQueue behavioral contract', () => {
 
     it('owns ActivityDock cancellation and clears queue presentation state', async () => {
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         useLibraryStore.setState({
             isBackgroundHealingActive: true,
             backgroundHealingProgress: { current: 1, total: 10, message: 'Working' },
@@ -1074,7 +1090,7 @@ describe('useThumbnailQueue behavioral contract', () => {
             }>();
             mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
             const { useThumbnailQueue } = await import('../useThumbnailQueue');
-            renderHook(() => useThumbnailQueue());
+            renderHook(() => useThumbnailQueue(undefined, true));
             await advanceStartup();
 
             act(() => useLibraryStore.getState().requestThumbnailOptimizationCancel());
@@ -1112,7 +1128,7 @@ describe('useThumbnailQueue behavioral contract', () => {
         const job = deferred<never>();
         mocks.startThumbnailOptimizationJob.mockReturnValueOnce(job.promise);
         const { useThumbnailQueue } = await import('../useThumbnailQueue');
-        renderHook(() => useThumbnailQueue());
+        renderHook(() => useThumbnailQueue(undefined, true));
         await advanceStartup();
         expect(mocks.startThumbnailOptimizationJob).toHaveBeenCalledTimes(1);
 

@@ -89,6 +89,10 @@ before:2025
 
 `date:YYYY` matches the year, `date:YYYY-MM` matches the month, and `date:YYYY-MM-DD` matches one local day. `date:start..end` requires both sides of the range and accepts year, month, or day values.
 
+## Media Filter
+
+The view controls offer All, Images, and Videos. Media type combines with search and the other filters and is preserved in saved smart collection rules. Video prompts and recovered model/resource metadata participate in library searches when available.
+
 ## Filter Panel
 
 The Library filter panel is organized into tabs:

@@ -41,8 +41,16 @@ const libraryContextMocks = vi.hoisted(() => ({
     isKeywordStatsLoading: false
 }));
 
+const libraryStoreMocks = vi.hoisted(() => ({
+    setKeywordStatsEnabled: vi.fn()
+}));
+
 vi.mock('../../../hooks/useLibraryContext', () => ({
     useLibraryContext: () => libraryContextMocks
+}));
+
+vi.mock('../../../stores/libraryStore', () => ({
+    useLibraryStore: (selector: (state: typeof libraryStoreMocks) => unknown) => selector(libraryStoreMocks)
 }));
 
 describe('StatsDashboard', () => {
@@ -63,6 +71,16 @@ describe('StatsDashboard', () => {
         fireEvent.click(screen.getByRole('button', { name: /Flux Super Long Model Name XL/i }));
 
         expect(onFilter).toHaveBeenCalledWith('model', 'Flux Super Long Model Name XL');
+    });
+
+    it('enables keyword analysis only while the Statistics dashboard is mounted', () => {
+        const { unmount } = render(<StatsDashboard images={[]} onFilter={vi.fn()} />);
+
+        expect(libraryStoreMocks.setKeywordStatsEnabled).toHaveBeenCalledWith(true);
+
+        unmount();
+
+        expect(libraryStoreMocks.setKeywordStatsEnabled).toHaveBeenLastCalledWith(false);
     });
 
     it('shows progressive loading placeholders before the summary query resolves', () => {

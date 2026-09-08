@@ -1,28 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    recordStartupDiagnostic: vi.fn().mockResolvedValue(undefined),
     load: vi.fn(),
     listInvokeaiImages: vi.fn(),
     refreshInvokeOwnerScope: vi.fn(),
     setInvokeBoardVerification: vi.fn(),
     reconcileInvokeSourceFacts: vi.fn(),
     fetchBoards: vi.fn(),
+    getInvokeSourceDatabase: vi.fn(),
     reconcileInvokeBoardSnapshot: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-sql', () => ({ default: { load: mocks.load } }));
 vi.mock('../../../bindings', () => ({
     commands: {
+        getStartupLaunch: vi.fn().mockResolvedValue({ launchId: 'a0', processElapsedMs: 0 }),
+        recordStartupDiagnostic: mocks.recordStartupDiagnostic,
         listInvokeaiImages: mocks.listInvokeaiImages,
         refreshInvokeOwnerScope: mocks.refreshInvokeOwnerScope,
         setInvokeBoardVerification: mocks.setInvokeBoardVerification,
     },
 }));
+vi.mock('../../runtime', () => ({ isTauriRuntime: () => true }));
 vi.mock('../sourceReconciliation', () => ({
     reconcileInvokeSourceFacts: mocks.reconcileInvokeSourceFacts,
 }));
 vi.mock('../connection', () => ({
     fetchBoards: mocks.fetchBoards,
+    getInvokeSourceDatabase: mocks.getInvokeSourceDatabase,
 }));
 vi.mock('../../db/collectionRepo', () => ({
     reconcileInvokeBoardSnapshot: mocks.reconcileInvokeBoardSnapshot,
@@ -56,11 +62,45 @@ const restoredCacheResult = {
 };
 
 describe('applyInvokeOwnerScope', () => {
+    it.each(['failed', 'cancelled'] as const)('finishes the repair report as %s without masking the business rejection', async (status) => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        const { startupDiagnostics } = await import('../../../utils/startupDiagnostics');
+        const { createStartupRepairCollector } = await import('../../../utils/startupRepairDiagnostics');
+        const report = vi.fn();
+        const collector = createStartupRepairCollector({ now: () => 0, stage: vi.fn(), report });
+        const claim = vi.spyOn(startupDiagnostics, 'claimRepair').mockReturnValueOnce(collector);
+        const controller = new AbortController();
+        if (status === 'cancelled') controller.abort();
+        const failure = new Error('private repair failure');
+        mocks.reconcileInvokeSourceFacts.mockRejectedValueOnce(failure);
+        try {
+            await expect(applyInvokeOwnerScope({
+                discovery, selection: { dbPath: discovery.dbPath, mode: 'all' },
+                reconcileSourceFacts: true, signal: controller.signal,
+            })).rejects.toBe(failure);
+            expect(report).toHaveBeenCalledTimes(1);
+            expect(report.mock.calls[0][0].status).toBe(status);
+            expect(JSON.stringify(report.mock.calls)).not.toContain('private');
+            expect(mocks.refreshInvokeOwnerScope).not.toHaveBeenCalled();
+        } finally { claim.mockRestore(); }
+    });
+    it('persists the failing native visibility stage without exposing owner data', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.refreshInvokeOwnerScope.mockResolvedValue({ status: 'error', error: 'database is locked' });
+        await expect(applyInvokeOwnerScope({
+            discovery, selection: { dbPath: discovery.dbPath, mode: 'all' },
+        })).rejects.toBe('database is locked');
+        expect(mocks.recordStartupDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+            phase: 'owner-visibility', status: 'failed', databaseRole: 'ambit', failureKind: 'database-busy',
+        }));
+        expect(JSON.stringify(mocks.recordStartupDiagnostic.mock.calls)).not.toMatch(/Artemis|Invoke\/databases|owner-a/);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.load.mockResolvedValue({
             select: vi.fn().mockResolvedValue([{ name: 'image_name' }, { name: 'user_id' }]),
         });
+        mocks.getInvokeSourceDatabase.mockImplementation((path: string) => mocks.load(`sqlite:${path}`));
         mocks.setInvokeBoardVerification.mockResolvedValue({ status: 'ok', data: null });
         mocks.reconcileInvokeSourceFacts.mockResolvedValue(3);
         mocks.fetchBoards.mockResolvedValue({ boards: new Map(), isAuthoritative: true });

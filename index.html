@@ -43,9 +43,7 @@
       flex-direction: column;
       align-items: center;
       gap: 1.05rem;
-      opacity: 0;
-      transform: translateY(10px) scale(0.985);
-      animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 60ms forwards;
+      opacity: 1;
     }
 
     .static-loading__mark-container {
@@ -130,9 +128,7 @@
       align-items: center;
       gap: 0;
       min-width: 11rem;
-      opacity: 0;
-      transform: translateY(6px);
-      animation: brand-in 420ms cubic-bezier(0.22, 1, 0.36, 1) 150ms forwards;
+      opacity: 1;
     }
 
     @keyframes loader-ring-spin {
@@ -150,18 +146,6 @@
 
       50% {
         opacity: 0.5;
-      }
-    }
-
-    @keyframes brand-in {
-      from {
-        opacity: 0;
-        transform: translateY(10px) scale(0.985);
-      }
-
-      to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
       }
     }
 
@@ -203,7 +187,8 @@
       <p class="static-loading__subtitle">Initializing library...</p>
     </div>
   </div>
-  <script type="module" src="/src/index.tsx"></script>
+  <script src="/startup-bootstrap.js"></script>
+  <script id="startup-diagnostic-entry" type="module" src="/src/startupDiagnosticEntry.ts"></script>
 </body>
 
 </html>

@@ -76,6 +76,12 @@ const renderCollectionItem = (
 );
 
 describe('CollectionItem thumbnail hydration states', () => {
+    it.each([['pending', 'Updating count'], ['failed', 'Count unavailable']] as const)(
+        'labels an ordinary %s count without exposing an old value', (countState, label) => {
+            renderCollectionItem({ ...baseCollection, count: 123, countState });
+            expect(screen.getByLabelText(label).textContent).toBe('\u2014');
+            expect(screen.queryByText('123')).toBeNull();
+        });
     it('renders a skeleton while a collection thumbnail is pending', () => {
         renderCollectionItem(baseCollection, { isThumbnailPending: true });
 

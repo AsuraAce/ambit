@@ -1,4 +1,3 @@
-import Database from '@tauri-apps/plugin-sql';
 import {
     commands,
     type FacetScopeCacheStatus,
@@ -9,10 +8,11 @@ import { reconcileInvokeBoardSnapshot } from '../db/collectionRepo';
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
 import { unwrap } from '../../utils/spectaUtils';
 import { createInvokeImagePathResolver } from './pathResolver';
-import { fetchBoards } from './connection';
+import { fetchBoards, getInvokeSourceDatabase } from './connection';
 import { reconcileInvokeSourceFacts } from './sourceReconciliation';
 import { resolveInvokeSyncScope } from './syncScope';
 import { isSameInvokePath } from './pathIdentity';
+import { measureStartupPhase, startupDiagnostics } from '../../utils/startupDiagnostics';
 
 export interface ApplyInvokeOwnerScopeOptions {
     discovery: InvokeOwnerDiscovery;
@@ -52,13 +52,13 @@ export const refreshInvokeOwnerVisibility = async (
     forceRefresh: boolean = false
 ) => {
     const { mode, ownerId } = resolveOwnerScope(discovery, selection);
-    const visibility = await unwrap(commands.refreshInvokeOwnerScope({
+    const visibility = await measureStartupPhase('owner-visibility', () => unwrap(commands.refreshInvokeOwnerScope({
         dbPath: discovery.dbPath,
         imagesRoot: discovery.imagesRoot,
         mode,
         ownerId,
         forceRefresh,
-    }));
+    })));
     return { mode, visibility };
 };
 
@@ -76,26 +76,41 @@ export const applyInvokeOwnerScope = async ({
     }
 
     const scope = resolveInvokeSyncScope(discovery, selection);
-    let db: Database | undefined;
+    let db: Awaited<ReturnType<typeof getInvokeSourceDatabase>> | undefined;
     let sourceFactsUpdated = 0;
     if (scope && reconcileSourceFacts) {
-        db = await Database.load(`sqlite:${discovery.dbPath}`);
-        const columns = new Set(
-            (await db.select<Array<{ name: string }>>('PRAGMA table_info(images)'))
-                .map(column => column.name)
-        );
-        const pathResolver = createInvokeImagePathResolver(discovery.imagesRoot, async () =>
-            unwrap(commands.listInvokeaiImages(discovery.imagesRoot))
-        );
-        sourceFactsUpdated = await reconcileInvokeSourceFacts({
-            db,
-            columns,
-            pathResolver,
-            scope,
-            onProgress: (current, total, message) => {
-                onProgress(current, total, message ?? 'Updating InvokeAI image details...');
-            },
-            signal,
+        await measureStartupPhase('owner-source-repair', async () => {
+            const diagnostics = startupDiagnostics.claimRepair();
+            diagnostics?.stage('setup');
+            const setupDone = diagnostics?.start('setup');
+            try {
+                db = await getInvokeSourceDatabase(discovery.dbPath);
+                const columns = new Set(
+                    (await db.select<Array<{ name: string }>>('PRAGMA table_info(images)'))
+                        .map(column => column.name)
+                );
+                const pathResolver = createInvokeImagePathResolver(discovery.imagesRoot, async () => {
+                    const done = diagnostics?.start('filesystem-enumeration');
+                    try { return await unwrap(commands.listInvokeaiImages(discovery.imagesRoot)); }
+                    finally { done?.(); }
+                });
+                setupDone?.();
+                sourceFactsUpdated = await reconcileInvokeSourceFacts({
+                    db,
+                    columns,
+                    pathResolver,
+                    scope,
+                    onProgress: (current, total, message) => {
+                        onProgress(current, total, message ?? 'Updating InvokeAI image details...');
+                    },
+                    signal,
+                    diagnostics,
+                });
+                diagnostics?.finish('completed');
+            } catch (error) {
+                diagnostics?.finish(signal?.aborted ? 'cancelled' : 'failed');
+                throw error;
+            }
         });
     }
 
@@ -104,11 +119,13 @@ export const applyInvokeOwnerScope = async ({
     let boardsVerified: boolean | undefined;
     if (scope && reconcileBoardOwners) {
         onProgress(0, 0, 'Updating InvokeAI board ownership...');
-        db ??= await Database.load(`sqlite:${discovery.dbPath}`);
-        const sourceBoards = await fetchBoards(db, scope);
+        const sourceBoards = await measureStartupPhase('owner-board-read', async () => {
+            db ??= await getInvokeSourceDatabase(discovery.dbPath);
+            return fetchBoards(db, scope);
+        });
         boardsVerified = sourceBoards.isAuthoritative;
         if (sourceBoards.isAuthoritative) {
-            const boardResult = await reconcileInvokeBoardSnapshot({
+            const boardResult = await measureStartupPhase('owner-board-write', () => reconcileInvokeBoardSnapshot({
                 dbPath: discovery.dbPath,
                 mode: scope.mode === 'legacy' ? 'legacy' : 'all',
                 ownerId: null,
@@ -121,7 +138,7 @@ export const applyInvokeOwnerScope = async ({
                 memberships: [],
                 reconcileMemberships: false,
                 deleteMissingCollections: false,
-            });
+            }));
             boardCollectionsUpdated = boardResult.collectionsUpdated + boardResult.collectionsDeleted;
         } else {
             boardScopeWarning = scope.mode === 'owner'
@@ -139,11 +156,11 @@ export const applyInvokeOwnerScope = async ({
     );
     console.info(`[InvokeAI] Visibility application completed in ${Math.round(performance.now() - visibilityStartedAt)}ms.`);
     if (scope?.mode === 'owner' && boardsVerified !== undefined) {
-        await unwrap(commands.setInvokeBoardVerification(
+        await measureStartupPhase('owner-board-verification', () => unwrap(commands.setInvokeBoardVerification(
             discovery.dbPath,
             scope.ownerId,
             boardsVerified
-        ));
+        )));
     }
 
     return {

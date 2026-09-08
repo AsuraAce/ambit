@@ -1,7 +1,7 @@
 # AGENTS.md
 
 ## Purpose
-Ambit is a local-first desktop image manager for large AI-generated image libraries. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
+Ambit is a local-first desktop manager for large AI-generated image libraries with video import, playback, and metadata support. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
 
 ## Delivery Posture
 Use **Assure** by default. Ambit is public open-source desktop software distributed through signed installers and an auto-updater, and changes can affect existing local libraries, filesystem scope, migrations, privacy behavior, or release compatibility. Keep ceremony proportional for low-risk work, but use explicit regression coverage and release-aware verification for those boundaries.
@@ -30,6 +30,7 @@ Start here for common tasks:
 - Search, query, and persisted UI state: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 - Rust commands, DB migrations, and metadata extraction: `src-tauri/src/lib.rs`, `src-tauri/src/db/`, `src-tauri/src/metadata/`, `src-tauri/src/scanner/`
 - Thumbnail generation and background optimization: `src-tauri/src/thumb/`, `src/services/thumbnailService.ts`, `src/hooks/useThumbnailQueue.ts`, `src/hooks/useThumbnailOps.ts`
+- Video probing, posters, and metadata: `src-tauri/src/media.rs`, `src-tauri/src/metadata/video.rs`, `src/services/videoService.ts`, `src/features/viewer/components/VideoViewer.tsx`
 - Release automation and versioning: `docs/WORKFLOW_SETUP.md`, `.github/workflows/`
 
 ## Sources of Truth
@@ -62,7 +63,7 @@ Production app builds run `verify:release` before `tauri build --ci`.
 - Use React Query for async backend data and Zustand for transient UI state.
 - Keep business logic in hooks or feature modules rather than growing component bodies when practical.
 - Preserve virtualization for large library views; do not replace `VirtualGrid`-style flows with eager full renders.
-- Keep the product local-first. Do not add cloud data flows except the user-configured Gemini analysis path.
+- Keep the product local-first. Preserve only the documented network paths: enabled updater checks, user-triggered Gemini actions/key verification, confirmed CivitAI hash resolution, and user-clicked external links. New network behavior requires an explicit product decision.
 - Respect Tauri filesystem scope registration and `APPLOCALDATA` or resource-safe access patterns.
 - For SQLite filters and sorts, prefer equality-friendly predicates when semantics allow.
 - Use feature branches (`feat/` or `fix/`) and conventional commits; release automation depends on that history.
@@ -92,6 +93,9 @@ Use this file as the entry point. Do not bulk-read `docs/` unless one of the rou
 - For deferred structural cleanup, read `docs/refactor.md` if present.
 - For UI color roles and light/dark theme conventions, read `docs/design-system.md`.
 - For user-facing manual coverage, start at `docs/manual/index.md`.
+
+## Documentation Passes
+When a documentation pass is requested, review all codebase subsystems against the documentation, including the user manual, architecture, current state, commands, and release workflows. Update demonstrated drift, verify local references and documented commands, and open a focused pull request. Keep completed plans and changelog entries as historical evidence; distinguish implementation from outstanding owner acceptance.
 
 ## Completion Checklist
 Before finishing, confirm:
