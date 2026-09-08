@@ -17,10 +17,6 @@ const IMAGE_VIEWER_TABS: readonly ViewerTabDefinition<ImageViewerTab>[] = [
     { id: 'workflow', label: 'Workflow' },
 ];
 const IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW = IMAGE_VIEWER_TABS.slice(0, 2);
-const IMAGE_VIEWER_LIBRARY_TABS: readonly ViewerTabDefinition<ImageViewerTab>[] = [
-    { id: 'details', label: 'details' },
-    { id: 'metadata', label: 'library' },
-];
 
 interface MetadataSidebarProps {
     image: AIImage;
@@ -95,13 +91,13 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
 }) => {
     const isGenerated = getEffectiveSourceKind(image) === 'generated';
     const tabs = !isGenerated
-        ? IMAGE_VIEWER_LIBRARY_TABS
+        ? IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW
         : image.metadata.workflowJson || image.metadata.hasWorkflowHint !== false
             ? IMAGE_VIEWER_TABS
             : IMAGE_VIEWER_TABS_WITHOUT_WORKFLOW;
     const effectiveActiveTab = tabs.some(tab => tab.id === activeTab)
         ? activeTab
-        : isGenerated ? 'metadata' : 'details';
+        : 'metadata';
 
     React.useEffect(() => {
         if (effectiveActiveTab !== activeTab) setActiveTab(effectiveActiveTab);
@@ -113,9 +109,9 @@ export const MetadataSidebar: React.FC<MetadataSidebarProps> = ({
         onTabChange={setActiveTab}
         ariaLabel="Image viewer sections"
     >
-        {!isGenerated && effectiveActiveTab === 'details' ? <PhotoDetailsTab image={image} /> : null}
+        {!isGenerated && effectiveActiveTab === 'metadata' ? <PhotoDetailsTab key={image.id} image={image} /> : null}
 
-        {(isGenerated && effectiveActiveTab === 'details') || (!isGenerated && effectiveActiveTab === 'metadata') ? (
+        {effectiveActiveTab === 'details' ? (
             <ImageDetailsTab
                 image={image}
                 collections={collections}

@@ -260,7 +260,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     useEffect(() => {
         if (getEffectiveSourceKind(displayImage) !== 'generated' && activeTab === 'workflow') {
-            setActiveTab('details');
+            setActiveTab('metadata');
         }
     }, [activeTab, displayImage]);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

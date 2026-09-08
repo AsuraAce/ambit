@@ -1,11 +1,10 @@
 import * as React from 'react';
 import { Check, ImageIcon, Palette } from 'lucide-react';
-import { getDetectedSourceKind, getEffectiveSourceKind, type AIImage, type Collection, type SourceKind } from '../../../../types';
+import { getDetectedSourceKind, type AIImage, type Collection, type SourceKind } from '../../../../types';
 import { CollectionMembershipPicker } from '../CollectionMembershipPicker';
 import { AssetTechnicalDetails } from './AssetTechnicalDetails';
 import { MetadataTextAreaField } from './MetadataTextAreaField';
 import { MetadataSectionHeader } from './MetadataSectionHeader';
-import { PhotoDetailsSection } from './PhotoDetailsTab';
 
 interface ImageDetailsTabProps {
     image: AIImage;
@@ -39,9 +38,9 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
 }) => {
     const [copiedColor, setCopiedColor] = React.useState<string | null>(null);
     const [isKindSaving, setIsKindSaving] = React.useState(false);
+    const kindHelpId = React.useId();
     const extension = image.filename.split('.').pop()?.toUpperCase() || 'Unknown';
     const detectedSourceKind = getDetectedSourceKind(image);
-    const isPhoto = getEffectiveSourceKind(image) === 'photograph';
 
     const saveImageKind = async (sourceKindOverride: SourceKind | null) => {
         if (!onSetImageKind) return;
@@ -62,35 +61,28 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 { label: 'Date', value: new Date(image.timestamp).toLocaleDateString() },
             ]} />
 
-            {isPhoto ? <section className="mt-6"><PhotoDetailsSection image={image} /></section> : null}
-
-            {onSetImageKind ? <fieldset className="mt-6" disabled={isKindSaving}>
-                <legend className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-gray-500">
-                    <ImageIcon className="h-4 w-4 text-sage-500" /> Image kind
-                </legend>
-                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Image kind">
-                    {([
-                        { value: null, label: `Automatic (${detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})` },
-                        { value: 'generated' as const, label: 'Generated' },
-                        { value: 'photograph' as const, label: 'Photo' },
-                        { value: 'other' as const, label: 'Other' },
-                    ]).map(option => {
-                        const checked = option.value === null
-                            ? image.sourceKindOverride === undefined
-                            : image.sourceKindOverride === option.value;
-                        return <button
-                            key={option.value ?? 'automatic'}
-                            type="button"
-                            role="radio"
-                            aria-checked={checked}
-                            disabled={isKindSaving}
-                            onClick={() => { void saveImageKind(option.value); }}
-                            className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/50 disabled:opacity-60 ${checked ? 'border-sage-400 bg-sage-50 text-sage-800 dark:border-sage-500/60 dark:bg-sage-900/20 dark:text-sage-200' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-white/10 dark:bg-zinc-800/50 dark:text-gray-300 dark:hover:bg-white/5'}`}
-                        >{option.label}</button>;
-                    })}
-                </div>
-                <p className="mt-2 text-[11px] leading-relaxed text-gray-400">Automatic follows metadata detection. A manual choice is preserved when the image is rescanned.</p>
-            </fieldset> : null}
+            {onSetImageKind ? <section className="mt-6">
+                <MetadataSectionHeader title="Image kind" icon={ImageIcon} />
+                <select
+                    aria-label="Image kind"
+                    aria-describedby={kindHelpId}
+                    value={image.sourceKindOverride ?? 'automatic'}
+                    disabled={isKindSaving}
+                    onChange={event => {
+                        const value = event.target.value;
+                        if (value === 'automatic' || value === 'generated' || value === 'photograph' || value === 'other') {
+                            void saveImageKind(value === 'automatic' ? null : value);
+                        }
+                    }}
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
+                >
+                    <option value="automatic">Automatic ({detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})</option>
+                    <option value="generated">Generated</option>
+                    <option value="photograph">Photo</option>
+                    <option value="other">Other</option>
+                </select>
+                <p id={kindHelpId} className="mt-2 text-[11px] leading-relaxed text-gray-400">Automatic follows metadata detection. Manual choices survive rescanning.</p>
+            </section> : null}
 
             <section className="mt-6">
                 <MetadataSectionHeader title="Color palette" icon={Palette} />

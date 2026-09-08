@@ -27,6 +27,14 @@ const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image())
 };
 
 describe('MetadataSidebar', () => {
+    it('keeps Other file information in shared Details and explicitly explains absent photo metadata', () => {
+        const { props, rerender } = setup('metadata', { ...image(), sourceKind: 'other', detectedSourceKind: 'other' });
+        expect(screen.getByText('No photo metadata available.')).toBeTruthy();
+        expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull();
+        rerender(<MetadataSidebar {...props} activeTab="details" />);
+        expect(screen.getByText('details-content')).toBeTruthy();
+    });
+
     it('uses the shared image title and Details, Metadata, and Workflow tabs', () => {
         const { props } = setup('details', image({ workflowJson: '{}' }));
         expect(screen.queryByRole('heading', { name: 'Image' })).toBeNull();
@@ -66,8 +74,8 @@ describe('MetadataSidebar', () => {
         expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
     });
 
-    it('renders a photograph as Details and Library without generation controls', () => {
-        setup('details', {
+    it('separates photo Metadata from shared Details without generation controls', () => {
+        const { props, rerender } = setup('metadata', {
             ...image({ workflowJson: '{}' }),
             detectedSourceKind: 'photograph',
             sourceKind: 'photograph',
@@ -80,18 +88,41 @@ describe('MetadataSidebar', () => {
                 lensMake: null, lensModel: 'Prime 50', focalLengthMm: 50,
                 focalLength35Mm: 50, apertureFNumber: 2.8, exposureTimeSeconds: 0.008,
                 iso: 200, orientation: 6, artist: null, copyright: null,
-                gpsLatitude: null, gpsLongitude: null
+                gpsLatitude: 51.5, gpsLongitude: -0.12
             }
         });
 
-        expect(screen.getByText('Photo')).toBeTruthy();
-        expect(screen.getByText('Camera One')).toBeTruthy();
-        expect(screen.getByText('details')).toBeTruthy();
-        expect(screen.getByText('library')).toBeTruthy();
+        expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();
+        expect(screen.queryByText('Camera One')).toBeNull();
+        expect(screen.getByRole('tab', { name: 'Details' })).toBeTruthy();
+        expect(screen.getByRole('tab', { name: 'Metadata' })).toBeTruthy();
+        expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
         expect(screen.queryByText('workflow')).toBeNull();
         expect(screen.queryByText('info-content')).toBeNull();
-        expect(screen.getByText('Capture details')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Exposure settings' })).toBeTruthy();
+        expect(screen.queryByText('Dimensions')).toBeNull();
+        expect(screen.queryByText('File size')).toBeNull();
+        expect(screen.queryByText('Modified')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Exposure settings' }));
+        expect(screen.queryByText('1/125 s')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Exposure settings' }));
+        expect(screen.getByText('1/125 s')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} activeTab="workflow" />);
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
+        expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} />);
         expect(screen.queryByText('ComfyUI')).toBeNull();
         expect(screen.queryByText('flux_dev')).toBeNull();
+        const gps = screen.getByRole('button', { name: 'Local GPS coordinates' });
+        expect(gps.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByText('51.500000, -0.120000')).toBeNull();
+        fireEvent.click(gps);
+        expect(screen.getByText('51.500000, -0.120000')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} image={{ ...props.image, id: 'next-photo' }} />);
+        expect(screen.getByRole('button', { name: 'Local GPS coordinates' }).getAttribute('aria-expanded')).toBe('false');
+        rerender(<MetadataSidebar {...props} activeTab="details" />);
+        expect(screen.queryByText('Test Camera Co Camera One')).toBeNull();
+        expect(screen.getByText('details-content')).toBeTruthy();
     });
 });
