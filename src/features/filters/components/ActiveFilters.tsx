@@ -4,6 +4,7 @@ import { FilterState } from '../../../types';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { useSearch } from '../../../contexts/SearchContext';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
+import { getEffectiveImageKind } from '../../../utils/filterState';
 
 interface ActiveFiltersProps {
     filters: FilterState;
@@ -17,6 +18,7 @@ const WIDE_FILTER_CHIP_LABEL_CLASS = 'truncate max-w-[min(40ch,calc(100cqw-3rem)
 const hasChipVisibleCriteria = (filters: FilterState, dateLabel: string | null, includeNavigationRules = false) => (
     (includeNavigationRules && (
         !!filters.searchQuery?.trim() ||
+        getEffectiveImageKind(filters) !== 'all' ||
         (!!filters.mediaType && filters.mediaType !== 'all')
     )) ||
     !!dateLabel ||
@@ -49,7 +51,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const showPinnedFilter = !!filters.pinnedOnly && !activeSmartCol?.filters?.pinnedOnly;
     const dateFilterLabel = getDateFilterLabel(filters);
     const smartDateFilterLabel = activeSmartCol?.filters ? getDateFilterLabel(activeSmartCol.filters) : null;
-    const smartSourceKind = activeSmartCol?.filters?.sourceKind ?? 'all';
+    const smartSourceKind = activeSmartCol?.filters ? getEffectiveImageKind(activeSmartCol.filters) : 'all';
 
     // Merge visible filters with smart collection implicit filters for display
     const hasActiveFilters = hasChipVisibleCriteria(filters, dateFilterLabel) ||

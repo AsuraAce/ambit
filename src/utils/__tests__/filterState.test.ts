@@ -3,6 +3,7 @@ import { FilterState, GeneratorTool } from '../../types';
 import {
     createCollectionSelectionFilters,
     createDefaultFilters,
+    getEffectiveImageKind,
     hasActiveResultFilters,
     hasNonCollectionResultFilters,
     shouldPrefetchResultPages
@@ -101,6 +102,17 @@ describe('filterState', () => {
     it('normalizes persisted image-kind filters at the query boundary', () => {
         expect(createDefaultFilters({ sourceKind: 'photograph' }).sourceKind).toBe('photograph');
         expect(createDefaultFilters({ sourceKind: 'invalid' as FilterState['sourceKind'] }).sourceKind).toBe('all');
+    });
+
+    it('ignores the remembered image kind for All media and Videos without losing it', () => {
+        const photos = createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' });
+        expect(getEffectiveImageKind(photos)).toBe('photograph');
+        expect(getEffectiveImageKind({ ...photos, mediaType: 'video' })).toBe('all');
+        const allMedia = { ...photos, mediaType: 'all' as const };
+        expect(getEffectiveImageKind(allMedia)).toBe('all');
+        expect(hasNonCollectionResultFilters(allMedia)).toBe(false);
+        expect(getEffectiveImageKind({ ...allMedia, mediaType: 'image' })).toBe('photograph');
+        expect(getEffectiveImageKind({ ...photos, mediaType: undefined })).toBe('photograph');
     });
 
     it('identifies result filters that should disable proactive prefetching', () => {

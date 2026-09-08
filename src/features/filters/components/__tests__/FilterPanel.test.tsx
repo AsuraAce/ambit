@@ -555,4 +555,18 @@ describe('FilterPanel interactions', () => {
         renderPanel();
         expect(screen.getByText('v...')).toBeTruthy();
     });
+
+    it('does not save an inactive remembered photo kind over smart collection rules', () => {
+        const onUpdateCollectionFilters = vi.fn();
+        const saved: FilterState = { ...filters, sourceKind: 'generated', mediaType: 'image' };
+        renderPanel({
+            search: { filters: { ...filters, collectionId: 'smart', searchQuery: 'castle', mediaType: 'all', sourceKind: 'photograph' } },
+            smartCollections: [{ id: 'smart', name: 'Smart', filters: saved } as SmartCollection],
+            props: { onUpdateCollectionFilters },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({
+            searchQuery: 'castle', sourceKind: 'generated', mediaType: 'image',
+        }));
+    });
 });

@@ -3,12 +3,19 @@ import type { PhotoMetadata, SourceKind } from './bindings';
 export type { PhotoMetadata, SourceKind } from './bindings';
 
 export type ImageKindFilter = 'all' | SourceKind;
+export type MediaTypeFilter = 'all' | 'image' | 'video';
+export type ViewerTab = 'details' | 'metadata' | 'workflow';
 
 export interface SourceKindCounts {
   all: number;
   generated: number;
   photograph: number;
   other: number;
+}
+
+export interface LibraryScopeCounts {
+  media: Record<MediaTypeFilter, number>;
+  imageKinds: SourceKindCounts;
 }
 
 export enum GeneratorTool {
@@ -245,7 +252,7 @@ export type LibraryAsset = AIImage | VideoAsset;
 export const isVideoAsset = (asset: AIImage): asset is VideoAsset => asset.mediaType === 'video';
 
 export interface FilterState {
-  mediaType?: 'all' | 'image' | 'video';
+  mediaType?: MediaTypeFilter;
   searchQuery: string;
   /** Undefined is accepted for smart collections persisted before photography support. */
   sourceKind?: ImageKindFilter;
@@ -414,6 +421,7 @@ export interface AppSettings {
   autoCheckForUpdates?: boolean;
   confirmDelete: boolean;
   defaultTheaterMode: boolean; // Persist sidebar state
+  viewerPreferredTab?: ViewerTab; // Shared explicit image/video sidebar preference
   monitoredFolders: MonitoredFolder[];
 
   // Privacy & AI
@@ -439,7 +447,8 @@ export interface AppSettings {
   invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
-  librarySourceKind?: ImageKindFilter; // Persisted top-level library scope
+  librarySourceKind?: ImageKindFilter; // Remembered image kind, inactive for All media/Videos
+  libraryMediaType?: MediaTypeFilter; // Persisted effective library media scope
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
   libraryShowInvokeImageAssets?: boolean; // Persisted InvokeAI image-asset visibility preference

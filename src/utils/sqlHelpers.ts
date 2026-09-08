@@ -1,6 +1,7 @@
 import { FilterState, AppSettings, Collection } from '../types';
 import { getDateFilterBounds, getSearchDateBounds, type DateFilterBounds } from './dateFilters';
 import { toPhotoWallTimeBounds } from './imageDates';
+import { getEffectiveImageKind, normalizeMediaTypeFilter } from './filterState';
 
 type SqlParam = string | number;
 
@@ -322,9 +323,11 @@ export const buildSqlWhereClause = (
         }
     }
 
-    if (filters.mediaType && filters.mediaType !== 'all') {
-        conditions.push('media_type = ?');
-        params.push(filters.mediaType);
+    const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+    const sourceKind = getEffectiveImageKind(filters);
+    if (mediaType !== 'all' && !excludeCategories.includes('mediaType')) {
+        conditions.push(mediaType === 'image' ? '(media_type = ? OR media_type IS NULL)' : 'media_type = ?');
+        params.push(mediaType);
     }
 
     // 1. Privacy Logic
@@ -346,7 +349,7 @@ export const buildSqlWhereClause = (
                 effectiveSmartFilters.dateFrom = undefined;
                 effectiveSmartFilters.dateTo = undefined;
             }
-            if ((filters.sourceKind ?? 'all') !== 'all') {
+            if (sourceKind !== 'all') {
                 effectiveSmartFilters.sourceKind = 'all';
             }
 
@@ -399,9 +402,9 @@ export const buildSqlWhereClause = (
         conditions.push('is_pinned = 1');
     }
 
-    if ((filters.sourceKind ?? 'all') !== 'all' && !excludeCategories.includes('sourceKind')) {
+    if (sourceKind !== 'all' && !excludeCategories.includes('sourceKind')) {
         conditions.push('source_kind = ?');
-        params.push(filters.sourceKind as string);
+        params.push(sourceKind);
     }
 
     // 5. Models (Array)

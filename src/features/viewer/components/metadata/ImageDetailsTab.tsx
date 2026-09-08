@@ -58,7 +58,7 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 { label: 'Dimensions', value: `${image.width}×${image.height}` },
                 { label: 'File type', value: extension },
                 { label: 'File size', value: formatFileSize(image.fileSize) },
-                { label: 'Date', value: new Date(image.timestamp).toLocaleDateString() },
+                { label: 'Modified', value: new Date(image.timestamp).toLocaleString() },
             ]} />
 
             {onSetImageKind ? <section className="mt-6">

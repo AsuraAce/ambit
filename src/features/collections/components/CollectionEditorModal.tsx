@@ -4,6 +4,7 @@ import { Collection, FilterState } from '../../../types';
 import { X, Save, Trash2, Filter, Users, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
+import { getEffectiveImageKind } from '../../../utils/filterState';
 import { useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
 import type { AmbitCollectionScopeTarget } from '../../../services/db/collectionRepo';
 
@@ -157,7 +158,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
             );
         }
 
-        if ((draftFilters.sourceKind ?? 'all') !== 'all') {
+        if (getEffectiveImageKind(draftFilters) !== 'all') {
             const sourceKindLabel = draftFilters.sourceKind === 'photograph'
                 ? 'Photos'
                 : draftFilters.sourceKind === 'generated' ? 'Generated' : 'Other';

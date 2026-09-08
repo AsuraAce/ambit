@@ -25,6 +25,7 @@ import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
 import { MetadataGeneratorField } from './metadata/MetadataGeneratorField';
 import { MetadataModelField } from './metadata/MetadataModelField';
 import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
+import { useViewerPreferredTab } from '../hooks/useViewerPreferredTab';
 
 type VideoViewerTab = 'details' | 'metadata' | 'workflow';
 
@@ -33,6 +34,7 @@ const VIDEO_VIEWER_TABS: readonly ViewerTabDefinition<VideoViewerTab>[] = [
     { id: 'metadata', label: 'Metadata' },
     { id: 'workflow', label: 'Workflow' },
 ];
+const VIDEO_VIEWER_TAB_IDS = VIDEO_VIEWER_TABS.map(tab => tab.id);
 
 interface VideoViewerProps {
     video: VideoAsset;
@@ -98,7 +100,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
         url: null as string | null,
     });
     const [notesState, setNotesState] = React.useState({ videoId: video.id, value: video.notes ?? '' });
-    const [activeTab, setActiveTab] = React.useState<VideoViewerTab>('metadata');
+    const { activeTab, onExplicitTabChange } = useViewerPreferredTab(VIDEO_VIEWER_TAB_IDS);
     const [positivePromptState, setPositivePromptState] = React.useState({ videoId: video.id, value: video.metadata.positivePrompt });
     const [negativePromptState, setNegativePromptState] = React.useState({ videoId: video.id, value: video.metadata.negativePrompt });
     const [fullVideo, setFullVideo] = React.useState<VideoAsset | null>(null);
@@ -373,7 +375,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
             <ViewerSidebarShell
                 tabs={VIDEO_VIEWER_TABS}
                 activeTab={activeTab}
-                onTabChange={setActiveTab}
+                onTabChange={onExplicitTabChange}
                 ariaLabel="Video viewer sections"
             >
                 {activeTab === 'details' && <div className="custom-scrollbar h-full overflow-y-auto p-5">

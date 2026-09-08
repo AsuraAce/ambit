@@ -95,9 +95,9 @@ describe('searchRepo basic queries', () => {
     ])('keeps %s source-kind counts inside the active owner scope', async (_, collectionId, loraName, scopedSource) => {
         const db = { select: vi.fn().mockResolvedValue([]) };
         getDbMock.mockResolvedValue(db);
-        const { countImagesBySourceKind } = await import('../searchRepo');
+        const { countLibraryScopes } = await import('../searchRepo');
 
-        await countImagesBySourceKind('WHERE is_deleted = ?', [0], collectionId, loraName);
+        await countLibraryScopes('WHERE is_deleted = ?', [0], collectionId, loraName);
 
         const sql = db.select.mock.calls[0]?.[0] as string;
         expect(sql).toContain(scopedSource);

@@ -1,14 +1,14 @@
 import * as React from 'react';
-import { Import } from 'lucide-react';
-import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode, type SourceKindCounts } from '../../types';
+import { Import, MoreHorizontal } from 'lucide-react';
+import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode, type LibraryScopeCounts, type SourceKindCounts } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../stores/libraryStore';
-import { ViewControls } from '../../features/library/components/ViewControls';
+import { SortOptionList, ViewControls } from '../../features/library/components/ViewControls';
 import { ActiveFilters } from '../../features/filters/components/ActiveFilters';
 import { isBrowserMockMode } from '../../services/runtime';
 import { ToastContext } from '../../contexts/ToastContext';
 import { TooltipButton } from './InfoTooltip';
-import { ImageKindScopeDropdown } from '../../features/filters/components/ImageKindScopeDropdown';
+import { LibraryScopeDropdown } from '../../features/filters/components/ImageKindScopeDropdown';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 import { getInvokeOwnerQueryScopeKey } from '../../utils/invokeOwnerQueryScope';
 
@@ -40,6 +40,9 @@ interface AppHeaderProps {
     displayedCount: number;
     totalCount: number | null;
     scopeName: string;
+    scopeCounts?: LibraryScopeCounts;
+    scopeAvailability?: LibraryScopeCounts;
+    /** @deprecated Replaced by scopeCounts.imageKinds. */
     sourceKindCounts?: SourceKindCounts;
     onImport: () => void;
     onSlideshow: () => void;
@@ -47,6 +50,29 @@ interface AppHeaderProps {
     isFiltering?: boolean;
     onSearchDraftPendingChange: (isPending: boolean) => void;
 }
+
+type ToolbarDensity = 'normal' | 'actionsOverflow' | 'compact';
+
+const getToolbarDensity = (width: number): ToolbarDensity => {
+    if (width < 700) return 'compact';
+    if (width < 900) return 'actionsOverflow';
+    return 'normal';
+};
+
+const useToolbarDensity = (elementRef: React.RefObject<HTMLElement | null>) => {
+    const [density, setDensity] = React.useState<ToolbarDensity>('normal');
+
+    React.useLayoutEffect(() => {
+        const element = elementRef.current;
+        if (!element || typeof ResizeObserver === 'undefined') return;
+
+        const observer = new ResizeObserver(([entry]) => setDensity(getToolbarDensity(entry.contentRect.width)));
+        observer.observe(element);
+        return () => observer.disconnect();
+    }, [elementRef]);
+
+    return density;
+};
 
 export const AppHeader = React.memo(({
     viewMode,
@@ -60,13 +86,19 @@ export const AppHeader = React.memo(({
     displayedCount,
     totalCount,
     scopeName,
-    sourceKindCounts = { all: 0, generated: 0, photograph: 0, other: 0 },
+    scopeCounts,
+    scopeAvailability,
     onImport,
     onSlideshow,
     clearAllFilters,
     isFiltering,
     onSearchDraftPendingChange,
 }: AppHeaderProps) => {
+    const headerRef = React.useRef<HTMLElement>(null);
+    const actionsMenuRef = React.useRef<HTMLDivElement>(null);
+    const actionsTriggerRef = React.useRef<HTMLButtonElement>(null);
+    const [showActionsMenu, setShowActionsMenu] = React.useState(false);
+    const toolbarDensity = useToolbarDensity(headerRef);
     const {
         settings, setSettings,
         recentSearches, setRecentSearches,
@@ -116,9 +148,64 @@ export const AppHeader = React.memo(({
     const showLayoutSwitcher = viewMode === 'grid';
     const showSlideshowButton = viewMode === 'grid' || viewMode === 'timeline';
 
+    React.useEffect(() => {
+        if (!showActionsMenu) return;
+
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!actionsMenuRef.current?.contains(event.target as Node)) setShowActionsMenu(false);
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setShowActionsMenu(false);
+                actionsTriggerRef.current?.focus();
+            }
+        };
+        document.addEventListener('pointerdown', handlePointerDown);
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', handlePointerDown);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [showActionsMenu]);
+
+    const toggleLiveWatch = () => {
+        if (browserMockMode) {
+            addToast('Unavailable in browser mock mode.', 'info');
+            return;
+        }
+        setIsLiveWatching(!isLiveWatching);
+    };
+    const selectOverflowSort = (option: SortOption) => {
+        setSortOption(option);
+        setShowActionsMenu(false);
+        actionsTriggerRef.current?.focus();
+    };
+
+    const actionButtons = (
+        <>
+            <TooltipButton
+                label="Import Images"
+                content="Import images. For automatic sync with favorites and boards, set up an Integration in Settings."
+                onClick={onImport}
+                className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
+            >
+                <Import className="w-4 h-4" />
+            </TooltipButton>
+            <TooltipButton
+                label={isLiveWatching ? 'Disable Live Watch' : 'Enable Live Watch'}
+                content={isLiveWatching ? 'Disable automatic monitoring of generator output folders.' : 'Automatically detect and import new images from generator output folders.'}
+                aria-pressed={isLiveWatching}
+                onClick={toggleLiveWatch}
+                className={`p-2 rounded-xl transition-all border relative group ${liveWatchButtonClass}`}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
+            </TooltipButton>
+        </>
+    );
+
     return (
-        <header className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
-            <div className="min-h-16 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-6 py-3 bg-white/90 dark:bg-zinc-900/95 backdrop-blur-xl border border-gray-200 dark:border-white/10 rounded-2xl shadow-lg animate-in slide-in-from-top-4 duration-500 ease-spring relative z-20">
+        <header ref={headerRef} className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
+            <div className="relative z-20 flex min-h-16 flex-nowrap items-center gap-3 rounded-2xl border border-gray-200 bg-white/90 px-6 py-3 shadow-lg backdrop-blur-xl animate-in slide-in-from-top-4 duration-500 ease-spring dark:border-white/10 dark:bg-zinc-900/95">
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (
@@ -135,26 +222,32 @@ export const AppHeader = React.memo(({
                     )}
                 </div>
 
-                <div className="flex min-w-0 basis-[26rem] flex-1 items-center gap-4">
-                    <React.Suspense fallback={<SearchBarFallback />}>
-                        <SearchBar
-                            filters={filters}
-                            setFilters={setFilters}
-                            searchProps={searchProps}
-                            recentSearches={recentSearches}
-                            setRecentSearches={setRecentSearches}
-                            scopeName={scopeName}
-                            displayedCount={displayedCount}
-                            isFiltering={isFiltering ?? false}
-                            submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
-                            onDraftPendingChange={onSearchDraftPendingChange}
-                        />
-                    </React.Suspense>
+                <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="min-w-0 max-w-lg flex-1">
+                        <React.Suspense fallback={<SearchBarFallback />}>
+                            <SearchBar
+                                filters={filters}
+                                setFilters={setFilters}
+                                searchProps={searchProps}
+                                recentSearches={recentSearches}
+                                setRecentSearches={setRecentSearches}
+                                scopeName={scopeName}
+                                displayedCount={displayedCount}
+                                isFiltering={isFiltering ?? false}
+                                submitNavigatesToGrid={viewMode === 'dashboard' || viewMode === 'maintenance'}
+                                onDraftPendingChange={onSearchDraftPendingChange}
+                            />
+                        </React.Suspense>
+                    </div>
                     {(viewMode === 'grid' || viewMode === 'timeline') && (
-                        <ImageKindScopeDropdown
-                            value={filters.sourceKind ?? 'all'}
-                            counts={sourceKindCounts}
-                            onChange={(sourceKind) => setFilters(previous => ({ ...previous, sourceKind }))}
+                        <LibraryScopeDropdown
+                            mediaType={filters.mediaType ?? 'all'}
+                            sourceKind={filters.sourceKind ?? 'all'}
+                            displayedCount={displayedCount}
+                            scopeCounts={scopeCounts}
+                            scopeAvailability={scopeAvailability}
+                            onMediaTypeChange={(mediaType) => setFilters(previous => ({ ...previous, mediaType }))}
+                            onImageKindChange={(sourceKind) => setFilters(previous => ({ ...previous, mediaType: 'image', sourceKind }))}
                         />
                     )}
                     {browserMockMode && (
@@ -164,34 +257,30 @@ export const AppHeader = React.memo(({
                     )}
                 </div>
 
-                <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-4">
-                    <div className="ml-1 flex items-center gap-1">
-                        <TooltipButton
-                            label="Import Images"
-                            content="Import images. For automatic sync with favorites and boards, set up an Integration in Settings."
-                            onClick={onImport}
-                            className={`p-2 rounded-xl transition-all border relative group ${shouldHighlightImport ? 'animate-pulse text-sage-600 bg-sage-500/20' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white'}`}
-                        >
-                            <Import className="w-4 h-4" />
-                        </TooltipButton>
-                        <TooltipButton
-                            label={isLiveWatching ? "Disable Live Watch" : "Enable Live Watch"}
-                            content={isLiveWatching ? "Disable automatic monitoring of generator output folders." : "Automatically detect and import new images from generator output folders."}
-                            aria-pressed={isLiveWatching}
-                            onClick={() => {
-                                if (browserMockMode) {
-                                    addToast('Unavailable in browser mock mode.', 'info');
-                                    return;
-                                }
-                                setIsLiveWatching(!isLiveWatching);
-                            }}
-                            className={`p-2 rounded-xl transition-all border relative group ${liveWatchButtonClass}`}
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-                        </TooltipButton>
-                    </div>
-
-                    <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
+                <div className="ml-auto flex shrink-0 items-center gap-3">
+                    {toolbarDensity === 'normal' ? (
+                        <div className="ml-1 flex items-center gap-1">{actionButtons}</div>
+                    ) : (
+                        <div ref={actionsMenuRef} className="relative">
+                            <button ref={actionsTriggerRef} type="button" aria-expanded={showActionsMenu} aria-label={`Library actions; Live Watch ${isLiveWatching ? 'on' : 'off'}`} onClick={() => setShowActionsMenu(open => !open)} className="flex h-9 items-center gap-1 rounded-xl border border-gray-200 bg-gray-100 px-2 text-gray-600 transition-colors hover:text-gray-900 dark:border-white/10 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:text-white">
+                                <MoreHorizontal className="h-4 w-4" />
+                                <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${isLiveWatching ? 'bg-sage-500' : 'bg-gray-400 dark:bg-zinc-500'}`} />
+                                <span className="sr-only">Library actions; Live Watch {isLiveWatching ? 'on' : 'off'}</span>
+                            </button>
+                            {showActionsMenu && (
+                                <div className="absolute right-0 top-full z-[100] mt-2 w-52 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-zinc-900">
+                                    <div className="flex items-center justify-between gap-2 px-2 pb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400"><span>Library actions</span><span className={isLiveWatching ? 'text-sage-600 dark:text-sage-300' : undefined}>{isLiveWatching ? 'Live Watch on' : 'Live Watch off'}</span></div>
+                                    <div className="flex items-center gap-2">{actionButtons}</div>
+                                    {toolbarDensity === 'compact' && (
+                                        <div className="mt-3 border-t border-gray-100 pt-2 dark:border-white/5">
+                                            <span className="px-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Sort</span>
+                                            <div className="mt-1 grid grid-cols-2 gap-1"><SortOptionList sortOption={sortOption} onSelect={selectOverflowSort} compact /></div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <ViewControls
                         showLayoutSwitcher={showLayoutSwitcher}
@@ -208,6 +297,7 @@ export const AppHeader = React.memo(({
                         scopeName={scopeName}
                         ownerPresentationKey={invokeOwnerPresentationKey}
                         isFiltering={isFiltering}
+                        showSortButton={toolbarDensity !== 'compact'}
                     />
                 </div>
             </div>

@@ -10,6 +10,7 @@ import {
     getBrowserMockValidFacetNames,
     getBrowserMockFacets,
     getBrowserMockImages,
+    getBrowserMockScopeAvailability,
     removeBrowserMockImagesFromCollection,
     searchBrowserMockImages,
     updateBrowserMockImage,
@@ -546,6 +547,65 @@ describe('browserMockData filtering', () => {
         deleteBrowserMockCollection(id);
     });
 
+    it('matches media scope semantics across Photos, Videos, and Images', () => {
+        const photos = searchBrowserMockImages(createDefaultFilters({ sourceKind: 'photograph' }), 'date_desc', 1000);
+        expect(photos.images.every(image => image.mediaType === 'image' && image.sourceKind === 'photograph')).toBe(true);
+
+        const videos = searchBrowserMockImages(createDefaultFilters({ mediaType: 'video', sourceKind: 'photograph' }), 'date_desc', 1000);
+        expect(videos.totalCount).toBeGreaterThan(0);
+        expect(videos.images.every(image => image.mediaType === 'video')).toBe(true);
+
+        const images = searchBrowserMockImages(createDefaultFilters({ mediaType: 'image', sourceKind: 'all' }), 'date_desc', 1000);
+        expect(images.images.every(image => image.mediaType === 'image')).toBe(true);
+    });
+
+    it('includes videos in All media while excluding them from image-kind counts', () => {
+        const allMedia = searchBrowserMockImages(createDefaultFilters(), 'date_desc', 1000);
+
+        expect(allMedia.images.some(image => image.mediaType === 'video')).toBe(true);
+        expect(allMedia.scopeCounts.media.video).toBeGreaterThan(0);
+        expect(allMedia.scopeCounts.imageKinds.all).toBe(allMedia.scopeCounts.media.image);
+        expect(allMedia.scopeCounts.imageKinds.other).toBe(allMedia.images.filter(
+            image => image.mediaType === 'image' && image.sourceKind === 'other'
+        ).length);
+        expect(allMedia.sourceKindCounts).toBe(allMedia.scopeCounts.imageKinds);
+    });
+
+    it('keeps global scope availability when contextual search has no results', () => {
+        const filters = createDefaultFilters({ searchQuery: 'does-not-exist-in-browser-mock' });
+        const contextual = searchBrowserMockImages(filters, 'date_desc', 1000);
+        const availability = getBrowserMockScopeAvailability(filters, {
+            privacyEnabled: false,
+            settings: createDefaultAppSettings(),
+        });
+
+        expect(contextual.totalCount).toBe(0);
+        expect(contextual.scopeCounts.media.all).toBe(0);
+        expect(availability.media.all).toBeGreaterThan(0);
+        expect(availability.media.video).toBeGreaterThan(0);
+    });
+
+    it('removes privacy-hidden media from results, contextual counts, and availability', () => {
+        const videos = getBrowserMockImages().filter(image => image.mediaType === 'video');
+        const originals = videos.map(image => ({ id: image.id, userMasked: image.userMasked }));
+        const privacy = {
+            privacyEnabled: true,
+            settings: createDefaultAppSettings({ maskingMode: 'hide', maskedKeywords: [] }),
+        };
+
+        try {
+            videos.forEach(image => updateBrowserMockImage(image.id, { userMasked: true }));
+            const result = searchBrowserMockImages(createDefaultFilters({ mediaType: 'video' }), 'date_desc', 1000, undefined, privacy);
+            const availability = getBrowserMockScopeAvailability(createDefaultFilters(), privacy);
+
+            expect(result.totalCount).toBe(0);
+            expect(result.scopeCounts.media.video).toBe(0);
+            expect(availability.media.video).toBe(0);
+        } finally {
+            originals.forEach(image => updateBrowserMockImage(image.id, { userMasked: image.userMasked }));
+        }
+    });
+
     it('covers storage-free operation, smart recursion, advanced tokens, and sparse metadata', () => {
         const originalStorage = globalThis.localStorage;
         vi.stubGlobal('localStorage', undefined);
@@ -647,6 +707,13 @@ describe('browserMockData filtering', () => {
         }));
         await expect(repository.load()).resolves.toEqual(expect.objectContaining({
             settings: expect.objectContaining({ promptMaskingEnabled: false, maskedKeywords: [] }),
+        }));
+
+        localStorage.setItem('ambit_browser_mock_state_v1', JSON.stringify({
+            settings: { librarySourceKind: 'photograph', viewerPreferredTab: 'unknown' },
+        }));
+        await expect(repository.load()).resolves.toEqual(expect.objectContaining({
+            settings: expect.objectContaining({ librarySourceKind: 'photograph', libraryMediaType: 'image', viewerPreferredTab: 'details' }),
         }));
     });
 });

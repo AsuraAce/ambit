@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types';
-import { normalizeImageKindFilter } from '../utils/filterState';
+import { normalizeImageKindFilter, normalizeMediaTypeFilter } from '../utils/filterState';
+import { normalizeViewerPreferredTab } from '../utils/settingsUtils';
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   hasCompletedOnboarding: false,
@@ -8,6 +9,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoCheckForUpdates: true,
   confirmDelete: true,
   defaultTheaterMode: false,
+  viewerPreferredTab: 'details',
   monitoredFolders: [],
   promptMaskingEnabled: true,
   maskedKeywords: ['nsfw', 'blood', 'gore'],
@@ -21,6 +23,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   starredAs: 'favorite',
   libraryLayoutMode: 'masonry',
   librarySourceKind: 'all',
+  libraryMediaType: 'all',
   libraryShowGrids: false,
   libraryShowIntermediates: false,
   libraryShowInvokeImageAssets: false,
@@ -52,6 +55,8 @@ export const createDefaultAppSettings = (
   };
 
   settings.librarySourceKind = normalizeImageKindFilter(settings.librarySourceKind);
+  settings.libraryMediaType = normalizeMediaTypeFilter(overrides.libraryMediaType, settings.librarySourceKind);
+  settings.viewerPreferredTab = normalizeViewerPreferredTab(settings.viewerPreferredTab);
   return settings;
 };
 

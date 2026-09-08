@@ -1,4 +1,4 @@
-import { FilterState, type ImageKindFilter } from '../types';
+import { FilterState, type ImageKindFilter, type MediaTypeFilter } from '../types';
 
 type PreservedViewFilters = Pick<FilterState, 'showGrids' | 'showIntermediates' | 'showInvokeImageAssets' | 'sortOption'>;
 
@@ -7,6 +7,22 @@ export const normalizeImageKindFilter = (value: unknown): ImageKindFilter => (
         ? value
         : 'all'
 );
+
+export const normalizeMediaTypeFilter = (
+    value: unknown,
+    legacyImageKind: unknown = 'all'
+): MediaTypeFilter => (
+    value === 'all' || value === 'image' || value === 'video'
+        ? value
+        : normalizeImageKindFilter(legacyImageKind) === 'all' ? 'all' : 'image'
+);
+
+/** Legacy saved collections may omit mediaType; explicit All media ignores kind. */
+export const getEffectiveImageKind = (
+    filters: Pick<FilterState, 'mediaType' | 'sourceKind'>
+): ImageKindFilter => normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === 'image'
+    ? normalizeImageKindFilter(filters.sourceKind)
+    : 'all';
 
 export const createDefaultFilters = (
     overrides: Partial<FilterState> = {}
@@ -50,7 +66,7 @@ const hasRangeFilter = (value: number | null | undefined): boolean =>
 
 export const hasNonCollectionResultFilters = (filters: FilterState): boolean => (
     filters.searchQuery.trim().length > 0 ||
-    (filters.sourceKind ?? 'all') !== 'all' ||
+    getEffectiveImageKind(filters) !== 'all' ||
     (!!filters.mediaType && filters.mediaType !== 'all') ||
     filters.models.length > 0 ||
     filters.tools.length > 0 ||

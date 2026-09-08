@@ -27,9 +27,31 @@ const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image())
 };
 
 describe('MetadataSidebar', () => {
-    it('keeps Other file information in shared Details and explicitly explains absent photo metadata', () => {
+    it('does not flash an empty metadata card while photo metadata is still loading', () => {
+        const target = { ...image(), sourceKind: 'photograph' as const, detectedSourceKind: 'photograph' as const };
+        const { props, rerender } = setup('metadata', target);
+        rerender(<MetadataSidebar {...props} isLoading />);
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.queryByText('No supported metadata found')).toBeNull();
+        rerender(<MetadataSidebar {...props} isLoading={false} image={{ ...target, photoMetadata: {
+            cameraModel: 'Loaded camera', cameraMake: null, capturedAt: null, captureTimeRaw: null,
+            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
+            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
+            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+        } }} />);
+        expect(screen.getByText('Loaded camera')).toBeTruthy();
+        expect(screen.queryByText('No supported metadata found')).toBeNull();
+        rerender(<MetadataSidebar {...props} isLoading={false} />);
+        expect(screen.getByText('No supported metadata found')).toBeTruthy();
+    });
+
+    it('keeps Other file information in shared Details and explicitly explains unsupported metadata', () => {
         const { props, rerender } = setup('metadata', { ...image(), sourceKind: 'other', detectedSourceKind: 'other' });
-        expect(screen.getByText('No photo metadata available.')).toBeTruthy();
+        const emptyHeading = screen.getByRole('heading', { name: 'No supported metadata found' });
+        expect(emptyHeading).toBeTruthy();
+        expect(emptyHeading.parentElement?.classList.contains('text-center')).toBe(true);
+        expect(emptyHeading.parentElement?.parentElement?.classList.contains('min-h-full')).toBe(false);
+        expect(screen.getByText('File information is available in Details.')).toBeTruthy();
         expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull();
         rerender(<MetadataSidebar {...props} activeTab="details" />);
         expect(screen.getByText('details-content')).toBeTruthy();
@@ -71,7 +93,7 @@ describe('MetadataSidebar', () => {
         expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
         expect(screen.getByText('metadata-content')).toBeTruthy();
         expect(screen.queryByText('workflow-content')).toBeNull();
-        expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
+        expect(props.setActiveTab).not.toHaveBeenCalled();
     });
 
     it('separates photo Metadata from shared Details without generation controls', () => {
@@ -109,7 +131,7 @@ describe('MetadataSidebar', () => {
         expect(screen.getByText('1/125 s')).toBeTruthy();
         rerender(<MetadataSidebar {...props} activeTab="workflow" />);
         expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
-        expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
+        expect(props.setActiveTab).not.toHaveBeenCalled();
         expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();
         rerender(<MetadataSidebar {...props} />);
         expect(screen.queryByText('ComfyUI')).toBeNull();

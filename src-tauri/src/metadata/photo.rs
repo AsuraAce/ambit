@@ -4,11 +4,13 @@ use chrono::NaiveDateTime;
 use exif::{Exif, In, Reader, Tag, Value};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
 
 const MAX_TEXT_FIELD_BYTES: usize = 4 * 1024;
 const MAX_TIFF_PROBE_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_CONTAINER_PROBE_BYTES: u64 = 64 * 1024 * 1024;
+const CONTAINER_PROBE_BUDGET_ERROR: &str = "photo metadata probe exceeded the 64 MiB read budget";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
@@ -127,8 +129,60 @@ impl std::error::Error for PhotoProbeError {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContainerKind {
     Jpeg,
+    Png,
     Tiff,
+    WebP,
     Other,
+}
+
+struct BudgetedFile {
+    inner: File,
+    remaining: u64,
+    file_len: u64,
+    exhausted: bool,
+}
+
+impl BudgetedFile {
+    fn new(inner: File, limit: u64) -> io::Result<Self> {
+        let file_len = inner.metadata()?.len();
+        Ok(Self {
+            inner,
+            remaining: limit,
+            file_len,
+            exhausted: false,
+        })
+    }
+
+    fn exhausted(&self) -> bool {
+        self.exhausted
+    }
+}
+
+impl Read for BudgetedFile {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        if buffer.is_empty() {
+            return Ok(0);
+        }
+        if self.remaining == 0 {
+            if self.inner.stream_position()? >= self.file_len {
+                return Ok(0);
+            }
+            self.exhausted = true;
+            return Err(io::Error::other(CONTAINER_PROBE_BUDGET_ERROR));
+        }
+
+        let allowed = usize::try_from(self.remaining.min(buffer.len() as u64))
+            .expect("read budget slice length fits usize");
+        let bytes_read = self.inner.read(&mut buffer[..allowed])?;
+        self.remaining -= bytes_read as u64;
+        Ok(bytes_read)
+    }
+}
+
+impl Seek for BudgetedFile {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
 }
 
 /// Classifies only strong catalog evidence. Generator evidence always wins over
@@ -149,7 +203,8 @@ pub fn classify_source_kind(
 
 /// Feasibility contract for reading ordinary photo EXIF without changing the
 /// existing AI metadata parser. JPEG EXIF is segment-bounded by the container.
-/// TIFF is capped because kamadak-exif 0.6.1 reads the complete TIFF container.
+/// PNG and WebP scans have a cumulative read budget, while TIFF is capped by
+/// file size because kamadak-exif 0.6.1 reads the complete TIFF container.
 pub fn probe_photo_metadata(path: &Path) -> Result<Option<PhotoMetadata>, PhotoProbeError> {
     let kind = detect_container(path)?;
     if kind == ContainerKind::Other {
@@ -169,12 +224,20 @@ pub fn probe_photo_metadata(path: &Path) -> Result<Option<PhotoMetadata>, PhotoP
     }
 
     let file = File::open(path).map_err(|error| PhotoProbeError::Io(error.to_string()))?;
-    let mut reader = BufReader::new(file);
-    let mut exif_reader = Reader::new();
-    exif_reader.continue_on_error(true);
-    let parsed = exif_reader
-        .read_from_container(&mut reader)
-        .or_else(|error| error.distill_partial_result(|_| {}));
+    let parsed = if matches!(kind, ContainerKind::Png | ContainerKind::WebP) {
+        let budgeted = BudgetedFile::new(file, MAX_CONTAINER_PROBE_BYTES)
+            .map_err(|error| PhotoProbeError::Io(error.to_string()))?;
+        let mut reader = BufReader::new(budgeted);
+        let parsed = read_exif_from_container(&mut reader);
+        if reader.get_ref().exhausted() {
+            return Err(PhotoProbeError::Parse(
+                CONTAINER_PROBE_BUDGET_ERROR.to_string(),
+            ));
+        }
+        parsed
+    } else {
+        read_exif_from_container(&mut BufReader::new(file))
+    };
 
     let exif = match parsed {
         Ok(exif) => exif,
@@ -186,9 +249,16 @@ pub fn probe_photo_metadata(path: &Path) -> Result<Option<PhotoMetadata>, PhotoP
     Ok((!metadata.is_empty()).then_some(metadata))
 }
 
+fn read_exif_from_container<R>(reader: &mut R) -> Result<Exif, exif::Error>
+where
+    R: BufRead + Seek,
+{
+    Reader::new().read_from_container(reader)
+}
+
 fn detect_container(path: &Path) -> Result<ContainerKind, PhotoProbeError> {
     let mut file = File::open(path).map_err(|error| PhotoProbeError::Io(error.to_string()))?;
-    let mut header = [0_u8; 4];
+    let mut header = [0_u8; 12];
     let bytes_read = file
         .read(&mut header)
         .map_err(|error| PhotoProbeError::Io(error.to_string()))?;
@@ -196,8 +266,14 @@ fn detect_container(path: &Path) -> Result<ContainerKind, PhotoProbeError> {
     if bytes_read >= 2 && header[..2] == [0xff, 0xd8] {
         return Ok(ContainerKind::Jpeg);
     }
-    if bytes_read == 4 && (header == *b"II*\0" || header == *b"MM\0*") {
+    if bytes_read >= 4 && (header[..4] == *b"II*\0" || header[..4] == *b"MM\0*") {
         return Ok(ContainerKind::Tiff);
+    }
+    if bytes_read >= 8 && header[..8] == *b"\x89PNG\r\n\x1a\n" {
+        return Ok(ContainerKind::Png);
+    }
+    if bytes_read == 12 && header[..4] == *b"RIFF" && header[8..12] == *b"WEBP" {
+        return Ok(ContainerKind::WebP);
     }
     Ok(ContainerKind::Other)
 }
@@ -345,8 +421,10 @@ mod tests {
     use exif::experimental::Writer;
     use exif::{Field, Rational};
     use image::codecs::jpeg::JpegEncoder;
+    use image::codecs::png::PngEncoder;
+    use image::codecs::webp::WebPEncoder;
     use image::metadata::Orientation;
-    use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageReader};
+    use image::{DynamicImage, ExtendedColorType, ImageDecoder, ImageEncoder, ImageReader};
     use std::fs;
     use std::io::Cursor;
     use std::path::PathBuf;
@@ -437,11 +515,11 @@ mod tests {
         jpeg
     }
 
-    fn jpeg_with_exif(fields: &[Field]) -> Vec<u8> {
+    fn jpeg_with_raw_exif(raw_exif: &[u8]) -> Vec<u8> {
         let jpeg = plain_jpeg();
 
         let mut app1 = b"Exif\0\0".to_vec();
-        app1.extend_from_slice(&write_exif(fields));
+        app1.extend_from_slice(raw_exif);
         let segment_length = u16::try_from(app1.len() + 2).expect("test EXIF fits APP1");
 
         let mut result = Vec::with_capacity(jpeg.len() + app1.len() + 4);
@@ -451,6 +529,59 @@ mod tests {
         result.extend_from_slice(&app1);
         result.extend_from_slice(&jpeg[2..]);
         result
+    }
+
+    fn jpeg_with_exif(fields: &[Field]) -> Vec<u8> {
+        jpeg_with_raw_exif(&write_exif(fields))
+    }
+
+    fn png_with_raw_exif(raw_exif: Vec<u8>) -> Vec<u8> {
+        let pixels = [24_u8; 3 * 2 * 3];
+        let mut png = Vec::new();
+        let mut encoder = PngEncoder::new(&mut png);
+        encoder
+            .set_exif_metadata(raw_exif)
+            .expect("PNG should support EXIF metadata");
+        encoder
+            .write_image(&pixels, 3, 2, ExtendedColorType::Rgb8)
+            .expect("test PNG should encode");
+        png
+    }
+
+    fn png_with_exif(fields: &[Field]) -> Vec<u8> {
+        png_with_raw_exif(write_exif(fields))
+    }
+
+    fn webp_with_raw_exif(raw_exif: Vec<u8>) -> Vec<u8> {
+        let pixels = [24_u8; 3 * 2 * 3];
+        let mut webp = Vec::new();
+        let mut encoder = WebPEncoder::new_lossless(&mut webp);
+        encoder
+            .set_exif_metadata(raw_exif)
+            .expect("WebP should support EXIF metadata");
+        encoder
+            .write_image(&pixels, 3, 2, ExtendedColorType::Rgb8)
+            .expect("test WebP should encode");
+        webp
+    }
+
+    fn webp_with_exif(fields: &[Field]) -> Vec<u8> {
+        webp_with_raw_exif(write_exif(fields))
+    }
+
+    fn encoded_without_exif(extension: &str) -> Vec<u8> {
+        let pixels = [24_u8; 3 * 2 * 3];
+        let mut encoded = Vec::new();
+        match extension {
+            "png" => PngEncoder::new(&mut encoded)
+                .write_image(&pixels, 3, 2, ExtendedColorType::Rgb8)
+                .expect("test PNG should encode"),
+            "webp" => WebPEncoder::new_lossless(&mut encoded)
+                .write_image(&pixels, 3, 2, ExtendedColorType::Rgb8)
+                .expect("test WebP should encode"),
+            _ => unreachable!("unsupported test container"),
+        }
+        encoded
     }
 
     fn scan_jpeg_fixture(name: &str, fields: &[Field]) -> PhotoMetadata {
@@ -598,6 +729,142 @@ mod tests {
 
         assert_eq!(result, None);
         assert_eq!(classify_source_kind(false, None), SourceKind::Other);
+    }
+
+    #[test]
+    fn png_and_webp_exif_are_probed_from_standard_container_chunks() {
+        let fields = [
+            ascii(Tag::Make, "Test Camera Co"),
+            ascii(Tag::Model, "Container Camera"),
+            ascii(Tag::DateTimeOriginal, "2026:08:19 10:11:12"),
+            short(Tag::Orientation, 6),
+        ];
+
+        for (extension, encoded) in [
+            ("png", png_with_exif(&fields)),
+            ("webp", webp_with_exif(&fields)),
+        ] {
+            let path = unique_test_path("container_exif", extension);
+            fs::write(&path, encoded).expect("test image should be writable");
+            let metadata = probe_photo_metadata(&path)
+                .expect("standard container EXIF should be readable")
+                .expect("camera EXIF should produce photo metadata");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(metadata.camera_model.as_deref(), Some("Container Camera"));
+            assert_eq!(metadata.orientation, Some(6));
+        }
+    }
+
+    #[test]
+    fn png_and_webp_without_exif_are_not_probe_failures() {
+        for extension in ["png", "webp"] {
+            let path = unique_test_path("container_without_exif", extension);
+            fs::write(&path, encoded_without_exif(extension))
+                .expect("test image should be writable");
+            let result = probe_photo_metadata(&path).expect("missing EXIF is not malformed input");
+            let _ = fs::remove_file(path);
+
+            assert_eq!(result, None);
+        }
+    }
+
+    #[test]
+    fn malformed_png_and_webp_are_retryable_probe_errors() {
+        for (extension, bytes) in [
+            ("png", b"\x89PNG\r\n\x1a\n\0\0\0\x10eXIf".as_slice()),
+            ("webp", b"RIFF\x10\0\0\0WEBPEXIF\x08\0\0\0".as_slice()),
+        ] {
+            let path = unique_test_path("truncated_container", extension);
+            fs::write(&path, bytes).expect("test image should be writable");
+            let result = probe_photo_metadata(&path);
+            let _ = fs::remove_file(path);
+
+            assert!(
+                matches!(result, Err(PhotoProbeError::Parse(_))),
+                "truncated {extension} metadata must remain eligible for retry: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn partially_valid_exif_directory_is_retryable_across_supported_containers() {
+        // The first IFD entry is a valid Orientation value. The second is one
+        // byte short, so accepting the first field would silently advance the
+        // refresh checkpoint past malformed metadata.
+        let partial_ifd = b"MM\0\x2a\0\0\0\x08\
+                            \0\x02\x01\x12\0\x03\0\0\0\x01\0\x06\0\0\
+                                  \x01\x01\0\x03\0\0\0\x01\0\x15\0";
+
+        for (extension, encoded) in [
+            ("jpg", jpeg_with_raw_exif(partial_ifd)),
+            ("png", png_with_raw_exif(partial_ifd.to_vec())),
+            ("webp", webp_with_raw_exif(partial_ifd.to_vec())),
+        ] {
+            let path = unique_test_path("partial_exif_directory", extension);
+            fs::write(&path, encoded).expect("partial EXIF fixture should be writable");
+            let result = probe_photo_metadata(&path);
+            let _ = fs::remove_file(path);
+
+            assert!(
+                matches!(result, Err(PhotoProbeError::Parse(_))),
+                "partially parsed {extension} EXIF must remain eligible for retry: {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn new_container_probe_budget_allows_early_exif_and_keeps_exhaustion_retryable() {
+        const PROBE_LIMIT: u64 = 64 * 1024 * 1024;
+
+        for (extension, encoded) in [
+            ("png", png_with_exif(&[ascii(Tag::Make, "Early Camera")])),
+            ("webp", webp_with_exif(&[ascii(Tag::Make, "Early Camera")])),
+        ] {
+            let early_path = unique_test_path("large_container_early_exif", extension);
+            fs::write(&early_path, encoded).expect("test image should be writable");
+            let early_file = fs::OpenOptions::new()
+                .write(true)
+                .open(&early_path)
+                .expect("test image should reopen");
+            early_file
+                .set_len(PROBE_LIMIT + 1)
+                .expect("sparse test image should be sizable");
+            drop(early_file);
+            let early = probe_photo_metadata(&early_path)
+                .expect("early EXIF should fit within the probe budget")
+                .expect("early EXIF should produce metadata");
+            let _ = fs::remove_file(early_path);
+            assert_eq!(early.camera_make.as_deref(), Some("Early Camera"));
+        }
+
+        let mut png_header = b"\x89PNG\r\n\x1a\n".to_vec();
+        png_header.extend_from_slice(&(PROBE_LIMIT as u32).to_be_bytes());
+        png_header.extend_from_slice(b"IDAT");
+        let mut webp_header = b"RIFF".to_vec();
+        webp_header.extend_from_slice(&((PROBE_LIMIT + 100) as u32).to_le_bytes());
+        webp_header.extend_from_slice(b"WEBPVP8 ");
+        webp_header.extend_from_slice(&(PROBE_LIMIT as u32).to_le_bytes());
+
+        for (extension, header) in [("png", png_header), ("webp", webp_header)] {
+            let exhausted_path = unique_test_path("container_probe_budget", extension);
+            fs::write(&exhausted_path, header).expect("test image should be writable");
+            let exhausted_file = fs::OpenOptions::new()
+                .write(true)
+                .open(&exhausted_path)
+                .expect("test image should reopen");
+            exhausted_file
+                .set_len(PROBE_LIMIT + 1024)
+                .expect("sparse test image should exceed the probe budget");
+            drop(exhausted_file);
+
+            let result = probe_photo_metadata(&exhausted_path);
+            let _ = fs::remove_file(exhausted_path);
+            assert!(
+                matches!(result, Err(PhotoProbeError::Parse(_))),
+                "{extension} budget exhaustion must be retryable, not missing EXIF: {result:?}"
+            );
+        }
     }
 
     #[test]

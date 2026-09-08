@@ -59,6 +59,7 @@ describe('ViewControls', () => {
 
     it('routes every layout, slideshow, and thumbnail-size control', () => {
         const { props } = setup();
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Grid Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Masonry Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Justified Layout' }));
@@ -69,21 +70,15 @@ describe('ViewControls', () => {
         expect(props.setThumbnailSize).toHaveBeenCalledWith(325);
     });
 
-    it('filters the gallery by all items, images, or videos', () => {
-        const { rerender, props } = setup();
-        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Videos' }));
-        expect(mocks.filters.mediaType).toBe('video');
-        rerender(<ViewControls {...props} />);
-        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe('true');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Images' }));
-        expect(mocks.filters.mediaType).toBe('image');
+    it('always exposes View controls, even with no hidden-content variants', () => {
+        setup();
+        expect(screen.getByRole('button', { name: 'View' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
+        expect(screen.getByRole('slider', { name: 'Thumbnail Size' })).toBeTruthy();
     });
 
     it('selects every sort option, closes after selection, and dismisses outside clicks', () => {
-        setup();
+        const { props } = setup();
         const options: Array<[SortOption, string]> = [
             ['date_desc', 'Newest'], ['date_asc', 'Oldest'], ['name_asc', 'Name (A-Z)'], ['name_desc', 'Name (Z-A)'],
             ['size_desc', 'Largest (Size)'], ['size_asc', 'Smallest (Size)']
@@ -92,7 +87,7 @@ describe('ViewControls', () => {
             fireEvent.click(screen.getByText('Newest'));
             const matches = screen.getAllByText(label);
             fireEvent.click(matches[matches.length - 1]);
-            expect(mocks.setSortOption).toHaveBeenLastCalledWith(value);
+            expect(props.setSortOption).toHaveBeenLastCalledWith(value);
         }
         fireEvent.click(screen.getByText('Newest'));
         expect(screen.getAllByText('Oldest')).toHaveLength(1);
@@ -127,17 +122,15 @@ describe('ViewControls', () => {
     it('renders active layout, sort, and hidden-content variants', () => {
         mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showIntermediates: true };
-        mocks.sortOption = 'name_desc';
-        const { container, rerender, props } = setup({ layoutMode: 'grid' });
+        const { container, rerender, props } = setup({ layoutMode: 'grid', sortOption: 'name_desc' });
+        fireEvent.click(screen.getByTitle('View Options'));
         expect(screen.getByRole('button', { name: 'Use Grid Layout' }).className).toContain('bg-white');
         expect(screen.getByText('Name (Z-A)')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('View Options'));
         expect(container.querySelector('[class~="right-0.5"]')).toBeTruthy();
 
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showGrids: true };
-        mocks.sortOption = 'future' as SortOption;
-        rerender(<ViewControls {...props} layoutMode="justified" showLayoutSwitcher={false} showSlideshowButton={false} />);
+        rerender(<ViewControls {...props} layoutMode="justified" sortOption={'future' as SortOption} showLayoutSwitcher={false} showSlideshowButton={false} />);
         expect(screen.getByText('Sort')).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Use Grid Layout' })).toBeNull();
         expect(screen.queryByRole('button', { name: 'Play Slideshow' })).toBeNull();

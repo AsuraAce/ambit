@@ -6,6 +6,10 @@ import { ImageViewer } from '../ImageViewer';
 
 const mockGetImageWithFullMetadata = vi.fn();
 const mockMetadataSidebar = vi.fn();
+const mockSetViewerTab = vi.fn();
+const viewerSettings = vi.hoisted(() => ({
+    viewerPreferredTab: undefined as 'details' | 'metadata' | 'workflow' | undefined,
+}));
 const captures = vi.hoisted(() => ({
     toolbar: null as Record<string, unknown> | null,
     canvas: null as Record<string, unknown> | null,
@@ -103,13 +107,18 @@ vi.mock('../../../../hooks/useImageAI', () => ({
 }));
 
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: { settings: Record<string, unknown> }) => unknown) => (
+    useSettingsStore: (selector: (state: { settings: Record<string, unknown>; isLoaded: boolean; setSettings: typeof mockSetViewerTab; privacyEnabled: boolean; privacyMaskIndexStatus: string }) => unknown) => (
         selector({
             settings: {
                 enableAI: true,
                 aiModel: 'gemini-3.1-flash-lite',
                 aiThinkingMode: 'default',
+                viewerPreferredTab: viewerSettings.viewerPreferredTab,
             },
+            isLoaded: true,
+            setSettings: mockSetViewerTab,
+            privacyEnabled: false,
+            privacyMaskIndexStatus: 'ready',
         })
     ),
 }));
@@ -173,8 +182,30 @@ const renderViewer = (overrides: Partial<React.ComponentProps<typeof ImageViewer
 };
 
 describe('ImageViewer full metadata loading', () => {
+    it('keeps the next image loading when an earlier metadata request finishes late', async () => {
+        let resolveFirst!: (value: AIImage) => void;
+        let resolveNext!: (value: AIImage | null) => void;
+        mockGetImageWithFullMetadata
+            .mockImplementationOnce(() => new Promise<AIImage>(resolve => { resolveFirst = resolve; }))
+            .mockImplementationOnce(() => new Promise<AIImage | null>(resolve => { resolveNext = resolve; }));
+        const view = renderViewer();
+        expect(captures.sidebar?.isLoading).toBe(true);
+        const next = { ...lightImage, id: 'next-photo' };
+        view.rerender(<ImageViewer {...view.props} image={next} />);
+        await act(async () => resolveFirst(lightImage));
+        expect(captures.sidebar?.isLoading).toBe(true);
+        expect((captures.sidebar?.image as AIImage).id).toBe(next.id);
+        await act(async () => resolveNext(null));
+        expect(captures.sidebar?.isLoading).toBe(false);
+    });
+
     beforeEach(() => {
         vi.clearAllMocks();
+        viewerSettings.viewerPreferredTab = undefined;
+        mockSetViewerTab.mockReset();
+        mockSetViewerTab.mockImplementation((update: { viewerPreferredTab: typeof viewerSettings.viewerPreferredTab }) => {
+            viewerSettings.viewerPreferredTab = update.viewerPreferredTab;
+        });
         Object.keys(captures).forEach(key => {
             captures[key as keyof typeof captures] = null;
         });
@@ -218,16 +249,17 @@ describe('ImageViewer full metadata loading', () => {
         expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith(lightImage.id);
     });
 
-    it('opens new image viewers on Metadata', async () => {
+    it('opens new image viewers on Details and persists an explicit tab selection', async () => {
         const view = renderViewer();
 
         await waitFor(() => expect(captures.sidebar).toBeTruthy());
-        expect(captures.sidebar?.activeTab).toBe('metadata');
+        expect(captures.sidebar?.activeTab).toBe('details');
 
-        act(() => (captures.sidebar?.setActiveTab as (tab: 'details') => void)('details'));
+        act(() => (captures.sidebar?.setActiveTab as (tab: 'metadata') => void)('metadata'));
+        expect(mockSetViewerTab).toHaveBeenCalledWith({ viewerPreferredTab: 'metadata' });
         view.rerender(<ImageViewer {...view.props} image={{ ...lightImage, id: 'C:/library/next.png' }} />);
         await waitFor(() => expect(mockGetImageWithFullMetadata).toHaveBeenCalledWith('C:/library/next.png'));
-        expect(captures.sidebar?.activeTab).toBe('details');
+        expect(captures.sidebar?.activeTab).toBe('metadata');
     });
 
     it('keeps persisted original metadata when a lightweight image omits it after restart', async () => {
@@ -648,6 +680,7 @@ describe('ImageViewer full metadata loading', () => {
         renderViewer();
 
         await waitFor(() => expect(assetAccessMock).toHaveBeenCalled());
+        await waitFor(() => expect(captures.sidebar?.isLoading).toBe(false));
         await waitFor(() => expect(warnSpy).toHaveBeenCalledWith(
             '[ImageViewer] Failed to register image path for viewer', expect.any(Error)
         ));

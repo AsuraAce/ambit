@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 
-pub(crate) const CURRENT_PHOTO_REFRESH_VERSION: i64 = 1;
+pub(crate) const CURRENT_PHOTO_REFRESH_VERSION: i64 = 2;
 
 const UPDATE_PHOTO_METADATA_SQL: &str = "UPDATE images
      SET detected_source_kind = ?1,
@@ -888,8 +888,10 @@ mod tests {
                 ('generated-auto', 'C:/library/a.jpg', 0, 'generated', NULL, 0, 'image'),
                 ('generated-corrected', 'C:/library/b.jpg', 0, 'generated', 'photograph', 0, 'image'),
                 ('other-stale', 'C:/library/c.jpg', 0, 'other', NULL, 0, 'image'),
-                ('other-current', 'C:/library/d.jpg', 0, 'other', NULL, 1, 'image'),
-                ('video', 'C:/library/e.mp4', 0, 'other', NULL, 0, 'video');",
+                ('png-v1', 'C:/library/d.png', 0, 'other', NULL, 1, 'image'),
+                ('webp-v1', 'C:/library/e.webp', 0, 'other', NULL, 1, 'image'),
+                ('other-current-v2', 'C:/library/f.jpg', 0, 'other', NULL, 2, 'image'),
+                ('video', 'C:/library/g.mp4', 0, 'other', NULL, 0, 'video');",
         )
         .expect("seed candidates");
 
@@ -906,7 +908,10 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("collect candidates");
 
-        assert_eq!(ids, ["generated-corrected", "other-stale"]);
+        assert_eq!(
+            ids,
+            ["generated-corrected", "other-stale", "png-v1", "webp-v1"]
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 
 import * as React from 'react';
 import type { FolderChange } from '../../bindings';
-import { render, act, screen, waitFor } from '../../test/testUtils';
+import { render, act, fireEvent, screen, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { LibraryProvider, useLibraryContext } from '../LibraryContext';
 import { useSync } from '../SyncContext';
@@ -27,7 +27,7 @@ const mocks = vi.hoisted(() => ({
     searchImages: vi.fn().mockResolvedValue([]),
     countImages: vi.fn().mockResolvedValue(0),
     countGlobalImages: vi.fn().mockResolvedValue(0),
-    countImagesBySourceKind: vi.fn().mockResolvedValue({ all: 0, generated: 0, photograph: 0, other: 0 }),
+    countLibraryScopes: vi.fn().mockResolvedValue({ media: { all: 0, image: 0, video: 0 }, imageKinds: { all: 0, generated: 0, photograph: 0, other: 0 } }),
     getFacets: vi.fn().mockResolvedValue({ models: [], loras: [], tools: [] }),
     getLibraryStatsSummary: vi.fn().mockResolvedValue({ totalImages: 0, totalGenerations: 0, avgSteps: 0, estSizeMB: '0', modelStats: [] }),
     clearLibraryStatsCache: vi.fn(),
@@ -172,7 +172,7 @@ vi.mock('../../services/db/searchRepo', () => ({
     searchImages: (...args: any[]) => mocks.searchImages(...args),
     countImages: (...args: any[]) => mocks.countImages(...args),
     countGlobalImages: () => mocks.countGlobalImages(),
-    countImagesBySourceKind: (...args: any[]) => mocks.countImagesBySourceKind(...args),
+    countLibraryScopes: (...args: unknown[]) => mocks.countLibraryScopes(...args),
     getFacets: (...args: any[]) => mocks.getFacets(...args),
     getLibraryStatsSummary: (...args: any[]) => mocks.getLibraryStatsSummary(...args),
     getKeywordStats: (...args: any[]) => mocks.getKeywordStats(...args),
@@ -599,11 +599,14 @@ describe('Library Integration (Provider Stack)', () => {
             );
 
             await waitFor(() => expect(hook?.isLoaded).toBe(true));
-            expect(screen.queryByTitle('View Options')).toBeNull();
+            expect(screen.getByTitle('View Options')).toBeTruthy();
+            fireEvent.click(screen.getByTitle('View Options'));
+            expect(screen.queryByRole('button', { name: /Show InvokeAI Image Assets/ })).toBeNull();
             await act(async () => hook?.setSettings({ invokeAiPath: 'D:/AmbitFixtures/InvokeAI' }));
             await act(async () => hook?.startInvokeSync({ mode }));
 
             await waitFor(() => expect(screen.getByTitle('View Options')).toBeTruthy());
+            expect(screen.getByRole('button', { name: /Show InvokeAI Image Assets/ })).toBeTruthy();
             expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledTimes(3);
         }
     );

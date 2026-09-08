@@ -1,11 +1,13 @@
-import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption, getEffectiveSourceKind, type SourceKindCounts } from '../types';
+import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, LibraryScopeCounts, SmartCollection, SortOption, getEffectiveSourceKind } from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
 import { getDateFilterBounds, getSearchDateBounds } from '../utils/dateFilters';
 import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
 import { getEffectiveDisplayTimestamp, imageMatchesDateBounds } from '../utils/imageDates';
 import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
-import { createDefaultFilters } from '../utils/filterState';
+import { createDefaultFilters, getEffectiveImageKind, normalizeMediaTypeFilter } from '../utils/filterState';
+import { addLibraryScopeCount, createEmptyLibraryScopeCounts } from '../utils/libraryScopeCounts';
+import { getEffectiveMaskedKeywords, isImageMasked } from '../utils/maskingUtils';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -22,6 +24,11 @@ const DEFAULT_SETTINGS: AppSettings = createDefaultAppSettings({
     enableAutoThumbnailHealing: false,
     devMode: true,
 });
+
+interface BrowserMockPrivacyOptions {
+    privacyEnabled: boolean;
+    settings: AppSettings;
+}
 
 const MODELS = ['Flux.1 Dev', 'SDXL 1.0 Base', 'Pony Diffusion V6', 'Illustrious XL', 'DreamShaper 8'];
 const LORAS = ['detail_tweaker_v1', 'cinematic_lighting', 'soft_portrait', 'isometric_world', 'lineart_boost'];
@@ -65,6 +72,7 @@ const createMockImages = (): AIImage[] => {
     return Array.from({ length: MOCK_COUNT }, (_, index) => {
         const isPhoto = index >= 120 && index < 150;
         const isOther = index >= 150;
+        const isVideo = index >= 170;
         const sourceKind = isPhoto ? 'photograph' : isOther ? 'other' : 'generated';
         const isPortrait = index % 3 === 0;
         const width = isPortrait ? 832 : 1216;
@@ -115,6 +123,21 @@ const createMockImages = (): AIImage[] => {
             detectedSourceKind: sourceKind,
             sourceKind,
             captureWallTimeMs,
+            mediaType: isVideo ? 'video' : 'image',
+            ...(isVideo ? {
+                mediaContainer: 'mp4',
+                mediaMimeType: 'video/mp4',
+                durationMs: 45_000 + index * 1_000,
+                videoCodec: 'h264',
+                videoProfile: 'High',
+                audioPresent: true,
+                audioCodec: 'aac',
+                frameRateNum: 30,
+                frameRateDen: 1,
+                rotationDegrees: 0 as const,
+                probeStatus: 'ready' as const,
+                playbackStatus: 'external_required' as const,
+            } : {}),
             photoMetadata: isPhoto ? {
                 capturedAt: { local: capturedAt, offset: index % 2 === 0 ? '+02:00' : null, subsecond: null },
                 captureTimeRaw: capturedAt,
@@ -238,6 +261,14 @@ const defaultState = (): AppState => {
 
 let state: AppState = defaultState();
 
+const normalizeMockSettings = (settings: Partial<AppSettings>): AppSettings => createDefaultAppSettings({
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    // Omitted legacy media settings must be inferred from the raw remembered kind.
+    libraryMediaType: settings.libraryMediaType,
+    promptMaskingEnabled: inferPromptMaskingEnabled(settings),
+});
+
 const loadStoredState = (): AppState => {
     if (typeof localStorage === 'undefined') return state;
 
@@ -251,11 +282,7 @@ const loadStoredState = (): AppState => {
             ...state,
             ...parsed,
             images: state.images,
-            settings: {
-                ...DEFAULT_SETTINGS,
-                ...savedSettings,
-                promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
-            },
+            settings: normalizeMockSettings(savedSettings),
             collections: parsed.collections?.length ? parsed.collections : state.collections,
             smartCollections: parsed.smartCollections ?? [],
             recentSearches: parsed.recentSearches ?? state.recentSearches,
@@ -293,7 +320,7 @@ export class BrowserMockRepository implements IRepository {
             ...state,
             ...nextState,
             images: state.images,
-            settings: { ...DEFAULT_SETTINGS, ...nextState.settings },
+            settings: normalizeMockSettings(nextState.settings),
         };
         persistState();
     }
@@ -304,7 +331,7 @@ export class BrowserMockRepository implements IRepository {
             ...state,
             ...nextState,
             images: state.images,
-            settings: { ...DEFAULT_SETTINGS, ...nextState.settings },
+            settings: normalizeMockSettings(nextState.settings),
         };
         persistState();
         return state;
@@ -499,13 +526,17 @@ const filterImages = (
     images: AIImage[],
     filters: FilterState,
     collections: Collection[],
-    excludeSourceKind = false,
-    applyVisibilityFilters = true
+    excludeScopeFilters = false,
+    applyVisibilityFilters = true,
+    privacy?: BrowserMockPrivacyOptions,
 ): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateBounds = getDateFilterBounds(filters);
     const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
-    const hasGlobalSourceKindFilter = !excludeSourceKind && (filters.sourceKind ?? 'all') !== 'all';
+    const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+    const imageKind = getEffectiveImageKind(filters);
+    const hasGlobalImageKindFilter = !excludeScopeFilters && imageKind !== 'all';
+    const maskedKeywords = privacy ? getEffectiveMaskedKeywords(privacy.settings) : [];
     const selectedCollection = filters.collectionId
         ? collections.find((collection) => collection.id === filters.collectionId)
         : null;
@@ -517,7 +548,7 @@ const filterImages = (
             ...selectedCollection.filters,
             collectionId: null,
             ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {}),
-            ...(hasGlobalSourceKindFilter || excludeSourceKind ? { sourceKind: 'all' as const } : {})
+            ...(hasGlobalImageKindFilter || excludeScopeFilters ? { sourceKind: 'all' as const } : {})
         }
         : null;
     const smartMatches = smartFilters
@@ -525,20 +556,22 @@ const filterImages = (
             images,
             smartFilters,
             collections,
-            hasGlobalSourceKindFilter || excludeSourceKind,
-            false
+            false,
+            false,
+            privacy,
         ).map((image) => image.id))
         : null;
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
-        if (filters.mediaType && filters.mediaType !== 'all' && (image.mediaType ?? 'image') !== filters.mediaType) return false;
+        if (privacy?.privacyEnabled && privacy.settings.maskingMode === 'hide' && isImageMasked(image, true, maskedKeywords)) return false;
+        if (!excludeScopeFilters && mediaType !== 'all' && (image.mediaType ?? 'image') !== mediaType) return false;
         if (applyVisibilityFilters && !filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
         if (applyVisibilityFilters && !filters.showGrids && image.metadata.isGrid) return false;
         if (applyVisibilityFilters && !filters.showInvokeImageAssets && isKnownInvokeImageAsset(image.invokeImageCategory)) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
         if (filters.pinnedOnly && !image.isPinned) return false;
-        if (!excludeSourceKind && (filters.sourceKind ?? 'all') !== 'all' && getEffectiveSourceKind(image) !== filters.sourceKind) return false;
+        if (!excludeScopeFilters && imageKind !== 'all' && getEffectiveSourceKind(image) !== imageKind) return false;
         if (!imageMatchesDateBounds(image, dateBounds)) return false;
         if (collectionIds && !collectionIds.has(image.id)) return false;
         if (smartMatches && !smartMatches.has(image.id)) return false;
@@ -584,23 +617,50 @@ export const searchBrowserMockImages = (
     filters: FilterState,
     sortOption: SortOption,
     limit: number,
-    cursorId?: string
-): { images: AIImage[]; totalCount: number; globalCount: number; sourceKindCounts: SourceKindCounts } => {
+    cursorId?: string,
+    privacy?: BrowserMockPrivacyOptions,
+): { images: AIImage[]; totalCount: number; globalCount: number; scopeCounts: LibraryScopeCounts; sourceKindCounts: LibraryScopeCounts['imageKinds'] } => {
     const current = loadStoredState();
     const collections = getBrowserMockCollections();
-    const filtered = sortImages(filterImages(current.images, filters, collections), sortOption);
-    const countImages = filterImages(current.images, { ...filters, sourceKind: 'all' }, collections, true);
-    const sourceKindCounts: SourceKindCounts = { all: countImages.length, generated: 0, photograph: 0, other: 0 };
-    countImages.forEach((image) => {
-        sourceKindCounts[getEffectiveSourceKind(image)] += 1;
-    });
+    const filtered = sortImages(filterImages(current.images, filters, collections, false, true, privacy), sortOption);
+    const countImages = filterImages(
+        current.images,
+        { ...filters, mediaType: 'all', sourceKind: 'all' },
+        collections,
+        true,
+        true,
+        privacy,
+    );
+    const scopeCounts = createEmptyLibraryScopeCounts();
+    countImages.forEach((image) => addLibraryScopeCount(scopeCounts, image.mediaType, getEffectiveSourceKind(image)));
     const start = cursorId ? Math.max(0, filtered.findIndex((image) => image.id === cursorId) + 1) : 0;
     return {
         images: filtered.slice(start, start + limit),
         totalCount: filtered.length,
-        globalCount: current.images.filter((image) => !image.isDeleted).length,
-        sourceKindCounts,
+        globalCount: current.images.filter((image) => !image.isDeleted && !(
+            privacy?.privacyEnabled
+            && privacy.settings.maskingMode === 'hide'
+            && isImageMasked(image, true, getEffectiveMaskedKeywords(privacy.settings))
+        )).length,
+        scopeCounts,
+        sourceKindCounts: scopeCounts.imageKinds,
     };
+};
+
+export const getBrowserMockScopeAvailability = (
+    filters: FilterState,
+    privacy: BrowserMockPrivacyOptions,
+): LibraryScopeCounts => {
+    const current = loadStoredState();
+    const visibilityFilters = createDefaultFilters({
+        showIntermediates: filters.showIntermediates,
+        showGrids: filters.showGrids,
+        showInvokeImageAssets: filters.showInvokeImageAssets,
+    });
+    const counts = createEmptyLibraryScopeCounts();
+    filterImages(current.images, visibilityFilters, getBrowserMockCollections(), false, true, privacy)
+        .forEach((image) => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    return counts;
 };
 
 const buildFacetItems = (images: AIImage[], type: FacetType) => {

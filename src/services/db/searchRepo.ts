@@ -1,4 +1,5 @@
-import { AIImage, AssetScope, FacetType, type SourceKindCounts } from '../../types';
+import { AIImage, AssetScope, FacetType, type LibraryScopeCounts } from '../../types';
+import { addLibraryScopeCount, createEmptyLibraryScopeCounts } from '../../utils/libraryScopeCounts';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
@@ -458,32 +459,30 @@ export const countImages = async (whereClause: string, params: unknown[], collec
     return result[0]?.count || 0;
 };
 
-interface SourceKindCountRow {
+interface LibraryScopeCountRow {
     source_kind: string;
+    media_type: string | null;
     count: number;
 }
 
-const mapSourceKindCounts = (rows: SourceKindCountRow[]): SourceKindCounts => {
-    const counts: SourceKindCounts = { all: 0, generated: 0, photograph: 0, other: 0 };
+const mapLibraryScopeCounts = (rows: LibraryScopeCountRow[]): LibraryScopeCounts => {
+    const counts = createEmptyLibraryScopeCounts();
     rows.forEach((row) => {
-        if (row.source_kind === 'generated' || row.source_kind === 'photograph' || row.source_kind === 'other') {
-            counts[row.source_kind] += row.count;
-            counts.all += row.count;
-        }
+        addLibraryScopeCount(counts, row.media_type, row.source_kind, row.count);
     });
     return counts;
 };
 
-export const countImagesBySourceKind = async (
+export const countLibraryScopes = async (
     whereClause: string,
     params: unknown[],
     collectionId?: string,
     loraName?: string
-): Promise<SourceKindCounts> => {
+): Promise<LibraryScopeCounts> => {
     const db = await getDb();
     const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
-    const select = 'SELECT images.source_kind, count(*) as count';
-    const group = 'GROUP BY images.source_kind';
+    const select = 'SELECT images.source_kind, images.media_type, count(*) as count';
+    const group = 'GROUP BY images.source_kind, images.media_type';
     let query = `${select} FROM scoped_images AS images ${finalWhere} ${group}`;
     let queryParams = params;
 
@@ -511,10 +510,10 @@ export const countImagesBySourceKind = async (
         queryParams = [loraName, ...params];
     }
 
-    const rows = await timeDbCall('countImagesBySourceKind', 'source-kind', () => (
-        db.select<SourceKindCountRow[]>(query, queryParams)
+    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => (
+        db.select<LibraryScopeCountRow[]>(query, queryParams)
     ));
-    return mapSourceKindCounts(rows);
+    return mapLibraryScopeCounts(rows);
 };
 
 /**

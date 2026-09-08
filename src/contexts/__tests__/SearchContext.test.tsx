@@ -59,6 +59,7 @@ vi.mock('../../hooks/useImagesQuery', () => ({
     }
 }));
 vi.mock('../../hooks/useLibraryStatsQuery', () => ({ useLibraryStatsQuery: () => mocks.statsQuery.current }));
+vi.mock('../../hooks/useLibraryScopeAvailability', () => ({ useLibraryScopeAvailability: () => ({ data: undefined }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.queryClient }));
 vi.mock('../../services/repository', () => ({ appRepository: mocks.repository }));
 vi.mock('../../services/db/connection', () => ({ getDb: mocks.getDb }));
@@ -66,10 +67,8 @@ vi.mock('../../bindings', () => ({ commands: { refreshPrivacyMaskIndex: mocks.re
 vi.mock('../../utils/spectaUtils', () => ({ unwrap: mocks.unwrap }));
 vi.mock('../../services/runtime', () => ({ isBrowserMockMode: () => mocks.browserMockMode.current }));
 vi.mock('../../utils/sqlHelpers', () => ({ buildSqlWhereClause: mocks.buildSqlWhereClause }));
-vi.mock('../../utils/filterState', () => ({
-    normalizeImageKindFilter: (value: unknown) => (
-        value === 'generated' || value === 'photograph' || value === 'other' ? value : 'all'
-    ),
+vi.mock('../../utils/filterState', async importOriginal => ({
+    ...await importOriginal<typeof import('../../utils/filterState')>(),
     shouldPrefetchResultPages: mocks.shouldPrefetchResultPages
 }));
 vi.mock('../../services/db/imageRepo', () => ({
@@ -714,14 +713,36 @@ describe('SearchProvider', () => {
             isLoaded: true
         };
 
-        renderProvider();
+        const rendered = renderProvider();
 
-        await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
         const hydratedSourceKind = setFilters.mock.calls
             .map(([update]) => (update as (value: FilterState) => FilterState)(baseFilters))
             .find(filters => filters.sourceKind === 'photograph');
         expect(hydratedSourceKind?.sourceKind).toBe('photograph');
+        expect(hydratedSourceKind?.mediaType).toBe('image');
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: hydratedSourceKind };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
         expect(setSettings).not.toHaveBeenCalled();
+    });
+
+    it('remembers the image kind while persisting Videos and resets both with Clear filters', async () => {
+        const setSettings = vi.fn();
+        mocks.settings.current = {
+            settings: settings({ libraryMediaType: 'image', librarySourceKind: 'photograph' }),
+            setSettings, privacyEnabled: false, isLoaded: true,
+        };
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'image', sourceKind: 'photograph' } };
+        const rendered = renderProvider();
+        expect(setSettings).not.toHaveBeenCalled();
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'video', sourceKind: 'photograph' } };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'video', librarySourceKind: 'photograph' });
+        mocks.settings.current = { ...(mocks.settings.current as object), settings: settings({ libraryMediaType: 'video', librarySourceKind: 'photograph' }) };
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'all', sourceKind: 'all' } };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'all', librarySourceKind: 'all' });
     });
 
     it('persists an image-kind change after the saved value has hydrated', async () => {
@@ -743,7 +764,7 @@ describe('SearchProvider', () => {
         };
         rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
 
-        await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ librarySourceKind: 'photograph' }));
+        await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ librarySourceKind: 'photograph', libraryMediaType: 'image' }));
     });
 
     it('falls back to the current grid value when only intermediates were persisted', async () => {

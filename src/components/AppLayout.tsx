@@ -209,6 +209,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         images,
         globalTotal,
         sourceKindCounts,
+        scopeCounts,
+        scopeAvailability,
         isFiltering,
         clearAllFilters,
         toggleFavorite,
@@ -393,6 +395,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     totalCount={scopeTotal}
                     scopeName={scopeName}
                     sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
+                    scopeCounts={scopeCounts}
+                    scopeAvailability={scopeAvailability}
                     isFiltering={isSearchPending}
                     onSearchDraftPendingChange={setIsSearchDraftPending}
                     onImport={onOpenImportModal}

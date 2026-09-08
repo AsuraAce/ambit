@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Heart, Pin } from 'lucide-react';
-import { AIImage, GeneratorTool, getEffectiveSourceKind, type SourceKind } from '../../../types';
+import { AIImage, GeneratorTool, type SourceKind } from '../../../types';
 import { useZoomPan } from '../../../hooks/useZoomPan';
 import { ImageCanvas } from './ImageCanvas';
 import { MetadataSidebar } from './MetadataSidebar';
@@ -24,6 +24,8 @@ import {
 import { MaskedViewerGate } from './MaskedViewerGate';
 import { useViewerKeyboard } from '../hooks/useViewerKeyboard';
 import { useMetadataDisclosureState } from '../hooks/useMetadataDisclosureState';
+import { getImageViewerTabs } from '../hooks/viewerTabAvailability';
+import { useViewerPreferredTab } from '../hooks/useViewerPreferredTab';
 
 interface ImageViewerProps {
     image: AIImage;
@@ -161,6 +163,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     const collections = useCollectionStore(s => s.collections);
     const [fullImage, setFullImage] = useState<AIImage | null>(null);
     const [isLoadingFull, setIsLoadingFull] = useState(false);
+    const [settledMetadataId, setSettledMetadataId] = useState<string | null>(null);
 
     // --- Stack / Version Logic ---
     const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
@@ -174,20 +177,30 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     useEffect(() => {
         if (mediaExposureBlocked) {
             setFullImage(null);
+            setSettledMetadataId(null);
             setIsLoadingFull(false);
             return;
         }
         const targetId = activeVersionId || image.id;
+        let cancelled = false;
         // Optimization: Only clear if it's a completely different image, 
         // keep old one as placeholder if it's just a version switch? 
         // No, let's clear to avoid confusing metadata flicker.
         setFullImage(null);
+        setSettledMetadataId(null);
         setIsLoadingFull(true);
 
         getImageWithFullMetadata(targetId).then(res => {
+            if (cancelled) return;
             if (res) setFullImage(res);
+            setSettledMetadataId(targetId);
             setIsLoadingFull(false);
-        }).catch(() => setIsLoadingFull(false));
+        }).catch(() => {
+            if (cancelled) return;
+            setSettledMetadataId(targetId);
+            setIsLoadingFull(false);
+        });
+        return () => { cancelled = true; };
     }, [image.id, activeVersionId, mediaExposureBlocked]);
 
     const versions = useMemo(() => {
@@ -236,7 +249,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     }, [image, fullImage, versions, activeVersionId]);
 
     // Derive loading state synchronously to avoid flash
-    const isReallyLoading = isLoadingFull || (activeVersionId ? (fullImage?.id !== activeVersionId) : (fullImage?.id !== image.id));
+    const isReallyLoading = isLoadingFull || settledMetadataId !== (activeVersionId || image.id);
 
     // --- Hooks ---
     const { scale, position, isDragging, resetZoom, zoomIn, zoomOut, handlers } = useZoomPan();
@@ -253,16 +266,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     });
 
     // --- UI State ---
-    const [activeTab, setActiveTab] = useState<'details' | 'metadata' | 'workflow'>('metadata');
+    const availableViewerTabs = useMemo(
+        () => getImageViewerTabs(displayImage).map(tab => tab.id),
+        [displayImage]
+    );
+    const { activeTab, onExplicitTabChange } = useViewerPreferredTab(availableViewerTabs);
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showControls, setShowControls] = useState(true);
     const [showStatusHud, setShowStatusHud] = useState(true);
-
-    useEffect(() => {
-        if (getEffectiveSourceKind(displayImage) !== 'generated' && activeTab === 'workflow') {
-            setActiveTab('metadata');
-        }
-    }, [activeTab, displayImage]);
     const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const statusHudTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -511,7 +522,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 <MetadataSidebar
                     image={displayImage} // Pass active version
                     activeTab={activeTab}
-                    setActiveTab={setActiveTab}
+                    setActiveTab={onExplicitTabChange}
                     collections={collections}
                     availableTags={availableTags}
                     modelOptions={modelOptions}

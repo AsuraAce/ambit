@@ -374,9 +374,27 @@ describe('TauriFsRepository', () => {
         expect(state.settings.promptMaskingEnabled).toBe(false);
         expect(state.settings.resourceFolders).toEqual([]);
         expect(state.settings.librarySourceKind).toBe('all');
+        expect(state.settings.libraryMediaType).toBe('all');
+        expect(state.settings.viewerPreferredTab).toBe('details');
         expect(fsMocks.writeTextFile).toHaveBeenCalled();
         const [, serialized] = fsMocks.writeTextFile.mock.calls.find(([fileName]) => fileName === 'library.json') as [string, string, unknown];
         expect(JSON.parse(serialized).images).toEqual([]);
+    });
+
+    it('loads shared viewer and media preferences without discarding the remembered image kind', async () => {
+        fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
+        fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
+            ...stateFixture(),
+            settings: {
+                ...stateFixture().settings,
+                viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'photograph',
+            },
+        }));
+        const { TauriFsRepository } = await import('../TauriFsRepository');
+        const state = await new TauriFsRepository().load();
+        expect(state.settings).toMatchObject({
+            viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'photograph',
+        });
     });
 
     it('normalizes omitted legacy collection and smart-filter fields after validation', async () => {

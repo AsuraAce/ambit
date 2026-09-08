@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope, type ImageKindFilter, type SourceKindCounts } from '../types';
+import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope, type ImageKindFilter, type MediaTypeFilter, type LibraryScopeCounts, type SourceKindCounts } from '../types';
 import { useSettings } from './SettingsContext';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { useCollections } from './CollectionContext';
@@ -18,12 +18,13 @@ import {
 import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo';
 import { useImagesQuery, type ImagesQueryKey } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
+import { useLibraryScopeAvailability } from '../hooks/useLibraryScopeAvailability';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
-import { normalizeImageKindFilter, shouldPrefetchResultPages } from '../utils/filterState';
+import { normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
@@ -50,6 +51,8 @@ interface SearchContextType {
     totalImages: number; // This is the MATCHING count
     globalTotal: number; // Total non-deleted images in library
     sourceKindCounts?: SourceKindCounts;
+    scopeCounts?: LibraryScopeCounts;
+    scopeAvailability?: LibraryScopeCounts;
     hasMoreImages: boolean;
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
@@ -136,7 +139,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
     const [sourceKindHydrated, setSourceKindHydrated] = useState(false);
-    const sourceKindHydrationTargetRef = useRef<ImageKindFilter | null>(null);
+    const sourceKindHydrationTargetRef = useRef<{ sourceKind: ImageKindFilter; mediaType: MediaTypeFilter } | null>(null);
 
     const setSortOptionDispatch = useCallback((value: React.SetStateAction<SortOption>) => {
         const nextSortOption = typeof value === 'function'
@@ -219,16 +222,22 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!settingsLoaded || sourceKindHydrated) return;
 
         const sourceKind = normalizeImageKindFilter(settings.librarySourceKind);
+        const mediaType = normalizeMediaTypeFilter(settings.libraryMediaType, sourceKind);
         const currentSourceKind = normalizeImageKindFilter(filters.sourceKind);
-        sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind ? null : sourceKind;
-        if (currentSourceKind !== sourceKind) {
-            setFilters(previous => ({ ...previous, sourceKind }));
+        const currentMediaType = normalizeMediaTypeFilter(filters.mediaType, currentSourceKind);
+        sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind && currentMediaType === mediaType
+            ? null : { sourceKind, mediaType };
+        if (sourceKindHydrationTargetRef.current) {
+            setFilters(previous => ({ ...previous, sourceKind, mediaType }));
         }
         setSourceKindHydrated(true);
-    }, [filters.sourceKind, setFilters, settings.librarySourceKind, settingsLoaded, sourceKindHydrated]);
+    }, [filters.mediaType, filters.sourceKind, setFilters, settings.libraryMediaType, settings.librarySourceKind, settingsLoaded, sourceKindHydrated]);
 
     const databaseQueriesEnabled = settingsLoaded
         && sourceKindHydrated
+        && (!sourceKindHydrationTargetRef.current
+            || (normalizeImageKindFilter(filters.sourceKind) === sourceKindHydrationTargetRef.current.sourceKind
+                && normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === sourceKindHydrationTargetRef.current.mediaType))
         && collectionsLoaded
         && invokeQueriesAdmitted
         && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
@@ -340,6 +349,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const sourceKindCounts: SourceKindCounts = privacyExposureBlocked
         ? { all: 0, generated: 0, photograph: 0, other: 0 }
         : firstPageSourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 };
+    const scopeCounts = privacyExposureBlocked ? undefined
+        : (queryData?.pages[0] as { scopeCounts?: LibraryScopeCounts } | undefined)?.scopeCounts;
+    const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: databaseQueriesEnabled });
+    const scopeAvailability = privacyExposureBlocked || !databaseQueriesEnabled ? undefined : availabilityQuery.data;
 
     // Stats & Facets Query
     const {
@@ -649,14 +662,16 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         if (!sourceKindHydrated) return;
 
         const sourceKind = normalizeImageKindFilter(filters.sourceKind);
+        const mediaType = normalizeMediaTypeFilter(filters.mediaType, sourceKind);
         const hydrationTarget = sourceKindHydrationTargetRef.current;
-        if (hydrationTarget !== null && sourceKind !== hydrationTarget) return;
+        if (hydrationTarget !== null && (sourceKind !== hydrationTarget.sourceKind || mediaType !== hydrationTarget.mediaType)) return;
 
         sourceKindHydrationTargetRef.current = null;
-        if (normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind) {
-            setSettings({ librarySourceKind: sourceKind });
+        if (normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind
+            || normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind) !== mediaType) {
+            setSettings({ librarySourceKind: sourceKind, libraryMediaType: mediaType });
         }
-    }, [filters.sourceKind, setSettings, settings.librarySourceKind, sourceKindHydrated]);
+    }, [filters.mediaType, filters.sourceKind, setSettings, settings.libraryMediaType, settings.librarySourceKind, sourceKindHydrated]);
 
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
@@ -694,6 +709,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             totalImages: totalImagesCount,
             globalTotal: globalTotalCount,
             sourceKindCounts,
+            scopeCounts,
+            scopeAvailability,
             hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
             loadMoreImages: async () => {
                 if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {

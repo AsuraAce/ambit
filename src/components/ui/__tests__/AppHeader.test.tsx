@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { fireEvent, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '../AppHeader';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
@@ -28,18 +28,23 @@ vi.mock('../../../features/filters/components/SearchBar', () => ({
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
-    ViewControls: ({ setThumbnailSize, setLayoutMode, setSortOption, onSlideshow, showLayoutSwitcher, showSlideshowButton }: {
+    SortOptionList: ({ onSelect }: { onSelect: (option: 'date_desc') => void }) => (
+        <button onClick={() => onSelect('date_desc')}>Newest</button>
+    ),
+    ViewControls: ({ setThumbnailSize, setLayoutMode, setSortOption, onSlideshow, showLayoutSwitcher, showSlideshowButton, showSortButton }: {
         setThumbnailSize: (size: number) => void;
         setLayoutMode: (mode: 'masonry') => void;
         setSortOption: (option: 'date_desc') => void;
         onSlideshow: () => void;
         showLayoutSwitcher: boolean;
         showSlideshowButton: boolean;
+        showSortButton?: boolean;
     }) => (
         <div
             data-testid="view-controls"
             data-layout={String(showLayoutSwitcher)}
             data-slideshow={String(showSlideshowButton)}
+            data-sort-visible={String(showSortButton)}
         >
             <button onClick={() => setThumbnailSize(320)}>Resize Thumbnails</button>
             <button onClick={() => setLayoutMode('masonry')}>Set Layout</button>
@@ -234,25 +239,29 @@ describe('AppHeader', () => {
         expect(onImport).toHaveBeenCalledTimes(1);
     });
 
-    it('places the persistent image-kind dropdown immediately after search', () => {
+    it('places the persistent library scope dropdown immediately after search', () => {
         const setFilters = vi.fn();
         render(
             <AppHeader
                 {...defaultProps}
                 setFilters={setFilters}
-                sourceKindCounts={{ all: 618, generated: 0, photograph: 3, other: 615 }}
+                displayedCount={618}
+                scopeCounts={{
+                    media: { all: 618, image: 618, video: 0 },
+                    imageKinds: { all: 618, generated: 0, photograph: 3, other: 615 },
+                }}
             />
         );
 
         const searchBar = screen.getByTestId('search-bar');
-        const scope = screen.getByTestId('image-kind-scope');
-        expect(searchBar.nextElementSibling).toBe(scope);
+        const scope = screen.getByTestId('library-scope');
+        expect(searchBar.parentElement?.nextElementSibling).toBe(scope);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Image kind: All, 618. Change image kind' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Library scope: All media, 618. Change library scope' }));
         fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
 
         const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
-        expect(update(defaultProps.filters).sourceKind).toBe('photograph');
+        expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
     });
 
     it('keeps a four-pixel boundary between AI search and the import controls', () => {
@@ -261,6 +270,34 @@ describe('AppHeader', () => {
         const importGroup = screen.getByRole('button', { name: 'Import Images' }).parentElement;
         expect(importGroup?.className).toContain('ml-1');
         expect(importGroup?.className).toContain('gap-1');
+    });
+
+    it('uses the header workspace width to move actions and then sort into overflow', () => {
+        let resizeCallback: ResizeObserverCallback | undefined;
+        class TestResizeObserver {
+            constructor(callback: ResizeObserverCallback) {
+                resizeCallback = callback;
+            }
+            observe = vi.fn();
+            disconnect = vi.fn();
+            unobserve = vi.fn();
+        }
+        vi.stubGlobal('ResizeObserver', TestResizeObserver);
+
+        render(<AppHeader {...defaultProps} />);
+        act(() => resizeCallback?.([{ contentRect: { width: 650 } } as ResizeObserverEntry], {} as ResizeObserver));
+
+        expect(screen.getByRole('button', { name: 'Library actions; Live Watch off' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        expect(screen.getByTestId('view-controls').getAttribute('data-sort-visible')).toBe('false');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
+        expect(screen.getByText('Live Watch off')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Import Images' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Newest' })).toBeTruthy();
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Newest' }), { key: 'Escape' });
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
+        vi.unstubAllGlobals();
     });
 
     it('toggles Live Watch and forwards view-control commands', () => {

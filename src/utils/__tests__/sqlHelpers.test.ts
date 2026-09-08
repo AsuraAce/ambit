@@ -77,6 +77,25 @@ describe('sqlHelpers', () => {
             expect(params).toEqual([]);
         });
 
+        it.each(['all', 'video'] as const)('ignores remembered Photos in %s media scope', mediaType => {
+            const query = buildSqlWhereClause({ ...defaultFilters, mediaType, sourceKind: 'photograph' }, false, 'blur', []);
+            expect(query.where).not.toContain('source_kind = ?');
+            expect(query.params).not.toContain('photograph');
+        });
+
+        it('counts scope alternatives without dropping privacy, owner, or search restrictions', () => {
+            const query = buildSqlWhereClause(
+                { ...defaultFilters, mediaType: 'image', sourceKind: 'photograph', searchQuery: 'portrait' },
+                true, 'hide', [], [], false, ['sourceKind', 'mediaType']
+            );
+            expect(query.where).not.toContain('media_type = ?');
+            expect(query.where).not.toContain('source_kind = ?');
+            expect(query.where).toContain('privacy_hidden = 0');
+            expect(query.where).toContain('invoke_scope_hidden = 0');
+            expect(query.params).not.toContain('photograph');
+            expect(query.params).toContain('%portrait%');
+        });
+
         it('should handle models filter', () => {
             const { where, params } = buildSqlWhereClause({ ...defaultFilters, models: ['SDXL', 'Flux'] }, false, 'blur', []);
             expect(where).toContain("resolved_model_name = ?");

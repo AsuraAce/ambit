@@ -394,6 +394,7 @@ mod tests {
     use super::*;
     use exif::experimental::Writer as ExifWriter;
     use exif::{Field, In, Tag, Value};
+    use image::ImageEncoder;
     use std::io::{Cursor, Write};
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -474,15 +475,19 @@ mod tests {
         result
     }
 
-    fn exif_fields_payload(fields: &[Field]) -> Vec<u8> {
+    fn raw_exif_fields_payload(fields: &[Field]) -> Vec<u8> {
         let mut writer = ExifWriter::new();
         for field in fields {
             writer.push_field(field);
         }
         let mut cursor = Cursor::new(Vec::new());
         writer.write(&mut cursor, true).expect("write test EXIF");
+        cursor.into_inner()
+    }
+
+    fn exif_fields_payload(fields: &[Field]) -> Vec<u8> {
         let mut payload = b"Exif\0\0".to_vec();
-        payload.extend_from_slice(&cursor.into_inner());
+        payload.extend_from_slice(&raw_exif_fields_payload(fields));
         payload
     }
 
@@ -494,6 +499,42 @@ mod tests {
             ifd_num: In::PRIMARY,
             value: Value::Ascii(vec![bytes]),
         }
+    }
+
+    fn exif_short_field(tag: Tag, value: u16) -> Field {
+        Field {
+            tag,
+            ifd_num: In::PRIMARY,
+            value: Value::Short(vec![value]),
+        }
+    }
+
+    fn png_or_webp_with_exif(extension: &str, fields: &[Field]) -> Vec<u8> {
+        let pixels = [24_u8; 2 * 1 * 3];
+        let exif = raw_exif_fields_payload(fields);
+        let mut encoded = Vec::new();
+        match extension {
+            "png" => {
+                let mut encoder = image::codecs::png::PngEncoder::new(&mut encoded);
+                encoder
+                    .set_exif_metadata(exif)
+                    .expect("PNG should support EXIF metadata");
+                encoder
+                    .write_image(&pixels, 2, 1, image::ExtendedColorType::Rgb8)
+                    .expect("encode test PNG");
+            }
+            "webp" => {
+                let mut encoder = image::codecs::webp::WebPEncoder::new_lossless(&mut encoded);
+                encoder
+                    .set_exif_metadata(exif)
+                    .expect("WebP should support EXIF metadata");
+                encoder
+                    .write_image(&pixels, 2, 1, image::ExtendedColorType::Rgb8)
+                    .expect("encode test WebP");
+            }
+            _ => unreachable!("unsupported test container"),
+        }
+        encoded
     }
 
     fn png_image_with_text_chunks(chunks: &[(&str, &str)]) -> Vec<u8> {
@@ -679,6 +720,55 @@ mod tests {
         );
         assert!(result.capture_wall_time_ms.is_some());
         assert_eq!(result.photo_metadata_error, None);
+    }
+
+    #[test]
+    fn scanner_applies_png_and_webp_exif_orientation_to_dimensions_and_thumbnails() {
+        for extension in ["png", "webp"] {
+            let source = unique_test_path(&format!("camera_photo.{extension}"));
+            let thumbnail_dir = unique_test_path(&format!("camera_photo_{extension}_thumbs"));
+            let fields = [
+                exif_ascii_field(Tag::Make, "Test Camera Co"),
+                exif_ascii_field(Tag::Model, "Camera One"),
+                exif_ascii_field(Tag::DateTimeOriginal, "2026:07:29 14:15:16"),
+                exif_short_field(Tag::Orientation, 6),
+            ];
+            std::fs::write(&source, png_or_webp_with_exif(extension, &fields))
+                .expect("write test photo");
+
+            let refresh_scan =
+                scan_image_internal(source.to_string_lossy().to_string(), None, true, true, None)
+                    .expect("scan camera photo for metadata refresh");
+            let result = scan_image_internal(
+                source.to_string_lossy().to_string(),
+                Some(thumbnail_dir.to_string_lossy().to_string()),
+                false,
+                true,
+                None,
+            )
+            .expect("scan camera photo");
+            let thumbnail = image::open(&result.thumbnail).expect("open generated thumbnail");
+
+            assert_eq!(
+                result.detected_source_kind,
+                metadata::photo::SourceKind::Photograph
+            );
+            assert_eq!(
+                (refresh_scan.width, refresh_scan.height),
+                (1, 2),
+                "metadata refresh scans must persist display-oriented dimensions"
+            );
+            assert_eq!((result.width, result.height), (1, 2));
+            assert_eq!(
+                result.thumbnail_version,
+                crate::thumb::CURRENT_THUMBNAIL_VERSION
+            );
+            assert_eq!((thumbnail.width(), thumbnail.height()), (256, 512));
+            assert_eq!(result.photo_metadata_error, None);
+
+            let _ = std::fs::remove_file(source);
+            let _ = std::fs::remove_dir_all(thumbnail_dir);
+        }
     }
 
     #[test]

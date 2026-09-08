@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
     searchImages: vi.fn(),
     countImages: vi.fn(),
     countGlobalImages: vi.fn(),
-    countImagesBySourceKind: vi.fn()
+    countLibraryScopes: vi.fn()
 }));
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
@@ -52,7 +52,7 @@ vi.mock('../../services/db/searchRepo', () => ({
     searchImages: mocks.searchImages,
     countImages: mocks.countImages,
     countGlobalImages: mocks.countGlobalImages,
-    countImagesBySourceKind: mocks.countImagesBySourceKind
+    countLibraryScopes: mocks.countLibraryScopes
 }));
 
 const settings: AppSettings = {
@@ -115,7 +115,10 @@ describe('useImagesQuery', () => {
         mocks.searchImages.mockResolvedValue([]);
         mocks.countImages.mockResolvedValue(7);
         mocks.countGlobalImages.mockResolvedValue(20);
-        mocks.countImagesBySourceKind.mockResolvedValue({ all: 7, generated: 4, photograph: 2, other: 1 });
+        mocks.countLibraryScopes.mockResolvedValue({
+            media: { all: 7, image: 7, video: 0 },
+            imageKinds: { all: 7, generated: 4, photograph: 2, other: 1 },
+        });
         mocks.searchBrowserMockImages.mockReturnValue({ images: [], totalCount: 0, globalCount: 0 });
         useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
@@ -190,8 +193,8 @@ describe('useImagesQuery', () => {
 
         await expect(config().queryFn({ pageParam: undefined })).resolves.toBe(browserPage);
         await expect(config().queryFn({ pageParam: { val: 'image.png', id: 'cursor', isPinned: 0 } })).resolves.toBe(browserPage);
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(1, expect.any(Object), 'name_asc', 1000, undefined);
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(2, expect.any(Object), 'name_asc', 1000, 'cursor');
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(1, expect.any(Object), 'name_asc', 1000, undefined, expect.objectContaining({ settings: expect.any(Object) }));
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(2, expect.any(Object), 'name_asc', 1000, 'cursor', expect.objectContaining({ settings: expect.any(Object) }));
         expect(mocks.buildSqlWhereClause).not.toHaveBeenCalled();
     });
 
@@ -211,7 +214,11 @@ describe('useImagesQuery', () => {
             images: firstPageImages,
             totalCount: 7,
             globalCount: 20,
-            sourceKindCounts: { all: 7, generated: 4, photograph: 2, other: 1 }
+            sourceKindCounts: { all: 7, generated: 4, photograph: 2, other: 1 },
+            scopeCounts: {
+                media: { all: 7, image: 7, video: 0 },
+                imageKinds: { all: 7, generated: 4, photograph: 2, other: 1 },
+            },
         });
         expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
             expect.any(Object), true, 'blur', ['secret'], []

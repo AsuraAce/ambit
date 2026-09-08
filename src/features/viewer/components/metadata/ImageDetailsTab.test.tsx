@@ -37,4 +37,32 @@ describe('ImageDetailsTab', () => {
         expect(screen.getByRole('textbox', { name: 'Notes' })).toBeTruthy();
         expect(screen.getByRole('heading', { name: 'Collections' })).toBeTruthy();
     });
+
+    it('shows the filesystem Modified date and time separately from photo capture metadata', () => {
+        const modifiedTimestamp = Date.UTC(2025, 0, 2, 3, 4, 5);
+        const image: AIImage = {
+            id: 'photo', url: 'photo.jpg', thumbnailUrl: 'photo.jpg', filename: 'photo.jpg',
+            width: 4000, height: 3000, timestamp: modifiedTimestamp, isFavorite: false, isPinned: false,
+            sourceKind: 'photograph', detectedSourceKind: 'photograph',
+            photoMetadata: {
+                capturedAt: { local: '2020:01:01 01:02:03', offset: null, subsecond: null },
+                captureTimeRaw: '2020:01:01 01:02:03',
+                cameraMake: null, cameraModel: null, lensMake: null, lensModel: null,
+                focalLengthMm: null, focalLength35Mm: null, apertureFNumber: null,
+                exposureTimeSeconds: null, iso: null, orientation: null, artist: null, copyright: null,
+                gpsLatitude: null, gpsLongitude: null,
+            },
+            metadata: { tool: GeneratorTool.UNKNOWN, model: '', seed: 0, steps: 0, cfg: 0, sampler: '', positivePrompt: '', negativePrompt: '' },
+        };
+
+        render(<ImageDetailsTab
+            image={image} collections={[]} notes="" setNotes={vi.fn()}
+            palette={[]} isPaletteLoading={false}
+        />);
+
+        expect(screen.getByText('Modified')).toBeTruthy();
+        expect(screen.getByText(new Date(modifiedTimestamp).toLocaleString())).toBeTruthy();
+        expect(screen.queryByText('Date')).toBeNull();
+        expect(screen.queryByText('Captured')).toBeNull();
+    });
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Camera, Calendar, Aperture, MapPin, User, Copyright } from 'lucide-react';
+import { Camera, Calendar, Aperture, FileQuestion, MapPin, User, Copyright } from 'lucide-react';
 import { type AIImage, getEffectiveSourceKind } from '../../../../types';
 import { MetadataField } from './MetadataField';
 import { MetadataParameterList, type MetadataParameterRow } from './MetadataParameterList';
@@ -7,6 +7,7 @@ import { MetadataDisclosureSection } from './MetadataDisclosureSection';
 
 interface PhotoDetailsTabProps {
     image: AIImage;
+    isLoading?: boolean;
 }
 
 const formatCaptureTime = (image: AIImage): string | undefined => {
@@ -25,7 +26,7 @@ const formatShutter = (seconds: number): string => {
     return `${seconds.toLocaleString(undefined, { maximumFractionDigits: 3 })} s`;
 };
 
-export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
+export const PhotoDetailsTab = ({ image, isLoading = false }: PhotoDetailsTabProps) => {
     const [gpsExpanded, setGpsExpanded] = useState(false);
     const photo = image.photoMetadata;
     const isPhoto = getEffectiveSourceKind(image) === 'photograph';
@@ -52,7 +53,7 @@ export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
     const hasGps = isPhoto && photo?.gpsLatitude != null && photo.gpsLongitude != null;
 
     return (
-        <div className="custom-scrollbar h-full space-y-6 overflow-y-auto p-5">
+        <div aria-busy={isLoading} className="custom-scrollbar h-full space-y-6 overflow-y-auto p-5">
             {fields.map(field => (
                 <MetadataField key={field.label} label={field.label} icon={field.icon}>
                     <div className="w-full break-words rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-sm font-medium text-gray-700 dark:border-white/10 dark:bg-black dark:text-zinc-200">{field.value}</div>
@@ -77,8 +78,12 @@ export const PhotoDetailsTab = ({ image }: PhotoDetailsTabProps) => {
                     <p className="mt-1 text-xs text-gray-400">Stored and displayed locally. No map or network request is made.</p>
                 </MetadataDisclosureSection>
             ) : null}
-            {fields.length === 0 && rows.length === 0 && attribution.length === 0 && !hasGps ? (
-                <p className="text-xs text-gray-500 dark:text-zinc-400">No photo metadata available.</p>
+            {!isLoading && fields.length === 0 && rows.length === 0 && attribution.length === 0 && !hasGps ? (
+                <div className="w-full rounded-xl border border-gray-200 bg-gray-50 px-5 py-8 text-center dark:border-white/10 dark:bg-zinc-900/50">
+                    <FileQuestion className="mx-auto mb-3 h-8 w-8 text-gray-400 dark:text-zinc-500" aria-hidden="true" />
+                    <h2 className="text-sm font-semibold text-gray-700 dark:text-zinc-200">No supported metadata found</h2>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-zinc-400">File information is available in Details.</p>
+                </div>
             ) : null}
         </div>
     );

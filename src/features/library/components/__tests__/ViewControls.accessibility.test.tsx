@@ -48,6 +48,7 @@ describe('ViewControls', () => {
     it('selects the requested gallery layout mode', () => {
         const setLayoutMode = renderViewControls();
 
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
         const layoutButton = screen.getByRole('button', { name: 'Use Justified Layout' });
         expect(layoutButton.getAttribute('title')).toBeNull();
         expect(layoutButton.getAttribute('aria-pressed')).toBe('false');
@@ -72,6 +73,22 @@ describe('ViewControls', () => {
         expect(viewButton.getAttribute('aria-haspopup')).toBeNull();
         fireEvent.click(viewButton);
         expect(viewButton.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('closes Sort and View with Escape and restores focus to their triggers', () => {
+        renderViewControls();
+
+        const sortButton = screen.getByRole('button', { name: 'Newest' });
+        fireEvent.click(sortButton);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(sortButton.getAttribute('aria-expanded')).toBe('false');
+        expect(document.activeElement).toBe(sortButton);
+
+        const viewButton = screen.getByRole('button', { name: 'View' });
+        fireEvent.click(viewButton);
+        fireEvent.keyDown(document, { key: 'Escape' });
+        expect(viewButton.getAttribute('aria-expanded')).toBe('false');
+        expect(document.activeElement).toBe(viewButton);
     });
 
     it('exposes and updates the pressed state of hidden-content toggles', () => {

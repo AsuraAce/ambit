@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
     convertFileSrc: vi.fn((path: string) => `asset://localhost/${path}`),
     getCollectionsForImage: vi.fn().mockResolvedValue([]),
     getImageWithFullMetadata: vi.fn(),
-    addToast: vi.fn()
+    addToast: vi.fn(),
+    settings: { viewerPreferredTab: 'details' as 'details' | 'metadata' | 'workflow' },
+    setViewerTab: vi.fn(),
+    settingsListeners: new Set<() => void>(),
 }));
 
 vi.mock('../../../../services/db/imageRepo', () => ({
@@ -38,6 +41,27 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 vi.mock('../../../../stores/collectionStore', () => ({
     useCollectionStore: (selector: (state: { collections: Array<{ id: string; name: string }> }) => unknown) =>
         selector({ collections: [{ id: 'collection-1', name: 'Favorites set' }] })
+}));
+vi.mock('../../../../stores/settingsStore', () => ({
+    useSettingsStore: (selector: (state: {
+        settings: typeof mocks.settings;
+        isLoaded: boolean;
+        setSettings: typeof mocks.setViewerTab;
+    }) => unknown) => {
+        const state = {
+            settings: mocks.settings,
+            isLoaded: true,
+            setSettings: mocks.setViewerTab,
+        };
+        return React.useSyncExternalStore(
+            (listener) => {
+                mocks.settingsListeners.add(listener);
+                return () => mocks.settingsListeners.delete(listener);
+            },
+            () => selector(state),
+            () => selector(state),
+        );
+    },
 }));
 vi.mock('../../../../bindings', () => ({
     commands: {
@@ -114,20 +138,28 @@ describe('VideoViewer', () => {
         mocks.getCollectionsForImage.mockResolvedValue([]);
         mocks.getImageWithFullMetadata.mockResolvedValue(video);
         mocks.prepareVideoPlayback.mockResolvedValue({ status: 'ok', data: 'C:/videos/clip.mp4' });
+        mocks.settings.viewerPreferredTab = 'details';
+        mocks.settingsListeners.clear();
+        mocks.setViewerTab.mockReset();
+        mocks.setViewerTab.mockImplementation((update: { viewerPreferredTab: 'details' | 'metadata' | 'workflow' }) => {
+            mocks.settings.viewerPreferredTab = update.viewerPreferredTab;
+            mocks.settingsListeners.forEach(listener => listener());
+        });
     });
 
-    it('opens new video viewers on Metadata', async () => {
+    it('opens new video viewers on Details and persists an explicit tab selection', async () => {
         const view = setup();
 
-        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
-        expect(screen.getByLabelText('Positive prompt')).toBeTruthy();
+        expect(screen.getByRole('tab', { name: 'Details' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.getByText('Duration')).toBeTruthy();
         expect(screen.queryByRole('heading', { name: 'Video' })).toBeNull();
 
-        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
         await waitFor(() => expect((screen.getByRole('button', { name: 'Favorites set' }) as HTMLButtonElement).disabled).toBe(false));
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
+        expect(mocks.setViewerTab).toHaveBeenCalledWith({ viewerPreferredTab: 'metadata' });
         view.rerender(<VideoViewer {...view.props} video={{ ...view.props.video, id: 'C:/videos/next.mp4' }} />);
         await waitFor(() => expect(mocks.getImageWithFullMetadata).toHaveBeenCalledWith('C:/videos/next.mp4'));
-        expect(screen.getByRole('tab', { name: 'Details' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
     });
 
     it('does not create or scope a player before a masked video is revealed', async () => {
@@ -205,6 +237,7 @@ describe('VideoViewer', () => {
 
     it('keeps disclosure choices while navigating within one viewer session', () => {
         const view = setup();
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         const disclosure = screen.getByRole('button', { name: 'Generation parameters' });
         fireEvent.click(disclosure);
         expect(disclosure.getAttribute('aria-expanded')).toBe('false');
@@ -258,7 +291,8 @@ describe('VideoViewer', () => {
         view.rerender(<VideoViewer {...view.props} video={nextVideo} />);
 
         expect(document.querySelector('video')).toBeNull();
-        expect(screen.getByRole('status').textContent).toContain('Preparing secure playback');
+        expect(screen.getByText(/Preparing secure playback/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         expect((screen.getByLabelText('Positive prompt') as HTMLTextAreaElement).value).toBe('next prompt');
         fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
         expect((screen.getByLabelText('Notes') as HTMLTextAreaElement).value).toBe('next notes');
@@ -414,6 +448,7 @@ describe('VideoViewer', () => {
             metadata: { ...video.metadata, model: 'Unknown', modelHash: 'f8bb2922e1' },
         });
 
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         await waitFor(() => expect(screen.getByText('f8bb2922e1')).toBeTruthy());
         expect(screen.getByText('Unresolved hash')).toBeTruthy();
         expect(screen.queryByText('Model Hash')).toBeNull();
@@ -439,6 +474,7 @@ describe('VideoViewer', () => {
             metadata: { ...video.metadata, tool: GeneratorTool.COMFYUI, model: 'Shared Model' },
         });
 
+        fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Generation Tool' })).toBeTruthy());
         fireEvent.click(screen.getByRole('button', { name: 'Edit Generation Tool' }));
         fireEvent.change(screen.getByRole('combobox', { name: 'Generator software' }), { target: { value: GeneratorTool.INVOKEAI } });

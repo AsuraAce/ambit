@@ -18,7 +18,7 @@ import { REPOSITORY_URL } from '../../../constants/support';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import { openExternalUrl } from '../../../utils/externalLinks';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
-import { hasNonCollectionResultFilters } from '../../../utils/filterState';
+import { getEffectiveImageKind, hasNonCollectionResultFilters } from '../../../utils/filterState';
 
 interface FilterPanelProps {
     isInvokeCollectionCatchupPending?: boolean;
@@ -151,7 +151,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
                 searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
-                sourceKind: (manual.sourceKind ?? 'all') !== 'all' ? manual.sourceKind : saved.sourceKind,
+                sourceKind: getEffectiveImageKind(manual) !== 'all' ? manual.sourceKind : saved.sourceKind,
                 dateRange: hasManualDateFilter ? manual.dateRange : saved.dateRange,
                 dateFrom: hasManualDateFilter ? manual.dateFrom : saved.dateFrom,
                 dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
