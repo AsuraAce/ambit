@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
     statsQuery: { current: {} as unknown },
     queryClient: {
         invalidateQueries: vi.fn().mockResolvedValue(undefined),
+        refetchQueries: vi.fn().mockResolvedValue(undefined),
         cancelQueries: vi.fn().mockResolvedValue(undefined)
     },
     repository: {

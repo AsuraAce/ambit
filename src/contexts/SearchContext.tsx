@@ -271,6 +271,7 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isFetchingNextPage,
         isLoading: isQueryLoading,
         isPlaceholderData,
+        dataUpdatedAt: imagesUpdatedAt,
         status: imagesQueryStatus,
         queryKey: imagesQueryKey
     } = useImagesQuery({
@@ -352,6 +353,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
     const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
     const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
+    React.useEffect(() => {
+        if (!hasCurrentSafePage) return;
+        // A fast page refresh may never render the disabled state. Refresh stale counts
+        // after that successful page too, without restarting an already-running probe.
+        void queryClient.refetchQueries({ queryKey: ['libraryStats', 'scopeCounts'], type: 'active', stale: true }, { cancelRefetch: false });
+        void queryClient.refetchQueries({ queryKey: ['libraryStats', 'scopeAvailability'], type: 'active', stale: true }, { cancelRefetch: false });
+    }, [hasCurrentSafePage, imagesUpdatedAt, queryClient]);
     const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
     const sourceKindCounts = scopeCounts?.imageKinds;
     const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
