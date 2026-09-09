@@ -619,20 +619,10 @@ export const searchBrowserMockImages = (
     limit: number,
     cursorId?: string,
     privacy?: BrowserMockPrivacyOptions,
-): { images: AIImage[]; totalCount: number; globalCount: number; scopeCounts: LibraryScopeCounts; sourceKindCounts: LibraryScopeCounts['imageKinds'] } => {
+): { images: AIImage[]; totalCount: number; globalCount: number } => {
     const current = loadStoredState();
     const collections = getBrowserMockCollections();
     const filtered = sortImages(filterImages(current.images, filters, collections, false, true, privacy), sortOption);
-    const countImages = filterImages(
-        current.images,
-        { ...filters, mediaType: 'all', sourceKind: 'all' },
-        collections,
-        true,
-        true,
-        privacy,
-    );
-    const scopeCounts = createEmptyLibraryScopeCounts();
-    countImages.forEach((image) => addLibraryScopeCount(scopeCounts, image.mediaType, getEffectiveSourceKind(image)));
     const start = cursorId ? Math.max(0, filtered.findIndex((image) => image.id === cursorId) + 1) : 0;
     return {
         images: filtered.slice(start, start + limit),
@@ -642,9 +632,26 @@ export const searchBrowserMockImages = (
             && privacy.settings.maskingMode === 'hide'
             && isImageMasked(image, true, getEffectiveMaskedKeywords(privacy.settings))
         )).length,
-        scopeCounts,
-        sourceKindCounts: scopeCounts.imageKinds,
     };
+};
+
+/** Contextual dropdown counts are optional work, separate from gallery retrieval. */
+export const getBrowserMockScopeCounts = (
+    filters: FilterState,
+    privacy?: BrowserMockPrivacyOptions,
+): LibraryScopeCounts => {
+    const current = loadStoredState();
+    const images = filterImages(
+        current.images,
+        { ...filters, mediaType: 'all', sourceKind: 'all' },
+        getBrowserMockCollections(),
+        true,
+        true,
+        privacy,
+    );
+    const counts = createEmptyLibraryScopeCounts();
+    images.forEach(image => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    return counts;
 };
 
 export const getBrowserMockScopeAvailability = (

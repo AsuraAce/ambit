@@ -6,9 +6,12 @@ import { formatCountCompact } from '../../../utils/formatUtils';
 interface LibraryScopeDropdownProps {
     mediaType: MediaTypeFilter;
     sourceKind: ImageKindFilter;
-    displayedCount: number;
+    displayedCount: number | undefined;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
+    countsLoading?: boolean;
+    countsError?: boolean;
+    onRetryCounts?: () => void;
     onMediaTypeChange: (value: MediaTypeFilter) => void;
     onImageKindChange: (value: ImageKindFilter) => void;
 }
@@ -34,6 +37,9 @@ export const LibraryScopeDropdown = React.memo(({
     displayedCount,
     scopeCounts,
     scopeAvailability,
+    countsLoading,
+    countsError,
+    onRetryCounts,
     onMediaTypeChange,
     onImageKindChange,
 }: LibraryScopeDropdownProps) => {
@@ -115,7 +121,7 @@ export const LibraryScopeDropdown = React.memo(({
     };
 
     const getMediaCount = (value: MediaTypeFilter) => (
-        scopeCounts?.media[value] ?? (value === mediaType ? displayedCount : undefined)
+        scopeCounts?.media[value] ?? (value === mediaType && (!isImageScope || sourceKind === 'all') ? displayedCount : undefined)
     );
     const getImageKindCount = (option: typeof IMAGE_KIND_OPTIONS[number]) => (
         scopeCounts?.imageKinds[option.countKey] ?? (isImageScope && option.value === sourceKind ? displayedCount : undefined)
@@ -142,8 +148,9 @@ export const LibraryScopeDropdown = React.memo(({
             </button>
 
             {isOpen && (
-                <div role="dialog" aria-label="Choose library scope" className="absolute left-0 top-full z-[100] mt-2 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-white/10 dark:bg-zinc-800">
-                    <div role="radiogroup" aria-label="Media type" onKeyDown={handleMenuKeyDown}>
+                <div role="dialog" aria-label="Choose library scope" onKeyDown={handleMenuKeyDown} className="absolute left-0 top-full z-[100] mt-2 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-white/10 dark:bg-zinc-800">
+                    {countsLoading && <span role="status" className="sr-only">Loading counts</span>}
+                    <div role="radiogroup" aria-label="Media type">
                         <div className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Media type</div>
                         {visibleMediaOptions.map((option, index) => {
                             const isSelected = option.value === mediaType;
@@ -157,7 +164,7 @@ export const LibraryScopeDropdown = React.memo(({
                             );
                         })}
                     </div>
-                    <div role="radiogroup" aria-label="Image kind" onKeyDown={handleMenuKeyDown}>
+                    <div role="radiogroup" aria-label="Image kind">
                         <div className="px-2.5 pb-1.5 pt-3 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Image kind</div>
                         {visibleImageKindOptions.map((option, index) => {
                             const isSelected = option.value === sourceKind;
@@ -172,6 +179,15 @@ export const LibraryScopeDropdown = React.memo(({
                             );
                         })}
                     </div>
+                    {countsError && (
+                        <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-200 px-2.5 pt-2 text-[10px] dark:border-white/10">
+                            <span role="status" className="text-ember-600 dark:text-ember-300">Counts unavailable</span>
+                            <button type="button" disabled={countsLoading} onClick={() => {
+                                onRetryCounts?.();
+                                closeAndRestoreFocus();
+                            }} className="rounded px-1 py-1 font-semibold text-sage-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/60 disabled:opacity-50 dark:text-sage-300">Retry counts</button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

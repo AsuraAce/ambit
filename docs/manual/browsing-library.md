@@ -23,6 +23,8 @@ The **View** menu separates **Layout**, **Thumbnail Size**, and available **Visi
 
 When hidden content is available, the View menu offers controls for showing it. `Show InvokeAI Image Assets` reveals InvokeAI user, control, mask, and other source images, which are hidden from ordinary browsing by default. The preference persists across restarts and applies to the current library result set, including collections, pinned results, statistics, and slideshows. Collection sidebar counts and saved collection thumbnails do not change with this display preference.
 
+Dropdown counts load independently after the gallery is ready. A dash means the count is not yet available, not zero. If counting fails, the gallery remains usable and **Retry counts** in the dropdown retries the failed counts.
+
 ## Grid Browsing
 
 Grid View is designed for large libraries. Ambit uses virtualized rendering so it can browse many images without drawing every record at once.

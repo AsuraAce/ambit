@@ -95,6 +95,21 @@ const renderImagesHook = (
 const config = (): InfiniteQueryConfig => mocks.config as InfiniteQueryConfig;
 
 describe('useImagesQuery', () => {
+    it.each(['pending', 'failed'] as const)('delivers the gallery independently of %s optional scope counts', async (state) => {
+        mocks.countLibraryScopes.mockImplementation(() => state === 'pending'
+            ? new Promise(() => {})
+            : Promise.reject(new Error('Optional counts unavailable')));
+        mocks.searchImages.mockResolvedValue([image()]);
+        renderImagesHook();
+        // Drain the immediately resolved page requests; no wall-clock timing assumption.
+        let page: QueryPage | undefined;
+        let failure: unknown;
+        void config().queryFn({ pageParam: undefined }).then(value => { page = value; }, error => { failure = error; });
+        for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        expect(failure).toBeUndefined();
+        expect(page?.images).toEqual([image()]);
+        expect(mocks.countLibraryScopes).not.toHaveBeenCalled();
+    });
     it('keeps the query identity when only an ordinary count becomes ready', () => {
         const row: Collection = { id: 'ordinary', name: 'Ordinary', createdAt: 1, imageIds: [], countState: 'pending' };
         renderImagesHook('date_desc', [row]);
@@ -214,11 +229,6 @@ describe('useImagesQuery', () => {
             images: firstPageImages,
             totalCount: 7,
             globalCount: 20,
-            sourceKindCounts: { all: 7, generated: 4, photograph: 2, other: 1 },
-            scopeCounts: {
-                media: { all: 7, image: 7, video: 0 },
-                imageKinds: { all: 7, generated: 4, photograph: 2, other: 1 },
-            },
         });
         expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
             expect.any(Object), true, 'blur', ['secret'], []

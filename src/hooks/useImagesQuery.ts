@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { measureStartupPhase } from '../utils/startupDiagnostics';
 import { FilterState, SortOption, AppSettings, AIImage, Collection, PaginationCursor } from '../types';
-import { searchImages, countImages, countGlobalImages, countLibraryScopes } from '../services/db/searchRepo';
+import { searchImages, countImages, countGlobalImages } from '../services/db/searchRepo';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { isBrowserMockMode } from '../services/runtime';
 import { searchBrowserMockImages } from '../services/browserMockData';
@@ -102,15 +102,6 @@ export const useImagesQuery = ({
                 effectiveMaskedKeywords,
                 allCollections
             );
-            const scopeCountQuery = buildSqlWhereClause(
-                filters,
-                privacyEnabled,
-                settings.maskingMode,
-                effectiveMaskedKeywords,
-                allCollections,
-                false,
-                ['sourceKind', 'mediaType']
-            );
 
             let sortField = 'display_timestamp';
             let sortOrder: 'ASC' | 'DESC' = 'DESC';
@@ -130,20 +121,14 @@ export const useImagesQuery = ({
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
                 const startedAt = performance.now();
-                const [images, totalCount, globalCount, scopeCounts] = await measureStartupPhase('first-page', () => Promise.all([
+                const [images, totalCount, globalCount] = await measureStartupPhase('first-page', () => Promise.all([
                     searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
                     countImages(where, params, collectionId, loraName),
                     countGlobalImages(), // Fast path: no JOIN, simple indexed count
-                    countLibraryScopes(
-                        scopeCountQuery.where,
-                        scopeCountQuery.params,
-                        scopeCountQuery.collectionId,
-                        scopeCountQuery.loraName
-                    )
                 ]));
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
-                return { images, totalCount, globalCount, scopeCounts, sourceKindCounts: scopeCounts.imageKinds };
+                return { images, totalCount, globalCount };
             } else {
                 const cursor = pageParam as PaginationCursor;
                 const startedAt = performance.now();

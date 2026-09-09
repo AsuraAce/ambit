@@ -211,6 +211,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         sourceKindCounts,
         scopeCounts,
         scopeAvailability,
+        scopeResultCount,
+        scopeCountsLoading,
+        scopeCountsError,
+        retryScopeCounts,
         isFiltering,
         clearAllFilters,
         toggleFavorite,
@@ -397,6 +401,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     sourceKindCounts={sourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 }}
                     scopeCounts={scopeCounts}
                     scopeAvailability={scopeAvailability}
+                    scopeResultCount={scopeResultCount}
+                    scopeCountsLoading={scopeCountsLoading}
+                    scopeCountsError={scopeCountsError}
+                    retryScopeCounts={retryScopeCounts}
                     isFiltering={isSearchPending}
                     onSearchDraftPendingChange={setIsSearchDraftPending}
                     onImport={onOpenImportModal}

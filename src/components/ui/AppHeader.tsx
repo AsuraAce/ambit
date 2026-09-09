@@ -42,6 +42,10 @@ interface AppHeaderProps {
     scopeName: string;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
+    scopeResultCount?: number;
+    scopeCountsLoading?: boolean;
+    scopeCountsError?: boolean;
+    retryScopeCounts?: () => Promise<void>;
     /** @deprecated Replaced by scopeCounts.imageKinds. */
     sourceKindCounts?: SourceKindCounts;
     onImport: () => void;
@@ -88,6 +92,10 @@ export const AppHeader = React.memo(({
     scopeName,
     scopeCounts,
     scopeAvailability,
+    scopeResultCount,
+    scopeCountsLoading,
+    scopeCountsError,
+    retryScopeCounts,
     onImport,
     onSlideshow,
     clearAllFilters,
@@ -243,9 +251,12 @@ export const AppHeader = React.memo(({
                         <LibraryScopeDropdown
                             mediaType={filters.mediaType ?? 'all'}
                             sourceKind={filters.sourceKind ?? 'all'}
-                            displayedCount={displayedCount}
+                            displayedCount={scopeResultCount}
                             scopeCounts={scopeCounts}
                             scopeAvailability={scopeAvailability}
+                            countsLoading={scopeCountsLoading}
+                            countsError={scopeCountsError}
+                            onRetryCounts={retryScopeCounts}
                             onMediaTypeChange={(mediaType) => setFilters(previous => ({ ...previous, mediaType }))}
                             onImageKindChange={(sourceKind) => setFilters(previous => ({ ...previous, mediaType: 'image', sourceKind }))}
                         />

@@ -11,6 +11,7 @@ import {
     getBrowserMockFacets,
     getBrowserMockImages,
     getBrowserMockScopeAvailability,
+    getBrowserMockScopeCounts,
     removeBrowserMockImagesFromCollection,
     searchBrowserMockImages,
     updateBrowserMockImage,
@@ -23,6 +24,12 @@ import { GeneratorTool } from '../../types';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
 describe('browserMockData filtering', () => {
+    it('returns gallery pages without calculating optional dropdown counts', () => {
+        const page = searchBrowserMockImages(createDefaultFilters(), 'date_desc', 10);
+        expect(page.images).toHaveLength(10);
+        expect(page).not.toHaveProperty('scopeCounts');
+        expect(page).not.toHaveProperty('sourceKindCounts');
+    });
     beforeEach(() => {
         localStorage.clear();
     });
@@ -541,9 +548,10 @@ describe('browserMockData filtering', () => {
             showGrids: true,
         }), 'date_desc', 1000);
         expect(scoped.images.every(image => image.sourceKind === 'photograph')).toBe(true);
-        expect(scoped.sourceKindCounts.generated).toBeGreaterThan(0);
-        expect(scoped.sourceKindCounts.photograph).toBeGreaterThan(0);
-        expect(scoped.sourceKindCounts.other).toBeGreaterThan(0);
+        const counts = getBrowserMockScopeCounts(createDefaultFilters({ collectionId: id, showIntermediates: true, showGrids: true }));
+        expect(counts.imageKinds.generated).toBeGreaterThan(0);
+        expect(counts.imageKinds.photograph).toBeGreaterThan(0);
+        expect(counts.imageKinds.other).toBeGreaterThan(0);
         deleteBrowserMockCollection(id);
     });
 
@@ -561,14 +569,14 @@ describe('browserMockData filtering', () => {
 
     it('includes videos in All media while excluding them from image-kind counts', () => {
         const allMedia = searchBrowserMockImages(createDefaultFilters(), 'date_desc', 1000);
+        const counts = getBrowserMockScopeCounts(createDefaultFilters());
 
         expect(allMedia.images.some(image => image.mediaType === 'video')).toBe(true);
-        expect(allMedia.scopeCounts.media.video).toBeGreaterThan(0);
-        expect(allMedia.scopeCounts.imageKinds.all).toBe(allMedia.scopeCounts.media.image);
-        expect(allMedia.scopeCounts.imageKinds.other).toBe(allMedia.images.filter(
+        expect(counts.media.video).toBeGreaterThan(0);
+        expect(counts.imageKinds.all).toBe(counts.media.image);
+        expect(counts.imageKinds.other).toBe(allMedia.images.filter(
             image => image.mediaType === 'image' && image.sourceKind === 'other'
         ).length);
-        expect(allMedia.sourceKindCounts).toBe(allMedia.scopeCounts.imageKinds);
     });
 
     it('keeps global scope availability when contextual search has no results', () => {
@@ -580,7 +588,7 @@ describe('browserMockData filtering', () => {
         });
 
         expect(contextual.totalCount).toBe(0);
-        expect(contextual.scopeCounts.media.all).toBe(0);
+        expect(getBrowserMockScopeCounts(filters).media.all).toBe(0);
         expect(availability.media.all).toBeGreaterThan(0);
         expect(availability.media.video).toBeGreaterThan(0);
     });
@@ -599,7 +607,7 @@ describe('browserMockData filtering', () => {
             const availability = getBrowserMockScopeAvailability(createDefaultFilters(), privacy);
 
             expect(result.totalCount).toBe(0);
-            expect(result.scopeCounts.media.video).toBe(0);
+            expect(getBrowserMockScopeCounts(createDefaultFilters({ mediaType: 'video' }), privacy).media.video).toBe(0);
             expect(availability.media.video).toBe(0);
         } finally {
             originals.forEach(image => updateBrowserMockImage(image.id, { userMasked: image.userMasked }));

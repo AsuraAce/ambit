@@ -19,6 +19,7 @@ import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo
 import { useImagesQuery, type ImagesQueryKey } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
 import { useLibraryScopeAvailability } from '../hooks/useLibraryScopeAvailability';
+import { useLibraryScopeCounts } from '../hooks/useLibraryScopeCounts';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
@@ -53,6 +54,10 @@ interface SearchContextType {
     sourceKindCounts?: SourceKindCounts;
     scopeCounts?: LibraryScopeCounts;
     scopeAvailability?: LibraryScopeCounts;
+    scopeResultCount?: number;
+    scopeCountsLoading: boolean;
+    scopeCountsError: boolean;
+    retryScopeCounts: () => Promise<void>;
     hasMoreImages: boolean;
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
@@ -345,14 +350,24 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const totalImagesCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
-    const firstPageSourceKindCounts = (queryData?.pages[0] as { sourceKindCounts?: SourceKindCounts } | undefined)?.sourceKindCounts;
-    const sourceKindCounts: SourceKindCounts = privacyExposureBlocked
-        ? { all: 0, generated: 0, photograph: 0, other: 0 }
-        : firstPageSourceKindCounts ?? { all: 0, generated: 0, photograph: 0, other: 0 };
-    const scopeCounts = privacyExposureBlocked ? undefined
-        : (queryData?.pages[0] as { scopeCounts?: LibraryScopeCounts } | undefined)?.scopeCounts;
-    const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: databaseQueriesEnabled });
-    const scopeAvailability = privacyExposureBlocked || !databaseQueriesEnabled ? undefined : availabilityQuery.data;
+    const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
+    const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
+    const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
+    const sourceKindCounts = scopeCounts?.imageKinds;
+    const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
+    const scopeResultCount = hasCurrentSafePage ? queryData?.pages[0]?.totalCount : undefined;
+    const scopeCountsLoading = hasCurrentSafePage && (scopeQuery.isFetching || availabilityQuery.isFetching);
+    const scopeCountsError = hasCurrentSafePage && (
+        (scopeQuery.isError && !scopeQuery.isFetching) || (availabilityQuery.isError && !availabilityQuery.isFetching)
+    );
+    const retryScopeCounts = useCallback(async () => {
+        if (!hasCurrentSafePage) return;
+        await Promise.all([
+            scopeQuery.isError && !scopeQuery.isFetching ? scopeQuery.refetch() : undefined,
+            availabilityQuery.isError && !availabilityQuery.isFetching ? availabilityQuery.refetch() : undefined,
+        ]);
+    }, [hasCurrentSafePage, scopeQuery.isError, scopeQuery.isFetching, scopeQuery.refetch,
+        availabilityQuery.isError, availabilityQuery.isFetching, availabilityQuery.refetch]);
 
     // Stats & Facets Query
     const {
@@ -680,6 +695,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             await fetchNextPage();
         } else {
             // Force refetch
+            // Mark optional counts stale without starting or awaiting them before the safe page.
+            void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeCounts'], refetchType: 'none' });
+            void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeAvailability'], refetchType: 'none' });
             // Using queryClient.invalidateQueries triggers a background refetch
             // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
             await queryClient.invalidateQueries({ queryKey: ['images'] });
@@ -711,6 +729,10 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             sourceKindCounts,
             scopeCounts,
             scopeAvailability,
+            scopeResultCount,
+            scopeCountsLoading,
+            scopeCountsError,
+            retryScopeCounts,
             hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
             loadMoreImages: async () => {
                 if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {

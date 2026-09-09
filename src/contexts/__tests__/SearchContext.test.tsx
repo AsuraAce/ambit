@@ -16,6 +16,10 @@ const mocks = vi.hoisted(() => ({
     searchState: { current: {} as unknown },
     imagesQuery: { current: {} as unknown },
     imagesQueryArgs: { current: null as { settingsLoaded?: boolean } | null },
+    availabilityArgs: { current: null as { enabled: boolean } | null },
+    scopeCountsArgs: { current: null as { enabled: boolean } | null },
+    scopeQuery: { current: {} as unknown },
+    availabilityQuery: { current: {} as unknown },
     statsQuery: { current: {} as unknown },
     queryClient: {
         invalidateQueries: vi.fn().mockResolvedValue(undefined),
@@ -59,7 +63,14 @@ vi.mock('../../hooks/useImagesQuery', () => ({
     }
 }));
 vi.mock('../../hooks/useLibraryStatsQuery', () => ({ useLibraryStatsQuery: () => mocks.statsQuery.current }));
-vi.mock('../../hooks/useLibraryScopeAvailability', () => ({ useLibraryScopeAvailability: () => ({ data: undefined }) }));
+vi.mock('../../hooks/useLibraryScopeAvailability', () => ({ useLibraryScopeAvailability: (args: { enabled: boolean }) => {
+    mocks.availabilityArgs.current = args;
+    return mocks.availabilityQuery.current;
+} }));
+vi.mock('../../hooks/useLibraryScopeCounts', () => ({ useLibraryScopeCounts: (args: { enabled: boolean }) => {
+    mocks.scopeCountsArgs.current = args;
+    return mocks.scopeQuery.current;
+} }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => mocks.queryClient }));
 vi.mock('../../services/repository', () => ({ appRepository: mocks.repository }));
 vi.mock('../../services/db/connection', () => ({ getDb: mocks.getDb }));
@@ -154,6 +165,10 @@ describe('SearchProvider', () => {
         vi.clearAllMocks();
         vi.useRealTimers();
         latest = undefined as unknown as SearchValue;
+        mocks.availabilityArgs.current = null;
+        mocks.scopeCountsArgs.current = null;
+        mocks.scopeQuery.current = { data: undefined, isPending: true, isError: false, isFetching: false, refetch: vi.fn() };
+        mocks.availabilityQuery.current = { data: undefined, isPending: true, isError: false, isFetching: false, refetch: vi.fn() };
 
         const setImages = vi.fn((next: AIImage[] | ((current: AIImage[]) => AIImage[])) => {
             const state = mocks.searchState.current as SearchValue;
@@ -298,6 +313,48 @@ describe('SearchProvider', () => {
         expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true);
         await waitFor(() => expect(mocks.checkHiddenContentAvailability).toHaveBeenCalledOnce());
         expect(mocks.queryClient.cancelQueries).not.toHaveBeenCalled();
+    });
+
+    it('admits optional counts only after a settled safe page, including an empty page', async () => {
+        const view = renderProvider();
+        await act(async () => {});
+        expect(mocks.availabilityArgs.current?.enabled).toBe(false);
+        expect(mocks.scopeCountsArgs.current?.enabled).toBe(false);
+        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, status: 'success', data: { pages: [{ images: [], totalCount: 0, globalCount: 0 }] } };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.isLibraryReady).toBe(true);
+        expect(mocks.availabilityArgs.current?.enabled).toBe(true);
+        expect(mocks.scopeCountsArgs.current?.enabled).toBe(true);
+        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, isPlaceholderData: true, isFetching: true };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(mocks.availabilityArgs.current?.enabled).toBe(false);
+        expect(mocks.scopeCountsArgs.current?.enabled).toBe(false);
+    });
+
+    it.each(['pending', 'failed'] as const)('keeps gallery readiness independent of %s optional counts and retries only failures', async state => {
+        const failedRetry = vi.fn().mockResolvedValue(undefined);
+        const successfulRetry = vi.fn().mockResolvedValue(undefined);
+        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, status: 'success', data: { pages: [{ images: [image()], totalCount: 1, globalCount: 5 }] } };
+        mocks.scopeQuery.current = { data: undefined, isPending: state === 'pending', isFetching: state === 'pending', isError: state === 'failed', refetch: failedRetry };
+        mocks.availabilityQuery.current = { data: undefined, isPending: false, isError: false, isFetching: false, refetch: successfulRetry };
+        const view = renderProvider();
+        await act(async () => {});
+        expect(latest.isLibraryReady).toBe(true);
+        expect(latest.images).toEqual([image()]);
+        expect(latest.scopeCounts).toBeUndefined();
+        expect(latest.scopeResultCount).toBe(1);
+        expect(latest.scopeCountsError).toBe(state === 'failed');
+        expect(latest.scopeCountsLoading).toBe(state === 'pending');
+        await act(async () => latest.retryScopeCounts());
+        expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
+        expect(successfulRetry).not.toHaveBeenCalled();
+        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalled();
+        mocks.imagesQuery.current = { ...mocks.imagesQuery.current as object, isFetching: true, isPlaceholderData: true };
+        view.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        expect(latest.scopeResultCount).toBeUndefined();
+        expect(latest.scopeCountsError).toBe(false);
+        await act(async () => latest.retryScopeCounts());
+        expect(failedRetry).toHaveBeenCalledTimes(state === 'failed' ? 1 : 0);
     });
 
     it('does not start a queued privacy refresh after InvokeAI admission closes', async () => {
@@ -522,6 +579,18 @@ describe('SearchProvider', () => {
         view.rerender(<SearchProvider><Consumer /></SearchProvider>);
 
         expect(latest.clearAllFilters).toBe(initialClearAllFilters);
+    });
+
+    it('invalidates optional counts on forced refresh without awaiting or eagerly refetching them', async () => {
+        renderProvider();
+        await act(async () => {});
+        mocks.queryClient.invalidateQueries.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
+            queryKey[0] === 'images' ? Promise.resolve() : new Promise(() => {}));
+        await act(async () => latest.fetchData(false));
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['libraryStats', 'scopeCounts'], refetchType: 'none' });
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['libraryStats', 'scopeAvailability'], refetchType: 'none' });
+        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
+        mocks.queryClient.invalidateQueries.mockResolvedValue(undefined);
     });
 
     it('loads another page only when a next page is available and idle', async () => {

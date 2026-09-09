@@ -23,6 +23,29 @@ const renderScope = (overrides: Partial<React.ComponentProps<typeof LibraryScope
 };
 
 describe('LibraryScopeDropdown', () => {
+    it('keeps unknown counts unknown and offers a keyboard-accessible count-only retry', () => {
+        const retry = vi.fn();
+        renderScope({ displayedCount: undefined, scopeCounts: undefined, countsError: true, onRetryCounts: retry });
+        const trigger = screen.getByRole('button', { name: /Library scope: All Media, —/ });
+        fireEvent.click(trigger);
+        expect(screen.getByRole('radio', { name: 'Photos, —' })).toBeTruthy();
+        expect(screen.getByText('Counts unavailable')).toBeTruthy();
+        const retryButton = screen.getByRole('button', { name: 'Retry counts' });
+        retryButton.focus();
+        fireEvent.keyDown(retryButton, { key: 'Escape' });
+        expect(document.activeElement).toBe(trigger);
+        fireEvent.click(trigger);
+        fireEvent.click(screen.getByRole('button', { name: 'Retry counts' }));
+        expect(retry).toHaveBeenCalledTimes(1);
+        expect(document.activeElement).toBe(trigger);
+    });
+
+    it('does not label the image-wide count with a selected photo-only result total', () => {
+        renderScope({ mediaType: 'image', sourceKind: 'photograph', displayedCount: 3, scopeCounts: undefined });
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
+        expect(screen.getByRole('radio', { name: 'Photos, 3' })).toBeTruthy();
+        expect(screen.getByRole('radio', { name: 'Images, —' })).toBeTruthy();
+    });
     it('keeps the selector label-only and abbreviates menu counts with exact accessible values', () => {
         renderScope({ scopeCounts: { ...scopeCounts, media: { ...scopeCounts.media, all: 211000 } } });
         const trigger = screen.getByRole('button', { name: /Library scope: All Media/ });
