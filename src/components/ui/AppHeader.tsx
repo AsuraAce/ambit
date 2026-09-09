@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Import, MoreHorizontal } from 'lucide-react';
+import { Import, MoreHorizontal, Play } from 'lucide-react';
 import { AppSettings, FilterState, LayoutMode, SortOption, ViewMode, type LibraryScopeCounts, type SourceKindCounts } from '../../types';
 import { useLibraryContext } from '../../hooks/useLibraryContext';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -205,7 +205,7 @@ export const AppHeader = React.memo(({
 
     return (
         <header ref={headerRef} className="flex-shrink-0 sticky top-0 z-50 transition-colors duration-200">
-            <div className="relative z-20 flex min-h-16 flex-nowrap items-center gap-3 rounded-2xl border border-gray-200 bg-white/90 px-6 py-3 shadow-lg backdrop-blur-xl animate-in slide-in-from-top-4 duration-500 ease-spring dark:border-white/10 dark:bg-zinc-900/95">
+            <div className={`relative z-20 flex min-h-16 flex-nowrap items-center gap-3 rounded-2xl border border-gray-200 bg-white/90 py-3 shadow-lg backdrop-blur-xl animate-in slide-in-from-top-4 duration-500 ease-spring dark:border-white/10 dark:bg-zinc-900/95 ${toolbarDensity === 'compact' ? 'px-3' : 'px-6'}`}>
                 {/* Background clip layer for elements that need rounding (like progress bar) */}
                 <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
                     {active && (
@@ -271,10 +271,11 @@ export const AppHeader = React.memo(({
                                 <div className="absolute right-0 top-full z-[100] mt-2 w-52 rounded-xl border border-gray-200 bg-white p-2 shadow-2xl dark:border-white/10 dark:bg-zinc-900">
                                     <div className="flex items-center justify-between gap-2 px-2 pb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400"><span>Library actions</span><span className={isLiveWatching ? 'text-sage-600 dark:text-sage-300' : undefined}>{isLiveWatching ? 'Live Watch on' : 'Live Watch off'}</span></div>
                                     <div className="flex items-center gap-2">{actionButtons}</div>
+                                    {showSlideshowButton && <TooltipButton label="Start Slideshow" content="Start Slideshow" onClick={() => { setShowActionsMenu(false); onSlideshow(); }} className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5"><Play aria-hidden className="h-3.5 w-3.5" />Start Slideshow</TooltipButton>}
                                     {toolbarDensity === 'compact' && (
                                         <div className="mt-3 border-t border-gray-100 pt-2 dark:border-white/5">
                                             <span className="px-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Sort</span>
-                                            <div className="mt-1 grid grid-cols-2 gap-1"><SortOptionList sortOption={sortOption} onSelect={selectOverflowSort} compact /></div>
+                                            <div className="mt-1 flex flex-col gap-1"><SortOptionList sortOption={sortOption} onSelect={selectOverflowSort} compact /></div>
                                         </div>
                                     )}
                                 </div>
@@ -286,7 +287,9 @@ export const AppHeader = React.memo(({
                         showLayoutSwitcher={showLayoutSwitcher}
                         layoutMode={layoutMode}
                         setLayoutMode={setLayoutMode}
-                        showSlideshowButton={showSlideshowButton}
+                        showSlideshowButton={showSlideshowButton && toolbarDensity === 'normal'}
+                        showThumbnailSize={showSlideshowButton}
+                        compact={toolbarDensity !== 'normal'}
                         onSlideshow={onSlideshow}
                         sortOption={sortOption}
                         setSortOption={setSortOption}

@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import type { ImageKindFilter, LibraryScopeCounts, MediaTypeFilter, SourceKindCounts } from '../../../types';
+import { formatCountCompact } from '../../../utils/formatUtils';
 
 interface LibraryScopeDropdownProps {
     mediaType: MediaTypeFilter;
@@ -13,13 +14,13 @@ interface LibraryScopeDropdownProps {
 }
 
 const MEDIA_OPTIONS: Array<{ value: MediaTypeFilter; label: string }> = [
-    { value: 'all', label: 'All media' },
+    { value: 'all', label: 'All Media' },
     { value: 'image', label: 'Images' },
     { value: 'video', label: 'Videos' },
 ];
 
 const IMAGE_KIND_OPTIONS: Array<{ value: ImageKindFilter; label: string; countKey: keyof SourceKindCounts }> = [
-    { value: 'all', label: 'All images', countKey: 'all' },
+    { value: 'all', label: 'All Images', countKey: 'all' },
     { value: 'generated', label: 'Generated', countKey: 'generated' },
     { value: 'photograph', label: 'Photos', countKey: 'photograph' },
     { value: 'other', label: 'Other', countKey: 'other' },
@@ -129,14 +130,13 @@ export const LibraryScopeDropdown = React.memo(({
                 aria-expanded={isOpen}
                 aria-label={`Library scope: ${selectedLabel}, ${formatCount(selectedCount)}. Change library scope`}
                 onClick={() => setIsOpen(open => !open)}
-                className={`flex h-10 min-w-[8.5rem] items-center justify-between gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/60 ${mediaType !== 'all'
+                className={`flex h-10 min-w-[7rem] items-center justify-between gap-2 rounded-xl border px-3 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500/60 ${mediaType !== 'all'
                     ? 'border-sage-500/30 bg-sage-500/10 text-sage-700 dark:text-sage-200'
                     : 'border-gray-200 bg-gray-100 text-gray-600 hover:text-gray-900 dark:border-white/10 dark:bg-zinc-800/50 dark:text-zinc-300 dark:hover:text-white'
                     }`}
             >
                 <span className="flex min-w-0 items-center gap-1.5">
                     <span className="truncate">{selectedLabel}</span>
-                    <span className="text-[10px] font-medium tabular-nums opacity-70">{formatCount(selectedCount)}</span>
                 </span>
                 <ChevronDown aria-hidden className={`h-3.5 w-3.5 shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
@@ -152,7 +152,7 @@ export const LibraryScopeDropdown = React.memo(({
                                 <button key={option.value} ref={element => { optionRefs.current[index] = element; }} type="button" role="radio" aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption({ key: `media:${option.value}`, type: 'media', value: option.value })} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
                                     <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
                                     <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
-                                    <span className="shrink-0 text-[10px] tabular-nums opacity-70">{formatCount(count)}</span>
+                                    <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
                                 </button>
                             );
                         })}
@@ -167,7 +167,7 @@ export const LibraryScopeDropdown = React.memo(({
                                 <button key={option.value} ref={element => { optionRefs.current[optionIndex] = element; }} type="button" role="radio" aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption({ key: `image:${option.value}`, type: 'image', value: option.value })} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
                                     <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
                                     <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
-                                    <span className="shrink-0 text-[10px] tabular-nums opacity-70">{formatCount(count)}</span>
+                                    <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
                                 </button>
                             );
                         })}

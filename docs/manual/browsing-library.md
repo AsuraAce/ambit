@@ -15,11 +15,11 @@ Use the left sidebar to switch between:
 
 The filter button opens or closes the library panel. Favorites Only and Pinned Only buttons narrow the current view without changing your source files.
 
-The scope dropdown beside search combines **Media type** (All media, Images, Videos) and **Image kind** (All images, Generated, Photos, Other). All media is the initial default. Selecting an image kind switches to Images; All media and Videos ignore that kind, while returning to Images restores it. Both choices persist across restarts. Clear filters resets both to All. Existing non-All image-kind preferences upgrade to Images.
+The scope dropdown beside search combines **Media type** (All Media, Images, Videos) and **Image kind** (All Images, Generated, Photos, Other). All Media is the initial default. Selecting an image kind switches to Images; All Media and Videos ignore that kind, while returning to Images restores it. Both choices persist across restarts. Clear filters resets both to All. Existing non-All image-kind preferences upgrade to Images.
 
-Counts reflect the surrounding search, collection, and filters. Categories absent from your accessible library are hidden, but a zero-result search does not hide available categories. All and your selected/remembered options remain accessible. Image-kind rules can also be saved in smart collections.
+Counts reflect the surrounding search, collection, and filters. The closed scope selector shows its label only; counts appear inside the dropdown. Large counts use compact notation such as `211k` and `1.2M`, with exact values available on hover and to assistive technology. The toolbar's right-hand summary shows the count above the current collection name (or Library); long names truncate with the full name available on hover. Categories absent from your accessible library are hidden, but a zero-result search does not hide available categories. All and your selected/remembered options remain accessible. Image-kind rules can also be saved in smart collections.
 
-The **View** menu contains layout, thumbnail size, slideshow, and available hidden-content controls. On narrower workspaces, Import and Live Watch move into the actions overflow while a watch-status indicator remains visible; Sort joins them at the narrowest layout. Search, scope, View, and overflow stay in one toolbar row.
+The **View** menu separates **Layout**, **Thumbnail Size**, and available **Visibility** controls. Layout choices appear in Grid View; thumbnail size is available in Grid and Timeline. **Start Slideshow** sits beside View on wider workspaces. On narrower workspaces, Import, Live Watch, and Slideshow move into the actions overflow while a watch-status indicator remains visible; Sort joins them at the narrowest layout. Sort options pair icons with their labels and retain a selected checkmark. Search, scope, View, and overflow stay in one toolbar row.
 
 When hidden content is available, the View menu offers controls for showing it. `Show InvokeAI Image Assets` reveals InvokeAI user, control, mask, and other source images, which are hidden from ordinary browsing by default. The preference persists across restarts and applies to the current library result set, including collections, pinned results, statistics, and slideshows. Collection sidebar counts and saved collection thumbnails do not change with this display preference.
 
@@ -40,7 +40,7 @@ Revealed InvokeAI image assets carry an `Asset · User`, `Asset · Control`, `As
 
 ## Videos In The Library
 
-Use the scope dropdown beside search to choose All media, Images, or Videos. Video cards show a static poster or placeholder with duration; browsing does not start background players. Open a video for playback, metadata, notes, collections, or original-file export. Media type can also be saved in a smart collection's filters.
+Use the scope dropdown beside search to choose All Media, Images, or Videos. Video cards show a static poster or placeholder with duration; browsing does not start background players. Open a video for playback, metadata, notes, collections, or original-file export. Media type can also be saved in a smart collection's filters.
 
 ## Timeline Browsing
 

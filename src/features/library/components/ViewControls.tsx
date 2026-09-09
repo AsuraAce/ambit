@@ -1,10 +1,11 @@
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye } from 'lucide-react';
+import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye, CalendarArrowDown, CalendarArrowUp, ArrowDownAZ, ArrowUpAZ, ArrowDownWideNarrow, ArrowUpNarrowWide, type LucideIcon } from 'lucide-react';
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { useDelayedBusyPresentation } from '../../../hooks/useDelayedBusyPresentation';
+import { formatCountCompact } from '../../../utils/formatUtils';
 
 const COUNT_LOADING_REVEAL_DELAY_MS = 180;
 const COUNT_LOADING_MIN_VISIBLE_MS = 300;
@@ -32,15 +33,17 @@ interface ViewControlsProps {
     ownerPresentationKey?: string;
     isFiltering?: boolean;
     showSortButton?: boolean;
+    showThumbnailSize?: boolean;
+    compact?: boolean;
 }
 
-const SORT_OPTIONS: Array<{ val: SortOption; label: string }> = [
-    { val: 'date_desc', label: 'Newest' },
-    { val: 'date_asc', label: 'Oldest' },
-    { val: 'name_asc', label: 'Name (A-Z)' },
-    { val: 'name_desc', label: 'Name (Z-A)' },
-    { val: 'size_desc', label: 'Largest (Size)' },
-    { val: 'size_asc', label: 'Smallest (Size)' },
+const SORT_OPTIONS: Array<{ val: SortOption; label: string; icon: LucideIcon }> = [
+    { val: 'date_desc', label: 'Newest', icon: CalendarArrowDown },
+    { val: 'date_asc', label: 'Oldest', icon: CalendarArrowUp },
+    { val: 'name_asc', label: 'Name (A-Z)', icon: ArrowDownAZ },
+    { val: 'name_desc', label: 'Name (Z-A)', icon: ArrowUpAZ },
+    { val: 'size_desc', label: 'Largest (Size)', icon: ArrowDownWideNarrow },
+    { val: 'size_asc', label: 'Smallest (Size)', icon: ArrowUpNarrowWide },
 ];
 
 const sortLabel = (sortOption: SortOption) => SORT_OPTIONS.find(option => option.val === sortOption)?.label ?? 'Sort';
@@ -57,11 +60,11 @@ export const SortOptionList = ({
     <>
         {SORT_OPTIONS.map(option => (
             <button key={option.val} type="button" onClick={() => onSelect(option.val)} className={compact
-                ? `rounded-lg px-2 py-1.5 text-left text-[10px] ${sortOption === option.val ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`
+                ? `flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs ${sortOption === option.val ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`
                 : `w-full text-left px-3 py-2 text-xs transition-colors flex justify-between items-center ${sortOption === option.val ? 'bg-sage-50 text-sage-600 dark:bg-sage-900/40 dark:text-sage-300' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`
             }>
-                {option.label}
-                {!compact && sortOption === option.val && <Check className="w-3 h-3" />}
+                <span className="flex items-center gap-2"><option.icon aria-hidden className="h-3.5 w-3.5 shrink-0 opacity-70" />{option.label}</span>
+                {sortOption === option.val && <Check aria-hidden className="w-3 h-3 shrink-0" />}
             </button>
         ))}
     </>
@@ -83,6 +86,8 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     isFiltering,
     ownerPresentationKey = 'invoke:none',
     showSortButton = true,
+    showThumbnailSize = true,
+    compact = false,
 }) => {
     const { availableHiddenContent, filters, setFilters } = useSearch();
     const [showSortMenu, setShowSortMenu] = useState(false);
@@ -168,7 +173,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 </button>
                 {showViewMenu && (
                     <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="border-b border-gray-100 p-2 dark:border-white/5">
+                        {showLayoutSwitcher && <div role="group" aria-label="Layout" className="border-b border-gray-100 p-3 dark:border-white/5">
                                 <span className="px-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Layout</span>
                                 <div className="mt-1 flex items-center gap-1 px-1">
                                     {showLayoutSwitcher && (
@@ -178,17 +183,20 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                                             <TooltipButton label="Use Justified Layout" content="Use Justified Layout" aria-pressed={layoutMode === 'justified'} onClick={() => setLayoutMode('justified')} className={`p-1.5 rounded-lg transition-all ${layoutMode === 'justified' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}><AlignJustify className="w-4 h-4" /></TooltipButton>
                                         </>
                                     )}
-                                    {showSlideshowButton && <TooltipButton label="Play Slideshow" content="Play Slideshow" onClick={onSlideshow} className="p-1.5 rounded-lg text-gray-500 hover:text-sage-600"><Play className="w-4 h-4 fill-current" /></TooltipButton>}
                                 </div>
-                                <label className="mt-3 flex items-center gap-2 px-1 text-xs text-gray-500">
+                        </div>}
+                        {showThumbnailSize && <div className="border-b border-gray-100 p-3 dark:border-white/5">
+                                <label className="flex flex-col gap-3 px-2 text-xs text-gray-500">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Thumbnail Size</span>
+                                    <span className="flex items-center gap-2">
                                     <Sliders className="w-3 h-3" />
-                                    <span className="sr-only">Thumbnail Size</span>
                                     <input aria-label="Thumbnail Size" type="range" min="100" max="400" value={thumbnailSize} onChange={event => setThumbnailSize(Number(event.target.value))} className="h-1 w-32 cursor-pointer appearance-none rounded-lg bg-gray-300 accent-sage-500 dark:bg-slate-700" />
+                                    </span>
                                 </label>
-                        </div>
+                        </div>}
                         {hasHiddenContentControls && (
                             <div>
-                                <div className="border-b border-gray-100 bg-gray-50/50 p-2 dark:border-white/5 dark:bg-black/20"><span className="pl-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Display</span></div>
+                                <div className="border-b border-gray-100 bg-gray-50/50 p-3 dark:border-white/5 dark:bg-black/20"><span className="pl-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Visibility</span></div>
                                 {availableHiddenContent.hasInvokeImageAssets && <HiddenContentToggle label="Show InvokeAI Image Assets" description="Reference, control, mask, and source images" enabled={Boolean(filters.showInvokeImageAssets)} onClick={() => setFilters(previous => ({ ...previous, showInvokeImageAssets: !previous.showInvokeImageAssets }))} />}
                                 {availableHiddenContent.hasIntermediates && <HiddenContentToggle label="Show Intermediates" description="Ephemeral generation steps" enabled={Boolean(filters.showIntermediates)} onClick={() => setFilters(previous => ({ ...previous, showIntermediates: !previous.showIntermediates }))} />}
                                 {availableHiddenContent.hasGrids && <HiddenContentToggle label="Show Image Grids" description="Combined previews (SD WebUI)" enabled={Boolean(filters.showGrids)} onClick={() => setFilters(previous => ({ ...previous, showGrids: !previous.showGrids }))} />}
@@ -198,15 +206,18 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
                 )}
             </div>
 
-            <div className={`flex min-w-[3rem] items-center justify-end text-[10px] font-bold tracking-widest tabular-nums text-gray-400 transition-opacity duration-200 dark:text-gray-500 ${showCountLoading ? 'opacity-50' : 'opacity-100'}`}>
+            {showSlideshowButton && <TooltipButton label="Start Slideshow" content="Start Slideshow" onClick={onSlideshow} className="rounded-xl border border-gray-200 bg-gray-100 p-2 text-gray-500 transition-colors hover:text-sage-600 dark:border-white/10 dark:bg-zinc-800/50 dark:hover:text-sage-300"><Play aria-hidden className="h-4 w-4 fill-current" /></TooltipButton>}
+
+            <div className={`flex flex-col items-end justify-center border-l border-gray-200 pl-3 text-right text-[10px] font-bold tracking-widest tabular-nums text-gray-400 transition-opacity duration-200 dark:border-white/10 dark:text-gray-500 ${compact ? 'w-24' : 'w-36'} ${showCountLoading ? 'opacity-50' : 'opacity-100'}`}>
                 {isAwaitingFirstSettledCount ? <span aria-hidden>&nbsp;</span> : showCountLoading ? <span aria-label={`Loading ${scopeName}`} className="text-gray-600 dark:text-gray-300">...<span className="sr-only" title={`LOADING ${scopeName}`}>{`LOADING ${scopeName}`}</span></span> : countPresentation.displayedCount !== countPresentation.totalCount ? (
                     <span aria-label={`${countPresentation.displayedCount.toLocaleString()} matches in ${countPresentation.scopeName}; ${countPresentation.totalCount === null ? 'collection total not available' : `${countPresentation.totalCount.toLocaleString()} total`}`}>
-                        <span className="text-sage-600 dark:text-sage-400">{countPresentation.displayedCount.toLocaleString()}</span><span className="px-1 opacity-40">/</span><span className="text-gray-600 dark:text-gray-300" aria-label={countPresentation.totalCount === null ? 'Collection total not available' : undefined} title={countPresentation.totalCount === null ? 'Collection total not available' : undefined}>{countPresentation.totalCount?.toLocaleString() ?? '—'}</span>
+                        <span title={countPresentation.displayedCount.toLocaleString()} className="text-sage-600 dark:text-sage-400">{formatCountCompact(countPresentation.displayedCount)}</span><span className="px-1 opacity-40">/</span><span className="text-gray-600 dark:text-gray-300" aria-label={countPresentation.totalCount === null ? 'Collection total not available' : undefined} title={countPresentation.totalCount === null ? 'Collection total not available' : countPresentation.totalCount.toLocaleString()}>{countPresentation.totalCount === null ? '—' : formatCountCompact(countPresentation.totalCount)}</span>
                         <span className="sr-only text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate" title={`MATCHES IN ${countPresentation.scopeName}`}>{`MATCHES IN ${countPresentation.scopeName}`}</span>
                     </span>
                 ) : (
-                    <span aria-label={`${countPresentation.totalCount?.toLocaleString() ?? 'collection total not available'} in ${countPresentation.scopeName}`} className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount?.toLocaleString() ?? '—'}<span className="sr-only text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate" title={countPresentation.scopeName}>{countPresentation.scopeName}</span></span>
+                    <span title={countPresentation.totalCount?.toLocaleString()} aria-label={`${countPresentation.totalCount?.toLocaleString() ?? 'collection total not available'} in ${countPresentation.scopeName}`} className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount === null ? '—' : formatCountCompact(countPresentation.totalCount)}</span>
                 )}
+                {!isAwaitingFirstSettledCount && <span title={showCountLoading ? scopeName : countPresentation.scopeName} className="mt-0.5 block w-full truncate text-[10px] normal-case tracking-normal text-gray-500 dark:text-gray-400">{showCountLoading ? scopeName : countPresentation.scopeName}</span>}
             </div>
         </div>
     );

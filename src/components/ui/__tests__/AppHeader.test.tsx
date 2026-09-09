@@ -49,7 +49,7 @@ vi.mock('../../../features/library/components/ViewControls', () => ({
             <button onClick={() => setThumbnailSize(320)}>Resize Thumbnails</button>
             <button onClick={() => setLayoutMode('masonry')}>Set Layout</button>
             <button onClick={() => setSortOption('date_desc')}>Set Sort</button>
-            <button onClick={onSlideshow}>Start Slideshow</button>
+            {showSlideshowButton && <button onClick={onSlideshow}>Start Slideshow</button>}
         </div>
     )
 }));
@@ -257,7 +257,7 @@ describe('AppHeader', () => {
         const scope = screen.getByTestId('library-scope');
         expect(searchBar.parentElement?.nextElementSibling).toBe(scope);
 
-        fireEvent.click(screen.getByRole('button', { name: 'Library scope: All media, 618. Change library scope' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Library scope: All Media, 618. Change library scope' }));
         fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
 
         const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
@@ -289,12 +289,17 @@ describe('AppHeader', () => {
 
         expect(screen.getByRole('button', { name: 'Library actions; Live Watch off' })).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Start Slideshow' })).toBeNull();
         expect(screen.getByTestId('view-controls').getAttribute('data-sort-visible')).toBe('false');
 
         fireEvent.click(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
         expect(screen.getByText('Live Watch off')).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Import Images' })).toBeTruthy();
         expect(screen.getByRole('button', { name: 'Newest' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Start Slideshow' }));
+        expect(defaultProps.onSlideshow).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
         fireEvent.keyDown(screen.getByRole('button', { name: 'Newest' }), { key: 'Escape' });
         expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
         vi.unstubAllGlobals();

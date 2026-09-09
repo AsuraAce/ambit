@@ -23,15 +23,25 @@ const renderScope = (overrides: Partial<React.ComponentProps<typeof LibraryScope
 };
 
 describe('LibraryScopeDropdown', () => {
+    it('keeps the selector label-only and abbreviates menu counts with exact accessible values', () => {
+        renderScope({ scopeCounts: { ...scopeCounts, media: { ...scopeCounts.media, all: 211000 } } });
+        const trigger = screen.getByRole('button', { name: /Library scope: All Media/ });
+        expect(trigger.textContent).toBe('All Media');
+        fireEvent.click(trigger);
+        const allMedia = screen.getByRole('radio', { name: `All Media, ${(211000).toLocaleString()}` });
+        expect(allMedia.textContent).toContain('211k');
+        expect(screen.getByTitle((211000).toLocaleString()).textContent).toBe('211k');
+    });
+
     it('groups media and image kind choices while focusing the effective scope', async () => {
         renderScope();
 
-        const trigger = screen.getByRole('button', { name: 'Library scope: All media, 1,200. Change library scope' });
+        const trigger = screen.getByRole('button', { name: 'Library scope: All Media, 1,200. Change library scope' });
         fireEvent.click(trigger);
 
         expect(screen.getByRole('radiogroup', { name: 'Media type' })).toBeTruthy();
         expect(screen.getByRole('radiogroup', { name: 'Image kind' })).toBeTruthy();
-        await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'All media, 1,200' })));
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'All Media, 1,200' })));
         expect(screen.getByRole('radio', { name: 'Photos, 250' })).toBeTruthy();
     });
 
@@ -46,12 +56,12 @@ describe('LibraryScopeDropdown', () => {
         expect(kindChange).not.toHaveBeenCalled();
     });
 
-    it('labels the image-wide trigger as Images while retaining All images in the menu', () => {
+    it('labels the image-wide trigger as Images while retaining All Images in the menu', () => {
         renderScope({ mediaType: 'image', sourceKind: 'all' });
 
         const trigger = screen.getByRole('button', { name: 'Library scope: Images, 1,175. Change library scope' });
         fireEvent.click(trigger);
-        expect(screen.getByRole('radio', { name: 'All images, 1,175' })).toBeTruthy();
+        expect(screen.getByRole('radio', { name: 'All Images, 1,175' })).toBeTruthy();
     });
 
     it('selects image kinds, returns focus, and supports Escape navigation', async () => {
@@ -88,7 +98,7 @@ describe('LibraryScopeDropdown', () => {
 
         const trigger = screen.getByRole('button', { name: 'Library scope: Videos, 7. Change library scope' });
         fireEvent.click(trigger);
-        expect(screen.getByRole('radio', { name: 'All media, —' })).toBeTruthy();
+        expect(screen.getByRole('radio', { name: 'All Media, —' })).toBeTruthy();
         expect(screen.getByRole('radio', { name: 'Videos, 7' })).toBeTruthy();
         expect(screen.queryByRole('radio', { name: 'Other, —' })).toBeNull();
         expect(screen.getByRole('radio', { name: 'Photos, —' })).toBeTruthy();
@@ -105,7 +115,7 @@ describe('LibraryScopeDropdown', () => {
         };
         const { rerender } = render(<LibraryScopeDropdown {...props} />);
         fireEvent.click(screen.getByRole('button', { name: 'Library scope: Images, 1,175. Change library scope' }));
-        const allImages = screen.getByRole('radio', { name: 'All images, 1,175' });
+        const allImages = screen.getByRole('radio', { name: 'All Images, 1,175' });
         fireEvent.keyDown(allImages, { key: 'ArrowUp' });
         const focusedOption = screen.getByRole('radio', { name: 'Videos, 25' });
         expect(document.activeElement).toBe(focusedOption);
