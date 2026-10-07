@@ -23,7 +23,6 @@ const mocks = vi.hoisted(() => ({
     statsQuery: { current: {} as unknown },
     queryClient: {
         invalidateQueries: vi.fn().mockResolvedValue(undefined),
-        refetchQueries: vi.fn().mockResolvedValue(undefined),
         cancelQueries: vi.fn().mockResolvedValue(undefined)
     },
     repository: {
@@ -45,6 +44,7 @@ const mocks = vi.hoisted(() => ({
     restoreImagesInQueryCaches: vi.fn(),
     applyOptimisticPinOrder: vi.fn(),
     incrementFacetCacheVersion: vi.fn(),
+    incrementScopeCountsVersion: vi.fn(),
     shouldPrefetchResultPages: vi.fn(),
     refreshSmartCounts: vi.fn()
 }));
@@ -95,7 +95,7 @@ vi.mock('../../services/db/collectionRepo', () => ({
 vi.mock('../../stores/libraryStore', () => ({
     useLibraryStore: Object.assign(
         (selector: (state: { keywordStatsEnabled: boolean }) => unknown) => selector({ keywordStatsEnabled: false }),
-        { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion }) }
+        { getState: () => ({ incrementFacetCacheVersion: mocks.incrementFacetCacheVersion, incrementScopeCountsVersion: mocks.incrementScopeCountsVersion }) }
     )
 }));
 vi.mock('../../stores/collectionStore', () => ({
@@ -582,14 +582,15 @@ describe('SearchProvider', () => {
         expect(latest.clearAllFilters).toBe(initialClearAllFilters);
     });
 
-    it('invalidates optional counts on forced refresh without awaiting or eagerly refetching them', async () => {
+    it('advances optional count identity on forced refresh without awaiting or eagerly refetching them', async () => {
         renderProvider();
         await act(async () => {});
         mocks.queryClient.invalidateQueries.mockImplementation(({ queryKey }: { queryKey: string[] }) =>
             queryKey[0] === 'images' ? Promise.resolve() : new Promise(() => {}));
         await act(async () => latest.fetchData(false));
-        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['libraryStats', 'scopeCounts'], refetchType: 'none' });
-        expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['libraryStats', 'scopeAvailability'], refetchType: 'none' });
+        expect(mocks.incrementScopeCountsVersion).toHaveBeenCalledOnce();
+        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['libraryStats', 'scopeCounts'] }));
+        expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalledWith(expect.objectContaining({ queryKey: ['libraryStats', 'scopeAvailability'] }));
         expect(mocks.queryClient.invalidateQueries).toHaveBeenCalledWith({ queryKey: ['images'] });
         mocks.queryClient.invalidateQueries.mockResolvedValue(undefined);
     });

@@ -20,6 +20,7 @@ interface ScopeCountsOptions {
 /** Optional dropdown counts never participate in gallery page readiness. */
 export function useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled }: ScopeCountsOptions) {
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
+    const scopeCountsVersion = useLibraryStore(state => state.scopeCountsVersion);
     const ownerScopeKey = useInvokeOwnerScopeStore(state => (
         getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
     ));
@@ -31,7 +32,7 @@ export function useLibraryScopeCounts({ filters, settings, privacyEnabled, allCo
     );
 
     return useQuery({
-        queryKey: ['libraryStats', 'scopeCounts', facetCacheVersion,
+        queryKey: ['libraryStats', 'scopeCounts', facetCacheVersion, scopeCountsVersion,
             { ...filters, mediaType: 'all', sourceKind: 'all' },
             activeCollection?.filters ?? null, activeCollection?.manualExclusions ?? [], scopeQuery,
             privacyEnabled, settings.maskingMode, keywords, ownerScopeKey],

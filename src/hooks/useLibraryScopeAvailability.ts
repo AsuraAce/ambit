@@ -20,6 +20,7 @@ interface ScopeAvailabilityOptions {
 /** Library-wide availability must not disappear when a search or collection is empty. */
 export function useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled }: ScopeAvailabilityOptions) {
     const facetCacheVersion = useLibraryStore(state => state.facetCacheVersion);
+    const scopeCountsVersion = useLibraryStore(state => state.scopeCountsVersion);
     const ownerScopeKey = useInvokeOwnerScopeStore(state => (
         getInvokeOwnerQueryScopeKey(settings.invokeAiPath, state.ownerScopeState)
     ));
@@ -34,7 +35,7 @@ export function useLibraryScopeAvailability({ filters, settings, privacyEnabled,
     };
 
     return useQuery({
-        queryKey: ['libraryStats', 'scopeAvailability', facetCacheVersion,
+        queryKey: ['libraryStats', 'scopeAvailability', facetCacheVersion, scopeCountsVersion,
             libraryFilters.showGrids, libraryFilters.showIntermediates, libraryFilters.showInvokeImageAssets,
             privacyEnabled, settings.maskingMode, keywords, ownerScopeKey],
         queryFn: () => {

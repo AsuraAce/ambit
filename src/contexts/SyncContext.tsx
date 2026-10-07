@@ -1518,9 +1518,8 @@ export const SyncProvider: React.FC<{
                     });
 
                     const invalidateStartedAt = liveWatchNow();
-                    // Counts must refresh even when no facets changed, after the safe page settles.
-                    void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeCounts'], refetchType: 'none' });
-                    void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeAvailability'], refetchType: 'none' });
+                    // Exclude pre-update count responses even when no facets changed.
+                    useLibraryStore.getState().incrementScopeCountsVersion();
                     const invalidatePromise = queryClient.invalidateQueries({ queryKey: ['images'] });
                     debugLiveWatchPerf('Live image refresh invalidation triggered', {
                         cycleId: livePerfContext?.cycleId,
@@ -1887,9 +1886,8 @@ export const SyncProvider: React.FC<{
                     // The startup/catch-up scanner owns the monitored-folder cursor.
                     if (result.handledPaths.length > 0) {
                         const invalidateStartedAt = liveWatchNow();
-                        // Counts must refresh even when no facets changed, after the safe page settles.
-                        void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeCounts'], refetchType: 'none' });
-                        void queryClient.invalidateQueries({ queryKey: ['libraryStats', 'scopeAvailability'], refetchType: 'none' });
+                        // Exclude pre-update count responses even when no facets changed.
+                        useLibraryStore.getState().incrementScopeCountsVersion();
                         const invalidatePromise = queryClient.invalidateQueries({ queryKey: ['images'] });
                         debugLiveWatchPerf('Generic live image refresh invalidation triggered', {
                             cycleId: cyclePerfContext?.cycleId,

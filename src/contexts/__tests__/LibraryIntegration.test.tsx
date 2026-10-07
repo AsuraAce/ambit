@@ -1314,9 +1314,12 @@ describe('Library Integration (Provider Stack)', () => {
     });
 
     it.each([
-        { source: 'invoke', delayedPage: true }, { source: 'generic', delayedPage: true },
-        { source: 'invoke', delayedPage: false }, { source: 'generic', delayedPage: false },
-    ] as const)('refreshes optional counts after $source live changes without facet changes (delayed page: $delayedPage)', async ({ source, delayedPage }) => {
+        { source: 'invoke', delayedPage: true, overlappingProbe: false }, { source: 'generic', delayedPage: true, overlappingProbe: false },
+        { source: 'invoke', delayedPage: false, overlappingProbe: false }, { source: 'generic', delayedPage: false, overlappingProbe: false },
+        { source: 'invoke', delayedPage: true, overlappingProbe: true }, { source: 'generic', delayedPage: true, overlappingProbe: true },
+        { source: 'invoke', delayedPage: false, overlappingProbe: true }, { source: 'generic', delayedPage: false, overlappingProbe: true },
+        { source: 'forced', delayedPage: true, overlappingProbe: true }, { source: 'forced', delayedPage: false, overlappingProbe: true },
+    ] as const)('refreshes optional counts after $source changes without facet changes (delayed page: $delayedPage, overlapping probe: $overlappingProbe)', async ({ source, delayedPage, overlappingProbe }) => {
         let libraryHook: ReturnType<typeof useLibraryContext> | undefined;
         let syncHook: SyncHook | undefined;
         const emptyCounts = { media: { all: 0, image: 0, video: 0 }, imageKinds: { all: 0, generated: 0, photograph: 0, other: 0 } };
@@ -1333,6 +1336,14 @@ describe('Library Integration (Provider Stack)', () => {
             expect(libraryHook?.scopeCounts).toEqual(emptyCounts);
             expect(libraryHook?.scopeAvailability).toEqual(emptyCounts);
         });
+        const oldCounts = createDeferred<typeof emptyCounts>();
+        if (overlappingProbe) {
+            mocks.countLibraryScopes.mockClear();
+            mocks.countLibraryScopes.mockReturnValue(oldCounts.promise);
+            await act(async () => libraryHook?.fetchData(false));
+            await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalledTimes(2));
+            expect(libraryHook?.isLibraryReady).toBe(true);
+        }
         const revision = useLibraryStore.getState().facetCacheVersion;
         const page = createDeferred<[]>();
         const counts = createDeferred<typeof emptyCounts>();
@@ -1346,24 +1357,33 @@ describe('Library Integration (Provider Stack)', () => {
                 touchedFacetTypes: [],
                 touchedFacetResources: createTargetedResult().touchedFacetResources,
             });
-        } else {
+        } else if (source === 'generic') {
             mocks.processTargetedFiles.mockResolvedValueOnce({
                 ...createTargetedResult({ handledPaths: ['C:/images/photo.jpg'] }),
                 stats: { processed: 1, imported: 1, skipped: 0, errors: 0 },
             });
         }
 
+        let forcedRefresh: Promise<void> | undefined;
         await act(async () => {
             if (source === 'invoke') await syncHook?.startInvokeSync({ mode: 'live' });
-            else await syncHook?.startTargetedLiveSync(['C:/images/photo.jpg']);
+            else if (source === 'generic') await syncHook?.startTargetedLiveSync(['C:/images/photo.jpg']);
+            else forcedRefresh = libraryHook?.fetchData(false);
         });
         // Neither a facet rebuild nor optional work should be needed before the new page.
         expect(useLibraryStore.getState().facetCacheVersion).toBe(revision);
         if (delayedPage) {
             await waitFor(() => expect(libraryHook?.scopeResultCount).toBeUndefined());
             expect(mocks.countLibraryScopes).not.toHaveBeenCalled();
+            if (overlappingProbe) {
+                await act(async () => oldCounts.resolve(emptyCounts));
+                expect(libraryHook?.scopeCounts).toBeUndefined();
+                expect(libraryHook?.scopeAvailability).toBeUndefined();
+                expect(mocks.countLibraryScopes).not.toHaveBeenCalled();
+            }
             await act(async () => page.resolve([]));
         }
+        await act(async () => { await forcedRefresh; });
         await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalledTimes(2));
         expect(libraryHook?.isLibraryReady).toBe(true);
 
@@ -1373,6 +1393,48 @@ describe('Library Integration (Provider Stack)', () => {
             expect(libraryHook?.scopeCounts).toEqual(updatedCounts);
             expect(libraryHook?.scopeAvailability).toEqual(updatedCounts);
         });
+        if (overlappingProbe && !delayedPage) {
+            // The pre-import snapshot may finish, but cannot replace the post-import counts.
+            await act(async () => oldCounts.resolve(emptyCounts));
+            expect(libraryHook?.scopeCounts).toEqual(updatedCounts);
+            expect(libraryHook?.scopeAvailability).toEqual(updatedCounts);
+        }
+        mocks.countLibraryScopes.mockResolvedValue(emptyCounts);
+    });
+
+    it('keeps the newest counts across repeated refreshes and out-of-order responses', async () => {
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        const emptyCounts = { media: { all: 0, image: 0, video: 0 }, imageKinds: { all: 0, generated: 0, photograph: 0, other: 0 } };
+        const initial = createDeferred<typeof emptyCounts>();
+        const middle = createDeferred<typeof emptyCounts>();
+        const newest = createDeferred<typeof emptyCounts>();
+        mocks.countLibraryScopes.mockReturnValue(initial.promise);
+        renderStack(value => hook = value);
+        await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalledTimes(2));
+        expect(hook?.isLibraryReady).toBe(true);
+
+        mocks.countLibraryScopes.mockReturnValue(middle.promise);
+        await act(async () => hook?.fetchData(false));
+        await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalledTimes(4));
+        mocks.countLibraryScopes.mockReturnValue(newest.promise);
+        await act(async () => hook?.fetchData(false));
+        await waitFor(() => expect(mocks.countLibraryScopes).toHaveBeenCalledTimes(6));
+        expect(hook?.isLibraryReady).toBe(true);
+        expect(hook?.scopeCounts).toBeUndefined();
+        expect(hook?.scopeAvailability).toBeUndefined();
+
+        const latestCounts = { media: { all: 2, image: 2, video: 0 }, imageKinds: { all: 2, generated: 0, photograph: 2, other: 0 } };
+        await act(async () => newest.resolve(latestCounts));
+        await waitFor(() => {
+            expect(hook?.scopeCounts).toEqual(latestCounts);
+            expect(hook?.scopeAvailability).toEqual(latestCounts);
+        });
+        await act(async () => {
+            middle.resolve(emptyCounts);
+            initial.resolve(emptyCounts);
+        });
+        expect(hook?.scopeCounts).toEqual(latestCounts);
+        expect(hook?.scopeAvailability).toEqual(latestCounts);
         mocks.countLibraryScopes.mockResolvedValue(emptyCounts);
     });
 
