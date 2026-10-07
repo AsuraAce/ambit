@@ -27,6 +27,22 @@ const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image())
 };
 
 describe('MetadataSidebar', () => {
+    it.each([
+        ['Canon', 'Canon PowerShot S5 IS', 'Canon PowerShot S5 IS'],
+        ['CANON', 'Canon PowerShot S5 IS', 'Canon PowerShot S5 IS'],
+        ['Canon', 'Canon', 'Canon'],
+        ['Canon', 'EOS R6', 'Canon EOS R6'],
+        ['Canon', 'Canonical Camera', 'Canon Canonical Camera'],
+    ])('shows make %s and model %s without repeating an included manufacturer', (cameraMake, cameraModel, label) => {
+        setup('metadata', { ...image(), sourceKind: 'photograph', photoMetadata: {
+            cameraMake, cameraModel, capturedAt: null, captureTimeRaw: null,
+            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
+            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
+            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+        } });
+        expect(screen.getByText(label)).toBeTruthy();
+    });
+
     it('does not flash an empty metadata card while photo metadata is still loading', () => {
         const target = { ...image(), sourceKind: 'photograph' as const, detectedSourceKind: 'photograph' as const };
         const { props, rerender } = setup('metadata', target);

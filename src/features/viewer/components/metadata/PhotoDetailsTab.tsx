@@ -30,9 +30,16 @@ export const PhotoDetailsTab = ({ image, isLoading = false }: PhotoDetailsTabPro
     const [gpsExpanded, setGpsExpanded] = useState(false);
     const photo = image.photoMetadata;
     const isPhoto = getEffectiveSourceKind(image) === 'photograph';
+    const cameraMake = photo?.cameraMake?.trim();
+    const cameraModel = photo?.cameraModel?.trim();
+    const modelIncludesMake = cameraMake && cameraModel && (
+        cameraModel.toLowerCase() === cameraMake.toLowerCase()
+        || cameraModel.toLowerCase().startsWith(`${cameraMake.toLowerCase()} `)
+    );
+    const cameraLabel = modelIncludesMake ? cameraModel : [cameraMake, cameraModel].filter(Boolean).join(' ');
     const fields = isPhoto ? [
         { label: 'Captured', icon: Calendar, value: formatCaptureTime(image) },
-        { label: 'Camera', icon: Camera, value: [photo?.cameraMake, photo?.cameraModel].filter(Boolean).join(' ') },
+        { label: 'Camera', icon: Camera, value: cameraLabel },
         { label: 'Lens', icon: Aperture, value: [photo?.lensMake, photo?.lensModel].filter(Boolean).join(' ') },
     ].filter(field => field.value) : [];
     const rows: MetadataParameterRow[] = [];
