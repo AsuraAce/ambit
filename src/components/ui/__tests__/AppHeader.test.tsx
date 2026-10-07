@@ -264,6 +264,41 @@ describe('AppHeader', () => {
         expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
     });
 
+    it.each(['All Media, 6', 'Videos, 2'])('keeps remembered Photos inactive under %s and restores them through Images', async (mediaOption) => {
+        const HeaderWithFilters = () => {
+            const [filters, setFilters] = React.useState<React.ComponentProps<typeof AppHeader>['filters']>({
+                ...defaultProps.filters,
+                mediaType: 'all',
+                sourceKind: 'all',
+            });
+            return <AppHeader {...defaultProps} filters={filters} setFilters={setFilters} scopeCounts={{
+                media: { all: 6, image: 4, video: 2 },
+                imageKinds: { all: 4, generated: 1, photograph: 3, other: 0 },
+            }} />;
+        };
+        render(<HeaderWithFilters />);
+        await screen.findByTestId('search-bar');
+
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: All Media/ }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
+        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+
+        fireEvent.click(screen.getByRole('radio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+        expect(screen.getByRole('radio', { name: mediaOption }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
+
+        fireEvent.click(screen.getByRole('radio', { name: 'Images, 4' }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
+        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+
+        fireEvent.click(screen.getByRole('radio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+        expect(screen.getByRole('button', { name: /Library scope: Photos, 3/ })).toBeTruthy();
+    });
+
     it('keeps a four-pixel boundary between AI search and the import controls', () => {
         render(<AppHeader {...defaultProps} />);
 

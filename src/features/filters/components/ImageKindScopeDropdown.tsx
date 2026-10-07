@@ -167,7 +167,7 @@ export const LibraryScopeDropdown = React.memo(({
                     <div role="radiogroup" aria-label="Image kind">
                         <div className="px-2.5 pb-1.5 pt-3 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Image kind</div>
                         {visibleImageKindOptions.map((option, index) => {
-                            const isSelected = option.value === sourceKind;
+                            const isSelected = isImageScope && option.value === sourceKind;
                             const count = getImageKindCount(option);
                             const optionIndex = visibleMediaOptions.length + index;
                             return (
