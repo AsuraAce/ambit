@@ -177,11 +177,17 @@ export const LibraryScopeDropdown = React.memo(({
                         const isSelected = option.key === selectedMenuKey;
                         const count = getScopeCount(scopeCounts, option) ?? (isSelected ? displayedCount : undefined);
                         return (
-                            <button key={option.key} data-scope-option={option.key} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption(option)} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
-                                <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
-                                <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
-                                <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
-                            </button>
+                            <React.Fragment key={option.key}>
+                                {option.key === 'images' && (
+                                    <div aria-hidden="true" className="mt-1.5 border-t border-gray-200 px-2.5 pb-1.5 pt-2.5 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:border-white/10 dark:text-zinc-300">Images</div>
+                                )}
+                                {option.key === 'videos' && <div role="separator" className="my-1.5 border-t border-gray-200 dark:border-white/10" />}
+                                <button data-scope-option={option.key} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption(option)} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
+                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
+                                    <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
+                                    <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
+                                </button>
+                            </React.Fragment>
                         );
                     })}
                     {countsError && (

@@ -38,6 +38,37 @@ describe('LibraryScopeDropdown', () => {
         ]);
     });
 
+    it('adds visual structure without adding keyboard stops or leaving a divider for hidden videos', () => {
+        const props = {
+            mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: 1200,
+            scopeCounts, onScopeChange: vi.fn(),
+        };
+        const { rerender } = render(<LibraryScopeDropdown {...props} />);
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+
+        const imageHeading = screen.getByText('Images');
+        const allMedia = screen.getByRole('menuitemradio', { name: 'All Media, 1,200' });
+        const allImages = screen.getByRole('menuitemradio', { name: 'All Images, 1,175' });
+        expect(imageHeading.closest('button')).toBeNull();
+        expect(allMedia.compareDocumentPosition(imageHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(imageHeading.compareDocumentPosition(allImages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.getAllByRole('separator')).toHaveLength(1);
+
+        fireEvent.keyDown(allMedia, { key: 'ArrowDown' });
+        expect(document.activeElement).toBe(allImages);
+        act(() => screen.getByRole('menuitemradio', { name: 'Other Images, 25' }).focus());
+        fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
+        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Videos, 25' }));
+
+        rerender(<LibraryScopeDropdown {...props} scopeAvailability={{
+            ...scopeCounts, media: { ...scopeCounts.media, video: 0 },
+        }} />);
+        expect(screen.queryByRole('menuitemradio', { name: 'Videos, 25' })).toBeNull();
+        expect(screen.queryByRole('separator')).toBeNull();
+        expect(screen.getByText('Images')).toBeTruthy();
+        expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([allMedia]);
+    });
+
     it('owns its keyboard actions without triggering gallery navigation or opening the selected image', () => {
         const actions = {
             setSelectedImageIndex: vi.fn(), setSelectedIds: vi.fn(), setLastSelectedId: vi.fn(), clearSelection: vi.fn(),
