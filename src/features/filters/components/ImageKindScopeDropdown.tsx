@@ -23,10 +23,10 @@ interface LibraryScopeDropdownProps {
 const SCOPE_OPTIONS: Array<LibraryScopeSelection & { key: string; label: string }> = [
     { key: 'all', label: 'All Media', mediaType: 'all', sourceKind: 'all' },
     { key: 'images', label: 'All Images', mediaType: 'image', sourceKind: 'all' },
+    { key: 'videos', label: 'Videos', mediaType: 'video', sourceKind: 'all' },
     { key: 'generated', label: 'Generated Images', mediaType: 'image', sourceKind: 'generated' },
     { key: 'photos', label: 'Photos', mediaType: 'image', sourceKind: 'photograph' },
     { key: 'other', label: 'Other Images', mediaType: 'image', sourceKind: 'other' },
-    { key: 'videos', label: 'Videos', mediaType: 'video', sourceKind: 'all' },
 ];
 
 const formatCount = (count: number | undefined) => count?.toLocaleString() ?? '—';
@@ -70,6 +70,7 @@ export const LibraryScopeDropdown = React.memo(({
         || getScopeCount(scopeAvailability, option) !== 0
     ));
     const selectedMenuKey = selectedOption.key;
+    const firstImageKindKey = visibleOptions.find(option => option.sourceKind !== 'all')?.key;
     const menuKeys = visibleOptions.map(option => option.key).join('|') + (countsError ? '|retry' : '');
 
     React.useLayoutEffect(() => {
@@ -173,15 +174,15 @@ export const LibraryScopeDropdown = React.memo(({
             {isOpen && (
                 <div ref={menuRef} id={menuId} role="menu" aria-label="Choose library scope" onKeyDown={handleMenuKeyDown} className="absolute left-0 top-full z-[100] mt-2 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-white/10 dark:bg-zinc-800">
                     {countsLoading && <span role="status" className="sr-only">Loading counts</span>}
+                    <div aria-hidden="true" className="px-2.5 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-zinc-400">Media</div>
                     {visibleOptions.map(option => {
                         const isSelected = option.key === selectedMenuKey;
                         const count = getScopeCount(scopeCounts, option) ?? (isSelected ? displayedCount : undefined);
                         return (
                             <React.Fragment key={option.key}>
-                                {option.key === 'images' && (
-                                    <div aria-hidden="true" className="mt-1.5 border-t border-gray-200 px-2.5 pb-1.5 pt-2.5 text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:border-white/10 dark:text-zinc-300">Images</div>
+                                {option.key === firstImageKindKey && (
+                                    <div aria-hidden="true" className="mt-2 px-2.5 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-zinc-400">Image Kind</div>
                                 )}
-                                {option.key === 'videos' && <div role="separator" className="my-1.5 border-t border-gray-200 dark:border-white/10" />}
                                 <button data-scope-option={option.key} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption(option)} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
                                     <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
                                     <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>

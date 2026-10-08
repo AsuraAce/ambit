@@ -29,8 +29,8 @@ describe('LibraryScopeDropdown', () => {
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos/ }));
 
         expect(screen.getAllByRole('menuitemradio').map(option => option.getAttribute('aria-label'))).toEqual([
-            'All Media, 1,200', 'All Images, 1,175', 'Generated Images, 900',
-            'Photos, 250', 'Other Images, 25', 'Videos, 25',
+            'All Media, 1,200', 'All Images, 1,175', 'Videos, 25',
+            'Generated Images, 900', 'Photos, 250', 'Other Images, 25',
         ]);
         expect(screen.queryAllByRole('group')).toHaveLength(0);
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([
@@ -38,7 +38,7 @@ describe('LibraryScopeDropdown', () => {
         ]);
     });
 
-    it('adds visual structure without adding keyboard stops or leaving a divider for hidden videos', () => {
+    it('organizes one selection into media and image-kind sections without extra keyboard stops or dividers', () => {
         const props = {
             mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: 1200,
             scopeCounts, onScopeChange: vi.fn(),
@@ -46,27 +46,64 @@ describe('LibraryScopeDropdown', () => {
         const { rerender } = render(<LibraryScopeDropdown {...props} />);
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
 
-        const imageHeading = screen.getByText('Images');
+        const mediaHeading = screen.getByText('Media');
+        const kindHeading = screen.getByText('Image Kind');
         const allMedia = screen.getByRole('menuitemradio', { name: 'All Media, 1,200' });
         const allImages = screen.getByRole('menuitemradio', { name: 'All Images, 1,175' });
-        expect(imageHeading.closest('button')).toBeNull();
-        expect(allMedia.compareDocumentPosition(imageHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(imageHeading.compareDocumentPosition(allImages) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-        expect(screen.getAllByRole('separator')).toHaveLength(1);
+        const videos = screen.getByRole('menuitemradio', { name: 'Videos, 25' });
+        const generated = screen.getByRole('menuitemradio', { name: 'Generated Images, 900' });
+        expect(mediaHeading.closest('button')).toBeNull();
+        expect(kindHeading.closest('button')).toBeNull();
+        expect(mediaHeading.compareDocumentPosition(allMedia) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(videos.compareDocumentPosition(kindHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(kindHeading.compareDocumentPosition(generated) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.queryByRole('separator')).toBeNull();
 
         fireEvent.keyDown(allMedia, { key: 'ArrowDown' });
         expect(document.activeElement).toBe(allImages);
-        act(() => screen.getByRole('menuitemradio', { name: 'Other Images, 25' }).focus());
+        act(() => videos.focus());
         fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
-        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Videos, 25' }));
+        expect(document.activeElement).toBe(generated);
+        fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowUp' });
+        expect(document.activeElement).toBe(videos);
 
         rerender(<LibraryScopeDropdown {...props} scopeAvailability={{
             ...scopeCounts, media: { ...scopeCounts.media, video: 0 },
         }} />);
         expect(screen.queryByRole('menuitemradio', { name: 'Videos, 25' })).toBeNull();
         expect(screen.queryByRole('separator')).toBeNull();
-        expect(screen.getByText('Images')).toBeTruthy();
+        expect(screen.getByText('Image Kind')).toBeTruthy();
         expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([allMedia]);
+    });
+
+    it('keeps the image-kind heading with the first available subtype and omits an empty section', () => {
+        const emptyKinds = { all: 0, generated: 0, photograph: 0, other: 0 };
+        const props = {
+            mediaType: 'all' as const, sourceKind: 'all' as const, displayedCount: 1200,
+            scopeCounts, onScopeChange: vi.fn(),
+        };
+        const { rerender } = render(<LibraryScopeDropdown {...props} scopeAvailability={{
+            ...scopeCounts, imageKinds: { ...emptyKinds, other: 25 },
+        }} />);
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+        const other = screen.getByRole('menuitemradio', { name: 'Other Images, 25' });
+        expect(screen.getByText('Image Kind').compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.queryByRole('menuitemradio', { name: 'Generated Images, 900' })).toBeNull();
+        expect(screen.queryByRole('menuitemradio', { name: 'Photos, 250' })).toBeNull();
+
+        const availability = { ...scopeCounts, imageKinds: emptyKinds };
+        rerender(<LibraryScopeDropdown {...props} scopeAvailability={availability} />);
+        expect(screen.queryByText('Image Kind')).toBeNull();
+        expect(screen.getByText('Media')).toBeTruthy();
+        expect(screen.getAllByRole('menuitemradio').map(option => option.getAttribute('aria-label'))).toEqual([
+            'All Media, 1,200', 'All Images, 1,175', 'Videos, 25',
+        ]);
+
+        rerender(<LibraryScopeDropdown {...props} mediaType="image" sourceKind="photograph"
+            scopeAvailability={availability} scopeCounts={{ ...scopeCounts, imageKinds: emptyKinds }} />);
+        const selectedPhoto = screen.getByRole('menuitemradio', { name: 'Photos, 0' });
+        expect(screen.getByText('Image Kind').compareDocumentPosition(selectedPhoto) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([selectedPhoto]);
     });
 
     it('owns its keyboard actions without triggering gallery navigation or opening the selected image', () => {
@@ -117,7 +154,7 @@ describe('LibraryScopeDropdown', () => {
         fireEvent.keyDown(menu, { key: 'Tab' });
         expect(screen.queryByRole('menu')).toBeNull();
         fireEvent.keyDown(trigger, { key: 'ArrowUp' });
-        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Videos, 25' }));
+        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Other Images, 25' }));
         fireEvent.keyDown(document.activeElement as Element, { key: 'Tab', shiftKey: true });
         expect(screen.queryByRole('menu')).toBeNull();
     });
@@ -243,7 +280,7 @@ describe('LibraryScopeDropdown', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Library scope: All Images, 1,175. Change library scope' }));
         const allImages = screen.getByRole('menuitemradio', { name: 'All Images, 1,175' });
         fireEvent.keyDown(allImages, { key: 'End' });
-        const focusedOption = screen.getByRole('menuitemradio', { name: 'Videos, 25' });
+        const focusedOption = screen.getByRole('menuitemradio', { name: 'Other Images, 25' });
         expect(document.activeElement).toBe(focusedOption);
 
         rerender(<LibraryScopeDropdown {...props} scopeCounts={{ ...scopeCounts, media: { ...scopeCounts.media, all: 1201 } }} />);
@@ -316,7 +353,7 @@ describe('LibraryScopeDropdown', () => {
         const trigger = screen.getByRole('button', { name: /Library scope:/ });
         fireEvent.keyDown(trigger, { key: 'ArrowDown' });
         fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowUp' });
-        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Videos, 25' }));
+        expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'Other Images, 25' }));
         fireEvent.keyDown(document.activeElement as Element, { key: 'ArrowDown' });
         expect(document.activeElement).toBe(screen.getByRole('menuitemradio', { name: 'All Media, 1,200' }));
         fireEvent.keyDown(document.activeElement as Element, { key: 'End' });
