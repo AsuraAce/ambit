@@ -92,7 +92,7 @@ export const useImagesQuery = ({
         queryFn: async ({ pageParam }) => {
             if (useBrowserMocks) {
                 const cursor = pageParam as PaginationCursor | undefined;
-                return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id);
+                return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id, { privacyEnabled, settings });
             }
 
             const { where, params, collectionId, loraName } = buildSqlWhereClause(
@@ -103,22 +103,20 @@ export const useImagesQuery = ({
                 allCollections
             );
 
-            let sortField = 'timestamp';
+            let sortField = 'display_timestamp';
             let sortOrder: 'ASC' | 'DESC' = 'DESC';
 
             switch (sortOption) {
-                case 'date_asc': sortField = 'timestamp'; sortOrder = 'ASC'; break;
+                case 'date_asc': sortField = 'display_timestamp'; sortOrder = 'ASC'; break;
                 case 'name_asc': sortField = 'path'; sortOrder = 'ASC'; break;
                 case 'name_desc': sortField = 'path'; sortOrder = 'DESC'; break;
                 case 'size_desc': sortField = 'file_size'; sortOrder = 'DESC'; break;
                 case 'size_asc': sortField = 'file_size'; sortOrder = 'ASC'; break;
-                case 'date_desc': default: sortField = 'timestamp'; sortOrder = 'DESC'; break;
+                case 'date_desc': default: sortField = 'display_timestamp'; sortOrder = 'DESC'; break;
             }
 
             const prioritizePinned = filters.collectionId !== null;
 
-            // Parallelize count and search for the first page
-            // collectionId/loraName enables INNER JOIN optimization for filtered queries
             // parallelize count and search for the first page
             // collectionId/loraName enables INNER JOIN optimization for filtered queries
             if (pageParam === undefined) {
@@ -126,7 +124,7 @@ export const useImagesQuery = ({
                 const [images, totalCount, globalCount] = await measureStartupPhase('first-page', () => Promise.all([
                     searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, undefined),
                     countImages(where, params, collectionId, loraName),
-                    countGlobalImages() // Fast path: no JOIN, simple indexed count
+                    countGlobalImages(), // Fast path: no JOIN, simple indexed count
                 ]));
                 const elapsedMs = Math.round(performance.now() - startedAt);
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
@@ -147,12 +145,12 @@ export const useImagesQuery = ({
 
             // Determine sort value based on current sort
             // This needs access to 'sortOption' which is in closure scope
-            let val: string | number = lastImage.timestamp;
+            let val: string | number = lastImage.displayTimestamp ?? lastImage.timestamp;
 
             // Map sort options to field values
             if (sortOption === 'name_asc' || sortOption === 'name_desc') val = lastImage.filename;
             else if (sortOption === 'size_asc' || sortOption === 'size_desc') val = lastImage.fileSize || 0;
-            else val = lastImage.timestamp;
+            else val = lastImage.displayTimestamp ?? lastImage.timestamp;
 
             return {
                 val,

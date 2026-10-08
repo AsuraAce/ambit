@@ -350,8 +350,17 @@ async function processImageFileEntries(
                     metadata: mappedMetadata,
                     url: convertFileSrc(path),
                     thumbnailSource: info.thumbnailSource,
+                    thumbnailVersion: info.thumbnailVersion,
                     microThumbnail: info.microThumbnail,
                     originalChunks: info.originalChunks,
+                    detectedSourceKind: info.detectedSourceKind,
+                    sourceKind: info.detectedSourceKind,
+                    photoMetadata: info.photoMetadata,
+                    photoMetadataError: info.photoMetadataError,
+                    captureWallTimeMs: info.captureWallTimeMs,
+                    displayTimestamp: info.detectedSourceKind === 'photograph'
+                        ? (info.captureWallTimeMs ?? info.timestamp ?? Date.now())
+                        : (info.timestamp ?? Date.now()),
                 };
                 if (j === 0) {
                     console.log(`[ImportDebug] Img ${path} - OrigChunks keys:`, info.originalChunks ? Object.keys(info.originalChunks) : 'undefined');
@@ -384,6 +393,21 @@ async function processImageFileEntries(
                     img.boardId = existing.boardId;
                     img.groupId = existing.groupId;
                     img.notes = existing.notes;
+                    img.sourceKindOverride = existing.sourceKindOverride;
+                    img.sourceKind = existing.sourceKindOverride ?? img.detectedSourceKind;
+
+                    if (img.photoMetadataError && existing.photoMetadata) {
+                        img.photoMetadata = existing.photoMetadata;
+                        img.captureWallTimeMs = existing.captureWallTimeMs;
+                        if (img.detectedSourceKind !== 'generated') {
+                            img.detectedSourceKind = existing.detectedSourceKind;
+                            img.sourceKind = existing.sourceKindOverride ?? existing.detectedSourceKind;
+                        }
+                    }
+
+                    img.displayTimestamp = img.sourceKind === 'photograph'
+                        ? (img.captureWallTimeMs ?? img.timestamp)
+                        : img.timestamp;
                 });
 
                 const imagesToUpdate = batchImages.filter(img => {
@@ -392,7 +416,10 @@ async function processImageFileEntries(
 
                     // Simple logic: if timestamp or size changed, update.
                     // For deeper metadata diff, we can enable it, but for speed we trust timestamp/size often.
+                    if (img.photoMetadataError) return true;
                     if (existing.timestamp !== img.timestamp || existing.fileSize !== img.fileSize) return true;
+                    if (existing.detectedSourceKind !== img.detectedSourceKind) return true;
+                    if (JSON.stringify(existing.photoMetadata) !== JSON.stringify(img.photoMetadata)) return true;
 
                     // For robust import, we might check canonical metadata if needed, 
                     // but usually timestamp update is sufficient for FS changes.

@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { useState, useRef, useEffect } from 'react';
-import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { LayoutGrid, Columns, AlignJustify, Play, ArrowUpDown, Check, Sliders, Eye, CalendarArrowDown, CalendarArrowUp, ArrowDownAZ, ArrowUpAZ, ArrowDownWideNarrow, ArrowUpNarrowWide, type LucideIcon } from 'lucide-react';
 import { LayoutMode, SortOption } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 import { useDelayedBusyPresentation } from '../../../hooks/useDelayedBusyPresentation';
-// import { useSearchStore } from '../../../stores/searchStore';
+import { formatCountCompact } from '../../../utils/formatUtils';
 
 const COUNT_LOADING_REVEAL_DELAY_MS = 180;
 const COUNT_LOADING_MIN_VISIBLE_MS = 300;
@@ -32,7 +32,43 @@ interface ViewControlsProps {
     scopeName: string;
     ownerPresentationKey?: string;
     isFiltering?: boolean;
+    showSortButton?: boolean;
+    showThumbnailSize?: boolean;
+    compact?: boolean;
 }
+
+const SORT_OPTIONS: Array<{ val: SortOption; label: string; icon: LucideIcon }> = [
+    { val: 'date_desc', label: 'Newest', icon: CalendarArrowDown },
+    { val: 'date_asc', label: 'Oldest', icon: CalendarArrowUp },
+    { val: 'name_asc', label: 'Name (A-Z)', icon: ArrowDownAZ },
+    { val: 'name_desc', label: 'Name (Z-A)', icon: ArrowUpAZ },
+    { val: 'size_desc', label: 'Largest (Size)', icon: ArrowDownWideNarrow },
+    { val: 'size_asc', label: 'Smallest (Size)', icon: ArrowUpNarrowWide },
+];
+
+const sortLabel = (sortOption: SortOption) => SORT_OPTIONS.find(option => option.val === sortOption)?.label ?? 'Sort';
+
+export const SortOptionList = ({
+    sortOption,
+    onSelect,
+    compact = false,
+}: {
+    sortOption: SortOption;
+    onSelect: (option: SortOption) => void;
+    compact?: boolean;
+}) => (
+    <>
+        {SORT_OPTIONS.map(option => (
+            <button key={option.val} type="button" onClick={() => onSelect(option.val)} className={compact
+                ? `flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs ${sortOption === option.val ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`
+                : `w-full text-left px-3 py-2 text-xs transition-colors flex justify-between items-center ${sortOption === option.val ? 'bg-sage-50 text-sage-600 dark:bg-sage-900/40 dark:text-sage-300' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`
+            }>
+                <span className="flex items-center gap-2"><option.icon aria-hidden className="h-3.5 w-3.5 shrink-0 opacity-70" />{option.label}</span>
+                {sortOption === option.val && <Check aria-hidden className="w-3 h-3 shrink-0" />}
+            </button>
+        ))}
+    </>
+);
 
 export const ViewControls: React.FC<ViewControlsProps> = ({
     showLayoutSwitcher,
@@ -40,25 +76,26 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     setLayoutMode,
     showSlideshowButton,
     onSlideshow,
-
+    sortOption,
+    setSortOption,
     thumbnailSize,
     setThumbnailSize,
     displayedCount,
     totalCount,
     scopeName,
     isFiltering,
-    ownerPresentationKey = 'invoke:none'
+    ownerPresentationKey = 'invoke:none',
+    showSortButton = true,
+    showThumbnailSize = true,
+    compact = false,
 }) => {
-    // Legacy Context (for hidden content not yet in store)
-    const { availableHiddenContent, filters, setFilters, sortOption, setSortOption } = useSearch();
-    // New Store
-    // const { filters, setFilters, sortOption, setSortOption } = useSearchStore();
-
+    const { availableHiddenContent, filters, setFilters } = useSearch();
     const [showSortMenu, setShowSortMenu] = useState(false);
     const [showViewMenu, setShowViewMenu] = useState(false);
-
     const sortMenuRef = useRef<HTMLDivElement>(null);
     const viewMenuRef = useRef<HTMLDivElement>(null);
+    const sortTriggerRef = useRef<HTMLButtonElement>(null);
+    const viewTriggerRef = useRef<HTMLButtonElement>(null);
     const settledCountPresentationRef = useRef<CountPresentation | null>(
         isFiltering ? null : { displayedCount, totalCount, scopeName, ownerPresentationKey }
     );
@@ -75,287 +112,120 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     const showCountLoading = isCountLoadingVisible;
     const settledCountPresentation = settledCountPresentationRef.current;
     const hasSettledCurrentOwnerScope = settledCountPresentation?.ownerPresentationKey === ownerPresentationKey;
-    const isAwaitingFirstSettledCount = Boolean(isFiltering)
-        && !showCountLoading
-        && !hasSettledCurrentOwnerScope;
-    const countPresentation = isFiltering
-        && !showCountLoading
-        && hasSettledCurrentOwnerScope
+    const isAwaitingFirstSettledCount = Boolean(isFiltering) && !showCountLoading && !hasSettledCurrentOwnerScope;
+    const countPresentation = isFiltering && !showCountLoading && hasSettledCurrentOwnerScope
         ? settledCountPresentation!
         : { displayedCount, totalCount, scopeName, ownerPresentationKey };
 
-    // Click outside listener
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) {
-                setShowSortMenu(false);
-            }
-            if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
-                setShowViewMenu(false);
-            }
+            if (sortMenuRef.current && !sortMenuRef.current.contains(event.target as Node)) setShowSortMenu(false);
+            if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) setShowViewMenu(false);
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            if (showSortMenu) {
+                setShowSortMenu(false);
+                sortTriggerRef.current?.focus();
+            } else if (showViewMenu) {
+                setShowViewMenu(false);
+                viewTriggerRef.current?.focus();
+            }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [showSortMenu, showViewMenu]);
+
+    const selectSort = (option: SortOption) => {
+        setSortOption(option);
+        setShowSortMenu(false);
+        setShowViewMenu(false);
+    };
+    const hasHiddenContentControls = availableHiddenContent.hasIntermediates
+        || availableHiddenContent.hasGrids
+        || availableHiddenContent.hasInvokeImageAssets;
 
     return (
-        <div className="flex items-center gap-4">
-            {showLayoutSwitcher && (
-                <div className="flex bg-gray-100 dark:bg-zinc-800/50 rounded-xl p-1 border border-gray-200 dark:border-white/5">
-                    <TooltipButton
-                        label="Use Grid Layout"
-                        content="Use Grid Layout"
-                        aria-pressed={layoutMode === 'grid'}
-                        onClick={() => setLayoutMode('grid')}
-                        className={`p-1.5 rounded-lg transition-all ${layoutMode === 'grid' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                    >
-                        <LayoutGrid className="w-4 h-4" />
-                    </TooltipButton>
-                    <TooltipButton
-                        label="Use Masonry Layout"
-                        content="Use Masonry Layout"
-                        aria-pressed={layoutMode === 'masonry'}
-                        onClick={() => setLayoutMode('masonry')}
-                        className={`p-1.5 rounded-lg transition-all ${layoutMode === 'masonry' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                    >
-                        <Columns className="w-4 h-4" />
-                    </TooltipButton>
-                    <TooltipButton
-                        label="Use Justified Layout"
-                        content="Use Justified Layout"
-                        aria-pressed={layoutMode === 'justified'}
-                        onClick={() => setLayoutMode('justified')}
-                        className={`p-1.5 rounded-lg transition-all ${layoutMode === 'justified' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}
-                    >
-                        <AlignJustify className="w-4 h-4" />
-                    </TooltipButton>
-                </div>
-            )}
-
-            {showSlideshowButton && (
-                <TooltipButton
-                    label="Play Slideshow"
-                    content="Play Slideshow"
-                    onClick={onSlideshow}
-                    className="p-2 rounded-xl bg-gray-100 dark:bg-zinc-800/50 border border-gray-200 dark:border-white/5 text-gray-500 hover:text-sage-600 transition-colors"
-                >
-                    <Play className="w-4 h-4 fill-current" />
-                </TooltipButton>
-            )}
-
-            {(showLayoutSwitcher || showSlideshowButton) && (
-                <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
-            )}
-
-            <div className="flex bg-gray-100 dark:bg-zinc-800/50 rounded-xl p-1 border border-gray-200 dark:border-white/5" role="group" aria-label="Media type filter">
-                {([
-                    ['all', 'All'],
-                    ['image', 'Images'],
-                    ['video', 'Videos'],
-                ] as const).map(([value, label]) => (
-                    <button
-                        key={value}
-                        type="button"
-                        aria-pressed={(filters.mediaType ?? 'all') === value}
-                        onClick={() => setFilters(previous => ({ ...previous, mediaType: value }))}
-                        className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all ${(filters.mediaType ?? 'all') === value
-                            ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm'
-                            : 'text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                            }`}
-                    >
-                        {label}
+        <div className="flex shrink-0 items-center gap-3">
+            {showSortButton && (
+                <div className="relative" ref={sortMenuRef}>
+                    <button ref={sortTriggerRef} type="button" aria-expanded={showSortMenu} onClick={() => setShowSortMenu(open => !open)} className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors">
+                        <ArrowUpDown className="w-3 h-3 text-gray-500" />
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">{sortLabel(sortOption)}</span>
                     </button>
-                ))}
-            </div>
-
-            <div className="relative" ref={sortMenuRef}>
-                <button
-                    type="button"
-                    aria-expanded={showSortMenu}
-                    onClick={() => setShowSortMenu(!showSortMenu)}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-zinc-800/50 rounded-xl border border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 transition-colors"
-                >
-                    <ArrowUpDown className="w-3 h-3 text-gray-500" />
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                        {{
-                            'date_desc': 'Newest',
-                            'date_asc': 'Oldest',
-                            'name_asc': 'Name (A-Z)',
-                            'name_desc': 'Name (Z-A)',
-                            'size_desc': 'Largest (Size)',
-                            'size_asc': 'Smallest (Size)'
-                        }[sortOption] || 'Sort'}
-                    </span>
-                </button>
-                {showSortMenu && (
-                    <div
-                        className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
-                        onClick={() => setShowSortMenu(false)}
-                    >
-                        {[
-                            { val: 'date_desc', label: 'Newest' },
-                            { val: 'date_asc', label: 'Oldest' },
-                            { val: 'name_asc', label: 'Name (A-Z)' },
-                            { val: 'name_desc', label: 'Name (Z-A)' },
-                            { val: 'size_desc', label: 'Largest (Size)' },
-                            { val: 'size_asc', label: 'Smallest (Size)' }
-                        ].map(opt => (
-                            <button
-                                key={opt.val}
-                                onClick={() => setSortOption(opt.val as SortOption)}
-                                className={`w-full text-left px-3 py-2 text-xs transition-colors flex justify-between items-center ${sortOption === opt.val ? 'bg-sage-50 text-sage-600 dark:bg-sage-900/40 dark:text-sage-300' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5'}`}
-                            >
-                                {opt.label}
-                                {sortOption === opt.val && <Check className="w-3 h-3" />}
-                            </button>
-                        ))}
-                    </div>
-                )}
-            </div>
-
-            {/* View Options Menu */}
-            {(availableHiddenContent.hasIntermediates
-                || availableHiddenContent.hasGrids
-                || availableHiddenContent.hasInvokeImageAssets) && (
-                <div className="relative" ref={viewMenuRef}>
-                    <button
-                        type="button"
-                        aria-expanded={showViewMenu}
-                        onClick={() => setShowViewMenu(!showViewMenu)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${showViewMenu ? 'bg-sage-600 border-sage-500 text-white' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300'}`}
-                        title="View Options"
-                    >
-                        <Eye className="w-3 h-3" />
-                        <span className="text-xs font-medium">View</span>
-                    </button>
-                    {showViewMenu && (
-                        <div
-                            className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
-                        >
-                            <div className="p-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-black/20">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest pl-2">Display</span>
-                            </div>
-
-                            {availableHiddenContent.hasInvokeImageAssets && (
-                                <button
-                                    aria-pressed={Boolean(filters.showInvokeImageAssets)}
-                                    onClick={() => {
-                                        setFilters(prev => ({ ...prev, showInvokeImageAssets: !prev.showInvokeImageAssets }));
-                                    }}
-                                    className="w-full text-left px-3 py-2.5 text-xs transition-colors flex justify-between items-center gap-3 group hover:bg-gray-100 dark:hover:bg-white/5"
-                                >
-                                    <div className="flex min-w-0 flex-col">
-                                        <span className="font-medium text-gray-700 dark:text-gray-200">Show InvokeAI Image Assets</span>
-                                        <span className="text-[9px] text-gray-400">Reference, control, mask, and source images</span>
-                                    </div>
-                                    <div className={`w-8 h-4 shrink-0 rounded-full transition-colors relative flex items-center ${filters.showInvokeImageAssets ? 'bg-sage-600' : 'bg-gray-300 dark:bg-zinc-700'}`}>
-                                        <div className={`absolute w-3 h-3 bg-white rounded-full transition-all ${filters.showInvokeImageAssets ? 'right-0.5' : 'left-0.5'}`} />
-                                    </div>
-                                </button>
-                            )}
-
-                            {availableHiddenContent.hasIntermediates && (
-                                <button
-                                    aria-pressed={filters.showIntermediates}
-                                    onClick={() => {
-                                        setFilters(prev => ({ ...prev, showIntermediates: !prev.showIntermediates }));
-                                    }}
-                                    className="w-full text-left px-3 py-2.5 text-xs transition-colors flex justify-between items-center group hover:bg-gray-100 dark:hover:bg-white/5"
-                                >
-                                    <div className="flex flex-col">
-                                        <span className="font-medium text-gray-700 dark:text-gray-200">Show Intermediates</span>
-                                        <span className="text-[9px] text-gray-400">Ephemeral generation steps</span>
-                                    </div>
-                                    <div className={`w-8 h-4 rounded-full transition-colors relative flex items-center ${filters.showIntermediates ? 'bg-sage-600' : 'bg-gray-300 dark:bg-zinc-700'}`}>
-                                        <div className={`absolute w-3 h-3 bg-white rounded-full transition-all ${filters.showIntermediates ? 'right-0.5' : 'left-0.5'}`} />
-                                    </div>
-                                </button>
-                            )}
-
-                            {availableHiddenContent.hasGrids && (
-                                <button
-                                    aria-pressed={filters.showGrids}
-                                    onClick={() => {
-                                        setFilters(prev => ({ ...prev, showGrids: !prev.showGrids }));
-                                    }}
-                                    className="w-full text-left px-3 py-2.5 text-xs transition-colors flex justify-between items-center group hover:bg-gray-100 dark:hover:bg-white/5"
-                                >
-                                    <div className="flex flex-col">
-                                        <span className="font-medium text-gray-700 dark:text-gray-200">Show Image Grids</span>
-                                        <span className="text-[9px] text-gray-400">Combined previews (SD WebUI)</span>
-                                    </div>
-                                    <div className={`w-8 h-4 rounded-full transition-colors relative flex items-center ${filters.showGrids ? 'bg-sage-600' : 'bg-gray-300 dark:bg-zinc-700'}`}>
-                                        <div className={`absolute w-3 h-3 bg-white rounded-full transition-all ${filters.showGrids ? 'right-0.5' : 'left-0.5'}`} />
-                                    </div>
-                                </button>
-                            )}
+                    {showSortMenu && (
+                        <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                            <SortOptionList sortOption={sortOption} onSelect={selectSort} />
                         </div>
                     )}
                 </div>
             )}
 
-            <div className="flex items-center gap-2 text-gray-500 ml-2">
-                <Sliders className="w-3 h-3" />
-                <input
-                    aria-label="Thumbnail Size"
-                    type="range"
-                    min="100"
-                    max="400"
-                    value={thumbnailSize}
-                    onChange={(e) => setThumbnailSize(Number(e.target.value))}
-                    className="w-20 h-1 bg-gray-300 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sage-500"
-                />
+            <div className="relative" ref={viewMenuRef}>
+                <button ref={viewTriggerRef} type="button" aria-expanded={showViewMenu} onClick={() => setShowViewMenu(open => !open)} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-colors ${showViewMenu ? 'bg-sage-600 border-sage-500 text-white' : 'bg-gray-100 dark:bg-zinc-800/50 border-gray-200 dark:border-white/5 hover:bg-gray-200 dark:hover:bg-white/10 text-gray-700 dark:text-gray-300'}`} title="View Options">
+                    <Eye className="w-3 h-3" />
+                    <span className="text-xs font-medium">View</span>
+                </button>
+                {showViewMenu && (
+                    <div className="absolute top-full right-0 mt-2 w-64 bg-white dark:bg-zinc-900 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        {showLayoutSwitcher && <div role="group" aria-label="Layout" className="border-b border-gray-100 p-3 dark:border-white/5">
+                                <span className="px-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Layout</span>
+                                <div className="mt-1 flex items-center gap-1 px-1">
+                                    {showLayoutSwitcher && (
+                                        <>
+                                            <TooltipButton label="Use Grid Layout" content="Use Grid Layout" aria-pressed={layoutMode === 'grid'} onClick={() => setLayoutMode('grid')} className={`p-1.5 rounded-lg transition-all ${layoutMode === 'grid' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}><LayoutGrid className="w-4 h-4" /></TooltipButton>
+                                            <TooltipButton label="Use Masonry Layout" content="Use Masonry Layout" aria-pressed={layoutMode === 'masonry'} onClick={() => setLayoutMode('masonry')} className={`p-1.5 rounded-lg transition-all ${layoutMode === 'masonry' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}><Columns className="w-4 h-4" /></TooltipButton>
+                                            <TooltipButton label="Use Justified Layout" content="Use Justified Layout" aria-pressed={layoutMode === 'justified'} onClick={() => setLayoutMode('justified')} className={`p-1.5 rounded-lg transition-all ${layoutMode === 'justified' ? 'bg-white dark:bg-white/10 text-sage-600 dark:text-sage-300 shadow-sm' : 'text-gray-400'}`}><AlignJustify className="w-4 h-4" /></TooltipButton>
+                                        </>
+                                    )}
+                                </div>
+                        </div>}
+                        {showThumbnailSize && <div className="border-b border-gray-100 p-3 dark:border-white/5">
+                                <label className="flex flex-col gap-3 px-2 text-xs text-gray-500">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Thumbnail Size</span>
+                                    <span className="flex items-center gap-2">
+                                    <Sliders className="w-3 h-3" />
+                                    <input aria-label="Thumbnail Size" type="range" min="100" max="400" value={thumbnailSize} onChange={event => setThumbnailSize(Number(event.target.value))} className="h-1 w-32 cursor-pointer appearance-none rounded-lg bg-gray-300 accent-sage-500 dark:bg-slate-700" />
+                                    </span>
+                                </label>
+                        </div>}
+                        {hasHiddenContentControls && (
+                            <div>
+                                <div className="border-b border-gray-100 bg-gray-50/50 p-3 dark:border-white/5 dark:bg-black/20"><span className="pl-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Visibility</span></div>
+                                {availableHiddenContent.hasInvokeImageAssets && <HiddenContentToggle label="Show InvokeAI Image Assets" description="Reference, control, mask, and source images" enabled={Boolean(filters.showInvokeImageAssets)} onClick={() => setFilters(previous => ({ ...previous, showInvokeImageAssets: !previous.showInvokeImageAssets }))} />}
+                                {availableHiddenContent.hasIntermediates && <HiddenContentToggle label="Show Intermediates" description="Ephemeral generation steps" enabled={Boolean(filters.showIntermediates)} onClick={() => setFilters(previous => ({ ...previous, showIntermediates: !previous.showIntermediates }))} />}
+                                {availableHiddenContent.hasGrids && <HiddenContentToggle label="Show Image Grids" description="Combined previews (SD WebUI)" enabled={Boolean(filters.showGrids)} onClick={() => setFilters(previous => ({ ...previous, showGrids: !previous.showGrids }))} />}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
-            <div className="h-6 w-px bg-gray-300 dark:bg-white/10 mx-2" />
+            {showSlideshowButton && <TooltipButton label="Start Slideshow" content="Start Slideshow" onClick={onSlideshow} className="rounded-xl border border-gray-200 bg-gray-100 p-2 text-gray-500 transition-colors hover:text-sage-600 dark:border-white/10 dark:bg-zinc-800/50 dark:hover:text-sage-300"><Play aria-hidden className="h-4 w-4 fill-current" /></TooltipButton>}
 
-            <div className={`text-[10px] font-bold text-gray-400 dark:text-gray-500 tracking-widest tabular-nums text-right flex flex-col items-end leading-tight min-w-[120px] transition-opacity duration-200 ${showCountLoading ? 'opacity-50' : 'opacity-100'}`}>
-                {isAwaitingFirstSettledCount ? (
-                    <>
-                        <span aria-hidden="true">&nbsp;</span>
-                        <span aria-hidden="true" className="text-[10px]">&nbsp;</span>
-                    </>
-                ) : showCountLoading ? (
-                    <>
-                        <span className="text-gray-600 dark:text-gray-300">...</span>
-                        <span
-                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
-                            title={`LOADING ${scopeName}`}
-                        >
-                            {`LOADING ${scopeName}`}
-                        </span>
-                    </>
-                ) : countPresentation.displayedCount !== countPresentation.totalCount ? (
-                    <>
-                        <div className="flex items-center gap-1">
-                            <span className="text-sage-600 dark:text-sage-400">{countPresentation.displayedCount.toLocaleString()}</span>
-                            <span className="opacity-40">/</span>
-                            <span className="text-gray-600 dark:text-gray-300"
-                                aria-label={countPresentation.totalCount === null ? 'Collection total not available' : undefined}
-                                title={countPresentation.totalCount === null ? 'Collection total not available' : undefined}>
-                                {countPresentation.totalCount?.toLocaleString() ?? '\u2014'}
-                            </span>
-                        </div>
-                        <span
-                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
-                            title={`MATCHES IN ${countPresentation.scopeName}`}
-                        >
-                            {`MATCHES IN ${countPresentation.scopeName}`}
-                        </span>
-                    </>
+            <div className={`flex flex-col items-end justify-center border-l border-gray-200 pl-3 text-right text-[10px] font-bold tracking-widest tabular-nums text-gray-400 transition-opacity duration-200 dark:border-white/10 dark:text-gray-500 ${compact ? 'w-24' : 'w-36'} ${showCountLoading ? 'opacity-50' : 'opacity-100'}`}>
+                {isAwaitingFirstSettledCount ? <span aria-hidden>&nbsp;</span> : showCountLoading ? <span aria-label={`Loading ${scopeName}`} className="text-gray-600 dark:text-gray-300">...<span className="sr-only" title={`LOADING ${scopeName}`}>{`LOADING ${scopeName}`}</span></span> : countPresentation.displayedCount !== countPresentation.totalCount ? (
+                    <span aria-label={`${countPresentation.displayedCount.toLocaleString()} matches in ${countPresentation.scopeName}; ${countPresentation.totalCount === null ? 'collection total not available' : `${countPresentation.totalCount.toLocaleString()} total`}`}>
+                        <span title={countPresentation.displayedCount.toLocaleString()} className="text-sage-600 dark:text-sage-400">{formatCountCompact(countPresentation.displayedCount)}</span><span className="px-1 opacity-40">/</span><span className="text-gray-600 dark:text-gray-300" aria-label={countPresentation.totalCount === null ? 'Collection total not available' : undefined} title={countPresentation.totalCount === null ? 'Collection total not available' : countPresentation.totalCount.toLocaleString()}>{countPresentation.totalCount === null ? '—' : formatCountCompact(countPresentation.totalCount)}</span>
+                        <span className="sr-only text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate" title={`MATCHES IN ${countPresentation.scopeName}`}>{`MATCHES IN ${countPresentation.scopeName}`}</span>
+                    </span>
                 ) : (
-                    <>
-                        <span className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount?.toLocaleString() ?? '\u2014'}</span>
-                        <span
-                            className="text-[10px] text-gray-500 dark:text-gray-400 normal-case tracking-normal max-w-[40ch] truncate"
-                            title={countPresentation.scopeName}
-                        >
-                            {countPresentation.scopeName}
-                        </span>
-                    </>
+                    <span title={countPresentation.totalCount?.toLocaleString()} aria-label={`${countPresentation.totalCount?.toLocaleString() ?? 'collection total not available'} in ${countPresentation.scopeName}`} className="text-gray-600 dark:text-gray-300">{countPresentation.totalCount === null ? '—' : formatCountCompact(countPresentation.totalCount)}</span>
                 )}
+                {!isAwaitingFirstSettledCount && <span title={showCountLoading ? scopeName : countPresentation.scopeName} className="mt-0.5 block w-full truncate text-[10px] normal-case tracking-normal text-gray-500 dark:text-gray-400">{showCountLoading ? scopeName : countPresentation.scopeName}</span>}
             </div>
         </div>
     );
 };
+
+const HiddenContentToggle = ({ label, description, enabled, onClick }: { label: string; description: string; enabled: boolean; onClick: () => void }) => (
+    <button type="button" aria-pressed={enabled} onClick={onClick} className="group flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-xs transition-colors hover:bg-gray-100 dark:hover:bg-white/5">
+        <span className="flex min-w-0 flex-col"><span className="font-medium text-gray-700 dark:text-gray-200">{label}</span><span className="text-[9px] text-gray-400">{description}</span></span>
+        <span className={`relative flex h-4 w-8 shrink-0 items-center rounded-full transition-colors ${enabled ? 'bg-sage-600' : 'bg-gray-300 dark:bg-zinc-700'}`}><span className={`absolute h-3 w-3 rounded-full bg-white transition-all ${enabled ? 'right-0.5' : 'left-0.5'}`} /></span>
+    </button>
+);

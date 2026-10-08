@@ -35,7 +35,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
     const { forceRefresh } = useMetadataRefresh();
 
     // Route refresh to the correct handler based on integration type.
-    // InvokeAI folders re-sync from their database; all others re-parse stored PNG chunks.
+    // InvokeAI folders re-sync from their database; all others refresh local image metadata.
     const handleRefresh = useCallback((path: string, force: boolean, variant?: GeneratorTool, isManaged?: boolean) => {
         if (isManaged && variant === GeneratorTool.INVOKEAI) {
             const folder = combinedFolders.find((f) => (f.isManaged ? f.pathRaw : f.path) === path);
@@ -68,7 +68,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                     <Monitor className="w-5 h-5 flex-shrink-0 mt-0.5" />
                     <div>
                         <strong className="block mb-1">Image Folders</strong>
-                        Add folders containing AI-generated images. Use this for <span className="font-semibold">archived images</span> or specific output directories.
+                        Add folders containing generated images, camera photos, or other local images. Ambit scans <span className="font-semibold">PNG, JPEG, and WebP</span> files without uploading them.
                     </div>
                 </div>
 

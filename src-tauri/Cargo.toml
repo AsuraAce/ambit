@@ -9,6 +9,11 @@ repository = "https://github.com/AsuraAce/ambit"
 edition = "2021"
 rust-version = "1.88.0"
 
+[features]
+# Enables the isolated native acceptance profile. This is intentionally rejected
+# in release builds so QA-only behavior cannot ship in production artifacts.
+qa-profile = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -27,6 +32,7 @@ tauri-plugin-log = "2"
 tauri-plugin-fs = { version = "2.5.1", features = ["watch"] }
 tauri-plugin-dialog = "2.7.1"
 image = "0.25"
+kamadak-exif = "0.6.1"
 webp = "0.3"
 base64 = "0.22"
 rayon = "1.12"

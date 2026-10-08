@@ -1,11 +1,13 @@
 use image::imageops::FilterType;
-use image::ImageReader;
+use image::{DynamicImage, ImageDecoder, ImageReader};
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 pub mod optimizer;
+
+pub const CURRENT_THUMBNAIL_VERSION: u32 = 2;
 
 #[derive(Debug, Clone)]
 pub struct ThumbnailResult {
@@ -123,9 +125,15 @@ pub(crate) fn generate_thumbnail_for_repair(
             .with_guessed_format()
             .map_err(|e| format!("Failed to guess format: {}", e))?;
 
-        let img = reader
-            .decode()
+        let mut decoder = reader
+            .into_decoder()
+            .map_err(|e| format!("Failed to initialize image decoder: {}", e))?;
+        let orientation = decoder
+            .orientation()
+            .map_err(|e| format!("Failed to read image orientation: {}", e))?;
+        let mut img = DynamicImage::from_decoder(decoder)
             .map_err(|e| format!("Failed to decode image: {}", e))?;
+        img.apply_orientation(orientation);
 
         // Capture original dimensions before resizing
         original_dimensions = Some((img.width(), img.height()));
@@ -161,11 +169,75 @@ pub(crate) fn generate_thumbnail_for_repair(
     })
 }
 
+pub fn oriented_dimensions(dimensions: (u32, u32), orientation: Option<u8>) -> (u32, u32) {
+    if matches!(orientation, Some(5..=8)) {
+        (dimensions.1, dimensions.0)
+    } else {
+        dimensions
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{ImageBuffer, Rgba};
+    use image::{GenericImageView, ImageBuffer, Rgba};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn orientation_exif_payload(orientation: u16) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"Exif\0\0II");
+        payload.extend_from_slice(&0x2Au16.to_le_bytes());
+        payload.extend_from_slice(&8u32.to_le_bytes());
+        payload.extend_from_slice(&1u16.to_le_bytes());
+        payload.extend_from_slice(&0x0112u16.to_le_bytes());
+        payload.extend_from_slice(&3u16.to_le_bytes());
+        payload.extend_from_slice(&1u32.to_le_bytes());
+        payload.extend_from_slice(&orientation.to_le_bytes());
+        payload.extend_from_slice(&[0, 0]);
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload
+    }
+
+    fn jpeg_with_orientation(width: u32, height: u32, orientation: u16) -> Vec<u8> {
+        let image = image::RgbImage::from_pixel(width, height, image::Rgb([8, 16, 24]));
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .encode_image(&image)
+            .expect("encode jpeg");
+        let exif = orientation_exif_payload(orientation);
+
+        let mut result = Vec::new();
+        result.extend_from_slice(&jpeg[..2]);
+        result.extend_from_slice(&[0xFF, 0xE1]);
+        result.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        result.extend_from_slice(&exif);
+        result.extend_from_slice(&jpeg[2..]);
+        result
+    }
+
+    #[test]
+    fn generated_thumbnail_applies_exif_orientation_before_sizing() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("ambit_thumb_orientation_{nonce}"));
+        let source = root.join("source.jpg");
+        let cache = root.join("cache");
+        fs::create_dir_all(&root).expect("create temp root");
+        fs::write(&source, jpeg_with_orientation(2, 1, 6)).expect("write source");
+
+        let result = generate_thumbnail(
+            source.to_string_lossy().as_ref(),
+            cache.to_string_lossy().as_ref(),
+        )
+        .expect("generate thumbnail");
+        let thumbnail = image::open(&result.thumbnail_path).expect("open thumbnail");
+
+        assert_eq!(result.original_dimensions, Some((1, 2)));
+        assert_eq!(thumbnail.dimensions(), (256, 512));
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn force_regeneration_alternates_between_two_inactive_thumbnail_slots() {

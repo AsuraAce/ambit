@@ -2,8 +2,9 @@
 
 import * as React from 'react';
 import { useState } from 'react';
+import { formatImageDisplayDate } from '../../../utils/imageDates';
 import { Heart, CheckCircle, Pin, EyeOff, Unlink, Image as ImageIcon, Trash2, Play, Video } from 'lucide-react';
-import { AIImage, isVideoAsset } from '../../../types';
+import { AIImage, isVideoAsset, getEffectiveSourceKind } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { formatModelName } from '../../../utils/formatUtils';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -46,6 +47,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
   const shouldBlur = isMasked && !isRevealed;
   const isMissing = !!image.isMissing;
+  const sourceKind = getEffectiveSourceKind(image);
   const isVideo = isVideoAsset(image);
   const hasVideoPoster = isVideo && image.thumbnailSource === 'ambit-video-v1';
   const invokeAssetLabel = getInvokeImageAssetLabel(image.invokeImageCategory);
@@ -67,10 +69,9 @@ export const ImageCard: React.FC<ImageCardProps> = ({
             ? 'border-red-300 dark:border-red-900/50 opacity-80'
             : 'border-gray-200 dark:border-white/5 hover:border-sage-300 dark:hover:border-white/20 hover:shadow-2xl hover:-translate-y-1 hover:scale-[1.02]'
         }
-        ${isMissing ? 'cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'}
+        ${isMissing ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'}
       `}
       onMouseDown={onMouseDown}
-      onClick={(e) => onClick(e, isMasked && isRevealed)}
       onContextMenu={onContextMenu}
       onMouseLeave={handleMouseLeave}
       draggable={!isMissing}
@@ -81,7 +82,13 @@ export const ImageCard: React.FC<ImageCardProps> = ({
       onDrag={onDrag}
       onDragEnd={onDragEnd}
     >
-      <div data-media-clip className="absolute inset-0 overflow-hidden rounded-2xl [clip-path:inset(0_round_1rem)]">
+      <button
+        type="button"
+        aria-label={`Open ${image.filename}, ${isVideo ? 'Video' : sourceKind === 'photograph' ? 'Photo' : sourceKind === 'generated' ? 'Generated image' : 'Other image'}`}
+        onClick={(e) => onClick(e, isMasked && isRevealed)}
+        className="absolute inset-0 z-[1] cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-400"
+      />
+      <div data-media-clip className="pointer-events-none absolute inset-0 z-[2] overflow-hidden rounded-2xl [clip-path:inset(0_round_1rem)]">
         {isVideo && !hasVideoPoster ? (
           <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-black ${shouldBlur ? 'blur-xl scale-110 opacity-50' : ''}`}>
             <Video className="h-12 w-12 text-white/30" />
@@ -133,7 +140,7 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 e.stopPropagation();
                 setIsRevealed(true);
               }}
-              className="mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
+              className="pointer-events-auto mt-2 px-3 py-1 bg-black/50 hover:bg-black/80 text-white text-[10px] font-bold rounded-full border border-white/20 transition-colors shadow-lg backdrop-blur-md cursor-pointer shrink-0"
             >
               Reveal
             </button>
@@ -207,18 +214,20 @@ export const ImageCard: React.FC<ImageCardProps> = ({
 
       {/* Hover Overlay - Only show if not blurred and not missing */}
       {!shouldBlur && !isMissing && (
-        <div className={`absolute inset-0 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+        <div className={`pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-gray-900/90 via-transparent to-transparent transition-opacity duration-300 ease-spring p-4 flex flex-col justify-end ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
           <div className="flex justify-between items-end translate-y-4 group-hover:translate-y-0 focus-within:translate-y-0 transition-transform duration-500 ease-spring">
             <div className="min-w-0">
               <div className="text-xs font-bold text-white truncate drop-shadow-md font-sans">
                 {(() => {
+                  if (isVideo) return image.videoCodec;
+                  if (sourceKind === 'photograph') return image.photoMetadata?.cameraModel || 'Photo';
+                  if (sourceKind === 'other') return 'Other';
                   const modelValue = image.metadata.model as unknown;
                   const model = typeof modelValue === 'string'
                     ? modelValue
                     : modelValue && typeof modelValue === 'object' && 'name' in modelValue
                       ? String((modelValue as { name?: unknown }).name || '')
                       : '';
-                  if (isVideo) return image.videoCodec;
                   if (image.metadata.overrideModel) return formatModelName(image.metadata.overrideModel);
                   if (model && model !== 'Unknown') return formatModelName(model);
                   if (image.metadata.modelHash) return `Hash: ${image.metadata.modelHash.slice(0, 8)}`;
@@ -226,10 +235,11 @@ export const ImageCard: React.FC<ImageCardProps> = ({
                 })()}
               </div>
               <div className="text-[10px] text-gray-300 font-mono">
+                {!isVideo && sourceKind !== 'generated' ? `${formatImageDisplayDate(image)} · ` : ''}
                 {image.width}x{image.height}{isVideo ? ` · ${formatVideoDuration(image.durationMs)}` : ''}
               </div>
             </div>
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="pointer-events-auto flex items-center gap-1 shrink-0">
               {/* Manual Hide Button (Only if it was masked originally) */}
               {isMasked && (
                 <TooltipButton

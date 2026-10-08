@@ -4,7 +4,11 @@ import {
   DEFAULT_AI_THINKING_MODE,
   normalizeAiThinkingMode,
 } from '../constants/aiModels';
-import type { AiThinkingMode, AppSettings } from '../types';
+import type { AiThinkingMode, AppSettings, ViewerTab } from '../types';
+
+export const normalizeViewerPreferredTab = (value: unknown): ViewerTab => (
+  value === 'metadata' || value === 'workflow' ? value : 'details'
+);
 
 type DeveloperSettings = Pick<AppSettings, 'devMode'>;
 type AiSettings = Pick<AppSettings, 'aiModel' | 'aiThinkingMode' | 'devMode' | 'systemPrompts'>;

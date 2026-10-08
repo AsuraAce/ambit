@@ -20,6 +20,7 @@ import {
   type AmbitCollectionScopeTarget
 } from '../services/db/collectionRepo';
 import { useInvokeOwnerScopeStore } from '../stores/invokeOwnerScopeStore';
+import { normalizeCollectionScope } from '../utils/filterState';
 
 interface UseCollectionOperationsProps {
   collections: Collection[];
@@ -99,7 +100,7 @@ export const useCollectionOperations = ({
       invokeOwnerId: invokeOwnerScope?.mode === 'owner' ? invokeOwnerScope.ownerId : undefined,
       imageIds: [],
       count: 0,
-      filters // Hybrid Support: Initialize with filters if provided
+      filters: filters ? normalizeCollectionScope(filters) : undefined
     };
 
     // Optimistic Update
@@ -132,7 +133,7 @@ export const useCollectionOperations = ({
     // Sanitize filters to prevent recursive self-reference
     let cleanFilters = filters;
     if (filters) {
-      cleanFilters = { ...filters };
+      cleanFilters = normalizeCollectionScope(filters);
       // If the filter's collectionId matches the collection we are updating, remove it.
       // This prevents the "Must be in Collection X" rule from being saved into Collection X itself,
       // which would restrict results to only manually added items (hybrid) and ignore dynamic matches.

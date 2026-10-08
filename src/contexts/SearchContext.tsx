@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { createContext, useState, useContext, useCallback, useEffect, useRef, ReactNode } from 'react';
-import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope } from '../types';
+import { AIImage, AssetScope, FilterState, SortOption, FacetType, MetadataRefreshScope, type ImageKindFilter, type MediaTypeFilter, type LibraryScopeCounts, type SourceKindCounts } from '../types';
 import { useSettings } from './SettingsContext';
 import { settingsPersistenceCoordinator } from '../utils/settingsPersistenceCoordinator';
 import { useCollections } from './CollectionContext';
@@ -18,12 +18,14 @@ import {
 import { clearAllCollectionThumbnailCaches } from '../services/db/collectionRepo';
 import { useImagesQuery, type ImagesQueryKey } from '../hooks/useImagesQuery';
 import { useLibraryStatsQuery } from '../hooks/useLibraryStatsQuery';
+import { useLibraryScopeAvailability } from '../hooks/useLibraryScopeAvailability';
+import { useLibraryScopeCounts } from '../hooks/useLibraryScopeCounts';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
-import { shouldPrefetchResultPages } from '../utils/filterState';
+import { getEffectiveImageKind, normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
@@ -49,6 +51,13 @@ interface SearchContextType {
     stats: LibraryStats;
     totalImages: number; // This is the MATCHING count
     globalTotal: number; // Total non-deleted images in library
+    sourceKindCounts?: SourceKindCounts;
+    scopeCounts?: LibraryScopeCounts;
+    scopeAvailability?: LibraryScopeCounts;
+    scopeResultCount?: number;
+    scopeCountsLoading: boolean;
+    scopeCountsError: boolean;
+    retryScopeCounts: () => Promise<void>;
     hasMoreImages: boolean;
     loadMoreImages: () => Promise<void>;
     clearAllFilters: () => void;
@@ -134,6 +143,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     );
     const [assetScope, setAssetScope] = useState<AssetScope>('used');
     const [facetDrilldownActive, setFacetDrilldownActive] = useState(false);
+    const [sourceKindHydrated, setSourceKindHydrated] = useState(false);
+    const sourceKindHydrationTargetRef = useRef<{ sourceKind: ImageKindFilter; mediaType: MediaTypeFilter } | null>(null);
 
     const setSortOptionDispatch = useCallback((value: React.SetStateAction<SortOption>) => {
         const nextSortOption = typeof value === 'function'
@@ -212,7 +223,26 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         invokeQueriesAdmitted,
     ]);
 
+    useEffect(() => {
+        if (!settingsLoaded || sourceKindHydrated) return;
+
+        const mediaType = normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind);
+        const sourceKind = getEffectiveImageKind({ mediaType, sourceKind: settings.librarySourceKind });
+        const currentSourceKind = normalizeImageKindFilter(filters.sourceKind);
+        const currentMediaType = normalizeMediaTypeFilter(filters.mediaType, currentSourceKind);
+        sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind && currentMediaType === mediaType
+            ? null : { sourceKind, mediaType };
+        if (sourceKindHydrationTargetRef.current) {
+            setFilters(previous => ({ ...previous, sourceKind, mediaType }));
+        }
+        setSourceKindHydrated(true);
+    }, [filters.mediaType, filters.sourceKind, setFilters, settings.libraryMediaType, settings.librarySourceKind, settingsLoaded, sourceKindHydrated]);
+
     const databaseQueriesEnabled = settingsLoaded
+        && sourceKindHydrated
+        && (!sourceKindHydrationTargetRef.current
+            || (normalizeImageKindFilter(filters.sourceKind) === sourceKindHydrationTargetRef.current.sourceKind
+                && normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind) === sourceKindHydrationTargetRef.current.mediaType))
         && collectionsLoaded
         && invokeQueriesAdmitted
         && (!requiresPrivacyMaskIndex || privacyMaskIndexStatus === 'ready');
@@ -320,6 +350,24 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     const totalImagesCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.totalCount ?? 0;
     const globalTotalCount = privacyExposureBlocked ? 0 : queryData?.pages[0]?.globalCount ?? 0;
+    const scopeQuery = useLibraryScopeCounts({ filters, settings, privacyEnabled, allCollections, enabled: hasCurrentSafePage });
+    const availabilityQuery = useLibraryScopeAvailability({ filters, settings, privacyEnabled, enabled: hasCurrentSafePage });
+    const scopeCounts = hasCurrentSafePage && !scopeQuery.isError ? scopeQuery.data : undefined;
+    const sourceKindCounts = scopeCounts?.imageKinds;
+    const scopeAvailability = hasCurrentSafePage && !availabilityQuery.isError ? availabilityQuery.data : undefined;
+    const scopeResultCount = hasCurrentSafePage ? queryData?.pages[0]?.totalCount : undefined;
+    const scopeCountsLoading = hasCurrentSafePage && (scopeQuery.isFetching || availabilityQuery.isFetching);
+    const scopeCountsError = hasCurrentSafePage && (
+        (scopeQuery.isError && !scopeQuery.isFetching) || (availabilityQuery.isError && !availabilityQuery.isFetching)
+    );
+    const retryScopeCounts = useCallback(async () => {
+        if (!hasCurrentSafePage) return;
+        await Promise.all([
+            scopeQuery.isError && !scopeQuery.isFetching ? scopeQuery.refetch() : undefined,
+            availabilityQuery.isError && !availabilityQuery.isFetching ? availabilityQuery.refetch() : undefined,
+        ]);
+    }, [hasCurrentSafePage, scopeQuery.isError, scopeQuery.isFetching, scopeQuery.refetch,
+        availabilityQuery.isError, availabilityQuery.isFetching, availabilityQuery.refetch]);
 
     // Stats & Facets Query
     const {
@@ -624,6 +672,22 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }
     }, [filters.showGrids, filters.showIntermediates, filters.showInvokeImageAssets, setSettings, settings.libraryShowInvokeImageAssets, viewSettingsHydrated]);
 
+    // Persist the top-level library scope after its saved value has hydrated.
+    useEffect(() => {
+        if (!sourceKindHydrated) return;
+
+        const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+        const sourceKind = getEffectiveImageKind(filters);
+        const hydrationTarget = sourceKindHydrationTargetRef.current;
+        if (hydrationTarget !== null && (sourceKind !== hydrationTarget.sourceKind || mediaType !== hydrationTarget.mediaType)) return;
+
+        sourceKindHydrationTargetRef.current = null;
+        if (normalizeImageKindFilter(settings.librarySourceKind) !== sourceKind
+            || normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind) !== mediaType) {
+            setSettings({ librarySourceKind: sourceKind, libraryMediaType: mediaType });
+        }
+    }, [filters.mediaType, filters.sourceKind, setSettings, settings.libraryMediaType, settings.librarySourceKind, sourceKindHydrated]);
+
     // Adapter for legacy fetchData calls
     const fetchData = useCallback(async (isLoadMore: boolean, isSilent: boolean = false) => {
         if (privacyExposureBlocked) return;
@@ -631,6 +695,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             await fetchNextPage();
         } else {
             // Force refetch
+            // New count identity excludes pre-refresh responses; admission waits for the safe page.
+            useLibraryStore.getState().incrementScopeCountsVersion();
             // Using queryClient.invalidateQueries triggers a background refetch
             // Components using 'isFetching' will see true, but 'isLoading' stays false if data exists
             await queryClient.invalidateQueries({ queryKey: ['images'] });
@@ -659,6 +725,13 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             stats: activeStats,
             totalImages: totalImagesCount,
             globalTotal: globalTotalCount,
+            sourceKindCounts,
+            scopeCounts,
+            scopeAvailability,
+            scopeResultCount,
+            scopeCountsLoading,
+            scopeCountsError,
+            retryScopeCounts,
             hasMoreImages: !privacyExposureBlocked && !!hasNextPage,
             loadMoreImages: async () => {
                 if (!privacyExposureBlocked && hasNextPage && !isFetchingNextPage) {

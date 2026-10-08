@@ -49,6 +49,9 @@ describe('repoUtils lightweight image rows', () => {
 
         expect(fields).toContain('images.positive_prompt');
         expect(fields).toContain('images.seed');
+        expect(fields).toContain('images.source_kind');
+        expect(fields).toContain('images.display_timestamp');
+        expect(fields).not.toContain('photo_metadata_json');
         expect(fields).toContain('images.invoke_image_category');
         expect(fields).not.toContain('metadata_json');
         expect(fields).not.toContain('original_metadata_json');
@@ -61,6 +64,7 @@ describe('repoUtils lightweight image rows', () => {
 
         expect(fields).toContain('images.positive_prompt');
         expect(fields).toContain('images.metadata_json');
+        expect(fields).toContain('images.photo_metadata_json');
         expect(fields).toContain('images.original_metadata_json');
         expect(fields).toContain('images.original_parsed_json');
         expect(fields).toContain('images.original_state_json');
@@ -134,6 +138,36 @@ describe('repoUtils lightweight image rows', () => {
                 generationMode: 'text_to_video',
             }),
         });
+    });
+
+    it('maps photo source/date scalars lightly and photo details only on full rows', () => {
+        const light = mapRowToImage({
+            ...baseLightRow,
+            detected_source_kind: 'photograph',
+            source_kind: 'photograph',
+            source_kind_override: null,
+            capture_wall_time_ms: 1700000000123,
+            display_timestamp: 1700000000123,
+            thumbnail_version: 2,
+        });
+        expect(light.sourceKind).toBe('photograph');
+        expect(light.displayTimestamp).toBe(1700000000123);
+        expect(light.photoMetadata).toBeUndefined();
+
+        const full = mapRowToImage({
+            ...baseLightRow,
+            detected_source_kind: 'photograph',
+            source_kind: 'photograph',
+            capture_wall_time_ms: 1700000000123,
+            display_timestamp: 1700000000123,
+            photo_metadata_json: JSON.stringify({
+                capturedAt: null,
+                captureTimeRaw: null,
+                cameraMake: 'Test Camera Co',
+                cameraModel: 'Camera One',
+            }),
+        });
+        expect(full.photoMetadata?.cameraModel).toBe('Camera One');
     });
 
     it('keeps an unavailable lightweight seed unknown', () => {

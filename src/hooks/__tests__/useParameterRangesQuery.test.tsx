@@ -148,7 +148,9 @@ describe('useParameterRangesQuery', () => {
         expect(where).toContain('timestamp >= ?');
         expect(where).toContain('timestamp < ?');
         expect(JSON.parse(paramsJson)).toEqual([
+            Date.UTC(2026, 3, 1),
             new Date(2026, 3, 1).getTime(),
+            Date.UTC(2026, 4, 1),
             new Date(2026, 4, 1).getTime(),
         ]);
     });
@@ -178,7 +180,10 @@ describe('useParameterRangesQuery', () => {
 
         expect(where).toContain('timestamp >= ?');
         expect(where).not.toContain('timestamp < ?');
-        expect(JSON.parse(paramsJson)).toEqual([new Date(2026, 3, 1).getTime()]);
+        expect(JSON.parse(paramsJson)).toEqual([
+            Date.UTC(2026, 3, 1),
+            new Date(2026, 3, 1).getTime(),
+        ]);
     });
 
     it('collapses rapid search-only corrections into one parameter range request', async () => {
@@ -211,7 +216,9 @@ describe('useParameterRangesQuery', () => {
         expect(where).toContain('timestamp >= ?');
         expect(where).toContain('timestamp < ?');
         expect(JSON.parse(paramsJson)).toEqual([
+            Date.UTC(2026, 3, 1),
             new Date(2026, 3, 1).getTime(),
+            Date.UTC(2026, 4, 1),
             new Date(2026, 4, 1).getTime(),
         ]);
     });

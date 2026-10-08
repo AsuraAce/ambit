@@ -245,8 +245,8 @@ describe('CollectionItem thumbnail hydration states', () => {
         expect(root.className).toContain('ring-2');
     });
 
-    it('selects and clears collections from list and grid modes', () => {
-        let current = filters;
+    it.each(['image', 'video'] as const)('selects and deselects collections from %s without restoring an old scope', mediaType => {
+        let current = createDefaultFilters({ mediaType, sourceKind: 'photograph', searchQuery: 'old search' });
         const setFilters = vi.fn((update: (previous: FilterState) => FilterState) => { current = update(current); });
         const shared = {
             col: baseCollection, setFilters, editingColId: null, editName: '', setEditName: vi.fn(), setEditingColId: vi.fn(),
@@ -256,13 +256,17 @@ describe('CollectionItem thumbnail hydration states', () => {
         const { rerender } = render(<CollectionItem {...shared} filters={current} />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBe(baseCollection.id);
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all', searchQuery: '' });
         rerender(<CollectionItem {...shared} filters={current} />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBeNull();
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all' });
 
+        current = { ...current, mediaType };
         rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBe(baseCollection.id);
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all' });
         rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
         fireEvent.contextMenu(screen.getByTitle(baseCollection.name));
         fireEvent.click(screen.getByTitle(baseCollection.name));

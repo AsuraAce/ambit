@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tauri_specta::Event as SpectaEvent;
 
-const CURRENT_THUMBNAIL_VERSION: i64 = 1;
+const CURRENT_THUMBNAIL_VERSION: i64 = super::CURRENT_THUMBNAIL_VERSION as i64;
 const FAILURE_BACKOFF_MS: i64 = 60 * 60 * 1000;
 const DB_FLUSH_LIMIT: usize = 100;
 const DB_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
@@ -2114,7 +2114,7 @@ mod tests {
                   AND images.path NOT LIKE 'blob:%'
                   AND images.path NOT LIKE 'data:%'
                   AND images.thumbnail_source = 'ambit'
-                  AND COALESCE(images.thumbnail_version, 0) < 1
+                  AND COALESCE(images.thumbnail_version, 0) < 2
                   AND images.thumbnail_path IS NOT NULL
                   AND images.thumbnail_path != ''
                   AND images.path != images.thumbnail_path;

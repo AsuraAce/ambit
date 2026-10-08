@@ -1,9 +1,10 @@
 import * as React from 'react';
-import { FilterX, Heart, Pin, X } from 'lucide-react';
+import { FilterX, Heart, Lock, Pin, X } from 'lucide-react';
 import { FilterState } from '../../../types';
 import { useCollections } from '../../../contexts/CollectionContext';
 import { useSearch } from '../../../contexts/SearchContext';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
+import { getEffectiveImageKind } from '../../../utils/filterState';
 
 interface ActiveFiltersProps {
     filters: FilterState;
@@ -17,6 +18,7 @@ const WIDE_FILTER_CHIP_LABEL_CLASS = 'truncate max-w-[min(40ch,calc(100cqw-3rem)
 const hasChipVisibleCriteria = (filters: FilterState, dateLabel: string | null, includeNavigationRules = false) => (
     (includeNavigationRules && (
         !!filters.searchQuery?.trim() ||
+        getEffectiveImageKind(filters) !== 'all' ||
         (!!filters.mediaType && filters.mediaType !== 'all')
     )) ||
     !!dateLabel ||
@@ -49,6 +51,7 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
     const showPinnedFilter = !!filters.pinnedOnly && !activeSmartCol?.filters?.pinnedOnly;
     const dateFilterLabel = getDateFilterLabel(filters);
     const smartDateFilterLabel = activeSmartCol?.filters ? getDateFilterLabel(activeSmartCol.filters) : null;
+    const smartSourceKind = activeSmartCol?.filters ? getEffectiveImageKind(activeSmartCol.filters) : 'all';
 
     // Merge visible filters with smart collection implicit filters for display
     const hasActiveFilters = hasChipVisibleCriteria(filters, dateFilterLabel) ||
@@ -132,6 +135,12 @@ export const ActiveFilters: React.FC<ActiveFiltersProps> = () => {
                         <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
                             <span>{smartDateFilterLabel}</span>
                             <div className="w-3 h-3 flex items-center justify-center text-[10px]">🔒</div>
+                        </div>
+                    )}
+                    {smartSourceKind !== 'all' && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 text-xs border border-gray-200 dark:border-zinc-700 opacity-80 cursor-not-allowed" title="Smart Collection Rule">
+                            <span>Kind: {smartSourceKind === 'photograph' ? 'Photos' : smartSourceKind[0].toUpperCase() + smartSourceKind.slice(1)}</span>
+                            <Lock aria-hidden className="w-3 h-3" />
                         </div>
                     )}
                     {activeSmartCol.filters.favoritesOnly && (

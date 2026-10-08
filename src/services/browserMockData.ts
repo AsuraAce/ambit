@@ -1,10 +1,13 @@
-import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, SmartCollection, SortOption } from '../types';
+import { AIImage, AppSettings, Collection, FacetType, FilterState, GeneratorTool, LibraryScopeCounts, SmartCollection, SortOption, getEffectiveSourceKind } from '../types';
 import type { AppState, IRepository } from './repository';
 import type { Facets, LibraryStats, LibraryStatsSummary, ValidFacetNames } from './db/searchRepo';
-import { getDateFilterBounds, getSearchDateBounds, timestampMatchesDateBounds } from '../utils/dateFilters';
+import { getDateFilterBounds, getSearchDateBounds } from '../utils/dateFilters';
 import { createDefaultAppSettings, inferPromptMaskingEnabled } from '../constants/defaultSettings';
+import { getEffectiveDisplayTimestamp, imageMatchesDateBounds } from '../utils/imageDates';
 import { isKnownInvokeImageAsset } from '../utils/invokeImageSource';
-import { createDefaultFilters } from '../utils/filterState';
+import { createDefaultFilters, getEffectiveImageKind, normalizeMediaTypeFilter } from '../utils/filterState';
+import { addLibraryScopeCount, createEmptyLibraryScopeCounts } from '../utils/libraryScopeCounts';
+import { getEffectiveMaskedKeywords, isImageMasked } from '../utils/maskingUtils';
 
 const STORAGE_KEY = 'ambit_browser_mock_state_v1';
 const MOCK_COUNT = 180;
@@ -21,6 +24,11 @@ const DEFAULT_SETTINGS: AppSettings = createDefaultAppSettings({
     enableAutoThumbnailHealing: false,
     devMode: true,
 });
+
+interface BrowserMockPrivacyOptions {
+    privacyEnabled: boolean;
+    settings: AppSettings;
+}
 
 const MODELS = ['Flux.1 Dev', 'SDXL 1.0 Base', 'Pony Diffusion V6', 'Illustrious XL', 'DreamShaper 8'];
 const LORAS = ['detail_tweaker_v1', 'cinematic_lighting', 'soft_portrait', 'isometric_world', 'lineart_boost'];
@@ -62,6 +70,10 @@ const createMockImages = (): AIImage[] => {
     const now = Date.now();
 
     return Array.from({ length: MOCK_COUNT }, (_, index) => {
+        const isPhoto = index >= 120 && index < 150;
+        const isOther = index >= 150;
+        const isVideo = index >= 170;
+        const sourceKind = isPhoto ? 'photograph' : isOther ? 'other' : 'generated';
         const isPortrait = index % 3 === 0;
         const width = isPortrait ? 832 : 1216;
         const height = isPortrait ? 1216 : 832;
@@ -72,11 +84,28 @@ const createMockImages = (): AIImage[] => {
                 : GeneratorTool.COMFYUI;
         const model = MODELS[index % MODELS.length];
         const prompt = PROMPTS[index % PROMPTS.length];
-        const filename = `mock_generation_${String(index + 1).padStart(4, '0')}.png`;
+        const filename = isPhoto
+            ? `mock_photo_${String(index - 119).padStart(4, '0')}.jpg`
+            : isOther
+                ? `mock_reference_${String(index - 149).padStart(4, '0')}.webp`
+                : `mock_generation_${String(index + 1).padStart(4, '0')}.png`;
         const invokeImageCategory = tool === GeneratorTool.INVOKEAI
             ? INVOKE_IMAGE_CATEGORIES[Math.floor(index / 4) % INVOKE_IMAGE_CATEGORIES.length]
             : undefined;
         const timestamp = now - (index * 6 * 60 * 60 * 1000);
+        const captureDate = new Date(timestamp - 14 * 24 * 60 * 60 * 1000);
+        const captureWallTimeMs = isPhoto
+            ? Date.UTC(
+                captureDate.getFullYear(),
+                captureDate.getMonth(),
+                captureDate.getDate(),
+                captureDate.getHours(),
+                captureDate.getMinutes(),
+                captureDate.getSeconds()
+            )
+            : undefined;
+        const pad = (value: number) => String(value).padStart(2, '0');
+        const capturedAt = `${captureDate.getFullYear()}:${pad(captureDate.getMonth() + 1)}:${pad(captureDate.getDate())} ${pad(captureDate.getHours())}:${pad(captureDate.getMinutes())}:${pad(captureDate.getSeconds())}`;
         const loras = index % 2 === 0 ? [LORAS[index % LORAS.length]] : [];
         const embeddings = index % 7 === 0 ? [EMBEDDINGS[index % EMBEDDINGS.length]] : [];
         const controlNets = index % 6 === 0 ? [CONTROL_NETS[index % CONTROL_NETS.length]] : [];
@@ -90,11 +119,49 @@ const createMockImages = (): AIImage[] => {
             filename,
             fileSize: 1_200_000 + index * 17_321,
             timestamp,
+            displayTimestamp: captureWallTimeMs ?? timestamp,
+            detectedSourceKind: sourceKind,
+            sourceKind,
+            captureWallTimeMs,
+            mediaType: isVideo ? 'video' : 'image',
+            ...(isVideo ? {
+                mediaContainer: 'mp4',
+                mediaMimeType: 'video/mp4',
+                durationMs: 45_000 + index * 1_000,
+                videoCodec: 'h264',
+                videoProfile: 'High',
+                audioPresent: true,
+                audioCodec: 'aac',
+                frameRateNum: 30,
+                frameRateDen: 1,
+                rotationDegrees: 0 as const,
+                probeStatus: 'ready' as const,
+                playbackStatus: 'external_required' as const,
+            } : {}),
+            photoMetadata: isPhoto ? {
+                capturedAt: { local: capturedAt, offset: index % 2 === 0 ? '+02:00' : null, subsecond: null },
+                captureTimeRaw: capturedAt,
+                cameraMake: index % 2 === 0 ? 'Fujifilm' : 'Sony',
+                cameraModel: index % 2 === 0 ? 'X-T5' : 'ILCE-7M4',
+                lensMake: index % 3 === 0 ? null : 'Mock Optics',
+                lensModel: index % 3 === 0 ? null : '35mm F1.8',
+                focalLengthMm: 35,
+                focalLength35Mm: 35,
+                apertureFNumber: 2.8,
+                exposureTimeSeconds: 0.004,
+                iso: 200 + (index % 4) * 100,
+                orientation: index % 2 === 0 ? 6 : 1,
+                artist: null,
+                copyright: null,
+                gpsLatitude: index % 5 === 0 ? 52.52 : null,
+                gpsLongitude: index % 5 === 0 ? 13.405 : null,
+            } : undefined,
+            thumbnailVersion: 2,
             width,
             height,
             isFavorite: index % 8 === 0,
             isPinned: index % 19 === 0,
-            isIntermediate: index % 11 === 0,
+            isIntermediate: sourceKind === 'generated' && index % 11 === 0,
             userMasked: index % 37 === 0,
             notes: index % 10 === 0 ? 'Browser mock note for UI review.' : undefined,
             invokeImageName: tool === GeneratorTool.INVOKEAI ? filename : undefined,
@@ -102,7 +169,7 @@ const createMockImages = (): AIImage[] => {
             invokeImageOrigin: tool === GeneratorTool.INVOKEAI
                 ? (index % 2 === 0 ? 'internal' : 'external')
                 : undefined,
-            metadata: {
+            metadata: sourceKind === 'generated' ? {
                 tool,
                 model,
                 seed: 100_000 + index * 1337,
@@ -121,6 +188,15 @@ const createMockImages = (): AIImage[] => {
                 isGrid: index % 17 === 0,
                 isIntermediate: index % 11 === 0,
                 modelHash: `mockhash${index % MODELS.length}`,
+            } : {
+                tool: GeneratorTool.UNKNOWN,
+                model: 'Unknown',
+                steps: 0,
+                cfg: 0,
+                sampler: 'Unknown',
+                positivePrompt: '',
+                negativePrompt: '',
+                generationType: 'unknown',
             },
         };
     });
@@ -185,6 +261,14 @@ const defaultState = (): AppState => {
 
 let state: AppState = defaultState();
 
+const normalizeMockSettings = (settings: Partial<AppSettings>): AppSettings => createDefaultAppSettings({
+    ...DEFAULT_SETTINGS,
+    ...settings,
+    // Omitted legacy media settings must be inferred from the raw remembered kind.
+    libraryMediaType: settings.libraryMediaType,
+    promptMaskingEnabled: inferPromptMaskingEnabled(settings),
+});
+
 const loadStoredState = (): AppState => {
     if (typeof localStorage === 'undefined') return state;
 
@@ -198,11 +282,7 @@ const loadStoredState = (): AppState => {
             ...state,
             ...parsed,
             images: state.images,
-            settings: {
-                ...DEFAULT_SETTINGS,
-                ...savedSettings,
-                promptMaskingEnabled: inferPromptMaskingEnabled(savedSettings),
-            },
+            settings: normalizeMockSettings(savedSettings),
             collections: parsed.collections?.length ? parsed.collections : state.collections,
             smartCollections: parsed.smartCollections ?? [],
             recentSearches: parsed.recentSearches ?? state.recentSearches,
@@ -240,7 +320,7 @@ export class BrowserMockRepository implements IRepository {
             ...state,
             ...nextState,
             images: state.images,
-            settings: { ...DEFAULT_SETTINGS, ...nextState.settings },
+            settings: normalizeMockSettings(nextState.settings),
         };
         persistState();
     }
@@ -251,7 +331,7 @@ export class BrowserMockRepository implements IRepository {
             ...state,
             ...nextState,
             images: state.images,
-            settings: { ...DEFAULT_SETTINGS, ...nextState.settings },
+            settings: normalizeMockSettings(nextState.settings),
         };
         persistState();
         return state;
@@ -377,7 +457,7 @@ const matchesScopedSearchToken = (image: AIImage, token: BrowserSearchToken): bo
 
     let matched: boolean | null = null;
     const dateBounds = getSearchDateBounds(key, val);
-    if (dateBounds) matched = timestampMatchesDateBounds(image.timestamp, dateBounds);
+    if (dateBounds) matched = imageMatchesDateBounds(image, dateBounds);
     else if (key === 'steps') matched = matchesNumberExpression(image.metadata.steps, val);
     else if (key === 'cfg') matched = matchesNumberExpression(image.metadata.cfg, val);
     else if (key === 'w' || key === 'width') matched = matchesNumberExpression(image.width, val);
@@ -446,11 +526,16 @@ const filterImages = (
     images: AIImage[],
     filters: FilterState,
     collections: Collection[],
-    applyVisibilityFilters = true
+    excludeScopeFilters = false,
+    applyVisibilityFilters = true,
+    privacy?: BrowserMockPrivacyOptions,
 ): AIImage[] => {
     const text = filters.searchQuery.trim().toLowerCase();
     const dateBounds = getDateFilterBounds(filters);
     const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
+    const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+    const imageKind = getEffectiveImageKind(filters);
+    const maskedKeywords = privacy ? getEffectiveMaskedKeywords(privacy.settings) : [];
     const selectedCollection = filters.collectionId
         ? collections.find((collection) => collection.id === filters.collectionId)
         : null;
@@ -465,20 +550,31 @@ const filterImages = (
         }
         : null;
     const smartMatches = smartFilters
-        ? new Set(filterImages(images, smartFilters, collections, false).map((image) => image.id))
+        ? new Set(filterImages(
+            images,
+            smartFilters,
+            collections,
+            false,
+            false,
+            privacy,
+        ).map((image) => image.id))
         : null;
+    const smartExclusions = smartFilters ? new Set(selectedCollection?.manualExclusions) : null;
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
-        if (filters.mediaType && filters.mediaType !== 'all' && (image.mediaType ?? 'image') !== filters.mediaType) return false;
+        if (privacy?.privacyEnabled && privacy.settings.maskingMode === 'hide' && isImageMasked(image, true, maskedKeywords)) return false;
+        if (!excludeScopeFilters && mediaType !== 'all' && (image.mediaType ?? 'image') !== mediaType) return false;
         if (applyVisibilityFilters && !filters.showIntermediates && (image.isIntermediate || image.metadata.isIntermediate)) return false;
         if (applyVisibilityFilters && !filters.showGrids && image.metadata.isGrid) return false;
         if (applyVisibilityFilters && !filters.showInvokeImageAssets && isKnownInvokeImageAsset(image.invokeImageCategory)) return false;
         if (filters.favoritesOnly && !image.isFavorite) return false;
         if (filters.pinnedOnly && !image.isPinned) return false;
-        if (!timestampMatchesDateBounds(image.timestamp, dateBounds)) return false;
+        if (!excludeScopeFilters && imageKind !== 'all' && getEffectiveSourceKind(image) !== imageKind) return false;
+        if (!imageMatchesDateBounds(image, dateBounds)) return false;
         if (collectionIds && !collectionIds.has(image.id)) return false;
         if (smartMatches && !smartMatches.has(image.id)) return false;
+        if (smartExclusions?.has(image.id)) return false;
         if (!matchesSelectedValues([image.metadata.model], filters.models)) return false;
         if (!matchesSelectedValues([image.metadata.tool], filters.tools)) return false;
         if (!matchesSelectedValues(image.metadata.loras, filters.loras, filters.matchModes?.loras)) return false;
@@ -504,14 +600,14 @@ const sortImages = (images: AIImage[], sortOption: SortOption): AIImage[] => {
     sorted.sort((a, b) => {
         if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
         switch (sortOption) {
-            case 'date_asc': return a.timestamp - b.timestamp || a.id.localeCompare(b.id);
+            case 'date_asc': return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b) || a.id.localeCompare(b.id);
             case 'name_asc': return a.filename.localeCompare(b.filename);
             case 'name_desc': return b.filename.localeCompare(a.filename);
             case 'size_asc': return (a.fileSize ?? 0) - (b.fileSize ?? 0);
             case 'size_desc': return (b.fileSize ?? 0) - (a.fileSize ?? 0);
             case 'date_desc':
             default:
-                return b.timestamp - a.timestamp || b.id.localeCompare(a.id);
+                return getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a) || b.id.localeCompare(a.id);
         }
     });
     return sorted;
@@ -521,16 +617,57 @@ export const searchBrowserMockImages = (
     filters: FilterState,
     sortOption: SortOption,
     limit: number,
-    cursorId?: string
+    cursorId?: string,
+    privacy?: BrowserMockPrivacyOptions,
 ): { images: AIImage[]; totalCount: number; globalCount: number } => {
     const current = loadStoredState();
-    const filtered = sortImages(filterImages(current.images, filters, getBrowserMockCollections()), sortOption);
+    const collections = getBrowserMockCollections();
+    const filtered = sortImages(filterImages(current.images, filters, collections, false, true, privacy), sortOption);
     const start = cursorId ? Math.max(0, filtered.findIndex((image) => image.id === cursorId) + 1) : 0;
     return {
         images: filtered.slice(start, start + limit),
         totalCount: filtered.length,
-        globalCount: current.images.filter((image) => !image.isDeleted).length,
+        globalCount: current.images.filter((image) => !image.isDeleted && !(
+            privacy?.privacyEnabled
+            && privacy.settings.maskingMode === 'hide'
+            && isImageMasked(image, true, getEffectiveMaskedKeywords(privacy.settings))
+        )).length,
     };
+};
+
+/** Contextual dropdown counts are optional work, separate from gallery retrieval. */
+export const getBrowserMockScopeCounts = (
+    filters: FilterState,
+    privacy?: BrowserMockPrivacyOptions,
+): LibraryScopeCounts => {
+    const current = loadStoredState();
+    const images = filterImages(
+        current.images,
+        { ...filters, mediaType: 'all', sourceKind: 'all' },
+        getBrowserMockCollections(),
+        true,
+        true,
+        privacy,
+    );
+    const counts = createEmptyLibraryScopeCounts();
+    images.forEach(image => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    return counts;
+};
+
+export const getBrowserMockScopeAvailability = (
+    filters: FilterState,
+    privacy: BrowserMockPrivacyOptions,
+): LibraryScopeCounts => {
+    const current = loadStoredState();
+    const visibilityFilters = createDefaultFilters({
+        showIntermediates: filters.showIntermediates,
+        showGrids: filters.showGrids,
+        showInvokeImageAssets: filters.showInvokeImageAssets,
+    });
+    const counts = createEmptyLibraryScopeCounts();
+    filterImages(current.images, visibilityFilters, getBrowserMockCollections(), false, true, privacy)
+        .forEach((image) => addLibraryScopeCount(counts, image.mediaType, getEffectiveSourceKind(image)));
+    return counts;
 };
 
 const buildFacetItems = (images: AIImage[], type: FacetType) => {

@@ -1,98 +1,92 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFile } from '@tauri-apps/plugin-fs';
-import { imageToBase64, repairAssetUrl } from '../imageService';
+import { imageToAnalysisBase64, repairAssetUrl } from '../imageService';
 
 vi.mock('@tauri-apps/plugin-fs', () => ({
     readFile: vi.fn(),
 }));
 
 const mockReadFile = vi.mocked(readFile);
-const originalFetchDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
-const originalFileReaderDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'FileReader');
+const originalCreateImageBitmap = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
 
-describe('imageToBase64', () => {
+describe('imageToAnalysisBase64', () => {
+    const drawImage = vi.fn();
+    const close = vi.fn();
+
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 4096, height: 2048, close })));
+        vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation(callback => {
+            callback(new Blob(['SANITIZED_PIXELS'], { type: 'image/webp' }));
+        });
     });
 
     afterEach(() => {
-        if (originalFetchDescriptor) {
-            Object.defineProperty(globalThis, 'fetch', originalFetchDescriptor);
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+        if (originalCreateImageBitmap) {
+            Object.defineProperty(globalThis, 'createImageBitmap', originalCreateImageBitmap);
         } else {
-            Reflect.deleteProperty(globalThis, 'fetch');
-        }
-        if (originalFileReaderDescriptor) {
-            Object.defineProperty(globalThis, 'FileReader', originalFileReaderDescriptor);
-        } else {
-            Reflect.deleteProperty(globalThis, 'FileReader');
+            Reflect.deleteProperty(globalThis, 'createImageBitmap');
         }
     });
 
-    it('reads local JPEG files through Tauri and reports their actual MIME type', async () => {
-        mockReadFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    it('decodes local image pixels and sends only a metadata-free WebP container', async () => {
+        const privateMetadataSentinel = 'GPS=52.5,13.4;SERIAL=SECRET';
+        mockReadFile.mockResolvedValue(new TextEncoder().encode(privateMetadataSentinel));
 
-        const result = await imageToBase64('C:/library/photo.jpg');
+        const result = await imageToAnalysisBase64('C:/library/photo.jpg');
 
         expect(mockReadFile).toHaveBeenCalledWith('C:/library/photo.jpg');
-        expect(result).toBe(`data:image/jpeg;base64,${btoa('\x01\x02\x03')}`);
+        expect(createImageBitmap).toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'image/jpeg' }),
+            { imageOrientation: 'from-image' },
+        );
+        expect(result).toMatch(/^data:image\/webp;base64,/);
+        expect(atob(result.split(',')[1])).toBe('SANITIZED_PIXELS');
+        expect(result).not.toContain(btoa(privateMetadataSentinel));
+        expect(close).toHaveBeenCalled();
     });
 
-    it('returns existing data URLs without reading or fetching them', async () => {
-        const dataUrl = 'data:image/webp;base64,abc';
+    it('caps the long edge at 2048 pixels without upscaling', async () => {
+        mockReadFile.mockResolvedValue(new Uint8Array([1]));
 
-        await expect(imageToBase64(dataUrl)).resolves.toBe(dataUrl);
+        await imageToAnalysisBase64('C:/library/large.png');
+
+        expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 2048, 1024);
+    });
+
+    it('re-encodes existing data URLs instead of forwarding their container bytes', async () => {
+        const source = `data:image/jpeg;base64,${btoa('SOURCE_EXIF_SENTINEL')}`;
+
+        const result = await imageToAnalysisBase64(source);
+
         expect(mockReadFile).not.toHaveBeenCalled();
+        expect(result).toBe(`data:image/webp;base64,${btoa('SANITIZED_PIXELS')}`);
     });
 
-    it.each([
-        ['webp', 'C:/library/render.webp?cache=1', 'image/webp'],
-        ['gif', 'C:/library/animation.gif', 'image/gif'],
-        ['avif', 'C:/library/export.avif', 'image/avif'],
-        ['default png', 'C:/library/no-extension', 'image/png']
-    ])('uses the %s MIME type for local paths', async (_label, path, mimeType) => {
-        mockReadFile.mockResolvedValue(new Uint8Array([65]));
+    it('fails closed when decode or re-encoding fails', async () => {
+        mockReadFile.mockResolvedValue(new Uint8Array([1]));
+        vi.mocked(createImageBitmap).mockRejectedValueOnce(new Error('decode failed'));
+        await expect(imageToAnalysisBase64('C:/library/broken.jpg')).rejects.toThrow('decode failed');
 
-        await expect(imageToBase64(path)).resolves.toBe(`data:${mimeType};base64,${btoa('A')}`);
+        vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementationOnce(callback => callback(null));
+        await expect(imageToAnalysisBase64('C:/library/broken.jpg')).rejects.toThrow(
+            'Browser could not create a sanitized WebP analysis image',
+        );
     });
 
-    it('converts remote and blob URLs with FileReader instead of Tauri filesystem access', async () => {
-        const fetchMock = vi.fn(async () => ({
-            blob: async () => new Blob(['remote'], { type: 'image/gif' })
-        }));
-        class MockFileReader {
-            result = 'data:image/gif;base64,remote';
-            onloadend: (() => void) | null = null;
-            onerror: ((reason?: unknown) => void) | null = null;
-
-            readAsDataURL(_blob: Blob) {
-                queueMicrotask(() => this.onloadend?.());
-            }
-        }
-        vi.stubGlobal('fetch', fetchMock);
-        vi.stubGlobal('FileReader', MockFileReader);
-
-        await expect(imageToBase64('blob:http://ambit/image')).resolves.toBe('data:image/gif;base64,remote');
-        expect(fetchMock).toHaveBeenCalledWith('blob:http://ambit/image');
-        expect(mockReadFile).not.toHaveBeenCalled();
-    });
-
-    it('rejects when FileReader cannot convert a remote image', async () => {
-        const readError = new Error('reader failed');
+    it('rejects non-image remote responses', async () => {
         vi.stubGlobal('fetch', vi.fn(async () => ({
-            blob: async () => new Blob(['remote'])
+            ok: true,
+            status: 200,
+            blob: async () => new Blob(['html'], { type: 'text/html' }),
         })));
-        class FailingFileReader {
-            result: string | null = null;
-            onloadend: (() => void) | null = null;
-            onerror: ((reason?: unknown) => void) | null = null;
 
-            readAsDataURL(_blob: Blob) {
-                queueMicrotask(() => this.onerror?.(readError));
-            }
-        }
-        vi.stubGlobal('FileReader', FailingFileReader);
-
-        await expect(imageToBase64('https://example.test/image.png')).rejects.toBe(readError);
+        await expect(imageToAnalysisBase64('https://example.test/not-an-image')).rejects.toThrow(
+            'Analysis source is not an image',
+        );
     });
 });
 

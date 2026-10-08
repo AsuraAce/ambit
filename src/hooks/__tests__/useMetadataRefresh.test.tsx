@@ -200,7 +200,8 @@ describe('useMetadataRefresh', () => {
         expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
             forceReparse: false,
             filterRoot: null,
-            filterTool: null
+            filterTool: null,
+            refreshPhotoMetadata: false
         });
     });
 
@@ -682,7 +683,8 @@ describe('useMetadataRefresh', () => {
         expect(invoke).toHaveBeenCalledWith('start_reparse_job', {
             forceReparse: false,
             filterRoot: 'D:/Images',
-            filterTool: 'ComfyUI'
+            filterTool: 'ComfyUI',
+            refreshPhotoMetadata: false
         });
         expect(useLibraryStore.getState().isRefreshingMetadata).toBe(false);
         expect(useLibraryStore.getState().refreshProgress).toBeNull();

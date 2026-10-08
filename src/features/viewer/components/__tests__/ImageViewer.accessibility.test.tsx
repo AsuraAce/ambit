@@ -73,13 +73,17 @@ vi.mock('../../../../hooks/useImageAI', () => ({
 }));
 
 vi.mock('../../../../stores/settingsStore', () => ({
-    useSettingsStore: (selector: (state: { settings: Record<string, unknown> }) => unknown) => (
+    useSettingsStore: (selector: (state: { settings: Record<string, unknown>; isLoaded: boolean; setSettings: () => void; privacyEnabled: boolean; privacyMaskIndexStatus: string }) => unknown) => (
         selector({
             settings: {
                 enableAI: true,
                 aiModel: 'gemini-3.1-flash-lite',
                 aiThinkingMode: 'default',
             },
+            isLoaded: true,
+            setSettings: vi.fn(),
+            privacyEnabled: false,
+            privacyMaskIndexStatus: 'ready',
         })
     ),
 }));

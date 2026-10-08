@@ -39,10 +39,24 @@ const createWindow = () => {
 describe('TitleBar', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.unstubAllEnvs();
         runtimeState.tauri = true;
         settingsState.developer = true;
         settingsState.captureMode = false;
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    it('labels the isolated QA profile independently of developer features', async () => {
+        vi.stubEnv('VITE_AMBIT_PROFILE', 'qa');
+        settingsState.developer = false;
+        const { win } = createWindow();
+        mockedGetCurrentWindow.mockReturnValue(win as unknown as ReturnType<typeof getCurrentWindow>);
+
+        render(<TitleBar />);
+
+        await screen.findByText('AMBIT');
+        expect(screen.getByText('QA')).toBeTruthy();
+        expect(screen.queryByText('DEV')).toBeNull();
     });
 
     it('renders nothing outside Tauri', () => {

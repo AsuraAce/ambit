@@ -1,4 +1,22 @@
+import type { PhotoMetadata, SourceKind } from './bindings';
 
+export type { PhotoMetadata, SourceKind } from './bindings';
+
+export type ImageKindFilter = 'all' | SourceKind;
+export type MediaTypeFilter = 'all' | 'image' | 'video';
+export type ViewerTab = 'details' | 'metadata' | 'workflow';
+
+export interface SourceKindCounts {
+  all: number;
+  generated: number;
+  photograph: number;
+  other: number;
+}
+
+export interface LibraryScopeCounts {
+  media: Record<MediaTypeFilter, number>;
+  imageKinds: SourceKindCounts;
+}
 
 export enum GeneratorTool {
   COMFYUI = 'ComfyUI',
@@ -137,6 +155,11 @@ export interface ParseResult {
   microThumbnail?: string;
   /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
   thumbnailSource?: string;
+  thumbnailVersion?: number;
+  detectedSourceKind?: SourceKind;
+  photoMetadata?: PhotoMetadata;
+  photoMetadataError?: string;
+  captureWallTimeMs?: number;
   originalChunks?: Record<string, string>; // Raw chunks for re-parsing
   error?: boolean;
   errorReason?: string;
@@ -167,10 +190,18 @@ export interface AIImage {
   microThumbnail?: string;
   /** Source of the thumbnail: 'ambit', 'invokeai', etc. */
   thumbnailSource?: string;
+  thumbnailVersion?: number;
   filename: string;
   fileSize?: number; // Size in bytes, used for duplicate detection
   fileHash?: string; // SHA-256 content hash for exact duplicate detection
   timestamp: number; // Unix timestamp
+  displayTimestamp?: number;
+  detectedSourceKind?: SourceKind;
+  sourceKindOverride?: SourceKind;
+  sourceKind?: SourceKind;
+  photoMetadata?: PhotoMetadata;
+  photoMetadataError?: string;
+  captureWallTimeMs?: number;
   width: number;
   height: number;
   isFavorite: boolean;
@@ -194,6 +225,12 @@ export interface AIImage {
   originalState?: OriginalState; // Snapshot of image-level state at import (for sync)
 }
 
+export const getDetectedSourceKind = (image: AIImage): SourceKind =>
+  image.detectedSourceKind ?? 'generated';
+
+export const getEffectiveSourceKind = (image: AIImage): SourceKind =>
+  image.sourceKindOverride ?? image.sourceKind ?? getDetectedSourceKind(image);
+
 export interface VideoAsset extends AIImage {
   mediaType: 'video';
   mediaContainer?: string;
@@ -215,8 +252,10 @@ export type LibraryAsset = AIImage | VideoAsset;
 export const isVideoAsset = (asset: AIImage): asset is VideoAsset => asset.mediaType === 'video';
 
 export interface FilterState {
-  mediaType?: 'all' | 'image' | 'video';
+  mediaType?: MediaTypeFilter;
   searchQuery: string;
+  /** Undefined is accepted for smart collections persisted before photography support. */
+  sourceKind?: ImageKindFilter;
   models: string[];
   tools: GeneratorTool[];
   loras: string[]; // New: Filter by LoRA usage
@@ -382,6 +421,7 @@ export interface AppSettings {
   autoCheckForUpdates?: boolean;
   confirmDelete: boolean;
   defaultTheaterMode: boolean; // Persist sidebar state
+  viewerPreferredTab?: ViewerTab; // Shared explicit image/video sidebar preference
   monitoredFolders: MonitoredFolder[];
 
   // Privacy & AI
@@ -407,6 +447,8 @@ export interface AppSettings {
   invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
+  librarySourceKind?: ImageKindFilter; // Active image scope; all for All Media/Videos
+  libraryMediaType?: MediaTypeFilter; // Persisted effective library media scope
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference
   libraryShowInvokeImageAssets?: boolean; // Persisted InvokeAI image-asset visibility preference

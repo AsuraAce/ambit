@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Copy, Heart, Pin, FolderPlus, FolderMinus, Trash2, Folder,
   Wand2, Eye, EyeOff, MinusCircle, ImageIcon, ExternalLink,
-  ImageOff, ChevronRight, Share2, Layout, Shield
+  ImageOff, ChevronRight, Share2, Layout, Shield, Check
 } from 'lucide-react';
 import { TooltipButton } from './InfoTooltip';
+import type { SourceKind } from '../../types';
 
 interface ContextMenuProps {
   x: number;
@@ -14,7 +15,7 @@ interface ContextMenuProps {
   enableAI?: boolean;
   activeCollectionName?: string;
   onClose: () => void;
-  onCopyPrompt: () => void;
+  onCopyPrompt?: () => void;
   onCopySeed?: () => void;
   onCopyGenerationInfo?: () => void;
   onCopyImage?: () => void;
@@ -38,6 +39,9 @@ interface ContextMenuProps {
   onToggleIntermediate?: () => void;
   modelsForThumbnail?: { name: string; hash: string; type: string }[];
   onSetModelThumbnail?: (model: { name: string; hash: string; type: string }) => void;
+  detectedSourceKind?: SourceKind;
+  sourceKindOverride?: SourceKind;
+  onSetImageKind?: (sourceKindOverride: SourceKind | null) => void;
 }
 
 export const ContextMenu: React.FC<ContextMenuProps> = ({
@@ -71,6 +75,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   onToggleIntermediate,
   modelsForThumbnail,
   onSetModelThumbnail,
+  detectedSourceKind,
+  sourceKindOverride,
+  onSetImageKind,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -140,13 +147,33 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 
       {/* Main Menu Groups */}
       <SubMenu label="Copy Data" icon={<Share2 className="w-4 h-4 text-gray-400" />} side={side}>
-        <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Prompt" onClick={onCopyPrompt} />
+        {onCopyPrompt && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Prompt" onClick={onCopyPrompt} />}
         {onCopySeed && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy Seed" onClick={onCopySeed} />}
         {onCopyGenerationInfo && <MenuItem icon={<Copy className="w-4 h-4 text-gray-400" />} label="Copy All Info" onClick={onCopyGenerationInfo} />}
         <div className="h-px bg-white/5 my-1" />
         {onCopyImage && <MenuItem icon={<ImageIcon className="w-4 h-4 text-gray-400" />} label="Copy Image" onClick={onCopyImage} />}
         {onCopyFilePath && <MenuItem icon={<Copy className="w-4 h-4 text-gray-500" />} label="Copy File Path" onClick={onCopyFilePath} />}
       </SubMenu>
+
+      {onSetImageKind && detectedSourceKind && (
+        <SubMenu label="Image Kind" icon={<ImageIcon className="w-4 h-4 text-gray-400" />} side={side}>
+          <MenuItem
+            icon={<Check className={`w-4 h-4 ${sourceKindOverride === undefined ? 'opacity-100' : 'opacity-0'}`} />}
+            label={`Automatic (${detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})`}
+            onClick={() => onSetImageKind(null)}
+            checked={sourceKindOverride === undefined}
+          />
+          {(['generated', 'photograph', 'other'] as const).map(kind => (
+            <MenuItem
+              key={kind}
+              icon={<Check className={`w-4 h-4 ${sourceKindOverride === kind ? 'opacity-100' : 'opacity-0'}`} />}
+              label={kind === 'photograph' ? 'Photo' : kind === 'generated' ? 'Generated' : 'Other'}
+              onClick={() => onSetImageKind(kind)}
+              checked={sourceKindOverride === kind}
+            />
+          ))}
+        </SubMenu>
+      )}
 
       <SubMenu label="Organize" icon={<Layout className="w-4 h-4 text-gray-400" />} side={side}>
         <MenuItem icon={<FolderPlus className="w-4 h-4 text-gray-400" />} label="Add to Collection..." onClick={onAddToCollection} />
@@ -334,8 +361,11 @@ const SubMenu = ({ label, icon, children, side }: { label: string, icon: React.R
   );
 };
 
-const MenuItem = ({ icon, label, onClick, className = "" }: { icon: React.ReactNode, label: string, onClick: () => void, className?: string }) => (
+const MenuItem = ({ icon, label, onClick, className = "", checked }: { icon: React.ReactNode, label: string, onClick: () => void, className?: string, checked?: boolean }) => (
   <button
+    type="button"
+    role={checked === undefined ? undefined : 'menuitemradio'}
+    aria-checked={checked === undefined ? undefined : checked}
     onClick={(e) => {
       e.stopPropagation();
       onClick();

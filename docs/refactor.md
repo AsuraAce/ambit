@@ -5,6 +5,11 @@ Last reviewed: 2026-07-27
 ## How to Use This File
 Use this file to record deferred structural cleanup that changes how contributors should edit the repo safely. Keep active workstreams and short-lived blockers in `docs/progress.md`.
 
+## Browser Sample Collection Persistence Boundary
+Status: Deferred (2026-10-08)
+
+The isolated dropdown QA run reproduced sample collections disappearing after browser reload. `collectionStore.prepareCollectionStorage` migrates legacy JSON collections, clears the JSON arrays and writes `collectionStorageVersion`; `browserMockData.persistState` omits that marker and uses those same arrays as its actual collection store. This predates the dropdown UX fix and is not evidence of native SQLite collection loss. Before relying on browser restart acceptance for collections, separate the mock persistence boundary from native legacy cleanup and add a create/reload regression. Preserve native migration receipts, owner scope and real catalogs. The same browser QA also recorded development-badge toolbar crowding at a 1000 px window with the sidebar open; keep that presentation fix separate from persistence work.
+
 ## InvokeAI Timestamp Cursor Completeness
 Status: Deferred
 

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { fireEvent, render, screen } from '../../../test/testUtils';
+import { act, fireEvent, render, screen } from '../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppHeader } from '../AppHeader';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
@@ -28,23 +28,28 @@ vi.mock('../../../features/filters/components/SearchBar', () => ({
 }));
 
 vi.mock('../../../features/library/components/ViewControls', () => ({
-    ViewControls: ({ setThumbnailSize, setLayoutMode, setSortOption, onSlideshow, showLayoutSwitcher, showSlideshowButton }: {
+    SortOptionList: ({ onSelect }: { onSelect: (option: 'date_desc') => void }) => (
+        <button onClick={() => onSelect('date_desc')}>Newest</button>
+    ),
+    ViewControls: ({ setThumbnailSize, setLayoutMode, setSortOption, onSlideshow, showLayoutSwitcher, showSlideshowButton, showSortButton }: {
         setThumbnailSize: (size: number) => void;
         setLayoutMode: (mode: 'masonry') => void;
         setSortOption: (option: 'date_desc') => void;
         onSlideshow: () => void;
         showLayoutSwitcher: boolean;
         showSlideshowButton: boolean;
+        showSortButton?: boolean;
     }) => (
         <div
             data-testid="view-controls"
             data-layout={String(showLayoutSwitcher)}
             data-slideshow={String(showSlideshowButton)}
+            data-sort-visible={String(showSortButton)}
         >
             <button onClick={() => setThumbnailSize(320)}>Resize Thumbnails</button>
             <button onClick={() => setLayoutMode('masonry')}>Set Layout</button>
             <button onClick={() => setSortOption('date_desc')}>Set Sort</button>
-            <button onClick={onSlideshow}>Start Slideshow</button>
+            {showSlideshowButton && <button onClick={onSlideshow}>Start Slideshow</button>}
         </div>
     )
 }));
@@ -234,12 +239,108 @@ describe('AppHeader', () => {
         expect(onImport).toHaveBeenCalledTimes(1);
     });
 
+    it('places the persistent library scope dropdown immediately after search', () => {
+        const setFilters = vi.fn();
+        render(
+            <AppHeader
+                {...defaultProps}
+                setFilters={setFilters}
+                displayedCount={618}
+                scopeCounts={{
+                    media: { all: 618, image: 618, video: 0 },
+                    imageKinds: { all: 618, generated: 0, photograph: 3, other: 615 },
+                }}
+            />
+        );
+
+        const searchBar = screen.getByTestId('search-bar');
+        const scope = screen.getByTestId('library-scope');
+        expect(searchBar.parentElement?.nextElementSibling).toBe(scope);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Library scope: All Media, 618. Change library scope' }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
+
+        const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
+        expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
+    });
+
+    it.each(['All Media, 6', 'Videos, 2'])('switches Photos through %s to all images without a hidden subtype', async (mediaOption) => {
+        const HeaderWithFilters = () => {
+            const [filters, setFilters] = React.useState<React.ComponentProps<typeof AppHeader>['filters']>({
+                ...defaultProps.filters,
+                mediaType: 'all',
+                sourceKind: 'all',
+            });
+            return <AppHeader {...defaultProps} filters={filters} setFilters={setFilters} scopeCounts={{
+                media: { all: 6, image: 4, video: 2 },
+                imageKinds: { all: 4, generated: 1, photograph: 3, other: 0 },
+            }} />;
+        };
+        render(<HeaderWithFilters />);
+        await screen.findByTestId('search-bar');
+
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: All Media/ }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+
+        fireEvent.click(screen.getByRole('menuitemradio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+        expect(screen.getByRole('menuitemradio', { name: mediaOption }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
+
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'All Images, 4' }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: All Images, 4/ }));
+        expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([
+            screen.getByRole('menuitemradio', { name: 'All Images, 4' }),
+        ]);
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
+
+        fireEvent.click(screen.getByRole('menuitemradio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
+        expect(screen.getByRole('button', { name: /Library scope: Photos, 3/ })).toBeTruthy();
+    });
+
     it('keeps a four-pixel boundary between AI search and the import controls', () => {
         render(<AppHeader {...defaultProps} />);
 
         const importGroup = screen.getByRole('button', { name: 'Import Images' }).parentElement;
         expect(importGroup?.className).toContain('ml-1');
         expect(importGroup?.className).toContain('gap-1');
+    });
+
+    it('uses the header workspace width to move actions and then sort into overflow', () => {
+        let resizeCallback: ResizeObserverCallback | undefined;
+        class TestResizeObserver {
+            constructor(callback: ResizeObserverCallback) {
+                resizeCallback = callback;
+            }
+            observe = vi.fn();
+            disconnect = vi.fn();
+            unobserve = vi.fn();
+        }
+        vi.stubGlobal('ResizeObserver', TestResizeObserver);
+
+        render(<AppHeader {...defaultProps} />);
+        act(() => resizeCallback?.([{ contentRect: { width: 650 } } as ResizeObserverEntry], {} as ResizeObserver));
+
+        expect(screen.getByRole('button', { name: 'Library actions; Live Watch off' })).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Start Slideshow' })).toBeNull();
+        expect(screen.getByTestId('view-controls').getAttribute('data-sort-visible')).toBe('false');
+
+        fireEvent.click(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
+        expect(screen.getByText('Live Watch off')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Import Images' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Newest' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Start Slideshow' }));
+        expect(defaultProps.onSlideshow).toHaveBeenCalledTimes(1);
+        expect(screen.queryByRole('button', { name: 'Import Images' })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
+        fireEvent.keyDown(screen.getByRole('button', { name: 'Newest' }), { key: 'Escape' });
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Library actions; Live Watch off' }));
+        vi.unstubAllGlobals();
     });
 
     it('toggles Live Watch and forwards view-control commands', () => {

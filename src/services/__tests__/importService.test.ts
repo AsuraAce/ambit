@@ -426,6 +426,81 @@ describe('processTargetedFiles', () => {
         expect(mocks.insertImagesBatch).not.toHaveBeenCalled();
     });
 
+    it('persists unchanged files with failed EXIF probes while preserving indexed photo state', async () => {
+        const existingPhotoMetadata = {
+            capturedAt: { local: '2024-06-15T14:30:00', offset: '+02:00', subsecond: null },
+            captureTimeRaw: '2024:06:15 14:30:00',
+            cameraMake: 'FUJIFILM',
+            cameraModel: 'X-T5',
+            lensMake: null,
+            lensModel: 'XF35mmF1.4 R',
+            focalLengthMm: 35,
+            focalLength35Mm: 53,
+            apertureFNumber: 2.8,
+            exposureTimeSeconds: 0.004,
+            iso: 200,
+            orientation: 1,
+            artist: null,
+            copyright: null,
+            gpsLatitude: null,
+            gpsLongitude: null
+        };
+        mocks.getExistingMetadata.mockResolvedValueOnce(new Map([
+            [
+                'C:/library/photo.jpg',
+                {
+                    timestamp: 7000,
+                    fileSize: 777,
+                    metadataJson: '{}',
+                    isFavorite: false,
+                    isPinned: false,
+                    detectedSourceKind: 'photograph',
+                    sourceKindOverride: 'other',
+                    photoMetadata: existingPhotoMetadata,
+                    captureWallTimeMs: 1718461800000
+                }
+            ]
+        ]));
+        mocks.scanImagesBulk.mockResolvedValueOnce([
+            {
+                metadata: {},
+                timestamp: 7000,
+                width: 6240,
+                height: 4160,
+                fileSize: 777,
+                thumbnail: 'C:/thumbs/photo.webp',
+                thumbnailSource: 'ambit',
+                thumbnailVersion: 2,
+                microThumbnail: 'mini-photo',
+                originalChunks: {},
+                detectedSourceKind: 'other',
+                photoMetadataError: 'Malformed EXIF directory'
+            }
+        ]);
+
+        const result = await processTargetedFiles(['C:/library/photo.jpg'], { forceRescan: true });
+
+        expect(result.images[0]).toMatchObject({
+            detectedSourceKind: 'photograph',
+            sourceKind: 'other',
+            photoMetadata: existingPhotoMetadata,
+            captureWallTimeMs: 1718461800000,
+            displayTimestamp: 7000,
+            photoMetadataError: 'Malformed EXIF directory'
+        });
+        expect(result.stats.imported).toBe(1);
+        expect(mocks.insertImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({
+                id: 'C:/library/photo.jpg',
+                detectedSourceKind: 'photograph',
+                sourceKindOverride: 'other',
+                photoMetadata: existingPhotoMetadata,
+                captureWallTimeMs: 1718461800000,
+                photoMetadataError: 'Malformed EXIF directory'
+            })
+        ]);
+    });
+
     it('accounts failed metadata batches as failed paths without pretending import succeeded', async () => {
         mocks.scanImagesBulk.mockRejectedValueOnce(new Error('native scanner failed'));
 

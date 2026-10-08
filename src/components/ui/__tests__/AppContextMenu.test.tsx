@@ -384,7 +384,7 @@ describe('AppContextMenu', () => {
         menu.onToggleFavorite();
         menu.onTogglePin();
         menu.onToggleMask(false);
-        await menu.onToggleIntermediate();
+        await menu.onToggleIntermediate?.();
         menu.onDelete();
 
         expect(modalMocks.setAddToCollectionMode).toHaveBeenCalledWith('add');
@@ -490,12 +490,12 @@ describe('AppContextMenu', () => {
         renderMenu({ images: [], filters: createFilters(null) });
         const menu = requireMenu();
 
-        menu.onCopyPrompt();
-        menu.onCopyGenerationInfo();
+        menu.onCopyPrompt?.();
+        menu.onCopyGenerationInfo?.();
         await menu.onCopyImage();
         menu.onCopyFilePath();
         menu.onTogglePin();
-        await menu.onToggleIntermediate();
+        await menu.onToggleIntermediate?.();
         menu.onDelete();
         await menu.onShowInFolder();
         await menu.onOpenInDefaultApp();
@@ -506,7 +506,7 @@ describe('AppContextMenu', () => {
         expect(menu.onUnsetThumbnail).toBeUndefined();
         expect(menu.modelsForThumbnail).toEqual([]);
         expect(actionMocks.handlePinImage).not.toHaveBeenCalled();
-        expect(imageRepoMocks.toggleImageIntermediate).toHaveBeenCalledWith('C:/library/image.png', true);
+        expect(imageRepoMocks.toggleImageIntermediate).not.toHaveBeenCalled();
         expect(tauriMocks.invoke).not.toHaveBeenCalled();
     });
 
@@ -533,7 +533,7 @@ describe('AppContextMenu', () => {
         const menu = requireMenu();
 
         menu.onCopyGenerationInfo();
-        await menu.onToggleIntermediate();
+        await menu.onToggleIntermediate?.();
 
         expect(clipboardWriteText).toHaveBeenCalledWith(
             'Steps: ?, Sampler: ?, CFG scale: ?, Seed: ?, Size: 1024x768, Model: ?',
@@ -553,7 +553,7 @@ describe('AppContextMenu', () => {
 
         menu.onRemoveFromCollection();
         menu.onToggleFavorite();
-        await menu.onToggleIntermediate();
+        await menu.onToggleIntermediate?.();
         menu.onDelete();
         await menu.onShowInFolder();
         await menu.onOpenInDefaultApp();

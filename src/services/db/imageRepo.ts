@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { commands, type DeleteRemovedImagesResult, type RemovedLifecycleMutationResult } from '../../bindings';
+import { commands, type DeleteRemovedImagesResult, type ImageRecord, type RemovedLifecycleMutationResult } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
-import { AIImage, FacetType, GeneratorTool, ImageMetadata, type VideoMetadataField } from '../../types';
+import { AIImage, FacetType, GeneratorTool, ImageMetadata, getDetectedSourceKind, type PhotoMetadata, type SourceKind, type VideoMetadataField } from '../../types';
 import { getDb, dbMutex } from './connection';
 import { mapRowToImage, getImageFieldsLight, getImageFieldsFull, INVOKE_IMAGE_SOURCE_FIELDS, REMOVED_IMAGE_FIELDS, type ImageRow } from './repoUtils';
 import { normalizePath, urlToPath } from '../../utils/pathUtils';
@@ -26,34 +26,9 @@ import { scanImageNative } from '../metadataParser';
 import { isSameInvokePath } from '../invoke/pathIdentity';
 import { isKnownInvokeImageAsset } from '../../utils/invokeImageSource';
 
-type PersistableImageRecord = {
-    id: string;
-    path: string;
-    width: number;
-    height: number;
-    fileSize: number;
-    fileHash: string | null;
-    timestamp: number;
-    metadataJson: string;
-    thumbnailPath: string;
-    microThumbnail: string | null;
-    thumbnailSource: string | null;
-    isFavorite: boolean;
-    isPinned: boolean;
-    isDeleted: boolean;
-    isMissing: boolean;
-    userMasked: boolean | null;
-    groupId: string | null;
-    boardId: string | null;
-    notes: string | null;
-    originalMetadataJson: string | null;
-    originalStateJson: string | null;
-    isCorrupt: boolean;
-    invokeImageName: string | null;
-    invokeImageCategory: string | null;
-    invokeImageOrigin: string | null;
-    invokeOwnerId: string | null;
-};
+type PersistableImageRecord = ImageRecord;
+
+const CURRENT_THUMBNAIL_VERSION = 2;
 
 interface CountRow {
     count: number;
@@ -72,9 +47,39 @@ type RemovedImageRow = ImageRow & {
     path: string;
     thumbnail_path?: string | null;
     collection_ids_json?: string | null;
+    photo_refresh_version?: number | null;
 };
 
 const SQLITE_PARAM_CHUNK_SIZE = 900;
+
+export const setImageSourceKind = async (
+    imageIds: string[],
+    sourceKindOverride: SourceKind | null
+): Promise<number> => {
+    if (imageIds.length === 0) return 0;
+
+    if (isBrowserMockMode()) {
+        const idSet = new Set(imageIds);
+        getBrowserMockImages().forEach(image => {
+            if (!idSet.has(image.id)) return;
+            const effectiveKind = sourceKindOverride ?? getDetectedSourceKind(image);
+            updateBrowserMockImage(image.id, {
+                sourceKindOverride: sourceKindOverride ?? undefined,
+                sourceKind: effectiveKind,
+                displayTimestamp: effectiveKind === 'photograph'
+                    ? (image.captureWallTimeMs ?? image.timestamp)
+                    : image.timestamp,
+            });
+        });
+        clearLibraryStatsCache();
+        return imageIds.length;
+    }
+
+    const updated = await unwrap(commands.setImageSourceKind(imageIds, sourceKindOverride));
+    clearLibraryStatsCache();
+    await clearCollectionThumbnailCacheForImages(imageIds);
+    return updated;
+};
 
 const chunkItems = <T>(items: T[], chunkSize = SQLITE_PARAM_CHUNK_SIZE): T[][] => {
     const chunks: T[][] = [];
@@ -92,10 +97,18 @@ const buildPersistableImageRecord = (image: AIImage): PersistableImageRecord => 
     fileSize: image.fileSize || 0,
     fileHash: image.fileHash || null,
     timestamp: image.timestamp,
-    metadataJson: JSON.stringify(image.metadata),
+    metadataJson: image.mediaType === 'video' || getDetectedSourceKind(image) === 'generated'
+        ? JSON.stringify(image.metadata)
+        : '{}',
     thumbnailPath: urlToPath(image.thumbnailUrl),
     microThumbnail: image.microThumbnail || null,
     thumbnailSource: image.thumbnailSource || null,
+    thumbnailVersion: image.thumbnailVersion ?? CURRENT_THUMBNAIL_VERSION,
+    detectedSourceKind: getDetectedSourceKind(image),
+    sourceKindOverride: image.sourceKindOverride ?? null,
+    photoMetadata: image.photoMetadata ?? null,
+    photoMetadataError: image.photoMetadataError ?? null,
+    captureWallTimeMs: image.captureWallTimeMs ?? null,
     isFavorite: !!image.isFavorite,
     isPinned: !!image.isPinned,
     isDeleted: !!image.isDeleted,
@@ -1246,7 +1259,7 @@ export const updateThumbnailPath = async (id: string, thumbnailPath: string): Pr
     const normalizedId = normalizePath(id);
     const normalizedThumb = normalizePath(thumbnailPath);
     const result = await db.execute(
-        'UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)',
+        `UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = ${CURRENT_THUMBNAIL_VERSION}, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)`,
         [normalizedThumb, 'ambit', normalizedId]
     );
     assertMutationMatched(result, normalizedId, 'Thumbnail update');
@@ -1291,7 +1304,7 @@ export const updateThumbnailPathsBatch = async (updates: {
                      SET thumbnail_path = ?,
                          micro_thumbnail = COALESCE(?, micro_thumbnail),
                          thumbnail_source = COALESCE(?, thumbnail_source),
-                         thumbnail_version = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 1 ELSE thumbnail_version END,
+                         thumbnail_version = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN ${CURRENT_THUMBNAIL_VERSION} ELSE thumbnail_version END,
                          thumbnail_failure_count = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN 0 ELSE thumbnail_failure_count END,
                          thumbnail_last_error = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_error END,
                          thumbnail_last_attempt_at = CASE WHEN COALESCE(?, thumbnail_source) = 'ambit' THEN NULL ELSE thumbnail_last_attempt_at END
@@ -1340,6 +1353,10 @@ export interface ExistingMetadata {
     boardId?: string;
     groupId?: string;
     notes?: string;
+    detectedSourceKind: SourceKind;
+    sourceKindOverride?: SourceKind;
+    photoMetadata?: PhotoMetadata;
+    captureWallTimeMs?: number;
 }
 
 export const getExistingMetadata = async (ids: string[]): Promise<Map<string, ExistingMetadata>> => {
@@ -1357,7 +1374,11 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
                 isPinned: image.isPinned ?? false,
                 boardId: image.boardId,
                 groupId: image.groupId,
-                notes: image.notes
+                notes: image.notes,
+                detectedSourceKind: getDetectedSourceKind(image),
+                sourceKindOverride: image.sourceKindOverride,
+                photoMetadata: image.photoMetadata,
+                captureWallTimeMs: image.captureWallTimeMs
             }));
         return map;
     }
@@ -1371,8 +1392,10 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
         const placeholders = chunk.map(() => '?').join(',');
 
         try {
-            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string, is_favorite: number, is_pinned: number, board_id?: string | null, group_id?: string | null, notes?: string | null }[]>(
-                `SELECT id, timestamp, file_size, metadata_json, is_favorite, is_pinned, board_id, group_id, notes FROM images WHERE id IN (${placeholders})`,
+            const rows = await db.select<{ id: string, timestamp: number, file_size: number, metadata_json: string, is_favorite: number, is_pinned: number, board_id?: string | null, group_id?: string | null, notes?: string | null, detected_source_kind: SourceKind, source_kind_override?: SourceKind | null, photo_metadata_json?: string | null, capture_wall_time_ms?: number | null }[]>(
+                `SELECT id, timestamp, file_size, metadata_json, is_favorite, is_pinned, board_id, group_id, notes,
+                        detected_source_kind, source_kind_override, photo_metadata_json, capture_wall_time_ms
+                 FROM images WHERE id IN (${placeholders})`,
                 chunk
             );
 
@@ -1385,7 +1408,11 @@ export const getExistingMetadata = async (ids: string[]): Promise<Map<string, Ex
                     isPinned: !!r.is_pinned,
                     boardId: r.board_id ?? undefined,
                     groupId: r.group_id ?? undefined,
-                    notes: r.notes ?? undefined
+                    notes: r.notes ?? undefined,
+                    detectedSourceKind: r.detected_source_kind,
+                    sourceKindOverride: r.source_kind_override ?? undefined,
+                    photoMetadata: r.photo_metadata_json ? JSON.parse(r.photo_metadata_json) as PhotoMetadata : undefined,
+                    captureWallTimeMs: r.capture_wall_time_ms ?? undefined
                 });
             });
         } catch (e) {

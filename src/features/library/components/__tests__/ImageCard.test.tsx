@@ -86,7 +86,7 @@ describe('ImageCard', () => {
         expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png', fallbackSrc: 'source.png', microSrc: 'micro', loading: 'lazy' });
 
         fireEvent.mouseDown(root);
-        fireEvent.click(root);
+        fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
         fireEvent.contextMenu(root);
         fireEvent.dragStart(root);
         fireEvent.drag(root);
@@ -109,6 +109,20 @@ describe('ImageCard', () => {
         expect(props.onClick).toHaveBeenCalledTimes(1);
     });
 
+    it('opens missing originals for cached inspection and forwards modifier selection', () => {
+        const { container, props } = setup({ image: image({ isMissing: true }) });
+        const openButton = screen.getByRole('button', { name: /Open image\.png/ });
+
+        fireEvent.click(openButton);
+        expect(props.onClick).toHaveBeenNthCalledWith(1, expect.anything(), false);
+        fireEvent.click(openButton, { ctrlKey: true });
+        expect(props.onClick).toHaveBeenNthCalledWith(2, expect.objectContaining({ ctrlKey: true }), false);
+        fireEvent.click(openButton, { shiftKey: true });
+        expect(props.onClick).toHaveBeenNthCalledWith(3, expect.objectContaining({ shiftKey: true }), false);
+        expect((container.firstElementChild as HTMLElement).draggable).toBe(false);
+        expect(smartImageMocks.props[0]).toMatchObject({ src: 'thumb.png' });
+    });
+
     it('reveals masked content and automatically hides it after leaving', () => {
         const { container, props } = setup({ isMasked: true, isSelected: true });
         const root = container.firstElementChild as HTMLElement;
@@ -127,7 +141,7 @@ describe('ImageCard', () => {
         fireEvent.click(screen.getByText('Reveal'));
         expect(screen.queryByText('Hidden Content')).toBeNull();
         expect(screen.getByRole('button', { name: 'Hide Content' })).toBeTruthy();
-        fireEvent.click(root);
+        fireEvent.click(screen.getByRole('button', { name: /Open image\.png/ }));
         expect(props.onClick).toHaveBeenCalledWith(expect.anything(), true);
         expect(root.className).toContain('border-sage-500');
 
@@ -152,7 +166,7 @@ describe('ImageCard', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Reveal' }));
         expect(props.onClick).not.toHaveBeenCalled();
         expect(screen.queryByText('Hidden Content')).toBeNull();
-        fireEvent.click(container.firstElementChild as HTMLElement);
+        fireEvent.click(screen.getByRole('button', { name: /Open source\.mp4, Video/ }));
         expect(props.onClick).toHaveBeenCalledWith(expect.anything(), true);
         expect(screen.getByText('AVC')).toBeTruthy();
         expect(screen.getByText('1024x768 · 0:12')).toBeTruthy();
@@ -181,7 +195,7 @@ describe('ImageCard', () => {
         });
         const root = container.firstElementChild as HTMLElement;
         expect(root.draggable).toBe(false);
-        expect(root.className).toContain('cursor-not-allowed');
+        expect(root.className).toContain('cursor-pointer');
         expect(screen.getByTitle('Source file not found')).toBeTruthy();
         expect(screen.queryByText('Trash')).toBeNull();
         expect(screen.queryByText('Hidden Content')).toBeNull();

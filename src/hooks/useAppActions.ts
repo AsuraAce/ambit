@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle, isVideoAsset } from '../types';
+import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle, getDetectedSourceKind, isVideoAsset, type SourceKind } from '../types';
 import { useToast } from './useToast';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useCollectionStore } from '../stores/collectionStore';
 import {
     rebuildThumbnailFacetCache,
+    setImageSourceKind,
     toggleImageFavorite,
     toggleImageMask,
     toggleImagePin,
@@ -340,6 +341,52 @@ export const useAppActions = ({
         addToast(message, 'info');
     };
 
+    const handleSetImageSourceKind = React.useCallback(async (
+        ids: string[],
+        sourceKindOverride: SourceKind | null
+    ) => {
+        if (ids.length === 0) return;
+
+        try {
+            await setImageSourceKind(ids, sourceKindOverride);
+            const idSet = new Set(ids);
+            const patchImage = (image: AIImage): AIImage => {
+                if (!idSet.has(image.id)) return image;
+                const effectiveKind = sourceKindOverride ?? getDetectedSourceKind(image);
+                return {
+                    ...image,
+                    sourceKindOverride: sourceKindOverride ?? undefined,
+                    sourceKind: effectiveKind,
+                    displayTimestamp: effectiveKind === 'photograph'
+                        ? (image.captureWallTimeMs ?? image.timestamp)
+                        : image.timestamp,
+                };
+            };
+
+            setImages(previous => previous.map(patchImage));
+            setViewerSessionImages(previous => previous?.map(patchImage) ?? null);
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['images'] }),
+                queryClient.invalidateQueries({ queryKey: ['libraryStats'] }),
+                queryClient.invalidateQueries({ queryKey: ['parameterRanges'] }),
+            ]);
+            refreshCollectionsAfterImageFlagChange();
+
+            const label = sourceKindOverride === null
+                ? 'Automatic'
+                : sourceKindOverride === 'photograph'
+                    ? 'Photo'
+                    : sourceKindOverride === 'generated'
+                        ? 'Generated'
+                        : 'Other';
+            addToast(`${ids.length === 1 ? 'Image' : `${ids.length} images`} set to ${label}`, 'success');
+        } catch (error) {
+            console.error('[ImageKind] Failed to update source kind', error);
+            addToast('Failed to update image kind', 'error');
+            throw error;
+        }
+    }, [addToast, queryClient, refreshCollectionsAfterImageFlagChange, setImages, setViewerSessionImages]);
+
     const handleTogglePrivacy = () => {
         const next = !privacyEnabled;
         setPrivacyEnabled(next);
@@ -481,6 +528,7 @@ export const useAppActions = ({
         handleBulkFavorite,
         handleBulkPin,
         handleBulkMask,
+        handleSetImageSourceKind,
         handleTogglePrivacy,
         openMetadataRecovery,
         executeMetadataRecovery,

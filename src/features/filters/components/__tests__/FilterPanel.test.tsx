@@ -138,6 +138,9 @@ const defaultSearchContext = (overrides: Partial<SearchContextValue> = {}): Sear
     },
     totalImages: 0,
     globalTotal: 0,
+    scopeCountsLoading: false,
+    scopeCountsError: false,
+    retryScopeCounts: async () => { },
     hasMoreImages: false,
     loadMoreImages: async () => { },
     clearAllFilters: vi.fn(),
@@ -554,5 +557,66 @@ describe('FilterPanel interactions', () => {
         contextMocks.appVersion.current = null;
         renderPanel();
         expect(screen.getByText('v...')).toBeTruthy();
+    });
+
+    it('preserves saved rules and clears an inactive legacy kind after compatible Update', () => {
+        const onUpdateCollectionFilters = vi.fn();
+        const setFilters = vi.fn();
+        const saved: FilterState = { ...filters, sourceKind: 'generated', mediaType: 'image' };
+        const manual: FilterState = { ...filters, collectionId: 'smart', searchQuery: 'castle', mediaType: 'all', sourceKind: 'photograph' };
+        renderPanel({
+            search: { filters: manual, setFilters },
+            smartCollections: [{ id: 'smart', name: 'Smart', filters: saved } as SmartCollection],
+            props: { onUpdateCollectionFilters },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({
+            searchQuery: 'castle', sourceKind: 'generated', mediaType: 'image',
+        }));
+        const updater = setFilters.mock.calls[0][0] as (value: FilterState) => FilterState;
+        expect(updater(manual)).toMatchObject({ sourceKind: 'all', mediaType: 'all', searchQuery: '' });
+    });
+
+    it('does not activate a dormant saved kind when refining an All Media collection to All Images', () => {
+        const onUpdateCollectionFilters = vi.fn();
+        renderPanel({
+            search: { filters: { ...filters, collectionId: 'smart', mediaType: 'image', sourceKind: 'all' } },
+            smartCollections: [{ id: 'smart', name: 'Smart', filters: { ...filters, mediaType: 'all', sourceKind: 'photograph' } } as SmartCollection],
+            props: { onUpdateCollectionFilters },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Update' }));
+        expect(onUpdateCollectionFilters).toHaveBeenCalledWith('smart', expect.objectContaining({ mediaType: 'image', sourceKind: 'all' }));
+    });
+
+    it('does not mark dormant kind memory as a manual edit', () => {
+        renderPanel({
+            search: { filters: { ...filters, collectionId: 'smart', mediaType: 'all', sourceKind: 'photograph' } },
+            smartCollections: [{ id: 'smart', name: 'Smart', filters } as SmartCollection],
+        });
+        expect(screen.queryByRole('button', { name: 'Update' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Clear filters' })).toBeNull();
+    });
+
+    it.each([
+        { saved: { sourceKind: 'photograph' as const }, manual: { mediaType: 'image' as const, sourceKind: 'generated' as const } },
+        { saved: { mediaType: 'image' as const }, manual: { mediaType: 'video' as const } },
+        { saved: { mediaType: 'video' as const }, manual: { sourceKind: 'photograph' as const } },
+    ])('prevents a conflicting quick update and explains how to edit saved rules', ({ saved, manual }) => {
+        const onUpdateCollectionFilters = vi.fn();
+        const onSaveSmartCollection = vi.fn();
+        const setFilters = vi.fn();
+        renderPanel({
+            search: { filters: { ...filters, ...manual, collectionId: 'smart' }, setFilters },
+            smartCollections: [{ id: 'smart', name: 'Smart', filters: { ...filters, ...saved } } as SmartCollection],
+            props: { onUpdateCollectionFilters, onSaveSmartCollection },
+        });
+        const update = screen.getByRole('button', { name: 'Update' });
+        expect(update.getAttribute('aria-disabled')).toBe('true');
+        fireEvent.focus(update);
+        expect(screen.getByRole('tooltip').textContent).toBe('This scope conflicts with the collection rules. Use Edit Filters to change them.');
+        fireEvent.click(update);
+        expect(onUpdateCollectionFilters).not.toHaveBeenCalled();
+        expect(onSaveSmartCollection).not.toHaveBeenCalled();
+        expect(setFilters).not.toHaveBeenCalled();
     });
 });

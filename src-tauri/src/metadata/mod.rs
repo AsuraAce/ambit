@@ -5,6 +5,7 @@ pub mod guidance;
 pub mod invokeai;
 pub mod models;
 pub mod parsers;
+pub mod photo;
 pub mod reparse;
 pub mod resources;
 pub mod thumbs_scan;

@@ -27,6 +27,52 @@ const setup = (activeTab: 'details' | 'metadata' | 'workflow', target = image())
 };
 
 describe('MetadataSidebar', () => {
+    it.each([
+        ['Canon', 'Canon PowerShot S5 IS', 'Canon PowerShot S5 IS'],
+        ['CANON', 'Canon PowerShot S5 IS', 'Canon PowerShot S5 IS'],
+        ['Canon', 'Canon', 'Canon'],
+        ['Canon', 'EOS R6', 'Canon EOS R6'],
+        ['Canon', 'Canonical Camera', 'Canon Canonical Camera'],
+    ])('shows make %s and model %s without repeating an included manufacturer', (cameraMake, cameraModel, label) => {
+        setup('metadata', { ...image(), sourceKind: 'photograph', photoMetadata: {
+            cameraMake, cameraModel, capturedAt: null, captureTimeRaw: null,
+            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
+            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
+            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+        } });
+        expect(screen.getByText(label)).toBeTruthy();
+    });
+
+    it('does not flash an empty metadata card while photo metadata is still loading', () => {
+        const target = { ...image(), sourceKind: 'photograph' as const, detectedSourceKind: 'photograph' as const };
+        const { props, rerender } = setup('metadata', target);
+        rerender(<MetadataSidebar {...props} isLoading />);
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(screen.queryByText('No supported metadata found')).toBeNull();
+        rerender(<MetadataSidebar {...props} isLoading={false} image={{ ...target, photoMetadata: {
+            cameraModel: 'Loaded camera', cameraMake: null, capturedAt: null, captureTimeRaw: null,
+            lensMake: null, lensModel: null, focalLengthMm: null, focalLength35Mm: null,
+            apertureFNumber: null, exposureTimeSeconds: null, iso: null, orientation: null,
+            artist: null, copyright: null, gpsLatitude: null, gpsLongitude: null,
+        } }} />);
+        expect(screen.getByText('Loaded camera')).toBeTruthy();
+        expect(screen.queryByText('No supported metadata found')).toBeNull();
+        rerender(<MetadataSidebar {...props} isLoading={false} />);
+        expect(screen.getByText('No supported metadata found')).toBeTruthy();
+    });
+
+    it('keeps Other file information in shared Details and explicitly explains unsupported metadata', () => {
+        const { props, rerender } = setup('metadata', { ...image(), sourceKind: 'other', detectedSourceKind: 'other' });
+        const emptyHeading = screen.getByRole('heading', { name: 'No supported metadata found' });
+        expect(emptyHeading).toBeTruthy();
+        expect(emptyHeading.parentElement?.classList.contains('text-center')).toBe(true);
+        expect(emptyHeading.parentElement?.parentElement?.classList.contains('min-h-full')).toBe(false);
+        expect(screen.getByText('File information is available in Details.')).toBeTruthy();
+        expect(screen.queryByRole('tab', { name: 'Workflow' })).toBeNull();
+        rerender(<MetadataSidebar {...props} activeTab="details" />);
+        expect(screen.getByText('details-content')).toBeTruthy();
+    });
+
     it('uses the shared image title and Details, Metadata, and Workflow tabs', () => {
         const { props } = setup('details', image({ workflowJson: '{}' }));
         expect(screen.queryByRole('heading', { name: 'Image' })).toBeNull();
@@ -63,6 +109,58 @@ describe('MetadataSidebar', () => {
         expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
         expect(screen.getByText('metadata-content')).toBeTruthy();
         expect(screen.queryByText('workflow-content')).toBeNull();
-        expect(props.setActiveTab).toHaveBeenCalledWith('metadata');
+        expect(props.setActiveTab).not.toHaveBeenCalled();
+    });
+
+    it('separates photo Metadata from shared Details without generation controls', () => {
+        const { props, rerender } = setup('metadata', {
+            ...image({ workflowJson: '{}' }),
+            detectedSourceKind: 'photograph',
+            sourceKind: 'photograph',
+            width: 4000,
+            height: 6000,
+            photoMetadata: {
+                capturedAt: { local: '2026:07:29 14:15:16', offset: '+02:00', subsecond: null },
+                captureTimeRaw: '2026:07:29 14:15:16',
+                cameraMake: 'Test Camera Co', cameraModel: 'Camera One',
+                lensMake: null, lensModel: 'Prime 50', focalLengthMm: 50,
+                focalLength35Mm: 50, apertureFNumber: 2.8, exposureTimeSeconds: 0.008,
+                iso: 200, orientation: 6, artist: null, copyright: null,
+                gpsLatitude: 51.5, gpsLongitude: -0.12
+            }
+        });
+
+        expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();
+        expect(screen.queryByText('Camera One')).toBeNull();
+        expect(screen.getByRole('tab', { name: 'Details' })).toBeTruthy();
+        expect(screen.getByRole('tab', { name: 'Metadata' })).toBeTruthy();
+        expect(screen.queryByRole('tab', { name: 'Library' })).toBeNull();
+        expect(screen.queryByText('workflow')).toBeNull();
+        expect(screen.queryByText('info-content')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Exposure settings' })).toBeTruthy();
+        expect(screen.queryByText('Dimensions')).toBeNull();
+        expect(screen.queryByText('File size')).toBeNull();
+        expect(screen.queryByText('Modified')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Exposure settings' }));
+        expect(screen.queryByText('1/125 s')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Exposure settings' }));
+        expect(screen.getByText('1/125 s')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} activeTab="workflow" />);
+        expect(screen.getByRole('tab', { name: 'Metadata' }).getAttribute('aria-selected')).toBe('true');
+        expect(props.setActiveTab).not.toHaveBeenCalled();
+        expect(screen.getByText('Test Camera Co Camera One')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} />);
+        expect(screen.queryByText('ComfyUI')).toBeNull();
+        expect(screen.queryByText('flux_dev')).toBeNull();
+        const gps = screen.getByRole('button', { name: 'Local GPS coordinates' });
+        expect(gps.getAttribute('aria-expanded')).toBe('false');
+        expect(screen.queryByText('51.500000, -0.120000')).toBeNull();
+        fireEvent.click(gps);
+        expect(screen.getByText('51.500000, -0.120000')).toBeTruthy();
+        rerender(<MetadataSidebar {...props} image={{ ...props.image, id: 'next-photo' }} />);
+        expect(screen.getByRole('button', { name: 'Local GPS coordinates' }).getAttribute('aria-expanded')).toBe('false');
+        rerender(<MetadataSidebar {...props} activeTab="details" />);
+        expect(screen.queryByText('Test Camera Co Camera One')).toBeNull();
+        expect(screen.getByText('details-content')).toBeTruthy();
     });
 });

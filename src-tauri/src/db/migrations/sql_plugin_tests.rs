@@ -473,7 +473,8 @@ fn maintenance_m80_upgrade_and_reload_preserve_counts() {
         &old.webview,
         "execute",
         json!({"db":db,"query":
-            "INSERT INTO images(id, path, positive_prompt) VALUES ('generated', 'generated.png', '')",
+            "INSERT INTO images(id, path, timestamp, positive_prompt)
+             VALUES ('generated', 'generated.png', 1, '')",
             "values":[]}),
     );
     let history_query =
@@ -510,7 +511,7 @@ fn maintenance_m80_upgrade_and_reload_preserve_counts() {
         &upgraded.as_array().unwrap()[..history.as_array().unwrap().len()],
         history.as_array().unwrap()
     );
-    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 80);
+    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 84);
     ipc(&sql.webview, "close", json!({"db":db}));
     sql.load(&path);
     assert_eq!(

@@ -1,6 +1,6 @@
 ﻿import * as React from 'react';
 import { useCallback } from 'react';
-import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder } from '../types';
+import { AIImage, AppSettings, GeneratorTool, ImportMode, MonitoredFolder, getDetectedSourceKind } from '../types';
 import { useToast } from './useToast';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useSearch } from '../contexts/SearchContext';
@@ -28,6 +28,14 @@ interface CommitImportOptions {
 }
 
 const MANUAL_IMPORT_CANCELLED_MESSAGE = 'Import cancelled. Imported items were kept; rescan to continue.';
+
+export const formatDetectedImageKindCounts = (images: AIImage[]): string => {
+    const counts = images.reduce((result, image) => {
+        result[getDetectedSourceKind(image)] += 1;
+        return result;
+    }, { generated: 0, photograph: 0, other: 0 });
+    return `${counts.generated} Generated, ${counts.photograph} Photo${counts.photograph === 1 ? '' : 's'}, ${counts.other} Other`;
+};
 
 interface UseImportOpsProps {
     images: AIImage[];
@@ -79,7 +87,7 @@ export const useImportOps = ({
                 await refreshCollections();
             }
 
-            let msg = `Imported ${uniqueNewImages.length} item${uniqueNewImages.length === 1 ? '' : 's'}.`;
+            let msg = `Imported ${uniqueNewImages.length} item${uniqueNewImages.length === 1 ? '' : 's'} (${formatDetectedImageKindCounts(uniqueNewImages)}).`;
             if (dupeCount > 0) msg += ` (Skipped ${dupeCount} duplicates)`;
             if (stats.skipped > 0) msg += ` Skipped ${stats.skipped} unchanged or ignored file${stats.skipped === 1 ? '' : 's'}.`;
             if (result.videoSummary?.rejected) msg += ` Rejected ${result.videoSummary.rejected} invalid video${result.videoSummary.rejected === 1 ? '' : 's'}.`;
@@ -89,7 +97,7 @@ export const useImportOps = ({
             if (toastMode === 'detailed') {
                 addToast(msg, stats.errors > 0 ? 'info' : 'success');
             } else if (toastMode === 'compact') {
-                addToast(`Imported ${uniqueNewImages.length} new item${uniqueNewImages.length === 1 ? '' : 's'}`, 'success');
+                addToast(`Imported ${uniqueNewImages.length} new item${uniqueNewImages.length === 1 ? '' : 's'} (${formatDetectedImageKindCounts(uniqueNewImages)})`, 'success');
             }
 
             refreshHiddenAvailability();
@@ -329,9 +337,9 @@ export const useImportOps = ({
             if (isManual) {
                 const failedFileCount = result.failedPaths.length > 0 ? result.failedPaths.length : result.stats.errors;
                 if (result.images.length > 0 && failedFileCount > 0) {
-                    addToast(`Imported ${result.images.length} items from ${folders.length} folder(s), but ${failedFileCount} file(s) failed`, 'warning');
+                    addToast(`Imported ${result.images.length} items (${formatDetectedImageKindCounts(result.images)}) from ${folders.length} folder(s), but ${failedFileCount} file(s) failed`, 'warning');
                 } else if (result.images.length > 0) {
-                    addToast(`Imported ${result.images.length} items from ${folders.length} folder(s)`, 'success');
+                    addToast(`Imported ${result.images.length} items (${formatDetectedImageKindCounts(result.images)}) from ${folders.length} folder(s)`, 'success');
                 } else if (result.stats.skipped > 0) {
                     addToast(`Scan complete. No new items found.`, 'info');
                 } else if (result.stats.errors > 0) {

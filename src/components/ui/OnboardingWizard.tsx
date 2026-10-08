@@ -252,7 +252,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             <img src={brandGlyphSrc} alt="" className="h-10 w-10 drop-shadow-[0_6px_18px_rgba(0,0,0,0.35)]" />
                         </motion.div>
                         <h1 className="mb-2 text-3xl font-semibold uppercase leading-tight tracking-[0.18em] text-white/92">{APP_NAME}</h1>
-                        <p className="text-sm leading-relaxed text-sage-100/50">Your local-first workspace for AI-generated images.</p>
+                        <p className="text-sm leading-relaxed text-sage-100/50">Your local-first workspace for generated images and photography.</p>
                     </div>
 
                     <ol aria-label="Onboarding progress" className="relative z-10 space-y-4">

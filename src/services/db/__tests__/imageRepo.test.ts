@@ -119,6 +119,35 @@ describe('imageRepo batch removal', () => {
         errorSpy.mockRestore();
     });
 
+    it('persists photo metadata probe failures so native retries remain eligible', async () => {
+        const db = {
+            select: vi.fn(),
+            execute: vi.fn(),
+        };
+        getDbMock.mockResolvedValue(db);
+        const { commands } = await import('../../../bindings');
+        vi.mocked(commands.saveImagesBatch).mockResolvedValue({ status: 'ok', data: 1 });
+
+        const { insertImagesBatch } = await import('../imageRepo');
+        await insertImagesBatch([{
+            id: 'C:/images/photo.jpg',
+            url: 'C:/images/photo.jpg',
+            thumbnailUrl: 'C:/thumbs/photo.webp',
+            filename: 'photo.jpg',
+            width: 6240,
+            height: 4160,
+            timestamp: 1700000000000,
+            metadata: liveImportMetadata,
+            isFavorite: false,
+            detectedSourceKind: 'other',
+            photoMetadataError: 'Malformed EXIF directory',
+        }]);
+
+        expect(commands.saveImagesBatch).toHaveBeenCalledWith([
+            expect.objectContaining({ photoMetadataError: 'Malformed EXIF directory' }),
+        ]);
+    });
+
     it('uses browser mock data for repository reads and writes without touching native storage', async () => {
         browserMockModeMock.mockReturnValue(true);
         const promptMetadata = { ...liveImportMetadata, positivePrompt: 'prompt' };
@@ -307,6 +336,10 @@ describe('imageRepo batch removal', () => {
             boardId: undefined,
             groupId: undefined,
             notes: 'note',
+            detectedSourceKind: 'generated',
+            sourceKindOverride: undefined,
+            photoMetadata: undefined,
+            captureWallTimeMs: undefined,
         });
         expect(existingMetadata.has('missing-source')).toBe(false);
 
@@ -1222,7 +1255,7 @@ describe('imageRepo batch removal', () => {
         expect(sqlCalls).toContain('UPDATE images SET is_favorite = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls).toContain('UPDATE images SET is_pinned = ? WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
         expect(sqlCalls.some(sql => sql.includes('DELETE FROM images'))).toBe(false);
-        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 1, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
+        expect(sqlCalls).toContain('UPDATE images SET thumbnail_path = ?, thumbnail_source = ?, thumbnail_version = 2, thumbnail_failure_count = 0, thumbnail_last_error = NULL, thumbnail_last_attempt_at = NULL WHERE id = ? AND id IN (SELECT id FROM scoped_images)');
     });
 
     it('rejects a thumbnail write when the image became hidden after it was queued', async () => {
@@ -1477,6 +1510,19 @@ describe('imageRepo batch removal', () => {
                 thumbnail_path: null,
                 micro_thumbnail: null,
                 thumbnail_source: null,
+                thumbnail_version: 0,
+                detected_source_kind: 'photograph',
+                source_kind_override: 'other',
+                source_kind: 'other',
+                photo_metadata_json: JSON.stringify({
+                    capturedAt: null,
+                    captureTimeRaw: null,
+                    cameraMake: 'Test Camera Co',
+                    cameraModel: 'Camera One',
+                }),
+                capture_wall_time_ms: 1699999999000,
+                display_timestamp: 1700000000000,
+                photo_refresh_version: 0,
                 is_favorite: 0,
                 is_pinned: 0,
                 is_deleted: 0,
@@ -1928,7 +1974,8 @@ describe('imageRepo batch removal', () => {
         const row = {
             id: 'C:/member.png', path: 'C:/member.png', width: 1, height: 1, file_size: 1,
             timestamp: 1, metadata_json: '{}', thumbnail_path: null, micro_thumbnail: null,
-            thumbnail_source: null, is_favorite: 0, is_pinned: 0, is_missing: 0, user_masked: null,
+            thumbnail_source: null, photo_refresh_version: 1,
+            is_favorite: 0, is_pinned: 0, is_missing: 0, user_masked: null,
             group_id: null, board_id: null, notes: null, original_metadata_json: null,
             original_parsed_json: null, original_state_json: null, is_corrupt: 0
         };

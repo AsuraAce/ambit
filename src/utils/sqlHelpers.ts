@@ -1,5 +1,7 @@
 import { FilterState, AppSettings, Collection } from '../types';
-import { getDateFilterBounds, getSearchDateBounds } from './dateFilters';
+import { getDateFilterBounds, getSearchDateBounds, type DateFilterBounds } from './dateFilters';
+import { toPhotoWallTimeBounds } from './imageDates';
+import { getEffectiveImageKind, normalizeMediaTypeFilter } from './filterState';
 
 type SqlParam = string | number;
 
@@ -14,6 +16,26 @@ interface SearchCondition {
     params: SqlParam[];
     isPositivePrompt: boolean;
 }
+
+const buildEffectiveDateConditions = (bounds: DateFilterBounds): { conditions: string[]; params: SqlParam[] } => {
+    const wallBounds = toPhotoWallTimeBounds(bounds);
+    const conditions: string[] = [];
+    const params: SqlParam[] = [];
+
+    const appendBound = (operator: '>=' | '<', epochValue?: number, wallValue?: number) => {
+        if (epochValue === undefined || wallValue === undefined) return;
+        conditions.push(`(
+            (source_kind = 'photograph' AND capture_wall_time_ms IS NOT NULL AND display_timestamp ${operator} ?)
+            OR
+            ((source_kind != 'photograph' OR capture_wall_time_ms IS NULL) AND display_timestamp ${operator} ?)
+        )`);
+        params.push(wallValue, epochValue);
+    };
+
+    appendBound('>=', bounds.start, wallBounds.start);
+    appendBound('<', bounds.end, wallBounds.end);
+    return { conditions, params };
+};
 
 type AssetAliasFilterKey = 'models' | 'loras' | 'embeddings' | 'hypernetworks' | 'controlNets' | 'ipAdapters';
 
@@ -124,17 +146,7 @@ const parseSearchToken = (token: SearchToken): SearchCondition | null => {
 
         const dateBounds = getSearchDateBounds(key, val);
         if (dateBounds) {
-            const dateConditions: string[] = [];
-            const dateParams: SqlParam[] = [];
-
-            if (dateBounds.start !== undefined) {
-                dateConditions.push('timestamp >= ?');
-                dateParams.push(dateBounds.start);
-            }
-            if (dateBounds.end !== undefined) {
-                dateConditions.push('timestamp < ?');
-                dateParams.push(dateBounds.end);
-            }
+            const { conditions: dateConditions, params: dateParams } = buildEffectiveDateConditions(dateBounds);
 
             return {
                 sql: token.isNegative
@@ -311,9 +323,11 @@ export const buildSqlWhereClause = (
         }
     }
 
-    if (filters.mediaType && filters.mediaType !== 'all') {
-        conditions.push('media_type = ?');
-        params.push(filters.mediaType);
+    const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+    const sourceKind = getEffectiveImageKind(filters);
+    if (mediaType !== 'all' && !excludeCategories.includes('mediaType')) {
+        conditions.push(mediaType === 'image' ? '(media_type = ? OR media_type IS NULL)' : 'media_type = ?');
+        params.push(mediaType);
     }
 
     // 1. Privacy Logic
@@ -335,7 +349,8 @@ export const buildSqlWhereClause = (
                 effectiveSmartFilters.dateFrom = undefined;
                 effectiveSmartFilters.dateTo = undefined;
             }
-
+            // Dropdown scopes may only narrow saved rules. Facet exclusions apply
+            // to the current controls, not to the collection's own constraints.
             const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
                 effectiveSmartFilters,
                 false,
@@ -382,6 +397,11 @@ export const buildSqlWhereClause = (
     // 4. Pinned Only
     if (filters.pinnedOnly) {
         conditions.push('is_pinned = 1');
+    }
+
+    if (sourceKind !== 'all' && !excludeCategories.includes('sourceKind')) {
+        conditions.push('source_kind = ?');
+        params.push(sourceKind);
     }
 
     // 5. Models (Array)
@@ -514,14 +534,9 @@ export const buildSqlWhereClause = (
 
     // 11. Date Range
     const dateBounds = getDateFilterBounds(filters);
-    if (dateBounds.start !== undefined) {
-        conditions.push('timestamp >= ?');
-        params.push(dateBounds.start);
-    }
-    if (dateBounds.end !== undefined) {
-        conditions.push('timestamp < ?');
-        params.push(dateBounds.end);
-    }
+    const effectiveDateBounds = buildEffectiveDateConditions(dateBounds);
+    conditions.push(...effectiveDateBounds.conditions);
+    params.push(...effectiveDateBounds.params);
 
     const where = conditions.length > 0 ? (isRecursive ? conditions.join(' AND ') : `WHERE ${conditions.join(' AND ')}`) : '';
 

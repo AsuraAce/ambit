@@ -14,6 +14,7 @@ use tauri::{Manager, Wry};
 use tauri_plugin_fs::FsExt;
 
 use crate::db::reparse::{ReparseJobResult, ReparseState};
+use crate::metadata::photo::SourceKind;
 use crate::metadata::video::{
     extract_video_metadata, refresh_video_metadata_evidence, reparse_video_metadata,
     MetadataEvidenceSource, VideoGenerationMetadata, VideoGenerationMode, VideoMetadataDiagnostic,
@@ -41,14 +42,15 @@ const UPSERT_VIDEO_ASSET_SQL: &str = r#"
         is_deleted, is_missing, is_corrupt, media_type, media_container,
         media_mime_type, duration_ms, video_codec, video_profile,
         audio_present, audio_codec, frame_rate_num, frame_rate_den,
-        rotation_degrees, probe_status, playback_status
+        rotation_degrees, probe_status, playback_status, detected_source_kind,
+        source_kind, display_timestamp
     ) VALUES (
         ?1, ?2, ?3, ?4, ?5, ?6, ?7,
         ?8, ?9, ?10,
         ?11, ?12, ?11, ?13, ?14, ?15, ?16,
         ?17, ?18, ?19,
         0, 0, 0, 'video', ?20, ?21, ?22, ?23, ?24,
-        ?25, ?26, ?27, ?28, ?29, 'ready', 'unknown'
+        ?25, ?26, ?27, ?28, ?29, 'ready', 'unknown', ?30, ?30, ?6
     )
     ON CONFLICT(id) DO UPDATE SET
         path = excluded.path,
@@ -124,7 +126,20 @@ const UPSERT_VIDEO_ASSET_SQL: &str = r#"
         frame_rate_num = excluded.frame_rate_num,
         frame_rate_den = excluded.frame_rate_den,
         rotation_degrees = excluded.rotation_degrees,
-        probe_status = 'ready'
+        probe_status = 'ready',
+        detected_source_kind = excluded.detected_source_kind,
+        source_kind_override = CASE
+            WHEN images.source_kind_override = 'photograph' THEN NULL
+            ELSE images.source_kind_override
+        END,
+        source_kind = COALESCE(
+            CASE
+                WHEN images.source_kind_override = 'photograph' THEN NULL
+                ELSE images.source_kind_override
+            END,
+            excluded.detected_source_kind
+        ),
+        display_timestamp = excluded.timestamp
 "#;
 
 pub struct VideoImportState {
@@ -848,6 +863,7 @@ fn upsert_video_asset(
         )
         .optional()
         .map_err(|error| error.to_string())?;
+    let detected_source_kind = classify_video_source_kind(&asset.metadata);
     let mut metadata = asset.metadata.clone();
     if let Some(current_metadata_json) = current_metadata_json {
         preserve_video_user_overrides(&current_metadata_json, &mut metadata);
@@ -887,12 +903,26 @@ fn upsert_video_asset(
             asset.frame_rate_num,
             asset.frame_rate_den,
             asset.rotation_degrees,
+            detected_source_kind.as_str(),
         ],
     )
     .map_err(|error| error.to_string())?;
     refresh_video_resource_junctions(&tx, &asset.id, &metadata_json)?;
     tx.commit().map_err(|error| error.to_string())?;
     Ok(metadata)
+}
+
+fn classify_video_source_kind(metadata: &VideoGenerationMetadata) -> SourceKind {
+    if metadata.field_sources.values().any(|source| {
+        matches!(
+            source,
+            MetadataEvidenceSource::TrustedSidecar | MetadataEvidenceSource::Embedded
+        )
+    }) {
+        SourceKind::Generated
+    } else {
+        SourceKind::Other
+    }
 }
 
 fn refresh_video_resource_junctions(
@@ -1002,6 +1032,7 @@ fn update_video_metadata_record(
             |row| row.get(0),
         )
         .map_err(|error| error.to_string())?;
+    let detected_source_kind = classify_video_source_kind(parsed_metadata);
     let mut metadata = parsed_metadata.clone();
     preserve_video_user_overrides(&current_json, &mut metadata);
     let metadata_json = serde_json::to_string(&metadata).map_err(|error| error.to_string())?;
@@ -1022,8 +1053,21 @@ fn update_video_metadata_record(
             sampler = ?10,
             generation_type = ?11,
             positive_prompt = ?12,
-            negative_prompt = ?13
-         WHERE id = ?14 AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
+            negative_prompt = ?13,
+            detected_source_kind = ?14,
+            source_kind_override = CASE
+                WHEN source_kind_override = 'photograph' THEN NULL
+                ELSE source_kind_override
+            END,
+            source_kind = COALESCE(
+                CASE
+                    WHEN source_kind_override = 'photograph' THEN NULL
+                    ELSE source_kind_override
+                END,
+                ?14
+            ),
+            display_timestamp = timestamp
+         WHERE id = ?15 AND media_type = 'video' AND id IN (SELECT id FROM scoped_images)",
         params![
             metadata_json,
             original_parsed_json,
@@ -1038,6 +1082,7 @@ fn update_video_metadata_record(
             metadata.generation_type,
             metadata.positive_prompt,
             metadata.negative_prompt,
+            detected_source_kind.as_str(),
             asset_id,
         ],
     )
@@ -1418,7 +1463,8 @@ mod tests {
     use super::{
         collision_safe_output_path, copy_without_overwrite, has_hidden_removed_video_collision,
         load_video_playback_path, normalize_rotation, parse_mediainfo_json,
-        preserve_video_user_overrides, upsert_video_asset, VideoAssetRecord,
+        preserve_video_user_overrides, update_video_metadata_record, upsert_video_asset,
+        VideoAssetRecord,
     };
     use crate::metadata::video::{
         MetadataEvidenceSource, VideoGenerationMetadata, VideoGenerationMode,
@@ -1500,6 +1546,32 @@ mod tests {
         assert_eq!(
             next.field_sources["positivePrompt"],
             MetadataEvidenceSource::UserOverride
+        );
+    }
+
+    #[test]
+    fn video_source_kind_requires_trusted_generation_evidence() {
+        let mut metadata = VideoGenerationMetadata::default();
+        assert_eq!(
+            super::classify_video_source_kind(&metadata).as_str(),
+            "other"
+        );
+
+        metadata.field_sources.insert(
+            "workflowJson".into(),
+            MetadataEvidenceSource::WorkflowDefault,
+        );
+        assert_eq!(
+            super::classify_video_source_kind(&metadata).as_str(),
+            "other"
+        );
+
+        metadata
+            .field_sources
+            .insert("workflowJson".into(), MetadataEvidenceSource::Embedded);
+        assert_eq!(
+            super::classify_video_source_kind(&metadata).as_str(),
+            "generated"
         );
     }
 
@@ -1642,8 +1714,13 @@ mod tests {
                 thumbnail_version INTEGER NOT NULL DEFAULT 1,
                 thumbnail_failure_count INTEGER NOT NULL DEFAULT 0,
                 thumbnail_last_error TEXT,
-                thumbnail_last_attempt_at INTEGER
+                thumbnail_last_attempt_at INTEGER,
+                detected_source_kind TEXT NOT NULL DEFAULT 'other',
+                source_kind_override TEXT,
+                source_kind TEXT NOT NULL DEFAULT 'other',
+                display_timestamp INTEGER NOT NULL DEFAULT 0
             );
+            CREATE VIEW scoped_images AS SELECT * FROM images;
             CREATE TABLE image_loras (
                 image_id TEXT NOT NULL,
                 lora_name TEXT NOT NULL,
@@ -1684,6 +1761,43 @@ mod tests {
             original_metadata_json: "{}".into(),
         };
         upsert_video_asset(&conn, &asset).expect("initial import");
+        let imported: (String, Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT detected_source_kind, source_kind_override, source_kind, display_timestamp
+                 FROM images WHERE id = ?1",
+                [&asset.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("video source kind and date");
+        assert_eq!(
+            imported,
+            ("other".into(), None, "other".into(), asset.timestamp)
+        );
+
+        conn.execute(
+            "UPDATE images SET source_kind_override = 'photograph', source_kind = 'photograph', display_timestamp = 0",
+            [],
+        )
+        .expect("seed invalid photograph override");
+        upsert_video_asset(&conn, &asset).expect("repair photograph override");
+        let repaired: (String, Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT detected_source_kind, source_kind_override, source_kind, display_timestamp
+                 FROM images WHERE id = ?1",
+                [&asset.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("video cannot remain a photograph");
+        assert_eq!(
+            repaired,
+            ("other".into(), None, "other".into(), asset.timestamp)
+        );
+
+        conn.execute(
+            "UPDATE images SET source_kind_override = 'generated', source_kind = 'generated', display_timestamp = 0",
+            [],
+        )
+        .expect("seed source-kind override");
         conn.execute(
             "UPDATE images SET
                 playback_status = 'external_required',
@@ -1701,6 +1815,23 @@ mod tests {
         asset.file_size = 200;
         asset.timestamp = 20;
         upsert_video_asset(&conn, &asset).expect("changed import");
+        let overridden: (String, Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT detected_source_kind, source_kind_override, source_kind, display_timestamp
+                 FROM images WHERE id = ?1",
+                [&asset.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("preserved source-kind override and date");
+        assert_eq!(
+            overridden,
+            (
+                "other".into(),
+                Some("generated".into()),
+                "generated".into(),
+                asset.timestamp
+            )
+        );
         let changed: (
             String,
             Option<String>,
@@ -1768,18 +1899,48 @@ mod tests {
         )
         .expect("seed video override");
         asset.metadata.positive_prompt = "new parsed prompt".into();
-        let persisted = upsert_video_asset(&conn, &asset).expect("metadata re-import");
+        asset.metadata.field_sources.insert(
+            "workflowJson".into(),
+            MetadataEvidenceSource::TrustedSidecar,
+        );
+        let persisted = update_video_metadata_record(
+            &conn,
+            &asset.id,
+            &asset.metadata,
+            "{\"sidecar\":\"reparsed evidence\"}",
+        )
+        .expect("metadata reparse");
         assert_eq!(persisted.positive_prompt, "chosen prompt");
-        let stored: (String, String) = conn
+        let stored: (String, String, String, Option<String>, String, i64) = conn
             .query_row(
                 "SELECT json_extract(metadata_json, '$.positivePrompt'),
-                        json_extract(original_parsed_json, '$.positivePrompt')
+                        json_extract(original_parsed_json, '$.positivePrompt'),
+                        detected_source_kind, source_kind_override, source_kind, display_timestamp
                  FROM images WHERE id = ?1",
                 [&asset.id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
             )
             .expect("stored metadata baselines");
-        assert_eq!(stored, ("chosen prompt".into(), "new parsed prompt".into()));
+        assert_eq!(
+            stored,
+            (
+                "chosen prompt".into(),
+                "new parsed prompt".into(),
+                "generated".into(),
+                Some("generated".into()),
+                "generated".into(),
+                asset.timestamp,
+            )
+        );
 
         asset.metadata.loras = vec!["MotionDetail.safetensors (0.8)".into()];
         asset.metadata.control_nets = vec!["CannyVideo.ckpt".into()];

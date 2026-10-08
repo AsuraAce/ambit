@@ -1,11 +1,11 @@
 import { renderHook } from '../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AIImage, AppSettings, Collection, PaginationCursor, SortOption } from '../../types';
+import type { AIImage, AppSettings, Collection, PaginationCursor, SortOption, SourceKindCounts } from '../../types';
 import { createDefaultFilters } from '../../utils/filterState';
 import { useImagesQuery, type ImagesQueryKey } from '../useImagesQuery';
 import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
 
-type QueryPage = { images: AIImage[]; totalCount: number; globalCount: number };
+type QueryPage = { images: AIImage[]; totalCount: number; globalCount: number; sourceKindCounts?: SourceKindCounts };
 type InfiniteQueryConfig = {
     queryKey: ImagesQueryKey;
     queryFn: (context: { pageParam: PaginationCursor | undefined }) => Promise<QueryPage>;
@@ -24,7 +24,8 @@ const mocks = vi.hoisted(() => ({
     buildSqlWhereClause: vi.fn(),
     searchImages: vi.fn(),
     countImages: vi.fn(),
-    countGlobalImages: vi.fn()
+    countGlobalImages: vi.fn(),
+    countLibraryScopes: vi.fn()
 }));
 
 vi.mock('@tanstack/react-query', async (importOriginal) => ({
@@ -50,7 +51,8 @@ vi.mock('../../utils/sqlHelpers', () => ({
 vi.mock('../../services/db/searchRepo', () => ({
     searchImages: mocks.searchImages,
     countImages: mocks.countImages,
-    countGlobalImages: mocks.countGlobalImages
+    countGlobalImages: mocks.countGlobalImages,
+    countLibraryScopes: mocks.countLibraryScopes
 }));
 
 const settings: AppSettings = {
@@ -93,6 +95,21 @@ const renderImagesHook = (
 const config = (): InfiniteQueryConfig => mocks.config as InfiniteQueryConfig;
 
 describe('useImagesQuery', () => {
+    it.each(['pending', 'failed'] as const)('delivers the gallery independently of %s optional scope counts', async (state) => {
+        mocks.countLibraryScopes.mockImplementation(() => state === 'pending'
+            ? new Promise(() => {})
+            : Promise.reject(new Error('Optional counts unavailable')));
+        mocks.searchImages.mockResolvedValue([image()]);
+        renderImagesHook();
+        // Drain the immediately resolved page requests; no wall-clock timing assumption.
+        let page: QueryPage | undefined;
+        let failure: unknown;
+        void config().queryFn({ pageParam: undefined }).then(value => { page = value; }, error => { failure = error; });
+        for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        expect(failure).toBeUndefined();
+        expect(page?.images).toEqual([image()]);
+        expect(mocks.countLibraryScopes).not.toHaveBeenCalled();
+    });
     it('keeps the query identity when only an ordinary count becomes ready', () => {
         const row: Collection = { id: 'ordinary', name: 'Ordinary', createdAt: 1, imageIds: [], countState: 'pending' };
         renderImagesHook('date_desc', [row]);
@@ -113,6 +130,10 @@ describe('useImagesQuery', () => {
         mocks.searchImages.mockResolvedValue([]);
         mocks.countImages.mockResolvedValue(7);
         mocks.countGlobalImages.mockResolvedValue(20);
+        mocks.countLibraryScopes.mockResolvedValue({
+            media: { all: 7, image: 7, video: 0 },
+            imageKinds: { all: 7, generated: 4, photograph: 2, other: 1 },
+        });
         mocks.searchBrowserMockImages.mockReturnValue({ images: [], totalCount: 0, globalCount: 0 });
         useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
@@ -187,18 +208,18 @@ describe('useImagesQuery', () => {
 
         await expect(config().queryFn({ pageParam: undefined })).resolves.toBe(browserPage);
         await expect(config().queryFn({ pageParam: { val: 'image.png', id: 'cursor', isPinned: 0 } })).resolves.toBe(browserPage);
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(1, expect.any(Object), 'name_asc', 1000, undefined);
-        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(2, expect.any(Object), 'name_asc', 1000, 'cursor');
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(1, expect.any(Object), 'name_asc', 1000, undefined, expect.objectContaining({ settings: expect.any(Object) }));
+        expect(mocks.searchBrowserMockImages).toHaveBeenNthCalledWith(2, expect.any(Object), 'name_asc', 1000, 'cursor', expect.objectContaining({ settings: expect.any(Object) }));
         expect(mocks.buildSqlWhereClause).not.toHaveBeenCalled();
     });
 
     it.each([
-        ['date_asc', 'timestamp', 'ASC'],
+        ['date_asc', 'display_timestamp', 'ASC'],
         ['name_asc', 'path', 'ASC'],
         ['name_desc', 'path', 'DESC'],
         ['size_desc', 'file_size', 'DESC'],
         ['size_asc', 'file_size', 'ASC'],
-        ['date_desc', 'timestamp', 'DESC']
+        ['date_desc', 'display_timestamp', 'DESC']
     ] as const)('maps %s to the expected database ordering', async (sortOption, field, order) => {
         const firstPageImages = [image()];
         mocks.searchImages.mockResolvedValue(firstPageImages);
@@ -207,7 +228,7 @@ describe('useImagesQuery', () => {
         await expect(config().queryFn({ pageParam: undefined })).resolves.toEqual({
             images: firstPageImages,
             totalCount: 7,
-            globalCount: 20
+            globalCount: 20,
         });
         expect(mocks.buildSqlWhereClause).toHaveBeenCalledWith(
             expect.any(Object), true, 'blur', ['secret'], []
@@ -232,7 +253,7 @@ describe('useImagesQuery', () => {
             globalCount: -1
         });
         expect(mocks.searchImages).toHaveBeenCalledWith(
-            'WHERE hidden = ?', [0], 1000, 'timestamp', 'DESC', true, 'collection-1', 'detail', cursor
+            'WHERE hidden = ?', [0], 1000, 'display_timestamp', 'DESC', true, 'collection-1', 'detail', cursor
         );
         expect(mocks.countImages).not.toHaveBeenCalled();
         expect(mocks.countGlobalImages).not.toHaveBeenCalled();

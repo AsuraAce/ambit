@@ -6,7 +6,7 @@ import { GeneratorTool, type AIImage, type AppSettings } from '../../types';
 import { useMaintenanceOps } from '../useMaintenanceOps';
 
 const mockAddToast = vi.fn();
-const mockImageToBase64 = vi.fn();
+const mockImageToAnalysisBase64 = vi.fn();
 const mockRecoverImageMetadata = vi.fn();
 const mockUpdateImageMetadataFields = vi.fn();
 const mockIncrementFacetCacheVersion = vi.fn();
@@ -22,7 +22,7 @@ vi.mock('../useToast', () => ({
 }));
 
 vi.mock('../../services/imageService', () => ({
-    imageToBase64: (...args: unknown[]) => mockImageToBase64(...args),
+    imageToAnalysisBase64: (...args: unknown[]) => mockImageToAnalysisBase64(...args),
 }));
 
 vi.mock('../../services/geminiService', () => ({
@@ -85,7 +85,7 @@ const settings: AppSettings = {
 describe('useMaintenanceOps metadata recovery', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockImageToBase64.mockResolvedValue('data:image/jpeg;base64,abc');
+        mockImageToAnalysisBase64.mockResolvedValue('data:image/webp;base64,sanitized');
         mockRecoverImageMetadata.mockResolvedValue({ positivePrompt: 'Recovered prompt' });
         mockUpdateImageMetadataFields.mockResolvedValue(undefined);
         mockGetSettingsState.mockReturnValue({ geminiApiKey: 'test-key' });
@@ -122,7 +122,15 @@ describe('useMaintenanceOps metadata recovery', () => {
             recoveredImage = await result.current.recoverMetadata(image.id, 'generic');
         });
 
-        expect(mockImageToBase64).toHaveBeenCalledWith(image.id);
+        expect(mockImageToAnalysisBase64).toHaveBeenCalledWith(image.id);
+        expect(mockRecoverImageMetadata).toHaveBeenCalledWith(
+            'data:image/webp;base64,sanitized',
+            'generic',
+            'test-key',
+            'gemini-3.1-flash-lite',
+            undefined,
+            'default',
+        );
         expect(mockUpdateImageMetadataFields).toHaveBeenCalledWith(image.id, {
             positivePrompt: 'Recovered prompt',
         });
@@ -159,7 +167,7 @@ describe('useMaintenanceOps metadata recovery', () => {
 
         expect(result.current.isRecoveringMetadata).toBe(false);
         expect(imageRepoMocks.getImagesByIds).toHaveBeenCalledWith(['missing']);
-        expect(mockImageToBase64).not.toHaveBeenCalled();
+        expect(mockImageToAnalysisBase64).not.toHaveBeenCalled();
         expect(mockAddToast).toHaveBeenCalledWith('Prompt Recovery could not find this image in the library.', 'error');
     });
 
@@ -182,7 +190,7 @@ describe('useMaintenanceOps metadata recovery', () => {
         });
 
         expect(imageRepoMocks.getImagesByIds).toHaveBeenCalledWith([image.id]);
-        expect(mockImageToBase64).toHaveBeenCalledWith(image.id);
+        expect(mockImageToAnalysisBase64).toHaveBeenCalledWith(image.id);
         expect((recoveredImage as AIImage | null)?.metadata.positivePrompt).toBe('Recovered prompt');
     });
 

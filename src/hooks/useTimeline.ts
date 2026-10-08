@@ -1,6 +1,7 @@
 
 import { useMemo } from 'react';
 import { AIImage, SortOption } from '../types';
+import { getEffectiveDisplayTimestamp, getImageCalendarParts, getImageDayStart } from '../utils/imageDates';
 
 export interface TimelineGroup {
     date: string; // Display label (e.g., "Today", "August 2023")
@@ -26,10 +27,11 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
             let id = '';
             let groupTimestamp = 0; // Used for sorting the groups themselves
 
-            const imgDate = new Date(img.timestamp);
-            const imgDayStart = new Date(imgDate.getFullYear(), imgDate.getMonth(), imgDate.getDate()).getTime();
+            const calendar = getImageCalendarParts(img);
+            const imgDate = new Date(calendar.year, calendar.monthIndex, calendar.day);
+            const imgDayStart = getImageDayStart(img);
 
-            if (img.timestamp >= thirtyDaysAgo) {
+            if (imgDayStart >= thirtyDaysAgo) {
                 // --- DAILY GROUPING (< 30 days) ---
                 if (imgDayStart === todayStart) {
                     label = 'Today';
@@ -82,9 +84,9 @@ export const useTimeline = (images: AIImage[], sortOption: SortOption = 'date_de
                     case 'name_desc': return b.filename.localeCompare(a.filename);
                     case 'size_desc': return (b.fileSize || 0) - (a.fileSize || 0);
                     case 'size_asc': return (a.fileSize || 0) - (b.fileSize || 0);
-                    case 'date_asc': return a.timestamp - b.timestamp; // Oldest first within the group
+                    case 'date_asc': return getEffectiveDisplayTimestamp(a) - getEffectiveDisplayTimestamp(b); // Oldest first within the group
                     case 'date_desc':
-                    default: return b.timestamp - a.timestamp; // Newest first within the group
+                    default: return getEffectiveDisplayTimestamp(b) - getEffectiveDisplayTimestamp(a); // Newest first within the group
                 }
             });
         });

@@ -23,4 +23,32 @@ describe('createDefaultAppSettings', () => {
         expect(settings.resourceSortOptions).not.toBe(defaults.resourceSortOptions);
         expect(settings.systemPrompts).not.toBe(defaults.systemPrompts);
     });
+
+    it('defaults the library image kind to All and preserves valid saved choices', () => {
+        expect(createDefaultAppSettings().librarySourceKind).toBe('all');
+        expect(createDefaultAppSettings({ librarySourceKind: 'photograph' }).librarySourceKind).toBe('photograph');
+        expect(createDefaultAppSettings({ librarySourceKind: 'invalid' as AppSettings['librarySourceKind'] }).librarySourceKind).toBe('all');
+    });
+
+    it('starts on Details and retains a supported global viewer preference', () => {
+        expect(createDefaultAppSettings().viewerPreferredTab).toBe('details');
+        expect(createDefaultAppSettings({ viewerPreferredTab: 'workflow' }).viewerPreferredTab).toBe('workflow');
+        expect(createDefaultAppSettings({ viewerPreferredTab: 'metadata' }).viewerPreferredTab).toBe('metadata');
+        expect(createDefaultAppSettings({ viewerPreferredTab: 'invalid' as AppSettings['viewerPreferredTab'] }).viewerPreferredTab).toBe('details');
+    });
+
+    it('upgrades a legacy image kind to Images only when no media scope was saved', () => {
+        expect(createDefaultAppSettings().libraryMediaType).toBe('all');
+        expect(createDefaultAppSettings({ librarySourceKind: 'photograph' }).libraryMediaType).toBe('image');
+        expect(createDefaultAppSettings({ librarySourceKind: 'photograph', libraryMediaType: 'all' }).libraryMediaType).toBe('all');
+        expect(createDefaultAppSettings({ librarySourceKind: 'photograph', libraryMediaType: 'video' })).toMatchObject({
+            libraryMediaType: 'video', librarySourceKind: 'all',
+        });
+    });
+
+    it.each(['all', 'video'] as const)('drops an inactive legacy kind when restoring %s', libraryMediaType => {
+        expect(createDefaultAppSettings({ libraryMediaType, librarySourceKind: 'photograph' })).toMatchObject({
+            libraryMediaType, librarySourceKind: 'all',
+        });
+    });
 });

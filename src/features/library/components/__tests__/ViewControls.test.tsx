@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { act, fireEvent, render, screen } from '../../../../test/testUtils';
+import { act, fireEvent, render, screen, within } from '../../../../test/testUtils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilterState, SortOption } from '../../../../types';
 import { ViewControls } from '../ViewControls';
@@ -39,6 +39,29 @@ const setup = (overrides: Partial<React.ComponentProps<typeof ViewControls>> = {
 };
 
 describe('ViewControls', () => {
+    it('separates layouts from thumbnail size and keeps Slideshow outside the View menu', () => {
+        const { rerender, props } = setup();
+        expect(screen.getByRole('button', { name: 'Start Slideshow' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
+        const layout = screen.getByRole('group', { name: 'Layout' });
+        expect(within(layout).getAllByRole('button')).toHaveLength(3);
+        expect(within(layout).queryByRole('slider')).toBeNull();
+        expect(within(layout).queryByRole('button', { name: 'Start Slideshow' })).toBeNull();
+        expect(screen.getByText('Thumbnail Size').className).not.toContain('sr-only');
+        rerender(<ViewControls {...props} showLayoutSwitcher={false} showThumbnailSize={false} />);
+        expect(screen.queryByRole('group', { name: 'Layout' })).toBeNull();
+        expect(screen.queryByRole('slider')).toBeNull();
+    });
+
+    it('shows collection context below compact counts without hiding its full name', () => {
+        setup({ displayedCount: 211000, totalCount: 1200000, scopeName: 'Artist - Study' });
+        const scope = screen.getByText('Artist - Study');
+        expect(scope.className).not.toContain('sr-only');
+        expect(scope.getAttribute('title')).toBe('Artist - Study');
+        expect(screen.getByTitle((211000).toLocaleString()).textContent).toBe('211k');
+        expect(screen.getByTitle((1200000).toLocaleString()).textContent).toBe('1.2M');
+    });
+
     it('preserves verified matches while the collection total is pending', () => {
         setup({ displayedCount: 7, totalCount: null, scopeName: 'Pending collection' });
         expect(screen.getByText('7')).toBeTruthy();
@@ -59,31 +82,26 @@ describe('ViewControls', () => {
 
     it('routes every layout, slideshow, and thumbnail-size control', () => {
         const { props } = setup();
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Grid Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Masonry Layout' }));
         fireEvent.click(screen.getByRole('button', { name: 'Use Justified Layout' }));
         expect(vi.mocked(props.setLayoutMode).mock.calls.map(call => call[0])).toEqual(['grid', 'masonry', 'justified']);
-        fireEvent.click(screen.getByRole('button', { name: 'Play Slideshow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Start Slideshow' }));
         expect(props.onSlideshow).toHaveBeenCalledTimes(1);
         fireEvent.change(screen.getByRole('slider'), { target: { value: '325' } });
         expect(props.setThumbnailSize).toHaveBeenCalledWith(325);
     });
 
-    it('filters the gallery by all items, images, or videos', () => {
-        const { rerender, props } = setup();
-        expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Videos' }));
-        expect(mocks.filters.mediaType).toBe('video');
-        rerender(<ViewControls {...props} />);
-        expect(screen.getByRole('button', { name: 'Videos' }).getAttribute('aria-pressed')).toBe('true');
-
-        fireEvent.click(screen.getByRole('button', { name: 'Images' }));
-        expect(mocks.filters.mediaType).toBe('image');
+    it('always exposes View controls, even with no hidden-content variants', () => {
+        setup();
+        expect(screen.getByRole('button', { name: 'View' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'View' }));
+        expect(screen.getByRole('slider', { name: 'Thumbnail Size' })).toBeTruthy();
     });
 
     it('selects every sort option, closes after selection, and dismisses outside clicks', () => {
-        setup();
+        const { props } = setup();
         const options: Array<[SortOption, string]> = [
             ['date_desc', 'Newest'], ['date_asc', 'Oldest'], ['name_asc', 'Name (A-Z)'], ['name_desc', 'Name (Z-A)'],
             ['size_desc', 'Largest (Size)'], ['size_asc', 'Smallest (Size)']
@@ -91,8 +109,9 @@ describe('ViewControls', () => {
         for (const [value, label] of options) {
             fireEvent.click(screen.getByText('Newest'));
             const matches = screen.getAllByText(label);
+            expect(matches[matches.length - 1].closest('button')?.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
             fireEvent.click(matches[matches.length - 1]);
-            expect(mocks.setSortOption).toHaveBeenLastCalledWith(value);
+            expect(props.setSortOption).toHaveBeenLastCalledWith(value);
         }
         fireEvent.click(screen.getByText('Newest'));
         expect(screen.getAllByText('Oldest')).toHaveLength(1);
@@ -112,7 +131,7 @@ describe('ViewControls', () => {
         expect(mocks.filters).toMatchObject({ showIntermediates: true, showGrids: true, showInvokeImageAssets: true });
 
         rerender(<ViewControls {...props} />);
-        fireEvent.mouseDown(screen.getByText('Display'));
+        fireEvent.mouseDown(screen.getByText('Visibility'));
         expect(screen.getByText('Show Intermediates')).toBeTruthy();
         fireEvent.mouseDown(document.body);
         expect(screen.queryByText('Show Intermediates')).toBeNull();
@@ -127,20 +146,18 @@ describe('ViewControls', () => {
     it('renders active layout, sort, and hidden-content variants', () => {
         mocks.availableHiddenContent = { hasIntermediates: true, hasGrids: false, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showIntermediates: true };
-        mocks.sortOption = 'name_desc';
-        const { container, rerender, props } = setup({ layoutMode: 'grid' });
+        const { container, rerender, props } = setup({ layoutMode: 'grid', sortOption: 'name_desc' });
+        fireEvent.click(screen.getByTitle('View Options'));
         expect(screen.getByRole('button', { name: 'Use Grid Layout' }).className).toContain('bg-white');
         expect(screen.getByText('Name (Z-A)')).toBeTruthy();
-        fireEvent.click(screen.getByTitle('View Options'));
         expect(container.querySelector('[class~="right-0.5"]')).toBeTruthy();
 
         mocks.availableHiddenContent = { hasIntermediates: false, hasGrids: true, hasInvokeImageAssets: false };
         mocks.filters = { ...baseFilters(), showGrids: true };
-        mocks.sortOption = 'future' as SortOption;
-        rerender(<ViewControls {...props} layoutMode="justified" showLayoutSwitcher={false} showSlideshowButton={false} />);
+        rerender(<ViewControls {...props} layoutMode="justified" sortOption={'future' as SortOption} showLayoutSwitcher={false} showSlideshowButton={false} />);
         expect(screen.getByText('Sort')).toBeTruthy();
         expect(screen.queryByRole('button', { name: 'Use Grid Layout' })).toBeNull();
-        expect(screen.queryByRole('button', { name: 'Play Slideshow' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Start Slideshow' })).toBeNull();
 
         rerender(<ViewControls {...props} layoutMode="justified" />);
         expect(screen.getByRole('button', { name: 'Use Justified Layout' }).className).toContain('bg-white');
@@ -159,7 +176,7 @@ describe('ViewControls', () => {
         rerender(<ViewControls {...props} displayedCount={10} totalCount={10} scopeName="A Very Long Collection Name" />);
         const scopeLabel = screen.getByText('A Very Long Collection Name');
         expect(scopeLabel.getAttribute('title')).toBe('A Very Long Collection Name');
-        expect(scopeLabel.className).toContain('max-w-[40ch]');
+        expect(scopeLabel.className).toContain('w-full');
         expect(scopeLabel.className).toContain('normal-case');
         expect(screen.queryByText(/TOTAL A Very Long Collection Name/)).toBeNull();
     });
@@ -291,7 +308,7 @@ describe('ViewControls', () => {
         expect(screen.getByText('...')).toBeTruthy();
 
         act(() => vi.advanceTimersByTime(1));
-        expect(screen.getByText('1,254')).toBeTruthy();
+        expect(screen.getByText('1.3k')).toBeTruthy();
         expect(screen.getByText('Reference Poses - Collection Part 1')).toBeTruthy();
         expect(screen.queryByText('...')).toBeNull();
     });

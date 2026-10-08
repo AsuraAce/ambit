@@ -12,6 +12,113 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tauri::Emitter;
 
+pub(crate) const CURRENT_PHOTO_REFRESH_VERSION: i64 = 2;
+
+const UPDATE_PHOTO_METADATA_SQL: &str = "UPDATE images
+     SET detected_source_kind = ?1,
+         source_kind = COALESCE(source_kind_override, ?1),
+         photo_metadata_json = ?2,
+         capture_wall_time_ms = ?3,
+         display_timestamp = CASE
+             WHEN COALESCE(source_kind_override, ?1) = 'photograph'
+             THEN COALESCE(?3, timestamp)
+             ELSE timestamp
+         END,
+         thumbnail_version = CASE
+             WHEN thumbnail_source = 'ambit'
+                  AND (detected_source_kind IS NOT ?1
+                       OR photo_metadata_json IS NOT ?2
+                       OR width != ?4
+                       OR height != ?5)
+             THEN 0
+             ELSE thumbnail_version
+         END,
+         width = ?4,
+         height = ?5,
+         photo_refresh_version = ?6
+     WHERE id = ?7";
+
+fn build_photo_filters(
+    force_reparse: bool,
+    root: Option<&str>,
+) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
+    let mut clauses = vec![
+        "is_deleted = 0".to_string(),
+        "media_type = 'image'".to_string(),
+        "(detected_source_kind != 'generated' OR source_kind_override = 'photograph')".to_string(),
+    ];
+    if !force_reparse {
+        clauses.push(format!(
+            "photo_refresh_version < {}",
+            CURRENT_PHOTO_REFRESH_VERSION
+        ));
+    }
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(root) = root {
+        let root_forward = root.replace('\\', "/").trim_end_matches('/').to_string();
+        let root_backward = root.replace('/', "\\").trim_end_matches('\\').to_string();
+        clauses.push("(path = ? OR path = ? OR path LIKE ? || '/%' OR path LIKE ? || '\\%' OR path LIKE ? || '/%' OR path LIKE ? || '\\%')".to_string());
+        params.push(Box::new(root_forward.clone()));
+        params.push(Box::new(root_backward.clone()));
+        params.push(Box::new(root_forward.clone()));
+        params.push(Box::new(root_forward));
+        params.push(Box::new(root_backward.clone()));
+        params.push(Box::new(root_backward));
+    }
+    (clauses.join(" AND "), params)
+}
+
+fn can_checkpoint_photo_refresh(photo_metadata_error: Option<&str>) -> bool {
+    photo_metadata_error.is_none()
+}
+
+fn replace_generated_resource_links(
+    conn: &rusqlite::Connection,
+    image_id: &str,
+    metadata: &ImageMetadata,
+) -> Result<(), String> {
+    for (table, column, values) in [
+        ("image_loras", "lora_name", metadata.loras.as_slice()),
+        (
+            "image_embeddings",
+            "embedding_name",
+            metadata.embeddings.as_slice(),
+        ),
+        (
+            "image_hypernetworks",
+            "hypernetwork_name",
+            metadata.hypernetworks.as_slice(),
+        ),
+        (
+            "image_controlnets",
+            "controlnet_name",
+            metadata.control_nets.as_slice(),
+        ),
+        (
+            "image_ipadapters",
+            "ipadapter_name",
+            metadata.ip_adapters.as_slice(),
+        ),
+    ] {
+        conn.execute(
+            &format!("DELETE FROM {table} WHERE image_id = ?1"),
+            params![image_id],
+        )
+        .map_err(|error| error.to_string())?;
+        let mut insert = conn
+            .prepare_cached(&format!(
+                "INSERT OR IGNORE INTO {table} (image_id, {column}) VALUES (?1, ?2)"
+            ))
+            .map_err(|error| error.to_string())?;
+        for value in values {
+            insert
+                .execute(params![image_id, value])
+                .map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// State for tracking reparse job cancellation.
 pub struct ReparseState {
     pub is_cancelled: Arc<AtomicBool>,
@@ -62,6 +169,7 @@ pub async fn start_reparse_job(
     force_reparse: bool,
     filter_root: Option<String>,
     filter_tool: Option<String>,
+    refresh_photo_metadata: bool,
 ) -> Result<ReparseJobResult, String> {
     // Reset cancellation flag at start
     state.is_cancelled.store(false, Ordering::SeqCst);
@@ -137,13 +245,27 @@ pub async fn start_reparse_job(
         let (where_sql, count_params) = build_filters(force_reparse, normalized_filter_root.as_ref(), filter_tool.as_ref());
         let count_query = format!("SELECT COUNT(*) FROM scoped_images WHERE {}", where_sql);
 
-        let total: usize = conn.query_row(
+        let generated_total: usize = conn.query_row(
             &count_query,
             rusqlite::params_from_iter(count_params.iter()),
             |r| r.get::<_, i64>(0)
         ).unwrap_or(0) as usize;
 
-        log::info!("[Reparse] Total query complete: {}", total);
+        let photo_total = if refresh_photo_metadata && filter_tool.is_none() {
+            let (photo_where, photo_params) =
+                build_photo_filters(force_reparse, normalized_filter_root.as_deref());
+            conn.query_row(
+                &format!("SELECT COUNT(*) FROM scoped_images WHERE {}", photo_where),
+                rusqlite::params_from_iter(photo_params.iter()),
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0) as usize
+        } else {
+            0
+        };
+        let total = generated_total + photo_total;
+
+        log::info!("[Reparse] Total query complete: {} generated + {} photo candidates", generated_total, photo_total);
 
         if total == 0 {
             log::info!("[Reparse] No images need refreshing");
@@ -178,6 +300,15 @@ pub async fn start_reparse_job(
         let progress_interval = 50;
         let mut last_emit_time = std::time::Instant::now();
         let min_emit_interval = std::time::Duration::from_millis(50);
+
+        #[cfg(feature = "qa-profile")]
+        let qa_batch_delay = std::time::Duration::from_millis(
+            std::env::var("AMBIT_QA_REFRESH_BATCH_DELAY_MS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(400)
+                .min(10_000),
+        );
         let mut was_cancelled = false;
 
         let should_use_prefetch = filter_root.is_some();
@@ -460,6 +591,167 @@ pub async fn start_reparse_job(
             }
         }
 
+        if photo_total > 0 && !is_cancelled.load(Ordering::SeqCst) {
+            log::info!("[Refresh] Starting restart-safe photo metadata phase");
+            let mut last_photo_id = String::new();
+            let photo_batch_size = 100;
+
+            loop {
+                if is_cancelled.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                let batch: Vec<(String, String)> = {
+                    let (photo_where, mut photo_params) =
+                        build_photo_filters(force_reparse, normalized_filter_root.as_deref());
+                    photo_params.push(Box::new(last_photo_id.clone()));
+                    let query = format!(
+                        "SELECT id, path
+                         FROM scoped_images
+                         WHERE {} AND id > ?
+                         ORDER BY id ASC
+                         LIMIT {}",
+                        photo_where, photo_batch_size
+                    );
+                    let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
+                    let rows = stmt
+                        .query_map(rusqlite::params_from_iter(photo_params.iter()), |row| {
+                            Ok((row.get(0)?, row.get(1)?))
+                        })
+                        .map_err(|e| e.to_string())?
+                        .collect::<Result<Vec<_>, rusqlite::Error>>()
+                        .map_err(|e| e.to_string())?;
+                    rows
+                };
+
+                if batch.is_empty() {
+                    break;
+                }
+                last_photo_id = batch.last().map(|row| row.0.clone()).unwrap_or_default();
+
+                let scan_results: Vec<(String, Result<crate::scanner::models::ScanResult, String>)> =
+                    batch
+                        .par_iter()
+                        .map(|(id, path)| {
+                            (
+                                id.clone(),
+                                crate::scanner::core::scan_image_internal(
+                                    path.clone(),
+                                    None,
+                                    true,
+                                    true,
+                                    None,
+                                ),
+                            )
+                        })
+                        .collect();
+
+                let tx = conn.transaction().map_err(|e| e.to_string())?;
+                {
+                    let mut update_photo = tx
+                        .prepare_cached(UPDATE_PHOTO_METADATA_SQL)
+                        .map_err(|e| e.to_string())?;
+                    let mut update_discovered_generated = tx
+                        .prepare_cached(
+                            "UPDATE images
+                             SET metadata_json = ?1,
+                                 original_parsed_json = ?1,
+                                 original_metadata_json = ?2,
+                                 model_hash = ?3,
+                                 model_name = ?4,
+                                 tool = ?5,
+                                 resolved_model_name = ?4,
+                                 steps = ?6,
+                                 seed = ?7,
+                                 cfg = ?8,
+                                 sampler = ?9,
+                                 generation_type = ?10,
+                                 positive_prompt = ?11,
+                                 negative_prompt = ?12,
+                                 parser_version = 0
+                             WHERE id = ?13",
+                        )
+                        .map_err(|e| e.to_string())?;
+
+                    for (id, scan_result) in scan_results {
+                        processed += 1;
+                        match scan_result {
+                            Ok(scan) => {
+                                let photo_json = scan
+                                    .photo_metadata
+                                    .as_ref()
+                                    .and_then(|photo| serde_json::to_string(photo).ok());
+                                if scan.detected_source_kind
+                                    == crate::metadata::photo::SourceKind::Generated
+                                {
+                                    if let Some(meta) = scan.metadata.as_ref() {
+                                        let metadata_json = serde_json::to_string(meta)
+                                            .map_err(|error| error.to_string())?;
+                                        let original_metadata_json = serde_json::to_string(&scan.chunks)
+                                            .map_err(|error| error.to_string())?;
+                                        update_discovered_generated
+                                            .execute(params![
+                                                metadata_json,
+                                                original_metadata_json,
+                                                meta.model_hash,
+                                                meta.model,
+                                                meta.tool,
+                                                meta.steps,
+                                                meta.seed,
+                                                meta.cfg,
+                                                meta.sampler.to_lowercase().replace('_', " ").replace('-', " "),
+                                                meta.generation_type,
+                                                meta.positive_prompt,
+                                                meta.negative_prompt,
+                                                id,
+                                            ])
+                                            .map_err(|error| error.to_string())?;
+                                        replace_generated_resource_links(&tx, &id, meta)?;
+                                    }
+                                }
+                                if scan.error.is_some() || scan.photo_metadata_error.is_some() {
+                                    errors += 1;
+                                }
+                                if !can_checkpoint_photo_refresh(
+                                    scan.photo_metadata_error.as_deref(),
+                                ) {
+                                    continue;
+                                }
+                                updated += update_photo
+                                    .execute(params![
+                                        scan.detected_source_kind.as_str(),
+                                        photo_json,
+                                        scan.capture_wall_time_ms,
+                                        i64::from(scan.width),
+                                        i64::from(scan.height),
+                                        CURRENT_PHOTO_REFRESH_VERSION,
+                                        id,
+                                    ])
+                                    .map_err(|e| e.to_string())?;
+                            }
+                            Err(error) => {
+                                errors += 1;
+                                log::warn!("[Refresh] Photo metadata scan failed for {}: {}", id, error);
+                            }
+                        }
+                    }
+                }
+                tx.commit().map_err(|e| e.to_string())?;
+
+                let _ = app.emit("refresh-progress", ReparseProgress {
+                    current: processed,
+                    total,
+                    updated,
+                    errors,
+                    phase: "processing".to_string(),
+                    message: format!("Refreshing photo metadata {}/{}", processed, total),
+                });
+
+                #[cfg(feature = "qa-profile")]
+                std::thread::sleep(qa_batch_delay);
+            }
+        }
+
         if is_cancelled.load(Ordering::SeqCst) {
             log::info!("[Refresh] Job cancelled by user");
             was_cancelled = true;
@@ -507,6 +799,7 @@ pub fn cancel_reparse_job(state: tauri::State<'_, ReparseState>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rusqlite::{params, Connection};
 
     #[test]
     fn progress_payload_serializes_structured_counters() {
@@ -525,5 +818,159 @@ mod tests {
         assert_eq!(value["total"], 288_222);
         assert_eq!(value["updated"], 123_981);
         assert_eq!(value["errors"], 2);
+    }
+
+    #[test]
+    fn photo_refresh_invalidates_orientation_only_thumbnail_changes() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                timestamp INTEGER NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                thumbnail_source TEXT,
+                thumbnail_version INTEGER NOT NULL,
+                detected_source_kind TEXT NOT NULL,
+                source_kind_override TEXT,
+                source_kind TEXT NOT NULL,
+                photo_metadata_json TEXT,
+                capture_wall_time_ms INTEGER,
+                display_timestamp INTEGER NOT NULL,
+                photo_refresh_version INTEGER NOT NULL
+             );
+             INSERT INTO images VALUES (
+                'orientation-only', 100, 4000, 3000, 'ambit', 2,
+                'other', NULL, 'other', '{\"orientation\":1}', NULL, 100, 0
+             );",
+        )
+        .expect("seed row");
+
+        conn.execute(
+            UPDATE_PHOTO_METADATA_SQL,
+            params![
+                "other",
+                r#"{"orientation":3}"#,
+                Option::<i64>::None,
+                4000_i64,
+                3000_i64,
+                CURRENT_PHOTO_REFRESH_VERSION,
+                "orientation-only",
+            ],
+        )
+        .expect("refresh photo metadata");
+
+        let state: (i64, i64) = conn
+            .query_row(
+                "SELECT thumbnail_version, photo_refresh_version
+                 FROM images WHERE id = 'orientation-only'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("updated state");
+        assert_eq!(state, (0, CURRENT_PHOTO_REFRESH_VERSION));
+    }
+
+    #[test]
+    fn photo_refresh_includes_manual_photo_corrections_but_skips_generated_automatic_rows() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE images (
+                id TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                is_deleted INTEGER NOT NULL,
+                detected_source_kind TEXT NOT NULL,
+                source_kind_override TEXT,
+                photo_refresh_version INTEGER NOT NULL,
+                media_type TEXT NOT NULL DEFAULT 'image'
+             );
+             INSERT INTO images VALUES
+                ('generated-auto', 'C:/library/a.jpg', 0, 'generated', NULL, 0, 'image'),
+                ('generated-corrected', 'C:/library/b.jpg', 0, 'generated', 'photograph', 0, 'image'),
+                ('other-stale', 'C:/library/c.jpg', 0, 'other', NULL, 0, 'image'),
+                ('png-v1', 'C:/library/d.png', 0, 'other', NULL, 1, 'image'),
+                ('webp-v1', 'C:/library/e.webp', 0, 'other', NULL, 1, 'image'),
+                ('other-current-v2', 'C:/library/f.jpg', 0, 'other', NULL, 2, 'image'),
+                ('video', 'C:/library/g.mp4', 0, 'other', NULL, 0, 'video');",
+        )
+        .expect("seed candidates");
+
+        let (where_sql, values) = build_photo_filters(false, None);
+        let ids = conn
+            .prepare(&format!(
+                "SELECT id FROM images WHERE {where_sql} ORDER BY id"
+            ))
+            .expect("prepare candidates")
+            .query_map(rusqlite::params_from_iter(values.iter()), |row| {
+                row.get::<_, String>(0)
+            })
+            .expect("query candidates")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect candidates");
+
+        assert_eq!(
+            ids,
+            ["generated-corrected", "other-stale", "png-v1", "webp-v1"]
+        );
+    }
+
+    #[test]
+    fn photo_metadata_failures_remain_pending_for_retry() {
+        assert!(can_checkpoint_photo_refresh(None));
+        assert!(!can_checkpoint_photo_refresh(Some(
+            "temporary EXIF read failure"
+        )));
+    }
+
+    #[test]
+    fn discovered_generated_metadata_replaces_all_resource_links() {
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE image_loras (image_id TEXT, lora_name TEXT, UNIQUE(image_id, lora_name));
+             CREATE TABLE image_embeddings (image_id TEXT, embedding_name TEXT, UNIQUE(image_id, embedding_name));
+             CREATE TABLE image_hypernetworks (image_id TEXT, hypernetwork_name TEXT, UNIQUE(image_id, hypernetwork_name));
+             CREATE TABLE image_controlnets (image_id TEXT, controlnet_name TEXT, UNIQUE(image_id, controlnet_name));
+             CREATE TABLE image_ipadapters (image_id TEXT, ipadapter_name TEXT, UNIQUE(image_id, ipadapter_name));
+             INSERT INTO image_loras VALUES ('discovered', 'stale');
+             INSERT INTO image_loras VALUES ('unrelated', 'keep');",
+        )
+        .expect("resource schema");
+        let metadata = ImageMetadata {
+            loras: vec!["detail".to_string()],
+            embeddings: vec!["easynegative".to_string()],
+            hypernetworks: vec!["style".to_string()],
+            control_nets: vec!["depth".to_string()],
+            ip_adapters: vec!["reference".to_string()],
+            ..ImageMetadata::default()
+        };
+
+        replace_generated_resource_links(&conn, "discovered", &metadata).expect("replace links");
+
+        for (table, column, expected) in [
+            ("image_loras", "lora_name", "detail"),
+            ("image_embeddings", "embedding_name", "easynegative"),
+            ("image_hypernetworks", "hypernetwork_name", "style"),
+            ("image_controlnets", "controlnet_name", "depth"),
+            ("image_ipadapters", "ipadapter_name", "reference"),
+        ] {
+            let values = conn
+                .prepare(&format!(
+                    "SELECT {column} FROM {table} WHERE image_id = 'discovered'"
+                ))
+                .expect("prepare resource query")
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("query resources")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect resources");
+            assert_eq!(values, [expected]);
+        }
+        let unrelated: String = conn
+            .query_row(
+                "SELECT lora_name FROM image_loras WHERE image_id = 'unrelated'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("unrelated link");
+        assert_eq!(unrelated, "keep");
     }
 }

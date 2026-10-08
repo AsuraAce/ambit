@@ -1,6 +1,7 @@
 use super::run_blocking;
 use crate::db::facets::FacetResourceTouches;
 use crate::db::ImageRecord;
+use crate::metadata::photo::SourceKind;
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use std::collections::BTreeSet;
 use std::sync::OnceLock;
@@ -511,14 +512,14 @@ fn save_images_batch_inner(
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
     {
-        use crate::metadata::CURRENT_PARSER_VERSION;
+        use crate::{db::reparse::CURRENT_PHOTO_REFRESH_VERSION, metadata::CURRENT_PARSER_VERSION};
 
         let valid_replacement_ids = valid_active_replacement_ids(&tx, images)?;
         let invoke_source_path_matches_scope =
             literal_invoke_images_prefix_sql("?2", "scope.images_root");
         let preserve_active_replacement_sql = "images.thumbnail_source = 'ambit'
             AND excluded.thumbnail_source = 'ambit'
-            AND ?28 = 1
+            AND ?34 = 1
             AND LOWER(excluded.thumbnail_path) LIKE '%.webp'
             AND LOWER(excluded.thumbnail_path) NOT LIKE '%.replacement.webp'
             AND LOWER(images.thumbnail_path) = LOWER(
@@ -526,9 +527,9 @@ fn save_images_batch_inner(
                 || '.replacement.webp'
             )";
         let save_sql =
-            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt)
+            "INSERT INTO images (id, path, width, height, file_size, file_hash, timestamp, metadata_json, thumbnail_path, micro_thumbnail, thumbnail_source, thumbnail_version, is_favorite, is_pinned, is_deleted, is_missing, user_masked, group_id, board_id, notes, original_metadata_json, original_state_json, is_corrupt, invoke_image_name, invoke_image_category, invoke_image_origin, invoke_owner_id, invoke_scope_hidden, invoke_source_id, model_hash, model_name, tool, resolved_model_name, steps, seed, cfg, sampler, generation_type, parser_version, original_parsed_json, positive_prompt, negative_prompt, detected_source_kind, source_kind_override, source_kind, photo_metadata_json, capture_wall_time_ms, display_timestamp, photo_refresh_version)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
-                    CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN 1 ELSE 0 END,
+                    CASE WHEN ?11 = 'ambit' AND ?9 IS NOT NULL AND ?9 != '' AND ?2 != ?9 THEN ?32 ELSE 0 END,
                     ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26,
                     0,
                     (SELECT scope.db_path FROM invoke_owner_scope_state scope
@@ -546,10 +547,19 @@ fn save_images_batch_inner(
                     ?27,
                     ?8,
                     COALESCE(NULLIF(json_extract(?8, '$.positivePrompt'), ''), NULLIF(json_extract(?8, '$.positive_prompt'), '')),
-                    COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), ''))
+                    COALESCE(NULLIF(json_extract(?8, '$.negativePrompt'), ''), NULLIF(json_extract(?8, '$.negative_prompt'), '')),
+                    ?28,
+                    ?29,
+                    COALESCE(?29, ?28),
+                    ?30,
+                    ?31,
+                    CASE WHEN COALESCE(?29, ?28) = 'photograph' THEN COALESCE(?31, ?7) ELSE ?7 END,
+                    ?33
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     path=excluded.path,
+                    width=excluded.width,
+                    height=excluded.height,
                     timestamp=excluded.timestamp,
                     file_size=excluded.file_size,
                     file_hash=excluded.file_hash,
@@ -573,6 +583,11 @@ fn save_images_batch_inner(
                         WHEN NULLIF(excluded.thumbnail_path, '') IS NOT NULL
                              AND images.thumbnail_path IS NOT excluded.thumbnail_path
                              AND NOT (__PRESERVE_ACTIVE_REPLACEMENT__) THEN 0
+                        WHEN images.thumbnail_source = 'ambit'
+                             AND (images.detected_source_kind IS NOT excluded.detected_source_kind
+                                  OR images.photo_metadata_json IS NOT excluded.photo_metadata_json
+                                  OR images.width != excluded.width
+                                  OR images.height != excluded.height) THEN 0
                         ELSE images.thumbnail_version
                     END,
                     thumbnail_failure_count=CASE
@@ -633,7 +648,18 @@ fn save_images_batch_inner(
                     parser_version=excluded.parser_version,
                     original_parsed_json=COALESCE(images.original_parsed_json, excluded.original_parsed_json),
                     positive_prompt=excluded.positive_prompt,
-                    negative_prompt=excluded.negative_prompt
+                    negative_prompt=excluded.negative_prompt,
+                    detected_source_kind=excluded.detected_source_kind,
+                    source_kind_override=images.source_kind_override,
+                    source_kind=COALESCE(images.source_kind_override, excluded.detected_source_kind),
+                    photo_metadata_json=excluded.photo_metadata_json,
+                    capture_wall_time_ms=excluded.capture_wall_time_ms,
+                    display_timestamp=CASE
+                        WHEN COALESCE(images.source_kind_override, excluded.detected_source_kind) = 'photograph'
+                        THEN COALESCE(excluded.capture_wall_time_ms, excluded.timestamp)
+                        ELSE excluded.timestamp
+                    END,
+                    photo_refresh_version=excluded.photo_refresh_version
                 WHERE images.metadata_json != excluded.metadata_json
                     OR images.timestamp != excluded.timestamp
                     OR images.file_size != excluded.file_size
@@ -644,6 +670,12 @@ fn save_images_batch_inner(
                     OR images.is_pinned IS NOT excluded.is_pinned
                     OR images.is_missing IS NOT excluded.is_missing
                     OR images.board_id IS NOT excluded.board_id
+                    OR images.width != excluded.width
+                    OR images.height != excluded.height
+                    OR images.detected_source_kind != excluded.detected_source_kind
+                    OR images.photo_metadata_json IS NOT excluded.photo_metadata_json
+                    OR images.capture_wall_time_ms IS NOT excluded.capture_wall_time_ms
+                    OR images.photo_refresh_version != excluded.photo_refresh_version
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_name IS NOT excluded.invoke_image_name)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_category IS NOT excluded.invoke_image_category)
                     OR (excluded.invoke_image_name IS NOT NULL AND images.invoke_image_origin IS NOT excluded.invoke_image_origin)
@@ -768,6 +800,12 @@ fn save_images_batch_inner(
             .map_err(|e| e.to_string())?;
 
         for img in images {
+            let photo_metadata_json = img
+                .photo_metadata
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|error| error.to_string())?;
             let rows_affected = stmt
                 .execute(params![
                     img.id,
@@ -797,6 +835,16 @@ fn save_images_batch_inner(
                     img.invoke_image_origin,
                     img.invoke_owner_id,
                     CURRENT_PARSER_VERSION,
+                    img.detected_source_kind.as_str(),
+                    img.source_kind_override.map(|kind| kind.as_str()),
+                    photo_metadata_json,
+                    img.capture_wall_time_ms,
+                    img.thumbnail_version,
+                    if img.photo_metadata_error.is_some() {
+                        0
+                    } else {
+                        CURRENT_PHOTO_REFRESH_VERSION
+                    },
                     i64::from(valid_replacement_ids.contains(&img.id))
                 ])
                 .map_err(|e| e.to_string())?;
@@ -3012,6 +3060,55 @@ pub async fn mark_images_corrupt(app: AppHandle, ids: Vec<String>) -> Result<usi
     }).await
 }
 
+pub fn set_image_source_kind_for_conn(
+    conn: &Connection,
+    image_ids: &[String],
+    source_kind_override: Option<SourceKind>,
+) -> Result<usize, String> {
+    if image_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let mut updated = 0;
+    {
+        let mut stmt = tx
+            .prepare_cached(
+                "UPDATE images
+                 SET source_kind_override = ?1,
+                     source_kind = COALESCE(?1, detected_source_kind),
+                     display_timestamp = CASE
+                         WHEN COALESCE(?1, detected_source_kind) = 'photograph'
+                         THEN COALESCE(capture_wall_time_ms, timestamp)
+                         ELSE timestamp
+                     END
+                 WHERE id = ?2 AND id IN (SELECT id FROM scoped_images WHERE media_type = 'image')",
+            )
+            .map_err(|e| e.to_string())?;
+        let override_value = source_kind_override.map(SourceKind::as_str);
+        for id in image_ids {
+            updated += stmt
+                .execute(params![override_value, id])
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(updated)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+#[specta::specta]
+pub async fn set_image_source_kind(
+    app: AppHandle,
+    image_ids: Vec<String>,
+    source_kind_override: Option<SourceKind>,
+) -> Result<usize, String> {
+    run_blocking(app, move |conn| {
+        set_image_source_kind_for_conn(conn, &image_ids, source_kind_override)
+    })
+    .await
+}
+
 #[derive(serde::Serialize, specta::Type)]
 pub struct IntegrityResult {
     pub missing: usize,
@@ -3143,6 +3240,12 @@ mod tests {
             thumbnail_path: format!("C:/thumbs/{}.webp", id),
             micro_thumbnail: None,
             thumbnail_source: Some("ambit".to_string()),
+            thumbnail_version: crate::thumb::CURRENT_THUMBNAIL_VERSION,
+            detected_source_kind: crate::metadata::photo::SourceKind::Generated,
+            source_kind_override: None,
+            photo_metadata: None,
+            photo_metadata_error: None,
+            capture_wall_time_ms: None,
             is_favorite: false,
             is_pinned: false,
             is_deleted: false,
@@ -3612,6 +3715,15 @@ mod tests {
 
         let mut initial =
             create_image_record("image", 100, 10, r#"{"model":"OldModel","tool":"OldTool"}"#);
+        // The current save command requires the current schema; migration 72's
+        // preservation guarantees were asserted above at the upgrade boundary.
+        for migration in crate::db::migrations::init_db()
+            .into_iter()
+            .filter(|migration| migration.version > 72)
+        {
+            conn.execute_batch(migration.sql)
+                .expect("finish schema upgrade");
+        }
         initial.path = "C:/Invoke/outputs/images/image.png".to_string();
         super::save_images_batch_inner(&conn, &[initial]).expect("insert image");
 
@@ -5281,7 +5393,7 @@ mod tests {
 
         let row = fetch_thumbnail_state(&conn, "img-same");
         assert_eq!(row.1.as_deref(), Some("ambit"));
-        assert_eq!(row.2, 1);
+        assert_eq!(row.2, i64::from(crate::thumb::CURRENT_THUMBNAIL_VERSION));
     }
 
     #[test]
@@ -5317,7 +5429,7 @@ mod tests {
         let row = fetch_thumbnail_state(&conn, "img-rescan");
         assert_eq!(row.0, replacement_path.to_string_lossy());
         assert_eq!(row.1.as_deref(), Some("ambit"));
-        assert_eq!(row.2, 1);
+        assert_eq!(row.2, i64::from(crate::thumb::CURRENT_THUMBNAIL_VERSION));
         let metadata: String = conn
             .query_row(
                 "SELECT metadata_json FROM images WHERE id = 'img-rescan'",
@@ -5368,7 +5480,7 @@ mod tests {
                 "invalid bytes: {invalid:?}"
             );
             assert_eq!(row.1.as_deref(), Some("ambit"));
-            assert_eq!(row.2, 1);
+            assert_eq!(row.2, i64::from(crate::thumb::CURRENT_THUMBNAIL_VERSION));
         }
 
         std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
@@ -5404,7 +5516,7 @@ mod tests {
         let row = fetch_thumbnail_state(&conn, "img-rescan");
         assert_eq!(row.0, canonical_path.to_string_lossy());
         assert_eq!(row.1.as_deref(), Some("ambit"));
-        assert_eq!(row.2, 1);
+        assert_eq!(row.2, i64::from(crate::thumb::CURRENT_THUMBNAIL_VERSION));
 
         std::fs::remove_dir_all(&thumbnail_dir).expect("remove thumbnail fixture directory");
     }
@@ -5439,10 +5551,285 @@ mod tests {
         let row = fetch_thumbnail_state(&conn, "img-fixed");
         assert_eq!(row.0, "C:/thumbs/img-fixed-repaired.webp");
         assert_eq!(row.1.as_deref(), Some("ambit"));
-        assert_eq!(row.2, 1);
+        assert_eq!(row.2, i64::from(crate::thumb::CURRENT_THUMBNAIL_VERSION));
         assert_eq!(row.3, 0);
         assert_eq!(row.4, None);
         assert_eq!(row.5, None);
+    }
+
+    #[test]
+    fn photo_upsert_materializes_capture_date_invalidates_orientation_and_preserves_override() {
+        use crate::metadata::photo::{CaptureTimeMetadata, PhotoMetadata, SourceKind};
+
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let initial = create_image_record("photo", 100, 200, "{}");
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial save");
+        conn.execute(
+            "UPDATE images SET source_kind_override = 'other', source_kind = 'other' WHERE id = 'photo'",
+            [],
+        )
+        .expect("set manual override");
+
+        let mut photo = create_image_record("photo", 200, 300, "{}");
+        photo.width = 3000;
+        photo.height = 4000;
+        photo.detected_source_kind = SourceKind::Photograph;
+        photo.photo_metadata = Some(PhotoMetadata {
+            captured_at: Some(CaptureTimeMetadata {
+                local: "2026:07:29 14:15:16".to_string(),
+                offset: None,
+                subsecond: None,
+            }),
+            camera_model: Some("Camera One".to_string()),
+            orientation: Some(6),
+            ..PhotoMetadata::default()
+        });
+        photo.capture_wall_time_ms = Some(123_456);
+        super::save_images_batch_inner(&conn, &[photo]).expect("photo rescan");
+
+        let row: (String, String, String, String, i64, i64, i64, i64) = conn
+            .query_row(
+                "SELECT detected_source_kind, source_kind_override, source_kind,
+                        photo_metadata_json, capture_wall_time_ms, display_timestamp,
+                        thumbnail_version, width
+                 FROM images WHERE id = 'photo'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                    ))
+                },
+            )
+            .expect("photo row");
+
+        assert_eq!(row.0, "photograph");
+        assert_eq!(row.1, "other", "rescan must preserve the manual override");
+        assert_eq!(row.2, "other");
+        assert!(row.3.contains("Camera One"));
+        assert_eq!(row.4, 123_456);
+        assert_eq!(row.5, 200, "Other uses file-modified display time");
+        assert_eq!(row.6, 0, "new photo orientation requires thumbnail repair");
+        assert_eq!(row.7, 3000);
+
+        let mut unoverridden = create_image_record("photo-effective", 500, 600, "{}");
+        unoverridden.detected_source_kind = SourceKind::Photograph;
+        unoverridden.capture_wall_time_ms = Some(456_789);
+        unoverridden.photo_metadata = Some(PhotoMetadata {
+            camera_make: Some("Camera Co".to_string()),
+            lens_model: Some("Prime".to_string()),
+            ..PhotoMetadata::default()
+        });
+        super::save_images_batch_inner(&conn, &[unoverridden]).expect("new effective photo");
+
+        let effective: (String, i64, i64) = conn
+            .query_row(
+                "SELECT source_kind, display_timestamp, thumbnail_version
+                 FROM images WHERE id = 'photo-effective'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("effective photo row");
+        assert_eq!(effective, ("photograph".to_string(), 456_789, 2));
+    }
+
+    #[test]
+    fn upsert_invalidates_ambit_thumbnail_when_orientation_changes_without_axis_swap() {
+        use crate::metadata::photo::PhotoMetadata;
+
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut initial = create_image_record("orientation-only", 100, 200, "{}");
+        initial.photo_metadata = Some(PhotoMetadata {
+            orientation: Some(1),
+            ..PhotoMetadata::default()
+        });
+        super::save_images_batch_inner(&conn, &[initial]).expect("initial save");
+
+        let mut rotated = create_image_record("orientation-only", 101, 201, "{}");
+        rotated.photo_metadata = Some(PhotoMetadata {
+            orientation: Some(3),
+            ..PhotoMetadata::default()
+        });
+        super::save_images_batch_inner(&conn, &[rotated]).expect("orientation refresh");
+
+        let row = fetch_thumbnail_state(&conn, "orientation-only");
+        assert_eq!(
+            row.2, 0,
+            "an orientation-only metadata change makes the cached pixels stale"
+        );
+    }
+
+    #[test]
+    fn source_kind_correction_excludes_hidden_owner_images_and_videos() {
+        use crate::metadata::photo::SourceKind;
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+        conn.execute_batch(
+            "INSERT INTO images (id, path, timestamp, media_type, invoke_scope_hidden)
+             VALUES ('visible', 'visible.jpg', 100, 'image', 0),
+                    ('hidden', 'hidden.jpg', 100, 'image', 1),
+                    ('video', 'video.mp4', 100, 'video', 0);",
+        )
+        .unwrap();
+        let updated = super::set_image_source_kind_for_conn(
+            &conn,
+            &["visible".into(), "hidden".into(), "video".into()],
+            Some(SourceKind::Photograph),
+        )
+        .unwrap();
+        assert_eq!(updated, 1);
+        let corrected: String = conn
+            .query_row(
+                "SELECT id FROM images WHERE source_kind_override = 'photograph'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(corrected, "visible");
+    }
+
+    #[test]
+    fn source_kind_correction_updates_effective_kind_and_display_time_atomically() {
+        use crate::metadata::photo::SourceKind;
+
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut photo = create_image_record("corrected-photo", 100, 200, "{}");
+        photo.detected_source_kind = SourceKind::Photograph;
+        photo.capture_wall_time_ms = Some(456_789);
+        super::save_images_batch_inner(&conn, &[photo]).expect("initial photo save");
+
+        let updated = super::set_image_source_kind_for_conn(
+            &conn,
+            &["corrected-photo".to_string()],
+            Some(SourceKind::Other),
+        )
+        .expect("set other override");
+        assert_eq!(updated, 1);
+
+        let overridden: (Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT source_kind_override, source_kind, display_timestamp
+                 FROM images WHERE id = 'corrected-photo'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("overridden row");
+        assert_eq!(
+            overridden,
+            (Some("other".to_string()), "other".to_string(), 100)
+        );
+
+        super::set_image_source_kind_for_conn(&conn, &["corrected-photo".to_string()], None)
+            .expect("reset to detected kind");
+
+        let automatic: (Option<String>, String, i64) = conn
+            .query_row(
+                "SELECT source_kind_override, source_kind, display_timestamp
+                 FROM images WHERE id = 'corrected-photo'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("automatic row");
+        assert_eq!(automatic, (None, "photograph".to_string(), 456_789));
+    }
+
+    #[test]
+    fn save_images_batch_keeps_failed_photo_metadata_probes_retryable() {
+        use crate::metadata::photo::{PhotoMetadata, SourceKind};
+
+        let conn = Connection::open_in_memory().expect("in-memory db");
+        apply_all_migrations(&conn);
+
+        let mut fresh_failure = create_image_record("fresh-photo-failure", 50, 100, "{}");
+        fresh_failure.photo_metadata_error = Some("Malformed EXIF directory".to_string());
+        super::save_images_batch_inner(&conn, &[fresh_failure]).expect("save fresh failed probe");
+        let fresh_checkpoint: i64 = conn
+            .query_row(
+                "SELECT photo_refresh_version FROM images WHERE id = 'fresh-photo-failure'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("fresh failed photo checkpoint");
+        assert_eq!(fresh_checkpoint, 0, "fresh failed probes must be retryable");
+
+        let mut image = create_image_record("current-photo-metadata", 100, 200, "{}");
+        image.detected_source_kind = SourceKind::Photograph;
+        image.photo_metadata = Some(PhotoMetadata {
+            camera_model: Some("Camera One".to_string()),
+            ..PhotoMetadata::default()
+        });
+        super::save_images_batch_inner(&conn, &[image.clone()]).expect("initial save");
+
+        conn.execute(
+            "UPDATE images SET source_kind_override = 'other', source_kind = 'other' WHERE id = 'current-photo-metadata'",
+            [],
+        )
+        .expect("set manual override");
+
+        image.photo_metadata_error = Some("Malformed EXIF directory".to_string());
+        super::save_images_batch_inner(&conn, &[image.clone()]).expect("save failed probe");
+
+        let failed_state: (i64, String, String, String) = conn
+            .query_row(
+                "SELECT photo_refresh_version, source_kind_override, source_kind, photo_metadata_json
+                 FROM images WHERE id = 'current-photo-metadata'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("failed photo refresh state");
+        assert_eq!(failed_state.0, 0);
+        assert_eq!(
+            failed_state.1, "other",
+            "failed probe must preserve manual override"
+        );
+        assert_eq!(failed_state.2, "other");
+        assert!(
+            failed_state.3.contains("Camera One"),
+            "failed probe must retain known camera metadata"
+        );
+
+        let retryable_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM images
+                 WHERE id = 'current-photo-metadata' AND photo_refresh_version < ?1",
+                [crate::db::reparse::CURRENT_PHOTO_REFRESH_VERSION],
+                |row| row.get(0),
+            )
+            .expect("retry eligibility");
+        assert_eq!(
+            retryable_count, 1,
+            "failed probe must remain eligible for non-forced photo refreshes"
+        );
+
+        image.photo_metadata_error = None;
+        super::save_images_batch_inner(&conn, &[image]).expect("rescan stale row");
+        let refreshed_state: (i64, String, String, String) = conn
+            .query_row(
+                "SELECT photo_refresh_version, source_kind_override, source_kind, photo_metadata_json
+                 FROM images WHERE id = 'current-photo-metadata'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("successful photo refresh state");
+        assert_eq!(
+            refreshed_state.0,
+            crate::db::reparse::CURRENT_PHOTO_REFRESH_VERSION
+        );
+        assert_eq!(refreshed_state.1, "other");
+        assert_eq!(refreshed_state.2, "other");
+        assert!(refreshed_state.3.contains("Camera One"));
     }
 
     #[test]

@@ -1,4 +1,5 @@
-import { AIImage, AssetScope, FacetType } from '../../types';
+import { AIImage, AssetScope, FacetType, type LibraryScopeCounts } from '../../types';
+import { addLibraryScopeCount, createEmptyLibraryScopeCounts } from '../../utils/libraryScopeCounts';
 import { getDb } from './connection';
 import { mapRowToImage, getImageFieldsLight, type ImageRow } from './repoUtils';
 import { WORD_CLOUD_CONFIG } from '../../config/wordCloud';
@@ -456,6 +457,63 @@ export const countImages = async (whereClause: string, params: unknown[], collec
 
     const result = await timeDbCall('countImages', reason, () => db.select<CountRow[]>(query, params));
     return result[0]?.count || 0;
+};
+
+interface LibraryScopeCountRow {
+    source_kind: string;
+    media_type: string | null;
+    count: number;
+}
+
+const mapLibraryScopeCounts = (rows: LibraryScopeCountRow[]): LibraryScopeCounts => {
+    const counts = createEmptyLibraryScopeCounts();
+    rows.forEach((row) => {
+        addLibraryScopeCount(counts, row.media_type, row.source_kind, row.count);
+    });
+    return counts;
+};
+
+export const countLibraryScopes = async (
+    whereClause: string,
+    params: unknown[],
+    collectionId?: string,
+    loraName?: string
+): Promise<LibraryScopeCounts> => {
+    const db = await getDb();
+    const finalWhere = whereClause ? whereClause : DEFAULT_VISIBLE_WHERE;
+    const select = 'SELECT images.source_kind, images.media_type, count(*) as count';
+    const group = 'GROUP BY images.source_kind, images.media_type';
+    let query = `${select} FROM scoped_images AS images ${finalWhere} ${group}`;
+    let queryParams = params;
+
+    if (collectionId && loraName) {
+        query = `${select}
+            FROM collection_images ci
+            JOIN image_loras il ON il.image_id = ci.image_id
+            JOIN scoped_images AS images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', `WHERE ci.collection_id = ? AND ${loraReferencePredicate} AND`)}
+            ${group}`;
+        queryParams = [collectionId, loraName, ...params];
+    } else if (collectionId) {
+        query = `${select}
+            FROM collection_images ci
+            CROSS JOIN scoped_images AS images ON images.id = ci.image_id
+            ${finalWhere.replace('WHERE', 'WHERE ci.collection_id = ? AND')}
+            ${group}`;
+        queryParams = [collectionId, ...params];
+    } else if (loraName) {
+        query = `${select}
+            FROM image_loras il
+            CROSS JOIN scoped_images AS images ON images.id = il.image_id
+            ${finalWhere.replace('WHERE', `WHERE ${loraReferencePredicate} AND`)}
+            ${group}`;
+        queryParams = [loraName, ...params];
+    }
+
+    const rows = await timeDbCall('countLibraryScopes', 'media-scope', () => (
+        db.select<LibraryScopeCountRow[]>(query, queryParams)
+    ));
+    return mapLibraryScopeCounts(rows);
 };
 
 /**

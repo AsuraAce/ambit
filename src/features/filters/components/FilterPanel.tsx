@@ -18,7 +18,7 @@ import { REPOSITORY_URL } from '../../../constants/support';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import { openExternalUrl } from '../../../utils/externalLinks';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
-import { hasNonCollectionResultFilters } from '../../../utils/filterState';
+import { hasNonCollectionResultFilters, normalizeCollectionScope } from '../../../utils/filterState';
 
 interface FilterPanelProps {
     isInvokeCollectionCatchupPending?: boolean;
@@ -135,22 +135,30 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
     // The Update Button should show if we are in a smart collection AND have added manual edits.
     const showUpdateButton = activeSmartCol && hasManualEdits;
+    const savedScope = activeSmartCol ? normalizeCollectionScope(activeSmartCol.filters) : null;
+    const manualScope = normalizeCollectionScope(filters);
+    const scopeConflicts = !!savedScope && (
+        (savedScope.mediaType !== 'all' && manualScope.mediaType !== 'all' && savedScope.mediaType !== manualScope.mediaType)
+        || (savedScope.sourceKind !== 'all' && manualScope.sourceKind !== 'all' && savedScope.sourceKind !== manualScope.sourceKind)
+    );
 
     const handleQuickUpdate = () => {
+        if (!activeSmartCol || !savedScope || scopeConflicts) return;
         if (activeSmartCol && onUpdateCollectionFilters) {
             // MERGE Logic: 
             // We want to ADD manual filters to the existing smart rules.
             // For lists (models, etc.), we UNION them.
             // For scalars (searchQuery), we OVERWRITE if manual is set (user intent to change).
 
-            const saved = activeSmartCol.filters;
-            const manual = filters;
+            const saved = savedScope;
+            const manual = manualScope;
             const hasManualDateFilter = !!getDateFilterLabel(manual);
 
             const mergedFilters: FilterState = {
                 ...saved, // Start with saved rules
                 // Concatenate scalars if manual is set (Additive refinement)
                 searchQuery: [saved.searchQuery, manual.searchQuery].filter(Boolean).join(' ').trim(),
+                sourceKind: manual.sourceKind !== 'all' ? manual.sourceKind : saved.sourceKind,
                 dateRange: hasManualDateFilter ? manual.dateRange : saved.dateRange,
                 dateFrom: hasManualDateFilter ? manual.dateFrom : saved.dateFrom,
                 dateTo: hasManualDateFilter ? manual.dateTo : saved.dateTo,
@@ -200,6 +208,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 favoritesOnly: false,
                 pinnedOnly: false,
                 mediaType: 'all',
+                sourceKind: 'all',
                 minSteps: undefined,
                 maxSteps: undefined,
                 minCfg: undefined,
@@ -272,14 +281,18 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
 
                 <div className="flex items-center gap-2">
                     {showUpdateButton && (
-                        <button
+                        <TooltipButton
+                            label="Update"
+                            content={scopeConflicts
+                                ? 'This scope conflicts with the collection rules. Use Edit Filters to change them.'
+                                : `Update ${activeSmartCol.name} with new filters`}
+                            aria-disabled={scopeConflicts}
                             onClick={handleQuickUpdate}
-                            className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-sage-500 hover:bg-sage-600 transition-all shadow-lg shadow-sage-500/20 px-3 py-1.5 rounded-full animate-in zoom-in duration-300"
-                            title={`Update ${activeSmartCol.name} with new filters`}
+                            className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-sage-500 hover:bg-sage-600 aria-disabled:cursor-not-allowed aria-disabled:opacity-50 transition-all shadow-lg shadow-sage-500/20 px-3 py-1.5 rounded-full animate-in zoom-in duration-300"
                         >
                             <Save className="w-3 h-3" />
                             Update
-                        </button>
+                        </TooltipButton>
                     )}
                     {isDirty && !showUpdateButton && (
                         <button

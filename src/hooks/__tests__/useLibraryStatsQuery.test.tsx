@@ -718,7 +718,9 @@ describe('useLibraryStatsQuery valid facets', () => {
         expect(where).toContain('timestamp >= ?');
         expect(where).toContain('timestamp < ?');
         expect(params).toEqual([
+            Date.UTC(2026, 3, 1),
             new Date(2026, 3, 1).getTime(),
+            Date.UTC(2026, 4, 1),
             new Date(2026, 4, 1).getTime(),
         ]);
     });

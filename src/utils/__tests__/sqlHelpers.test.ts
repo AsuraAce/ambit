@@ -1,6 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { buildSqlWhereClause, normalizeResourceReferenceForFilter, resourceReferenceEqualsSql, resourceReferenceSql } from '../sqlHelpers';
 import { FilterState, Collection, GeneratorTool } from '../../types';
+import { toPhotoWallTimeBounds } from '../imageDates';
+
+const effectiveDateParams = (start?: number, end?: number): number[] => {
+    const wall = toPhotoWallTimeBounds({ start, end });
+    return [
+        ...(start === undefined ? [] : [wall.start as number, start]),
+        ...(end === undefined ? [] : [wall.end as number, end]),
+    ];
+};
 
 describe('sqlHelpers', () => {
     const defaultFilters: FilterState = {
@@ -66,6 +75,25 @@ describe('sqlHelpers', () => {
 
             expect(where).not.toContain('media_type = ?');
             expect(params).toEqual([]);
+        });
+
+        it.each(['all', 'video'] as const)('ignores remembered Photos in %s media scope', mediaType => {
+            const query = buildSqlWhereClause({ ...defaultFilters, mediaType, sourceKind: 'photograph' }, false, 'blur', []);
+            expect(query.where).not.toContain('source_kind = ?');
+            expect(query.params).not.toContain('photograph');
+        });
+
+        it('counts scope alternatives without dropping privacy, owner, or search restrictions', () => {
+            const query = buildSqlWhereClause(
+                { ...defaultFilters, mediaType: 'image', sourceKind: 'photograph', searchQuery: 'portrait' },
+                true, 'hide', [], [], false, ['sourceKind', 'mediaType']
+            );
+            expect(query.where).not.toContain('media_type = ?');
+            expect(query.where).not.toContain('source_kind = ?');
+            expect(query.where).toContain('privacy_hidden = 0');
+            expect(query.where).toContain('invoke_scope_hidden = 0');
+            expect(query.params).not.toContain('photograph');
+            expect(query.params).toContain('%portrait%');
         });
 
         it('should handle models filter', () => {
@@ -203,10 +231,10 @@ describe('sqlHelpers', () => {
 
             expect(result.where).toContain('timestamp >= ?');
             expect(result.where).toContain('timestamp < ?');
-            expect(result.params).toEqual([
+            expect(result.params).toEqual(effectiveDateParams(
                 new Date(2026, 3, 15).getTime(),
                 new Date(2026, 3, 16).getTime()
-            ]);
+            ));
         });
 
         it('should handle custom bounded and one-sided date ranges', () => {
@@ -216,10 +244,10 @@ describe('sqlHelpers', () => {
                 dateFrom: '2026-04-01',
                 dateTo: '2026-04-30'
             }, false, 'blur', []);
-            expect(bounded.params).toEqual([
+            expect(bounded.params).toEqual(effectiveDateParams(
                 new Date(2026, 3, 1).getTime(),
                 new Date(2026, 4, 1).getTime()
-            ]);
+            ));
 
             const fromOnly = buildSqlWhereClause({
                 ...defaultFilters,
@@ -228,7 +256,7 @@ describe('sqlHelpers', () => {
             }, false, 'blur', []);
             expect(fromOnly.where).toContain('timestamp >= ?');
             expect(fromOnly.where).not.toContain('timestamp < ?');
-            expect(fromOnly.params).toEqual([new Date(2026, 3, 1).getTime()]);
+            expect(fromOnly.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime()));
 
             const toOnly = buildSqlWhereClause({
                 ...defaultFilters,
@@ -237,7 +265,7 @@ describe('sqlHelpers', () => {
             }, false, 'blur', []);
             expect(toOnly.where).not.toContain('timestamp >= ?');
             expect(toOnly.where).toContain('timestamp < ?');
-            expect(toOnly.params).toEqual([new Date(2026, 4, 1).getTime()]);
+            expect(toOnly.params).toEqual(effectiveDateParams(undefined, new Date(2026, 4, 1).getTime()));
         });
 
         it('should normalize inverted custom date ranges', () => {
@@ -248,10 +276,10 @@ describe('sqlHelpers', () => {
                 dateTo: '2026-04-01'
             }, false, 'blur', []);
 
-            expect(result.params).toEqual([
+            expect(result.params).toEqual(effectiveDateParams(
                 new Date(2026, 3, 1).getTime(),
                 new Date(2026, 4, 1).getTime()
-            ]);
+            ));
         });
 
         describe('Search Query Parsing', () => {
@@ -384,43 +412,43 @@ describe('sqlHelpers', () => {
 
             it('should handle exact date search syntax', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-15' }, false, 'blur', []);
-                expect(where).toContain('(timestamp >= ? AND timestamp < ?)');
-                expect(params).toEqual([
+                expect(where).toContain('display_timestamp >= ?');
+                expect(params).toEqual(effectiveDateParams(
                     new Date(2026, 3, 15).getTime(),
                     new Date(2026, 3, 16).getTime()
-                ]);
+                ));
             });
 
             it('should handle date range search syntax', () => {
                 const { where, params } = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04-01..2026-04-30' }, false, 'blur', []);
-                expect(where).toContain('(timestamp >= ? AND timestamp < ?)');
-                expect(params).toEqual([
+                expect(where).toContain('display_timestamp >= ?');
+                expect(params).toEqual(effectiveDateParams(
                     new Date(2026, 3, 1).getTime(),
                     new Date(2026, 4, 1).getTime()
-                ]);
+                ));
             });
 
             it('should handle partial ISO date search syntax', () => {
                 const year = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025' }, false, 'blur', []);
-                expect(year.where).toContain('(timestamp >= ? AND timestamp < ?)');
-                expect(year.params).toEqual([
+                expect(year.where).toContain('display_timestamp >= ?');
+                expect(year.params).toEqual(effectiveDateParams(
                     new Date(2025, 0, 1).getTime(),
                     new Date(2026, 0, 1).getTime()
-                ]);
+                ));
 
                 const month = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2026-04' }, false, 'blur', []);
-                expect(month.where).toContain('(timestamp >= ? AND timestamp < ?)');
-                expect(month.params).toEqual([
+                expect(month.where).toContain('display_timestamp >= ?');
+                expect(month.params).toEqual(effectiveDateParams(
                     new Date(2026, 3, 1).getTime(),
                     new Date(2026, 4, 1).getTime()
-                ]);
+                ));
 
                 const mixedRange = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'date:2025..2026-04' }, false, 'blur', []);
-                expect(mixedRange.where).toContain('(timestamp >= ? AND timestamp < ?)');
-                expect(mixedRange.params).toEqual([
+                expect(mixedRange.where).toContain('display_timestamp >= ?');
+                expect(mixedRange.params).toEqual(effectiveDateParams(
                     new Date(2025, 0, 1).getTime(),
                     new Date(2026, 4, 1).getTime()
-                ]);
+                ));
             });
 
             it('should reject malformed date range search syntax', () => {
@@ -441,25 +469,26 @@ describe('sqlHelpers', () => {
 
             it('should handle after and before date search syntax', () => {
                 const after = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'after:2026-04-01' }, false, 'blur', []);
-                expect(after.where).toContain('(timestamp >= ?)');
-                expect(after.params).toEqual([new Date(2026, 3, 1).getTime()]);
+                expect(after.where).toContain('display_timestamp >= ?');
+                expect(after.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime()));
 
                 const before = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'before:2026-04-30' }, false, 'blur', []);
-                expect(before.where).toContain('(timestamp < ?)');
-                expect(before.params).toEqual([new Date(2026, 4, 1).getTime()]);
+                expect(before.where).toContain('display_timestamp < ?');
+                expect(before.params).toEqual(effectiveDateParams(undefined, new Date(2026, 4, 1).getTime()));
 
                 const afterMonth = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'after:2026-04' }, false, 'blur', []);
-                expect(afterMonth.where).toContain('(timestamp >= ?)');
-                expect(afterMonth.params).toEqual([new Date(2026, 3, 1).getTime()]);
+                expect(afterMonth.where).toContain('display_timestamp >= ?');
+                expect(afterMonth.params).toEqual(effectiveDateParams(new Date(2026, 3, 1).getTime()));
 
                 const beforeYear = buildSqlWhereClause({ ...defaultFilters, searchQuery: 'before:2026' }, false, 'blur', []);
-                expect(beforeYear.where).toContain('(timestamp < ?)');
-                expect(beforeYear.params).toEqual([new Date(2027, 0, 1).getTime()]);
+                expect(beforeYear.where).toContain('display_timestamp < ?');
+                expect(beforeYear.params).toEqual(effectiveDateParams(undefined, new Date(2027, 0, 1).getTime()));
             });
 
             it('negates date and scoped numeric search tokens', () => {
                 const date = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-before:2026-04-30' }, false, 'blur', []);
-                expect(date.where).toContain('NOT (timestamp < ?)');
+                expect(date.where).toContain('NOT ((');
+                expect(date.where).toContain('display_timestamp < ?');
                 const steps = buildSqlWhereClause({ ...defaultFilters, searchQuery: '-steps:20' }, false, 'blur', []);
                 expect(steps.where).toContain('NOT (steps = ?)');
             });
@@ -538,7 +567,7 @@ describe('sqlHelpers', () => {
                 expect(where).toContain('timestamp >= ?');
                 // We shouldn't have two timestamp conditions from smart filter and global if logic works.
                 const count = (where.match(/timestamp >= \?/g) || []).length;
-                expect(count).toBe(1);
+                expect(count).toBe(2);
             });
 
             it('should pre-empt smart collection custom date if global custom date is set', () => {
@@ -565,12 +594,57 @@ describe('sqlHelpers', () => {
                     false, 'blur', [], [smartColWithDate]
                 );
 
-                expect(where.match(/timestamp >= \?/g) ?? []).toHaveLength(1);
-                expect(where.match(/timestamp < \?/g) ?? []).toHaveLength(1);
-                expect(params).toEqual([
+                expect(where.match(/display_timestamp >= \?/g) ?? []).toHaveLength(2);
+                expect(where.match(/display_timestamp < \?/g) ?? []).toHaveLength(2);
+                expect(params).toEqual(effectiveDateParams(
                     new Date(2026, 3, 1).getTime(),
                     new Date(2026, 4, 1).getTime()
-                ]);
+                ));
+            });
+
+            it('intersects the active image-kind scope with the saved smart-collection kind', () => {
+                const collection: Collection = {
+                    id: 'photo-smart',
+                    name: 'Photos',
+                    imageIds: [],
+                    createdAt: 1,
+                    filters: { ...defaultFilters, sourceKind: 'photograph' },
+                };
+
+                const result = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: collection.id, sourceKind: 'other' },
+                    false,
+                    'blur',
+                    [],
+                    [collection]
+                );
+
+                expect(result.where.match(/source_kind = \?/g) ?? []).toHaveLength(2);
+                expect(result.params).toContain('other');
+                expect(result.params).toContain('photograph');
+            });
+
+            it('retains a saved smart-collection kind when calculating scope counts', () => {
+                const collection: Collection = {
+                    id: 'photo-smart-counts',
+                    name: 'Photos',
+                    imageIds: [],
+                    createdAt: 1,
+                    filters: { ...defaultFilters, sourceKind: 'photograph' },
+                };
+
+                const result = buildSqlWhereClause(
+                    { ...defaultFilters, collectionId: collection.id },
+                    false,
+                    'blur',
+                    [],
+                    [collection],
+                    false,
+                    ['sourceKind']
+                );
+
+                expect(result.where).toContain('source_kind = ?');
+                expect(result.params).toContain('photograph');
             });
 
             it('applies smart collection manual exclusions', () => {

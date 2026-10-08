@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { Check, Palette } from 'lucide-react';
-import type { AIImage, Collection } from '../../../../types';
+import { Check, ImageIcon, Palette } from 'lucide-react';
+import { getDetectedSourceKind, type AIImage, type Collection, type SourceKind } from '../../../../types';
 import { CollectionMembershipPicker } from '../CollectionMembershipPicker';
 import { AssetTechnicalDetails } from './AssetTechnicalDetails';
 import { MetadataTextAreaField } from './MetadataTextAreaField';
@@ -12,6 +12,7 @@ interface ImageDetailsTabProps {
     notes: string;
     setNotes: (notes: string) => void;
     onUpdateNotes?: (id: string, notes: string) => void;
+    onSetImageKind?: (id: string, sourceKindOverride: SourceKind | null) => void | Promise<void>;
     onSetCollectionMembership?: (assetId: string, collectionId: string, shouldBelong: boolean) => Promise<boolean>;
     palette: string[];
     isPaletteLoading: boolean;
@@ -30,12 +31,26 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
     notes,
     setNotes,
     onUpdateNotes,
+    onSetImageKind,
     onSetCollectionMembership,
     palette,
     isPaletteLoading,
 }) => {
     const [copiedColor, setCopiedColor] = React.useState<string | null>(null);
+    const [isKindSaving, setIsKindSaving] = React.useState(false);
+    const kindHelpId = React.useId();
     const extension = image.filename.split('.').pop()?.toUpperCase() || 'Unknown';
+    const detectedSourceKind = getDetectedSourceKind(image);
+
+    const saveImageKind = async (sourceKindOverride: SourceKind | null) => {
+        if (!onSetImageKind) return;
+        setIsKindSaving(true);
+        try {
+            await onSetImageKind(image.id, sourceKindOverride);
+        } finally {
+            setIsKindSaving(false);
+        }
+    };
 
     return (
         <div className="custom-scrollbar h-full overflow-y-auto p-5">
@@ -43,8 +58,31 @@ export const ImageDetailsTab: React.FC<ImageDetailsTabProps> = ({
                 { label: 'Dimensions', value: `${image.width}×${image.height}` },
                 { label: 'File type', value: extension },
                 { label: 'File size', value: formatFileSize(image.fileSize) },
-                { label: 'Date', value: new Date(image.timestamp).toLocaleDateString() },
+                { label: 'Modified', value: new Date(image.timestamp).toLocaleString() },
             ]} />
+
+            {onSetImageKind ? <section className="mt-6">
+                <MetadataSectionHeader title="Image kind" icon={ImageIcon} />
+                <select
+                    aria-label="Image kind"
+                    aria-describedby={kindHelpId}
+                    value={image.sourceKindOverride ?? 'automatic'}
+                    disabled={isKindSaving}
+                    onChange={event => {
+                        const value = event.target.value;
+                        if (value === 'automatic' || value === 'generated' || value === 'photograph' || value === 'other') {
+                            void saveImageKind(value === 'automatic' ? null : value);
+                        }
+                    }}
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-900 outline-none focus:border-sage-500 disabled:opacity-60 dark:border-white/10 dark:bg-zinc-900 dark:text-white"
+                >
+                    <option value="automatic">Automatic ({detectedSourceKind === 'photograph' ? 'Photo' : detectedSourceKind === 'generated' ? 'Generated' : 'Other'})</option>
+                    <option value="generated">Generated</option>
+                    <option value="photograph">Photo</option>
+                    <option value="other">Other</option>
+                </select>
+                <p id={kindHelpId} className="mt-2 text-[11px] leading-relaxed text-gray-400">Automatic follows metadata detection. Manual choices survive rescanning.</p>
+            </section> : null}
 
             <section className="mt-6">
                 <MetadataSectionHeader title="Color palette" icon={Palette} />

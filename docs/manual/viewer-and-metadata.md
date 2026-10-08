@@ -37,13 +37,21 @@ Remove from Library removes the image record from Ambit's active library. It doe
 
 ## Metadata Sidebar
 
-Both viewers open on Metadata. Your selected tab and expanded metadata sections are retained while navigating within the viewer session.
+Both viewers initially open on Details. Explicit tab selections are remembered globally across images, videos, and app restarts. If a preferred tab is unavailable, the viewer temporarily shows Metadata (or Details if Metadata is unavailable), without replacing the saved preference. Expanded metadata sections remain viewer-session state.
 
 - Details: technical file facts, notes, and the searchable collection membership picker; images also show a color palette.
 - Metadata: prompts, generator and model editors, generation parameters, provenance, and populated resource sections.
 - Workflow: workflow inspection, copy, and download when recorded data is available.
 
 For images, Workflow may disappear after Ambit confirms that no workflow was recorded. Video Workflow shows an explanatory empty state when no workflow is available. Use the arrow keys while a tab is focused to switch tabs; Home and End select the first and last tabs.
+
+Photos and Other images show only Details and Metadata. Details contains technical file facts, the Image Kind dropdown, color palette, notes, and collection membership. Metadata shows captured time, camera and lens, exposure settings, attribution, and local GPS coordinates when available. Ambit stores and displays GPS coordinates locally and does not contact a map or network service.
+
+### Photo coverage
+
+Ambit reads selected embedded EXIF fields from JPEG, PNG eXIf, and WebP EXIF containers. Camera/capture, lens/exposure, orientation, attribution, and GPS fields are shown when supported values are present; GPS starts collapsed. This is not an all-tags inspector or comprehensive IPTC, XMP, MakerNotes, or RAW workflow. Missing EXIF does not make a file a photo by extension alone, and strong generator evidence takes precedence over camera metadata unless you choose a manual Image Kind.
+
+Photo probes are limited to 64 MiB of input. Malformed or over-budget probes remain retryable through metadata refresh. The updated photo-refresh workflow revisits previously imported eligible PNG/WebP records while preserving notes, collections, and manual classifications. Files with no supported metadata show “No supported metadata found” and “File information is available in Details.”
 
 ## Metadata Tab
 
@@ -86,9 +94,18 @@ Internal Metadata opens a technical inspector with Parsed, Text, and, when workf
 
 Details contains technical file information, Notes, and Collections. Use the collection picker to search and change membership. Notes save on blur when changed.
 
+The image **Modified** row shows the filesystem modification date and time. It is separate from the camera's **Captured** value in Metadata; captured time may also determine a photo's timeline position.
+
 Positive and negative prompt corrections live under Metadata. For A1111, Forge, and unknown generator records, Parse Prompt from Clipboard can read A1111-style parameter text containing `Steps:` and apply the prompts it finds.
 
-These edits update Ambit's catalog. They do not rewrite the source file or the original generator workflow. Revert is available when actual metadata overrides exist.
+Image Kind offers Automatic, Generated, Photo, and Other. Automatic follows Ambit's conservative metadata detection. Manual choices are catalog-only and survive rescans; they do not rewrite the image file.
+
+Positive Prompt and Negative Prompt fields save local prompt corrections to Ambit's catalog on blur. Unchanged fields do not create overrides. Imported original prompts remain available for read-only inspection.
+
+Notes stores local notes for the image and saves changed text on blur.
+
+These edits update Ambit's catalog. They do not rewrite the original image file or change the original generator workflow.
+Revert is available when actual metadata overrides exist.
 
 ## Workflow Tab
 
@@ -133,7 +150,7 @@ AI result views include copy actions such as Copy, Copy All, or Copy This Variat
 
 If metadata is missing or looks wrong:
 
-1. Inspect Metadata and Internal Metadata to see what Ambit parsed.
+1. Inspect Metadata and, for generated images, Internal Metadata to see what Ambit parsed.
 2. Open Workflow to check whether workflow JSON exists or can be loaded from file headers.
 3. Refresh metadata for the folder if the source file has newer metadata.
 4. Use AI Prompt Recovery only when you intentionally want Gemini to infer a prompt from the image.

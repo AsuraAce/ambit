@@ -55,9 +55,7 @@ export function ViewerTabs<T extends string>({
                         role="tab"
                         aria-selected={isActive}
                         tabIndex={isActive ? 0 : -1}
-                        onClick={() => {
-                            if (!isActive) onTabChange(tab.id);
-                        }}
+                        onClick={() => onTabChange(tab.id)}
                         onKeyDown={event => handleKeyDown(event, index)}
                         className={`flex-1 rounded-md px-2 py-2 text-xs font-bold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-500 ${isActive
                             ? 'bg-sage-600 text-white shadow-lg shadow-sage-500/20'

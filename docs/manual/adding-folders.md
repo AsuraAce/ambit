@@ -2,7 +2,7 @@
 
 [Back to manual index](index.md)
 
-Ambit builds its library by scanning local image folders and selected files. It catalogs supported images and videos through file selection and folder scans, and keeps the original files on disk.
+Ambit builds its library by scanning local image folders and selected files. It catalogs supported images and videos through file selection and folder scans, parses generation or camera metadata when available, and keeps the original files on disk.
 
 ## Import Choices
 
@@ -20,7 +20,7 @@ flowchart TD
     C --> H["Add Folder"]
 ```
 
-Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for downloaded packs, screenshots, archives, or individual files.
+Use integrations when you want Ambit to understand an existing generator workspace. Use one-time import for camera folders, downloaded packs, screenshots, archives, or individual files. Import completion reports how many images Ambit detected as Generated, Photo, and Other.
 
 Manual video import accepts MP4, WebM, MOV, M4V, and MKV candidates. Ambit probes the file before adding it, shows a static poster in the library, and uses actual playback events to decide whether the built-in viewer can play it. If the current Windows media runtime cannot decode it, the video stays manageable and can be opened in the default app. Folder scans and Live Watch also discover supported videos, including create, modify, rename, and removal changes. A video whose poster cannot be generated remains cataloged with a generic placeholder.
 
@@ -30,7 +30,7 @@ Open Settings > Connections > Folders to manage monitored media folders.
 
 In the Folders section you can:
 
-- add folders containing images and supported videos
+- add folders containing generated images, camera photos, other local images, and supported videos
 - review folders Ambit is monitoring
 - rescan a single folder
 - refresh metadata across all folders
@@ -58,7 +58,7 @@ For details, see [Assets And Resource Discovery](assets-resource-discovery.md).
 
 ## During Scans
 
-Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later.
+Scans can take time on large folders. Ambit reports progress while it scans sources, imports images, and finalizes metadata. If an import is cancelled, imported images are kept and unfinished folders can be rescanned later. Refresh All Metadata also adopts camera metadata for older library records in restart-safe batches; manual Image Kind choices remain unchanged.
 
 ## Next Step
 

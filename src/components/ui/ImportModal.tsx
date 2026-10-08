@@ -178,7 +178,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                     <h3 className="font-black text-sm text-gray-900 dark:text-white tracking-tight">One-Time Import</h3>
                                 </div>
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
-                                    Choose images or manually add generated videos. Folder monitoring remains image-only.
+                                    Add generated images, camera photos, screenshots, or supported videos. Image formats: PNG, JPEG, and WebP.
                                 </p>
 
                                 <div className="grid grid-cols-3 gap-3">

@@ -3,6 +3,7 @@ import { FilterState, GeneratorTool } from '../../types';
 import {
     createCollectionSelectionFilters,
     createDefaultFilters,
+    getEffectiveImageKind,
     hasActiveResultFilters,
     hasNonCollectionResultFilters,
     shouldPrefetchResultPages
@@ -45,11 +46,20 @@ const activeFilters: FilterState = {
 };
 
 describe('filterState', () => {
+    it.each(['image', 'video', 'all'] as const)('opens collections in All Media from %s without retaining a hidden subtype', mediaType => {
+        const previous = { ...activeFilters, mediaType, sourceKind: 'photograph' as const };
+        const next = { ...previous, ...createCollectionSelectionFilters(previous, 'collection-1') };
+        expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'all', collectionId: 'collection-1', searchQuery: '' });
+        expect(getEffectiveImageKind(next)).toBe('all');
+        expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('all');
+    });
+
     it('clears all non-view filters when selecting a collection', () => {
         const nextFilters = createCollectionSelectionFilters(activeFilters, 'collection-1');
 
         expect(nextFilters).toMatchObject({
             searchQuery: '',
+            sourceKind: 'all',
             models: [],
             tools: [],
             loras: [],
@@ -95,6 +105,22 @@ describe('filterState', () => {
     it('identifies default browsing as unfiltered for prefetching', () => {
         expect(hasActiveResultFilters(createDefaultFilters())).toBe(false);
         expect(hasActiveResultFilters(createDefaultFilters({ minSteps: null as unknown as number }))).toBe(false);
+    });
+
+    it('normalizes persisted image-kind filters at the query boundary', () => {
+        expect(createDefaultFilters({ sourceKind: 'photograph' }).sourceKind).toBe('photograph');
+        expect(createDefaultFilters({ sourceKind: 'invalid' as FilterState['sourceKind'] }).sourceKind).toBe('all');
+    });
+
+    it('interprets old filters without mutating legacy saved collection rules', () => {
+        const photos = createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' });
+        expect(getEffectiveImageKind(photos)).toBe('photograph');
+        expect(getEffectiveImageKind({ ...photos, mediaType: 'video' })).toBe('all');
+        const allMedia = { ...photos, mediaType: 'all' as const };
+        expect(getEffectiveImageKind(allMedia)).toBe('all');
+        expect(hasNonCollectionResultFilters(allMedia)).toBe(false);
+        expect(getEffectiveImageKind({ ...allMedia, mediaType: 'image' })).toBe('photograph');
+        expect(getEffectiveImageKind({ ...photos, mediaType: undefined })).toBe('photograph');
     });
 
     it('identifies result filters that should disable proactive prefetching', () => {

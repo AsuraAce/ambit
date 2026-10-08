@@ -16,6 +16,9 @@ export const TitleBar = () => {
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [showOnHover, setShowOnHover] = useState(false);
     const developerFeaturesEnabled = useSettingsStore(s => areDeveloperFeaturesEnabled(s.settings));
+    const profileBadge = import.meta.env.VITE_AMBIT_PROFILE === 'qa'
+        ? 'QA'
+        : developerFeaturesEnabled ? 'DEV' : null;
 
     useEffect(() => {
         if (!isTauriRuntime()) return;
@@ -119,9 +122,9 @@ export const TitleBar = () => {
                     <span className="text-[13px] font-semibold tracking-[0.18em] text-zinc-700 dark:text-zinc-300">
                         {APP_NAME.toUpperCase()}
                     </span>
-                    {developerFeaturesEnabled && !isCaptureMode() && (
+                    {profileBadge && !isCaptureMode() && (
                         <span className="ml-2 px-1.5 py-0.5 bg-ember-500/20 text-ember-600 dark:text-ember-300 text-[9px] font-bold rounded animate-pulse">
-                            DEV
+                            {profileBadge}
                         </span>
                     )}
                 </div>

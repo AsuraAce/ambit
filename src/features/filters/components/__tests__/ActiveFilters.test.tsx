@@ -240,6 +240,14 @@ describe('ActiveFilters', () => {
         expect(container.innerHTML).toBe('');
     });
 
+    it('does not duplicate the toolbar image-kind scope as an active-filter chip', () => {
+        searchMocks.state.filters = createFilters({ sourceKind: 'photograph' });
+        const { container } = render(<ActiveFiltersUnderTest />);
+
+        expect(container.innerHTML).toBe('');
+        expect(screen.queryByText('Kind: Photos')).toBeNull();
+    });
+
     it('renders locked smart rules and deduplicates matching explicit chips', () => {
         const smartFilters = createFilters({
             searchQuery: 'smart search',

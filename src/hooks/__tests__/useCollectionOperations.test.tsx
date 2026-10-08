@@ -134,6 +134,21 @@ describe('useCollectionOperations', () => {
     });
 
     describe('createCollection', () => {
+        it.each(['all', 'video'] as const)('does not persist dormant image-kind memory when saving %s rules', async mediaType => {
+            const { upsertCollection } = await import('../../services/db/collectionRepo');
+            const { result } = renderHook(() => useCollectionOperations(props));
+            const remembered = createDefaultFilters({ mediaType, sourceKind: 'photograph', searchQuery: 'portrait' });
+            await act(async () => {
+                await result.current.createCollection('Saved scope', remembered);
+                await result.current.updateCollectionFilters('col1', remembered);
+            });
+            expect(upsertCollection).toHaveBeenCalledTimes(2);
+            for (const [collection] of vi.mocked(upsertCollection).mock.calls) {
+                expect(collection.filters).toMatchObject({ mediaType, sourceKind: 'all', searchQuery: 'portrait' });
+            }
+            expect(remembered.sourceKind).toBe('photograph');
+        });
+
         it('should perform optimistic update and call service', async () => {
             const { upsertCollection } = await import('../../services/db/collectionRepo');
             const { result } = renderHook(() => useCollectionOperations(props));

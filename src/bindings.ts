@@ -336,6 +336,14 @@ async markImagesCorrupt(ids: string[]) : Promise<Result<number, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async setImageSourceKind(imageIds: string[], sourceKindOverride: SourceKind | null) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_image_source_kind", { imageIds, sourceKindOverride }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("verify_library_integrity") };
@@ -353,9 +361,9 @@ async verifyLibraryIntegrity() : Promise<Result<IntegrityResult, string>> {
  * 3. Parses using Rayon
  * 4. Updates DB with Smart Diffing (skipping unchanged prompts/junctions)
  */
-async startReparseJob(forceReparse: boolean, filterRoot: string | null, filterTool: string | null) : Promise<Result<ReparseJobResult, string>> {
+async startReparseJob(forceReparse: boolean, filterRoot: string | null, filterTool: string | null, refreshPhotoMetadata: boolean) : Promise<Result<ReparseJobResult, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse, filterRoot, filterTool }) };
+    return { status: "ok", data: await TAURI_INVOKE("start_reparse_job", { forceReparse, filterRoot, filterTool, refreshPhotoMetadata }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -853,6 +861,7 @@ export type A1111DiscoveryCandidate = { path: string; name: string; imageCount: 
 export type A1111DiscoveryResult = { detectedVariant: string; candidates: A1111DiscoveryCandidate[]; logs: string[]; warnings: string[] }
 export type AmbitCollectionScopeMode = "global" | "all" | "owner"
 export type BackupInfo = { name: string; path: string; createdAt: string; sizeBytes: number }
+export type CaptureTimeMetadata = { local: string; offset: string | null; subsecond: string | null }
 export type CollectionMembershipMutationInput = { operation: CollectionMembershipOperation; imageIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
 export type CollectionMembershipMutationResult = { affectedIds: string[]; sourceCollectionId: string | null; targetCollectionId: string | null }
 export type CollectionMembershipOperation = "add" | "remove" | "move"
@@ -890,7 +899,7 @@ microThumbnail: string | null;
 /**
  * Source of the thumbnail: 'ambit', 'invokeai', etc.
  */
-thumbnailSource: string | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null; invokeImageName: string | null; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
+thumbnailSource: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; sourceKindOverride: SourceKind | null; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null; isFavorite: boolean; isPinned: boolean; isDeleted: boolean; isMissing: boolean; isCorrupt: boolean; userMasked: boolean | null; groupId: string | null; boardId: string | null; notes: string | null; originalMetadataJson: string | null; originalStateJson: string | null; invokeImageName: string | null; invokeImageCategory: string | null; invokeImageOrigin: string | null; invokeOwnerId: string | null }
 export type ImageToReparse = { id: string; tool: string; originalMetadataJson: string }
 export type ImportResult = { added: number; totalFound: number; message: string }
 export type IntegrityResult = { missing: number; recovered: number; broken_thumbs: number }
@@ -924,6 +933,7 @@ export type MetadataEvidenceSource = "user_override" | "trusted_sidecar" | "embe
 export type MetadataStats = { total: number; with_raw: number; with_pv: number; v0: number; v1: number }
 export type NumericRange = { min: number; max: number }
 export type ParameterRanges = { steps: NumericRange | null; cfg: NumericRange | null; denoisingStrength: NumericRange | null; samplers: string[]; generationTypes: string[]; controlNets: string[]; ipAdapters: string[]; guidanceSubtypes: Partial<{ [key in string]: string }> }
+export type PhotoMetadata = { capturedAt: CaptureTimeMetadata | null; captureTimeRaw: string | null; cameraMake: string | null; cameraModel: string | null; lensMake: string | null; lensModel: string | null; focalLengthMm: number | null; focalLength35Mm: number | null; apertureFNumber: number | null; exposureTimeSeconds: number | null; iso: number | null; orientation: number | null; artist: string | null; copyright: string | null; gpsLatitude: number | null; gpsLongitude: number | null }
 export type PrivacyMaskRefreshResult = { changed: boolean; updated: number }
 export type RemovedLifecycleMutationResult = { affectedIds: string[]; notFoundIds: string[]; membershipWarningIds: string[]; touchedResources: FacetResourceTouches }
 export type ReparseBatchResult = { processed: number; updated: number; errors: number }
@@ -945,7 +955,8 @@ thumbnailSource: string | null; chunks: Partial<{ [key in string]: string }>; me
 /**
  * Error message if scan failed or resulted in a partial result
  */
-error: string | null }
+error: string | null; thumbnailVersion: number; detectedSourceKind: SourceKind; photoMetadata: PhotoMetadata | null; photoMetadataError: string | null; captureWallTimeMs: number | null }
+export type SourceKind = "generated" | "photograph" | "other"
 export type StartupCacheAction = "restored" | "selective" | "full"
 export type StartupDatabaseRole = "ambit" | "invoke-source" | "mixed"
 export type StartupDiagnosticEvent = { launchId: string; phase: StartupPhase; status: StartupPhaseStatus; elapsedMs: number; durationMs: number | null; cacheAction: StartupCacheAction | null; databaseRole?: StartupDatabaseRole | null; attempt?: number | null; failureKind?: StartupFailureKind | null; repairDecision?: StartupRepairDecision | null; repairStage?: StartupRepairStage | null; repairReport?: StartupRepairReport | null }

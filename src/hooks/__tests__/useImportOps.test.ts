@@ -315,8 +315,8 @@ describe('useImportOps', () => {
             await result.current.handleImportFolders([{ path: 'C:/watch' }]);
         });
 
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 items from 1 folder(s), but 1 file(s) failed', 'warning');
-        expect(mocks.addToast).not.toHaveBeenCalledWith('Imported 1 items from 1 folder(s)', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s), but 1 file(s) failed', 'warning');
+        expect(mocks.addToast).not.toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s)', 'success');
     });
 
     it('shows success when a manual folder import has images and no failures', async () => {
@@ -330,7 +330,7 @@ describe('useImportOps', () => {
             await result.current.handleImportFolders([{ path: 'C:/watch' }]);
         });
 
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 items from 1 folder(s)', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 items (1 Generated, 0 Photos, 0 Other) from 1 folder(s)', 'success');
     });
 
     it('uses aggregate Activity Dock messages for multi-folder imports', async () => {
@@ -523,7 +523,7 @@ describe('useImportOps', () => {
         expect(update([existing])).toEqual([added, existing]);
         expect(update([added, existing])).toEqual([added, existing]);
         expect(refreshCollections).toHaveBeenCalledTimes(1);
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item. (Skipped 1 duplicates) Skipped 1 unchanged or ignored file. 1 failed.', 'info');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other). (Skipped 1 duplicates) Skipped 1 unchanged or ignored file. 1 failed.', 'info');
         expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
     });
 
@@ -539,7 +539,7 @@ describe('useImportOps', () => {
         expect(mocks.refreshMetadata).toHaveBeenCalledTimes(1);
         expect(setImages).not.toHaveBeenCalled();
         expect(refreshCollections).not.toHaveBeenCalled();
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item.', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
     });
 
     it('reports duplicate-only, skipped-only, and failed-only web scans', async () => {
@@ -613,7 +613,7 @@ describe('useImportOps', () => {
 
         await act(async () => result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
 
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item.', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
         expect(mocks.refreshHiddenAvailability).toHaveBeenCalledTimes(1);
     });
 
@@ -626,7 +626,7 @@ describe('useImportOps', () => {
         await act(async () => result.current.importImages({ target: input } as unknown as React.ChangeEvent<HTMLInputElement>));
 
         expect(mocks.processWebFiles).toHaveBeenCalledTimes(1);
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item.', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
     });
 
     it('handles native web-file drops across success, cancellation, failure, and contention', async () => {
@@ -638,7 +638,7 @@ describe('useImportOps', () => {
         });
         const success = renderImportOps();
         await act(async () => success.result.current.handleWebFiles([native]));
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item.', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
         success.unmount();
 
         mocks.processNativePaths.mockResolvedValueOnce(emptyImportResult(true));
@@ -711,7 +711,7 @@ describe('useImportOps', () => {
         });
         const managed = renderImportOps();
         await act(async () => managed.result.current.handleImportPaths(['C:/new.png']));
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item.', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 item (1 Generated, 0 Photos, 0 Other).', 'success');
         managed.unmount();
 
         useLibraryStore.getState().beginImportRun({ owner: 'busy', abortController: null });
@@ -786,7 +786,7 @@ describe('useImportOps', () => {
         mocks.processNativePaths.mockResolvedValueOnce(importResult({ images: [importedImage('new')] }));
         const first = renderImportOps();
         await act(async () => first.result.current.scanDirectory('C:/scan'));
-        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 new item', 'success');
+        expect(mocks.addToast).toHaveBeenCalledWith('Imported 1 new item (1 Generated, 0 Photos, 0 Other)', 'success');
         first.unmount();
 
         mocks.refreshHiddenAvailability.mockClear();

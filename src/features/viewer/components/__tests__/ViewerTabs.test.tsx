@@ -28,6 +28,9 @@ describe('ViewerTabs', () => {
 
         fireEvent.click(screen.getByRole('tab', { name: 'Metadata' }));
         expect(onTabChange).toHaveBeenCalledWith('metadata');
+
+        fireEvent.click(screen.getByRole('tab', { name: 'Details' }));
+        expect(onTabChange).toHaveBeenLastCalledWith('details');
     });
 
     it('supports arrow, Home, and End keyboard navigation', () => {

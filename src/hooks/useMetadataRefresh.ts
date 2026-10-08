@@ -126,14 +126,16 @@ export function useMetadataRefresh(startupReady = false) {
     const runCombinedRefresh = useCallback(async (
         forceReparse: boolean,
         filterRoot: string | null,
-        filterTool: string | null
+        filterTool: string | null,
+        refreshPhotoMetadata: boolean
     ): Promise<RefreshResult> => {
         combinedRefreshInFlightRef.current = true;
         try {
             const result = await measureStartupPhase('metadata-maintenance', () => invoke<RefreshResult>('start_reparse_job', {
                 forceReparse,
                 filterRoot,
-                filterTool
+                filterTool,
+                refreshPhotoMetadata
             }));
             if (!result.wasCancelled) {
                 deferStartupVisibilityUntilProcessingRef.current = false;
@@ -254,7 +256,7 @@ export function useMetadataRefresh(startupReady = false) {
         }
 
         try {
-            const result = await runCombinedRefresh(false, null, filterTool || null);
+            const result = await runCombinedRefresh(false, null, filterTool || null, false);
             console.log('[Refresh] Job returned:', result);
             completeRefresh(result);
             return { ok: true };
@@ -301,7 +303,7 @@ export function useMetadataRefresh(startupReady = false) {
         setIsRefreshingMetadata(true);
 
         try {
-            const result = await runCombinedRefresh(force, rootPath || null, filterTool || null);
+            const result = await runCombinedRefresh(force, rootPath || null, filterTool || null, !filterTool);
             console.log('[Refresh] Job returned:', result);
             completeRefresh(result);
         } catch (err) {
