@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/AsuraAce/ambit/compare/v0.13.3...v0.14.0) (2026-10-08)
+
+
+### Features
+
+* **photography:** add EXIF photo support and unified library scopes ([#324](https://github.com/AsuraAce/ambit/issues/324)) ([4e0614b](https://github.com/AsuraAce/ambit/commit/4e0614bb71f4f91288a5084ce791ce65737b42d4))
+
 ## [0.13.3](https://github.com/AsuraAce/ambit/compare/v0.13.2...v0.13.3) (2026-09-07)
 
 
