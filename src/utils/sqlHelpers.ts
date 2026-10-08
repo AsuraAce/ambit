@@ -349,18 +349,15 @@ export const buildSqlWhereClause = (
                 effectiveSmartFilters.dateFrom = undefined;
                 effectiveSmartFilters.dateTo = undefined;
             }
-            if (sourceKind !== 'all') {
-                effectiveSmartFilters.sourceKind = 'all';
-            }
-
+            // Dropdown scopes may only narrow saved rules. Facet exclusions apply
+            // to the current controls, not to the collection's own constraints.
             const { where: smartWhere, params: smartParams } = buildSqlWhereClause(
                 effectiveSmartFilters,
                 false,
                 'blur',
                 [],
                 [],
-                true,
-                excludeCategories.includes('sourceKind') ? ['sourceKind'] : []
+                true
             );
 
             if (smartWhere) {

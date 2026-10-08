@@ -24,6 +24,13 @@ export const getEffectiveImageKind = (
     ? normalizeImageKindFilter(filters.sourceKind)
     : 'all';
 
+/** Save effective constraints, not dormant browsing preferences. */
+export const normalizeCollectionScope = (filters: FilterState): FilterState => ({
+    ...filters,
+    mediaType: normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind),
+    sourceKind: getEffectiveImageKind(filters),
+});
+
 export const createDefaultFilters = (
     overrides: Partial<FilterState> = {}
 ): FilterState => {
@@ -121,5 +128,7 @@ export const createCollectionSelectionFilters = (
     collectionId: string
 ): FilterState => createDefaultFilters({
     ...preserveViewFilters(previousFilters),
+    mediaType: 'all',
+    sourceKind: previousFilters.sourceKind,
     collectionId,
 });

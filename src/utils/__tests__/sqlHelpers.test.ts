@@ -602,7 +602,7 @@ describe('sqlHelpers', () => {
                 ));
             });
 
-            it('lets the active image-kind scope override a saved smart-collection kind', () => {
+            it('intersects the active image-kind scope with the saved smart-collection kind', () => {
                 const collection: Collection = {
                     id: 'photo-smart',
                     name: 'Photos',
@@ -619,12 +619,12 @@ describe('sqlHelpers', () => {
                     [collection]
                 );
 
-                expect(result.where.match(/source_kind = \?/g) ?? []).toHaveLength(1);
+                expect(result.where.match(/source_kind = \?/g) ?? []).toHaveLength(2);
                 expect(result.params).toContain('other');
-                expect(result.params).not.toContain('photograph');
+                expect(result.params).toContain('photograph');
             });
 
-            it('excludes a saved smart-collection kind when calculating scope counts', () => {
+            it('retains a saved smart-collection kind when calculating scope counts', () => {
                 const collection: Collection = {
                     id: 'photo-smart-counts',
                     name: 'Photos',
@@ -643,8 +643,8 @@ describe('sqlHelpers', () => {
                     ['sourceKind']
                 );
 
-                expect(result.where).not.toContain('source_kind = ?');
-                expect(result.params).not.toContain('photograph');
+                expect(result.where).toContain('source_kind = ?');
+                expect(result.params).toContain('photograph');
             });
 
             it('applies smart collection manual exclusions', () => {

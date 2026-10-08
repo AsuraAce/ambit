@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { countLibraryScopes } from '../searchRepo';
 import { buildSqlWhereClause } from '../../../utils/sqlHelpers';
 import { createDefaultFilters } from '../../../utils/filterState';
-import type { FilterState } from '../../../types';
+import type { Collection, FilterState } from '../../../types';
 
 const mocks = vi.hoisted(() => ({ getDb: vi.fn() }));
 vi.mock('../connection', () => ({ getDb: mocks.getDb }));
@@ -17,7 +17,7 @@ describe('library media scopes over SQLite', () => {
             CREATE TABLE images (
                 id TEXT, media_type TEXT, source_kind TEXT, positive_prompt TEXT DEFAULT '',
                 invoke_owner_id TEXT, invoke_scope_hidden INTEGER DEFAULT 0,
-                is_deleted INTEGER DEFAULT 0, privacy_hidden INTEGER DEFAULT 0,
+                is_deleted INTEGER DEFAULT 0, privacy_hidden INTEGER DEFAULT 0, is_favorite INTEGER DEFAULT 0,
                 is_intermediate_gen INTEGER DEFAULT 0, is_grid_gen INTEGER DEFAULT 0,
                 is_invoke_asset_gen INTEGER DEFAULT 0
             );
@@ -45,8 +45,8 @@ describe('library media scopes over SQLite', () => {
     });
     afterEach(() => sqlite.close());
 
-    const count = async (overrides: Partial<FilterState> = {}, alternatives = false) => {
-        const query = buildSqlWhereClause(createDefaultFilters(overrides), true, 'hide', [], [], false,
+    const count = async (overrides: Partial<FilterState> = {}, alternatives = false, collections: Collection[] = []) => {
+        const query = buildSqlWhereClause(createDefaultFilters(overrides), true, 'hide', [], collections, false,
             alternatives ? ['mediaType', 'sourceKind'] : []);
         return countLibraryScopes(query.where, query.params, query.collectionId, query.loraName);
     };
@@ -67,5 +67,32 @@ describe('library media scopes over SQLite', () => {
         const contextual = await count({ collectionId: 'selected', searchQuery: 'portrait', mediaType: 'image', sourceKind: 'photograph' }, true);
         expect(contextual.media).toEqual({ all: 2, image: 1, video: 1 });
         expect(contextual.imageKinds).toEqual({ all: 1, generated: 0, photograph: 1, other: 0 });
+    });
+
+    it.each([undefined, 'image'] as const)('only narrows a photo smart collection with saved mediaType %s', async mediaType => {
+        const collection: Collection = {
+            id: 'photos', name: 'Photos', createdAt: 1, imageIds: [],
+            filters: createDefaultFilters({ mediaType, sourceKind: 'photograph' }),
+        };
+        const scope = { collectionId: collection.id, mediaType: 'image' as const, sourceKind: 'generated' as const };
+        expect((await count(scope, false, [collection])).media.all).toBe(0);
+        expect(await count(scope, true, [collection])).toEqual({
+            media: { all: 1, image: 1, video: 0 },
+            imageKinds: { all: 1, generated: 0, photograph: 1, other: 0 },
+        });
+        expect((await count({ ...scope, mediaType: 'video' }, false, [collection])).media.all).toBe(0);
+        expect((await count({ ...scope, sourceKind: 'all' }, false, [collection])).media.all).toBe(1);
+    });
+
+    it('retains search, favorites and manual exclusions inside smart scope counts', async () => {
+        sqlite.exec("UPDATE images SET is_favorite = 1 WHERE id = 'photo'");
+        const collection: Collection = {
+            id: 'photos', name: 'Photos', createdAt: 1, imageIds: [],
+            filters: createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' }),
+        };
+        const filters = { collectionId: collection.id, searchQuery: 'portrait', favoritesOnly: true };
+        expect((await count(filters, true, [collection])).media.all).toBe(1);
+        expect((await count({ ...filters, searchQuery: 'landscape' }, true, [collection])).media.all).toBe(0);
+        expect((await count(filters, true, [{ ...collection, manualExclusions: ['photo'] }])).media.all).toBe(0);
     });
 });

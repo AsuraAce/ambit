@@ -535,7 +535,6 @@ const filterImages = (
     const hasGlobalDateFilter = dateBounds.start !== undefined || dateBounds.end !== undefined;
     const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
     const imageKind = getEffectiveImageKind(filters);
-    const hasGlobalImageKindFilter = !excludeScopeFilters && imageKind !== 'all';
     const maskedKeywords = privacy ? getEffectiveMaskedKeywords(privacy.settings) : [];
     const selectedCollection = filters.collectionId
         ? collections.find((collection) => collection.id === filters.collectionId)
@@ -547,8 +546,7 @@ const filterImages = (
         ? {
             ...selectedCollection.filters,
             collectionId: null,
-            ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {}),
-            ...(hasGlobalImageKindFilter || excludeScopeFilters ? { sourceKind: 'all' as const } : {})
+            ...(hasGlobalDateFilter ? { dateRange: 'all' as const, dateFrom: undefined, dateTo: undefined } : {})
         }
         : null;
     const smartMatches = smartFilters
@@ -561,6 +559,7 @@ const filterImages = (
             privacy,
         ).map((image) => image.id))
         : null;
+    const smartExclusions = smartFilters ? new Set(selectedCollection?.manualExclusions) : null;
 
     return images.filter((image) => {
         if (image.isDeleted) return false;
@@ -575,6 +574,7 @@ const filterImages = (
         if (!imageMatchesDateBounds(image, dateBounds)) return false;
         if (collectionIds && !collectionIds.has(image.id)) return false;
         if (smartMatches && !smartMatches.has(image.id)) return false;
+        if (smartExclusions?.has(image.id)) return false;
         if (!matchesSelectedValues([image.metadata.model], filters.models)) return false;
         if (!matchesSelectedValues([image.metadata.tool], filters.tools)) return false;
         if (!matchesSelectedValues(image.metadata.loras, filters.loras, filters.matchModes?.loras)) return false;

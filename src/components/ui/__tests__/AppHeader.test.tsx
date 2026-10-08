@@ -258,7 +258,7 @@ describe('AppHeader', () => {
         expect(searchBar.parentElement?.nextElementSibling).toBe(scope);
 
         fireEvent.click(screen.getByRole('button', { name: 'Library scope: All Media, 618. Change library scope' }));
-        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
 
         const update = setFilters.mock.calls[0][0] as (previous: typeof defaultProps.filters) => typeof defaultProps.filters & { sourceKind: 'photograph' };
         expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
@@ -280,22 +280,22 @@ describe('AppHeader', () => {
         await screen.findByTestId('search-bar');
 
         fireEvent.click(screen.getByRole('button', { name: /Library scope: All Media/ }));
-        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
-        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
 
-        fireEvent.click(screen.getByRole('radio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: mediaOption }));
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
-        expect(screen.getByRole('radio', { name: mediaOption }).getAttribute('aria-checked')).toBe('true');
-        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
+        expect(screen.getByRole('menuitemradio', { name: mediaOption }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
 
-        fireEvent.click(screen.getByRole('radio', { name: 'Images, 4' }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Images · Photos, 3' }));
         fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
-        expect(screen.getByRole('radio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
 
-        fireEvent.click(screen.getByRole('radio', { name: mediaOption }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: mediaOption }));
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));
-        fireEvent.click(screen.getByRole('radio', { name: 'Photos, 3' }));
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Photos, 3' }));
         expect(screen.getByRole('button', { name: /Library scope: Photos, 3/ })).toBeTruthy();
     });
 

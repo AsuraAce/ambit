@@ -524,7 +524,7 @@ describe('browserMockData filtering', () => {
         deleteBrowserMockCollection(id);
     });
 
-    it('matches native image-kind override and disjunctive-count behavior for smart collections', () => {
+    it('keeps browser results and contextual counts inside saved photo collection rules', () => {
         const id = 'photo-smart-browser-test';
         upsertBrowserMockCollection({
             id,
@@ -533,14 +533,13 @@ describe('browserMockData filtering', () => {
             imageIds: [],
         });
 
-        const overridden = searchBrowserMockImages(createDefaultFilters({
+        const narrowed = searchBrowserMockImages(createDefaultFilters({
             collectionId: id,
             sourceKind: 'other',
             showIntermediates: true,
             showGrids: true,
         }), 'date_desc', 1000);
-        expect(overridden.totalCount).toBeGreaterThan(0);
-        expect(overridden.images.every(image => image.sourceKind === 'other')).toBe(true);
+        expect(narrowed.totalCount).toBe(0);
 
         const scoped = searchBrowserMockImages(createDefaultFilters({
             collectionId: id,
@@ -549,9 +548,16 @@ describe('browserMockData filtering', () => {
         }), 'date_desc', 1000);
         expect(scoped.images.every(image => image.sourceKind === 'photograph')).toBe(true);
         const counts = getBrowserMockScopeCounts(createDefaultFilters({ collectionId: id, showIntermediates: true, showGrids: true }));
-        expect(counts.imageKinds.generated).toBeGreaterThan(0);
-        expect(counts.imageKinds.photograph).toBeGreaterThan(0);
-        expect(counts.imageKinds.other).toBeGreaterThan(0);
+        expect(counts).toEqual({
+            media: { all: 26, image: 26, video: 0 },
+            imageKinds: { all: 26, photograph: 26, generated: 0, other: 0 },
+        });
+        const excludedPhotoId = scoped.images[0].id;
+        removeBrowserMockImagesFromCollection(id, [excludedPhotoId]);
+        const afterExclusion = searchBrowserMockImages(createDefaultFilters({ collectionId: id }), 'date_desc', 1000);
+        expect(afterExclusion.totalCount).toBe(25);
+        expect(afterExclusion.images.some(image => image.id === excludedPhotoId)).toBe(false);
+        expect(getBrowserMockScopeCounts(createDefaultFilters({ collectionId: id })).media.all).toBe(25);
         deleteBrowserMockCollection(id);
     });
 

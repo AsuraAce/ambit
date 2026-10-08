@@ -154,6 +154,8 @@ There are two collection types:
 
 In the Organize tab, use New Empty Collection to create a manual collection. When filters are active, use Save Filters as Collection to create a smart collection from the current search and filter state.
 
+Entering a collection clears manual refinements and selects All Media, preserving your remembered image kind for a later return to Images. Saved media/kind rules still limit smart-collection results. A remembered kind under All Media or Videos is a browsing preference, not a saved rule.
+
 Collection workflows include:
 
 - select a collection to filter the library to that collection
@@ -184,6 +186,8 @@ To refine a smart collection:
 1. Select the smart collection.
 2. Add manual search or filter refinements.
 3. Use Update when it appears in the Library panel header.
+
+Media and image-kind refinements must be compatible with the saved rules. For example, Generated cannot replace a saved Photos rule through the header Update action; that action is unavailable and explains why on hover or keyboard focus. Use **Edit Filters** to change the saved rules explicitly. A compatible Update clears manual refinements while keeping the remembered image kind. An empty result alone does not disable Update.
 
 To filter by assets:
 

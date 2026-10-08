@@ -46,6 +46,14 @@ const activeFilters: FilterState = {
 };
 
 describe('filterState', () => {
+    it.each(['image', 'video', 'all'] as const)('opens collections in All Media from %s without losing the remembered kind', mediaType => {
+        const previous = { ...activeFilters, mediaType, sourceKind: 'photograph' as const };
+        const next = { ...previous, ...createCollectionSelectionFilters(previous, 'collection-1') };
+        expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'photograph', collectionId: 'collection-1', searchQuery: '' });
+        expect(getEffectiveImageKind(next)).toBe('all');
+        expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('photograph');
+    });
+
     it('clears all non-view filters when selecting a collection', () => {
         const nextFilters = createCollectionSelectionFilters(activeFilters, 'collection-1');
 
