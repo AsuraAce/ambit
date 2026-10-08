@@ -264,7 +264,7 @@ describe('AppHeader', () => {
         expect(update(defaultProps.filters)).toMatchObject({ mediaType: 'image', sourceKind: 'photograph' });
     });
 
-    it.each(['All Media, 6', 'Videos, 2'])('keeps remembered Photos inactive under %s and restores them through Images', async (mediaOption) => {
+    it.each(['All Media, 6', 'Videos, 2'])('switches Photos through %s to all images without a hidden subtype', async (mediaOption) => {
         const HeaderWithFilters = () => {
             const [filters, setFilters] = React.useState<React.ComponentProps<typeof AppHeader>['filters']>({
                 ...defaultProps.filters,
@@ -289,9 +289,12 @@ describe('AppHeader', () => {
         expect(screen.getByRole('menuitemradio', { name: mediaOption }).getAttribute('aria-checked')).toBe('true');
         expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
 
-        fireEvent.click(screen.getByRole('menuitemradio', { name: 'Images · Photos, 3' }));
-        fireEvent.click(screen.getByRole('button', { name: /Library scope: Photos, 3/ }));
-        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('true');
+        fireEvent.click(screen.getByRole('menuitemradio', { name: 'All Images, 4' }));
+        fireEvent.click(screen.getByRole('button', { name: /Library scope: All Images, 4/ }));
+        expect(screen.getAllByRole('menuitemradio', { checked: true })).toEqual([
+            screen.getByRole('menuitemradio', { name: 'All Images, 4' }),
+        ]);
+        expect(screen.getByRole('menuitemradio', { name: 'Photos, 3' }).getAttribute('aria-checked')).toBe('false');
 
         fireEvent.click(screen.getByRole('menuitemradio', { name: mediaOption }));
         fireEvent.click(screen.getByRole('button', { name: /Library scope:/ }));

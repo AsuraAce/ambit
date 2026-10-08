@@ -798,7 +798,7 @@ describe('SearchProvider', () => {
         expect(setSettings).not.toHaveBeenCalled();
     });
 
-    it('remembers the image kind while persisting Videos and resets both with Clear filters', async () => {
+    it('persists only the effective Videos scope and resets both with Clear filters', async () => {
         const setSettings = vi.fn();
         mocks.settings.current = {
             settings: settings({ libraryMediaType: 'image', librarySourceKind: 'photograph' }),
@@ -809,11 +809,33 @@ describe('SearchProvider', () => {
         expect(setSettings).not.toHaveBeenCalled();
         mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'video', sourceKind: 'photograph' } };
         rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
-        expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'video', librarySourceKind: 'photograph' });
-        mocks.settings.current = { ...(mocks.settings.current as object), settings: settings({ libraryMediaType: 'video', librarySourceKind: 'photograph' }) };
+        expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'video', librarySourceKind: 'all' });
+        mocks.settings.current = { ...(mocks.settings.current as object), settings: settings({ libraryMediaType: 'video', librarySourceKind: 'all' }) };
         mocks.searchState.current = { ...(mocks.searchState.current as object), filters: { ...baseFilters, mediaType: 'all', sourceKind: 'all' } };
         rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
         expect(setSettings).toHaveBeenLastCalledWith({ libraryMediaType: 'all', librarySourceKind: 'all' });
+    });
+
+    it.each(['all', 'video'] as const)('hydrates explicit %s without a legacy subtype or interim queries/writes', async (mediaType) => {
+        const setSettings = vi.fn();
+        const setFilters = (mocks.searchState.current as SearchValue).setFilters as ReturnType<typeof vi.fn>;
+        const previous = { ...baseFilters, mediaType: 'image' as const, sourceKind: 'generated' as const };
+        mocks.settings.current = {
+            settings: settings({ libraryMediaType: mediaType, librarySourceKind: 'photograph' }),
+            setSettings, privacyEnabled: false, isLoaded: true,
+        };
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: previous };
+        const rendered = renderProvider();
+        expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(false);
+        expect(setSettings).not.toHaveBeenCalled();
+        const hydratedScope = setFilters.mock.calls
+            .map(([update]) => (update as (value: FilterState) => FilterState)(previous))
+            .find(filters => filters.mediaType === mediaType);
+        expect(hydratedScope).toMatchObject({ mediaType, sourceKind: 'all' });
+        mocks.searchState.current = { ...(mocks.searchState.current as object), filters: hydratedScope };
+        rendered.rerender(<SearchProvider><Consumer /></SearchProvider>);
+        await waitFor(() => expect(mocks.imagesQueryArgs.current?.settingsLoaded).toBe(true));
+        expect(setSettings).toHaveBeenCalledExactlyOnceWith({ libraryMediaType: mediaType, librarySourceKind: 'all' });
     });
 
     it('persists an image-kind change after the saved value has hydrated', async () => {

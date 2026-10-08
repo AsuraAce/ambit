@@ -208,6 +208,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 favoritesOnly: false,
                 pinnedOnly: false,
                 mediaType: 'all',
+                sourceKind: 'all',
                 minSteps: undefined,
                 maxSteps: undefined,
                 minCfg: undefined,

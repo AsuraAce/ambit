@@ -129,6 +129,6 @@ export const createCollectionSelectionFilters = (
 ): FilterState => createDefaultFilters({
     ...preserveViewFilters(previousFilters),
     mediaType: 'all',
-    sourceKind: previousFilters.sourceKind,
+    sourceKind: 'all',
     collectionId,
 });

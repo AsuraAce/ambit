@@ -257,8 +257,7 @@ export const AppHeader = React.memo(({
                             countsLoading={scopeCountsLoading}
                             countsError={scopeCountsError}
                             onRetryCounts={retryScopeCounts}
-                            onMediaTypeChange={(mediaType) => setFilters(previous => ({ ...previous, mediaType }))}
-                            onImageKindChange={(sourceKind) => setFilters(previous => ({ ...previous, mediaType: 'image', sourceKind }))}
+                            onScopeChange={(scope) => setFilters(previous => ({ ...previous, ...scope }))}
                         />
                     )}
                     {browserMockMode && (

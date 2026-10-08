@@ -15,13 +15,13 @@ Use the left sidebar to switch between:
 
 The filter button opens or closes the library panel. Favorites Only and Pinned Only buttons narrow the current view without changing your source files.
 
-The scope dropdown beside search combines **Media type** (All Media, Images, Videos) and **Image kind** (All Images, Generated, Photos, Other). All Media is the initial default. Selecting an image kind switches to Images; All Media and Videos ignore that kind, while returning to Images restores it. Both choices persist across restarts. Clear filters resets both to All. Existing non-All image-kind preferences upgrade to Images.
+The scope dropdown beside search offers one choice: **All Media**, **All Images**, **Generated Images**, **Photos**, **Other Images**, or **Videos**. All Media is the initial default. The active choice persists across restarts. All Images always shows every image within your current search and collection; it never restores a previous subtype. To return to photos after viewing videos, select Photos directly. Legacy preferences containing only an image kind restore that image scope.
 
-When a kind is remembered, the Images action says **Images · Photos**, **Images · Generated**, or **Images · Other**, and shows the count that action would return. **All Images** explicitly clears the remembered kind. Only active choices are checked. Opening a collection uses All Media and clears manual refinements without forgetting the image kind; selecting Images later restores it. Selecting the same collection again removes only collection selection. Clear filters keeps the selected collection.
+Exactly one option is checked, and the closed selector uses the same label. There is no separately remembered image kind under All Media or Videos. Opening a collection uses All Media and clears manual refinements. Selecting the same collection again removes only collection selection. Clear filters resets the scope to All Media while keeping the selected collection.
 
-Counts reflect the surrounding search, collection, and filters. The closed scope selector shows its label only; counts appear inside the dropdown. Large counts use compact notation such as `211k` and `1.2M`, with exact values available on hover and to assistive technology. The toolbar's right-hand summary shows the count above the current collection name (or Library); long names truncate with the full name available on hover. Categories absent from your accessible library are hidden, but a zero-result search does not hide available categories. All and your selected/remembered options remain accessible. Image-kind rules can also be saved in smart collections.
+Counts reflect the surrounding search, collection, and filters. The closed scope selector shows its label only; counts appear inside the dropdown. Large counts use compact notation such as `211k` and `1.2M`, with exact values available on hover and to assistive technology. The toolbar's right-hand summary shows the count above the current collection name (or Library); long names truncate with the full name available on hover. Categories confirmed absent from your accessible library are hidden, but a zero-result search does not hide available categories. All Media, All Images and the selected option remain accessible; unknown availability keeps options visible. Image-kind rules can also be saved in smart collections.
 
-Saved smart-collection media/kind rules remain in force: dropdown choices only narrow them. In a Photos-only collection, All Images still returns only its photos, and Generated returns zero. Dropdown counts respect those saved rules.
+Saved smart-collection media/kind rules remain in force: dropdown choices only narrow them. In a Photos-only collection, All Images still returns only its photos, and Generated Images returns zero. Dropdown counts respect those saved rules.
 
 With the scope button focused, Enter or Space opens at the current choice; Down or Up opens at the first or last action. Inside the menu, arrows navigate, Home/End reach the endpoints, and Enter/Space selects. Escape closes and returns to the button. Tab or Shift+Tab closes and continues through the toolbar.
 
@@ -48,7 +48,7 @@ Revealed InvokeAI image assets carry an `Asset · User`, `Asset · Control`, `As
 
 ## Videos In The Library
 
-Use the scope dropdown beside search to choose All Media, Images, or Videos. Video cards show a static poster or placeholder with duration; browsing does not start background players. Open a video for playback, metadata, notes, collections, or original-file export. Media type can also be saved in a smart collection's filters.
+Use the scope dropdown beside search to choose All Media, All Images, an image category, or Videos. Video cards show a static poster or placeholder with duration; browsing does not start background players. Open a video for playback, metadata, notes, collections, or original-file export. Media type can also be saved in a smart collection's filters.
 
 ## Timeline Browsing
 

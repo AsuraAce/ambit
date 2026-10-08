@@ -25,7 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { isBrowserMockMode } from '../services/runtime';
-import { normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
+import { getEffectiveImageKind, normalizeImageKindFilter, normalizeMediaTypeFilter, shouldPrefetchResultPages } from '../utils/filterState';
 import { getEffectiveMaskedKeywords } from '../utils/maskingUtils';
 import { useLibraryStore } from '../stores/libraryStore';
 import { patchImageFlagsInQueryCaches, restoreImagesInQueryCaches } from '../utils/imageQueryCache';
@@ -226,8 +226,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         if (!settingsLoaded || sourceKindHydrated) return;
 
-        const sourceKind = normalizeImageKindFilter(settings.librarySourceKind);
-        const mediaType = normalizeMediaTypeFilter(settings.libraryMediaType, sourceKind);
+        const mediaType = normalizeMediaTypeFilter(settings.libraryMediaType, settings.librarySourceKind);
+        const sourceKind = getEffectiveImageKind({ mediaType, sourceKind: settings.librarySourceKind });
         const currentSourceKind = normalizeImageKindFilter(filters.sourceKind);
         const currentMediaType = normalizeMediaTypeFilter(filters.mediaType, currentSourceKind);
         sourceKindHydrationTargetRef.current = currentSourceKind === sourceKind && currentMediaType === mediaType
@@ -676,8 +676,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     useEffect(() => {
         if (!sourceKindHydrated) return;
 
-        const sourceKind = normalizeImageKindFilter(filters.sourceKind);
-        const mediaType = normalizeMediaTypeFilter(filters.mediaType, sourceKind);
+        const mediaType = normalizeMediaTypeFilter(filters.mediaType, filters.sourceKind);
+        const sourceKind = getEffectiveImageKind(filters);
         const hydrationTarget = sourceKindHydrationTargetRef.current;
         if (hydrationTarget !== null && (sourceKind !== hydrationTarget.sourceKind || mediaType !== hydrationTarget.mediaType)) return;
 

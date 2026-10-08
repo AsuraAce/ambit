@@ -130,7 +130,7 @@ Local markers mean Ambit found the asset on disk. A local-only inventory item ha
 
 The Filters tab groups generation metadata filters.
 
-Image Kind is controlled from the library header rather than the generation-metadata sections. All, Generated, Photos, and Other combine with the current search and filters, and the selected kind can be persisted in a smart collection.
+Library scope is controlled from the header rather than the generation-metadata sections. Choose All Media, All Images, Generated Images, Photos, Other Images, or Videos. The choice combines with the current search and filters, and its media/kind constraints can be persisted in a smart collection.
 
 Generator filters show detected generator tools. When another active filter leaves no matching images for a tool, that tool can appear unavailable until the surrounding filter context changes.
 
@@ -154,7 +154,7 @@ There are two collection types:
 
 In the Organize tab, use New Empty Collection to create a manual collection. When filters are active, use Save Filters as Collection to create a smart collection from the current search and filter state.
 
-Entering a collection clears manual refinements and selects All Media, preserving your remembered image kind for a later return to Images. Saved media/kind rules still limit smart-collection results. A remembered kind under All Media or Videos is a browsing preference, not a saved rule.
+Entering a collection clears manual refinements and selects All Media, with no hidden image subtype. Saved media/kind rules still limit smart-collection results. Choose Photos or another category directly to narrow the collection further; All Images removes only the header's subtype restriction, not the saved rules.
 
 Collection workflows include:
 
@@ -187,7 +187,7 @@ To refine a smart collection:
 2. Add manual search or filter refinements.
 3. Use Update when it appears in the Library panel header.
 
-Media and image-kind refinements must be compatible with the saved rules. For example, Generated cannot replace a saved Photos rule through the header Update action; that action is unavailable and explains why on hover or keyboard focus. Use **Edit Filters** to change the saved rules explicitly. A compatible Update clears manual refinements while keeping the remembered image kind. An empty result alone does not disable Update.
+Media and image-kind refinements must be compatible with the saved rules. For example, Generated Images cannot replace a saved Photos rule through the header Update action; that action is unavailable and explains why on hover or keyboard focus. Use **Edit Filters** to change the saved rules explicitly. A compatible Update clears manual refinements and resets the header scope to All Media. An empty result alone does not disable Update.
 
 To filter by assets:
 

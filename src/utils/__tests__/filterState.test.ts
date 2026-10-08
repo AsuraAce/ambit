@@ -46,12 +46,12 @@ const activeFilters: FilterState = {
 };
 
 describe('filterState', () => {
-    it.each(['image', 'video', 'all'] as const)('opens collections in All Media from %s without losing the remembered kind', mediaType => {
+    it.each(['image', 'video', 'all'] as const)('opens collections in All Media from %s without retaining a hidden subtype', mediaType => {
         const previous = { ...activeFilters, mediaType, sourceKind: 'photograph' as const };
         const next = { ...previous, ...createCollectionSelectionFilters(previous, 'collection-1') };
-        expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'photograph', collectionId: 'collection-1', searchQuery: '' });
+        expect(next).toMatchObject({ mediaType: 'all', sourceKind: 'all', collectionId: 'collection-1', searchQuery: '' });
         expect(getEffectiveImageKind(next)).toBe('all');
-        expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('photograph');
+        expect(getEffectiveImageKind({ ...next, mediaType: 'image' })).toBe('all');
     });
 
     it('clears all non-view filters when selecting a collection', () => {
@@ -112,7 +112,7 @@ describe('filterState', () => {
         expect(createDefaultFilters({ sourceKind: 'invalid' as FilterState['sourceKind'] }).sourceKind).toBe('all');
     });
 
-    it('ignores the remembered image kind for All media and Videos without losing it', () => {
+    it('interprets old filters without mutating legacy saved collection rules', () => {
         const photos = createDefaultFilters({ mediaType: 'image', sourceKind: 'photograph' });
         expect(getEffectiveImageKind(photos)).toBe('photograph');
         expect(getEffectiveImageKind({ ...photos, mediaType: 'video' })).toBe('all');

@@ -559,7 +559,7 @@ describe('FilterPanel interactions', () => {
         expect(screen.getByText('v...')).toBeTruthy();
     });
 
-    it('does not save or erase an inactive remembered photo kind when updating smart rules', () => {
+    it('preserves saved rules and clears an inactive legacy kind after compatible Update', () => {
         const onUpdateCollectionFilters = vi.fn();
         const setFilters = vi.fn();
         const saved: FilterState = { ...filters, sourceKind: 'generated', mediaType: 'image' };
@@ -574,7 +574,7 @@ describe('FilterPanel interactions', () => {
             searchQuery: 'castle', sourceKind: 'generated', mediaType: 'image',
         }));
         const updater = setFilters.mock.calls[0][0] as (value: FilterState) => FilterState;
-        expect(updater(manual)).toMatchObject({ sourceKind: 'photograph', mediaType: 'all', searchQuery: '' });
+        expect(updater(manual)).toMatchObject({ sourceKind: 'all', mediaType: 'all', searchQuery: '' });
     });
 
     it('does not activate a dormant saved kind when refining an All Media collection to All Images', () => {

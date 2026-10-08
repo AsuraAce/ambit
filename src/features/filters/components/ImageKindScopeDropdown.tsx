@@ -1,7 +1,12 @@
 import * as React from 'react';
 import { Check, ChevronDown } from 'lucide-react';
-import type { ImageKindFilter, LibraryScopeCounts, MediaTypeFilter, SourceKindCounts } from '../../../types';
+import type { ImageKindFilter, LibraryScopeCounts, MediaTypeFilter } from '../../../types';
 import { formatCountCompact } from '../../../utils/formatUtils';
+
+interface LibraryScopeSelection {
+    mediaType: MediaTypeFilter;
+    sourceKind: ImageKindFilter;
+}
 
 interface LibraryScopeDropdownProps {
     mediaType: MediaTypeFilter;
@@ -12,24 +17,24 @@ interface LibraryScopeDropdownProps {
     countsLoading?: boolean;
     countsError?: boolean;
     onRetryCounts?: () => void;
-    onMediaTypeChange: (value: MediaTypeFilter) => void;
-    onImageKindChange: (value: ImageKindFilter) => void;
+    onScopeChange: (value: LibraryScopeSelection) => void;
 }
 
-const MEDIA_OPTIONS: Array<{ value: MediaTypeFilter; label: string }> = [
-    { value: 'all', label: 'All Media' },
-    { value: 'image', label: 'Images' },
-    { value: 'video', label: 'Videos' },
-];
-
-const IMAGE_KIND_OPTIONS: Array<{ value: ImageKindFilter; label: string; countKey: keyof SourceKindCounts }> = [
-    { value: 'all', label: 'All Images', countKey: 'all' },
-    { value: 'generated', label: 'Generated', countKey: 'generated' },
-    { value: 'photograph', label: 'Photos', countKey: 'photograph' },
-    { value: 'other', label: 'Other', countKey: 'other' },
+const SCOPE_OPTIONS: Array<LibraryScopeSelection & { key: string; label: string }> = [
+    { key: 'all', label: 'All Media', mediaType: 'all', sourceKind: 'all' },
+    { key: 'images', label: 'All Images', mediaType: 'image', sourceKind: 'all' },
+    { key: 'generated', label: 'Generated Images', mediaType: 'image', sourceKind: 'generated' },
+    { key: 'photos', label: 'Photos', mediaType: 'image', sourceKind: 'photograph' },
+    { key: 'other', label: 'Other Images', mediaType: 'image', sourceKind: 'other' },
+    { key: 'videos', label: 'Videos', mediaType: 'video', sourceKind: 'all' },
 ];
 
 const formatCount = (count: number | undefined) => count?.toLocaleString() ?? '—';
+const getScopeCount = (counts: LibraryScopeCounts | undefined, scope: LibraryScopeSelection) => (
+    scope.mediaType === 'image' && scope.sourceKind !== 'all'
+        ? counts?.imageKinds[scope.sourceKind]
+        : counts?.media[scope.mediaType]
+);
 
 export const LibraryScopeDropdown = React.memo(({
     mediaType,
@@ -40,8 +45,7 @@ export const LibraryScopeDropdown = React.memo(({
     countsLoading,
     countsError,
     onRetryCounts,
-    onMediaTypeChange,
-    onImageKindChange,
+    onScopeChange,
 }: LibraryScopeDropdownProps) => {
     const [isOpen, setIsOpen] = React.useState(false);
     const containerRef = React.useRef<HTMLDivElement>(null);
@@ -53,34 +57,20 @@ export const LibraryScopeDropdown = React.memo(({
         menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"], [role="menuitem"]') ?? []
     ), []);
 
-    const selectedMedia = MEDIA_OPTIONS.find(option => option.value === mediaType) ?? MEDIA_OPTIONS[0];
-    const selectedImageKind = IMAGE_KIND_OPTIONS.find(option => option.value === sourceKind) ?? IMAGE_KIND_OPTIONS[0];
-    const isImageScope = mediaType === 'image';
-    const selectedLabel = isImageScope
-        ? (selectedImageKind.value === 'all' ? 'Images' : selectedImageKind.label)
-        : selectedMedia.label;
-    const selectedCount = scopeCounts
-        ? (isImageScope ? scopeCounts.imageKinds[selectedImageKind.countKey] : scopeCounts.media[mediaType])
-        : displayedCount;
-
-    const visibleMediaOptions = MEDIA_OPTIONS.filter(option => (
-        option.value === 'all'
-        || option.value === mediaType
+    const selectedOption = SCOPE_OPTIONS.find(option => (
+        option.mediaType === mediaType && (mediaType !== 'image' || option.sourceKind === sourceKind)
+    )) ?? SCOPE_OPTIONS[0];
+    const selectedLabel = selectedOption.label;
+    const selectedCount = getScopeCount(scopeCounts, selectedOption) ?? displayedCount;
+    const visibleOptions = SCOPE_OPTIONS.filter(option => (
+        option.key === 'all'
+        || option.key === 'images'
+        || option.key === selectedOption.key
         || scopeAvailability === undefined
-        || scopeAvailability.media[option.value] !== 0
+        || getScopeCount(scopeAvailability, option) !== 0
     ));
-    const visibleImageKindOptions = IMAGE_KIND_OPTIONS.filter(option => (
-        option.value === 'all'
-        || option.value === sourceKind
-        || scopeAvailability === undefined
-        || scopeAvailability.imageKinds[option.countKey] !== 0
-    ));
-    const menuOptions = [
-        ...visibleMediaOptions.map(option => ({ key: `media:${option.value}`, type: 'media' as const, value: option.value })),
-        ...visibleImageKindOptions.map(option => ({ key: `image:${option.value}`, type: 'image' as const, value: option.value })),
-    ];
-    const selectedMenuKey = isImageScope ? `image:${selectedImageKind.value}` : `media:${selectedMedia.value}`;
-    const menuKeys = menuOptions.map(option => option.key).join('|') + (countsError ? '|retry' : '');
+    const selectedMenuKey = selectedOption.key;
+    const menuKeys = visibleOptions.map(option => option.key).join('|') + (countsError ? '|retry' : '');
 
     React.useLayoutEffect(() => {
         if (!isOpen || menuRef.current?.contains(document.activeElement)) return;
@@ -114,11 +104,10 @@ export const LibraryScopeDropdown = React.memo(({
         triggerRef.current?.focus();
     }, []);
 
-    const selectOption = React.useCallback((option: typeof menuOptions[number]) => {
-        if (option.type === 'media') onMediaTypeChange(option.value);
-        else onImageKindChange(option.value);
+    const selectOption = React.useCallback((option: LibraryScopeSelection) => {
+        onScopeChange({ mediaType: option.mediaType, sourceKind: option.sourceKind });
         closeAndRestoreFocus();
-    }, [closeAndRestoreFocus, onImageKindChange, onMediaTypeChange]);
+    }, [closeAndRestoreFocus, onScopeChange]);
 
     const handleMenuKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
         const items = getMenuItems();
@@ -152,13 +141,6 @@ export const LibraryScopeDropdown = React.memo(({
         }
     };
 
-    const getMediaCount = (value: MediaTypeFilter) => value === 'image'
-        ? scopeCounts?.imageKinds[selectedImageKind.countKey] ?? (isImageScope ? displayedCount : undefined)
-        : scopeCounts?.media[value] ?? (value === mediaType ? displayedCount : undefined);
-    const getImageKindCount = (option: typeof IMAGE_KIND_OPTIONS[number]) => (
-        scopeCounts?.imageKinds[option.countKey] ?? (isImageScope && option.value === sourceKind ? displayedCount : undefined)
-    );
-
     return (
         <div ref={containerRef} className="relative shrink-0" data-testid="library-scope">
             <button
@@ -191,36 +173,17 @@ export const LibraryScopeDropdown = React.memo(({
             {isOpen && (
                 <div ref={menuRef} id={menuId} role="menu" aria-label="Choose library scope" onKeyDown={handleMenuKeyDown} className="absolute left-0 top-full z-[100] mt-2 w-56 rounded-xl border border-gray-200 bg-white p-1.5 shadow-2xl dark:border-white/10 dark:bg-zinc-800">
                     {countsLoading && <span role="status" className="sr-only">Loading counts</span>}
-                    <div role="group" aria-label="Media type">
-                        <div className="px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Media type</div>
-                        {visibleMediaOptions.map(option => {
-                            const isSelected = option.value === mediaType;
-                            const count = getMediaCount(option.value);
-                            const label = option.value === 'image' && selectedImageKind.value !== 'all'
-                                ? `Images · ${selectedImageKind.label}` : option.label;
-                            return (
-                                <button key={option.value} data-scope-option={`media:${option.value}`} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${label}, ${formatCount(count)}`} onClick={() => selectOption({ key: `media:${option.value}`, type: 'media', value: option.value })} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
-                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
-                                    <span className="min-w-0 flex-1 truncate font-medium">{label}</span>
-                                    <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <div role="group" aria-label="Image kind">
-                        <div className="px-2.5 pb-1.5 pt-3 text-[9px] font-bold uppercase tracking-wider text-gray-400 dark:text-zinc-500">Image kind</div>
-                        {visibleImageKindOptions.map(option => {
-                            const isSelected = isImageScope && option.value === sourceKind;
-                            const count = getImageKindCount(option);
-                            return (
-                                <button key={option.value} data-scope-option={`image:${option.value}`} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption({ key: `image:${option.value}`, type: 'image', value: option.value })} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
-                                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
-                                    <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
-                                    <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {visibleOptions.map(option => {
+                        const isSelected = option.key === selectedMenuKey;
+                        const count = getScopeCount(scopeCounts, option) ?? (isSelected ? displayedCount : undefined);
+                        return (
+                            <button key={option.key} data-scope-option={option.key} type="button" role="menuitemradio" tabIndex={-1} aria-checked={isSelected} aria-label={`${option.label}, ${formatCount(count)}`} onClick={() => selectOption(option)} className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage-500/60 ${isSelected ? 'bg-sage-500/15 text-sage-700 dark:text-sage-200' : 'text-gray-600 hover:bg-gray-100 dark:text-zinc-300 dark:hover:bg-white/5'}`}>
+                                <span className="flex h-4 w-4 shrink-0 items-center justify-center">{isSelected && <Check aria-hidden className="h-3.5 w-3.5" />}</span>
+                                <span className="min-w-0 flex-1 truncate font-medium">{option.label}</span>
+                                <span title={formatCount(count)} className="shrink-0 text-[10px] tabular-nums opacity-70">{count === undefined ? '—' : formatCountCompact(count)}</span>
+                            </button>
+                        );
+                    })}
                     {countsError && (
                         <div className="mt-1.5 flex items-center justify-between gap-2 border-t border-gray-200 px-2.5 pt-2 text-[10px] dark:border-white/10">
                             <span role="status" className="text-ember-600 dark:text-ember-300">Counts unavailable</span>

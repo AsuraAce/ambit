@@ -447,7 +447,7 @@ export interface AppSettings {
   invokeOwnerSelection?: InvokeOwnerSelection; // Owner scope, bound to the canonical InvokeAI database path
   starredAs?: 'favorite' | 'pin' | 'both' | 'none'; // New: Map starred images to favorites, pins, or both
   libraryLayoutMode?: LayoutMode; // Persisted gallery layout preference
-  librarySourceKind?: ImageKindFilter; // Remembered image kind, inactive for All media/Videos
+  librarySourceKind?: ImageKindFilter; // Active image scope; all for All Media/Videos
   libraryMediaType?: MediaTypeFilter; // Persisted effective library media scope
   libraryShowGrids?: boolean; // Persisted view preference
   libraryShowIntermediates?: boolean; // Persisted view preference

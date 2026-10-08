@@ -56,6 +56,7 @@ export const createDefaultAppSettings = (
 
   settings.librarySourceKind = normalizeImageKindFilter(settings.librarySourceKind);
   settings.libraryMediaType = normalizeMediaTypeFilter(overrides.libraryMediaType, settings.librarySourceKind);
+  if (settings.libraryMediaType !== 'image') settings.librarySourceKind = 'all';
   settings.viewerPreferredTab = normalizeViewerPreferredTab(settings.viewerPreferredTab);
   return settings;
 };

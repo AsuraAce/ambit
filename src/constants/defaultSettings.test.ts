@@ -37,12 +37,18 @@ describe('createDefaultAppSettings', () => {
         expect(createDefaultAppSettings({ viewerPreferredTab: 'invalid' as AppSettings['viewerPreferredTab'] }).viewerPreferredTab).toBe('details');
     });
 
-    it('upgrades a remembered image kind to Images only when no media scope was saved', () => {
+    it('upgrades a legacy image kind to Images only when no media scope was saved', () => {
         expect(createDefaultAppSettings().libraryMediaType).toBe('all');
         expect(createDefaultAppSettings({ librarySourceKind: 'photograph' }).libraryMediaType).toBe('image');
         expect(createDefaultAppSettings({ librarySourceKind: 'photograph', libraryMediaType: 'all' }).libraryMediaType).toBe('all');
         expect(createDefaultAppSettings({ librarySourceKind: 'photograph', libraryMediaType: 'video' })).toMatchObject({
-            libraryMediaType: 'video', librarySourceKind: 'photograph',
+            libraryMediaType: 'video', librarySourceKind: 'all',
+        });
+    });
+
+    it.each(['all', 'video'] as const)('drops an inactive legacy kind when restoring %s', libraryMediaType => {
+        expect(createDefaultAppSettings({ libraryMediaType, librarySourceKind: 'photograph' })).toMatchObject({
+            libraryMediaType, librarySourceKind: 'all',
         });
     });
 });

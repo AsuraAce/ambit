@@ -381,7 +381,7 @@ describe('TauriFsRepository', () => {
         expect(JSON.parse(serialized).images).toEqual([]);
     });
 
-    it('loads shared viewer and media preferences without discarding the remembered image kind', async () => {
+    it('loads shared viewer and media preferences without restoring an inactive image kind', async () => {
         fsMocks.exists.mockImplementation(async (fileName: string) => fileName === 'library.json');
         fsMocks.readTextFile.mockResolvedValue(JSON.stringify({
             ...stateFixture(),
@@ -393,7 +393,7 @@ describe('TauriFsRepository', () => {
         const { TauriFsRepository } = await import('../TauriFsRepository');
         const state = await new TauriFsRepository().load();
         expect(state.settings).toMatchObject({
-            viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'photograph',
+            viewerPreferredTab: 'workflow', libraryMediaType: 'video', librarySourceKind: 'all',
         });
     });
 

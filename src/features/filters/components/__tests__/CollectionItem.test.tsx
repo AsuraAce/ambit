@@ -256,17 +256,17 @@ describe('CollectionItem thumbnail hydration states', () => {
         const { rerender } = render(<CollectionItem {...shared} filters={current} />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBe(baseCollection.id);
-        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'photograph', searchQuery: '' });
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all', searchQuery: '' });
         rerender(<CollectionItem {...shared} filters={current} />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBeNull();
-        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'photograph' });
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all' });
 
         current = { ...current, mediaType };
         rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
         fireEvent.click(screen.getByTitle(baseCollection.name));
         expect(current.collectionId).toBe(baseCollection.id);
-        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'photograph' });
+        expect(current).toMatchObject({ mediaType: 'all', sourceKind: 'all' });
         rerender(<CollectionItem {...shared} filters={current} viewMode="grid" />);
         fireEvent.contextMenu(screen.getByTitle(baseCollection.name));
         fireEvent.click(screen.getByTitle(baseCollection.name));
