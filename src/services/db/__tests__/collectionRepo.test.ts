@@ -1,3 +1,4 @@
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilterState, type Collection } from '../../../types';
 import { createDefaultFilters } from '../../../utils/filterState';
@@ -15,6 +16,8 @@ const browserMocks = vi.hoisted(() => ({
     deleteBrowserMockCollection: vi.fn(),
     getBrowserMockCollections: vi.fn(),
     getBrowserMockImages: vi.fn(),
+    getBrowserMockInvokeMembershipSnapshot: vi.fn().mockReturnValue([]),
+    setBrowserMockInvokeMembershipSnapshot: vi.fn(),
     removeBrowserMockImagesFromCollection: vi.fn(),
     upsertBrowserMockCollection: vi.fn(),
 }));
@@ -55,6 +58,8 @@ vi.mock('../../browserMockData', () => ({
     deleteBrowserMockCollection: browserMocks.deleteBrowserMockCollection,
     getBrowserMockCollections: browserMocks.getBrowserMockCollections,
     getBrowserMockImages: browserMocks.getBrowserMockImages,
+    getBrowserMockInvokeMembershipSnapshot: browserMocks.getBrowserMockInvokeMembershipSnapshot,
+    setBrowserMockInvokeMembershipSnapshot: browserMocks.setBrowserMockInvokeMembershipSnapshot,
     removeBrowserMockImagesFromCollection: browserMocks.removeBrowserMockImagesFromCollection,
     upsertBrowserMockCollection: browserMocks.upsertBrowserMockCollection,
 }));
@@ -1029,6 +1034,7 @@ describe('collectionRepo membership helpers', () => {
             invokeOwnerId: 'owner-a',
             invokeSourceId: 'D:/Invoke/databases/invokeai.db',
             invokeSourceName: 'Invoke Board',
+            invokeNameOverridden: false,
             invokeSourcePresent: true,
             imageIds: [],
             source: 'invoke',
@@ -1492,7 +1498,9 @@ describe('collectionRepo membership helpers', () => {
         const params = dbMocks.execute.mock.calls[0][1] as unknown[];
         expect(sql).toContain("source = 'invoke'");
         expect(sql).toContain('invoke_source_name');
-        expect(sql).toContain('collections.name IS collections.invoke_source_name');
+        expect(sql).toContain('collections.invoke_name_overridden = 0');
+        expect(sql).toContain('collections.invoke_source_id IS NOT NULL');
+        expect(sql).toContain('collections.name = collections.invoke_source_name');
         expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
         expect(sql).toMatch(
@@ -1524,7 +1532,9 @@ describe('collectionRepo membership helpers', () => {
         expect(sql).toContain('invoke_owner_id = excluded.invoke_owner_id');
         expect(sql).toContain('invoke_source_id = excluded.invoke_source_id');
         expect(sql).toContain('invoke_source_name');
-        expect(sql).toContain('collections.name IS collections.invoke_source_name');
+        expect(sql).toContain('collections.invoke_name_overridden = 0');
+        expect(sql).toContain('collections.invoke_source_id IS NOT NULL');
+        expect(sql).toContain('collections.name = collections.invoke_source_name');
         expect(sql).toMatch(
             /updated_at = CASE\s+WHEN collections\.invoke_source_name IS NULL\s+AND collections\.source IS 'invoke'\s+AND collections\.invoke_owner_id IS excluded\.invoke_owner_id\s+AND collections\.invoke_source_id IS excluded\.invoke_source_id\s+AND collections\.invoke_source_present = 1\s+THEN collections\.updated_at[\s\S]*ELSE MAX/
         );
@@ -1532,5 +1542,202 @@ describe('collectionRepo membership helpers', () => {
         expect(sql).not.toContain('custom_thumbnail = excluded.custom_thumbnail');
         expect(params.slice(0, 5)).toEqual(['board-a', 'Board A', 10, 'owner-a', 'db-a']);
         expect(params.slice(7, 12)).toEqual(['board-b', 'Board B', 20, 'owner-b', 'db-a']);
+    });
+});
+
+
+describe('Invoke collection local name intent', () => {
+    beforeEach(resetRepoMocks);
+
+    it('renames atomically and rejects rows outside the active collection scope', async () => {
+        const { renameCollectionInDb } = await import('../collectionRepo');
+        dbMocks.execute.mockResolvedValueOnce({ rowsAffected: 1 });
+        await renameCollectionInDb('board', 'Source name');
+        const [sql, params] = dbMocks.execute.mock.calls[0];
+        expect(sql).toContain("invoke_name_overridden = CASE WHEN source = 'invoke' THEN 1");
+        expect(sql).toContain('id IN (SELECT id FROM scoped_collections)');
+        expect(params).toEqual(['Source name', expect.any(Number), 'board']);
+        dbMocks.execute.mockResolvedValueOnce({ rowsAffected: 0 });
+        await expect(renameCollectionInDb('hidden', 'Name')).rejects.toThrow('collection was not found');
+    });
+
+    it('preserves Invoke name and override marker during unrelated whole-row saves', async () => {
+        const { upsertCollection } = await import('../collectionRepo');
+        await upsertCollection({ id: 'board', name: 'Stale name', source: 'invoke', color: '#abcdef', invokeNameOverridden: false });
+        const [sql] = dbMocks.execute.mock.calls[0];
+        const updateSql = sql.split('ON CONFLICT(id) DO UPDATE SET')[1];
+        expect(updateSql).toContain("name = CASE WHEN collections.source = 'invoke' THEN collections.name ELSE excluded.name END");
+        expect(updateSql).not.toContain('invoke_name_overridden =');
+    });
+
+    it('keeps rename intent when local and source names converge, until reset', async () => {
+        browserMocks.isBrowserMockMode.mockReturnValue(true);
+        let collection: Collection = { id: 'board', name: 'Local', source: 'invoke', invokeSourceName: 'Original', invokeNameOverridden: false, createdAt: 1, imageIds: ['local-image'] };
+        browserMocks.getBrowserMockCollections.mockImplementation(() => [collection]);
+        browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => { collection = { ...collection, ...update }; });
+        const { renameCollectionInDb, upsertInvokeBoardCollection, upsertInvokeBoardCollections, resetInvokeCollection, upsertCollection } = await import('../collectionRepo');
+        await renameCollectionInDb('board', 'Local');
+        const board = { id: 'board', name: 'Local', createdAt: 1, invokeSourceId: 'invoke.db' };
+        await upsertInvokeBoardCollection(board);
+        await upsertInvokeBoardCollections([{ ...board, name: 'Later upstream' }]);
+        await upsertCollection({ ...collection, name: 'Stale', invokeNameOverridden: false, color: 'green' });
+        expect(collection).toMatchObject({ name: 'Local', invokeNameOverridden: true, invokeSourceName: 'Later upstream', color: 'green', imageIds: ['local-image'] });
+        browserMocks.getBrowserMockInvokeMembershipSnapshot.mockReturnValue(['source-image']);
+        await resetInvokeCollection('board');
+        expect(collection).toMatchObject({ name: 'Later upstream', invokeNameOverridden: false, imageIds: ['source-image'], color: 'green' });
+    });
+
+    it('preserves ambiguous legacy names and marks adopted source boards as overridden', async () => {
+        browserMocks.isBrowserMockMode.mockReturnValue(true);
+        browserMocks.getBrowserMockCollections.mockReturnValue([{ id: 'legacy', name: 'Retained', source: 'invoke', imageIds: [], createdAt: 1 }]);
+        const { upsertInvokeBoardCollection } = await import('../collectionRepo');
+        await upsertInvokeBoardCollection({ id: 'legacy', name: 'Upstream', createdAt: 1, invokeSourceId: 'invoke.db' });
+        expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(expect.objectContaining({ name: 'Retained', invokeNameOverridden: true }));
+    });
+
+    const ambiguousSourceCases = [
+        { reason: 'known name without a bound source', name: 'A', sourceId: null },
+        { reason: 'false marker with a differing display name', name: 'Local', sourceId: 'invoke.db' },
+    ];
+
+    describe.each(['single', 'bulk'] as const)('%s source upsert preservation', (mode) => {
+        it.each(ambiguousSourceCases)('retains $reason over SQLite', async ({ name, sourceId }) => {
+            const sqlite = new DatabaseSync(':memory:');
+            try {
+                sqlite.exec(`CREATE TABLE collections (
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER,
+                    is_archived INTEGER DEFAULT 0, is_pinned INTEGER DEFAULT 0,
+                    source TEXT, invoke_owner_id TEXT, invoke_source_id TEXT,
+                    invoke_source_name TEXT, invoke_source_present INTEGER DEFAULT 1,
+                    invoke_name_overridden INTEGER NOT NULL DEFAULT 0, updated_at INTEGER,
+                    color TEXT, custom_thumbnail TEXT
+                )`);
+                sqlite.prepare(`INSERT INTO collections
+                    (id,name,created_at,source,invoke_source_id,invoke_source_name,color,custom_thumbnail)
+                    VALUES ('board',?,1,'invoke',?,'A','green','keep.png')`).run(name, sourceId);
+                dbMocks.execute.mockImplementation(async (sql: string, params: SQLInputValue[] = []) => {
+                    const result = sqlite.prepare(sql).run(...params);
+                    return { rowsAffected: Number(result.changes) };
+                });
+                const { upsertInvokeBoardCollection, upsertInvokeBoardCollections } = await import('../collectionRepo');
+                // The first source name is unchanged: bulk writes must still repair
+                // an inconsistent false marker before future upstream convergence.
+                for (const sourceName of ['A', name, 'Later upstream']) {
+                    const board = { id: 'board', name: sourceName, createdAt: 1, invokeSourceId: 'invoke.db' };
+                    if (mode === 'single') await upsertInvokeBoardCollection(board);
+                    else await upsertInvokeBoardCollections([board]);
+                    expect(sqlite.prepare('SELECT * FROM collections WHERE id = ?').get('board')).toMatchObject({
+                        name, invoke_source_name: sourceName, invoke_source_id: 'invoke.db',
+                        invoke_name_overridden: 1, color: 'green', custom_thumbnail: 'keep.png',
+                    });
+                }
+            } finally {
+                sqlite.close();
+            }
+        });
+
+        it.each(ambiguousSourceCases)('retains $reason in browser mode', async ({ name, sourceId }) => {
+            browserMocks.isBrowserMockMode.mockReturnValue(true);
+            let collection: Collection = {
+                id: 'board', name, source: 'invoke', invokeSourceId: sourceId ?? undefined,
+                invokeSourceName: 'A', invokeNameOverridden: false,
+                createdAt: 1, imageIds: ['local-image'], color: 'green', customThumbnail: 'keep.png',
+            };
+            browserMocks.getBrowserMockCollections.mockImplementation(() => [collection]);
+            browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => {
+                collection = { ...collection, ...update };
+            });
+            const { upsertInvokeBoardCollection, upsertInvokeBoardCollections } = await import('../collectionRepo');
+            for (const sourceName of ['A', name, 'Later upstream']) {
+                const board = { id: 'board', name: sourceName, createdAt: 1, invokeSourceId: 'invoke.db' };
+                if (mode === 'single') await upsertInvokeBoardCollection(board);
+                else await upsertInvokeBoardCollections([board]);
+                expect(collection).toMatchObject({
+                    name, invokeSourceName: sourceName, invokeNameOverridden: true,
+                    color: 'green', customThumbnail: 'keep.png', imageIds: ['local-image'],
+                });
+            }
+        });
+
+        it('continues following a known source when its display name was unmodified', async () => {
+            browserMocks.isBrowserMockMode.mockReturnValue(true);
+            const collection: Collection = {
+                id: 'board', name: 'A', source: 'invoke', invokeSourceId: 'invoke.db',
+                invokeSourceName: 'A', invokeNameOverridden: false, createdAt: 1, imageIds: [],
+            };
+            browserMocks.getBrowserMockCollections.mockReturnValue([collection]);
+            const { upsertInvokeBoardCollection, upsertInvokeBoardCollections } = await import('../collectionRepo');
+            const board = { id: 'board', name: 'B', createdAt: 1, invokeSourceId: 'invoke.db' };
+            if (mode === 'single') await upsertInvokeBoardCollection(board);
+            else await upsertInvokeBoardCollections([board]);
+            expect(browserMocks.upsertBrowserMockCollection).toHaveBeenCalledWith(expect.objectContaining({
+                name: 'B', invokeSourceName: 'B', invokeNameOverridden: false,
+            }));
+        });
+    });
+
+    it('finds hidden source boards using canonical database identity without scoped visibility', async () => {
+        dbMocks.select.mockResolvedValue([{ invoke_source_id: 'D:/Invoke/databases/invokeai.db' }]);
+        const { hasInvokeBoardCollectionsForSource } = await import('../collectionRepo');
+        await expect(hasInvokeBoardCollectionsForSource('d:\\invoke\\databases\\invokeai.db')).resolves.toBe(true);
+        await expect(hasInvokeBoardCollectionsForSource('D:/Other/invokeai.db')).resolves.toBe(false);
+        const [sql] = dbMocks.select.mock.calls[0];
+        expect(sql).toContain('FROM collections');
+        expect(sql).not.toContain('scoped_collections');
+        expect(sql).not.toContain('invoke_suppressed');
+    });
+
+    it('ownership-only mock verification refreshes availability without adopting or changing content', async () => {
+        browserMocks.isBrowserMockMode.mockReturnValue(true);
+        const local: Collection = { id: 'local', name: 'Local name', source: 'invoke', createdAt: 1, imageIds: ['local-image'], invokeSourceId: 'D:/Invoke/invokeai.db', invokeSourceName: 'Last source name', invokeNameOverridden: true, invokeSourcePresent: false, color: 'green' };
+        const absent: Collection = { ...local, id: 'absent', invokeOwnerId: 'last-verified', invokeSourcePresent: true };
+        const foreign: Collection = { ...local, id: 'foreign', invokeSourceId: 'D:/Other/invokeai.db' };
+        const unbound: Collection = { ...local, id: 'unbound', invokeSourceId: undefined };
+        const ambit: Collection = { ...local, id: 'ambit', source: 'ambit' };
+        let collections = [local, absent, foreign, unbound, ambit];
+        browserMocks.getBrowserMockCollections.mockImplementation(() => collections);
+        browserMocks.upsertBrowserMockCollection.mockImplementation((update: Collection) => {
+            collections = collections.map(collection => collection.id === update.id ? update : collection);
+        });
+        const { reconcileInvokeBoardSnapshot } = await import('../collectionRepo');
+        const input = {
+            dbPath: 'd:/invoke/invokeai.db', mode: 'all' as const, ownerId: null, ownershipOnly: true,
+            reconcileMemberships: false, deleteMissingCollections: false, memberships: [],
+            boards: ['local', 'foreign', 'unbound', 'ambit', 'new'].map(id => ({ id, name: 'New upstream', createdAt: 2, ownerId: ' owner ' })),
+        };
+        await expect(reconcileInvokeBoardSnapshot(input)).resolves.toMatchObject({ collectionsUpdated: 2 });
+        expect(collections).toEqual([
+            { ...local, invokeOwnerId: 'owner', invokeSourcePresent: true },
+            { ...absent, invokeSourcePresent: false }, foreign, unbound, ambit,
+        ]);
+        expect(browserMocks.setBrowserMockInvokeMembershipSnapshot).not.toHaveBeenCalled();
+        expect(browserMocks.getBrowserMockImages).not.toHaveBeenCalled();
+        await expect(reconcileInvokeBoardSnapshot(input)).resolves.toMatchObject({ collectionsUpdated: 0 });
+    });
+
+    it.each(['owner', 'unselected', 'memberships', 'reconcileMemberships', 'deleteMissingCollections', 'emptyPath', 'emptyBoard', 'duplicateBoard'])('ownership-only mock rejects %s before any mutation', async (invalid) => {
+        browserMocks.isBrowserMockMode.mockReturnValue(true);
+        const { reconcileInvokeBoardSnapshot } = await import('../collectionRepo');
+        const input: Parameters<typeof reconcileInvokeBoardSnapshot>[0] = {
+            dbPath: 'invoke.db', mode: 'all', ownerId: 'owner', ownershipOnly: true,
+            reconcileMemberships: false, deleteMissingCollections: false, memberships: [],
+            boards: [{ id: 'board', name: 'Upstream', createdAt: 1, ownerId: 'owner' }],
+        };
+        if (invalid === 'owner' || invalid === 'unselected') input.mode = invalid;
+        if (invalid === 'memberships') input.memberships = [{ imageName: 'image.png', boardId: 'board' }];
+        if (invalid === 'reconcileMemberships') input.reconcileMemberships = true;
+        if (invalid === 'deleteMissingCollections') input.deleteMissingCollections = true;
+        if (invalid === 'emptyPath') input.dbPath = ' ';
+        if (invalid === 'emptyBoard') input.boards[0].id = ' ';
+        if (invalid === 'duplicateBoard') input.boards.push({ ...input.boards[0] });
+        await expect(reconcileInvokeBoardSnapshot(input)).rejects.toThrow();
+        expect(browserMocks.upsertBrowserMockCollection).not.toHaveBeenCalled();
+        expect(browserMocks.setBrowserMockInvokeMembershipSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('hydrates explicit rename intent independently of matching display names', async () => {
+        dbMocks.select.mockResolvedValue([makeCollectionRow({ source: 'invoke', name: 'Matching', invoke_source_name: 'Matching', invoke_name_overridden: 1 })]);
+        const { getAllCollectionsWithStats } = await import('../collectionRepo');
+        await expect(getAllCollectionsWithStats({ includeCounts: false, includeThumbnails: false })).resolves.toEqual([expect.objectContaining({ invokeNameOverridden: true })]);
     });
 });

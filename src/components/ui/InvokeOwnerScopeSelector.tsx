@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { Check } from 'lucide-react';
 import type { InvokeOwnerDiscovery, InvokeOwnerSelection } from '../../types';
-import { ConfirmDialog } from './ConfirmDialog';
 
 interface InvokeOwnerScopeSelectorProps {
     discovery: InvokeOwnerDiscovery;
@@ -18,19 +17,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
     selectionRequired = false,
     onSelect,
 }) => {
-    const [isAllUsersConfirmOpen, setIsAllUsersConfirmOpen] = React.useState(false);
     const unassignedBoards = discovery.unassignedBoardCount ?? 0;
-    const unassignedDetails = [
-        discovery.unassignedImageCount > 0
-            ? `${discovery.unassignedImageCount.toLocaleString()} unassigned image rows`
-            : null,
-        unassignedBoards > 0
-            ? `${unassignedBoards.toLocaleString()} unassigned boards`
-            : null,
-    ].filter((value): value is string => value !== null).join(' and ');
-    const allUsersMessage = unassignedDetails
-        ? `Ambit will show every owner's InvokeAI content, including ${unassignedDetails}, across the gallery, collections, maintenance views, and references. You can return to a single owner at any time.`
-        : "Ambit will show every owner's InvokeAI images and boards from this local database. You can return to a single owner at any time.";
 
     return (
         <div className="space-y-3">
@@ -103,7 +90,7 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                 aria-pressed={selection?.mode === 'all'}
                 onClick={() => {
                     if (selection?.mode === 'all') return;
-                    setIsAllUsersConfirmOpen(true);
+                    void onSelect({ dbPath: discovery.dbPath, mode: 'all' });
                 }}
                 className={`w-full rounded-xl border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${selection?.mode === 'all'
                     ? 'border-ember-500 bg-ember-500/10'
@@ -124,18 +111,6 @@ export const InvokeOwnerScopeSelector: React.FC<InvokeOwnerScopeSelectorProps> =
                 </div>
             )}
 
-            <ConfirmDialog
-                isOpen={isAllUsersConfirmOpen}
-                title="Show images from all InvokeAI users?"
-                message={allUsersMessage}
-                confirmLabel="Show All Users"
-                onConfirm={() => {
-                    setIsAllUsersConfirmOpen(false);
-                    void onSelect({ dbPath: discovery.dbPath, mode: 'all' });
-                }}
-                onCancel={() => setIsAllUsersConfirmOpen(false)}
-                zIndex={220}
-            />
         </div>
     );
 };

@@ -103,6 +103,32 @@ describe('SettingsStore', () => {
         expect(useSettingsStore.getState().geminiApiKey).toBeNull();
     });
 
+    it.each([true, false, undefined])('normalizes the retired board setting on load and save while retaining cursors (%s)', async (parent) => {
+        const historical = { dbPath: 'D:/Invoke/invokeai.db', lastSyncedAt: 123,
+            syncBoardsToCollections: false } as AppSettings['invokeDbSnapshot'];
+        const saved = { ...createDefaultAppSettings(), invokeSyncBoards: parent,
+            syncBoardsToCollections: parent === false, lastSyncedAt: 123,
+            invokeDbSnapshot: historical, invokeDbSnapshots: historical ? [historical] : [] };
+        vi.mocked(appRepository.load).mockResolvedValue(appState(saved));
+        await useSettingsStore.getState().initialize();
+        expect(useSettingsStore.getState().settings).toMatchObject({
+            invokeSyncBoards: parent !== false, syncBoardsToCollections: parent !== false,
+            lastSyncedAt: 123,
+        });
+        expect(useSettingsStore.getState().settings.invokeDbSnapshot).toBe(historical);
+        useSettingsStore.getState().setSettings({ syncBoardsToCollections: parent === false, theme: 'light' });
+        await useSettingsStore.getState().flushSettings();
+        const updater = vi.mocked(appRepository.update).mock.calls.at(-1)?.[0];
+        if (!updater) throw new Error('Expected a settings write');
+        const persisted = await updater(appState(saved));
+        expect(persisted.settings).toMatchObject({
+            invokeSyncBoards: parent !== false, syncBoardsToCollections: parent !== false,
+            theme: 'light', lastSyncedAt: 123,
+        });
+        expect(persisted.settings.invokeDbSnapshot).toBe(historical);
+        expect(persisted.settings.invokeDbSnapshots).toEqual([historical]);
+    });
+
     it('should load API key from keyring on initialize', async () => {
         vi.mocked(appRepository.load).mockResolvedValue(appState({} as AppSettings));
         vi.mocked(commands.loadApiKey).mockResolvedValue({ status: 'ok', data: 'secure-key' });
@@ -334,7 +360,11 @@ describe('SettingsStore', () => {
 
         expect(useSettingsStore.getState().settings).toBe(visibleSettings);
         const updater = vi.mocked(appRepository.update).mock.calls[0][0];
-        expect(updater(appState(visibleSettings)).settings).toBe(purgeSettings);
+        expect(updater(appState(visibleSettings)).settings).toEqual({
+            ...purgeSettings,
+            invokeSyncBoards: true,
+            syncBoardsToCollections: true,
+        });
     });
 
     it('does not persist pre-initialization default updates', async () => {

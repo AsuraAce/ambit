@@ -2,7 +2,9 @@ import Database from '@tauri-apps/plugin-sql';
 import type { InvokeOwnerDiscovery, InvokeOwnerSummary, InvokeSourceFingerprint } from '../../types';
 import type { InvokeSyncScope } from './syncScope';
 import { measureStartupPhase } from '../../utils/startupDiagnostics';
-import { getInvokePathIdentity } from './pathIdentity';
+import { getInvokePathIdentity, isSameInvokePath } from './pathIdentity';
+import { commands } from '../../bindings';
+import { unwrap } from '../../utils/spectaUtils';
 
 interface BoardRow {
     board_id: string;
@@ -102,6 +104,20 @@ export const invalidateInvokeSourceDatabase = (rootPath?: string): void => {
     }
     sourceDatabasePromises.delete(getInvokePathIdentity(resolveInvokePaths(rootPath).dbPath));
 };
+/** Inspect a candidate without committing settings or admitting any library content. */
+export const inspectInvokeConnection = async (rootPath: string): Promise<InvokeOwnerDiscovery> => {
+    const path = rootPath.trim();
+    if (!path) throw new Error('Choose an InvokeAI folder first.');
+    const { dbPath } = resolveInvokePaths(path);
+    const snapshot = await unwrap(commands.getInvokeDbSnapshot(path));
+    if (!snapshot.files.some(file => isSameInvokePath(file.path, dbPath) && file.exists)) {
+        throw new Error('Could not find an existing InvokeAI database at this path.');
+    }
+    // Do not let SQLite create an empty database when checking a mistyped path.
+    invalidateInvokeSourceDatabase(path);
+    return discoverInvokeOwners(path);
+};
+
 export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwnerDiscovery> => {
     if (!rootPath) throw new Error('No InvokeAI path provided.');
 
@@ -110,6 +126,7 @@ export const discoverInvokeOwners = async (rootPath: string): Promise<InvokeOwne
     const imageColumns = new Set(
         (await measureStartupPhase('owner-source-schema', () => db.select<TableRow[]>('PRAGMA table_info(images)'))).map(column => column.name)
     );
+    if (imageColumns.size === 0) throw new Error('This database does not contain an InvokeAI images table.');
     if (!imageColumns.has('user_id')) {
         return { schemaMode: 'legacy', dbPath, imagesRoot, owners: [], unassignedImageCount: 0 };
     }
