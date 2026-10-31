@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/AsuraAce/ambit/compare/v0.14.0...v0.14.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **deps:** clear npm and Rust dependency advisories ([#328](https://github.com/AsuraAce/ambit/issues/328)) ([06a2e23](https://github.com/AsuraAce/ambit/commit/06a2e2333ddda22db7a3cdbd65434ab070b1bb53))
+
 ## [0.14.0](https://github.com/AsuraAce/ambit/compare/v0.13.3...v0.14.0) (2026-10-08)
 
 
