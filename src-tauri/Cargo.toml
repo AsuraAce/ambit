@@ -57,7 +57,8 @@ sha2 = "0.11"
 hex = "0.4"
 keyring = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
+# The zip feature stays off: releases publish raw NSIS/MSI updater artifacts.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"
