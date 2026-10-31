@@ -31,6 +31,7 @@ ambit-comfyui-support*.json
 *.db
 
 .agent/
+.claude/worktrees/
 .codex/
 .gemini/
 gha-creds-*.json

@@ -1,6 +1,6 @@
 # Photography merge acceptance
 
-Status: Local publication review and release gate passed; draft PR update authorized; native interaction acceptance pending
+Status: Complete — merged in PR #324 and released in `v0.14.0`; no native interaction acceptance was recorded before release
 
 ## Outcome
 
