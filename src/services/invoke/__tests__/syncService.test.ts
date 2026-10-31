@@ -1623,7 +1623,8 @@ describe('syncImages live mode', () => {
             durableImages.push(...images);
         });
         const onBatchCommitted = vi.fn();
-        const operation = syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), controller.signal, {
+        const onProgress = vi.fn();
+        const operation = syncImages('D:/AmbitFixtures/InvokeAI', onProgress, controller.signal, {
             mode: 'manual', syncBoards: true, syncFavorites: false, onBatchCommitted,
         });
 
@@ -1634,6 +1635,8 @@ describe('syncImages live mode', () => {
         await expect(operation).rejects.toThrow('Aborted');
 
         expect(durableImages).toHaveLength(499);
+        // A cancelled run must not show more additions than processed rows.
+        expect(onProgress).toHaveBeenLastCalledWith(500, 501, 'Processing images: 500 / 501');
         expect(syncCollectionImages).not.toHaveBeenCalled();
         expect(commands.replaceInvokeImageReferences).not.toHaveBeenCalled();
         const batchReads = selectMock.mock.calls.filter(([sql]) => sql.includes('FROM images i') && sql.includes('OFFSET'));

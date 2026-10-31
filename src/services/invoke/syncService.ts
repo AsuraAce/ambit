@@ -1094,13 +1094,16 @@ export const syncImages = async (
         let insertMs = 0;
         let referenceWriteMs = 0;
         let collectionSyncMs = 0;
-        const reportCommittedBatch = () => options.onBatchCommitted?.({
-            processed,
-            imported: newImportedCount,
-            updated: totalUpdated,
-            touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
-            touchedFacetResources,
-        });
+        const reportCommittedBatch = () => {
+            onProgress(Math.min(processed, totalToImport), totalToImport, `Processing images: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
+            options.onBatchCommitted?.({
+                processed,
+                imported: newImportedCount,
+                updated: totalUpdated,
+                touchedFacetTypes: orderFacetTypes(touchedFacetTypes),
+                touchedFacetResources,
+            });
+        };
         if (currentBatch.length > 0) {
             // Lazy Board Creation
             if (shouldApplyBoardMappings) {
@@ -1165,7 +1168,6 @@ export const syncImages = async (
             batchMs: elapsedMs(batchStartedAt)
         });
         offset += rows.length;
-        onProgress(Math.min(processed, totalToImport), totalToImport, `Processing images: ${Math.min(processed, totalToImport)} / ${totalToImport}`);
         await new Promise(r => setTimeout(r, 0));
     }
 
