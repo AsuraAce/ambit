@@ -1,6 +1,6 @@
 # Single-choice library scope
 
-Status: Implementation verified; native owner acceptance pending
+Status: Complete — released in `v0.14.0`; no native owner acceptance was recorded before release
 Date: 2026-10-08
 
 ## Outcome
