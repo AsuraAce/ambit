@@ -1,9 +1,12 @@
 use super::models::{FileEntry, FolderStats, MediaCandidateKind};
+use super::SCAN_POOL;
+use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "webp"];
 const VIDEO_EXTENSIONS: [&str; 5] = ["mp4", "webm", "mov", "m4v", "mkv"];
+const IMAGE_CANDIDATE_BATCH_SIZE: usize = 256;
 
 fn canonical_root(root: &Path) -> Option<PathBuf> {
     root.canonicalize().ok()
@@ -158,6 +161,7 @@ fn collect_images_recursive_inner(
     }
 
     if let Ok(entries) = std::fs::read_dir(current) {
+        let mut candidates = Vec::with_capacity(IMAGE_CANDIDATE_BATCH_SIZE);
         for entry in entries.flatten() {
             let p = entry.path();
             let Ok(file_type) = entry.file_type() else {
@@ -166,18 +170,46 @@ fn collect_images_recursive_inner(
 
             if safe_dir(root_canonical, &p, file_type) {
                 if !is_thumbnail_dir(&p) {
+                    flush_image_candidates(root, root_canonical, &mut candidates, files);
                     collect_images_recursive_inner(root, root_canonical, &p, files, visited);
                 }
-            } else if safe_file(root_canonical, &p, file_type)
+            } else if !file_type.is_symlink()
+                && file_type.is_file()
                 && is_image_path(&p)
                 && !is_thumbnail_file(&p)
             {
-                if let Ok(rel) = p.strip_prefix(root) {
-                    files.push(rel.to_string_lossy().replace("\\", "/"));
+                candidates.push(p);
+                if candidates.len() == IMAGE_CANDIDATE_BATCH_SIZE {
+                    flush_image_candidates(root, root_canonical, &mut candidates, files);
                 }
             }
         }
+        flush_image_candidates(root, root_canonical, &mut candidates, files);
     }
+}
+
+fn flush_image_candidates(
+    root: &Path,
+    root_canonical: &Path,
+    candidates: &mut Vec<PathBuf>,
+    files: &mut Vec<String>,
+) {
+    if candidates.is_empty() {
+        return;
+    }
+
+    let found: Vec<Option<String>> = SCAN_POOL.install(|| {
+        candidates
+            .par_iter()
+            .map(|path| {
+                canonical_inside_root(root_canonical, path)?;
+                let rel = path.strip_prefix(root).ok()?;
+                Some(rel.to_string_lossy().replace("\\", "/"))
+            })
+            .collect()
+    });
+    files.extend(found.into_iter().flatten());
+    candidates.clear();
 }
 
 pub fn collect_images_recursive_absolute(root: &Path, current: &Path, files: &mut Vec<String>) {
@@ -421,6 +453,135 @@ mod tests {
         path.to_string_lossy().replace("\\", "/")
     }
 
+    // Retain the former serial traversal as an independent ordering and safety oracle.
+    fn collect_images_recursive_serial(root: &Path, current: &Path, files: &mut Vec<String>) {
+        let Some(root_canonical) = canonical_root(root) else {
+            return;
+        };
+        let mut visited = HashSet::new();
+        collect_images_recursive_serial_inner(root, &root_canonical, current, files, &mut visited);
+    }
+
+    fn collect_images_recursive_serial_inner(
+        root: &Path,
+        root_canonical: &Path,
+        current: &Path,
+        files: &mut Vec<String>,
+        visited: &mut HashSet<PathBuf>,
+    ) {
+        if files.len() > 300_000 {
+            return;
+        }
+
+        let Some(current_canonical) = canonical_inside_root(root_canonical, current) else {
+            return;
+        };
+        if !visited.insert(current_canonical) {
+            return;
+        }
+
+        if let Ok(entries) = fs::read_dir(current) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                let Ok(file_type) = entry.file_type() else {
+                    continue;
+                };
+
+                if safe_dir(root_canonical, &p, file_type) {
+                    if !is_thumbnail_dir(&p) {
+                        collect_images_recursive_serial_inner(
+                            root,
+                            root_canonical,
+                            &p,
+                            files,
+                            visited,
+                        );
+                    }
+                } else if safe_file(root_canonical, &p, file_type)
+                    && is_image_path(&p)
+                    && !is_thumbnail_file(&p)
+                {
+                    if let Ok(rel) = p.strip_prefix(root) {
+                        files.push(rel.to_string_lossy().replace("\\", "/"));
+                    }
+                }
+            }
+        }
+    }
+
+    fn assert_relative_scan_matches_serial(root: &Path, current: &Path, initial: Vec<String>) {
+        let mut expected = initial.clone();
+        collect_images_recursive_serial(root, current, &mut expected);
+        let mut actual = initial;
+        collect_images_recursive(root, current, &mut actual);
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn relative_scan_matches_serial_across_batches_and_nested_directories() {
+        let root = TestDir::new("relative-batches");
+        for i in 0..300 {
+            write_file(&root.path.join(format!("image-{i:03}.PNG")));
+        }
+        write_file(&root.path.join("same.png"));
+        write_file(&root.path.join("nested/same.png"));
+        write_file(&root.path.join("nested/deeper/same.JPG"));
+        write_file(&root.path.join("nested/deeper/keep.webp"));
+        write_file(&root.path.join("nested/deeper/keep-thumbnail.png"));
+        write_file(&root.path.join("nested/deeper/movie.mp4"));
+        write_file(&root.path.join("ThUmBnAiLs/ignored.png"));
+        write_file(&root.path.join("nested/THUMBNAILS/ignored.jpg"));
+
+        let mut actual = Vec::new();
+        collect_images_recursive(&root.path, &root.path, &mut actual);
+        assert_eq!(actual.len(), 304);
+        assert!(actual.contains(&"same.png".to_string()));
+        assert!(actual.contains(&"nested/same.png".to_string()));
+        assert!(!actual.iter().any(|path| path.contains("ignored")));
+        assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
+        assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
+    }
+
+    #[test]
+    fn relative_scan_preserves_serial_limit_and_absent_current_behavior() {
+        let root = TestDir::new("relative-limit");
+        write_file(&root.path.join("one.png"));
+        write_file(&root.path.join("nested/two.png"));
+
+        assert_relative_scan_matches_serial(&root.path, &root.path, vec![String::new(); 300_000]);
+        assert_relative_scan_matches_serial(&root.path, &root.path, vec![String::new(); 300_001]);
+        assert_relative_scan_matches_serial(&root.path, &root.path.join("absent"), Vec::new());
+    }
+
+    #[test]
+    fn relative_scan_reads_current_files_on_each_call() {
+        let root = TestDir::new("relative-fresh");
+        write_file(&root.path.join("first.png"));
+
+        let mut first = Vec::new();
+        collect_images_recursive(&root.path, &root.path, &mut first);
+        assert_eq!(first, ["first.png"]);
+
+        write_file(&root.path.join("second.webp"));
+        let mut second = Vec::new();
+        collect_images_recursive(&root.path, &root.path, &mut second);
+        second.sort();
+        assert_eq!(second, ["first.png", "second.webp"]);
+        assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
+    }
+
+    #[test]
+    fn relative_scan_uses_at_most_four_native_workers() {
+        assert!(SCAN_POOL.current_num_threads() <= 4);
+        assert!(SCAN_POOL.current_num_threads() >= 1);
+        SCAN_POOL.install(|| {
+            assert_eq!(
+                rayon::current_num_threads(),
+                SCAN_POOL.current_num_threads()
+            );
+        });
+    }
+
     #[test]
     fn mixed_media_discovery_classifies_supported_video_candidates() {
         let root = TestDir::new("mixed-media");
@@ -558,6 +719,7 @@ mod tests {
         let mut relative = Vec::new();
         collect_images_recursive(&root.path, &outside.path, &mut relative);
         assert!(relative.is_empty());
+        assert_relative_scan_matches_serial(&root.path, &outside.path, Vec::new());
 
         let mut absolute = Vec::new();
         collect_images_recursive_absolute(&root.path, &outside.path, &mut absolute);
@@ -575,6 +737,7 @@ mod tests {
         );
 
         assert_scanners_only_return(&root.path, &expected_absolute);
+        assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
     }
 
     #[test]
@@ -591,5 +754,6 @@ mod tests {
         }
 
         assert_scanners_only_return(&root.path, &expected_absolute);
+        assert_relative_scan_matches_serial(&root.path, &root.path, Vec::new());
     }
 }

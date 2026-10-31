@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import type { AppSettings, AppSettingsUpdate } from '../../../../types';
 import { SettingsModal } from '../SettingsModal';
+import type { InvokeOwnerDiscoverySession } from '../../hooks/useInvokeOwnerDiscovery';
 
 vi.mock('../../../../hooks/useAppVersion', () => ({
     useAppVersion: () => 'test'
@@ -92,7 +93,16 @@ vi.mock('..', () => ({
     PrivacyTab: () => null,
     IntelligenceTab: () => null,
     AdvancedTab: () => <div>Advanced panel</div>,
-    ConnectionsTab: () => null
+    ConnectionsTab: ({ invokeDraftSession, invokeOwnerDiscoverySession }: { invokeDraftSession?: { draft: { invokeAiPath: string }; update: (update: { invokeAiPath: string }) => void }; invokeOwnerDiscoverySession: InvokeOwnerDiscoverySession }) => (
+        <div>
+            <span data-testid="invoke-draft-path">{invokeDraftSession?.draft.invokeAiPath}</span>
+            <span data-testid="invoke-applied-discovery-allowed">{String(invokeOwnerDiscoverySession.canUseAppliedDiscovery)}</span>
+            <button type="button" onClick={() => {
+                invokeDraftSession?.update({ invokeAiPath: 'D:/Draft' });
+                invokeOwnerDiscoverySession.invalidate('D:/Draft');
+            }}>Edit Invoke draft</button>
+        </div>
+    )
 }));
 
 const createSettings = (): AppSettings => ({
@@ -157,6 +167,36 @@ describe('SettingsModal', () => {
             initialScanPending: false,
             lastScanned: 123
         });
+    });
+
+    it('retains an InvokeAI draft across navigation and discards it when the modal closes', () => {
+        const modalProps = {
+            onClose: vi.fn(),
+            settings: createSettings(),
+            onSave: vi.fn(),
+            canCheckForUpdates: false,
+            initialTab: 'invokeai' as const,
+            hasPendingUpdate: false,
+            pendingUpdateVersion: null,
+            updateErrorMessage: null,
+            updateStatus: 'idle' as const,
+            onCheckForUpdates: vi.fn(),
+            onOpenUpdatePrompt: vi.fn(),
+            onNavigateToMaintenance: vi.fn(),
+        };
+        const { rerender } = render(<SettingsModal isOpen={true} {...modalProps} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Edit Invoke draft' }));
+        expect(screen.getByTestId('invoke-draft-path').textContent).toBe('D:/Draft');
+        expect(screen.getByTestId('invoke-applied-discovery-allowed').textContent).toBe('false');
+        fireEvent.click(screen.getByRole('button', { name: 'General' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Connections' }));
+        expect(screen.getByTestId('invoke-draft-path').textContent).toBe('D:/Draft');
+
+        rerender(<SettingsModal isOpen={false} {...modalProps} />);
+        rerender(<SettingsModal isOpen={true} {...modalProps} />);
+        expect(screen.getByTestId('invoke-draft-path').textContent).toBe('');
+        expect(screen.getByTestId('invoke-applied-discovery-allowed').textContent).toBe('true');
     });
 
     it('claims focus on its named close control when opened', () => {

@@ -138,6 +138,15 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         callbacksRef.current = { refreshMaintenanceCounts, refreshMetadata, startInvokeSync, settings, startTargetedLiveSync, syncStatus };
     });
 
+    useEffect(() => useLibraryStore.subscribe((state, previous) => {
+        if (state.invokeSyncCancellationGeneration === previous.invokeSyncCancellationGeneration) return;
+        if (invokeSyncTimeoutRef.current) {
+            clearTimeout(invokeSyncTimeoutRef.current);
+            invokeSyncTimeoutRef.current = null;
+        }
+        pendingInvokePerfRef.current = null;
+    }), []);
+
     const drainGenericLiveChanges = useCallback(async (paths: string[]) => {
         paths
             .map(path => path.replace(/\\/g, '/'))
@@ -205,6 +214,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
         if (!isLiveWatching) {
             invokeActivationCatchupRootRef.current = null;
         }
+        const activationCancellationGeneration = useLibraryStore.getState().invokeSyncCancellationGeneration;
 
         const initWatcher = async () => {
             if (!isLiveWatching) {
@@ -235,6 +245,7 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
 
             await watcherService.startWatching(pathsToWatch, async (changes?: FolderChange[]) => {
                 if (!changes || changes.length === 0) return;
+                const eventCancellationGeneration = useLibraryStore.getState().invokeSyncCancellationGeneration;
                 const eventReceivedAt = liveWatchNow();
                 const pathCount = changes.reduce((total, change) => total + change.paths.length, 0);
                 debugLiveWatchPerf('folder-change-event received', {
@@ -337,7 +348,8 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 setLastWatcherEvent(Date.now());
 
                 // Immediately Trigger full InvokeAI SQLite Sync evaluation if an Invoke local path dropped
-                if (invokePaths.length > 0 && cb.settings.invokeAiPath) {
+                if (invokePaths.length > 0 && cb.settings.invokeAiPath
+                    && eventCancellationGeneration === useLibraryStore.getState().invokeSyncCancellationGeneration) {
                     startLiveWatchSession('invoke', {
                         phase: 'watching',
                         message: 'Checking InvokeAI for completed images...'
@@ -375,12 +387,14 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                     });
                     invokeSyncTimeoutRef.current = setTimeout(() => {
                         invokeSyncTimeoutRef.current = null;
+                        if (eventCancellationGeneration !== useLibraryStore.getState().invokeSyncCancellationGeneration) return;
                         const perfContext = pendingInvokePerfRef.current;
                         pendingInvokePerfRef.current = null;
+                        if (!perfContext) return;
                         const firedAt = liveWatchNow();
                         const resolvedPerfContext: InvokeLiveWatchPerfContext = {
-                            ...perfContext!,
-                            debounceFireDelayMs: Math.round(firedAt - perfContext!.debounceScheduledAt),
+                            ...perfContext,
+                            debounceFireDelayMs: Math.round(firedAt - perfContext.debounceScheduledAt),
                             debounceDelayMs: INVOKE_LIVE_DEBOUNCE_MS
                         };
 
@@ -409,7 +423,12 @@ export const WatcherProvider: React.FC<{ children: ReactNode }> = ({ children })
                 if (invokeActivationCatchupRootRef.current !== activationKey) {
                     invokeActivationCatchupRootRef.current = activationKey;
 
-                    if (cb.syncStatus === 'syncing') {
+                    if (activationCancellationGeneration !== useLibraryStore.getState().invokeSyncCancellationGeneration) {
+                        debugLiveWatchPerf('Invoke activation catch-up skipped', {
+                            reason: 'sync-cancelled',
+                            root: activeInvokeRoot
+                        });
+                    } else if (cb.syncStatus === 'syncing') {
                         debugLiveWatchPerf('Invoke activation catch-up skipped', {
                             reason: 'sync-already-active',
                             root: activeInvokeRoot

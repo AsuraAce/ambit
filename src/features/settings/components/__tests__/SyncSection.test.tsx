@@ -1,311 +1,111 @@
 import * as React from 'react';
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
-import { AppSettings } from '../../../../types';
-import type { InvokeOwnerScopeState } from '../../../../contexts/SyncContext';
-import { SyncSection } from '../SyncSection';
+import { fireEvent, render, screen } from '../../../../test/testUtils';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AppSettings, InvokeOwnerDiscovery } from '../../../../types';
+import { useInvokeConnectionDraft } from '../../hooks/useInvokeConnectionDraft';
+import { InvokeRecoverySection, SyncSection } from '../SyncSection';
 
-const mocks = vi.hoisted(() => ({
-    startInvokeSync: vi.fn(),
-    cancelSync: vi.fn(),
-    addToast: vi.fn(),
-    syncStatus: 'idle' as 'idle' | 'syncing' | 'complete' | 'error',
-    isLiveSyncing: false,
-    invokeOwnerScopeState: {
-        status: 'ready',
-        discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 }
-    } as InvokeOwnerScopeState
-}));
-
+const mocks = vi.hoisted(() => ({ isInvokeSyncActive: false, isLiveSyncing: false }));
 vi.mock('../../../../contexts/LibraryContext', () => ({
-    useLibrary: () => ({
-        syncState: {
-            status: mocks.syncStatus,
-            progress: { current: 0, total: 0 }
-        },
-        startInvokeSync: mocks.startInvokeSync,
-        cancelSync: mocks.cancelSync,
-        isLiveSyncing: mocks.isLiveSyncing,
-        isInvokeSyncActive: mocks.syncStatus === 'syncing' || mocks.isLiveSyncing,
-        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
-    })
+    useLibrary: () => ({ isInvokeSyncActive: mocks.isInvokeSyncActive, isLiveSyncing: mocks.isLiveSyncing }),
 }));
+vi.mock('../../../../hooks/useToast', () => ({ useToast: () => ({ addToast: vi.fn() }) }));
 
-vi.mock('../../../../hooks/useToast', () => ({
-    useToast: () => ({
-        addToast: mocks.addToast
-    })
-}));
+const applied = (overrides: Partial<AppSettings> = {}) => ({
+    invokeAiPath: 'D:/Invoke', invokeSyncFavorites: true, invokeSyncBoards: true, importOrphans: true,
+    ...overrides,
+} as AppSettings);
 
-const createSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
-    hasCompletedOnboarding: true,
-    theme: 'dark',
-    thumbnailSize: 220,
-    confirmDelete: true,
-    defaultTheaterMode: false,
-    monitoredFolders: [],
-    promptMaskingEnabled: true,
-    maskedKeywords: [],
-    maskingMode: 'blur',
-    enableAI: false,
-    invokeAiPath: 'D:/Invoke',
-    lastSyncedAt: 123456,
-    importIntermediates: false,
-    importOrphans: true,
-    starredAs: 'favorite',
-    syncBoardsToCollections: true
-    , ...overrides
-});
-
-const SyncSectionHarness: React.FC<{ initialSettings: AppSettings }> = ({ initialSettings }) => {
-    const [settings, setSettings] = React.useState(initialSettings);
-    return <SyncSection settings={settings} setSettings={setSettings} />;
+const multiUserDiscovery: InvokeOwnerDiscovery = {
+    schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke',
+    owners: [{ ownerId: 'owner-a', imageCount: 1 }], unassignedImageCount: 0,
 };
 
-describe('SyncSection', () => {
+const Harness: React.FC<{ settings?: AppSettings; ownerDiscovery?: InvokeOwnerDiscovery }> = ({ settings = applied(), ownerDiscovery }) => {
+    const session = useInvokeConnectionDraft(settings, true);
+    return <>
+        <SyncSection draftSession={session} ownerDiscovery={ownerDiscovery} />
+        <InvokeRecoverySection settings={settings} setSettings={vi.fn()} hasPendingDraft={session.isDirty} />
+    </>;
+};
+
+describe('SyncSection draft controls', () => {
     beforeEach(() => {
-        vi.clearAllMocks();
-        mocks.syncStatus = 'idle';
+        mocks.isInvokeSyncActive = false;
         mocks.isLiveSyncing = false;
-        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
+    });
+    it.each([true, false, undefined])('offers one draft-only board control governed by the parent setting (%s)', (parent) => {
+        const settings = applied({ invokeSyncBoards: parent, syncBoardsToCollections: parent === false });
+        render(<Harness settings={settings} />);
+        const boards = screen.getByRole('switch', { name: 'Sync boards as collections' }) as HTMLInputElement;
+        expect(boards.checked).toBe(parent !== false);
+        expect(screen.queryByRole('switch', { name: 'Persist Synced Boards as Collections' })).toBeNull();
+        fireEvent.click(boards);
+        expect(boards.checked).toBe(parent === false);
+        expect(settings.invokeSyncBoards).toBe(parent);
+        expect((screen.getByRole('button', { name: 'Force Full Resync' }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByText(/turning this off keeps existing collections/i)).toBeTruthy();
+    });
+    it('keeps option changes in the local draft and blocks applied recovery actions', () => {
+        render(<Harness />);
+        fireEvent.click(screen.getByRole('switch', { name: 'Import Intermediates' }));
+
+        expect((screen.getByRole('switch', { name: 'Import Intermediates' }) as HTMLInputElement).checked).toBe(true);
+        expect((screen.getByRole('button', { name: 'Force Full Resync' }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByRole('button', { name: 'Force Full Resync' }).getAttribute('title')).toMatch(/apply or discard/i);
     });
 
-    it('enables selected-owner sync while disabling orphan recovery without erasing its preference', () => {
-        mocks.invokeOwnerScopeState = { status: 'ready', discovery: { schemaMode: 'multi_user', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
-        render(<SyncSection settings={createSettings({
-            invokeOwnerSelection: {
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                mode: 'owner',
-                ownerId: 'owner-a',
-            },
-        })} setSettings={vi.fn()} />);
+    it('uses the draft owner scope to disable orphan recovery without clearing its preference', () => {
+        render(<Harness settings={applied({
+            invokeOwnerSelection: { dbPath: 'D:/Invoke/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+            importOrphans: true,
+        })} ownerDiscovery={multiUserDiscovery} />);
 
-        const syncButton = screen.getByRole('button', { name: /initiate sync/i }) as HTMLButtonElement;
-        expect(syncButton.disabled).toBe(false);
-        const orphanRecovery = screen.getByLabelText(/orphan recovery/i) as HTMLInputElement;
+        const orphanRecovery = screen.getByRole('switch', { name: 'Orphan Recovery' }) as HTMLInputElement;
         expect(orphanRecovery.disabled).toBe(true);
         expect(orphanRecovery.checked).toBe(false);
         expect(screen.getByText(/saved preference is preserved/i)).toBeTruthy();
-        fireEvent.click(syncButton);
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({ importOrphans: true }));
     });
 
-    it('starts manual sync from the saved cursor so stale repair does not force a full resync', () => {
-        render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
-
-        fireEvent.click(screen.getByRole('button', { name: /initiate sync/i }));
-
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
-            afterTimestamp: 123456
-        }));
-    });
-
-    it('treats orphan recovery as opt-in when the setting is missing', () => {
-        const settings = createSettings();
-        delete settings.importOrphans;
-
-        render(<SyncSection settings={settings} setSettings={vi.fn()} />);
-
-        expect((screen.getByLabelText(/orphan recovery/i) as HTMLInputElement).checked).toBe(false);
-        expect(screen.queryByText(/manual full output-folder recovery sweep/i)).not.toBeNull();
-    });
-
-    it('checks orphan recovery only when explicitly enabled', () => {
-        render(<SyncSection settings={{ ...createSettings(), importOrphans: true }} setSettings={vi.fn()} />);
-
-        expect((screen.getByLabelText(/orphan recovery/i) as HTMLInputElement).checked).toBe(true);
-    });
-
-    it('persists Invoke sync choices and passes them to manual sync', () => {
-        render(<SyncSectionHarness initialSettings={createSettings()} />);
-
-        fireEvent.click(screen.getByLabelText(/sync favorites/i));
-        fireEvent.click(screen.getByLabelText(/sync boards/i));
-        fireEvent.click(screen.getByRole('button', { name: /initiate sync/i }));
-
-        expect((screen.getByLabelText(/sync favorites/i) as HTMLInputElement).checked).toBe(false);
-        expect((screen.getByLabelText(/sync boards/i) as HTMLInputElement).checked).toBe(false);
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
-            syncFavorites: false,
-            syncBoards: false,
-            afterTimestamp: 123456
-        }));
-    });
-
-    it('keeps every switch focusable and exposes a visible keyboard focus ring on its track', () => {
-        render(<SyncSectionHarness initialSettings={createSettings()} />);
-
-        const switches = screen.getAllByRole('switch');
-        expect(switches).toHaveLength(5);
-
-        switches.forEach((switchInput) => {
-            const track = switchInput.nextElementSibling;
-            expect(switchInput.className.split(/\s+/)).toContain('peer');
-            expect(switchInput.className.split(/\s+/)).toContain('sr-only');
-            expect(track?.className.split(/\s+/)).toContain('peer-focus-visible:ring-2');
-            expect(track?.className.split(/\s+/)).toContain('peer-focus-visible:ring-sage-500/50');
-        });
-
-        const importIntermediates = screen.getByRole('switch', { name: 'Import Intermediates' });
-        importIntermediates.focus();
-        expect(document.activeElement).toBe(importIntermediates);
-        fireEvent.click(importIntermediates);
-        expect((importIntermediates as HTMLInputElement).checked).toBe(true);
-    });
-
-    it('confirms a full resync before clearing only the saved cursor', () => {
-        render(<SyncSectionHarness initialSettings={createSettings()} />);
-
-        expect(screen.getByText('Sync Recovery')).not.toBeNull();
-        fireEvent.click(screen.getByRole('button', { name: /force full resync/i }));
-
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
-        const resyncButtons = screen.getAllByRole('button', { name: /force full resync/i });
-        fireEvent.click(resyncButtons[resyncButtons.length - 1]);
-        fireEvent.click(screen.getByRole('button', { name: /initiate sync/i }));
-
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
-            afterTimestamp: null
-        }));
-    });
-
-    it('disables full resync during an active foreground sync', () => {
-        mocks.syncStatus = 'syncing';
-
-        render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
-
-        const button = screen.getByRole('button', { name: /force full resync/i });
-        expect((button as HTMLButtonElement).disabled).toBe(true);
-        expect(button.getAttribute('title')).toBe('Wait for the current InvokeAI sync to finish');
-    });
-
-    it('keeps background Live Watch controls visually stable while rejecting conflicting actions', () => {
-        mocks.isLiveSyncing = true;
-
-        render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
-
-        const fullResyncButton = screen.getByRole('button', { name: /force full resync/i });
-        const syncButton = screen.getByRole('button', { name: /initiate sync/i });
-        expect((fullResyncButton as HTMLButtonElement).disabled).toBe(false);
-        expect((syncButton as HTMLButtonElement).disabled).toBe(false);
-        expect(fullResyncButton.getAttribute('aria-disabled')).toBe('true');
-        expect(syncButton.getAttribute('aria-disabled')).toBe('true');
-
-        fireEvent.click(fullResyncButton);
-        fireEvent.click(syncButton);
-
-        expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull();
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
-        expect(mocks.addToast).toHaveBeenCalledWith(
-            'Wait for the current InvokeAI sync to finish before forcing a full resync.',
-            'warning'
-        );
-        expect(mocks.addToast).toHaveBeenCalledWith(
-            'Wait for the current InvokeAI sync to finish before starting another sync.',
-            'warning'
-        );
-    });
-
-    it('preserves the cursor when a sync starts after the confirmation opens', async () => {
+    it('confirms a full resync before clearing the applied cursor and its snapshot', () => {
         const setSettings = vi.fn();
-        const settings = createSettings();
-        const { rerender } = render(<SyncSection settings={settings} setSettings={setSettings} />);
+        const settings = applied({
+            lastSyncedAt: 42,
+            invokeDbSnapshot: {
+                dbPath: 'D:/Invoke/databases/invokeai.db', lastSyncedAt: 42,
+                importIntermediates: false, importOrphans: false, syncBoardsToCollections: false,
+                scopeMode: 'legacy', scopeOwnerId: null, pathRepairVersion: 1, importSchemaVersion: 1, files: [],
+            },
+        });
+        render(<InvokeRecoverySection settings={settings} setSettings={setSettings} hasPendingDraft={false} />);
 
-        fireEvent.click(screen.getByRole('button', { name: /force full resync/i }));
-        mocks.isLiveSyncing = true;
-        rerender(<SyncSection settings={{ ...settings }} setSettings={setSettings} />);
-
-        const resyncButtons = screen.getAllByRole('button', { name: /force full resync/i });
-        fireEvent.click(resyncButtons[resyncButtons.length - 1]);
-
+        fireEvent.click(screen.getAllByRole('button', { name: 'Force Full Resync' }).at(-1)!);
+        expect(screen.getByText('Force Full InvokeAI Resync?')).toBeTruthy();
         expect(setSettings).not.toHaveBeenCalled();
-        expect(mocks.addToast).toHaveBeenCalledWith(
-            'Wait for the current InvokeAI sync to finish before forcing a full resync.',
-            'warning'
-        );
-        await waitFor(() => {
-            expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull();
+        fireEvent.click(screen.getAllByRole('button', { name: 'Force Full Resync' }).at(-1)!);
+
+        const update = setSettings.mock.calls[0][0] as (current: AppSettings) => AppSettings;
+        expect(update(settings)).toMatchObject({
+            lastSyncedAt: null,
+            invokeDbSnapshot: { lastSyncedAt: null },
+            invokeDbSnapshots: [expect.objectContaining({ lastSyncedAt: null })],
         });
     });
 
-    it('renders nothing without an InvokeAI path', () => {
-        const { container } = render(<SyncSection settings={createSettings({ invokeAiPath: undefined })} setSettings={vi.fn()} />);
-        expect(container.firstChild).toBeNull();
+    it('disables full resync while a sync is active', () => {
+        mocks.isInvokeSyncActive = true;
+        render(<InvokeRecoverySection settings={applied()} setSettings={vi.fn()} hasPendingDraft={false} />);
+        expect((screen.getByRole('button', { name: 'Force Full Resync' }) as HTMLButtonElement).disabled).toBe(true);
     });
 
-    it('updates starred mapping and ignores invalid select values', () => {
-        const { unmount } = render(<SyncSectionHarness initialSettings={createSettings({ starredAs: undefined })} />);
-        const select = screen.getByRole('combobox');
-        expect((select as HTMLSelectElement).value).toBe('favorite');
-        for (const value of ['pin', 'both', 'none', 'favorite']) {
-            fireEvent.change(select, { target: { value } });
-            expect(mocks.addToast).toHaveBeenCalledWith(`Starred images mapped to ${value}`, 'success');
-        }
-        unmount();
-
+    it('does not clear the cursor if a sync starts after confirmation opens', () => {
         const setSettings = vi.fn();
-        render(<SyncSection settings={createSettings()} setSettings={setSettings} />);
-        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'invalid' } });
+        const settings = applied({ lastSyncedAt: 42 });
+        const view = render(<InvokeRecoverySection settings={settings} setSettings={setSettings} hasPendingDraft={false} />);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Force Full Resync' }).at(-1)!);
+        mocks.isInvokeSyncActive = true;
+        view.rerender(<InvokeRecoverySection settings={{ ...settings }} setSettings={setSettings} hasPendingDraft={false} />);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Force Full Resync' }).at(-1)!);
         expect(setSettings).not.toHaveBeenCalled();
-    });
-
-    it('updates every board and import toggle in both directions', () => {
-        const initial = createSettings({
-            invokeSyncFavorites: false,
-            invokeSyncBoards: false,
-            syncBoardsToCollections: false,
-            importIntermediates: false,
-            importOrphans: false
-        });
-        const { rerender } = render(<SyncSectionHarness initialSettings={initial} />);
-        fireEvent.click(screen.getByLabelText('Sync Favorites'));
-        fireEvent.click(screen.getByLabelText('Sync Boards'));
-        fireEvent.click(screen.getByLabelText('Persistent Collections'));
-        fireEvent.click(screen.getByLabelText(/import intermediates/i));
-        fireEvent.click(screen.getByLabelText(/orphan recovery/i));
-        expect(mocks.addToast).toHaveBeenCalledWith('Invoke favorites will sync', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Invoke boards will sync', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Boards will sync to collections', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Intermediates import enabled', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Orphan recovery enabled', 'success');
-
-        rerender(<SyncSectionHarness initialSettings={createSettings()} />);
-        fireEvent.click(screen.getByLabelText('Sync Favorites'));
-        fireEvent.click(screen.getByLabelText('Persistent Collections'));
-        fireEvent.click(screen.getByLabelText('Sync Boards'));
-        fireEvent.click(screen.getByLabelText(/import intermediates/i));
-        fireEvent.click(screen.getByLabelText(/orphan recovery/i));
-        expect(mocks.addToast).toHaveBeenCalledWith('Invoke favorites sync disabled', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Invoke boards sync disabled', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Board sync disabled', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Intermediates import disabled', 'success');
-        expect(mocks.addToast).toHaveBeenCalledWith('Orphan recovery disabled', 'success');
-    });
-
-    it.each(['idle', 'complete', 'error'] as const)('starts sync from %s status with full configured payload', (syncStatus) => {
-        mocks.syncStatus = syncStatus;
-        render(<SyncSection settings={createSettings({ starredAs: 'both', invokeSyncFavorites: undefined, invokeSyncBoards: undefined })} setSettings={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: syncStatus === 'error' ? /retry sync/i : /initiate sync/i }));
-        expect(mocks.startInvokeSync).toHaveBeenCalledWith({
-            syncFavorites: true,
-            syncBoards: true,
-            importIntermediates: false,
-            afterTimestamp: 123456,
-            starredAs: 'both',
-            importOrphans: true
-        });
-        expect(mocks.addToast).toHaveBeenCalledWith('Synchronization started...', 'success');
-    });
-
-    it('terminates active synchronization and cancels full-resync confirmation', async () => {
-        const { rerender } = render(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /force full resync/i }));
-        fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
-        await waitFor(() => expect(screen.queryByText('Force Full InvokeAI Resync?')).toBeNull());
-
-        mocks.syncStatus = 'syncing';
-        rerender(<SyncSection settings={createSettings()} setSettings={vi.fn()} />);
-        fireEvent.click(screen.getByRole('button', { name: /terminate sync/i }));
-        expect(mocks.cancelSync).toHaveBeenCalledTimes(1);
     });
 });

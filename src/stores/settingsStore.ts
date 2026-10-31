@@ -57,7 +57,11 @@ let initializePromise: Promise<void> | null = null;
 const persistSettings = async (settings: AppSettings): Promise<void> => {
     await appRepository.update((appState) => ({
         ...appState,
-        settings
+        settings: {
+            ...settings,
+            invokeSyncBoards: settings.invokeSyncBoards !== false,
+            syncBoardsToCollections: settings.invokeSyncBoards !== false,
+        }
     }));
 };
 
@@ -105,6 +109,8 @@ export const useSettingsStore = create<SettingsState>()(
                     const newSettings = typeof update === 'function'
                         ? { ...state.settings, ...update(state.settings) }
                         : { ...state.settings, ...update };
+                    newSettings.invokeSyncBoards = newSettings.invokeSyncBoards !== false;
+                    newSettings.syncBoardsToCollections = newSettings.invokeSyncBoards;
                     nextSettings = newSettings;
 
                     // Register new folders with Tauri scope immediately if they changed.
@@ -169,6 +175,8 @@ export const useSettingsStore = create<SettingsState>()(
                     restoredSettings = typeof update === 'function'
                         ? { ...state.settings, ...update(state.settings) }
                         : { ...state.settings, ...update };
+                    restoredSettings.invokeSyncBoards = restoredSettings.invokeSyncBoards !== false;
+                    restoredSettings.syncBoardsToCollections = restoredSettings.invokeSyncBoards;
                     return { settings: restoredSettings };
                 });
                 return restoredSettings;

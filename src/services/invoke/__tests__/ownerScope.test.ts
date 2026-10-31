@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     fetchBoards: vi.fn(),
     getInvokeSourceDatabase: vi.fn(),
     reconcileInvokeBoardSnapshot: vi.fn(),
+    hasInvokeBoardCollectionsForSource: vi.fn(),
 }));
 
 vi.mock('@tauri-apps/plugin-sql', () => ({ default: { load: mocks.load } }));
@@ -32,6 +33,7 @@ vi.mock('../connection', () => ({
 }));
 vi.mock('../../db/collectionRepo', () => ({
     reconcileInvokeBoardSnapshot: mocks.reconcileInvokeBoardSnapshot,
+    hasInvokeBoardCollectionsForSource: mocks.hasInvokeBoardCollectionsForSource,
 }));
 
 const discovery = {
@@ -70,9 +72,11 @@ describe('applyInvokeOwnerScope', () => {
         const collector = createStartupRepairCollector({ now: () => 0, stage: vi.fn(), report });
         const claim = vi.spyOn(startupDiagnostics, 'claimRepair').mockReturnValueOnce(collector);
         const controller = new AbortController();
-        if (status === 'cancelled') controller.abort();
         const failure = new Error('private repair failure');
-        mocks.reconcileInvokeSourceFacts.mockRejectedValueOnce(failure);
+        mocks.reconcileInvokeSourceFacts.mockImplementationOnce(async () => {
+            if (status === 'cancelled') controller.abort();
+            throw failure;
+        });
         try {
             await expect(applyInvokeOwnerScope({
                 discovery, selection: { dbPath: discovery.dbPath, mode: 'all' },
@@ -104,6 +108,7 @@ describe('applyInvokeOwnerScope', () => {
         mocks.setInvokeBoardVerification.mockResolvedValue({ status: 'ok', data: null });
         mocks.reconcileInvokeSourceFacts.mockResolvedValue(3);
         mocks.fetchBoards.mockResolvedValue({ boards: new Map(), isAuthoritative: true });
+        mocks.hasInvokeBoardCollectionsForSource.mockResolvedValue(false);
         mocks.reconcileInvokeBoardSnapshot.mockResolvedValue({
             collectionsUpdated: 0,
             collectionsDeleted: 0,
@@ -115,6 +120,69 @@ describe('applyInvokeOwnerScope', () => {
             status: 'ok',
             data: { changed: true, activeUpdated: 2, removedUpdated: 1, ...restoredCacheResult },
         });
+    });
+
+    it('verifies saved collections hidden by owner gates without syncing their contents when boards are disabled', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.hasInvokeBoardCollectionsForSource.mockResolvedValue(true);
+        mocks.fetchBoards.mockResolvedValue({ boards: new Map([
+            ['board-a', { name: 'Source changed', createdAt: 123, ownerId: 'owner-a' }],
+        ]), isAuthoritative: true });
+        let settle!: () => void;
+        mocks.reconcileInvokeBoardSnapshot.mockImplementationOnce(() => new Promise(resolve => {
+            settle = () => resolve({ collectionsUpdated: 1, collectionsDeleted: 0 });
+        }));
+        const operation = applyInvokeOwnerScope({
+            discovery, selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: false,
+        });
+        await vi.waitFor(() => expect(mocks.reconcileInvokeBoardSnapshot).toHaveBeenCalledOnce());
+        expect(mocks.hasInvokeBoardCollectionsForSource).toHaveBeenCalledWith(discovery.dbPath);
+        expect(mocks.reconcileInvokeBoardSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+            dbPath: discovery.dbPath, mode: 'all', ownerId: null, ownershipOnly: true,
+            memberships: [], reconcileMemberships: false, deleteMissingCollections: false,
+        }));
+        expect(mocks.setInvokeBoardVerification).not.toHaveBeenCalled();
+        settle();
+        await operation;
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(discovery.dbPath, 'owner-a', true);
+    });
+
+    it('does not admit disabled-sync collections when the ownership transaction fails', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.hasInvokeBoardCollectionsForSource.mockResolvedValue(true);
+        mocks.reconcileInvokeBoardSnapshot.mockRejectedValueOnce(new Error('ownership write failed'));
+        await expect(applyInvokeOwnerScope({
+            discovery, selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: false,
+        })).rejects.toThrow('ownership write failed');
+        expect(mocks.setInvokeBoardVerification).not.toHaveBeenCalled();
+        expect(mocks.refreshInvokeOwnerScope).not.toHaveBeenCalled();
+    });
+
+    it('keeps disabled-sync collections guarded if the source cannot verify board ownership', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        mocks.hasInvokeBoardCollectionsForSource.mockResolvedValue(true);
+        mocks.fetchBoards.mockResolvedValueOnce({ boards: new Map(), isAuthoritative: false });
+        const result = await applyInvokeOwnerScope({
+            discovery, selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: false,
+        });
+        expect(mocks.reconcileInvokeBoardSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setInvokeBoardVerification).toHaveBeenCalledWith(discovery.dbPath, 'owner-a', false);
+        expect(result.boardScopeWarning).toMatch(/remain hidden/i);
+    });
+
+    it('does not read board mappings with sync disabled when no saved collections need verification', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        await applyInvokeOwnerScope({
+            discovery, selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+            reconcileBoardOwners: false,
+        });
+        expect(mocks.hasInvokeBoardCollectionsForSource).toHaveBeenCalledWith(discovery.dbPath);
+        expect(mocks.fetchBoards).not.toHaveBeenCalled();
+        expect(mocks.reconcileInvokeBoardSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setInvokeBoardVerification).not.toHaveBeenCalled();
     });
 
     it('reconciles authoritative source facts before applying durable owner visibility', async () => {
@@ -278,4 +346,74 @@ describe('applyInvokeOwnerScope', () => {
         expect(mocks.load).not.toHaveBeenCalled();
         expect(mocks.refreshInvokeOwnerScope).not.toHaveBeenCalled();
     });
+
+    it('does not begin preparation when cancellation was already requested', async () => {
+        const { applyInvokeOwnerScope } = await import('../ownerScope');
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(applyInvokeOwnerScope({
+            discovery,
+            selection: { dbPath: discovery.dbPath, mode: 'all' },
+            reconcileSourceFacts: true,
+            reconcileBoardOwners: true,
+            signal: controller.signal,
+        })).rejects.toThrow('Aborted');
+
+        expect(mocks.getInvokeSourceDatabase).not.toHaveBeenCalled();
+        expect(mocks.reconcileInvokeSourceFacts).not.toHaveBeenCalled();
+        expect(mocks.refreshInvokeOwnerScope).not.toHaveBeenCalled();
+    });
+
+    it.each(['board-write', 'visibility', 'board-verification'] as const)(
+        'waits for %s to settle on cancellation without starting a later preparation stage',
+        async stage => {
+            const { applyInvokeOwnerScope } = await import('../ownerScope');
+            const controller = new AbortController();
+            let releaseWrite!: () => void;
+            const pendingWrite = new Promise<void>(resolve => { releaseWrite = resolve; });
+            const writeStarted = vi.fn();
+            const writeSettled = vi.fn();
+            const completeWrite = async () => {
+                writeStarted();
+                await pendingWrite;
+                writeSettled();
+            };
+            if (stage === 'board-write') {
+                mocks.reconcileInvokeBoardSnapshot.mockImplementationOnce(async () => {
+                    await completeWrite();
+                    return { collectionsUpdated: 1, collectionsDeleted: 0 };
+                });
+            } else if (stage === 'visibility') {
+                mocks.refreshInvokeOwnerScope.mockImplementationOnce(async () => {
+                    await completeWrite();
+                    return { status: 'ok', data: { changed: true, activeUpdated: 1, removedUpdated: 0, ...restoredCacheResult } };
+                });
+            } else {
+                mocks.setInvokeBoardVerification.mockImplementationOnce(async () => {
+                    await completeWrite();
+                    return { status: 'ok', data: null };
+                });
+            }
+            const settled = vi.fn();
+            const operation = applyInvokeOwnerScope({
+                discovery,
+                selection: { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' },
+                reconcileBoardOwners: true,
+                signal: controller.signal,
+            }).finally(settled);
+            const rejection = expect(operation).rejects.toThrow('Aborted');
+            await vi.waitFor(() => expect(writeStarted).toHaveBeenCalledOnce());
+            controller.abort();
+            await Promise.resolve();
+            expect(settled).not.toHaveBeenCalled();
+
+            releaseWrite();
+            await rejection;
+
+            expect(writeSettled).toHaveBeenCalledOnce();
+            if (stage === 'board-write') expect(mocks.refreshInvokeOwnerScope).not.toHaveBeenCalled();
+            if (stage !== 'board-verification') expect(mocks.setInvokeBoardVerification).not.toHaveBeenCalled();
+        }
+    );
 });
