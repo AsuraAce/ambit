@@ -10,6 +10,7 @@ import { createInvokeImagePathResolver } from './pathResolver';
 import { extractInvokeImageReferences } from './referenceExtractor';
 import { invokeOwnerPredicate, type InvokeSyncScope } from './syncScope';
 import type { StartupRepairCollector } from '../../utils/startupRepairDiagnostics';
+import { throwIfInvokeAborted } from './abort';
 
 interface InvokeSourceIdentityRow {
     source_rowid?: number;
@@ -77,10 +78,6 @@ const claimLegacyTarget = (
     }
 };
 
-const throwIfAborted = (signal?: AbortSignal): void => {
-    if (signal?.aborted) throw new Error('Aborted');
-};
-
 const supportsImageRowId = async (db: Database): Promise<boolean> => {
     try {
         await db.select('SELECT rowid AS source_rowid FROM images LIMIT 1');
@@ -102,6 +99,7 @@ export const reconcileInvokeSourceFacts = async ({
     signal,
     diagnostics,
 }: ReconcileInvokeSourceFactsOptions): Promise<number> => {
+    throwIfInvokeAborted(signal);
     diagnostics?.stage('setup');
     const setupDone = diagnostics?.start('setup');
     if (scope.mode === 'owner' && !columns.has('user_id')) {
@@ -116,13 +114,16 @@ export const reconcileInvokeSourceFacts = async ({
     const [identityCountRow] = await db.select<Array<{ count: number }>>(
         'SELECT count(*) as count FROM images i'
     );
+    throwIfInvokeAborted(signal);
     const [factCountRow] = await db.select<Array<{ count: number }>>(
         `SELECT count(*) as count FROM images i ${whereClause}`,
         ownerPredicate.params
     );
+    throwIfInvokeAborted(signal);
     const identityTotal = identityCountRow?.count ?? 0;
     const total = factCountRow?.count ?? 0;
     const useRowId = await supportsImageRowId(db);
+    throwIfInvokeAborted(signal);
     setupDone?.();
     const cursorWhereClause = ownerPredicate.clause
         ? `WHERE ${ownerPredicate.clause} AND i.rowid > ?`
@@ -141,7 +142,7 @@ export const reconcileInvokeSourceFacts = async ({
     diagnostics?.stage('identity');
 
     while (identityProcessed < identityTotal) {
-        throwIfAborted(signal);
+        throwIfInvokeAborted(signal);
         const readDone = diagnostics?.start('identity-read');
         const rows = await db.select<InvokeSourceIdentityRow[]>(`
             SELECT i.image_name${subfolderSelect},
@@ -153,6 +154,7 @@ export const reconcileInvokeSourceFacts = async ({
             LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${identityOffset}`}
         `, useRowId ? [identityCursor] : []);
         readDone?.();
+        throwIfInvokeAborted(signal);
         diagnostics?.count('identityRows', rows.length);
         if (rows.length === 0) break;
 
@@ -161,6 +163,7 @@ export const reconcileInvokeSourceFacts = async ({
             pathResolver.resolveImagePath(row.image_name, row.image_subfolder)
         ));
         pathsDone?.();
+        throwIfInvokeAborted(signal);
         const matchingDone = diagnostics?.start('identity-matching');
         rows.forEach((row, index) => {
             const resolved = resolvedPaths[index];
@@ -199,6 +202,7 @@ export const reconcileInvokeSourceFacts = async ({
         await new Promise(resolve => setTimeout(resolve, 0));
         yieldDone?.();
     }
+    throwIfInvokeAborted(signal);
     console.info(`[InvokeAI] Image-location mapping completed in ${Math.round(performance.now() - identityStartedAt)}ms.`);
 
     diagnostics?.stage('legacy-paths');
@@ -232,13 +236,14 @@ export const reconcileInvokeSourceFacts = async ({
         onProgress(0, pathsToVerify.length, 'Checking legacy image locations...');
     }
     for (let offset = 0; offset < pathsToVerify.length; offset += BATCH_SIZE) {
-        throwIfAborted(signal);
+        throwIfInvokeAborted(signal);
         diagnostics?.count('pathsChecked', Math.min(BATCH_SIZE, pathsToVerify.length - offset));
         const verifyDone = diagnostics?.start('legacy-paths');
         const missingPaths = await unwrap(commands.verifyImagePaths(
             pathsToVerify.slice(offset, offset + BATCH_SIZE)
         ));
         verifyDone?.();
+        throwIfInvokeAborted(signal);
         missingPaths.forEach(path => missingPathKeys.add(pathKey(path)));
         onProgress(
             Math.min(offset + BATCH_SIZE, pathsToVerify.length),
@@ -272,7 +277,7 @@ export const reconcileInvokeSourceFacts = async ({
         }
     });
     inventoryBuildDone?.();
-    throwIfAborted(signal);
+    throwIfInvokeAborted(signal);
     diagnostics?.count('inventorySubmitted', ownerInventory.length);
     const inventoryDone = diagnostics?.start('inventory');
     const inventoryResult = await unwrap(commands.reconcileInvokeOwnerInventory({
@@ -280,6 +285,7 @@ export const reconcileInvokeSourceFacts = async ({
         images: ownerInventory,
     }));
     inventoryDone?.();
+    throwIfInvokeAborted(signal);
     diagnostics?.count('inventoryApplied', inventoryResult.activeUpdated + inventoryResult.removedUpdated);
     let updated = inventoryResult.activeUpdated + inventoryResult.removedUpdated;
 
@@ -305,7 +311,7 @@ export const reconcileInvokeSourceFacts = async ({
     diagnostics?.stage('facts');
 
     while (processed < total) {
-        throwIfAborted(signal);
+        throwIfInvokeAborted(signal);
         const readDone = diagnostics?.start('fact-read');
         const rows = await db.select<InvokeSourceFactRow[]>(`
             SELECT i.image_name${subfolderSelect}${categorySelect}${originSelect}${ownerSelect}${metadataSelect}${useRowId ? ', i.rowid AS source_rowid' : ''}
@@ -315,6 +321,7 @@ export const reconcileInvokeSourceFacts = async ({
             LIMIT ${BATCH_SIZE}${useRowId ? '' : ` OFFSET ${factOffset}`}
         `, useRowId ? [...ownerPredicate.params, factCursor] : ownerPredicate.params);
         readDone?.();
+        throwIfInvokeAborted(signal);
         diagnostics?.count('factRows', rows.length);
         if (rows.length === 0) break;
 
@@ -323,6 +330,7 @@ export const reconcileInvokeSourceFacts = async ({
             pathResolver.resolveImagePath(row.image_name, row.image_subfolder)
         ));
         pathsDone?.();
+        throwIfInvokeAborted(signal);
         const extractionDone = diagnostics?.start('fact-extraction');
         const updatesById = new Map<string, InvokeImageSourceUpdate>();
         const referenceSetsById = new Map<string, InvokeImageReferenceSet>();
@@ -363,23 +371,25 @@ export const reconcileInvokeSourceFacts = async ({
         });
         extractionDone?.();
 
-        throwIfAborted(signal);
+        throwIfInvokeAborted(signal);
         const updates = Array.from(updatesById.values());
         if (updates.length > 0) {
             diagnostics?.count('factsSubmitted', updates.length);
             const writeDone = diagnostics?.start('fact-write');
             const result = await unwrap(commands.reconcileInvokeImageSources(updates));
             writeDone?.();
+            throwIfInvokeAborted(signal);
             diagnostics?.count('factsApplied', result.activeUpdated + result.removedUpdated);
             updated += result.activeUpdated + result.removedUpdated;
         }
         const referenceSets = Array.from(referenceSetsById.values());
         if (referenceSets.length > 0) {
-            throwIfAborted(signal);
+            throwIfInvokeAborted(signal);
             diagnostics?.count('referenceSetsSubmitted', referenceSets.length);
             const referencesDone = diagnostics?.start('reference-write');
             const referencesResult = await unwrap(commands.replaceInvokeImageReferences(referenceSets));
             referencesDone?.();
+            throwIfInvokeAborted(signal);
             diagnostics?.count('referenceSourcesReplaced', referencesResult.sourcesReplaced);
         }
 
@@ -400,6 +410,7 @@ export const reconcileInvokeSourceFacts = async ({
         yieldDone?.();
     }
 
+    throwIfInvokeAborted(signal);
     console.info(`[InvokeAI] Image-detail reconciliation completed in ${Math.round(performance.now() - factsStartedAt)}ms.`);
 
     return updated;

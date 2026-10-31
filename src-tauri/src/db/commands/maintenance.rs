@@ -1292,7 +1292,7 @@ fn update_invoke_collection_ownership_inner(
             }
 
             tx.execute(
-                "UPDATE collections SET name = ?2 WHERE id = ?1",
+                "UPDATE collections SET name = ?2, invoke_name_overridden = 0 WHERE id = ?1",
                 params![collection_id, source_name],
             )
             .map_err(|error| error.to_string())?;
@@ -1504,6 +1504,10 @@ fn migrate_legacy_collections_inner(
              ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'ambit', ?10)
              ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
+                invoke_name_overridden = CASE
+                    WHEN collections.source = 'invoke' THEN 1
+                    ELSE collections.invoke_name_overridden
+                END,
                 color = excluded.color,
                 is_archived = excluded.is_archived,
                 is_pinned = excluded.is_pinned,
@@ -2927,12 +2931,22 @@ mod tests {
         )
         .expect("seed local overrides");
 
+        conn.execute("UPDATE collections SET invoke_name_overridden=1,color='red',is_pinned=1,is_archived=1,invoke_suppressed=1,custom_thumbnail='keep.png' WHERE id='board'", []).unwrap();
+
         update_invoke_collection_ownership_inner(
             &conn,
             "board",
             InvokeCollectionOwnershipAction::Reset,
         )
         .expect("reset local overrides");
+        let presentation: (i64,String,i64,i64,i64,String) = conn.query_row(
+            "SELECT invoke_name_overridden,color,is_pinned,is_archived,invoke_suppressed,custom_thumbnail FROM collections WHERE id='board'",
+            [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?))).unwrap();
+        assert_eq!(
+            presentation,
+            (0, "red".into(), 1, 1, 1, "keep.png".into()),
+            "reset clears rename intent while preserving local presentation and suppression"
+        );
         let reset_state: (String, i64, i64, String) = conn
             .query_row(
                 "SELECT collections.name,
@@ -2985,6 +2999,37 @@ mod tests {
             )
             .expect("restored visibility");
         assert_eq!(visible_after_restore, 1);
+    }
+
+    #[test]
+    fn invoke_collection_reset_rolls_back_name_intent_when_overlay_clear_fails() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        activate_test_owner_scope(&conn, "all", None);
+        conn.execute_batch("INSERT INTO collections (id,name,created_at,source,invoke_source_id,invoke_source_name,invoke_name_overridden)
+            VALUES ('board','Local',1,'invoke','invoke.db','Source',1);
+            INSERT INTO invoke_board_membership_exclusions VALUES ('board','image.png');
+            CREATE TRIGGER reject_overlay_clear BEFORE DELETE ON invoke_board_membership_exclusions
+            BEGIN SELECT RAISE(ABORT,'blocked overlay clear'); END;").unwrap();
+        let error = update_invoke_collection_ownership_inner(
+            &conn,
+            "board",
+            InvokeCollectionOwnershipAction::Reset,
+        )
+        .unwrap_err();
+        assert!(error.contains("blocked overlay clear"));
+        let state: (String, i64) = conn
+            .query_row(
+                "SELECT name,invoke_name_overridden FROM collections WHERE id='board'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            state,
+            ("Local".into(), 1),
+            "name restoration and rename intent clear must commit with overlays"
+        );
     }
 
     #[test]
@@ -3791,6 +3836,17 @@ mod tests {
             )
             .expect("membership count");
         assert_eq!(membership_count, 1);
+        let overridden: i64 = conn
+            .query_row(
+                "SELECT invoke_name_overridden FROM collections WHERE id='hidden-collection'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            overridden, 1,
+            "legacy imports into Invoke boards retain rename intent through receipts and retries"
+        );
     }
 
     #[test]

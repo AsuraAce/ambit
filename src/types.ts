@@ -268,6 +268,7 @@ export interface Collection {
   invokeOwnerId?: string; // Owner-specific visibility for InvokeAI boards and Ambit collections
   invokeSourceId?: string; // InvokeAI database whose owner namespace scopes this collection
   invokeSourceName?: string; // Last authoritative InvokeAI board name
+  invokeNameOverridden?: boolean; // Local rename intent, retained even when source names converge
   invokeSourcePresent?: boolean; // False when the source board was absent from the latest snapshot
   invokeSuppressed?: boolean; // Locally hidden without deleting source ownership state
 }
@@ -396,7 +397,7 @@ export interface AppSettings {
   invokeAiPath?: string; // Root path to InvokeAI (containing databases/invokeai.db)
   a1111Path?: string; // New: Root path to Stable Diffusion WebUI (A1111)
   comfyUiPath?: string; // New: Root path to ComfyUI output (used for output discovery)
-  syncBoardsToCollections?: boolean; // New: Option to turn boards into persistent collections
+  syncBoardsToCollections?: boolean; // Saved compatibility mirror of invokeSyncBoards; not an independent option
   invokeSyncFavorites?: boolean; // Persisted sync choice for importing favorited InvokeAI images
   invokeSyncBoards?: boolean; // Persisted sync choice for importing InvokeAI board membership
   lastSyncedAt?: number | null; // Timestamp of the last successful sync

@@ -181,6 +181,7 @@ interface LibraryState {
     invokeSyncActivityKind: InvokeSyncActivityKind | null;
     isLiveSyncing: boolean;
     syncAbortController: AbortController | null; // Added
+    invokeSyncCancellationGeneration: number;
 
     // Watcher State
     isLiveWatching: boolean;
@@ -248,6 +249,7 @@ interface LibraryState {
     setIsLiveSyncing: (isLive: boolean) => void;
     setSyncAbortController: (ctrl: AbortController | null) => void; // Added
     cancelSync: () => void; // Added
+    markInvokeSyncCancelled: () => void;
 
     setIsLiveWatching: (isWatching: boolean) => void;
     setMaintenanceCounts: (counts: MaintenanceCounts) => void;
@@ -315,6 +317,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     invokeSyncActivityKind: null,
     isLiveSyncing: false,
     syncAbortController: null,
+    invokeSyncCancellationGeneration: 0,
 
     isLiveWatching: false,
     maintenanceCounts: {
@@ -378,10 +381,14 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     setInvokeSyncActivityKind: (kind) => set({ invokeSyncActivityKind: kind }),
     setIsLiveSyncing: (isLive) => set({ isLiveSyncing: isLive }),
     setSyncAbortController: (ctrl) => set({ syncAbortController: ctrl }),
+    markInvokeSyncCancelled: () => set(state => ({
+        invokeSyncCancellationGeneration: state.invokeSyncCancellationGeneration + 1,
+    })),
     cancelSync: () => set((state) => {
         if (state.syncAbortController) {
             state.syncAbortController.abort();
-            return { syncStatus: 'idle', syncProgress: { current: 0, total: 0, message: 'Cancelled' }, invokeSyncActivityKind: null, syncAbortController: null };
+            // The coordinator owns completion: a native write can still be in flight.
+            return { syncProgress: { ...state.syncProgress, message: 'Cancelling…' } };
         }
         return {};
     }),

@@ -202,6 +202,8 @@ pub struct InvokeBoardSnapshotInput {
     pub memberships: Vec<InvokeBoardSnapshotMembership>,
     pub reconcile_memberships: bool,
     pub delete_missing_collections: bool,
+    #[serde(default)]
+    pub ownership_only: bool,
 }
 
 #[derive(serde::Serialize, specta::Type, Debug, Clone, Default, PartialEq, Eq)]
@@ -1765,14 +1767,6 @@ fn refresh_invoke_owner_scope_inner(
                 )
                 .map_err(|error| error.to_string())?;
         }
-        source_assignments += tx
-            .execute(
-                "UPDATE collections
-             SET invoke_source_id = ?1
-             WHERE source = 'invoke' AND invoke_source_id IS NULL",
-                [&db_path],
-            )
-            .map_err(|error| error.to_string())?;
         if source_assignments > 0 {
             // Reclassifying rows changes which logical sources can see them. Any
             // previously prepared projection may therefore be stale, including a
@@ -2546,6 +2540,23 @@ fn reconcile_invoke_board_snapshot_inner(
         return Err("Boards cannot be reconciled before an owner scope is selected".to_string());
     }
 
+    if input.ownership_only {
+        if input.reconcile_memberships
+            || input.delete_missing_collections
+            || !input.memberships.is_empty()
+        {
+            return Err("Ownership-only board reconciliation cannot change memberships or delete collections".to_string());
+        }
+        if !matches!(
+            input.mode,
+            InvokeOwnerScopeMode::All | InvokeOwnerScopeMode::Legacy
+        ) {
+            return Err(
+                "Ownership-only board reconciliation requires an all-owner catalog".to_string(),
+            );
+        }
+    }
+
     let (_busy_timeout, tx) =
         begin_owner_preparation_transaction(conn, BOARD_SNAPSHOT_RECONCILIATION_OPERATION)?;
     tx.execute_batch(
@@ -2610,6 +2621,57 @@ fn reconcile_invoke_board_snapshot_inner(
         }
     }
 
+    let source_match = if cfg!(windows) {
+        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
+    } else {
+        "invoke_source_id = ?1"
+    };
+    if input.ownership_only {
+        // Refresh only imported boards already bound to this source. IDs alone
+        // cannot authorize adopting local collections or retargeting another DB.
+        let collections_updated = tx
+            .execute(
+                &format!(
+                    "UPDATE collections
+                 SET invoke_owner_id = (
+                         SELECT owner_id FROM temp_invoke_board_snapshot snapshot
+                         WHERE snapshot.board_id = collections.id
+                     ),
+                     invoke_board_verified = 1,
+                     invoke_source_present = 1
+                 WHERE source = 'invoke' AND {source_match}
+                   AND EXISTS (
+                       SELECT 1 FROM temp_invoke_board_snapshot snapshot
+                       WHERE snapshot.board_id = collections.id
+                         AND (collections.invoke_owner_id IS NOT snapshot.owner_id
+                              OR collections.invoke_board_verified IS NOT 1
+                              OR collections.invoke_source_present IS NOT 1)
+                   )"
+                ),
+                [&db_path],
+            )
+            .map_err(|error| error.to_string())?;
+        let missing_updated = tx
+            .execute(
+                &format!(
+                    "UPDATE collections SET invoke_source_present = 0
+                 WHERE source = 'invoke' AND {source_match}
+                   AND invoke_source_present IS NOT 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM temp_invoke_board_snapshot snapshot
+                       WHERE snapshot.board_id = collections.id
+                   )"
+                ),
+                [&db_path],
+            )
+            .map_err(|error| error.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
+        return Ok(InvokeBoardSnapshotResult {
+            collections_updated: collections_updated + missing_updated,
+            ..Default::default()
+        });
+    }
+
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|error| error.to_string())?
@@ -2637,10 +2699,21 @@ fn reconcile_invoke_board_snapshot_inner(
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
              name = CASE
-                 WHEN collections.invoke_source_name IS NOT NULL
+                 WHEN collections.invoke_name_overridden = 0
+                  AND collections.source = 'invoke'
+                  AND collections.invoke_source_id IS NOT NULL
+                  AND collections.invoke_source_name IS NOT NULL
                   AND collections.name = collections.invoke_source_name
                  THEN excluded.name
                  ELSE collections.name
+             END,
+             invoke_name_overridden = CASE
+                 WHEN collections.invoke_name_overridden = 1
+                   OR collections.source IS NOT 'invoke'
+                   OR collections.invoke_source_id IS NULL
+                   OR collections.invoke_source_name IS NULL
+                   OR collections.name IS NOT collections.invoke_source_name
+                 THEN 1 ELSE 0
              END,
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
@@ -2663,6 +2736,11 @@ fn reconcile_invoke_board_snapshot_inner(
                 AND collections.name = collections.invoke_source_name
                 AND collections.name IS NOT excluded.name
              )
+            OR (collections.invoke_name_overridden = 0 AND (
+                collections.invoke_source_id IS NULL
+                OR collections.invoke_source_name IS NULL
+                OR collections.name IS NOT collections.invoke_source_name
+            ))
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
             OR collections.invoke_source_id IS NOT excluded.invoke_source_id
@@ -2681,10 +2759,21 @@ fn reconcile_invoke_board_snapshot_inner(
          WHERE 1 = 1
          ON CONFLICT(id) DO UPDATE SET
              name = CASE
-                 WHEN collections.invoke_source_name IS NOT NULL
+                 WHEN collections.invoke_name_overridden = 0
+                  AND collections.source = 'invoke'
+                  AND collections.invoke_source_id IS NOT NULL
+                  AND collections.invoke_source_name IS NOT NULL
                   AND collections.name = collections.invoke_source_name
                  THEN excluded.name
                  ELSE collections.name
+             END,
+             invoke_name_overridden = CASE
+                 WHEN collections.invoke_name_overridden = 1
+                   OR collections.source IS NOT 'invoke'
+                   OR collections.invoke_source_id IS NULL
+                   OR collections.invoke_source_name IS NULL
+                   OR collections.name IS NOT collections.invoke_source_name
+                 THEN 1 ELSE 0
              END,
              source = 'invoke',
              invoke_owner_id = excluded.invoke_owner_id,
@@ -2697,6 +2786,11 @@ fn reconcile_invoke_board_snapshot_inner(
                 AND collections.name = collections.invoke_source_name
                 AND collections.name IS NOT excluded.name
              )
+            OR (collections.invoke_name_overridden = 0 AND (
+                collections.invoke_source_id IS NULL
+                OR collections.invoke_source_name IS NULL
+                OR collections.name IS NOT collections.invoke_source_name
+            ))
             OR collections.source IS NOT 'invoke'
             OR collections.invoke_owner_id IS NOT excluded.invoke_owner_id
             OR collections.invoke_source_id IS NOT excluded.invoke_source_id
@@ -2711,11 +2805,6 @@ fn reconcile_invoke_board_snapshot_inner(
     }
     .map_err(|error| error.to_string())?;
 
-    let source_match = if cfg!(windows) {
-        "LOWER(RTRIM(REPLACE(invoke_source_id, '\\', '/'), '/')) = LOWER(?1)"
-    } else {
-        "invoke_source_id = ?1"
-    };
     // Keep one parameter shape for every mode. All-user and legacy snapshots
     // bind NULL so the predicate includes every owner; owner snapshots bind
     // the selected ID. This avoids dynamically producing one-parameter SQL
@@ -3396,6 +3485,7 @@ mod tests {
                 memberships: Vec::new(),
                 reconcile_memberships: true,
                 delete_missing_collections: false,
+                ownership_only: false,
             },
         );
         writer.join().expect("competing writer completed");
@@ -6195,6 +6285,327 @@ mod tests {
         assert_eq!(unknown_seed, None);
     }
 
+    fn board_catalog(ownership_only: bool) -> super::InvokeBoardSnapshotInput {
+        super::InvokeBoardSnapshotInput {
+            db_path: "invoke.db".into(),
+            mode: super::InvokeOwnerScopeMode::All,
+            owner_id: None,
+            boards: vec![super::InvokeBoardSnapshotBoard {
+                id: "board".into(),
+                name: "A".into(),
+                created_at: 1,
+                owner_id: Some("owner-new".into()),
+            }],
+            memberships: Vec::new(),
+            reconcile_memberships: false,
+            delete_missing_collections: false,
+            ownership_only,
+        }
+    }
+
+    #[test]
+    fn explicit_board_name_override_survives_upstream_name_convergence() {
+        for with_revision in [false, true] {
+            let conn = Connection::open_in_memory().unwrap();
+            apply_all_migrations(&conn);
+            if with_revision {
+                conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+                    .unwrap();
+            }
+            let mut snapshot = board_catalog(false);
+            super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).unwrap();
+            let read = |conn: &Connection| -> (String, String, i64) {
+                conn.query_row("SELECT name,invoke_source_name,invoke_name_overridden FROM collections WHERE id='board'", [],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap()
+            };
+            assert_eq!(read(&conn), ("A".into(), "A".into(), 0));
+            conn.execute(
+                "UPDATE collections SET name='B',invoke_name_overridden=1 WHERE id='board'",
+                [],
+            )
+            .unwrap();
+            for name in ["A", "B", "C"] {
+                snapshot.boards[0].name = name.into();
+                super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).unwrap();
+                assert_eq!(
+                    read(&conn),
+                    ("B".into(), name.into(), 1),
+                    "source convergence must not relinquish the local rename"
+                );
+            }
+            conn.execute("UPDATE collections SET name=invoke_source_name,invoke_name_overridden=0 WHERE id='board'", []).unwrap();
+            snapshot.boards[0].name = "D".into();
+            super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).unwrap();
+            assert_eq!(
+                read(&conn),
+                ("D".into(), "D".into(), 0),
+                "unmodified names follow upstream"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_board_adoption_preserves_ambiguous_names() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        conn.execute(
+            "INSERT INTO collections (id,name,created_at) VALUES ('board','A',1)",
+            [],
+        )
+        .unwrap();
+        let mut snapshot = board_catalog(false);
+        for name in ["A", "B", "C"] {
+            snapshot.boards[0].name = name.into();
+            super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).unwrap();
+            let state: (String, i64) = conn
+                .query_row(
+                    "SELECT name,invoke_name_overridden FROM collections WHERE id='board'",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(
+                state,
+                ("A".into(), 1),
+                "matching the first catalog name cannot prove legacy rename intent"
+            );
+        }
+    }
+
+    #[test]
+    fn board_sync_off_first_and_different_sources_never_adopt_unknown_boards() {
+        for previous_source in [None, Some("other.db")] {
+            for mode in [
+                super::InvokeOwnerScopeMode::Owner,
+                super::InvokeOwnerScopeMode::Unselected,
+            ] {
+                let conn = Connection::open_in_memory().unwrap();
+                apply_all_migrations(&conn);
+                conn.execute_batch("INSERT INTO collections (id,name,created_at,source,invoke_owner_id,invoke_source_name,invoke_name_overridden) VALUES
+                    ('board','Local name',1,'invoke','owner-new','Old upstream',1),
+                    ('unmatched','Other unknown board',1,'invoke',NULL,NULL,1);
+                    INSERT INTO collections (id,name,created_at,source,invoke_source_id,invoke_owner_id) VALUES
+                    ('foreign','Foreign',1,'invoke','other.db','owner-new');
+                    INSERT INTO images(id,path,invoke_image_name,invoke_owner_id) VALUES
+                    ('image','C:/Current/outputs/images/image.png','image.png','owner-new');").unwrap();
+                if let Some(previous_source) = previous_source {
+                    conn.execute("INSERT INTO invoke_owner_scope_state (state_key,db_path,images_root,scope_mode,boards_verified,updated_at)
+                        VALUES ('current',?1,'C:/Other','all',1,1)", [previous_source]).unwrap();
+                }
+                let db_path = "C:/Current/databases/invokeai.db";
+                super::refresh_invoke_owner_scope_inner(
+                    &conn,
+                    &super::InvokeOwnerScopeInput {
+                        db_path: db_path.into(),
+                        images_root: "C:/Current".into(),
+                        mode,
+                        owner_id: Some("owner-new".into()),
+                        force_refresh: false,
+                    },
+                )
+                .unwrap();
+                let source: Option<String> = conn
+                    .query_row(
+                        "SELECT invoke_source_id FROM images WHERE id='image'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    source,
+                    Some(super::normalize_invoke_root(db_path)),
+                    "image paths still prove source binding"
+                );
+                let mut catalog = board_catalog(true);
+                catalog.db_path = db_path.into();
+                catalog.boards.push(super::InvokeBoardSnapshotBoard {
+                    id: "foreign".into(),
+                    name: "Upstream foreign".into(),
+                    created_at: 2,
+                    owner_id: Some("owner-new".into()),
+                });
+                assert_eq!(
+                    super::reconcile_invoke_board_snapshot_inner(&conn, &catalog)
+                        .unwrap()
+                        .changed_count(),
+                    0
+                );
+                let unknown: (String,Option<String>,i64) = conn.query_row("SELECT name,invoke_source_id,invoke_name_overridden FROM collections WHERE id='board'", [],
+                    |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+                assert_eq!(
+                    unknown,
+                    ("Local name".into(), None, 1),
+                    "off-mode source preparation cannot adopt legacy boards"
+                );
+                conn.execute("UPDATE invoke_owner_scope_state SET boards_verified=1 WHERE state_key='current'", []).unwrap();
+                assert_eq!(conn.query_row("SELECT COUNT(*) FROM scoped_collections WHERE id IN ('board','unmatched','foreign')", [], |row| row.get::<_,i64>(0)).unwrap(),0,
+                    "unknown and cross-source boards stay guarded even after catalog verification");
+                catalog.ownership_only = false;
+                catalog.boards.truncate(1);
+                super::reconcile_invoke_board_snapshot_inner(&conn, &catalog).unwrap();
+                let adopted: (String, Option<String>) = conn
+                    .query_row(
+                        "SELECT name,invoke_source_id FROM collections WHERE id='board'",
+                        [],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    adopted,
+                    (
+                        "Local name".into(),
+                        Some(super::normalize_invoke_root(db_path))
+                    ),
+                    "sync-on may adopt a catalog-matched board authoritatively"
+                );
+                let unmatched: Option<String> = conn
+                    .query_row(
+                        "SELECT invoke_source_id FROM collections WHERE id='unmatched'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(unmatched, None, "unmatched legacy boards remain unbound");
+            }
+        }
+    }
+
+    #[test]
+    fn ownership_only_board_catalog_updates_only_bound_source_facts() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        conn.execute("ALTER TABLE collections ADD COLUMN updated_at INTEGER", [])
+            .unwrap();
+        conn.execute_batch("INSERT INTO collections
+            (id,name,created_at,source,invoke_source_id,invoke_owner_id,invoke_board_verified,
+             invoke_source_name,invoke_source_present,invoke_name_overridden,invoke_suppressed,
+             color,is_pinned,is_archived,custom_thumbnail,updated_at) VALUES
+            ('board','Local',1,'invoke','invoke.db','owner-old',0,'Old source',0,1,1,'red',1,1,'keep.png',42),
+            ('absent','Absent',1,'invoke','invoke.db','owner-verified',1,'Absent source',1,1,1,'blue',1,1,'absent.png',43),
+            ('collision','Other source',1,'invoke','other.db','other-owner',0,'Other',0,0,0,NULL,0,0,NULL,44),
+            ('local','Ambit',1,'ambit','invoke.db',NULL,0,NULL,1,0,0,NULL,0,0,NULL,45),
+            ('unbound','Unbound',1,'invoke',NULL,NULL,0,NULL,1,0,0,NULL,0,0,NULL,46),
+            ('null-source','Legacy',1,NULL,'invoke.db',NULL,0,NULL,1,0,0,NULL,0,0,NULL,47);
+            INSERT INTO images(id,path,invoke_source_id,invoke_owner_id,invoke_image_name,board_id) VALUES ('image','image.png','invoke.db','owner-old','image.png','board');
+            INSERT INTO collection_images VALUES ('board','image');
+            INSERT INTO invoke_board_membership_snapshot VALUES ('board','source.png');
+            INSERT INTO invoke_board_membership_exclusions VALUES ('board','source.png');
+            INSERT INTO invoke_board_membership_additions VALUES ('board','image');").unwrap();
+        let contents = |conn: &Connection| -> Vec<Vec<rusqlite::types::Value>> {
+            let mut rows = Vec::new();
+            for query in [
+                "SELECT id,name,created_at,source,invoke_source_id,invoke_source_name,invoke_name_overridden,invoke_suppressed,color,is_pinned,is_archived,custom_thumbnail,updated_at FROM collections ORDER BY id",
+                "SELECT * FROM images ORDER BY id",
+                "SELECT * FROM collection_images ORDER BY collection_id,image_id",
+                "SELECT * FROM invoke_board_membership_snapshot ORDER BY collection_id,invoke_image_name",
+                "SELECT * FROM invoke_board_membership_exclusions ORDER BY collection_id,invoke_image_name",
+                "SELECT * FROM invoke_board_membership_additions ORDER BY collection_id,image_id",
+            ] {
+                let mut stmt = conn.prepare(query).unwrap();
+                let count = stmt.column_count();
+                rows.extend(stmt.query_map([], |row| (0..count).map(|i| row.get(i)).collect())
+                    .unwrap().collect::<Result<Vec<_>, _>>().unwrap());
+            }
+            rows
+        };
+        let before = contents(&conn);
+        let mut snapshot = board_catalog(true);
+        for id in ["collision", "local", "unbound", "null-source", "new"] {
+            let mut board = snapshot.boards[0].clone();
+            board.id = id.into();
+            snapshot.boards.push(board);
+        }
+        let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).unwrap();
+        assert_eq!(
+            result,
+            super::InvokeBoardSnapshotResult {
+                collections_updated: 2,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
+            contents(&conn),
+            before,
+            "ownership refresh must neither insert boards nor mutate content, overlays or images"
+        );
+        let facts: Vec<(String,Option<String>,i64,i64)> = conn.prepare("SELECT id,invoke_owner_id,invoke_board_verified,invoke_source_present FROM collections ORDER BY id")
+            .unwrap().query_map([], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)))
+            .unwrap().collect::<Result<_,_>>().unwrap();
+        assert_eq!(
+            facts,
+            vec![
+                ("absent".into(), Some("owner-verified".into()), 1, 0),
+                ("board".into(), Some("owner-new".into()), 1, 1),
+                ("collision".into(), Some("other-owner".into()), 0, 0),
+                ("local".into(), None, 0, 1),
+                ("null-source".into(), None, 0, 1),
+                ("unbound".into(), None, 0, 1),
+            ]
+        );
+        assert_eq!(
+            super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
+                .unwrap()
+                .changed_count(),
+            0
+        );
+    }
+
+    #[test]
+    fn ownership_only_board_refresh_rolls_back_on_missing_board_failure() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        conn.execute_batch("INSERT INTO collections (id,name,created_at,source,invoke_source_id,invoke_owner_id,invoke_board_verified) VALUES
+            ('board','Local',1,'invoke','invoke.db','old-owner',0),
+            ('absent','Absent',1,'invoke','invoke.db','verified-owner',1);
+            CREATE TRIGGER reject_missing_board BEFORE UPDATE OF invoke_source_present ON collections
+            WHEN NEW.invoke_source_present = 0 BEGIN SELECT RAISE(ABORT,'blocked missing board'); END;").unwrap();
+        let error =
+            super::reconcile_invoke_board_snapshot_inner(&conn, &board_catalog(true)).unwrap_err();
+        assert!(error.contains("blocked missing board"));
+        let state: (String,i64,i64) = conn.query_row("SELECT invoke_owner_id,invoke_board_verified,invoke_source_present FROM collections WHERE id='board'", [],
+            |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+        assert_eq!(
+            state,
+            ("old-owner".into(), 0, 1),
+            "the present-board update rolls back when any catalog write fails"
+        );
+    }
+
+    #[test]
+    fn ownership_only_catalog_rejects_content_requests_before_writes() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_all_migrations(&conn);
+        for invalid in 0..4 {
+            let mut snapshot = board_catalog(true);
+            match invalid {
+                0 => snapshot.reconcile_memberships = true,
+                1 => snapshot.delete_missing_collections = true,
+                2 => snapshot
+                    .memberships
+                    .push(super::InvokeBoardSnapshotMembership {
+                        image_name: "image.png".into(),
+                        board_id: "board".into(),
+                    }),
+                _ => {
+                    snapshot.mode = super::InvokeOwnerScopeMode::Owner;
+                    snapshot.owner_id = Some("owner".into());
+                }
+            }
+            assert!(super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot).is_err());
+            assert_eq!(
+                conn.query_row("SELECT COUNT(*) FROM collections", [], |r| r
+                    .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+        let snapshot: super::InvokeBoardSnapshotInput = serde_json::from_str(r#"{"dbPath":"invoke.db","mode":"all","ownerId":null,"boards":[],"memberships":[],"reconcileMemberships":false,"deleteMissingCollections":false}"#).unwrap();
+        assert!(
+            !snapshot.ownership_only,
+            "old callers retain their normal mode"
+        );
+    }
+
     #[test]
     fn authoritative_board_snapshot_preserves_revision_for_source_name_backfill() {
         let conn = Connection::open_in_memory().expect("in-memory db");
@@ -6222,6 +6633,7 @@ mod tests {
             memberships: Vec::new(),
             reconcile_memberships: false,
             delete_missing_collections: false,
+            ownership_only: false,
         };
 
         super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
@@ -6250,7 +6662,7 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("renamed board");
-        assert_eq!(renamed.0, "Renamed upstream");
+        assert_eq!(renamed.0, "Board A", "an ambiguous legacy name stays local");
         assert!(
             renamed.1 > 123,
             "a genuine upstream rename must advance Recently Updated order"
@@ -6330,6 +6742,7 @@ mod tests {
             ],
             reconcile_memberships: true,
             delete_missing_collections: true,
+            ownership_only: false,
         };
 
         super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)
@@ -6443,6 +6856,7 @@ mod tests {
             }],
             reconcile_memberships: true,
             delete_missing_collections: true,
+            ownership_only: false,
         };
         let mut catalog_snapshot = snapshot.clone();
         catalog_snapshot.mode = super::InvokeOwnerScopeMode::All;
@@ -6612,6 +7026,7 @@ mod tests {
                 ],
                 reconcile_memberships: true,
                 delete_missing_collections: true,
+                ownership_only: false,
             };
 
             let result = super::reconcile_invoke_board_snapshot_inner(&conn, &snapshot)

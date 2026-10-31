@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Collection, FilterState } from '../../../types';
 import { X, Save, Trash2, Filter, Users, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ConfirmDialog } from '../../../components/ui/ConfirmDialog';
 import { getDateFilterLabel } from '../../../utils/dateFilters';
 import { useInvokeOwnerScopeStore } from '../../../stores/invokeOwnerScopeStore';
 import type { AmbitCollectionScopeTarget } from '../../../services/db/collectionRepo';
@@ -31,6 +32,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     const [scopeSelection, setScopeSelection] = useState('global');
     const [isSavingScope, setIsSavingScope] = useState(false);
     const [isResettingInvoke, setIsResettingInvoke] = useState(false);
+    const [showResetConfirmation, setShowResetConfirmation] = useState(false);
     const discovery = useInvokeOwnerScopeStore(state => state.ownerScopeState.discovery);
 
     // Initialize draft filters when collection opens
@@ -40,6 +42,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
         } else {
             setDraftFilters(null);
         }
+        setShowResetConfirmation(false);
         setScopeSelection(collection?.invokeOwnerId
             ? `owner:${collection.invokeOwnerId}`
             : collection?.invokeSourceId
@@ -74,11 +77,16 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     };
 
     const handleResetInvoke = async () => {
+        if (collection.invokeSourcePresent === false) {
+            setShowResetConfirmation(false);
+            return;
+        }
         setIsResettingInvoke(true);
         try {
             if (await onResetInvokeCollection(collection.id)) onClose();
         } finally {
             setIsResettingInvoke(false);
+            setShowResetConfirmation(false);
         }
     };
 
@@ -234,6 +242,17 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
     };
 
     return (
+        <>
+        <ConfirmDialog
+            isOpen={isOpen && showResetConfirmation}
+            title="Reset to InvokeAI?"
+            message="Remove local name and membership overrides and restore the last synced InvokeAI version. Color, pin, archive, and thumbnail choices stay unchanged."
+            confirmLabel="Reset Collection"
+            onConfirm={handleResetInvoke}
+            onCancel={() => setShowResetConfirmation(false)}
+            isLoading={isResettingInvoke}
+            zIndex={110}
+        />
         <AnimatePresence>
             {isOpen && (
                 <motion.div
@@ -275,16 +294,16 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                 {collection.source === 'invoke' ? (
                                     <div className="space-y-2 text-xs text-gray-500 dark:text-gray-400">
                                         <p>
-                                            Managed by InvokeAI · {discovery?.owners.find(owner => owner.ownerId === collection.invokeOwnerId)?.displayName || collection.invokeOwnerId || 'System'}
+                                            Linked to InvokeAI · {discovery?.owners.find(owner => owner.ownerId === collection.invokeOwnerId)?.displayName || collection.invokeOwnerId || 'System'}
                                         </p>
                                         {collection.invokeSourcePresent === false && (
                                             <p className="flex items-center gap-1.5 font-medium text-ember-600 dark:text-ember-300">
                                                 <AlertTriangle className="h-3.5 w-3.5" /> Source unavailable
                                             </p>
                                         )}
-                                        {collection.invokeSourceName && collection.name !== collection.invokeSourceName && (
+                                        {collection.invokeNameOverridden && (
                                             <p>
-                                                Local name override · InvokeAI: <span className="font-medium text-gray-700 dark:text-gray-200">{collection.invokeSourceName}</span>
+                                                Local name override{collection.invokeSourceName && <> · InvokeAI: <span className="font-medium text-gray-700 dark:text-gray-200">{collection.invokeSourceName}</span></>}
                                             </p>
                                         )}
                                     </div>
@@ -378,7 +397,7 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                                     {collection.source === 'invoke' ? (
                                     <button
                                         type="button"
-                                        onClick={() => void handleResetInvoke()}
+                                        onClick={() => setShowResetConfirmation(true)}
                                         disabled={collection.invokeSourcePresent === false || isResettingInvoke}
                                         className="flex items-center justify-center gap-2 p-3 rounded-xl border border-sage-200 dark:border-sage-500/30 bg-sage-50 dark:bg-sage-900/20 text-sage-600 dark:text-sage-300 hover:bg-sage-100 dark:hover:bg-sage-900/40 transition-colors text-sm font-medium group disabled:cursor-not-allowed disabled:opacity-50"
                                     >
@@ -417,5 +436,6 @@ export const CollectionEditorModal: React.FC<CollectionEditorModalProps> = ({
                 </motion.div>
             )}
         </AnimatePresence>
+        </>
     );
 };

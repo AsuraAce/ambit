@@ -3,6 +3,14 @@
 Status: Deferred ordinary collection counts owner-confirmed; separate SQL-tracer retirement verified
 Baseline: source checkpoint `0bada870`; integrating main `e50926487c68e433b85009628705832a9d6be039` (v0.13.2, verified 2026-09-07)
 
+## Captured black-window failure: 2026-10-07
+
+Owner-reported regular-dev launch `43905e04-fd8c-4295-836e-33000a2b6e91` mounted React and reached owner visibility preparation, then recorded `browser-process-exited` at 4.900s with signed exit code `-1073741819` (`0xC0000005`). Native observations through 120s received no further renderer heartbeats; readiness and splash dismissal were unrecorded. The last database operation in the terminal completed its commit; that proximity does not attribute the browser failure to owner preparation.
+
+The existing Crashpad report timestamp matches this failure. Exception/module metadata identifies a read access violation inside `RTSSHooks64.dll` at module offset `0x8bc30`; the WebView2 modules report version `154.0.4258.53`. RTSS, its 64-bit hooks loader, and MSI Afterburner were running. This locates the fault in an injected overlay hook and motivates an RTSS-disabled comparison; it does not establish the underlying defect or a fix. No dump memory streams were read, and no dump was uploaded or copied into the repository.
+
+Tauri subsequently rebuilt automatically after watched-file changes. The resulting launch `1b09c93c-ac50-4019-a6dc-3b3dc9483786` reached readiness at 14.052s and completed InvokeAI catch-up at 27.432s; the owner confirmed the window recovered. No agent restart command or app code change was used. Both journals, the supplied terminal log, and a metadata-only crash report are preserved locally under ignored `.tauri/startup-black-window-20261007/`. Overlay-disabled verification and general reliability acceptance remain pending.
+
 ## Current cleanup: retire temporary SQL tracing
 
 Approved 2026-09-07. Original cleanup commit `86a629c4` remains on `codex/retire-startup-sql-tracing`. After PR #317 merged as `cf10378522019a1ede0c31322f0c96e3cdbf3b8b`, the cleanup was applied to that exact base on `codex/retire-startup-sql-tracing-followup`, preserving main's CI fixes and documentation updates. Pre-cleanup revision `6946a2d4c8dc4d8ffa031142fa408ac458298137` is the Git recovery reference for the vendored `src-tauri/vendor/tauri-plugin-sql`, native/frontend SQL tracing adapters, diagnostic launcher, `scripts/run-startup-sql-overhead.mjs`, and the `startup_trace_tests.rs`, `startup_sql_overhead.rs` and `post_m80_index.rs` campaign modules.

@@ -10,6 +10,11 @@ Status: Deferred
 
 InvokeAI incremental import selects rows newer than the saved timestamp. Newly inserted rows with older timestamps can therefore be missed; full source-fact reconciliation only repairs existing Ambit records and is not a remedy for absent imports. This predates the All users startup shortcut. A future cursor/reconciliation design must explicitly cover backdated inserts, replacements, owner transitions, and tombstones before changing snapshot or cursor formats. Relevant boundaries: `src/services/invoke/syncService.ts`, `src/services/invoke/sourceReconciliation.ts`, and `src/contexts/SyncContext.tsx`.
 
+## InvokeAI Favorite Mapping Provenance
+Status: Deferred
+
+The existing sync engine distinguishes local favorite/pin edits from source values using `originalState`, but retains that baseline when automatic mapping changes flags. Subsequent mapping changes can therefore interpret a prior automatic update as a local override. Before introducing bulk retrospective mapping or transactional mapping rollback, define and test baseline advancement and explicit local overrides, including partial replay/cancellation. The explicit setup flow preserves existing manual mapping semantics; it does not introduce bulk remapping. Relevant boundary: `src/services/invoke/syncService.ts`.
+
 ## Image-Named Mixed-Media Persistence Boundary
 Status: Deferred
 

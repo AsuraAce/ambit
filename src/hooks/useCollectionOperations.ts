@@ -10,6 +10,7 @@ import type { CollectionRefreshOptions } from '../stores/collectionStore';
 import { isImageMasked } from '../utils/maskingUtils';
 import {
   upsertCollection,
+  renameCollectionInDb,
   deleteCollectionFromDb,
   addImagesToCollection as addImgsToCol,
   removeImagesFromCollection as removeImgsFromCol,
@@ -224,7 +225,7 @@ export const useCollectionOperations = ({
 
   const resetInvokeCollection = useCallback(async (id: string): Promise<boolean> => {
     const collection = [...collections, ...smartCollections].find(item => item.id === id);
-    if (!collection || collection.source !== 'invoke') return false;
+    if (!collection || collection.source !== 'invoke' || collection.invokeSourcePresent === false) return false;
 
     try {
       await resetInvokeCollectionInDb(id);
@@ -247,10 +248,10 @@ export const useCollectionOperations = ({
     if (!col) return;
 
     // Optimistic Update
-    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+    setAllCollections(prev => prev.map(c => c.id === id ? { ...c, name: newName, ...(c.source === 'invoke' ? { invokeNameOverridden: true } : {}) } : c));
 
     try {
-      await upsertCollection({ ...col, name: newName });
+      await renameCollectionInDb(id, newName);
       addToast("Collection renamed", "success");
       await refreshCollections();
     } catch (e) {

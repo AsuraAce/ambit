@@ -183,15 +183,19 @@ const defaultState = (): AppState => {
     };
 };
 
-let state: AppState = defaultState();
+interface BrowserMockState extends AppState {
+    invokeBoardMemberships?: Record<string, string[]>;
+}
 
-const loadStoredState = (): AppState => {
+let state: BrowserMockState = defaultState();
+
+const loadStoredState = (): BrowserMockState => {
     if (typeof localStorage === 'undefined') return state;
 
     try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (!saved) return state;
-        const parsed = JSON.parse(saved) as Partial<AppState>;
+        const parsed = JSON.parse(saved) as Partial<BrowserMockState>;
         const savedSettings = parsed.settings ?? {};
 
         state = {
@@ -223,6 +227,7 @@ const persistState = (): void => {
             smartCollections: state.smartCollections,
             settings: state.settings,
             recentSearches: state.recentSearches,
+            invokeBoardMemberships: state.invokeBoardMemberships,
         }));
     } catch (error) {
         console.error('[BrowserMock] Failed to persist mock state', error);
@@ -276,6 +281,7 @@ export const getBrowserMockCollections = (): Collection[] => {
     const collections = [...current.collections, ...current.smartCollections];
     return collections.map((collection) => ({
         ...collection,
+        invokeNameOverridden: collection.invokeNameOverridden ?? false,
         count: getCollectionCount(collection, collections),
         thumbnail: collection.customThumbnail
             ? current.images.find((image) => image.id === collection.customThumbnail)?.thumbnailUrl
@@ -665,6 +671,16 @@ export const getBrowserMockValidFacetNames = (filters: FilterState): ValidFacetN
         ipAdapters: facets.ipAdapters.map((item) => item.name),
     };
 };
+
+export const setBrowserMockInvokeMembershipSnapshot = (collectionId: string, imageIds: string[]): void => {
+    loadStoredState();
+    state.invokeBoardMemberships = { ...state.invokeBoardMemberships, [collectionId]: [...imageIds] };
+    persistState();
+};
+
+export const getBrowserMockInvokeMembershipSnapshot = (collectionId: string): string[] => (
+    [...(loadStoredState().invokeBoardMemberships?.[collectionId] ?? [])]
+);
 
 export const upsertBrowserMockCollection = (collection: Partial<Collection> & { id: string; name: string }): void => {
     const collections = getBrowserMockCollections();

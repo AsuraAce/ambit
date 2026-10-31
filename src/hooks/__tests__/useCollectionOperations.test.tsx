@@ -35,6 +35,7 @@ vi.mock('../../stores/collectionStore', () => {
 
 vi.mock('../../services/db/collectionRepo', () => ({
     upsertCollection: vi.fn(),
+    renameCollectionInDb: vi.fn(),
     deleteCollectionFromDb: vi.fn(),
     addImagesToCollection: vi.fn(),
     removeImagesFromCollection: vi.fn(),
@@ -281,6 +282,28 @@ describe('useCollectionOperations', () => {
         });
     });
 
+    it('records local rename intent even when the chosen name matches InvokeAI', async () => {
+        const { renameCollectionInDb, upsertCollection } = await import('../../services/db/collectionRepo');
+        const board: Collection = { ...mockCollections[0], source: 'invoke', invokeSourceName: 'Collection 1', invokeNameOverridden: false };
+        dispatchedCollections = [board];
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [board] }));
+        await act(async () => result.current.renameCollection('col1', 'Collection 1'));
+        expect(renameCollectionInDb).toHaveBeenCalledWith('col1', 'Collection 1');
+        expect(upsertCollection).not.toHaveBeenCalled();
+        expect(dispatchedCollections[0]).toMatchObject({ name: 'Collection 1', invokeNameOverridden: true });
+    });
+
+    it('does not reset an InvokeAI collection whose source is unavailable', async () => {
+        const { resetInvokeCollection } = await import('../../services/db/collectionRepo');
+        const board: Collection = { ...mockCollections[0], source: 'invoke', invokeSourcePresent: false };
+        const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [board] }));
+        let succeeded = true;
+        await act(async () => { succeeded = await result.current.resetInvokeCollection('col1'); });
+        expect(succeeded).toBe(false);
+        expect(resetInvokeCollection).not.toHaveBeenCalled();
+        expect(mockRefreshCollections).not.toHaveBeenCalled();
+    });
+
     describe('collection metadata edits', () => {
         it('sanitizes self-referential smart filters and refreshes smart counts after saving', async () => {
             const { upsertCollection } = await import('../../services/db/collectionRepo');
@@ -314,10 +337,10 @@ describe('useCollectionOperations', () => {
         });
 
         it('rolls back filter, rename, color, archive, and pin edits when persistence fails', async () => {
-            const { upsertCollection } = await import('../../services/db/collectionRepo');
+            const { upsertCollection, renameCollectionInDb } = await import('../../services/db/collectionRepo');
+            vi.mocked(renameCollectionInDb).mockRejectedValueOnce(new Error('rename failed'));
             vi.mocked(upsertCollection)
                 .mockRejectedValueOnce(new Error('filters failed'))
-                .mockRejectedValueOnce(new Error('rename failed'))
                 .mockRejectedValueOnce(new Error('color failed'))
                 .mockRejectedValueOnce(new Error('archive failed'))
                 .mockRejectedValueOnce(new Error('pin failed'));
@@ -351,7 +374,6 @@ describe('useCollectionOperations', () => {
             });
 
             expect(vi.mocked(upsertCollection).mock.calls.map(call => call[0])).toEqual([
-                expect.objectContaining({ name: 'Renamed' }),
                 expect.objectContaining({ color: '#123456' }),
                 expect.objectContaining({ isArchived: true }),
                 expect.objectContaining({ isPinned: true })
@@ -1089,7 +1111,7 @@ describe('useCollectionOperations', () => {
         const { result } = renderHook(() => useCollectionOperations({ ...props, collections: [target, extra] }));
 
         resetState();
-        vi.mocked(repo.upsertCollection).mockRejectedValueOnce(new Error('rename'));
+        vi.mocked(repo.renameCollectionInDb).mockRejectedValueOnce(new Error('rename'));
         await act(async () => result.current.renameCollection('col1', 'Renamed'));
         expect(dispatchedCollections[1]).toBe(extra);
 

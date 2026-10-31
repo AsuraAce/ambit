@@ -5,12 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultAppSettings } from './constants/defaultSettings';
 import { createDefaultFilters } from './utils/filterState';
 import { GeneratorTool, type AIImage, type AppSettings, type Collection, type FilterState, type LayoutMode, type SmartCollection, type ViewMode } from './types';
-import type { InvokeOwnerScopeState } from './contexts/SyncContext';
+import type { ApplyInvokeConnectionOptions, InvokeConnectionApplyOutcome, InvokeOwnerScopeState } from './contexts/SyncContext';
+import type { InvokeConnectionDraft } from './services/invoke/connectionDraft';
 import App from './App';
 import { settingsPersistenceCoordinator } from './utils/settingsPersistenceCoordinator';
 import { useLibraryStore } from './stores/libraryStore';
+import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
+import { ActivityDock } from './components/ui/ActivityDock';
 
 type AppLayoutProbe = {
+    modals: { openModal: (name: 'settings') => void; setInitialSettingsTab: (tab: 'invokeai') => void };
     isInvokeCollectionCatchupPending: boolean;
     forcePrivacyProtectionGate: boolean;
     images: AIImage[];
@@ -147,6 +151,10 @@ const captured = vi.hoisted(() => ({
 }));
 
 const mocks = vi.hoisted(() => ({
+    renderInvokeSurfaces: false,
+    inspectInvokeConnection: vi.fn(),
+    applyInvokeConnection: vi.fn(),
+    browseGallery: vi.fn(),
     addToast: vi.fn(),
     settings: null as unknown as AppSettings,
     settingsLoaded: true,
@@ -299,7 +307,13 @@ const createDeferred = <T,>() => {
 };
 
 vi.mock('./hooks/useToast', () => ({ useToast: () => ({ addToast: mocks.addToast }) }));
-vi.mock('./hooks/useModalManager', () => ({ useModalManager: () => mocks.modals }));
+vi.mock('./hooks/useModalManager', async importOriginal => {
+    const actual = await importOriginal<typeof import('./hooks/useModalManager')>();
+    return { useModalManager: () => {
+        const manager = actual.useModalManager();
+        return mocks.renderInvokeSurfaces ? manager : mocks.modals;
+    } };
+});
 vi.mock('./hooks/useAppVersion', () => ({ useAppVersion: () => '1.0.0' }));
 vi.mock('./services/db/imageRepo', () => ({
     getImageWithFullMetadata: (id: string) => mocks.getImageWithFullMetadata(id)
@@ -440,14 +454,39 @@ vi.mock('./hooks/useDragDrop', () => ({
     }
 }));
 vi.mock('./contexts/SyncContext', () => ({
-    useSync: () => ({
+    useSync: () => {
+        const ownerScopeState = useInvokeOwnerScopeStore(state => state.ownerScopeState);
+        return {
         startInvokeSync: mocks.startInvokeSync,
         isInvokeSyncActive: mocks.isInvokeSyncActive,
         isLiveSyncing: mocks.isLiveSyncing,
-        invokeOwnerScopeState: mocks.invokeOwnerScopeState,
+        invokeOwnerScopeState: mocks.renderInvokeSurfaces
+            ? ownerScopeState
+            : mocks.invokeOwnerScopeState,
         selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
         retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
-    })
+        };
+    },
+}));
+vi.mock('./contexts/LibraryContext', () => ({
+    useLibrary: () => ({
+        invokeOwnerScopeState: useInvokeOwnerScopeStore(state => state.ownerScopeState),
+        applyInvokeConnection: mocks.applyInvokeConnection,
+        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
+        startInvokeSync: mocks.startInvokeSync,
+        cancelSync: useLibraryStore(state => state.cancelSync),
+        syncState: { status: useLibraryStore(state => state.syncStatus) },
+        isInvokeSyncActive: useLibraryStore(state => state.syncStatus === 'syncing'),
+        isLiveSyncing: false,
+    }),
+}));
+vi.mock('./services/invoke/connection', async importOriginal => ({
+    ...(await importOriginal<typeof import('./services/invoke/connection')>()),
+    inspectInvokeConnection: mocks.inspectInvokeConnection,
+}));
+vi.mock('./services/db/collectionRepo', async importOriginal => ({
+    ...(await importOriginal<typeof import('./services/db/collectionRepo')>()),
+    getSuppressedInvokeCollections: vi.fn().mockResolvedValue([]),
 }));
 vi.mock('./hooks/useFolderMonitor', () => ({ useFolderMonitor: mocks.folderMonitor }));
 vi.mock('./hooks/useGlobalShortcuts', () => ({ useGlobalShortcuts: mocks.shortcuts }));
@@ -456,15 +495,29 @@ vi.mock('./features/viewer/utils/searchHighlights', () => ({ derivePromptHighlig
 vi.mock('./components/AppLayout', () => ({
     AppLayout: (props: AppLayoutProbe) => {
         captured.appLayout = props;
-        return <main ref={props.workspaceRef} tabIndex={-1} data-testid="app-layout" />;
+        return <main ref={props.workspaceRef} tabIndex={-1} data-testid="app-layout">
+            {mocks.renderInvokeSurfaces && <>
+                <button type="button" onClick={() => {
+                    props.modals.setInitialSettingsTab('invokeai');
+                    props.modals.openModal('settings');
+                }}>Open InvokeAI Settings</button>
+                <button type="button" onClick={mocks.browseGallery}>Browse gallery</button>
+                <ActivityDock />
+            </>}
+        </main>;
     }
 }));
-vi.mock('./components/GlobalModals', () => ({
-    GlobalModals: (props: GlobalModalsProbe) => {
-        captured.globalModals = props;
-        return <div data-testid="global-modals" />;
-    }
-}));
+vi.mock('./components/GlobalModals', async importOriginal => {
+    const actual = await importOriginal<typeof import('./components/GlobalModals')>();
+    // Load the real Settings tree before test timers/async assertions begin.
+    await import('./features/settings/components/SettingsModal');
+    return {
+        GlobalModals: (props: React.ComponentProps<typeof actual.GlobalModals>) => {
+            captured.globalModals = props as unknown as GlobalModalsProbe;
+            return mocks.renderInvokeSurfaces ? <actual.GlobalModals {...props} /> : <div data-testid="global-modals" />;
+        },
+    };
+});
 vi.mock('./components/ui/OnboardingWizard', () => ({
     OnboardingWizard: (props: OnboardingProbe) => {
         captured.onboarding = props;
@@ -507,6 +560,10 @@ describe('App orchestration', () => {
     beforeEach(() => {
         settingsPersistenceCoordinator.reopenAdmission();
         vi.clearAllMocks();
+        mocks.renderInvokeSurfaces = false;
+        mocks.applyInvokeConnection.mockReset();
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
+        useLibraryStore.setState(useLibraryStore.getInitialState(), true);
         captured.appLayout = null;
         captured.globalModals = null;
         captured.onboarding = null;
@@ -580,6 +637,232 @@ describe('App orchestration', () => {
         vi.restoreAllMocks();
         delete (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
         document.getElementById('static-loading')?.remove();
+    });
+
+    describe('InvokeAI Settings, preparation gate, and Activity Dock journey', () => {
+        const discovery = {
+            schemaMode: 'multi_user' as const,
+            dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke',
+            owners: [
+                { ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 },
+                { ownerId: 'owner-b', displayName: 'Odin', imageCount: 3 },
+            ], unassignedImageCount: 0,
+        };
+        const scope = (ownerId: string) => ({ mode: 'owner' as const, ownerId, dbPath: discovery.dbPath, imagesRoot: discovery.imagesRoot });
+        const prepareJourney = (connected = true) => {
+            mocks.renderInvokeSurfaces = true;
+            mocks.settings = createDefaultAppSettings({
+                hasCompletedOnboarding: true, enableAI: false,
+                invokeAiPath: connected ? 'D:/Invoke' : undefined,
+                invokeOwnerSelection: connected ? { dbPath: discovery.dbPath, mode: 'owner', ownerId: 'owner-a' } : undefined,
+            });
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState(connected
+                ? { status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') }
+                : { status: 'idle' });
+            mocks.inspectInvokeConnection.mockResolvedValue(discovery);
+        };
+        const showPendingOwner = async (connected = true) => {
+            fireEvent.click(screen.getByRole('button', { name: 'Open InvokeAI Settings' }));
+            if (!connected) {
+                const path = await screen.findByRole('textbox');
+                fireEvent.change(path, { target: { value: 'D:/Invoke' } });
+                fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+            }
+            fireEvent.click(await screen.findByRole('button', { name: /Odin/ }));
+            fireEvent.click(screen.getByRole('button', { name: connected ? 'Switch view' : 'Connect & Import' }));
+        };
+        const acceptPreparation = (draft: InvokeConnectionDraft, options?: ApplyInvokeConnectionOptions) => {
+            options?.onAccepted?.();
+            mocks.settings = { ...mocks.settings, ...draft };
+            useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                status: 'applying', rootPath: 'D:/Invoke', discovery, scope: scope('owner-b'),
+            });
+            const cancel = vi.fn(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+            useInvokeOwnerScopeStore.getState().setOperation({
+                id: Symbol('owner operation'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
+                phase: 'preparing', viewCommitted: false, progress: { current: 1, total: 3, message: 'Updating InvokeAI image details...' }, cancel,
+            });
+            return cancel;
+        };
+
+        it.each([false, true])('shows accepted preparation immediately without flashing the gallery (existing connection: %s)', async connected => {
+            prepareJourney(connected);
+            const pending = createDeferred<InvokeConnectionApplyOutcome>();
+            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+            render(<App />);
+            await showPendingOwner(connected);
+            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+            // Acceptance precedes settings persistence. Keep the old configured path until the write settles.
+            act(() => {
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                    status: 'applying', rootPath: draft.invokeAiPath, discovery, scope: scope('owner-b'),
+                });
+                useInvokeOwnerScopeStore.getState().setOperation({
+                    id: Symbol('accepted preparation'), origin: 'user', rootPath: draft.invokeAiPath, targetLabel: 'Odin',
+                    phase: 'preparing', viewCommitted: false, progress: { current: 0, total: 0 }, cancel: vi.fn(),
+                });
+                options.onAccepted?.();
+            });
+            expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
+            expect(screen.getByRole('heading', { name: 'Preparing view — Odin' })).toBeTruthy();
+            expect(screen.queryByTestId('app-layout')).toBeNull();
+
+            await act(async () => {
+                mocks.settings = { ...mocks.settings, ...draft };
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: draft.invokeAiPath, discovery, scope: scope('owner-b') });
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'completed', viewCommitted: true }));
+                pending.resolve({ status: 'completed', viewCommitted: true });
+            });
+            expect(screen.getByTestId('app-layout')).toBeTruthy();
+        });
+
+        it('exposes Cancel on the actual App gate and restores the previous gallery only after preparation cancellation settles', async () => {
+            prepareJourney();
+            const previousSettings = mocks.settings;
+            const pending = createDeferred<InvokeConnectionApplyOutcome>();
+            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+            render(<App />);
+            await showPendingOwner();
+            expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy();
+            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+            let cancel!: ReturnType<typeof acceptPreparation>;
+            act(() => { cancel = acceptPreparation(draft, options); });
+            await waitFor(() => expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull());
+            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+            expect(screen.queryByRole('button', { name: 'Close Settings' })).toBeNull();
+            expect(screen.queryByTestId('app-layout')).toBeNull();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(cancel).toHaveBeenCalledTimes(1);
+            expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+            expect(screen.queryByTestId('app-layout')).toBeNull();
+
+            await act(async () => {
+                mocks.settings = previousSettings;
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry: vi.fn() }));
+                pending.resolve({ status: 'aborted', viewCommitted: false });
+            });
+            expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
+            expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
+            expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+        });
+
+        it('shows a neutral result after first-connection cancellation and keeps the unprepared gallery hidden', async () => {
+            prepareJourney(false);
+            const pending = createDeferred<InvokeConnectionApplyOutcome>();
+            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+            render(<App />);
+            await showPendingOwner(false);
+            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+            act(() => { acceptPreparation(draft, options); });
+            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(screen.queryByTestId('app-layout')).toBeNull();
+
+            const retry = vi.fn();
+            await act(async () => {
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({
+                    status: 'error', rootPath: 'D:/Invoke', discovery,
+                    failure: { kind: 'preparation_cancelled', details: 'Preparation cancelled.' },
+                });
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry }));
+                pending.resolve({ status: 'aborted', viewCommitted: false });
+            });
+            expect(screen.getByRole('heading', { name: 'InvokeAI preparation cancelled' })).toBe(document.activeElement);
+            expect(screen.queryByTestId('app-layout')).toBeNull();
+            expect(screen.queryByText('InvokeAI library preparation failed')).toBeNull();
+            expect(retry).not.toHaveBeenCalled();
+            fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+            expect(retry).toHaveBeenCalledTimes(1);
+            fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
+            expect(await screen.findByRole('button', { name: 'Close Settings' })).toBeTruthy();
+            expect(mocks.applyInvokeConnection).toHaveBeenCalledTimes(1);
+        });
+
+        it.each([false, true])('opens the prepared gallery while synchronization is still pending (existing connection: %s)', async connected => {
+            prepareJourney(connected);
+            const pending = createDeferred<InvokeConnectionApplyOutcome>();
+            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+            render(<App />);
+            await showPendingOwner(connected);
+            const [draft, options] = mocks.applyInvokeConnection.mock.calls[0] as [InvokeConnectionDraft, ApplyInvokeConnectionOptions];
+            let cancel!: ReturnType<typeof acceptPreparation>;
+            act(() => { cancel = acceptPreparation(draft, options); });
+            await screen.findByRole('heading', { name: 'Preparing view — Odin' });
+            act(() => {
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-b') });
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
+                    ...current, phase: 'syncing', viewCommitted: true,
+                    progress: { current: 1, total: 3, message: 'Processing images: 1/3' },
+                }));
+            });
+            expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
+            expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
+            expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+            const browse = screen.getByRole('button', { name: 'Browse gallery' });
+            browse.focus();
+            fireEvent.click(browse);
+            expect(mocks.browseGallery).toHaveBeenCalledTimes(1);
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
+                ...current, progress: { current: 2, total: 3, message: 'Processing images: 2/3' },
+            })));
+            expect(document.activeElement).toBe(browse);
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(cancel).toHaveBeenCalledTimes(1);
+            expect(screen.getByTestId('app-layout')).toBeTruthy();
+            expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+            await act(async () => {
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', imported: 1, retry: vi.fn() }));
+                pending.resolve({ status: 'aborted', viewCommitted: true });
+            });
+            expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+            expect(screen.getByText('1 added')).toBeTruthy();
+            expect(document.activeElement).toBe(browse);
+        });
+
+        it('keeps current-owner preparation cancellable inside Settings without focusing the gate behind it', async () => {
+            prepareJourney();
+            const pending = createDeferred<InvokeConnectionApplyOutcome>();
+            mocks.applyInvokeConnection.mockReturnValue(pending.promise);
+            render(<App />);
+            fireEvent.click(screen.getByRole('button', { name: 'Open InvokeAI Settings' }));
+            const sync = await screen.findByRole('button', { name: 'Sync now' });
+            sync.focus();
+            fireEvent.click(sync);
+            expect(mocks.applyInvokeConnection.mock.calls[0]).toHaveLength(1);
+            const cancel = vi.fn(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+            act(() => {
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'applying', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore.getState().setOperation({
+                    id: Symbol('current owner'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Artemis',
+                    phase: 'preparing', viewCommitted: false, progress: { current: 1, total: 2 }, cancel,
+                });
+            });
+            const heading = await screen.findByRole('heading', { name: 'Preparing view — Artemis' });
+            expect(document.activeElement).not.toBe(heading);
+            expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy();
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
+            expect(cancel).toHaveBeenCalledTimes(1);
+            fireEvent.click(screen.getByRole('button', { name: 'Close Settings' }));
+            await waitFor(() => expect(document.activeElement).toBe(heading));
+            expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+            await act(async () => {
+                useInvokeOwnerScopeStore.getState().setOwnerScopeState({ status: 'ready', rootPath: 'D:/Invoke', discovery, scope: scope('owner-a') });
+                useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelled', retry: vi.fn() }));
+                pending.resolve({ status: 'aborted', viewCommitted: false });
+            });
+            expect(screen.getByTestId('app-layout')).toBe(document.activeElement);
+        });
+
+        it('keeps a rejected replacement in Settings for correction', async () => {
+            prepareJourney();
+            mocks.applyInvokeConnection.mockResolvedValue({ status: 'source_unavailable', message: 'InvokeAI source unavailable.', viewCommitted: false });
+            render(<App />);
+            await showPendingOwner();
+            await screen.findByText('InvokeAI source unavailable.');
+            expect(screen.getByRole('button', { name: 'Close Settings' })).toBeTruthy();
+            expect(screen.queryByTestId('invoke-owner-scope-gate')).toBeNull();
+        });
     });
 
     it('waits for settings and collections before rendering the application shell', () => {
@@ -1012,7 +1295,7 @@ describe('App orchestration', () => {
 
         mocks.settings = { ...mocks.settings, invokeSyncBoards: true, syncBoardsToCollections: false };
         view.rerender(<App />);
-        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(false);
+        expect(requireProbe(captured.appLayout, 'AppLayout').isInvokeCollectionCatchupPending).toBe(true);
 
         mocks.settings = { ...mocks.settings, syncBoardsToCollections: true };
         useLibraryStore.setState({ isStartupCatchupPending: false });
@@ -1658,7 +1941,7 @@ describe('App orchestration', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
         await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
         expect(mocks.modals.setInitialSettingsTab).toHaveBeenCalledWith('invokeai');
         expect(mocks.modals.openModal).toHaveBeenCalledWith('settings');
