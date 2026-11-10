@@ -4,7 +4,7 @@ import type { FolderChange } from '../../bindings';
 import { render, act, fireEvent, screen, waitFor } from '../../test/testUtils';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { LibraryProvider, useLibraryContext } from '../LibraryContext';
-import { useSync } from '../SyncContext';
+import { useSync, type InvokeSyncOutcome } from '../SyncContext';
 import { ToastProvider } from '../ToastContext';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useSettingsStore } from '../../stores/settingsStore';
@@ -5319,7 +5319,43 @@ describe('Library Integration (Provider Stack)', () => {
         await act(async () => hook?.startInvokeSync({ mode: 'startup' }));
 
         expect(consoleWarn).toHaveBeenCalledWith(
-            '[Startup Catch-up] Failed to persist Invoke DB snapshot.',
+            '[Startup Catch-up] Failed to read Invoke DB snapshot; saved the sync cursor without it.',
+            expect.any(Error),
+        );
+        consoleWarn.mockRestore();
+    });
+
+    // A full import commits every batch before the checkpoint. Failing the run on a snapshot read would
+    // restore the old cursor, so the next sync would re-read the whole source (138k rows in R18).
+    it.each([
+        ['DB snapshot', () => mocks.getInvokeDbSnapshot.mockRejectedValueOnce(new Error('snapshot unavailable'))],
+        ['source fingerprint', () => mocks.readInvokeSourceFingerprint.mockRejectedValueOnce(new Error('fingerprint unavailable'))],
+    ])('keeps the committed cursor when the post-sync %s read fails', async (_label, failRead) => {
+        const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        let hook: ReturnType<typeof useLibraryContext> | undefined;
+        renderStack(h => hook = h);
+        await waitFor(() => expect(hook?.isLoaded).toBe(true));
+        await act(async () => hook?.setSettings({
+            invokeAiPath: 'D:/AmbitFixtures/InvokeAI',
+            importOrphans: false,
+            lastSyncedAt: 123,
+        }));
+        await waitFor(() => expect(hook?.invokeOwnerScopeState.status).toBe('ready'));
+        mocks.syncImages.mockResolvedValueOnce({
+            ...createNoopInvokeSyncResult(),
+            imported: 1,
+            maxTimestamp: 200,
+            syncedIds: new Set(['image-a']),
+        });
+        failRead();
+
+        let outcome: InvokeSyncOutcome | undefined;
+        await act(async () => { outcome = await hook?.startInvokeSync({ mode: 'manual' }); });
+
+        expect(outcome).toEqual({ status: 'completed' });
+        expect(hook?.settings.lastSyncedAt).toBe(200);
+        expect(consoleWarn).toHaveBeenCalledWith(
+            '[Startup Catch-up] Failed to read Invoke DB snapshot; saved the sync cursor without it.',
             expect.any(Error),
         );
         consoleWarn.mockRestore();

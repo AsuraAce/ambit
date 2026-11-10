@@ -1627,8 +1627,9 @@ export const SyncProvider: React.FC<{
                 return;
             }
 
+            let snapshot: InvokeDbSnapshotState;
             try {
-                const snapshot = await readInvokeDbSnapshotState(
+                snapshot = await readInvokeDbSnapshotState(
                     capturedRootPath,
                     {
                         ...effectiveSnapshotConfig,
@@ -1641,6 +1642,15 @@ export const SyncProvider: React.FC<{
                         ),
                     }
                 );
+            } catch (snapshotError) {
+                throwIfInvokeAborted(ctrl.signal);
+                // Every batch is committed, so keep the cursor and let the next sync stay incremental.
+                // Only the unchanged-source shortcut is lost: the older saved snapshot cannot match a changed source.
+                console.warn('[Startup Catch-up] Failed to read Invoke DB snapshot; saved the sync cursor without it.', snapshotError);
+                await persistCheckpoint({ lastSyncedAt });
+                return;
+            }
+            try {
                 throwIfInvokeAborted(ctrl.signal);
                 updateInvokeOperation(operationId, { phase: 'settling', cancel: undefined });
                 await persistSnapshotState(snapshot);
