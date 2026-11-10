@@ -54,8 +54,6 @@ Startup, including an F5 refresh, still verifies the applied connection and chec
 
 When Privacy Mode is enabled, **Preparing privacy protection** is a separate cover over the gallery. Startup and an owner change verify the masking rules before displaying the new view; unchanged rules reuse the saved privacy index. Synchronization can continue while this cover is visible. It disappears when privacy verification finishes, independently of import completion.
 
-When Privacy Mode is enabled, **Preparing privacy protection** is a separate cover over the gallery. Startup and an owner change verify the masking rules before displaying the new view; unchanged rules reuse the saved privacy index. Synchronization can continue while this cover is visible. It disappears when privacy verification finishes, independently of import completion.
-
 InvokeAI synchronization can:
 
 - import images from the InvokeAI database into Ambit's library
