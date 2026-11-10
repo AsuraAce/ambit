@@ -56,7 +56,12 @@ export const partitionFindings = (vulnerabilities, { today = new Date(), excepti
   return { blocking, excepted };
 };
 
-const describeFinding = (finding) => {
+// cargo audit exits non-zero whenever it lists vulnerabilities, so a non-zero exit is accepted only
+// when findings were listed and every one of them is a covered time-limited exception.
+export const isExpectedAuditExit = (status, { vulnerabilities, excepted }) =>
+  status === 0 || (vulnerabilities.length > 0 && excepted.length === vulnerabilities.length);
+
+const describeFinding =(finding) => {
   const advisory = finding.advisory ?? {};
   const pkg = finding.package ?? {};
   return `${advisory.id ?? 'unknown'} ${pkg.name ?? advisory.package ?? 'unknown'}@${pkg.version ?? 'unknown'}: ${advisory.title ?? 'untitled advisory'}`;
@@ -152,8 +157,7 @@ const runAudit = () => {
     process.exit(1);
   }
 
-  // cargo audit exits non-zero whenever it reports vulnerabilities, including excepted ones.
-  if (result.status !== 0 && vulnerabilities.length === 0) {
+  if (!isExpectedAuditExit(result.status, { vulnerabilities, excepted })) {
     if (result.stderr) {
       console.error(result.stderr);
     }

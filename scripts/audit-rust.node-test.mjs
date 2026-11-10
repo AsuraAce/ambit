@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { partitionFindings, timeLimitedExceptions } from './audit-rust.mjs';
+import { isExpectedAuditExit, partitionFindings, timeLimitedExceptions } from './audit-rust.mjs';
 
 const finding = (id, name, version) => ({ advisory: { id, title: `${id} title` }, package: { name, version } });
 
@@ -34,6 +34,19 @@ test('the exception does not cover another version line or another package', () 
     otherLine,
     otherPackage,
   ]);
+});
+
+test('a non-zero cargo audit exit passes only when every listed finding is a covered exception', () => {
+  const covered = finding('RUSTSEC-2026-0459', 'libsqlite3-sys', '0.30.1');
+  const unrelated = finding('RUSTSEC-2026-9999', 'libsqlite3-sys', '0.30.1');
+  const outcome = (findings) => partitionFindings(findings, { today: BEFORE_EXPIRY });
+
+  assert.equal(isExpectedAuditExit(1, { vulnerabilities: [covered], ...outcome([covered]) }), true);
+  assert.equal(isExpectedAuditExit(1, { vulnerabilities: [], ...outcome([]) }), false);
+  assert.equal(
+    isExpectedAuditExit(1, { vulnerabilities: [covered, unrelated], ...outcome([covered, unrelated]) }),
+    false,
+  );
 });
 
 test('every time-limited exception names its follow-up issue and a valid expiry date', () => {
