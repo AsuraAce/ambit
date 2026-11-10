@@ -7,10 +7,10 @@ This document explains Ambit's pull request, dependency, release, and updater wo
 - Node.js: `24`, declared in `.node-version` and used by every workflow.
 - pnpm: `11.5.3`, pinned by the `packageManager` field in `package.json`.
 - Rust build toolchain: `1.96.0`, pinned in `rust-toolchain.toml` and used for audits and releases.
-- Rust minimum supported version: `1.88.0`, declared in `src-tauri/Cargo.toml` and exercised by the Windows PR job.
+- Rust minimum supported version: `1.90.0`, declared in `src-tauri/Cargo.toml` and exercised by the Windows PR job.
 - GitHub Actions: every external action is pinned to a full commit SHA. The release tag remains in a comment for Dependabot and human review.
 
-Rust `1.77.2` is no longer a valid minimum. The current lockfile contains Edition 2024 crates and dependencies that require Rust `1.88.0`.
+Rust `1.77.2` is no longer a valid minimum. The current lockfile contains Edition 2024 crates and dependencies that require Rust `1.88.0` or newer; the minimum is now `1.90.0`.
 
 ## Pull Request Checks
 
@@ -25,7 +25,7 @@ Protect `main` with these required status checks:
 
 `frontend-checks` validates version consistency, release automation scripts, lint, TypeScript, Vitest coverage, and the production bundle guard.
 
-`rust-tests` runs on Windows with Rust `1.88.0`, restores the Rust cache, verifies generated bindings, runs Rust tests, and performs the Tauri no-bundle build.
+`rust-tests` runs on Windows with Rust `1.90.0`, restores the Rust cache, verifies generated bindings, runs Rust tests, and performs the Tauri no-bundle build.
 
 `dependency-audits` is always present as a stable check:
 
