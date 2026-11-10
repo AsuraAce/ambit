@@ -19,7 +19,7 @@ Purpose: store image records, parsed metadata, facet caches, backups, reparsing 
 Code: `src-tauri/src/db/`
 Interacts with: Rust scanner and metadata modules, TypeScript repo modules under `src/services/db/`, settings-backed folder sync
 Risks: PRAGMA or migration changes affect startup, large-library performance, and data integrity
-Related docs: `docs/refactor.md#persistence-boundary-cleanup`
+Deferred work: [#348](https://github.com/AsuraAce/ambit/issues/348) (persistence boundary and legacy app-data fallbacks)
 
 ### Metadata Extraction, Scanning, and Watcher Flows
 Purpose: scan image and video files, extract metadata and workflows, resolve models, and watch library folders.
@@ -42,7 +42,7 @@ Purpose: generate cached WebP thumbnails, repair or upgrade thumbnail records in
 Code: `src-tauri/src/thumb/`, `src/services/thumbnailService.ts`, `src/hooks/useThumbnailQueue.ts`, `src/hooks/useThumbnailOps.ts`
 Interacts with: SQLite image rows, app-local thumbnail storage, Activity Dock state, maintenance UI, collection thumbnail refresh, and generated Tauri bindings
 Risks: background jobs write in batches and coordinate cancellation, retry backoff, cache-loss recovery, and foreground throttling; changes can create heavy disk or database work on large libraries
-Related docs: `docs/manual/maintenance.md`, `docs/refactor.md#smart-thumbnail-optimization-and-thumbnail-maintenance-ownership`
+Related docs: `docs/manual/maintenance.md`
 
 Smart and Maintenance thumbnail repair share one native engine for source-root validation, generation, outcome persistence, cancellation, and diagnostics. Canonical required and upgradeable views use disjoint partial indexes and keyset ordering. Smart discovers those views incrementally without a startup count, respects failure backoff, and changes between normal and throttled orchestration around foreground activity. Maintenance keeps its exact scoped count and keyset pages, submits explicit image IDs at Fast priority, and bypasses failure backoff; Regenerate Selected additionally forces a real overwrite rather than accepting a cached file. One native job lease prevents Smart and Maintenance from processing concurrently. Manual leases carry a renderer-session owner so a replacement renderer can cancel and reclaim an abandoned operation after any active native batch settles.
 
@@ -97,14 +97,15 @@ Purpose: render the desktop UI, modals, viewer, filter panel, grid/timeline/stat
 Code: `src/index.tsx`, `src/App.tsx`, `src/components/`, `src/features/`
 Interacts with: contexts, stores, hooks, `src/services/`, generated bindings, and Tauri plugins
 Risks: `src/App.tsx` coordinates many cross-feature concerns, so changes can regress areas outside the touched feature. Gallery and Maintenance both route to shared `ImageViewer.tsx` and `VideoViewer.tsx` components under `src/features/viewer/components/`, but each owns context-specific session navigation and action wiring; viewer feature changes must verify both entry points.
-Related docs: `docs/refactor.md#frontend-state-and-shell-coordination`, `docs/refactor.md#shared-image-viewer-integration-boundary`
+Deferred work: [#345](https://github.com/AsuraAce/ambit/issues/345) (app shell and state coordination), [#346](https://github.com/AsuraAce/ambit/issues/346) (shared viewer capabilities)
 
 ### Query, State, and Persistence Adapters
 Purpose: own frontend query flows, transient UI state, JSON-backed settings and recent-search persistence, thumbnail services, and database helper modules.
 Code: `src/contexts/`, `src/stores/`, `src/hooks/`, `src/services/`
 Interacts with: `src/features/`, `src/bindings.ts`, `src-tauri/src/db/`, app-local `library.json`
 Risks: state ownership is split across React Query, contexts, Zustand, and repository adapters, which makes duplicate sources of truth easy to introduce
-Related docs: `docs/progress.md#current-constraints`, `docs/refactor.md#frontend-state-and-shell-coordination`
+Related docs: `docs/progress.md#current-constraints`
+Deferred work: [#345](https://github.com/AsuraAce/ambit/issues/345) (app shell and state coordination)
 
 ### Network Surface
 Purpose: keep the core app local-first while supporting explicit public-beta network paths.
