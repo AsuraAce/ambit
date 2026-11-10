@@ -411,7 +411,7 @@ describe('libraryStore live watch session', () => {
         expect(useLibraryStore.getState().syncStatus).toBe(before);
     });
 
-    it('aborts and clears an active sync controller', () => {
+    it('requests cancellation while retaining busy state until the coordinator settles native work', () => {
         const controller = new AbortController();
         const abort = vi.spyOn(controller, 'abort');
         act(() => {
@@ -421,8 +421,10 @@ describe('libraryStore live watch session', () => {
             useLibraryStore.getState().cancelSync();
         });
         expect(abort).toHaveBeenCalled();
-        expect(useLibraryStore.getState().syncStatus).toBe('idle');
-        expect(useLibraryStore.getState().invokeSyncActivityKind).toBeNull();
+        expect(useLibraryStore.getState().syncStatus).toBe('syncing');
+        expect(useLibraryStore.getState().invokeSyncActivityKind).toBe('manual');
+        expect(useLibraryStore.getState().syncAbortController).toBe(controller);
+        expect(useLibraryStore.getState().syncProgress.message).toBe('Cancelling…');
     });
 
     it('sets direct import state and preserves dock dismissal when import stops', () => {

@@ -1,4 +1,3 @@
-import Database from '@tauri-apps/plugin-sql';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { commands } from '../../bindings';
 import { unwrap } from '../../utils/spectaUtils';
@@ -7,6 +6,7 @@ import { insertImagesBatch } from '../db/imageRepo';
 import { AIImage, GeneratorTool, ImageMetadata } from '../../types';
 import { getFilename, normalizePath } from '../../utils/pathUtils';
 import { getInvokeSourceDatabase } from './connection';
+import { throwIfInvokeAborted } from './abort';
 
 const normalizeRelativePath = (path: string): string =>
     normalizePath(path).replace(/^\/+/, '');
@@ -48,8 +48,10 @@ export const scanForOrphans = async (
     rootPath: string,
     syncedIds: Set<string>,
     onProgress: (phase: string, current: number, total: number) => void,
-    options: { importIntermediates?: boolean } = { importIntermediates: false }
+    options: { importIntermediates?: boolean; signal?: AbortSignal } = { importIntermediates: false }
 ): Promise<number> => {
+    const { signal } = options;
+    throwIfInvokeAborted(signal);
     let imagesRoot = rootPath.replace(/[\\/]$/, '');
     const isFile = rootPath.endsWith('.db');
     if (isFile) {
@@ -61,7 +63,9 @@ export const scanForOrphans = async (
     onProgress('Scanning disk for untracked files...', 0, 0);
 
     const ambitDb = await getDb();
+    throwIfInvokeAborted(signal);
     const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
+    throwIfInvokeAborted(signal);
     const ambitExistingIds = new Set(existingRows.map(r => r.id));
 
     let knownIntermediates = new Set<string>();
@@ -69,15 +73,19 @@ export const scanForOrphans = async (
         try {
             const dbPath = isFile ? rootPath : `${imagesRoot}/databases/invokeai.db`;
             const invokeDb = await getInvokeSourceDatabase(dbPath);
+            throwIfInvokeAborted(signal);
             const tableInfo = await invokeDb.select<Array<{ name: string }>>('PRAGMA table_info(images)');
+            throwIfInvokeAborted(signal);
             const hasImageSubfolder = tableInfo.some(column => column.name === 'image_subfolder');
             const interRows = await invokeDb.select<Array<{ image_name: string, image_subfolder?: string | null }>>(
                 `SELECT image_name ${hasImageSubfolder ? ', image_subfolder' : ''} FROM images WHERE is_intermediate = 1`
             );
+            throwIfInvokeAborted(signal);
             knownIntermediates = new Set(interRows.flatMap((r) =>
                 buildIntermediateMatchKeys(r.image_name, r.image_subfolder)
             ));
         } catch (e) {
+            throwIfInvokeAborted(signal);
             console.error("[Hybrid Sync] ERROR loading intermediates:", e);
         }
     }
@@ -85,7 +93,9 @@ export const scanForOrphans = async (
     let allFiles: string[] = [];
     try {
         allFiles = await unwrap(commands.listInvokeaiImages(imagesRoot));
+        throwIfInvokeAborted(signal);
     } catch (e) {
+        throwIfInvokeAborted(signal);
         console.error('[OrphanScan] Failed to list images on disk:', e);
         return 0;
     }
@@ -117,6 +127,7 @@ export const scanForOrphans = async (
 
     const CHUNK_SIZE = 100;
     for (let i = 0; i < total; i += CHUNK_SIZE) {
+        throwIfInvokeAborted(signal);
         const chunk = orphans.slice(i, i + CHUNK_SIZE);
         const chunkAbsPaths = chunk.map(rel => {
             return `${imagesRoot}/${rel}`.replace(/\\/g, '/').replace(/\/+/g, '/');
@@ -124,6 +135,7 @@ export const scanForOrphans = async (
 
         try {
             const scanResults = await unwrap(commands.scanImagesBulk(chunkAbsPaths, null, true, false, null, null));
+            throwIfInvokeAborted(signal);
 
             const batchToInsert: AIImage[] = [];
             for (let j = 0; j < chunk.length; j++) {
@@ -167,15 +179,20 @@ export const scanForOrphans = async (
                 };
 
                 batchToInsert.push(newImg);
-                processed++;
             }
 
             if (batchToInsert.length > 0) {
+                throwIfInvokeAborted(signal);
                 await insertImagesBatch(batchToInsert);
+                processed += batchToInsert.length;
             }
-        } catch (e) { }
+        } catch (e) {
+            throwIfInvokeAborted(signal);
+        }
         onProgress('Importing untracked files...', processed, total);
+        throwIfInvokeAborted(signal);
     }
 
+    throwIfInvokeAborted(signal);
     return processed;
 };

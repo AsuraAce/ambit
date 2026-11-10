@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type Database from '@tauri-apps/plugin-sql';
 import { startupDiagnostics } from '../../../utils/startupDiagnostics';
+import { commands } from '../../../bindings';
+import { inspectInvokeConnection } from '../connection';
 import { diagnoseInvokeAI, discoverInvokeOwners, fetchBoardMappings as fetchBoardMappingsImpl, fetchBoards, getInvokeSourceDatabase, invalidateInvokeSourceDatabase, readInvokeSourceFingerprint, resolveInvokePaths, testConnection } from '../connection';
 
 const fetchBoardMappings = (db: Database) => fetchBoardMappingsImpl(db, {
@@ -24,6 +26,34 @@ const createDb = (select: (sql: string) => Promise<unknown[]>) => ({
 });
 
 describe('InvokeAI connection helpers', () => {
+    it('rejects a missing candidate without letting SQLite create a source database', async () => {
+        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
+            dbPath: 'D:/Missing/databases/invokeai.db', files: [],
+        } });
+        await expect(inspectInvokeConnection('D:/Missing')).rejects.toThrow('existing InvokeAI database');
+        expect(sqlMock.load).not.toHaveBeenCalled();
+    });
+
+    it('inspects an existing candidate without importing or changing its database', async () => {
+        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
+        } });
+        const db = createDb(async () => [{ name: 'image_name' }]);
+        sqlMock.load.mockResolvedValue(db);
+        await expect(inspectInvokeConnection(' D:/Invoke ')).resolves.toMatchObject({ schemaMode: 'legacy' });
+        expect(db.select).toHaveBeenCalledExactlyOnceWith('PRAGMA table_info(images)');
+    });
+
+    it('rejects a non-Invoke database rather than treating missing tables as legacy ownership', async () => {
+        vi.spyOn(commands, 'getInvokeDbSnapshot').mockResolvedValue({ status: 'ok', data: {
+            dbPath: 'D:/Invoke/databases/invokeai.db',
+            files: [{ path: 'D:/Invoke/databases/invokeai.db', exists: true, size: 100, modifiedMs: 1 }],
+        } });
+        sqlMock.load.mockResolvedValue(createDb(async () => []));
+        await expect(inspectInvokeConnection('D:/Invoke')).rejects.toThrow('images table');
+    });
+
     it('separates source opening from schema discovery without logging source values', async () => {
         const finish = vi.fn();
         const start = vi.spyOn(startupDiagnostics, 'start').mockReturnValue(finish);

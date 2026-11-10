@@ -14,6 +14,8 @@ interface StartupPreparationCardProps {
     statusMessage: string;
     reassurance?: string;
     progress?: StartupPreparationProgress;
+    headingRef?: React.Ref<HTMLHeadingElement>;
+    actions?: React.ReactNode;
 }
 
 export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
@@ -24,6 +26,8 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
     statusMessage,
     reassurance,
     progress,
+    headingRef,
+    actions,
 }) => {
     const isDeterminate = (progress?.total ?? 0) > 0;
     const current = Math.min(progress?.current ?? 0, progress?.total ?? 0);
@@ -44,7 +48,7 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                     <p className="text-xs font-black uppercase tracking-[0.22em] text-gray-500">
                         {phaseLabel}
                     </p>
-                    <h1 className="mt-1 text-xl font-black tracking-tight text-gray-900 dark:text-white">
+                    <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined} className="mt-1 text-xl font-black tracking-tight text-gray-900 outline-none dark:text-white">
                         {title}
                     </h1>
                 </div>
@@ -61,7 +65,15 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
 
             <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-white/10 dark:bg-black/20">
                 <div className="flex items-start justify-between gap-4 text-xs font-semibold text-gray-600 dark:text-gray-300">
-                    <span role="status" aria-live="polite" aria-atomic="true">{statusMessage}</span>
+                    <div className="flex min-w-0 items-start gap-2">
+                        {!isDeterminate && (
+                            <LoaderCircle
+                                className="h-4 w-4 shrink-0 animate-spin text-sage-600 motion-reduce:animate-none dark:text-sage-400"
+                                aria-hidden="true"
+                            />
+                        )}
+                        <span role="status" aria-live="polite" aria-atomic="true">{statusMessage}</span>
+                    </div>
                     {isDeterminate ? (
                         <span className="shrink-0 font-mono text-gray-500" aria-hidden="true">
                             {current.toLocaleString()} / {progress!.total.toLocaleString()}
@@ -82,13 +94,9 @@ export const StartupPreparationCard: React.FC<StartupPreparationCardProps> = ({
                             style={{ width: `${percentage}%` }}
                         />
                     </div>
-                ) : (
-                    <LoaderCircle
-                        className="mt-3 h-4 w-4 animate-spin text-sage-600 motion-reduce:animate-none dark:text-sage-400"
-                        aria-hidden="true"
-                    />
-                )}
+                ) : null}
             </div>
+            {actions && <div className="mt-5 flex justify-end">{actions}</div>}
         </section>
     );
 };

@@ -312,6 +312,82 @@ describe('WatcherContext', () => {
         expect(mocks.startInvokeSync).not.toHaveBeenCalled();
     });
 
+    it('drops pending Invoke events at cancellation and settlement while permitting later fresh events', async () => {
+        mocks.settings = { ...baseSettings(), invokeAiPath: 'C:/InvokeAI' };
+        useLibraryStore.setState({ isLiveWatching: true });
+        renderProvider();
+        await advanceInit();
+        mocks.startInvokeSync.mockClear();
+        const change = [{ kind: 'modify' as const, paths: ['C:/InvokeAI/databases/invokeai.db-wal'] }];
+
+        await act(async () => mocks.watcherCallback?.(change));
+        act(() => useLibraryStore.getState().markInvokeSyncCancelled());
+        // A native event can arrive while the cancelled operation is still settling.
+        await act(async () => mocks.watcherCallback?.(change));
+        act(() => useLibraryStore.getState().markInvokeSyncCancelled());
+        await act(async () => vi.advanceTimersByTime(1000));
+
+        expect(useLibraryStore.getState().invokeSyncCancellationGeneration).toBe(2);
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+        expect(useLibraryStore.getState().isLiveWatching).toBe(true);
+
+        await act(async () => mocks.watcherCallback?.(change));
+        await act(async () => vi.advanceTimersByTime(500));
+
+        expect(mocks.startInvokeSync).toHaveBeenCalledOnce();
+        expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({
+            mode: 'live', perfContext: expect.objectContaining({ eventCount: 1, pathCount: 1 }),
+        }));
+    });
+
+    it('rejects the Invoke part of an event delayed by generic rename work without dropping the generic changes', async () => {
+        mocks.settings = {
+            ...baseSettings(),
+            invokeAiPath: 'C:/InvokeAI',
+            monitoredFolders: [{ id: 'active', path: 'C:/active', isActive: true, imageCount: 0 }],
+        };
+        useLibraryStore.setState({ isLiveWatching: true });
+        let releaseRename!: () => void;
+        mocks.moveImagePathIdentities.mockReturnValueOnce(new Promise<void>(resolve => { releaseRename = resolve; }));
+        renderProvider();
+        await advanceInit();
+        mocks.startInvokeSync.mockClear();
+        let pendingEvent: void | Promise<void>;
+        act(() => {
+            pendingEvent = mocks.watcherCallback?.([
+                { kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db'] },
+                { kind: 'rename', paths: ['C:/active/old.png', 'C:/active/new.png'] },
+            ]);
+        });
+        expect(mocks.moveImagePathIdentities).toHaveBeenCalledOnce();
+        act(() => useLibraryStore.getState().markInvokeSyncCancelled());
+        act(() => useLibraryStore.getState().markInvokeSyncCancelled());
+        await act(async () => { releaseRename(); await pendingEvent; });
+        await act(async () => vi.advanceTimersByTime(500));
+
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+        expect(mocks.markImagePathIdentitiesMissing).toHaveBeenCalledWith(['C:/active/old.png']);
+        expect(mocks.startTargetedLiveSync).toHaveBeenCalledWith(
+            ['C:/active/new.png'],
+            expect.objectContaining({ source: 'generic-folder-watch' })
+        );
+    });
+
+    it('does not run obsolete activation catch-up after asynchronous watcher initialization settles', async () => {
+        mocks.settings = { ...baseSettings(), invokeAiPath: 'C:/InvokeAI' };
+        useLibraryStore.setState({ isLiveWatching: true });
+        let finishInitialization!: () => void;
+        mocks.startWatching.mockReturnValueOnce(new Promise<void>(resolve => { finishInitialization = resolve; }));
+        renderProvider();
+        await advanceInit();
+        expect(mocks.startWatching).toHaveBeenCalledOnce();
+
+        act(() => useLibraryStore.getState().markInvokeSyncCancelled());
+        await act(async () => finishInitialization());
+
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
+    });
+
     it('supports missing monitored-folder configuration', async () => {
         mocks.settings = { ...baseSettings(), monitoredFolders: undefined as never };
         useLibraryStore.setState({ isLiveWatching: true });
@@ -347,5 +423,20 @@ describe('WatcherContext', () => {
         await act(async () => vi.advanceTimersByTime(500));
 
         expect(mocks.startInvokeSync).toHaveBeenCalledWith(expect.objectContaining({ mode: 'live' }));
+    });
+
+    it('does not drain a retained Invoke timer if cancellation happens after the watcher subscription unmounts', async () => {
+        mocks.settings = { ...baseSettings(), invokeAiPath: 'C:/InvokeAI' };
+        useLibraryStore.setState({ isLiveWatching: true, liveWatchSessionCloseRequested: true });
+        const view = renderProvider();
+        await advanceInit();
+        mocks.startInvokeSync.mockClear();
+        await act(async () => mocks.watcherCallback?.([{ kind: 'modify', paths: ['C:/InvokeAI/databases/invokeai.db-wal'] }]));
+        view.unmount();
+
+        useLibraryStore.getState().markInvokeSyncCancelled();
+        await act(async () => vi.advanceTimersByTime(500));
+
+        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
     });
 });

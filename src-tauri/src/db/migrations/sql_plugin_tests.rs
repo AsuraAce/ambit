@@ -183,6 +183,57 @@ fn sql_plugin_ipc_uses_only_the_generated_database() {
     assert!(path.is_file());
 }
 
+#[test]
+fn sql_plugin_bound_json_name_set_preserves_invoke_path_repair_scope() {
+    let directory = GeneratedBenchmarkDir::new();
+    let sql = MockSql::new(&directory.path);
+    let db = sql.load(&directory.path.join("generated-invoke-path-names.db"));
+    ipc(
+        &sql.webview,
+        "execute",
+        json!({"db":db,"query":"CREATE TABLE images (image_name TEXT PRIMARY KEY, image_subfolder TEXT, thumbnail_name TEXT, created_at TEXT NOT NULL, user_id TEXT NOT NULL, is_intermediate INTEGER NOT NULL)","values":[]}),
+    );
+    for (name, owner, intermediate) in [
+        ("IMAGE-0000.PNG", "selected", 0),
+        ("image-0749.png", "other", 0),
+        ("image-1499.png", "selected", 1),
+        ("folder\\Mixed.PNG", "selected", 0),
+        ("quote'\"name.png", "selected", 0),
+        ("not-requested.png", "selected", 0),
+    ] {
+        ipc(
+            &sql.webview,
+            "execute",
+            json!({"db":db,"query":"INSERT INTO images VALUES (?, NULL, NULL, '2026-01-01', ?, ?)","values":[name,owner,intermediate]}),
+        );
+    }
+    // One JSON bind replaces the former 500-name batches. Names remain data,
+    // including quotes and normalized separators, and cannot widen owner scope.
+    let mut names: Vec<String> = (0..1500)
+        .map(|index| format!("image-{index:04}.png"))
+        .collect();
+    names.extend(["folder/mixed.png".into(), "quote'\"name.png".into()]);
+    let query = r"
+        SELECT i.image_name, i.image_subfolder, i.thumbnail_name
+        FROM images i
+        WHERE LOWER(REPLACE(i.image_name, '\', '/')) IN (SELECT value FROM json_each(?))
+          AND i.user_id = ? AND i.is_intermediate = 0
+        ORDER BY i.created_at ASC, i.image_name ASC
+    ";
+    assert_eq!(
+        ipc(
+            &sql.webview,
+            "select",
+            json!({"db":db,"query":query,"values":[serde_json::to_string(&names).unwrap(),"selected"]}),
+        ),
+        json!([
+            {"image_name":"IMAGE-0000.PNG","image_subfolder":null,"thumbnail_name":null},
+            {"image_name":"folder\\Mixed.PNG","image_subfolder":null,"thumbnail_name":null},
+            {"image_name":"quote'\"name.png","image_subfolder":null,"thumbnail_name":null}
+        ])
+    );
+}
+
 pub(super) fn wait_until(label: &str, condition: impl Fn() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(10);
     while !condition() {
@@ -511,7 +562,7 @@ fn maintenance_m80_upgrade_and_reload_preserve_counts() {
         &upgraded.as_array().unwrap()[..history.as_array().unwrap().len()],
         history.as_array().unwrap()
     );
-    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 84);
+    assert_eq!(upgraded.as_array().unwrap().last().unwrap()["version"], 85);
     ipc(&sql.webview, "close", json!({"db":db}));
     sql.load(&path);
     assert_eq!(

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '../../../../test/testUtils';
 import { AppSettings } from '../../../../types';
 import { ConnectionsTab } from '../ConnectionsTab';
+import type { InvokeConnectionDraftSession } from '../../hooks/useInvokeConnectionDraft';
+import type { InvokeOwnerDiscoverySession } from '../../hooks/useInvokeOwnerDiscovery';
 
 vi.mock('..', () => ({
     FoldersTab: () => <div>Folders panel</div>,
@@ -25,9 +27,28 @@ const settings: AppSettings = {
     enableAI: false,
 };
 
+const invokeDraftSession: InvokeConnectionDraftSession = {
+    draft: {
+        invokeAiPath: '', invokeSyncFavorites: true, invokeSyncBoards: true, starredAs: 'favorite',
+        importIntermediates: false, importOrphans: false,
+    },
+    isDirty: false,
+    update: vi.fn(),
+    selectOwner: vi.fn(),
+    discard: vi.fn(),
+};
+const invokeOwnerDiscoverySession: InvokeOwnerDiscoverySession = {
+    discovery: undefined,
+    inspect: vi.fn(),
+    invalidate: vi.fn(),
+    reset: vi.fn(),
+    isInspecting: false,
+    canUseAppliedDiscovery: true,
+};
+
 describe('ConnectionsTab', () => {
     it('shows Resources as a dedicated sub-tab separate from Folders', () => {
-        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} />);
+        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} invokeDraftSession={invokeDraftSession} invokeOwnerDiscoverySession={invokeOwnerDiscoverySession} />);
 
         expect(screen.getByRole('button', { name: /resources/i })).not.toBeNull();
         expect(screen.getByText('Folders panel')).not.toBeNull();
@@ -39,7 +60,7 @@ describe('ConnectionsTab', () => {
 
     it('switches through every connection panel and responds to deep-link changes', () => {
         const { rerender } = render(
-            <ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="invokeai" />
+            <ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="invokeai" invokeDraftSession={invokeDraftSession} invokeOwnerDiscoverySession={invokeOwnerDiscoverySession} />
         );
         expect(screen.getByText('InvokeAI panel')).toBeTruthy();
 
@@ -48,12 +69,12 @@ describe('ConnectionsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: /comfyui/i }));
         expect(screen.getByText('ComfyUI panel')).toBeTruthy();
 
-        rerender(<ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="folders" />);
+        rerender(<ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="folders" invokeDraftSession={invokeDraftSession} invokeOwnerDiscoverySession={invokeOwnerDiscoverySession} />);
         expect(screen.getByText('Folders panel')).toBeTruthy();
     });
 
     it('switches subtabs without slide, zoom, or transition-all motion', () => {
-        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} />);
+        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} invokeDraftSession={invokeDraftSession} invokeOwnerDiscoverySession={invokeOwnerDiscoverySession} />);
 
         const resourcesTab = screen.getByRole('button', { name: /resources/i });
         expect(resourcesTab.className).toContain('transition-colors');
@@ -64,7 +85,7 @@ describe('ConnectionsTab', () => {
         expect(panel?.className).not.toMatch(/animate-in|slide-in|zoom-in/);
     });
     it('supplies a harmless default close callback to the SD WebUI panel', () => {
-        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="a1111" />);
+        render(<ConnectionsTab settings={settings} setSettings={vi.fn()} initialSubTab="a1111" invokeDraftSession={invokeDraftSession} invokeOwnerDiscoverySession={invokeOwnerDiscoverySession} />);
 
         fireEvent.click(screen.getByRole('button', { name: 'SD WebUI panel' }));
     });

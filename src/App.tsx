@@ -17,6 +17,8 @@ import { useSettingsStore } from './stores/settingsStore';
 import { useCollectionStore } from './stores/collectionStore';
 import { getCollectionCount } from './utils/collectionCount';
 import { useLibraryStore } from './stores/libraryStore';
+import { useInvokeOwnerScopeStore } from './stores/invokeOwnerScopeStore';
+import { invokeSyncTrace } from './utils/invokeSyncTrace';
 import { useAppHandlers } from './hooks/useAppHandlers';
 import { VirtualGridHandle } from './features/library/components/VirtualGrid';
 import { ViewMode, LayoutMode, AIImage, ContextMenuState, Collection, SmartCollection, isVideoAsset, type InvokeOwnerSelection } from './types';
@@ -354,7 +356,6 @@ export default function App() {
     } = useSync();
     const isInvokeCollectionCatchupPending = Boolean(settings.invokeAiPath?.trim())
         && settings.invokeSyncBoards !== false
-        && settings.syncBoardsToCollections
         && (isStartupCatchupPending || (isInvokeSyncActive && !isLiveSyncing));
     const clearOwnerScopedView = useCallback(() => {
         referenceNavigationRequestRef.current += 1;
@@ -369,6 +370,9 @@ export default function App() {
         clearAllFilters();
         clearSelection();
     }, [clearAllFilters, clearSelection, setSelectedImageIndex, setViewingImageId]);
+    const hasExplicitInvokePreparation = useInvokeOwnerScopeStore(state => state.operation?.origin === 'user'
+        && !state.operation.viewCommitted
+        && ['preparing', 'cancelling', 'settling'].includes(state.operation.phase));
     const {
         isOwnerScopeAdmitted: isInvokeOwnerScopeAdmittedForRoot,
         isOwnerScopeBlocking: isInvokeOwnerScopeBlocking,
@@ -380,6 +384,7 @@ export default function App() {
         configuredRoot: settings.invokeAiPath,
         ownerScopeState: invokeOwnerScopeState,
         isInitialStartupPresentation,
+        isExplicitPreparation: hasExplicitInvokePreparation && invokeOwnerScopeState.status === 'applying',
         onClearStaleView: clearOwnerScopedView,
     });
     const isInvokeOwnerScopeOfflineReady = isInvokeOwnerScopeAdmittedForRoot
@@ -429,10 +434,8 @@ export default function App() {
         await selectInvokeOwnerScope(selection);
     }, [selectInvokeOwnerScope]);
     const handleInvokeOwnerRetry = useCallback(async () => {
-        if (await retryInvokeOwnerScope()) {
-            await startInvokeSync({ mode: 'startup' });
-        }
-    }, [retryInvokeOwnerScope, startInvokeSync]);
+        await retryInvokeOwnerScope();
+    }, [retryInvokeOwnerScope]);
     const openInvokeSettings = useCallback(() => {
         modals.setInitialSettingsTab('invokeai');
         modals.openModal('settings');
@@ -751,6 +754,33 @@ export default function App() {
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const workspaceRef = useRef<HTMLElement>(null);
     const gridRef = useRef<VirtualGridHandle>(null);
+    const invokeOperationId = useInvokeOwnerScopeStore(state => state.operation?.id);
+    const invokeViewCommitted = useInvokeOwnerScopeStore(state => state.operation?.viewCommitted);
+    const focusedInvokeOperationRef = useRef<symbol | undefined>(undefined);
+    const pendingInvokeFocusRef = useRef(false);
+
+    useEffect(() => {
+        if (!invokeSyncTrace.enabled) return;
+        const frame = window.requestAnimationFrame(() => invokeSyncTrace.presentationCommitted(
+            invokeOperationId,
+            privacyExposureBlocked,
+            isLoaded && isLibraryReady && !isInvokeOwnerScopeBlocking
+                && !privacyExposureBlocked && !modals.isAnyModalOpen,
+        ));
+        return () => window.cancelAnimationFrame(frame);
+    }, [invokeOperationId, privacyExposureBlocked, isLoaded, isLibraryReady, isInvokeOwnerScopeBlocking, modals.isAnyModalOpen]);
+
+    useEffect(() => {
+        if (shouldRenderInvokeOwnerScopeGate) pendingInvokeFocusRef.current = true;
+        if (!invokeOperationId || focusedInvokeOperationRef.current === invokeOperationId
+            || isInvokeOwnerScopeBlocking || modals.isAnyModalOpen || !isLoaded || privacyExposureBlocked
+            || (!invokeViewCommitted && !pendingInvokeFocusRef.current)) return;
+        if (workspaceRef.current) {
+            workspaceRef.current.focus({ preventScroll: true });
+            focusedInvokeOperationRef.current = invokeOperationId;
+            pendingInvokeFocusRef.current = false;
+        }
+    }, [invokeOperationId, invokeViewCommitted, isInvokeOwnerScopeBlocking, shouldRenderInvokeOwnerScopeGate, modals.isAnyModalOpen, isLoaded, privacyExposureBlocked]);
 
     useEffect(() => {
         const timer = setTimeout(() => setShowSupportPulse(false), 5000);
@@ -954,6 +984,7 @@ export default function App() {
                     onSelect={handleInvokeOwnerSelection}
                     onRetry={handleInvokeOwnerRetry}
                     onOpenSettings={openInvokeSettings}
+                    autoFocus={!modals.isAnyModalOpen}
                 />
             ) : (!isInvokeOwnerScopeBlocking || isRetainingPreviousRuntimeView) ? (
                 <div className="flex min-h-0 flex-1">

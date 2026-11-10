@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ActivityDock } from '../ActivityDock';
 import { createInitialLiveWatchSessionState, useLibraryStore } from '../../../stores/libraryStore';
 import { invoke } from '@tauri-apps/api/core';
+import { useInvokeOwnerScopeStore, type InvokeOperationState } from '../../../stores/invokeOwnerScopeStore';
 
 vi.mock('framer-motion', () => ({
     AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -47,10 +48,27 @@ const resetLibraryStore = () => {
     });
 };
 
+const createInvokeOperation = (overrides: Partial<InvokeOperationState> = {}): InvokeOperationState => ({
+    id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
+    phase: 'syncing', viewCommitted: true,
+    progress: { current: 0, total: 0, message: 'Catching up images and boards...' },
+    cancel: vi.fn(),
+    ...overrides,
+});
+
+const completeInvokeOperation = (overrides: Partial<InvokeOperationState> = {}) => {
+    useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
+        ...current, phase: 'completed', message: 'Synchronization completed.', hasChanges: true,
+        imported: 0, updated: 0, ...overrides,
+    }));
+    useLibraryStore.setState({ syncStatus: 'idle' });
+};
+
 describe('ActivityDock', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         resetLibraryStore();
+        useInvokeOwnerScopeStore.getState().resetOwnerScopeState();
     });
 
     afterEach(() => {
@@ -70,6 +88,345 @@ describe('ActivityDock', () => {
         expect(screen.getByText('You can keep using the library while Ambit synchronizes InvokeAI.')).toBeTruthy();
         expect(screen.getByText('Cancel')).toBeTruthy();
         expect(screen.queryByText('Live Watch')).toBeNull();
+    });
+
+    it('shows the committed owner operation and retains cancellation until settlement', () => {
+        const cancel = vi.fn();
+        useInvokeOwnerScopeStore.getState().setOperation({
+            id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin',
+            phase: 'syncing', viewCommitted: true,
+            progress: { current: 2, total: 5, message: 'Processing images: 2/5' },
+            imported: 1, updated: 0, cancel,
+        });
+        render(<ActivityDock />);
+        expect(screen.getByText('InvokeAI · Odin')).toBeTruthy();
+        expect(screen.getByRole('status').textContent).toBe('Processing images: 2/5');
+        expect(screen.getByText('1 added')).toBeTruthy();
+        expect(screen.getByText('0 updated')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(cancel).toHaveBeenCalledTimes(1);
+        act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'cancelling' })));
+        expect((screen.getByRole('button', { name: 'Cancelling…' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it.each(['cancelled', 'failed'] as const)('retains the %s result with retry below other active work and dismisses only that result', phase => {
+        const retry = vi.fn();
+        useInvokeOwnerScopeStore.getState().setOperation({
+            id: Symbol('sync'), origin: 'user', rootPath: 'D:/Invoke', targetLabel: 'Odin', phase,
+            viewCommitted: true, progress: { current: 2, total: 5 }, message: `Sync ${phase}.`, retry,
+        });
+        useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });
+        render(<ActivityDock />);
+        expect(screen.getByText('Duplicate Scan')).toBeTruthy();
+        expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+        act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+        expect(screen.getByRole('status').textContent).toBe(`Sync ${phase}.`);
+        expect(screen.queryByTestId('activity-dock-progress-rail')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(retry).toHaveBeenCalledTimes(1);
+        fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
+        expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+        expect(useLibraryStore.getState().isActivityDockDismissed).toBe(false);
+    });
+
+    describe('InvokeAI presentation timing', () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+            vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+        });
+
+        it('keeps a quick unchanged startup silent without falling back to legacy sync progress', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            useLibraryStore.setState({
+                syncStatus: 'syncing', invokeSyncActivityKind: 'startup',
+                syncProgress: { current: 0, total: 0, message: 'Legacy catch-up progress' },
+            });
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2499));
+            expect(screen.queryByText('InvokeAI · Odin')).toBeNull();
+            expect(screen.queryByText('Legacy catch-up progress')).toBeNull();
+
+            act(() => completeInvokeOperation({ hasChanges: false }));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('reveals sustained startup after 2.5 seconds despite progress changes and shows its final result', () => {
+            const operation = createInvokeOperation({ origin: 'startup' });
+            useInvokeOwnerScopeStore.getState().setOperation(operation);
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2000));
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({
+                ...current, progress: { current: 1, total: 2, message: 'Checking boards...' },
+            })));
+            act(() => vi.advanceTimersByTime(499));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByRole('status').textContent).toBe('Checking boards...');
+            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+            expect(operation.cancel).toHaveBeenCalledOnce();
+
+            act(() => completeInvokeOperation({ hasChanges: false }));
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it.each([
+            ['board-only changes', true],
+            ['unknown change evidence', undefined],
+        ] as const)('shows quick startup success for %s even with zero image counts', (_case, hasChanges) => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(100));
+            act(() => completeInvokeOperation({ hasChanges }));
+            expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
+            expect(screen.getByText('0 added')).toBeTruthy();
+            expect(screen.getByText('0 updated')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(5000));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('keeps user-triggered startup-mode work immediate and gives unchanged success five seconds', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation());
+            useLibraryStore.setState({ invokeSyncActivityKind: 'startup' });
+            render(<ActivityDock />);
+            expect(screen.getByRole('status').textContent).toBe('Catching up images and boards...');
+            act(() => completeInvokeOperation({ hasChanges: false }));
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getByRole('status').textContent).toBe('Synchronization completed.');
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('reports repaired paths as a separate detail from imported and updated image counts', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({
+                phase: 'completed', imported: 2, updated: 3, pathsRepaired: 7,
+            }));
+            render(<ActivityDock />);
+            expect(screen.getByText('2 added')).toBeTruthy();
+            expect(screen.getByText('3 updated')).toBeTruthy();
+            expect(screen.getByText('7 paths repaired')).toBeTruthy();
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, pathsRepaired: 0 })));
+            expect(screen.queryByText('0 paths repaired')).toBeNull();
+        });
+
+        it('pauses only the remaining success time while hovered', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2000));
+            fireEvent.mouseEnter(screen.getByRole('status'));
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.getByRole('status')).toBeTruthy();
+            fireEvent.mouseLeave(screen.getByRole('status'));
+            act(() => vi.advanceTimersByTime(2999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('pauses while keyboard focus moves within the dock without taking focus', () => {
+            render(<><button type="button">Continue browsing</button><ActivityDock /></>);
+            const outside = screen.getByRole('button', { name: 'Continue browsing' });
+            outside.focus();
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' })));
+            expect(document.activeElement).toBe(outside);
+            act(() => vi.advanceTimersByTime(2000));
+            act(() => screen.getByRole('button', { name: 'Minimize Activity Details' }).focus());
+            act(() => vi.advanceTimersByTime(10000));
+            act(() => screen.getByRole('button', { name: 'Dismiss Activity Details' }).focus());
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => outside.focus());
+            act(() => vi.advanceTimersByTime(2999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('pauses the remaining success time while the document is hidden', () => {
+            const visibility = vi.spyOn(document, 'visibilityState', 'get');
+            visibility.mockReturnValue('visible');
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2000));
+            visibility.mockReturnValue('hidden');
+            fireEvent(document, new Event('visibilitychange'));
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.getByRole('status')).toBeTruthy();
+            visibility.mockReturnValue('visible');
+            fireEvent(document, new Event('visibilitychange'));
+            act(() => vi.advanceTimersByTime(2999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+            visibility.mockRestore();
+        });
+
+        it('starts the success budget when it becomes visible and pauses while higher-priority work replaces it', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            useLibraryStore.setState({ isScanningDuplicates: true, duplicateScanProgress: { current: 1, total: 2 } });
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            act(() => vi.advanceTimersByTime(2000));
+            act(() => useLibraryStore.setState({ isScanningDuplicates: true }));
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => useLibraryStore.setState({ isScanningDuplicates: false }));
+            act(() => vi.advanceTimersByTime(2999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('keeps a success available while minimized until its details have been visible for five seconds', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            useLibraryStore.setState({ isActivityDockMinimized: true });
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(10000));
+            fireEvent.click(screen.getByRole('button', { name: 'Expand Activity Details' }));
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('resets success timing for the next operation and cannot clear it from a stale callback', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(4000));
+            const next = createInvokeOperation({ phase: 'completed', message: 'Next synchronization completed.' });
+            act(() => {
+                useInvokeOwnerScopeStore.getState().setOperation(next);
+                vi.advanceTimersByTime(1000);
+            });
+            expect(useInvokeOwnerScopeStore.getState().operation?.id).toBe(next.id);
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getByRole('status').textContent).toBe('Next synchronization completed.');
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('does not inherit the previous startup reveal timer', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2000));
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' })));
+            act(() => vi.advanceTimersByTime(2499));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByRole('status')).toBeTruthy();
+        });
+
+        it.each(['cancelled', 'failed'] as const)('retains quick startup %s with Retry until manual dismissal', phase => {
+            const retry = vi.fn();
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            render(<ActivityDock />);
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase, retry })));
+            act(() => vi.advanceTimersByTime(15000));
+            fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+            expect(retry).toHaveBeenCalledOnce();
+            fireEvent.click(screen.getByRole('button', { name: 'Dismiss Activity Details' }));
+            expect(useInvokeOwnerScopeStore.getState().operation).toBeNull();
+        });
+
+        it('does not dismiss a failure if the same operation changes after success', () => {
+            const operation = createInvokeOperation({ phase: 'completed' });
+            useInvokeOwnerScopeStore.getState().setOperation(operation);
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(4000));
+            act(() => {
+                useInvokeOwnerScopeStore.getState().setOperation({ ...operation, phase: 'failed', retry: vi.fn() });
+                vi.advanceTimersByTime(1000);
+            });
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+        });
+
+        it('keeps preparation separate from background startup presentation', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup', phase: 'preparing', viewCommitted: false }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(current => current && ({ ...current, phase: 'syncing', viewCommitted: true })));
+            act(() => vi.advanceTimersByTime(2499));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByRole('status')).toBeTruthy();
+        });
+
+        it('does not show an unchanged startup result that was displaced for its whole operation', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            useLibraryStore.setState({ isImporting: true, importProgress: { current: 1, total: 2 } });
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(5000));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => completeInvokeOperation({ hasChanges: false }));
+            act(() => useLibraryStore.setState({ isImporting: false }));
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('does not consume success time before the document first becomes visible', () => {
+            const visibility = vi.spyOn(document, 'visibilityState', 'get');
+            visibility.mockReturnValue('hidden');
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(10000));
+            expect(useInvokeOwnerScopeStore.getState().operation?.phase).toBe('completed');
+            visibility.mockReturnValue('visible');
+            fireEvent(document, new Event('visibilitychange'));
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+            visibility.mockRestore();
+        });
+
+        it('preserves the success budget while Live Watch work and its close grace take priority', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' }));
+            render(<ActivityDock />);
+            act(() => vi.advanceTimersByTime(2000));
+            act(() => useLibraryStore.getState().startLiveWatchSession('invoke', { phase: 'syncing' }));
+            act(() => vi.advanceTimersByTime(6000));
+            expect(screen.getByText('Live Watch')).toBeTruthy();
+            expect(screen.queryByRole('status')).toBeNull();
+            act(() => useLibraryStore.getState().updateLiveWatchSession({ phase: 'summary', progress: null }));
+            act(() => vi.advanceTimersByTime(1499));
+            expect(screen.getByText('Live Watch')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(2999));
+            expect(screen.getByRole('status')).toBeTruthy();
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryByRole('status')).toBeNull();
+        });
+
+        it('cleans up timers across duplicate mounts and React effect replay', () => {
+            useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ origin: 'startup' }));
+            const view = render(<React.StrictMode><ActivityDock /><ActivityDock /></React.StrictMode>);
+            act(() => vi.advanceTimersByTime(100));
+            act(() => completeInvokeOperation({ hasChanges: false }));
+            act(() => vi.advanceTimersByTime(10000));
+            expect(screen.queryAllByRole('status')).toHaveLength(0);
+
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' })));
+            expect(screen.getAllByRole('status')).toHaveLength(2);
+            act(() => vi.advanceTimersByTime(4999));
+            expect(screen.getAllByRole('status')).toHaveLength(2);
+            act(() => vi.advanceTimersByTime(1));
+            expect(screen.queryAllByRole('status')).toHaveLength(0);
+
+            act(() => useInvokeOwnerScopeStore.getState().setOperation(createInvokeOperation({ phase: 'completed' })));
+            view.unmount();
+            act(() => vi.advanceTimersByTime(10000));
+            expect(useInvokeOwnerScopeStore.getState().operation?.phase).toBe('completed');
+        });
     });
 
     it('identifies startup synchronization as InvokeAI catch-up', () => {
@@ -1019,6 +1376,7 @@ describe('ActivityDock', () => {
         });
         render(<ActivityDock />);
         fireEvent.click(screen.getByText('Cancel'));
-        expect(useLibraryStore.getState().syncStatus).toBe('idle');
+        expect(abortController.signal.aborted).toBe(true);
+        expect(useLibraryStore.getState().syncStatus).toBe('syncing');
     });
 });

@@ -1,442 +1,373 @@
 import * as React from 'react';
-import { fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
+import { act, fireEvent, render, screen, waitFor } from '../../../../test/testUtils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSettings } from '../../../../types';
-import type { InvokeOwnerScopeState } from '../../../../contexts/SyncContext';
+import type { AppSettings, InvokeOwnerDiscovery } from '../../../../types';
+import { useInvokeConnectionDraft } from '../../hooks/useInvokeConnectionDraft';
+import { useInvokeOwnerDiscovery } from '../../hooks/useInvokeOwnerDiscovery';
 import { InvokeAITab } from '../InvokeAITab';
 
 const mocks = vi.hoisted(() => ({
-    developerFeatures: true,
-    invoke: vi.fn(),
-    open: vi.fn(),
-    testConnection: vi.fn(),
-    diagnoseInvokeAI: vi.fn(),
-    selectInvokeOwnerScope: vi.fn(),
-    retryInvokeOwnerScope: vi.fn(),
-    startInvokeSync: vi.fn(),
-    getSuppressedInvokeCollections: vi.fn(),
-    restoreInvokeCollection: vi.fn(),
-    refreshCollections: vi.fn(),
-    isInvokeSyncActive: false,
-    isLiveSyncing: false,
-    ownerScopeState: { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } } as InvokeOwnerScopeState
+    inspect: vi.fn(), apply: vi.fn(), open: vi.fn(), getSuppressedInvokeCollections: vi.fn(), refreshCollections: vi.fn(),
+    diagnose: vi.fn(), invoke: vi.fn(), developerFeatures: false,
+    cancelSync: vi.fn(), isInvokeSyncActive: false, isLiveSyncing: false, syncStatus: 'idle' as 'idle' | 'syncing',
+    ownerScopeState: { status: 'ready' } as Record<string, unknown>,
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }));
-vi.mock('../../../../services/invoke/connection', () => ({ testConnection: mocks.testConnection, diagnoseInvokeAI: mocks.diagnoseInvokeAI }));
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('../../../../services/invoke/connection', () => ({
+    inspectInvokeConnection: mocks.inspect,
+    resolveInvokePaths: (root: string) => ({ dbPath: `${root.replace(/\\/g, '/').replace(/\/$/, '')}/databases/invokeai.db`, imagesRoot: root }),
+    diagnoseInvokeAI: mocks.diagnose,
+}));
+vi.mock('../../../../services/db/collectionRepo', () => ({ getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections, restoreInvokeCollection: vi.fn() }));
+vi.mock('../../../../stores/collectionStore', () => ({ useCollectionStore: (select: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) => select({ refreshCollections: mocks.refreshCollections }) }));
 vi.mock('../../../../utils/settingsUtils', () => ({ areDeveloperFeaturesEnabled: () => mocks.developerFeatures }));
-vi.mock('../../../../services/db/collectionRepo', () => ({
-    getSuppressedInvokeCollections: mocks.getSuppressedInvokeCollections,
-    restoreInvokeCollection: mocks.restoreInvokeCollection,
+vi.mock('../SyncSection', () => ({
+    SyncSection: ({ draftSession }: { draftSession: { draft: { importIntermediates: boolean }; update: (update: { importIntermediates: boolean }) => void } }) => (
+        <button type="button" onClick={() => draftSession.update({ importIntermediates: !draftSession.draft.importIntermediates })}>
+            Import intermediates: {String(draftSession.draft.importIntermediates)}
+        </button>
+    ),
+    InvokeRecoverySection: () => <div>sync recovery</div>,
 }));
-vi.mock('../../../../stores/collectionStore', () => ({
-    useCollectionStore: (selector: (state: { refreshCollections: typeof mocks.refreshCollections }) => unknown) =>
-        selector({ refreshCollections: mocks.refreshCollections }),
-}));
-vi.mock('../SyncSection', () => ({ SyncSection: () => <div>sync-section</div> }));
 vi.mock('../../../../contexts/LibraryContext', () => ({
-    useLibrary: () => ({
-        invokeOwnerScopeState: mocks.ownerScopeState,
-        selectInvokeOwnerScope: mocks.selectInvokeOwnerScope,
-        retryInvokeOwnerScope: mocks.retryInvokeOwnerScope,
-        startInvokeSync: mocks.startInvokeSync,
-        isInvokeSyncActive: mocks.isInvokeSyncActive,
-        isLiveSyncing: mocks.isLiveSyncing,
-    }),
+    useLibrary: () => ({ invokeOwnerScopeState: mocks.ownerScopeState, retryInvokeOwnerScope: vi.fn(), startInvokeSync: vi.fn(), applyInvokeConnection: mocks.apply, cancelSync: mocks.cancelSync, syncState: { status: mocks.syncStatus }, isInvokeSyncActive: mocks.isInvokeSyncActive, isLiveSyncing: mocks.isLiveSyncing }),
 }));
 
+const legacyDiscovery = (root: string): InvokeOwnerDiscovery => ({ schemaMode: 'legacy', dbPath: `${root}/databases/invokeai.db`, imagesRoot: root, owners: [], unassignedImageCount: 0 });
 const settings = (invokeAiPath?: string) => ({ invokeAiPath } as AppSettings);
-const applySettings = (initial: AppSettings) => {
-    let current = initial;
-    const setSettings = vi.fn((update: React.SetStateAction<AppSettings>) => {
-        current = typeof update === 'function' ? update(current) : update;
-    });
-    return { setSettings, current: () => current };
+const DraftHarness: React.FC<{ settings: AppSettings; setSettings: React.Dispatch<React.SetStateAction<AppSettings>>; onClose?: () => void }> = ({ settings, setSettings, onClose }) => {
+    const draftSession = useInvokeConnectionDraft(settings, true);
+    const ownerDiscoverySession = useInvokeOwnerDiscovery(draftSession.draft.invokeAiPath);
+    return <InvokeAITab settings={settings} setSettings={setSettings} draftSession={draftSession} ownerDiscoverySession={ownerDiscoverySession} onClose={onClose} />;
+};
+const DraftNavigationHarness: React.FC<{ settings: AppSettings }> = ({ settings }) => {
+    const [showInvoke, setShowInvoke] = React.useState(true);
+    const draftSession = useInvokeConnectionDraft(settings, true);
+    const ownerDiscoverySession = useInvokeOwnerDiscovery(draftSession.draft.invokeAiPath);
+    return <>
+        <button type="button" onClick={() => setShowInvoke(value => !value)}>Toggle Invoke tab</button>
+        {showInvoke && <InvokeAITab settings={settings} setSettings={vi.fn()} draftSession={draftSession} ownerDiscoverySession={ownerDiscoverySession} />}
+    </>;
 };
 
-describe('InvokeAITab', () => {
+describe('InvokeAITab draft connection flow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mocks.developerFeatures = true;
+        mocks.inspect.mockImplementation(async (root: string) => legacyDiscovery(root));
+        mocks.apply.mockResolvedValue({ status: 'completed' });
+        mocks.getSuppressedInvokeCollections.mockResolvedValue([]);
+        mocks.ownerScopeState = { status: 'ready' };
+        mocks.developerFeatures = false;
+        mocks.diagnose.mockResolvedValue({ totalInDb: 0, categories: [], origins: [] });
+        mocks.invoke.mockResolvedValue({ imageFiles: 0, thumbnailFiles: 0, subfolders: {} });
         mocks.isInvokeSyncActive = false;
         mocks.isLiveSyncing = false;
-        mocks.ownerScopeState = { status: 'ready', discovery: { schemaMode: 'legacy', dbPath: 'D:/Invoke/databases/invokeai.db', imagesRoot: 'D:/Invoke', owners: [], unassignedImageCount: 0 } };
-        mocks.open.mockResolvedValue(null);
-        mocks.testConnection.mockResolvedValue({ success: true, message: 'Connected' });
-        mocks.diagnoseInvokeAI.mockResolvedValue({ totalInDb: 2, categories: [], origins: [] });
-        mocks.invoke.mockResolvedValue({ imageFiles: 2, thumbnailFiles: 1, subfolders: {} });
-        mocks.getSuppressedInvokeCollections.mockResolvedValue([]);
-        mocks.restoreInvokeCollection.mockResolvedValue(undefined);
-        mocks.refreshCollections.mockResolvedValue(undefined);
-        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mocks.syncStatus = 'idle';
     });
 
-    it('disables path actions without a path and hides developer diagnostics when disabled', () => {
-        mocks.developerFeatures = false;
-        render(<InvokeAITab settings={settings()} setSettings={vi.fn()} />);
-        expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.queryByText('System Audit')).toBeNull();
-        expect(screen.getByText('sync-section')).toBeTruthy();
+    it('does not apply typed edits until the explicit connection action', async () => {
+        const setSettings = vi.fn();
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={setSettings} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        expect(setSettings).not.toHaveBeenCalled();
+        expect(mocks.apply).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('Connected to a legacy InvokeAI database.');
+        expect(mocks.apply).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ invokeAiPath: 'D:/Candidate' })));
     });
 
-    it('restores hidden InvokeAI collections and marks unavailable sources', async () => {
-        mocks.getSuppressedInvokeCollections.mockResolvedValueOnce([{
-            id: 'hidden-board',
-            name: 'Local label',
-            invokeSourceName: 'Upstream label',
-            invokeSourcePresent: false,
-            invokeOwnerId: 'owner-a',
-        }]);
-        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
-
-        expect(await screen.findByText('Hidden InvokeAI collections')).toBeTruthy();
-        expect(screen.getByText('Local label')).toBeTruthy();
-        expect(screen.getByText('Source unavailable')).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: 'Restore Local label' }));
-
-        await waitFor(() => expect(mocks.restoreInvokeCollection).toHaveBeenCalledWith('hidden-board'));
-        await waitFor(() => expect(mocks.refreshCollections).toHaveBeenCalledWith(false, {
-            consistency: 'authoritative',
-        }));
-        await waitFor(() => expect(screen.queryByText('Local label')).toBeNull());
+    it('closes a replacement only after acceptance and does not restore Settings focus after unmount', async () => {
+        const onClose = vi.fn();
+        let onAccepted: (() => void) | undefined;
+        let finish!: (outcome: { status: 'completed'; viewCommitted: boolean }) => void;
+        mocks.apply.mockImplementation((_draft, options?: { onAccepted?: () => void }) => {
+            onAccepted = options?.onAccepted;
+            return new Promise(resolve => { finish = resolve; });
+        });
+        const { unmount } = render(<DraftHarness settings={settings()} setSettings={vi.fn()} onClose={onClose} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('Connected to a legacy InvokeAI database.');
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+        expect(onClose).not.toHaveBeenCalled();
+        act(() => onAccepted?.());
+        expect(onClose).toHaveBeenCalledTimes(1);
+        unmount();
+        const galleryControl = document.createElement('button');
+        document.body.append(galleryControl);
+        galleryControl.focus();
+        await act(async () => finish({ status: 'completed', viewCommitted: true }));
+        expect(document.activeElement).toBe(galleryControl);
+        galleryControl.remove();
     });
 
-    it('locks the configured root while owner visibility is changing', () => {
+    it('keeps validation failure and current-owner Sync now inside Settings', async () => {
+        const onClose = vi.fn();
+        mocks.apply.mockResolvedValueOnce({ status: 'failed', message: 'Source unavailable.', viewCommitted: false });
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} onClose={onClose} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('Connected to a legacy InvokeAI database.');
+        fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+        await screen.findByText('Source unavailable.');
+        expect(onClose).not.toHaveBeenCalled();
+        expect(mocks.apply.mock.calls[0]).toHaveLength(1);
+    });
+
+    it.each([false, true])('requires a fresh check after an equivalent typed path edit (previous failure: %s)', async (failedCheck) => {
+        const setSettings = vi.fn();
+        mocks.ownerScopeState = { status: 'ready', discovery: legacyDiscovery('D:/Applied') };
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={setSettings} />);
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+        if (failedCheck) {
+            mocks.inspect.mockRejectedValueOnce(new Error('database unavailable'));
+            fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+            await screen.findByText('database unavailable');
+        }
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Applied/' } });
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+        expect(mocks.apply).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('Connected to a legacy InvokeAI database.');
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
+    });
+
+    it('retains required validation across tab navigation and restores the applied connection on discard', () => {
+        mocks.ownerScopeState = { status: 'ready', discovery: legacyDiscovery('D:/Applied') };
+        render(<DraftNavigationHarness settings={settings('D:/Applied')} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Applied/' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(true);
+        // Make a substantive draft change so Discard changes is available.
+        fireEvent.click(screen.getByRole('button', { name: /import intermediates: false/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+        expect(mocks.inspect).not.toHaveBeenCalled();
+        expect(mocks.apply).not.toHaveBeenCalled();
+    });
+
+    it.each(['', '   '])('can discard a cleared configured path (%j) without applying or inspecting', (emptyPath) => {
+        const setSettings = vi.fn();
+        mocks.ownerScopeState = { status: 'ready', discovery: legacyDiscovery('D:/Applied') };
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={setSettings} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: emptyPath } });
+        expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(true);
+        fireEvent.click(screen.getByRole('button', { name: 'Discard changes' }));
+        expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('D:/Applied');
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+        expect(screen.queryByRole('button', { name: 'Discard changes' })).toBeNull();
+        expect(mocks.inspect).not.toHaveBeenCalled();
+        expect(mocks.apply).not.toHaveBeenCalled();
+        expect(setSettings).not.toHaveBeenCalled();
+    });
+
+    it('keeps multi-user selection local until the final action', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 1 });
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByRole('button', { name: /artemis/i });
+        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        expect(mocks.apply).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } })));
+    });
+
+    it('retains checked discovery, owner selection, and import options across tab navigation', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 1 });
+        render(<DraftNavigationHarness settings={settings()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByRole('button', { name: /artemis/i });
+        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
+        fireEvent.click(screen.getByRole('button', { name: /import intermediates: false/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle Invoke tab' }));
+
+        expect(screen.getByRole('button', { name: /import intermediates: true/i })).toBeTruthy();
+        expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({
+            invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' },
+            importIntermediates: true,
+        })));
+        expect(mocks.inspect).toHaveBeenCalledTimes(1);
+    });
+
+    it('auto-selects only a sole represented owner and hides the selector', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 2 }], unassignedImageCount: 0 });
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText(/selected it automatically/i);
+        expect(screen.queryByRole('button', { name: /all users/i })).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ invokeOwnerSelection: { dbPath: 'D:/Candidate/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } })));
+    });
+
+    it('replaces a stale saved owner with the sole discovered owner', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', owners: [{ ownerId: 'owner-b', displayName: 'B', imageCount: 2 }], unassignedImageCount: 0 });
+        render(<DraftHarness settings={{ ...settings('D:/Applied'), invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-a' } }} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText(/selected it automatically/i);
+        expect(screen.getByRole('button', { name: 'Switch view' })).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Switch view' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({
+            invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'owner', ownerId: 'owner-b' },
+        })));
+    });
+
+    it('confirms All users only at the final action and restores focus when cancelled', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', imageCount: 2 }, { ownerId: 'owner-b', imageCount: 1 }], unassignedImageCount: 0 });
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByRole('button', { name: /all users/i });
+        fireEvent.click(screen.getByRole('button', { name: /all users/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Connect & Import' }));
+
+        expect(screen.getByText('Show images from all InvokeAI users?')).toBeTruthy();
+        expect(mocks.apply).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Connect & Import' })));
+        expect(mocks.apply).not.toHaveBeenCalled();
+    });
+
+    it('requires explicit selection when the only owner has unassigned content', async () => {
+        mocks.inspect.mockResolvedValue({ schemaMode: 'multi_user', dbPath: 'D:/Candidate/databases/invokeai.db', imagesRoot: 'D:/Candidate', owners: [{ ownerId: 'owner-a', imageCount: 2 }], unassignedImageCount: 1, unassignedBoardCount: 1 });
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByRole('button', { name: /unnamed owner/i });
+        expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(true);
+        expect(screen.getByRole('button', { name: /all users/i })).toBeTruthy();
+    });
+
+    it('does not reconfirm a cached applied All users view for Sync now', async () => {
+        mocks.ownerScopeState = {
+            status: 'ready',
+            discovery: { schemaMode: 'multi_user', dbPath: 'D:/Applied/databases/invokeai.db', imagesRoot: 'D:/Applied', owners: [{ ownerId: 'owner-a', imageCount: 2 }], unassignedImageCount: 0 },
+        };
+        render(<DraftHarness settings={{ ...settings('D:/Applied'), invokeOwnerSelection: { dbPath: 'D:/Applied/databases/invokeai.db', mode: 'all' } }} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Sync now' }));
+        await waitFor(() => expect(mocks.apply).toHaveBeenCalledTimes(1));
+        expect(screen.queryByText('Show images from all InvokeAI users?')).toBeNull();
+    });
+
+    it('describes cancelled preparation as a retryable choice when Settings reopens', () => {
+        mocks.ownerScopeState = {
+            status: 'error', rootPath: 'D:/Applied', discovery: legacyDiscovery('D:/Applied'),
+            failure: { kind: 'preparation_cancelled', details: 'Preparation cancelled.' },
+        };
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        expect(screen.getByText('InvokeAI preparation cancelled')).toBeTruthy();
+        expect(screen.getByText(/saved for retry/i)).toBeTruthy();
+        expect(screen.queryByText('InvokeAI library preparation failed')).toBeNull();
+        expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+        expect(mocks.apply).not.toHaveBeenCalled();
+    });
+
+    it('blocks apply after a failed inspection even when a saved discovery exists', async () => {
+        mocks.ownerScopeState = { status: 'ready', discovery: legacyDiscovery('D:/Applied') };
+        mocks.inspect.mockRejectedValueOnce(new Error('database unavailable'));
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('database unavailable');
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('revokes an earlier successful discovery when a recheck of the same source fails', async () => {
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('Connected to a legacy InvokeAI database.');
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(false);
+
+        mocks.inspect.mockRejectedValueOnce(new Error('database unavailable'));
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText('database unavailable');
+        expect((screen.getByRole('button', { name: 'Sync now' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('keeps hidden-collection restoration secondary and disables it while a draft is pending', async () => {
+        mocks.getSuppressedInvokeCollections.mockResolvedValue([{ id: 'board-a', name: 'Board A', invokeSourcePresent: true }]);
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        await screen.findByText('Hidden InvokeAI collections');
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        expect((screen.getByRole('button', { name: 'Restore Board A' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('runs diagnostics against the applied path and keeps diagnostic failures non-blocking', async () => {
+        mocks.developerFeatures = true;
+        mocks.diagnose.mockResolvedValueOnce({ totalInDb: 2, categories: [], origins: [] });
+        mocks.invoke.mockResolvedValueOnce({ imageFiles: 1, thumbnailFiles: 0, subfolders: {} });
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Run Audit' }));
+        await screen.findByText('Count Discrepancy Found');
+        expect(mocks.diagnose).toHaveBeenCalledWith('D:/Applied');
+        expect(mocks.invoke).toHaveBeenCalledWith('audit_invokeai_folder', { path: 'D:/Applied' });
+
+        mocks.diagnose.mockRejectedValueOnce(new Error('audit unavailable'));
+        fireEvent.click(screen.getByRole('button', { name: 'Run Audit' }));
+        await waitFor(() => expect(error).toHaveBeenCalledWith(expect.objectContaining({ message: 'audit unavailable' })));
+        error.mockRestore();
+    });
+
+    it('keeps a foreground import cancellable from Settings', () => {
+        mocks.isInvokeSyncActive = true;
+        mocks.syncStatus = 'syncing';
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel sync' }));
+        expect(mocks.cancelSync).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not show a cancel control while InvokeAI is only preparing a connection', () => {
+        mocks.isInvokeSyncActive = true;
+        mocks.syncStatus = 'idle';
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
+        expect(screen.queryByRole('button', { name: 'Cancel sync' })).toBeNull();
+    });
+
+    it('shows no owner selector for legacy databases', async () => {
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Candidate' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        await screen.findByText(/predates per-user ownership/i);
+        expect(screen.queryByRole('button', { name: /all users/i })).toBeNull();
+    });
+
+    it('does not surface a completed discovery for a root replaced while testing', async () => {
+        let resolveDiscovery: (value: InvokeOwnerDiscovery) => void = () => undefined;
+        mocks.inspect.mockImplementationOnce(() => new Promise(resolve => { resolveDiscovery = resolve; }));
+        render(<DraftHarness settings={settings()} setSettings={vi.fn()} />);
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/Old' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Test Connection' }));
+        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'D:/New' } });
+        resolveDiscovery(legacyDiscovery('D:/Old'));
+        await waitFor(() => expect(screen.queryByText('Connected to a legacy InvokeAI database.')).toBeNull());
+        expect((screen.getByRole('button', { name: 'Connect & Import' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('formats owner preparation progress with the active locale', () => {
         mocks.ownerScopeState = {
             status: 'applying',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [
-                    { ownerId: 'owner-a', imageCount: 1 },
-                    { ownerId: 'owner-b', imageCount: 1 },
-                ],
-                unassignedImageCount: 0,
-            },
             progress: { current: 500, total: 2000, message: 'Updating InvokeAI image details...' },
         };
-        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
+        render(<DraftHarness settings={settings('D:/Applied')} setSettings={vi.fn()} />);
 
-        const rootInput = screen.getByRole('textbox') as HTMLInputElement;
-        const browseButton = screen.getByText('Browse').closest('button') as HTMLButtonElement;
-        expect(rootInput.disabled).toBe(true);
-        expect(rootInput.readOnly).toBe(false);
-        expect(rootInput.getAttribute('aria-disabled')).toBe('true');
-        expect(browseButton.disabled).toBe(true);
-        expect(browseButton.getAttribute('aria-disabled')).toBe('true');
-        expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
-        expect(screen.getByRole('status').textContent).toContain('Updating InvokeAI image details...');
-        expect(screen.getByRole('status').textContent).toContain('500 / 2,000');
-    });
-
-    it('locks root and owner controls during quiet startup synchronization', () => {
-        mocks.isInvokeSyncActive = true;
-        mocks.ownerScopeState = {
-            status: 'ready',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [
-                    { ownerId: 'owner-a', imageCount: 1 },
-                    { ownerId: 'owner-b', imageCount: 1 },
-                ],
-                unassignedImageCount: 0,
-            },
-        };
-        render(<InvokeAITab settings={{
-            ...settings('D:/Invoke'),
-            invokeOwnerSelection: {
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                mode: 'owner',
-                ownerId: 'owner-a',
-            },
-        }} setSettings={vi.fn()} />);
-
-        expect((screen.getByRole('textbox') as HTMLInputElement).disabled).toBe(true);
-        expect(screen.getAllByRole('button', { name: /unnamed owner/i })
-            .every(button => (button as HTMLButtonElement).disabled)).toBe(true);
-        expect(screen.getByText(/locked until synchronization finishes/i)).toBeTruthy();
-    });
-
-    it('keeps owner-scope presentation stable during background Live Watch', () => {
-        mocks.isInvokeSyncActive = true;
-        mocks.isLiveSyncing = true;
-        const setSettings = vi.fn();
-        mocks.ownerScopeState = {
-            status: 'ready',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [
-                    { ownerId: 'owner-a', imageCount: 1 },
-                    { ownerId: 'owner-b', imageCount: 1 },
-                ],
-                unassignedImageCount: 0,
-            },
-        };
-        render(<InvokeAITab settings={{
-            ...settings('D:/Invoke'),
-            invokeOwnerSelection: {
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                mode: 'owner',
-                ownerId: 'owner-a',
-            },
-        }} setSettings={setSettings} />);
-
-        const rootInput = screen.getByRole('textbox') as HTMLInputElement;
-        const browseButton = screen.getByText('Browse').closest('button') as HTMLButtonElement;
-        expect(rootInput.disabled).toBe(false);
-        expect(rootInput.readOnly).toBe(true);
-        expect(rootInput.getAttribute('aria-disabled')).toBe('true');
-        expect(browseButton.disabled).toBe(false);
-        expect(browseButton.getAttribute('aria-disabled')).toBe('true');
-        fireEvent.change(rootInput, { target: { value: 'D:/Other' } });
-        fireEvent.click(browseButton);
-        expect(setSettings).not.toHaveBeenCalled();
-        expect(mocks.open).not.toHaveBeenCalled();
-        expect(screen.getAllByRole('button', { name: /unnamed owner/i })
-            .every(button => !(button as HTMLButtonElement).disabled)).toBe(true);
-        expect(screen.queryByText(/locked until synchronization finishes/i)).toBeNull();
-    });
-
-    it('shows display names with stable IDs and requires confirmation for All users', async () => {
-        mocks.ownerScopeState = {
-            status: 'selection_required',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [{
-                    ownerId: 'owner-a',
-                    displayName: 'Artemis',
-                    imageCount: 12,
-                    intermediateImageCount: 4,
-                }],
-                unassignedImageCount: 2,
-            },
-        };
-        mocks.selectInvokeOwnerScope.mockResolvedValue(true);
-        mocks.startInvokeSync.mockResolvedValue(undefined);
-        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
-
-        expect(screen.getByText('Artemis')).toBeTruthy();
-        expect(screen.getByText('owner-a')).toBeTruthy();
-        expect(screen.getByText('8 standard images')).toBeTruthy();
-        expect(screen.getByText('4 intermediates')).toBeTruthy();
-        expect(screen.queryByText(/email/i)).toBeTruthy();
-        fireEvent.click(screen.getByRole('button', { name: /artemis/i }));
-        expect(mocks.selectInvokeOwnerScope).toHaveBeenCalledWith({
-            dbPath: 'D:/Invoke/databases/invokeai.db',
-            mode: 'owner',
-            ownerId: 'owner-a',
-        });
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
-
-        fireEvent.click(screen.getByRole('button', { name: /all users/i }));
-        expect(screen.getByText('Show images from all InvokeAI users?')).toBeTruthy();
-        expect(screen.getByText(/2 unassigned image rows/i)).toBeTruthy();
-        expect(mocks.selectInvokeOwnerScope).toHaveBeenCalledTimes(1);
-        fireEvent.click(screen.getByRole('button', { name: 'Show All Users' }));
-        await waitFor(() => expect(mocks.selectInvokeOwnerScope).toHaveBeenLastCalledWith({
-            dbPath: 'D:/Invoke/databases/invokeai.db',
-            mode: 'all',
-        }));
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
-    });
-
-    it('explains offline and blocking failures without exposing raw errors by default', async () => {
-        mocks.ownerScopeState = {
-            status: 'offline_ready',
-            rootPath: 'D:/Invoke',
-            isRetrying: true,
-            error: 'file is locked',
-            failure: { kind: 'source_unavailable', details: 'file is locked' },
-        };
-        const view = render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
-
-        expect(screen.getByText('Using the last verified local view')).toBeTruthy();
-        expect(screen.getByText(/Sync and Live Watch are paused/i)).toBeTruthy();
-        expect(screen.queryByText('Preparing your InvokeAI library...')).toBeNull();
-        expect((screen.getByRole('button', { name: /retrying/i }) as HTMLButtonElement).disabled).toBe(true);
-
-        mocks.ownerScopeState = {
-            status: 'error',
-            rootPath: 'D:/Invoke',
-            error: 'visibility transaction failed',
-            failure: { kind: 'preparation_failed', details: 'visibility transaction failed' },
-        };
-        mocks.retryInvokeOwnerScope.mockResolvedValueOnce(true);
-        mocks.startInvokeSync.mockResolvedValueOnce(undefined);
-        view.rerender(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
-
-        expect(screen.getByText('InvokeAI library preparation failed')).toBeTruthy();
-        expect((screen.getByText('Technical details').parentElement as HTMLDetailsElement).open).toBe(false);
-        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-        await waitFor(() => expect(mocks.retryInvokeOwnerScope).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(mocks.startInvokeSync).toHaveBeenCalledWith({ mode: 'startup' }));
-    });
-
-    it('summarizes and auto-selects a single represented owner without showing All users', () => {
-        mocks.ownerScopeState = {
-            status: 'ready',
-            rootPath: 'D:/Invoke',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [{ ownerId: 'owner-a', displayName: 'Artemis', imageCount: 12 }],
-                unassignedImageCount: 0,
-            },
-        };
-        const view = render(<InvokeAITab settings={{
-            ...settings('D:/Invoke'),
-            invokeOwnerSelection: {
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                mode: 'owner',
-                ownerId: 'owner-a',
-            },
-        }} setSettings={vi.fn()} />);
-
-        expect(screen.getByText(/found one InvokeAI owner and selected it automatically/i)).toBeTruthy();
-        expect(screen.getByText(/12 images/i)).toBeTruthy();
-        expect(screen.queryByRole('button', { name: /artemis/i })).toBeNull();
-        expect(screen.queryByRole('button', { name: /all users/i })).toBeNull();
-        expect(mocks.selectInvokeOwnerScope).not.toHaveBeenCalled();
-        expect(mocks.startInvokeSync).not.toHaveBeenCalled();
-        view.unmount();
-    });
-
-    it('keeps owner controls available when a single image owner has unassigned boards', () => {
-        mocks.ownerScopeState = {
-            status: 'ready',
-            rootPath: 'D:/Invoke',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [{ ownerId: 'system', displayName: 'System', imageCount: 154_719, boardCount: 6 }],
-                unassignedImageCount: 0,
-                unassignedBoardCount: 231,
-            },
-        };
-
-        render(<InvokeAITab settings={settings('D:/Invoke')} setSettings={vi.fn()} />);
-
-        expect(screen.getByRole('button', { name: /system/i })).toBeTruthy();
-        expect(screen.getByRole('button', { name: /all users/i })).toBeTruthy();
-        expect(screen.getByText(/231 boards have no owner/i)).toBeTruthy();
-        expect(screen.queryByText(/selected it automatically/i)).toBeNull();
-    });
-
-    it('shows a non-color marker for the selected All users scope', () => {
-        mocks.ownerScopeState = {
-            status: 'ready',
-            discovery: {
-                schemaMode: 'multi_user',
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                imagesRoot: 'D:/Invoke',
-                owners: [
-                    { ownerId: 'owner-a', imageCount: 1 },
-                    { ownerId: 'owner-b', imageCount: 1 },
-                ],
-                unassignedImageCount: 0,
-            },
-        };
-
-        render(<InvokeAITab settings={{
-            ...settings('D:/Invoke'),
-            invokeOwnerSelection: {
-                dbPath: 'D:/Invoke/databases/invokeai.db',
-                mode: 'all',
-            },
-        }} setSettings={vi.fn()} />);
-
-        const allUsers = screen.getByRole('button', { name: /All users/i });
-        expect(allUsers.querySelector('.lucide-check')).toBeTruthy();
-        fireEvent.click(allUsers);
-        expect(screen.queryByText('Show images from all InvokeAI users?')).toBeNull();
-        expect(mocks.selectInvokeOwnerScope).not.toHaveBeenCalled();
-    });
-
-    it('updates typed and browsed paths while ignoring cancelled selections', async () => {
-        const harness = applySettings(settings('old'));
-        mocks.open.mockResolvedValueOnce('C:/InvokeAI').mockResolvedValueOnce(null).mockResolvedValueOnce(['invalid']);
-        render(<InvokeAITab settings={harness.current()} setSettings={harness.setSettings} />);
-
-        fireEvent.change(screen.getByRole('textbox'), { target: { value: 'typed' } });
-        expect(harness.current().invokeAiPath).toBe('typed');
-        fireEvent.click(screen.getByText('Browse'));
-        await waitFor(() => expect(harness.current().invokeAiPath).toBe('C:/InvokeAI'));
-        fireEvent.click(screen.getByText('Browse'));
-        await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(2));
-        fireEvent.click(screen.getByText('Browse'));
-        await waitFor(() => expect(mocks.open).toHaveBeenCalledTimes(3));
-        expect(harness.current().invokeAiPath).toBe('C:/InvokeAI');
-
-        mocks.open.mockRejectedValueOnce(new Error('dialog failed'));
-        fireEvent.click(screen.getByText('Browse'));
-        await waitFor(() => expect(console.error).toHaveBeenCalledWith(expect.any(Error)));
-    });
-
-    it('shows connection loading, success, backend failure, and import failure states', async () => {
-        let resolveConnection: (value: { success: boolean; message: string }) => void = () => undefined;
-        mocks.testConnection.mockImplementationOnce(() => new Promise(resolve => { resolveConnection = resolve; }));
-        const { rerender } = render(<InvokeAITab settings={settings('path')} setSettings={vi.fn()} />);
-        fireEvent.click(screen.getByText('Test Connection'));
-        expect(screen.getByText('Verifying...')).toBeTruthy();
-        await waitFor(() => expect(mocks.testConnection).toHaveBeenCalledTimes(1));
-        resolveConnection({ success: true, message: 'Connected' });
-        await waitFor(() => expect(screen.getByText('Connected')).toBeTruthy());
-
-        mocks.testConnection.mockResolvedValueOnce({ success: false, message: 'Bad database' });
-        fireEvent.click(screen.getByText('Test Connection'));
-        await waitFor(() => expect(screen.getByText('Bad database')).toBeTruthy());
-
-        mocks.testConnection.mockRejectedValueOnce(new Error('load failed'));
-        fireEvent.click(screen.getByText('Test Connection'));
-        await waitFor(() => expect(screen.getByText('Failed to load integration service.')).toBeTruthy());
-
-        rerender(<InvokeAITab settings={settings()} setSettings={vi.fn()} />);
-        expect((screen.getByText('Test Connection').closest('button') as HTMLButtonElement).disabled).toBe(true);
-    });
-
-    it('audits matching and database-heavy nested repositories', async () => {
-        mocks.diagnoseInvokeAI.mockResolvedValueOnce({
-            totalInDb: 12,
-            categories: [{ image_category: 'general', count: 8 }],
-            origins: [{ image_origin: 'internal', count: 12 }]
-        });
-        mocks.invoke.mockResolvedValueOnce({ imageFiles: 10, thumbnailFiles: 9, subfolders: { outputs: 10 } });
-        render(<InvokeAITab settings={settings('path')} setSettings={vi.fn()} />);
-
-        fireEvent.click(screen.getByText('Run Audit'));
-        expect(screen.getByText('Analyzing...')).toBeTruthy();
-        await waitFor(() => expect(screen.getByText('Count Discrepancy Found')).toBeTruthy());
-        expect(document.body.textContent).toContain('extra records in the database');
-        expect(screen.getByText(/Recommended: use/)).toBeTruthy();
-        expect(screen.getByText('general')).toBeTruthy();
-        expect(screen.getByText('internal')).toBeTruthy();
-        expect(screen.getByText('outputs')).toBeTruthy();
-        expect(screen.getByText('9 Thumbnails active')).toBeTruthy();
-        expect(mocks.invoke).toHaveBeenCalledWith('audit_invokeai_folder', { path: 'path' });
-    });
-
-    it('reports extra files, flat repositories, and diagnostic failures', async () => {
-        mocks.diagnoseInvokeAI.mockResolvedValueOnce({ totalInDb: 1, categories: [], origins: [] });
-        mocks.invoke.mockResolvedValueOnce({ imageFiles: 3, thumbnailFiles: 0, subfolders: undefined });
-        render(<InvokeAITab settings={settings('path')} setSettings={vi.fn()} />);
-        fireEvent.click(screen.getByText('Run Audit'));
-        await waitFor(() => expect(document.body.textContent).toContain('extra files in the outputs folder'));
-        expect(screen.queryByText(/Recommended: use/)).toBeNull();
-        expect(screen.getByText('Output repository is flat (no sub-collections found).')).toBeTruthy();
-
-        mocks.diagnoseInvokeAI.mockRejectedValueOnce(new Error('audit failed'));
-        fireEvent.click(screen.getByText('Run Audit'));
-        await waitFor(() => expect(console.error).toHaveBeenCalledWith(expect.objectContaining({ message: 'audit failed' })));
-        expect(screen.getByText('Run Audit')).toBeTruthy();
+        const formatter = new Intl.NumberFormat();
+        expect(screen.getByRole('status').textContent).toContain(
+            `${formatter.format(500)} / ${formatter.format(2000)}`,
+        );
     });
 });

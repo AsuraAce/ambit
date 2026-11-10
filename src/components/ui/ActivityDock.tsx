@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search } from 'lucide-react';
+import { Loader2, X, Info, Sparkles, Minus, Fingerprint, Search, CheckCircle2, AlertTriangle, RotateCw } from 'lucide-react';
 import {
     useLibraryStore,
     type LiveWatchSessionSource,
@@ -14,6 +14,9 @@ import {
     THUMBNAIL_QUEUE_RUNNING_FOOTER
 } from '../../hooks/thumbnailQueueProgress';
 import { TooltipButton } from './InfoTooltip';
+import { useInvokeOwnerScopeStore } from '../../stores/invokeOwnerScopeStore';
+import { useInvokeDockPresentation, useInvokeResultDismissal } from './useInvokeDockPresentation';
+import { invokeSyncTrace } from '../../utils/invokeSyncTrace';
 
 const ELAPSED_VISIBLE_AFTER_MS = 5000;
 const LIVE_WATCH_DOCK_REVEAL_MS = 2500;
@@ -199,9 +202,16 @@ export const ActivityDock: React.FC = () => {
         cancelSync,
         cancelRefresh
     } = useLibraryStore();
+    const invokeOperation = useInvokeOwnerScopeStore(state => state.operation);
+    const setInvokeOperation = useInvokeOwnerScopeStore(state => state.setOperation);
     const [dismissedLiveWatchPresentationKey, setDismissedLiveWatchPresentationKey] = React.useState<string | null>(null);
 
-    const isManualSyncing = syncStatus === 'syncing';
+    const invokePresentation = useInvokeDockPresentation(
+        invokeOperation,
+        !isImporting && !isActivityDockDismissed
+    );
+    const isInvokeOperationActive = invokePresentation.isActiveVisible;
+    const isManualSyncing = isInvokeOperationActive || (invokeOperation === null && syncStatus === 'syncing');
 
     // Priority order: Import > Manual Sync > Manual Regen > Model Resolution > Discovery > Duplicates > Missing Audit > Populating > Background Healing > Reparsing > Live Watch
     const isHighPriorityActive = isImporting || isManualSyncing || isRegeneratingThumbnails || isResolvingModels || isScanningDiscovery || isScanningDuplicates || isScanningMissingFiles || isPopulatingThumbnails;
@@ -214,7 +224,13 @@ export const ActivityDock: React.FC = () => {
     const isLiveWatchVisible = isLiveWatchActive && liveWatchPresentation.mode !== 'hidden';
     const isLiveWatchTone = isLiveWatchVisible;
 
-    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible;
+    const isInvokeResult = invokePresentation.isResultVisible
+        && !isHighPriorityActive && !isBackgroundActive && !isRefreshActive
+        && !(isLiveWatchActive && (isLiveWatchDockWorkPhase(liveWatchSession) || isLiveWatchVisible));
+    const isInvokePresentation = (!isImporting && isInvokeOperationActive) || isInvokeResult;
+    const isInvokeCancelling = isInvokePresentation && invokeOperation?.phase === 'cancelling';
+    const isInvokeSettling = isInvokePresentation && invokeOperation?.phase === 'settling';
+    const active = isHighPriorityActive || isBackgroundActive || isRefreshActive || isLiveWatchVisible || isInvokeResult;
 
     let progress: SyncProgress | null = null;
     let label = "";
@@ -227,9 +243,11 @@ export const ActivityDock: React.FC = () => {
         label = "Importing";
         supportsCancel = !!importAbortController;
     } else if (isManualSyncing) {
-        progress = syncProgress;
-        label = invokeSyncActivityKind === 'startup' ? "InvokeAI Catch-up" : "InvokeAI Sync";
-        supportsCancel = true;
+        progress = isInvokePresentation ? invokeOperation!.progress : syncProgress;
+        label = isInvokePresentation
+            ? `InvokeAI · ${invokeOperation!.targetLabel}`
+            : invokeSyncActivityKind === 'startup' ? "InvokeAI Catch-up" : "InvokeAI Sync";
+        supportsCancel = isInvokePresentation ? Boolean(invokeOperation!.cancel) || isInvokeCancelling || isInvokeSettling : true;
         footerMessage = invokeSyncActivityKind === 'startup'
             ? "You can keep using the library while Ambit catches up."
             : "You can keep using the library while Ambit synchronizes InvokeAI.";
@@ -278,18 +296,22 @@ export const ActivityDock: React.FC = () => {
         label = 'Live Watch';
         isLowPriority = true;
         footerMessage = 'Live Watch stays active in the background.';
+    } else if (isInvokeResult) {
+        progress = invokeOperation!.progress;
+        label = `InvokeAI · ${invokeOperation!.targetLabel}`;
+        footerMessage = 'Existing images and collections are kept.';
     }
 
-    if (progress?.mode === 'complete') {
+    if (progress?.mode === 'complete' && !isInvokeCancelling && !isInvokeSettling) {
         supportsCancel = false;
     }
 
     const current = progress?.current ?? 0;
     const total = progress?.total ?? 0;
     const mode = progress?.mode;
-    const isCompleteProgress = mode === 'complete';
-    const showIndeterminateProgress = liveWatchPresentation.isActiveWork || mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible);
-    const showProgressBar = !isLiveWatchVisible || liveWatchPresentation.isExpanded;
+    const isCompleteProgress = mode === 'complete' || isInvokeResult;
+    const showIndeterminateProgress = !isInvokeResult && (liveWatchPresentation.isActiveWork || mode === 'indeterminate' || (total === 0 && active && !isCompleteProgress && !isLiveWatchVisible));
+    const showProgressBar = !isInvokeResult && (!isLiveWatchVisible || liveWatchPresentation.isExpanded);
 
     const [elapsedNow, setElapsedNow] = React.useState(() => Date.now());
 
@@ -304,7 +326,11 @@ export const ActivityDock: React.FC = () => {
     }, [active, progress?.startedAt, showIndeterminateProgress]);
 
     const percent = isLiveWatchVisible ? 0 : isCompleteProgress ? 100 : total > 0 ? Math.round((current / total) * 100) : 0;
-    const message = isLiveWatchVisible
+    const message = isInvokeResult
+        ? invokeOperation!.message || (invokeOperation!.phase === 'completed' ? 'Synchronization completed.' : invokeOperation!.phase === 'cancelled' ? 'Synchronization cancelled.' : 'Synchronization failed.')
+        : isInvokeCancelling
+            ? 'Cancelling… Waiting for current work to finish safely.'
+        : isLiveWatchVisible
         ? liveWatchPresentation.message
         : isRefreshActive
             ? formatMetadataRefreshMessage(progress, percent)
@@ -322,6 +348,15 @@ export const ActivityDock: React.FC = () => {
         ? []
         : [
             ...splitDetailItems(progress?.detail),
+            ...(isInvokePresentation && typeof invokeOperation?.imported === 'number'
+                ? [`${formatProgressNumber(invokeOperation.imported)} added`]
+                : []),
+            ...(isInvokePresentation && typeof invokeOperation?.updated === 'number'
+                ? [`${formatProgressNumber(invokeOperation.updated)} updated`]
+                : []),
+            ...(isInvokePresentation && typeof invokeOperation?.pathsRepaired === 'number' && invokeOperation.pathsRepaired > 0
+                ? [`${formatProgressNumber(invokeOperation.pathsRepaired)} paths repaired`]
+                : []),
             elapsedLabel
         ].filter((item): item is string => Boolean(item));
     const hasMultipleSecondaryDetails = secondaryDetails.length > 1;
@@ -352,20 +387,45 @@ export const ActivityDock: React.FC = () => {
         };
 
     const dismissDock = React.useCallback(() => {
+        if (isInvokeResult) {
+            setInvokeOperation(current => current?.id === invokeOperation?.id ? null : current);
+            return;
+        }
         if (isLiveWatchVisible) {
             setDismissedLiveWatchPresentationKey(liveWatchPresentation.presentationKey);
             return;
         }
 
         setIsActivityDockDismissed(true);
-    }, [isLiveWatchVisible, liveWatchPresentation.presentationKey, setIsActivityDockDismissed]);
+    }, [isInvokeResult, invokeOperation?.id, setInvokeOperation, isLiveWatchVisible, liveWatchPresentation.presentationKey, setIsActivityDockDismissed]);
 
-    const shouldShow = active && (isLiveWatchVisible || !isActivityDockDismissed);
+    const shouldShow = active && (isInvokeResult || isLiveWatchVisible || !isActivityDockDismissed);
+    React.useEffect(() => {
+        if (!invokeSyncTrace.enabled) return;
+        // Observe a committed display on a paint opportunity, independently of
+        // the coordinator callback. Tracing never changes focus or presentation.
+        const frame = window.requestAnimationFrame(() => invokeSyncTrace.dockCommitted(
+            invokeOperation, isInvokePresentation && shouldShow && !isActivityDockMinimized
+        ));
+        return () => window.cancelAnimationFrame(frame);
+    }, [invokeOperation, isInvokePresentation, shouldShow, isActivityDockMinimized]);
+    const invokeResultInteractions = useInvokeResultDismissal(
+        invokeOperation,
+        isInvokeResult && shouldShow && !isActivityDockMinimized,
+        shouldShow,
+        invokePresentation.isDocumentVisible
+    );
+    const resultIcon = isInvokeResult
+        ? invokeOperation!.phase === 'completed' ? <CheckCircle2 className="h-4 w-4" />
+            : invokeOperation!.phase === 'failed' ? <AlertTriangle className="h-4 w-4" />
+                : <Info className="h-4 w-4" />
+        : null;
 
     return (
         <AnimatePresence>
             {shouldShow && (
                 <motion.div
+                    {...invokeResultInteractions}
                     layout
                     initial={{ y: 100, opacity: 0, scale: 0.95 }}
                     animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -382,7 +442,7 @@ export const ActivityDock: React.FC = () => {
                                 className={`group bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl border border-white/20 dark:border-white/10 p-2.5 rounded-full shadow-xl flex items-center gap-3 cursor-pointer hover:scale-105 transition-transform ${accentClasses.pillHover}`}
                             >
                                 <motion.div layout="position" className={accentClasses.iconText}>
-                                    {shouldUseSparkles ? <Sparkles className={`w-5 h-5 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-5 h-5 animate-spin" />}
+                                    {resultIcon ?? (shouldUseSparkles ? <Sparkles className={`w-5 h-5 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-5 h-5 animate-spin" />)}
                                 </motion.div>
                                 <motion.div layout="position" className="w-12 h-1 bg-gray-200 dark:bg-zinc-700 rounded-full overflow-hidden mr-1">
                                     <div
@@ -400,11 +460,11 @@ export const ActivityDock: React.FC = () => {
                             <div className="flex items-center justify-between gap-4">
                                 <div className="flex items-center gap-3">
                                     <motion.div layout="position" className={`p-2 rounded-lg ${accentClasses.iconBg}`}>
-                                        {isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isScanningMissingFiles ? <Search className="w-4 h-4" /> : shouldUseSparkles ? <Sparkles className={`w-4 h-4 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-4 h-4 animate-spin" />}
+                                        {resultIcon ?? (isScanningDuplicates ? <Fingerprint className="w-4 h-4" /> : isScanningMissingFiles ? <Search className="w-4 h-4" /> : shouldUseSparkles ? <Sparkles className={`w-4 h-4 ${shouldPulseSparkles ? 'animate-pulse' : ''}`} /> : <Loader2 className="w-4 h-4 animate-spin" />)}
                                     </motion.div>
                                     <motion.div layout="position">
                                         <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 italic opacity-80 leading-none mb-1">{isLiveWatchVisible ? 'Live Watch' : 'Background Activity'}</h4>
-                                        <p className="text-sm font-bold text-gray-900 dark:text-white flex min-w-0 items-center gap-2 whitespace-nowrap">
+                                        <p className="text-sm font-bold text-gray-900 dark:text-white flex min-w-0 flex-wrap items-center gap-2">
                                             {isLiveWatchVisible ? (
                                                 liveWatchPresentation.sourceLabel && (
                                                     <span className={LIVE_WATCH_SOURCE_CHIP_CLASS}>
@@ -465,7 +525,7 @@ export const ActivityDock: React.FC = () => {
                                     </div>
                                 )}
                                 <div className="flex justify-between items-center px-0.5">
-                                    <p className="text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate flex-1 pr-4 h-4 leading-4">
+                                    <p role={isInvokePresentation ? 'status' : undefined} aria-live={isInvokePresentation ? 'polite' : undefined} aria-atomic={isInvokePresentation ? true : undefined} className="text-[11px] font-medium text-gray-500 dark:text-gray-400 flex-1 pr-4 leading-4">
                                         {message || "Starting work..."}
                                     </p>
                                     {!showIndeterminateProgress && !isLiveWatchActive && !isBackgroundActive && !isRefreshActive && !isCompleteProgress && (
@@ -502,7 +562,13 @@ export const ActivityDock: React.FC = () => {
 
                                 {supportsCancel && (
                                     <button
+                                        type="button"
+                                        disabled={isInvokeCancelling || isInvokeSettling}
                                         onClick={() => {
+                                            if (isInvokePresentation) {
+                                                invokeOperation?.cancel?.();
+                                                return;
+                                            }
                                             if (isImporting) cancelImport();
                                             if (isManualSyncing) cancelSync();
                                             if (isRegeneratingThumbnails) cancelThumbnailRegeneration();
@@ -516,9 +582,18 @@ export const ActivityDock: React.FC = () => {
                                             if (isBackgroundActive) requestThumbnailOptimizationCancel();
                                             if (isRefreshActive) cancelRefresh();
                                         }}
-                                        className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider"
+                                        className="text-[10px] font-bold text-red-500 hover:text-red-700 dark:hover:text-red-400 bg-red-50 dark:bg-red-900/10 hover:bg-red-100 dark:hover:bg-red-900/30 px-2 py-1 rounded-md transition-colors uppercase tracking-wider disabled:cursor-wait disabled:opacity-60"
                                     >
-                                        Cancel
+                                        {isInvokeCancelling ? 'Cancelling…' : isInvokeSettling ? 'Finishing…' : 'Cancel'}
+                                    </button>
+                                )}
+                                {isInvokeResult && invokeOperation?.retry && invokeOperation.phase !== 'completed' && (
+                                    <button
+                                        type="button"
+                                        onClick={invokeOperation.retry}
+                                        className="inline-flex items-center gap-1 rounded-md bg-sage-500/10 px-2 py-1 text-xs font-bold text-sage-600 hover:bg-sage-500/20 dark:text-sage-300"
+                                    >
+                                        <RotateCw className="h-3 w-3" /> Retry
                                     </button>
                                 )}
                             </motion.div>

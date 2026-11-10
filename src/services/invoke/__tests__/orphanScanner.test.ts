@@ -375,4 +375,66 @@ describe('scanForOrphans', () => {
         expect(progress).toHaveBeenCalledWith('Importing untracked files...', 0, 101);
         expect(progress).toHaveBeenLastCalledWith('Importing untracked files...', 1, 101);
     });
+
+    it('does not enumerate or scan files when cancellation was already requested', async () => {
+        const controller = new AbortController();
+        controller.abort();
+
+        await expect(scanForOrphans('D:/Invoke', new Set(), vi.fn(), { signal: controller.signal }))
+            .rejects.toThrow('Aborted');
+
+        expect(getDb).not.toHaveBeenCalled();
+        expect(commands.listInvokeaiImages).not.toHaveBeenCalled();
+        expect(commands.scanImagesBulk).not.toHaveBeenCalled();
+    });
+
+    it.each(['enumeration', 'scan', 'write'] as const)(
+        'waits for an in-flight %s and stops orphan recovery after cancellation',
+        async stage => {
+            const controller = new AbortController();
+            const files = Array.from({ length: 101 }, (_, index) => `outputs/images/${index}.png`);
+            vi.mocked(commands.listInvokeaiImages).mockResolvedValue({ status: 'ok', data: files });
+            let releaseWork!: () => void;
+            const pendingWork = new Promise<void>(resolve => { releaseWork = resolve; });
+            const workStarted = vi.fn();
+            const committedPaths: string[] = [];
+            const waitForRelease = async () => { workStarted(); await pendingWork; };
+            if (stage === 'enumeration') {
+                vi.mocked(commands.listInvokeaiImages).mockImplementationOnce(async () => {
+                    await waitForRelease();
+                    return { status: 'ok', data: files };
+                });
+            } else if (stage === 'scan') {
+                const scan = vi.mocked(commands.scanImagesBulk).getMockImplementation()!;
+                vi.mocked(commands.scanImagesBulk).mockImplementationOnce(async (...args) => {
+                    await waitForRelease();
+                    return scan(...args);
+                });
+            } else {
+                vi.mocked(insertImagesBatch).mockImplementationOnce(async images => {
+                    await waitForRelease();
+                    committedPaths.push(...images.map(image => image.id));
+                });
+            }
+            const settled = vi.fn();
+            const progress = vi.fn();
+            const operation = scanForOrphans('D:/Invoke', new Set(), progress, {
+                importIntermediates: true,
+                signal: controller.signal,
+            }).finally(settled);
+            const rejection = expect(operation).rejects.toThrow('Aborted');
+            await vi.waitFor(() => expect(workStarted).toHaveBeenCalledOnce());
+            controller.abort();
+            await Promise.resolve();
+            expect(settled).not.toHaveBeenCalled();
+
+            releaseWork();
+            await rejection;
+
+            expect(commands.scanImagesBulk).toHaveBeenCalledTimes(stage === 'enumeration' ? 0 : 1);
+            expect(insertImagesBatch).toHaveBeenCalledTimes(stage === 'write' ? 1 : 0);
+            expect(committedPaths).toHaveLength(stage === 'write' ? 100 : 0);
+            if (stage === 'write') expect(progress).toHaveBeenLastCalledWith('Importing untracked files...', 100, 101);
+        }
+    );
 });

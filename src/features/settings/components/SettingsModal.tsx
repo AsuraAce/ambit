@@ -9,6 +9,8 @@ import { AppUpdaterStatus } from '../../../hooks/useAppUpdater';
 import { useAppVersion } from '../../../hooks/useAppVersion';
 import type { ImportResult } from '../../../services/importService';
 import { isDevelopmentBuild } from '../../../utils/settingsUtils';
+import { useInvokeConnectionDraft } from '../hooks/useInvokeConnectionDraft';
+import { useInvokeOwnerDiscovery } from '../hooks/useInvokeOwnerDiscovery';
 
 /* istanbul ignore next -- import.meta.env.DEV is fixed for a given build. */
 const DevTab = import.meta.env.DEV
@@ -99,6 +101,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [connectionSubTab, setConnectionSubTab] = useState<ConnectionSubTab | undefined>(undefined);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusOnCloseRef = useRef(true);
+  const invokeDraftSession = useInvokeConnectionDraft(settings, isOpen);
+  const invokeOwnerDiscoverySession = useInvokeOwnerDiscovery(invokeDraftSession.draft.invokeAiPath);
+  const wasSettingsOpenRef = useRef(isOpen);
+
+  useEffect(() => {
+    if (!isOpen && wasSettingsOpenRef.current) {
+      invokeOwnerDiscoverySession.reset();
+    }
+    wasSettingsOpenRef.current = isOpen;
+  }, [invokeOwnerDiscoverySession.reset, isOpen]);
 
   // Reset to initial tab when modal opens
   useEffect(() => {
@@ -122,13 +135,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
   useEffect(() => {
     if (!isOpen) return;
 
+    restoreFocusOnCloseRef.current = true;
     const previousFocus = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
     closeButtonRef.current?.focus();
 
     return () => {
-      if (previousFocus?.isConnected) previousFocus.focus();
+      if (restoreFocusOnCloseRef.current && previousFocus?.isConnected) previousFocus.focus();
     };
   }, [isOpen]);
 
@@ -242,6 +256,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
                     onInvokeSync={onInvokeSync}
                     initialSubTab={connectionSubTab}
                     onClose={onClose}
+                    onInvokeAccepted={() => {
+                      restoreFocusOnCloseRef.current = false;
+                      onClose();
+                    }}
+                    invokeDraftSession={invokeDraftSession}
+                    invokeOwnerDiscoverySession={invokeOwnerDiscoverySession}
                   />
                 )}
                 {activeTab === 'intelligence' && <IntelligenceTab settings={settings} setSettings={handleSettingsChange} />}

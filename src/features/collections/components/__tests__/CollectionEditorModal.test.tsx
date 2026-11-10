@@ -142,6 +142,7 @@ describe('CollectionEditorModal', () => {
                     source: 'invoke',
                     name: 'Local label',
                     invokeSourceName: 'Upstream label',
+                    invokeNameOverridden: true,
                     invokeSourcePresent: false,
                 }}
                 filters={currentFilters}
@@ -164,6 +165,7 @@ describe('CollectionEditorModal', () => {
                     source: 'invoke',
                     name: 'Local label',
                     invokeSourceName: 'Upstream label',
+                    invokeNameOverridden: true,
                     invokeSourcePresent: true,
                 }}
                 filters={currentFilters}
@@ -172,8 +174,23 @@ describe('CollectionEditorModal', () => {
             />,
         );
         fireEvent.click(screen.getByRole('button', { name: /reset to invokeai/i }));
+        expect(onResetInvokeCollection).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog', { name: 'Reset to InvokeAI?' })).toBeTruthy();
+        expect(screen.getByText(/last synced InvokeAI version/)).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+        expect(onResetInvokeCollection).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: /reset to invokeai/i }));
+        fireEvent.click(screen.getByRole('button', { name: 'Reset Collection' }));
         await waitFor(() => expect(onResetInvokeCollection).toHaveBeenCalledWith('collection-1'));
         expect(onClose).toHaveBeenCalled();
+    });
+
+    it('shows explicit local rename intent even when the source name matches', () => {
+        render(<CollectionEditorModal isOpen onClose={onClose} onSave={onSave} filters={currentFilters}
+            collection={{ ...createCollection(), source: 'invoke', invokeSourceName: 'Portfolio', invokeNameOverridden: true, invokeOwnerId: 'owner-a' }} />);
+        expect(screen.getByText(/Local name override/)).toBeTruthy();
+        expect(screen.getByText('Linked to InvokeAI · owner-a')).toBeTruthy();
     });
 
     it('saves static drafts and can replace them with the current view', async () => {
