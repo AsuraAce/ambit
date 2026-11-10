@@ -3,6 +3,8 @@
 ## Purpose
 Ambit is a local-first desktop manager for large AI-generated image libraries with video import, playback, and metadata support. The repo is a Tauri v2 app with a React/TypeScript frontend and a Rust/SQLite backend. Most agent tasks here touch feature UI, Tauri commands, metadata parsing, or library/query performance.
 
+This file holds Ambit-specific facts and rules. The maintainer's shared agent standards, kept outside this repository, take precedence where they conflict.
+
 ## Delivery Posture
 Use **Assure** by default. Ambit is public open-source desktop software distributed through signed installers and an auto-updater, and changes can affect existing local libraries, filesystem scope, migrations, privacy behavior, or release compatibility. Keep ceremony proportional for low-risk work, but use explicit regression coverage and release-aware verification for those boundaries.
 
@@ -66,8 +68,8 @@ Production app builds run `verify:release` before `tauri build --ci`.
 - Keep the product local-first. Preserve only the documented network paths: enabled updater checks, user-triggered Gemini actions/key verification, confirmed CivitAI hash resolution, and user-clicked external links. New network behavior requires an explicit product decision.
 - Respect Tauri filesystem scope registration and `APPLOCALDATA` or resource-safe access patterns.
 - For SQLite filters and sorts, prefer equality-friendly predicates when semantics allow.
-- Use feature branches (`feat/` or `fix/`) and conventional commits; release automation depends on that history.
-- If you discover recurring structural debt that should survive the current task, record it in `docs/refactor.md`.
+- Use branches with a conventional type prefix (`feat/`, `fix/`, `docs/`, `chore/`, `refactor/`) and conventional commits; release automation depends on the commit history.
+- Deferred structural work lives in GitHub issues labelled `refactor`. File debt found outside the current task there, naming the files and the problem, instead of folding it into the change.
 
 ## Verification
 - Run the narrowest relevant script from `package.json` for the area you touched.
@@ -90,7 +92,7 @@ Use this file as the entry point. Do not bulk-read `docs/` unless one of the rou
 - For active work, constraints, and maintainer-review notes, read `docs/progress.md`.
 - For release automation details, read `docs/WORKFLOW_SETUP.md`.
 - For private ComfyUI support bundles and fixture intake, read `docs/comfyui-support-workflow.md`.
-- For deferred structural cleanup, read `docs/refactor.md` if present.
+- For deferred structural cleanup, read the open issues labelled `refactor` (`gh issue list --label refactor`).
 - For UI color roles and light/dark theme conventions, read `docs/design-system.md`.
 - For user-facing manual coverage, start at `docs/manual/index.md`.
 

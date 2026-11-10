@@ -40,10 +40,10 @@ Last reviewed: 2026-11-10
 - Add coverage thresholds after the public-beta baseline is intentionally reviewed.
 - Add a small Tauri desktop launch smoke test using a temporary app-data/profile directory; keep installer and updater validation in the release-candidate workflow.
 - Decide whether the unused application-level `LocalStorageRepository` should remain as a tested legacy adapter or be retired; preserve the explicit Tauri/browser-mock runtime selector.
-- Keep structural follow-ups in `docs/refactor.md`; notably Live Watch pending-completion UX and facet-semantics centralization remain deferred there.
+- Structural follow-ups are GitHub issues labelled `refactor`; notably Live Watch pending-completion UX ([#342](https://github.com/AsuraAce/ambit/issues/342)) and facet-semantics centralization ([#350](https://github.com/AsuraAce/ambit/issues/350)) remain deferred there.
 
 ## Status Routing
 - Use this file for moving repository state and near-term follow-ups.
 - Use `docs/release-candidate-validation.md` for release-asset, updater, and installed-app evidence.
 - Treat plans marked `Complete` or `Superseded` as historical. Do not infer active work from a pending item inside a superseded plan without reconciling it here.
-- Use `docs/refactor.md` for actionable deferred structural work, not release status or session notes.
+- Use GitHub issues labelled `refactor` for actionable deferred structural work, not release status or session notes.
