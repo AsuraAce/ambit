@@ -1656,8 +1656,6 @@ export const SyncProvider: React.FC<{
         let batchRefresh: Promise<void> | undefined;
         let pathCheckStartedAt: number | undefined;
         const refreshCommittedImages = (changedCount: number) => {
-            // [DEBUG-invoke-memory] Controlled QA comparison only; remove before delivery.
-            if (import.meta.env.DEV && import.meta.env.VITE_DEBUG_INVOKE_HOLD_GALLERY === '1') return;
             if (changedCount <= lastRefreshedChanges || batchRefresh || !isCapturedScopeCurrent() || ctrl.signal.aborted
                 || performance.now() - lastBatchRefresh < 1000) return;
             lastBatchRefresh = performance.now();
