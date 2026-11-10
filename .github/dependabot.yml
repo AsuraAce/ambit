@@ -15,6 +15,12 @@ updates:
     commit-message:
       prefix: "chore"
       include: "scope"
+    ignore:
+      # Keep @types/node on the runtime major in .node-version (24).
+      # Remove this rule when the runtime moves.
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       npm-safe-patch-minor:
         patterns:
