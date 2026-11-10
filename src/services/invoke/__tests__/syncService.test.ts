@@ -677,6 +677,50 @@ describe('syncImages live mode', () => {
         expect(getFlatInvokeImageIdsForRoot).toHaveBeenCalledTimes(mode === 'manual' ? 1 : 0);
     });
 
+    // A failed or zero size probe proves nothing about ambiguity. Treating it as a checked rejection
+    // made the import skip the legacy move and insert a second row for the same image.
+    it.each([
+        { label: 'fails', arrangeProbe: () => vi.mocked(commands.getFileSizesBulk).mockRejectedValueOnce(new Error('probe failed')) },
+        { label: 'reports size 0', arrangeProbe: () => vi.mocked(commands.getFileSizesBulk).mockResolvedValueOnce({ status: 'ok', data: [0] } as never) },
+    ])('keeps the legacy import fallback when the repair size probe $label', async ({ arrangeProbe }) => {
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        const selectMock = arrangeManualPathCheck({ names: ['asset.png'], rows: [], relativeRows: [{ image_name: 'nested/asset.png' }] });
+        const originalSelect = selectMock.getMockImplementation()!;
+        selectMock.mockImplementation(async (query, params) => {
+            if (query.includes('SELECT count(*) as count FROM images i')) return [{ count: 1 }];
+            if (query.includes('OFFSET 0')) return [{
+                image_name: 'nested/asset.png', metadata_blob: {},
+                created_at: '2026-04-18T12:00:00Z', width: 512, height: 512,
+            }];
+            if (query.includes('OFFSET')) return [];
+            return originalSelect(query, params);
+        });
+        const legacy = makeExistingInvokeImage('asset.png', { invokeImageName: 'nested/asset.png' });
+        const catalog = new Map([[legacy.id, legacy]]);
+        vi.mocked(getImagesByIds).mockImplementation(async ids => ids.flatMap(id => catalog.get(id) ?? []));
+        vi.mocked(insertImagesBatch).mockImplementation(async images => {
+            images.forEach(image => catalog.set(image.id, image));
+        });
+        vi.mocked(moveImagePathIdentity).mockImplementation(async (oldId, newId) => {
+            const image = catalog.get(oldId);
+            if (!image || catalog.has(newId)) return false;
+            catalog.delete(oldId);
+            catalog.set(newId, { ...image, id: newId });
+            return true;
+        });
+        arrangeProbe();
+
+        const result = await syncImages('D:/AmbitFixtures/InvokeAI', vi.fn(), undefined, {
+            mode: 'manual', syncBoards: false,
+        });
+
+        expect(moveImagePathIdentities).not.toHaveBeenCalled();
+        expect(moveImagePathIdentity).toHaveBeenCalledOnce();
+        expect(result).toMatchObject({ imported: 0, pathsRepaired: 1 });
+        expect([...catalog.keys()]).toEqual(['D:/AmbitFixtures/InvokeAI/outputs/images/nested/asset.png']);
+        warnSpy.mockRestore();
+    });
+
     it('bounds atomic reference corrections to 250 and reports actual native corrections', async () => {
         const names = Array.from({ length: 501 }, (_, index) => `moved-${index}.png`);
         arrangeManualPathCheck({ names, rows: names.map(image_name => ({ image_name, image_subfolder: 'nested' })) });

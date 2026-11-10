@@ -526,6 +526,8 @@ export const syncImages = async (
             const verifiedCandidates = candidates.filter((candidate, index) => {
                 if ((sizes[index] || 0) <= 0) {
                     skippedTargetMissing++;
+                    // A failed or empty probe is not ambiguity: leave the source unchecked so the import may still move it.
+                    if (totalToImport > 0) checkedRepairTargets.delete(normalizePath(candidate.legacyFlatPath));
                     return false;
                 }
                 if (existingMap.has(candidate.targetPath)) {
