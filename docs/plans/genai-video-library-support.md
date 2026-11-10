@@ -87,8 +87,8 @@ scope or architecture.
 - **Compatibility before naming cleanup:** add a media discriminator to the
   existing `images` and `removed_images` persistence boundary for the MVP. Do not
   rename every table, command, repository, and historical image type before the
-  feature is proven. Record the remaining naming debt in `docs/refactor.md` when
-  it becomes real.
+  feature is proven. The remaining naming debt is tracked in
+  [#337](https://github.com/AsuraAce/ambit/issues/337).
 - **Probe before trust:** extensions identify candidates only. Probe results, not
   filenames, determine media type, technical properties, and playback status.
 
