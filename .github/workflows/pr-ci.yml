@@ -57,7 +57,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
     env:
-      RUSTUP_TOOLCHAIN: 1.88.0
+      RUSTUP_TOOLCHAIN: 1.90.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -79,14 +79,14 @@ jobs:
       - name: install minimum supported rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable action
         with:
-          toolchain: 1.88.0
+          toolchain: 1.90.0
 
       - name: verify minimum supported rust
         shell: pwsh
         run: |
           $version = rustc --version
-          if ($version -notmatch '^rustc 1\.88\.0 ') {
-            throw "Expected Rust 1.88.0, got: $version"
+          if ($version -notmatch '^rustc 1\.90\.0 ') {
+            throw "Expected Rust 1.90.0, got: $version"
           }
           $version
 
