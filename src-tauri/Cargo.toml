@@ -37,7 +37,7 @@ webp = "0.3"
 base64 = "0.22"
 rayon = "1.12"
 flate2 = "1.1.5"
-tauri-plugin-sql = { version = "=2.4.0", features = ["sqlite"] }
+tauri-plugin-sql = { version = "=2.6.0", features = ["sqlite"] }
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 notify = { version = "8.2.0", features = ["serde"] }
 regex = "1.12.2"
