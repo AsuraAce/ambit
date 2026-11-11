@@ -60,10 +60,8 @@ pub fn scan_jpeg_metadata(path: &std::path::Path) -> Result<HashMap<String, Stri
             if file.read_exact(&mut app1_data).is_ok() && app1_data.starts_with(EXIF_HEADER) {
                 merge_missing_chunks(&mut chunks, extract_exif_chunks(&app1_data[6..]));
             }
-        } else {
-            if file.seek(SeekFrom::Current(len as i64)).is_err() {
-                break;
-            }
+        } else if file.seek(SeekFrom::Current(len as i64)).is_err() {
+            break;
         }
     }
 
