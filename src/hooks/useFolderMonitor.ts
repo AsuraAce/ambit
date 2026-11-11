@@ -16,6 +16,7 @@ import { isImportSourceCancelled, isImportSourceCompleted } from '../utils/impor
 // Need to access store actions directly since we are bypassing handleImportPaths state management
 import { useLibraryStore } from '../stores/libraryStore';
 import { isBrowserMockMode } from '../services/runtime';
+import { ensureFolderAccessible } from '../services/assetScope';
 import type { ImportProgressCallback, ImportResult } from '../services/importService';
 import type { InvokeSyncOutcome } from '../contexts/SyncContext';
 
@@ -113,6 +114,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
                         if (folder.lastScanned) {
                             try {
                                 console.log(`[FolderMonitor] Smart Scan for ${folder.path}`);
+                                await ensureFolderAccessible(folder.path);
                                 const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
 
                                 if (newFiles && newFiles.length > 0) {
@@ -393,6 +395,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         for (const folder of folders) {
             try {
                 if (folder.lastScanned) {
+                    await ensureFolderAccessible(folder.path);
                     const newFiles = await unwrap(commands.scanDirectorySince(folder.path, folder.lastScanned));
                     if (newFiles.length > 0) {
                         tasks.push({ paths: newFiles.map(f => f.path), variant: folder.variant, folderId: folder.id });

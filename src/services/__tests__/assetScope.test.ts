@@ -32,6 +32,24 @@ describe('assetScope', () => {
         mocks.registerLibraryPath.mockResolvedValue({ status: 'ok', data: null });
     });
 
+    // #384: Live Watch and resource scans skipped missing folders before the scope
+    // checks; a folder that cannot be registered must still be left out, not fail the call.
+    it('keeps only the folders that could be registered, in order', async () => {
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        mocks.registerLibraryPath.mockImplementation(async (path: string) => (
+            path === 'D:/unplugged'
+                ? { status: 'error', error: 'Failed to resolve library path' }
+                : { status: 'ok', data: null }
+        ));
+        const { ensureFolderAccessible, filterAccessibleFolders } = await loadService();
+
+        await expect(filterAccessibleFolders(['C:/one', 'D:/unplugged', 'C:/two'])).resolves.toEqual(['C:/one', 'C:/two']);
+        await expect(ensureFolderAccessible('D:/unplugged')).resolves.toBe(false);
+        await expect(ensureFolderAccessible('C:/one')).resolves.toBe(true);
+        expect(mocks.registerLibraryPath).toHaveBeenCalledWith('C:/one');
+        consoleError.mockRestore();
+    });
+
     it('does nothing in browser mock mode', async () => {
         mocks.browserMockMode = true;
         const { ensureAssetPathAccessible } = await loadService();

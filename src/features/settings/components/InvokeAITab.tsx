@@ -8,6 +8,8 @@ import { areDeveloperFeaturesEnabled } from '../../../utils/settingsUtils';
 import { useLibrary } from '../../../contexts/LibraryContext';
 import { InvokeOwnerScopeSelector } from '../../../components/ui/InvokeOwnerScopeSelector';
 import { isSameInvokePath } from '../../../services/invoke/pathIdentity';
+import { ensureFolderAccessible } from '../../../services/assetScope';
+import { normalizeInvokeRoot } from '../../../utils/pathUtils';
 import {
     isSameInvokeConnectionSource,
     isSameInvokeOwnerSelection,
@@ -171,7 +173,11 @@ export const InvokeAITab: React.FC<TabProps> = React.memo(({ settings, setSettin
         try {
             const { diagnoseInvokeAI } = await import('../../../services/invoke/connection');
             const dbDiag = await diagnoseInvokeAI(settings.invokeAiPath!) as Omit<InvokeDiagnostics, 'folder'>;
-            const folderAudit = await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath! });
+            // The audit refuses a folder outside the scope. One that cannot be registered
+            // is missing, which the audit reported as empty before.
+            const folderAudit = await ensureFolderAccessible(normalizeInvokeRoot(settings.invokeAiPath))
+                ? await invoke<InvokeFolderAudit>('audit_invokeai_folder', { path: settings.invokeAiPath! })
+                : { imageFiles: 0, thumbnailFiles: 0, subfolders: {} };
 
             setDiagData({
                 ...dbDiag,

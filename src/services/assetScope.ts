@@ -89,6 +89,26 @@ export const ensureAssetPathAccessible = async (
     await registration;
 };
 
+/**
+ * Registers a folder before a command that checks the filesystem scope reads it.
+ * Returns false when the folder cannot be registered, for example because it does
+ * not exist; the failure is already logged. The Rust command stays the decision point.
+ */
+export const ensureFolderAccessible = async (path: string | null | undefined): Promise<boolean> => {
+    try {
+        await ensureAssetPathAccessible(path, { assumeDirectory: true });
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+/** Registers each folder and returns those now in scope, in their original order. */
+export const filterAccessibleFolders = async (paths: string[]): Promise<string[]> => {
+    const accessible = await Promise.all(paths.map(ensureFolderAccessible));
+    return paths.filter((_, index) => accessible[index]);
+};
+
 export const ensureConfiguredAssetPathsAccessible = async (
     settings: Pick<AppSettings, 'monitoredFolders' | 'invokeAiPath' | 'resourceFolders'>
 ): Promise<void> => {

@@ -670,6 +670,12 @@ pub async fn scan_model_thumbnails(
     paths: Vec<String>,
     state: tauri::State<'_, ModelDiscoveryState>,
 ) -> Result<ThumbnailScanResult, String> {
+    use tauri_plugin_fs::FsExt;
+    crate::scanner::utils::validate_scoped_roots(
+        &paths,
+        |path| app.fs_scope().is_allowed(path),
+        "Resource folder",
+    )?;
     state.is_cancelled.store(false, Ordering::SeqCst);
 
     let started_at = now_millis();

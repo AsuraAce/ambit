@@ -9,6 +9,7 @@ import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { formatStableImportProgress } from '../utils/importProgress';
 import { getThumbnailDir } from '../services/thumbnailService';
+import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
 
 interface ImportOptions {
@@ -402,6 +403,8 @@ export const useImportOps = ({
         try {
             let filesToScan: string[] = [];
             let isIncremental = false;
+            // The scans below refuse a folder outside the scope; a just-added folder may not be registered yet.
+            await ensureFolderAccessible(path);
 
             if (lastScanned && lastScanned > 0) {
                 console.log(`[Resync] Incremental scan for ${path} since ${new Date(lastScanned).toISOString()}`);

@@ -6,6 +6,7 @@ import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { normalizePath } from '../utils/pathUtils';
+import { ensureFolderAccessible, filterAccessibleFolders } from './assetScope';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
 import {
@@ -796,6 +797,9 @@ export async function processFoldersUnified(
 
             // Attempt to scan as directory first.
             // Note: scanDirectoryWithStats should be recursive on backend.
+            // The scan refuses folders outside the scope. A picked file is already in
+            // scope through the dialog, so a failed registration still tries the scan.
+            await ensureFolderAccessible(folder.path);
             const files = await unwrap(commands.scanDirectoryWithStats(folder.path));
             if (abortSignal?.aborted) {
                 result.wasCancelled = true;
@@ -1143,7 +1147,10 @@ export const processTargetedFiles = async (
 
 export const scanResourceThumbnails = async (paths: string[]): Promise<ThumbnailScanResult> => {
     try {
-        const result = await unwrap(commands.scanModelThumbnails(paths));
+        // The scan refuses folders outside the scope. A folder that cannot be
+        // registered is missing, and the scan skipped missing folders anyway.
+        const accessiblePaths = await filterAccessibleFolders(paths);
+        const result = await unwrap(commands.scanModelThumbnails(accessiblePaths));
         return result;
     } catch (e) {
         console.error('Failed to scan resource thumbnails', e);

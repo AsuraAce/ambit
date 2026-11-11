@@ -7,13 +7,18 @@ import {
 import { A1111FolderType, type DiscoveryCandidate, WebUIVariant } from '../types';
 
 const mocks = vi.hoisted(() => ({
-    discoverA1111Folders: vi.fn()
+    discoverA1111Folders: vi.fn(),
+    ensureFolderAccessible: vi.fn(async () => true)
 }));
 
 vi.mock('../../../bindings', () => ({
     commands: {
         discoverA1111Folders: mocks.discoverA1111Folders
     }
+}));
+
+vi.mock('../../assetScope', () => ({
+    ensureFolderAccessible: mocks.ensureFolderAccessible
 }));
 
 describe('discoverA1111Candidates', () => {
@@ -45,6 +50,19 @@ describe('discoverA1111Candidates', () => {
                 warnings: ['count cap reached']
             }
         });
+    });
+
+    // #384: discovery refuses a root outside the scope, and a typed or picked
+    // A1111 root is not registered by anything else.
+    it.each([
+        ['discovery', () => discoverA1111Candidates('D:/SD', new Set())],
+        ['variant detection', () => detectWebUIVariation('D:/SD')]
+    ])('registers the A1111 root before %s', async (_label, run) => {
+        await run();
+
+        expect(mocks.ensureFolderAccessible).toHaveBeenCalledWith('D:/SD');
+        expect(mocks.ensureFolderAccessible.mock.invocationCallOrder[0])
+            .toBeLessThan(mocks.discoverA1111Folders.mock.invocationCallOrder[0]);
     });
 
     it('maps backend candidates and marks already linked folders', async () => {

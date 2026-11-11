@@ -3,6 +3,8 @@ import type { AppSettings, InvokeDbSnapshotFile, InvokeDbSnapshotState, InvokeSo
 import { unwrap } from '../../utils/spectaUtils';
 import type { InvokeSyncScope } from './syncScope';
 import { isSameInvokePath } from './pathIdentity';
+import { ensureFolderAccessible } from '../assetScope';
+import { normalizeInvokeRoot } from '../../utils/pathUtils';
 
 interface InvokeDbSnapshotCommandResult {
     dbPath: string;
@@ -148,6 +150,8 @@ export const readInvokeDbSnapshotState = async (
     rootPath: string,
     config: InvokeDbSnapshotConfig
 ): Promise<InvokeDbSnapshotState> => {
+    // The snapshot refuses a database outside the scope; register the root first.
+    await ensureFolderAccessible(normalizeInvokeRoot(rootPath));
     const snapshot = await unwrap(commands.getInvokeDbSnapshot(rootPath));
     return buildInvokeDbSnapshotState(snapshot, config);
 };
