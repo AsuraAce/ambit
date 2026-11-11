@@ -11,7 +11,6 @@ import { useImageAI } from '../../../hooks/useImageAI';
 import { useSettingsStore } from '../../../stores/settingsStore';
 import { useCollectionStore } from '../../../stores/collectionStore';
 import { ensureAssetPathAccessible } from '../../../services/assetScope';
-import { getFilename } from '../../../utils/pathUtils';
 import { getImageWithFullMetadata } from '../../../services/db/imageRepo';
 import { useToast } from '../../../hooks/useToast';
 import type { PromptHighlightSpec } from '../utils/searchHighlights';
@@ -289,6 +288,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         setNegativePromptValue(displayImage.metadata.negativePrompt || '');
         resetZoom();
         ai.closeModal();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resets the viewer only when the displayed image changes; the ai object is new every render
     }, [
         displayImage.id,
         displayImage.notes,
@@ -381,6 +381,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode(p => !p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lists ai.modalOpen and ai.closeModal, the members used; the ai object is new every render
     }, [ai.modalOpen, ai.closeModal, isTheaterMode, displayImage.id, onNext, onPrev, canNavigateNext, canNavigatePrevious, handleToggleFavorite, handleTogglePin, onToggleFavorite, onTogglePin, onToggleSidebar, onDelete, onClose]);
 
     useViewerKeyboard({

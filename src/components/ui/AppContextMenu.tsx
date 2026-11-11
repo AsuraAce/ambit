@@ -31,7 +31,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
     onClose,
     images,
     actions,
-    fileOps,
+    fileOps: _fileOps,
     colOps,
     onMoveToCollection,
     modals,
@@ -114,7 +114,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                             new ClipboardItem({ [blob.type]: blob })
                         ]);
                         addToast('Image copied to clipboard', 'success');
-                    } catch (e) {
+                    } catch {
                         // Fallback to path if blob copy fails (e.g. browser security)
                         navigator.clipboard.writeText(activeImage.url).catch(error => console.error('[Clipboard] Copy failed', error));
                         addToast('Image path copied (fallback)', 'info');
@@ -240,6 +240,7 @@ export const AppContextMenu: React.FC<AppContextMenuProps> = ({
                 const modelName = typeof modelValue === 'string'
                     ? modelValue
                     : modelValue && typeof modelValue === 'object' && 'name' in modelValue
+                        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
                         ? String((modelValue as { name?: unknown }).name || '')
                         : '';
                 if (m.modelHash || modelName) {

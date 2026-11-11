@@ -80,7 +80,7 @@ const runExclusive = <T>(work: (permit: SettingsPersistencePermit) => Promise<T>
         const settled = await Promise.allSettled(precedingTransactions);
         const failures = settled
             .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-            .map(result => result.reason);
+            .map((result): unknown => result.reason);
         if (failures.length > 0) {
             throw new AggregateError(failures, 'One or more settings transactions failed before exclusive work.');
         }

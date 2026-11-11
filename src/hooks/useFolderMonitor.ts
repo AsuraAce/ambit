@@ -362,6 +362,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         }
 
         prevFoldersRef.current = currentFolders;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the folder list changes; adding these would re-run the folder diff when they change
     }, [monitoredFolders, isLoaded, onScan, addToast, updateFolderLastScanned, handleImportPaths, browserMockMode]);
 
     // Live Watch Catch-up
@@ -394,6 +395,7 @@ export function useFolderMonitor({ isLoaded, monitoredFolders, onScan, handleImp
         } 
 
         hasLiveWatchStartedRef.current = isLiveWatching;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fires on the live-watch toggle; performUnifiedScan is declared after this effect (#407) and recreated often
     }, [isLiveWatching, monitoredFolders, onScan, handleImportPaths, updateFolderLastScanned, addToast, refreshMetadata, browserMockMode]);
 
     // Reusable Scan Logic (Extracted from previous effect)

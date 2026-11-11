@@ -140,7 +140,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     isInvokeCollectionCatchupPending = false,
     forcePrivacyProtectionGate = false,
     filters, setFilters, isFilterPanelOpen, setIsFilterPanelOpen,
-    colOps, setExportIds, modals, addToast,
+    colOps, setExportIds: _setExportIds, modals, addToast: _addToast,
     viewMode, changeViewMode, searchProps, layoutMode, setLayoutMode,
     sortOption, setSortOption, displayedCount, scopeTotal, scopeName,
     fileOps, onOpenImportModal, workspaceRef, scrollContainerRef,
@@ -165,7 +165,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         || (privacyEnabled && privacyMaskIndexStatus !== 'ready');
     const effectiveMaskedKeywords = getEffectiveMaskedKeywords(settings);
 
-    const allCollections = useCollectionStore(s => s.collections);
+    const _allCollections = useCollectionStore(s => s.collections);
 
     // Local State
     const [showSupportPulse, setShowSupportPulse] = React.useState(true);
@@ -233,10 +233,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
     // Expose actions for debugging/maintenance
     React.useEffect(() => {
-        // @ts-ignore
+        // @ts-expect-error -- window.app is a debug global not in the Window type
         if (!window.app) window.app = {};
-        // @ts-ignore
-        window.app.actions = actions;
+        (window as unknown as { app: { actions?: unknown } }).app.actions = actions;
     }, [actions]);
 
     // Derived loadMore
@@ -333,9 +332,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 onDeleteSmartCollection={colOps.deleteSmartCollection}
                 onDropOnCollection={async (colId, data) => {
                     try {
-                        const ids = JSON.parse(data);
+                        const ids = JSON.parse(data) as unknown;
                         if (Array.isArray(ids)) {
-                            await colOps.addImagesToCollection(ids, colId);
+                            await colOps.addImagesToCollection(ids as string[], colId);
                         }
                     } catch (e) {
                         console.error("Drop failed", e);

@@ -50,7 +50,7 @@ export const useImportOps = ({
     images,
     setImages,
     refreshCollections,
-    settings
+    settings: _settings
 }: UseImportOpsProps) => {
     const { addToast } = useToast();
     const {
@@ -154,7 +154,7 @@ export const useImportOps = ({
 
             const result = await processWebFiles(files);
             await commitImportResult(result);
-        } catch (error) {
+        } catch {
             addToast("Import failed", "error");
         } finally {
             finishImportRun(importRunId);
@@ -192,7 +192,7 @@ export const useImportOps = ({
 
             const result = await processWebFiles(files);
             await commitImportResult(result);
-        } catch (error) {
+        } catch {
             addToast("Import failed", "error");
         } finally {
             finishImportRun(importRunId);

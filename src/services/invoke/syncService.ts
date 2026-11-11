@@ -150,7 +150,7 @@ export const syncImages = async (
         invokeDb = await getInvokeSourceDatabase(dbPath);
     } catch (e) {
         throwIfInvokeAborted(signal);
-        throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`);
+        throw new Error(`Could not connect to InvokeAI DB at ${dbPath}`, { cause: e });
     }
     throwIfInvokeAborted(signal);
     logSyncDebug('Invoke DB connect complete', {
@@ -373,6 +373,7 @@ export const syncImages = async (
             const filename = getFilename(path);
             if (filename) stalePathByName.set(filename.toLowerCase(), path);
         });
+        // eslint-disable-next-line no-useless-assignment -- releases the large row array before the remaining awaits of the repair pass
         staleFlatPaths = [];
         if (stalePathByName.size === 0) return 0;
 
@@ -420,6 +421,7 @@ export const syncImages = async (
         `, [JSON.stringify(Array.from(stalePathByName.keys())), ...repairParams]);
         throwIfInvokeAborted(signal);
         addRepairRows(repairRows);
+        // eslint-disable-next-line no-useless-assignment -- releases the large row array before the remaining awaits of the repair pass
         repairRows = [];
 
         // Relative names can conflict with an already matched flat name, so
@@ -437,6 +439,7 @@ export const syncImages = async (
         throwIfInvokeAborted(signal);
         const relativeRowsScanned = relativeRepairRows.length;
         addRepairRows(relativeRepairRows);
+        // eslint-disable-next-line no-useless-assignment -- releases the large row array before the remaining awaits of the repair pass
         relativeRepairRows = [];
 
         const repairCandidates = Array.from(repairRowsByKey.values());
@@ -514,7 +517,7 @@ export const syncImages = async (
             } catch (error) {
                 throwIfInvokeAborted(signal);
                 console.warn('[InvokeAI Sync] Failed to probe resolved InvokeAI paths during repair.', error);
-                sizes = new Array(targetPaths.length).fill(0);
+                sizes = new Array<number>(targetPaths.length).fill(0);
             }
             const lookupPaths = Array.from(new Set([
                 ...targetPaths,
@@ -631,7 +634,7 @@ export const syncImages = async (
         const boardsTable = await invokeDb.select<Array<{ name: string }>>("SELECT name FROM sqlite_master WHERE type='table' AND name='boards'");
         throwIfInvokeAborted(signal);
         hasBoardsTable = boardsTable.some(table => table.name === 'boards');
-    } catch (e) {
+    } catch {
         throwIfInvokeAborted(signal);
     }
 
@@ -692,7 +695,7 @@ export const syncImages = async (
             batchCount: 0,
             totalMs: elapsedMs(syncStartedAt)
         });
-        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, pathsRepaired, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map(), boardsChanged, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
+        return { imported: 0, updated: repairedExistingCount + reconciledExistingCount, pathsRepaired, maxTimestamp: options.afterTimestamp || 0, syncedIds, boardMapping: options.syncBoards ? boards : new Map<string, InvokeBoardInfo>(), boardsChanged, touchedFacetTypes: [], touchedFacetResources: createEmptyTouchedFacetResources() };
     }
 
     let processed = 0;
@@ -975,7 +978,9 @@ export const syncImages = async (
                                 (meta.negativePrompt !== undefined && meta.negative_prompt === undefined)) {
                                 formatLooksMapped = true;
                             }
-                        } catch { }
+                        } catch {
+                            // Best-effort: unparseable metadata is treated as not mapped
+                        }
                     }
 
                     if (isMissingRaw || formatLooksMapped) needsUpdate = true;

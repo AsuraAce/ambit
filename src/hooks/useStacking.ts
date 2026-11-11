@@ -14,6 +14,7 @@ export interface StackGroup {
 const getModelName = (model: unknown): string => {
     if (typeof model === 'string') return model;
     if (model && typeof model === 'object' && 'name' in model) {
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- may print [object Object]; see #409
         return String((model as { name?: unknown }).name || '');
     }
     return '';
@@ -72,16 +73,17 @@ export const useStacking = (images: AIImage[]) => {
             };
 
             const handler = (e: MessageEvent) => {
-                if (e.data.requestId === requestId) {
-                    if (e.data.type === 'stacks-result') {
-                        setSuggestedStacks(e.data.groups);
+                const data = e.data as { requestId?: string; type?: string; groups: StackGroup[]; error?: unknown };
+                if (data.requestId === requestId) {
+                    if (data.type === 'stacks-result') {
+                        setSuggestedStacks(data.groups);
                     }
                     setIsCalculating(false);
                     worker.removeEventListener('message', handler);
                     if (activeWorkerCleanupRef.current === cleanupWorkerListener) {
                         activeWorkerCleanupRef.current = null;
                     }
-                    finish(e.data.error ? 'failed' : 'finished');
+                    finish(data.error ? 'failed' : 'finished');
                 }
             };
 

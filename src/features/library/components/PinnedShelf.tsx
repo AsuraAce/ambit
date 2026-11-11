@@ -40,7 +40,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
     onRangeSelection,
     onBackgroundClick
 }) => {
-    const privacyEnabled = useSettingsStore(s => s.privacyEnabled);
+    const _privacyEnabled = useSettingsStore(s => s.privacyEnabled);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const [dragBox, setDragBox] = React.useState<{ x: number, y: number, w: number, h: number } | null>(null);
     const dragStartRef = React.useRef<{ x: number, y: number } | null>(null);

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { AIImage, AppSettings, FilterState, Collection, RecoveryStyle, getDetectedSourceKind, isVideoAsset, type SourceKind } from '../types';
+import { AIImage, RecoveryStyle, getDetectedSourceKind, isVideoAsset, type SourceKind } from '../types';
 import { useToast } from './useToast';
 import { useSearchStore } from '../stores/searchStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -329,7 +329,7 @@ export const useAppActions = ({
             await queryClient.invalidateQueries({ queryKey: ['parameterRanges'] });
         }
 
-        let message = '';
+        let message: string;
         const count = idsToToggle.size;
         const s = count === 1 ? '' : 's';
 

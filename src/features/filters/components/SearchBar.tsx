@@ -176,6 +176,7 @@ export const SearchBar = React.memo(({
         if (isDraftPending || isFiltering) return `Searching ${scopeName}…`;
         if (displayedCount === 0) return `No matches in ${scopeName}.`;
         return `${displayedCount.toLocaleString()} ${displayedCount === 1 ? 'match' : 'matches'} in ${scopeName}.`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keeps the status recomputing in step with the raw query values while typing
     }, [
         queryIssue,
         displayedCount,

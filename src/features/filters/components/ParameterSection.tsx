@@ -3,7 +3,6 @@ import { normalizeSampler } from '../../../utils/samplerUtils';
 import { FilterState } from '../../../types';
 import { SectionHeader, FilterSlider, MultiSelectDropdown, ChipSelect } from './FilterPrimitives';
 import { useParameterRangesQuery } from '../../../hooks/useParameterRangesQuery';
-import { Check } from 'lucide-react';
 
 interface ParameterSectionProps {
     filters: FilterState;

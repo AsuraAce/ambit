@@ -112,6 +112,7 @@ export const useFoldersTabLogic = ({
 
     useEffect(() => {
         void fetchCounts(); // per-folder failures are caught and logged inside
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetches counts only when the number of folders changes
     }, [settings.monitoredFolders.length]);
 
     const combinedFolders = useMemo(() => {
@@ -315,6 +316,7 @@ export const useFoldersTabLogic = ({
                 return next;
             });
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setSettings comes from SettingsModal and changes with onSave; adding it changes when this callback is recreated
     }, [settings.monitoredFolders, onScanFolder, onInvokeSync, addToast, updateFolderLastScanned, fetchCounts]);
 
     const handleAddFolder = (e: React.FormEvent) => {
@@ -434,7 +436,7 @@ export const useFoldersTabLogic = ({
             if (selected && typeof selected === 'string') {
                 setNewFolderPath(normalizePath(selected));
             }
-        } catch (e) {
+        } catch {
             fileInputRef.current?.click();
         }
     };

@@ -70,7 +70,7 @@ const addArrayFacetType = (set: Set<FacetType>, values: string[] | undefined, ty
     }
 };
 
-export const orderFacetTypes = (types: Iterable<FacetType | string>): FacetType[] => {
+export const orderFacetTypes = (types: Iterable<string>): FacetType[] => {
     const unique = new Set<FacetType>();
 
     for (const type of types) {
@@ -136,7 +136,7 @@ export const mergeTouchedFacetResources = (
 };
 
 export const hasTouchedFacetResources = (resources: TouchedFacetResources): boolean => {
-    return Object.values(resources).some(values => values.length > 0);
+    return (Object.values(resources) as string[][]).some(values => values.length > 0);
 };
 
 export const touchedFacetResourcesToTypes = (resources: TouchedFacetResources): FacetType[] => {

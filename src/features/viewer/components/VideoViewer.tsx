@@ -192,6 +192,7 @@ export const VideoViewer: React.FC<VideoViewerProps> = ({
                 if (!cancelled) setPlaybackState({ videoId: video.id, status: 'external_required', url: null });
             });
         return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- playbackStatus is only the fallback for a new video; adding it would re-prepare the URL on every status change
     }, [revealed, video.id, video.isMissing, playerKey]);
 
     const seekBy = React.useCallback((seconds: number) => {

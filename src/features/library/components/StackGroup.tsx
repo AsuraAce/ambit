@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { useState } from 'react';
 import { ArrowRight, Layers, CheckCircle2, Maximize, Check, X, Hash } from 'lucide-react';
-import { AIImage } from '../../../types';
 import { StackGroup as IStackGroup } from '../../../hooks/useStacking';
 
 interface StackGroupProps {

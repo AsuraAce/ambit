@@ -1,7 +1,6 @@
 import { commands, type FolderChange } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { UnlistenFn } from '@tauri-apps/api/event';
-import { AppSettings } from '../types';
 import { isBrowserMockMode } from './runtime';
 import { startBackgroundDiagnostic, type BackgroundDiagnosticHandle } from '../utils/backgroundDiagnostics';
 import { listenWithCleanup } from '../utils/tauriListener';

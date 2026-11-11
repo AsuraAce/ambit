@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { X, Keyboard, Search, ChevronDown, ChevronRight, Monitor, Puzzle, Sliders, Calendar, ListChecks } from 'lucide-react';
 import { APP_NAME } from '../../constants/app';
 import { SEARCH_OPERATOR_DEFINITIONS, type SearchOperatorCategory } from '../../constants/searchOperators';
@@ -46,8 +45,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose,
         const saved = localStorage.getItem('ambit_shortcuts_expanded');
         if (saved) {
             try {
-                setExpandedCategories(JSON.parse(saved));
-            } catch (e) {
+                setExpandedCategories(JSON.parse(saved) as Record<string, boolean>);
+            } catch {
                 // Fail silently, use defaults
                 setExpandedCategories({ 'General': true });
             }

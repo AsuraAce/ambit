@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Columns, Layers, PanelLeft, ChevronRight, Sidebar, SplitSquareHorizontal, Heart, GitCompare, Eye, EyeOff, Pin } from 'lucide-react';
+import { X, ZoomIn, ZoomOut, RotateCcw, ArrowRightLeft, Sidebar, Heart, GitCompare, Eye, EyeOff, Pin } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../library/components/SmartImage';
 import { getFilename } from '../../../utils/pathUtils';
@@ -465,8 +464,6 @@ export const CompareModal: React.FC<CompareModalProps> = ({
 
     // --- Diffing Logic ---
     const renderPromptDiff = (promptA: string, promptB: string) => {
-        const wordsA = promptA.split(/(\s+)/);
-        const wordsB = promptB.split(/(\s+)/);
 
         const setA = new Set(promptA.split(/\s+/).map(w => w.toLowerCase().replace(/[^\w]/g, '')));
         const setB = new Set(promptB.split(/\s+/).map(w => w.toLowerCase().replace(/[^\w]/g, '')));

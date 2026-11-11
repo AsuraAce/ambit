@@ -55,7 +55,7 @@ export const ResourcesTab: React.FC<TabProps> = React.memo(({ settings, setSetti
                 type="file"
                 ref={resourceInputRef}
                 className="hidden"
-                // @ts-ignore
+                // @ts-expect-error -- webkitdirectory is not in React's input attribute types
                 webkitdirectory=""
                 directory=""
             />

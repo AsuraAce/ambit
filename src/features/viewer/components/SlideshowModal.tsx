@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock, Maximize2, Info } from 'lucide-react';
+import { X, Play, Pause, ChevronLeft, ChevronRight, Shuffle, Clock } from 'lucide-react';
 import { AIImage } from '../../../types';
 import { SmartImage } from '../../../features/library/components/SmartImage';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
@@ -60,6 +60,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
       }
       shuffledIndicesRef.current = indices;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on images.length so a new array with the same count does not reshuffle
   }, [isShuffle, images.length]);
 
   // Handle Mouse Movement to toggle HUD
@@ -95,6 +96,7 @@ export const SlideshowModal: React.FC<SlideshowModalProps> = ({
     // Pre-load
     const img = new Image();
     img.src = images[next].url;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on images.length so a new array with the same count does not re-run the preload
   }, [currentIndex, isShuffle, images.length, isOpen]); // Stable images.length instead of images array
 
   // Navigation Logic

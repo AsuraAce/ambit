@@ -76,7 +76,8 @@ export const ImageCanvas: React.FC<ImageCanvasProps> = ({
                 className="flex-1 flex items-center justify-center relative group overflow-hidden cursor-grab active:cursor-grabbing"
                 onClick={(e) => {
                     if (scale === 1 && e.target === e.currentTarget) {
-                        isTheaterMode ? onToggleTheater() : onClose();
+                        if (isTheaterMode) onToggleTheater();
+                        else onClose();
                     }
                 }}
                 onDoubleClick={handlers.onDoubleClick}

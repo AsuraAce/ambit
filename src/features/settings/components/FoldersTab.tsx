@@ -114,7 +114,7 @@ export const FoldersTab: React.FC<TabProps> = React.memo(({
                             type="file"
                             ref={fileInputRef}
                             className="hidden"
-                            // @ts-ignore
+                            // @ts-expect-error -- webkitdirectory is non-standard and missing from input props
                             webkitdirectory=""
                             directory=""
                         />

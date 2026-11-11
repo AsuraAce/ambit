@@ -64,6 +64,7 @@ const withThumbnailRepairOperation = async <T>(
         try {
             await unwrap(commands.finishThumbnailRepairOperation(operationId));
         } catch (finishError) {
+            // eslint-disable-next-line no-unsafe-finally -- when work succeeded, a failed release must surface to the caller; when work failed, the original error is kept and this one is only logged
             if (operationError === undefined) throw finishError;
             console.error('[Thumb] Failed to release thumbnail repair operation', finishError);
         }

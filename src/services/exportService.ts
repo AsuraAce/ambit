@@ -59,7 +59,7 @@ export const exportImagesToZip = async (
           const response = await fetch(img.url);
           const blob = await response.blob();
           zip.file(img.filename, blob);
-        } catch (e) {
+        } catch {
           zip.file(`${img.filename}.error.txt`, `Failed to download source item: ${img.url}`);
         }
       } else {

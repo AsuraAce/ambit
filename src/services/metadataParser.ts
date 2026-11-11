@@ -1,4 +1,4 @@
-import { ImageMetadata, GeneratorTool, ParseResult, AIImage, type SourceKind } from '../types';
+import { ImageMetadata, GeneratorTool, ParseResult } from '../types';
 import { commands, ScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { getFilename } from '../utils/pathUtils';
@@ -78,7 +78,6 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
 
         // Let's implement a simple Request ID system.
         const requestId = Math.random().toString(36).substring(7);
-        let timeoutId: ReturnType<typeof setTimeout>;
         let settled = false;
         const diagnostic = startBackgroundDiagnostic('worker', 'Metadata parse', {
             requestId,
@@ -120,7 +119,7 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
         };
 
         const payload = toWorkerInput(chunks);
-        timeoutId = setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             settle('failed', () => reject(new Error("Worker timed out")), { error: 'Worker timed out' });
         }, 5000);
         worker.addEventListener('message', handler);
@@ -128,6 +127,7 @@ const parseInWorker = (chunks: unknown, filename: string, path?: string, default
         try {
             worker.postMessage({ chunks: payload.chunks, buffer: payload.buffer, filename, requestId, path, defaultTool });
         } catch (error) {
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- rejects with the exact value postMessage threw (a DataCloneError or non-Error); callers handle it as-is
             settle('failed', () => reject(error), {
                 error: error instanceof Error ? error.message : String(error)
             });

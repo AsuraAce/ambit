@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Link2, FileUp, FolderOpen, Check, Zap, Sparkles, AlertCircle, ArrowRight, Video } from 'lucide-react';
+import { X, Link2, FileUp, FolderOpen, Check, Sparkles, Video } from 'lucide-react';
 
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',

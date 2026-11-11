@@ -232,7 +232,7 @@ export const useResourcesTabLogic = ({
             if (selected && typeof selected === 'string') {
                 setNewResourcePath(normalizePath(selected));
             }
-        } catch (e) {
+        } catch {
             resourceInputRef.current?.click();
         }
     }, []);

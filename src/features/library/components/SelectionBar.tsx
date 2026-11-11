@@ -1,4 +1,5 @@
-import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Edit3, Share, Trash2, X, Eye } from 'lucide-react';
+import { SplitSquareHorizontal, Heart, Pin, EyeOff, Folder, FolderMinus, Share, Trash2, X, Eye } from 'lucide-react';
+import type { ReactElement } from 'react';
 import { AIImage, isVideoAsset, type SourceKind } from '../../../types';
 import { isImageMasked } from '../../../utils/maskingUtils';
 import { useSettingsStore } from '../../../stores/settingsStore';
@@ -34,9 +35,9 @@ interface SelectionBarProps {
 export function SelectionBar({
     selectedIds,
     filteredImages,
-    lastSelectedId,
+    lastSelectedId: _lastSelectedId,
     isExporting,
-    confirmDelete,
+    confirmDelete: _confirmDelete,
     maskedKeywords,
     onClearSelection,
     onDelete,
@@ -70,8 +71,8 @@ export function SelectionBar({
     const allCurrentlyMasked = selectedImages.every(img => isImageMasked(img, privacyEnabled, maskedKeywords));
 
     let nextState: boolean | null = null;
-    let nextLabel = "Reset All to Auto Mask";
-    let nextIcon = <EyeOff className="w-5 h-5" />;
+    let nextLabel: string;
+    let nextIcon: ReactElement;
     let buttonClass = NEUTRAL_BUTTON_CLASS;
 
     if (allAuto) {

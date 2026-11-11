@@ -27,7 +27,6 @@ export const parseAndApplyFilter = (
             }));
         }
     } else if (term.startsWith('tool:')) {
-        const toolName = term.replace('tool:', '').trim();
         // Re-calculating enum if needed, but for now we trust the text matching in SQL
         setFilters(prev => ({
             ...prev,

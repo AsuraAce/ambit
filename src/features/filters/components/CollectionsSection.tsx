@@ -167,7 +167,7 @@ export const CollectionsSection: React.FC<CollectionsSectionProps> = ({
                                 onChange={(e) => setNewName(e.target.value)}
                                 placeholder={isSavingSearch ? "Save search as..." : "New collection name..."}
                                 className="w-full bg-white dark:bg-zinc-900 border border-gray-300 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs focus:border-sage-500 outline-none text-gray-900 dark:text-white"
-                                onBlur={() => { !newName && setIsCreating(false); setIsSavingSearch(false); }}
+                                onBlur={() => { if (!newName) setIsCreating(false); setIsSavingSearch(false); }}
                             />
                         </form>
                     )}

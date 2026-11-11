@@ -262,7 +262,7 @@ export const MetadataInfoTab = ({
     const handleCopyGenData = () => {
         const md = image.metadata;
 
-        let text = '';
+        let text: string;
         if (md.rawParameters && md.tool === GeneratorTool.AUTOMATIC1111) {
             text = md.rawParameters;
         } else {

@@ -72,7 +72,7 @@ export const TitleBar = () => {
                 } else {
                     cleanup = disposeListeners;
                 }
-            } catch (e) {
+            } catch {
                 console.warn("TitleBar: Not in Tauri environment");
             }
         };

@@ -1,8 +1,7 @@
 
 import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
-import { Pencil, Trash2, Archive, ArchiveRestore, Play, Download, ImageOff, ChevronRight, Pin, Settings } from 'lucide-react';
-import { SortOption } from '../../../types';
+import { Pencil, Trash2, Archive, ArchiveRestore, Play, Download, ImageOff, Pin, Settings } from 'lucide-react';
 import { TooltipButton } from '../../../components/ui/InfoTooltip';
 
 interface CollectionContextMenuProps {

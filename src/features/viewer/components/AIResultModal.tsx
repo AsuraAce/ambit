@@ -281,7 +281,7 @@ interface VariationDisplayProps {
     hasNext: boolean;
 }
 
-const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index, onCopy, onPrev, onNext, hasPrev, hasNext }) => {
+const VariationDisplay: React.FC<VariationDisplayProps> = ({ text, index: _index, onCopy, onPrev, onNext, hasPrev, hasNext }) => {
     const [copied, setCopied] = React.useState(false);
 
     const handleCopy = () => {

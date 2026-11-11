@@ -513,7 +513,7 @@ export const diagnoseInvokeAI = async (rootPath: string): Promise<InvokeDiagnost
             try {
                 const res = await db.select<CountRow[]>(`SELECT count(*) as count FROM ${t.name}`);
                 tableCounts.push({ name: t.name, count: res[0]?.count ?? 0 });
-            } catch (e) {
+            } catch {
                 tableCounts.push({ name: t.name, count: 'Error' });
             }
         }

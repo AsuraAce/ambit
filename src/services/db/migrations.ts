@@ -4,7 +4,7 @@ export const migrateSchema = async () => {
     const db = await getDb();
     try {
         await db.select('SELECT is_pinned FROM images LIMIT 1');
-    } catch (e) {
+    } catch {
         console.log('[DB] Adding is_pinned column...');
         try {
             await db.execute('ALTER TABLE images ADD COLUMN is_pinned INTEGER DEFAULT 0');

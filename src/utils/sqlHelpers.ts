@@ -1,4 +1,4 @@
-import { FilterState, AppSettings, Collection } from '../types';
+import { FilterState, AppSettings, Collection, GeneratorTool } from '../types';
 import { getDateFilterBounds, getSearchDateBounds, type DateFilterBounds } from './dateFilters';
 import { toPhotoWallTimeBounds } from './imageDates';
 import { getEffectiveImageKind, normalizeMediaTypeFilter } from './filterState';
@@ -421,7 +421,7 @@ export const buildSqlWhereClause = (
     if (filters.tools.length > 0 && !excludeCategories.includes('tools')) {
         const matchMode = filters.matchModes?.tools || 'any';
         const toolConditions = filters.tools.map(t => {
-            if (t === 'Unknown') {
+            if (t === GeneratorTool.UNKNOWN) {
                 return `(tool = 'Unknown' OR tool IS NULL)`;
             }
             params.push(t);

@@ -20,11 +20,11 @@ interface UseSearchProps {
 }
 
 export const useAiSearchLogic = ({
-  filters,
+  filters: _filters,
   setFilters,
   settings,
   setRecentSearches,
-  availableTags,
+  availableTags: _availableTags,
   onOpenSettings
 }: UseSearchProps) => {
   const { addToast } = useToast();
@@ -104,7 +104,7 @@ export const useAiSearchLogic = ({
         }));
         addToast("Filters updated by AI", "success");
         inputRef.current?.blur();
-      } catch (error) {
+      } catch {
         addToast("AI Search failed. Check API Key.", "error");
         inputRef.current?.focus();
       } finally {

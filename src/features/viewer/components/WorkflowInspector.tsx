@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useMemo, useState } from 'react';
 import { Box, Workflow, Search, ChevronDown, ChevronRight, Copy, Check, Download, Activity, AlertTriangle, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react';
-import { AIImage, isVideoAsset } from '../../../types';
+import { AIImage, GeneratorTool, isVideoAsset } from '../../../types';
 import { scanImageWorkflow } from '../../../services/metadataParser';
 import { updateImageWorkflow, updateImageWorkflowHint } from '../../../services/db/imageRepo';
 import {
@@ -762,7 +762,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     const isDeveloperMode = useSettingsStore((state) => state.settings.devMode === true);
     const showParserDiagnostics = !isVideoAsset(image)
         && isDeveloperMode
-        && image.metadata.tool === 'ComfyUI';
+        && image.metadata.tool === GeneratorTool.COMFYUI;
     const originalWorkflow = image.originalChunks?.workflow;
     const originalPrompt = image.originalChunks?.prompt;
     const originalChunks = useMemo(() => ({
@@ -788,7 +788,9 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         [backendWorkflowGraph, originalChunks]
     );
     const workflowGraphSource = backendGraphSource ?? fallbackWorkflowGraphSource;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const workflowNodes = workflowGraphSource?.nodes ?? [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const workflowEdges = workflowGraphSource?.edges ?? [];
     const nodeById = useMemo(
         () => new Map(workflowNodes.map((node) => [String(node.id), node])),
@@ -798,8 +800,11 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         () => indexWorkflowConnections(workflowNodes, workflowEdges),
         [workflowEdges, workflowNodes]
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const selectedOutputNodeIds = workflowGraphSource?.selectedOutputNodeIds ?? [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const rootSamplerNodeIds = workflowGraphSource?.rootSamplerNodeIds ?? [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- memos derived from this feed effects; a memoised value would change how often they run
     const selectedBranchNodeIds = workflowGraphSource?.selectedBranchNodeIds ?? [];
     const outputAmbiguous = workflowGraphSource?.outputAmbiguous ?? false;
     const visibleSelectedOutputNodeIds = useMemo(
@@ -863,7 +868,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
     }, [nodeMode, selectedBranchAvailable]);
 
     React.useEffect(() => {
-        if (image.metadata.tool !== 'ComfyUI' || Object.keys(originalChunks).length === 0) {
+        if (image.metadata.tool !== GeneratorTool.COMFYUI || Object.keys(originalChunks).length === 0) {
             setBackendWorkflowGraph(null);
             return;
         }
@@ -928,6 +933,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
             };
             void loadWorkflow(); // catches and logs its own failures
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on image.id and the workflow fields; a new image object or parent callback must not restart the load
     }, [image.id, image.metadata.workflowJson, localWorkflow, isLoading, workflowJsonForActions]);
 
     // Sync local state if prop changes OR if image changes
@@ -993,7 +999,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
         element.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, [filteredNodes, focusedConnection, searchQuery]);
 
-    const graphSourceLabel = image.metadata.tool === 'ComfyUI' && workflowGraphSource
+    const graphSourceLabel = image.metadata.tool === GeneratorTool.COMFYUI && workflowGraphSource
         ? workflowGraphSource.source === 'prompt'
             ? 'API Prompt'
             : workflowGraphSource.normalizedByBackend
@@ -1046,7 +1052,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                     </>}
                 />
 
-                {image.metadata.tool === 'ComfyUI' && workflowNodes.length > 0 && (
+                {image.metadata.tool === GeneratorTool.COMFYUI && workflowNodes.length > 0 && (
                     <div
                         role="group"
                         aria-label="Workflow node view"
@@ -1145,7 +1151,7 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
                                                 ? (image.metadata.hasWorkflowHint === false
                                                     ? "This image was generated without a recorded workflow."
                                                     : "No workflow data was found for this image in the database or file headers.")
-                                                : image.metadata.tool === 'InvokeAI'
+                                                : image.metadata.tool === GeneratorTool.INVOKEAI
                                                     ? "This InvokeAI workflow has a complex session structure that isn't fully visualizable yet, but you can still copy or download the JSON."
                                                     : "This image contains raw workflow data that doesn't follow the standard node graph structure, but you can still copy or download the JSON."
                                         }

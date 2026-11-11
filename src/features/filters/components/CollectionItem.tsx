@@ -59,8 +59,8 @@ export const CollectionItem: React.FC<CollectionItemProps> = ({
     handleDrop,
     handleContextMenu,
     dropTargetId,
-    onResetThumbnail,
-    onDelete,
+    onResetThumbnail: _onResetThumbnail,
+    onDelete: _onDelete,
     viewMode = 'list',
     isThumbnailPending = false
 }) => {

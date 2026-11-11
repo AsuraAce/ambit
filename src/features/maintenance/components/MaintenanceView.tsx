@@ -124,7 +124,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
     const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     // Missing Scan Special State
-    const [scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
+    const [_scanMissingIds, setScanMissingIds] = useState<Set<string>>(new Set());
     const [fetchedMissingImages, setFetchedMissingImages] = useState<AIImage[]>([]);
 
     useEffect(() => {
@@ -266,7 +266,7 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         handleImageClick,
         handleRangeSelection: selectionRangeHandler,
         clearSelection,
-        setLastSelectedId
+        setLastSelectedId: _setLastSelectedId
     } = useSelection(currentList);
 
     // --- Handlers ---
@@ -517,7 +517,10 @@ export const MaintenanceView: React.FC<MaintenanceViewProps> = ({
         setLocalMissingImages,
         thumbnailsScope,
         untaggedScope,
-        viewingImageId
+        viewingImageId,
+        setLocalIntermediateImages,
+        setLocalUnoptimizedImages,
+        setLocalUntaggedImages
     ]);
 
     const handleRegenerate = async (ids?: string[]) => {

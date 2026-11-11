@@ -64,7 +64,7 @@ export const scanForOrphans = async (
 
     const ambitDb = await getDb();
     throwIfInvokeAborted(signal);
-    const existingRows = await ambitDb.select('SELECT id FROM images') as { id: string }[];
+    const existingRows = await ambitDb.select<{ id: string }[]>('SELECT id FROM images');
     throwIfInvokeAborted(signal);
     const ambitExistingIds = new Set(existingRows.map(r => r.id));
 
@@ -90,7 +90,7 @@ export const scanForOrphans = async (
         }
     }
 
-    let allFiles: string[] = [];
+    let allFiles: string[];
     try {
         allFiles = await unwrap(commands.listInvokeaiImages(imagesRoot));
         throwIfInvokeAborted(signal);
@@ -186,7 +186,7 @@ export const scanForOrphans = async (
                 await insertImagesBatch(batchToInsert);
                 processed += batchToInsert.length;
             }
-        } catch (e) {
+        } catch {
             throwIfInvokeAborted(signal);
         }
         onProgress('Importing untracked files...', processed, total);

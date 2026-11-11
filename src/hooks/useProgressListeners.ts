@@ -51,5 +51,5 @@ export function useProgressListeners() {
             discoveryListener.cleanup();
             duplicateScanListener.cleanup();
         };
-    }, []);
+    }, [setDiscoveryScanProgress, setDuplicateScanProgress, setIsScanningDuplicates, setModelResolutionProgress]);
 }

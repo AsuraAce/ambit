@@ -688,7 +688,8 @@ export const SyncProvider: React.FC<{
             } catch (rollbackError) {
                 throw new AggregateError(
                     [preparationError, rollbackError],
-                    'Owner scope preparation failed and the previous view could not be restored.'
+                    'Owner scope preparation failed and the previous view could not be restored.',
+                    { cause: rollbackError }
                 );
             }
             throw preparationError;
@@ -727,7 +728,7 @@ export const SyncProvider: React.FC<{
         };
         ownerScopeAdmissionRef.current = admission;
         return admission;
-    }, [persistOwnerSelection, refreshAfterOwnerScopeChange, settingsRef]);
+    }, [persistOwnerSelection, refreshAfterOwnerScopeChange, settingsRef, setInvokeOwnerScopeState]);
 
     const ensureInvokeOwnerScope = useCallback(async (force = false): Promise<InvokeOwnerAdmission> => {
         if (!useCollectionStore.getState().isLoaded) {
@@ -960,7 +961,7 @@ export const SyncProvider: React.FC<{
                 startPendingInvokeLiveRerun();
             }
         }
-    }, [applyDiscoveredOwnerScope, settingsRef, startPendingInvokeLiveRerun]);
+    }, [applyDiscoveredOwnerScope, settingsRef, startPendingInvokeLiveRerun, setInvokeOwnerScopeState]);
 
     const selectInvokeOwnerScope = useCallback(async (selection: InvokeOwnerSelection): Promise<boolean> => {
         const draft = getInvokeConnectionDraft(settingsRef.current);
@@ -2031,6 +2032,7 @@ export const SyncProvider: React.FC<{
             await batchRefresh;
             if (syncCacheClaim) {
                 await abortInvokeScopeCacheClaim(syncCacheClaim, 'sync completion');
+                // eslint-disable-next-line no-useless-assignment -- clears the released claim, like the other abort sites
                 syncCacheClaim = null;
             }
             if (!options.controller && (syncOutcome.status === 'failed' || syncOutcome.status === 'aborted')
@@ -2094,7 +2096,7 @@ export const SyncProvider: React.FC<{
             finishActiveRun(syncOutcome);
         }
         return syncOutcome;
-    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, refreshAfterOwnerScopeChange, setSettings, refreshCollections, refreshCollectionThumbnails, refreshSmartCounts, setSyncStatus, setSyncProgress, setInvokeOwnerScopeState, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, startPendingInvokeLiveRerun, updateLiveWatchSession, reportLiveImagesReceived]);
+    }, [syncStatus, addToast, ensureInvokeOwnerScope, onSyncComplete, onInvokeContentChanged, queryClient, queueLiveFacetRefresh, incrementFacetCacheVersion, refreshAfterOwnerScopeChange, setSettings, refreshCollections, refreshCollectionThumbnails, refreshSmartCounts, setSyncStatus, setSyncProgress, setInvokeOwnerScopeState, setInvokeSyncActivityKind, setIsLiveSyncing, startLiveWatchSession, startPendingInvokeLiveRerun, updateLiveWatchSession, reportLiveImagesReceived, setSyncAbortController, settingsRef]);
 
     runInvokeSyncRef.current = runInvokeSync;
 
@@ -2278,7 +2280,7 @@ export const SyncProvider: React.FC<{
         });
 
         return targetedLiveDrainPromiseRef.current;
-    }, [queryClient, queueLiveFacetRefresh, reportLiveImagesReceived, startLiveWatchSession, updateLiveWatchSession]);
+    }, [queryClient, queueLiveFacetRefresh, reportLiveImagesReceived, startLiveWatchSession, updateLiveWatchSession, settingsRef]);
 
     const cancelSync = useCallback(() => {
         cancelSyncAction();

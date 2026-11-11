@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check, Filter, ExternalLink, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
+import { Filter, ExternalLink, FolderOpen, Sliders, Puzzle, Save, FolderSearch, Images, HardDrive, Layers3, type LucideIcon } from 'lucide-react';
 import { AIImage, FilterState, type SmartCollection } from '../../../types';
 import { useSearch } from '../../../contexts/SearchContext';
 import { useCollections } from '../../../contexts/CollectionContext';
@@ -7,7 +7,6 @@ import { CollectionsSection } from './CollectionsSection';
 
 import { ParameterSection } from './ParameterSection';
 import { GeneratorSection } from './GeneratorSection';
-import { ArchitectureSection } from './ArchitectureSection';
 import { ResourceSection, type AssetScope } from './ResourceSection';
 import type { FacetItem } from '../../../services/db/searchRepo';
 import { DateRangeSection } from './DateRangeSection';
@@ -48,10 +47,10 @@ type FilterTab = 'organize' | 'generate' | 'resources';
 
 export const FilterPanel: React.FC<FilterPanelProps> = ({
     isInvokeCollectionCatchupPending = false,
-    filteredImages,
+    filteredImages: _filteredImages,
     onCreateCollection,
     onSaveSmartCollection,
-    onDeleteSmartCollection,
+    onDeleteSmartCollection: _onDeleteSmartCollection,
     onDropOnCollection,
     onRenameCollection,
     onDeleteCollection,

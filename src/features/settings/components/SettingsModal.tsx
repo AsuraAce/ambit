@@ -111,6 +111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = React.memo(({
       invokeOwnerDiscoverySession.reset();
     }
     wasSettingsOpenRef.current = isOpen;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- lists .reset, the only member used; the session object is new every render
   }, [invokeOwnerDiscoverySession.reset, isOpen]);
 
   // Reset to initial tab when modal opens

@@ -1,5 +1,5 @@
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { AIImage, FilterState, Collection, SortOption, AppSettings } from '../types';
 import { buildSqlWhereClause } from '../utils/sqlHelpers';
 

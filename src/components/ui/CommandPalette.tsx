@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Monitor, Moon, Sun, LayoutGrid, Clock, BarChart3, Eraser, Settings, Import, FolderPlus, Sparkles } from 'lucide-react';
+import { Search, Moon, Sun, LayoutGrid, Clock, BarChart3, Eraser, Settings, Import, FolderPlus, Sparkles } from 'lucide-react';
 import { AppSettings, ViewMode } from '../../types';
 
 interface CommandPaletteProps {

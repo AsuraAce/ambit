@@ -1221,7 +1221,7 @@ export const getAllCollectionsWithStats = async (options: CollectionStatsOptions
             imageIds: [],
             customThumbnail: c.custom_thumbnail,
             filters,
-            manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) : undefined,
+            manualExclusions: c.manual_exclusions ? JSON.parse(c.manual_exclusions) as string[] : undefined,
             source: c.source,
             invokeOwnerId: c.invoke_owner_id || undefined,
             invokeSourceId: c.invoke_source_id || undefined,
