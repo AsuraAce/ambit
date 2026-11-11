@@ -65,8 +65,8 @@ tauri-plugin-window-state = "2"
 tauri-plugin-single-instance = "2"
 
 [target.'cfg(windows)'.dependencies]
-webview2-com = "=0.38.2"
-windows-core = "=0.61.2"
+webview2-com = "=0.39.1"
+windows-core = "=0.62.2"
 
 [dev-dependencies]
 tauri = { version = "2.11.2", features = ["test"] }
