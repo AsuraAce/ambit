@@ -15,7 +15,7 @@ const store = vi.hoisted(() => ({
     setSettings: vi.fn(),
     setPrivacyEnabled: vi.fn(),
     flushSettings: vi.fn(),
-    initialize: vi.fn(),
+    initialize: vi.fn().mockResolvedValue(undefined),
 }));
 
 const lifecycle = vi.hoisted(() => ({

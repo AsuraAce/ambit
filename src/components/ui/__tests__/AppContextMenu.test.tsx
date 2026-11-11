@@ -177,7 +177,7 @@ const createFilters = (collectionId: string | null = 'collection-1'): FilterStat
 const actionMocks = {
     toggleFavorite: vi.fn(),
     handlePinImage: vi.fn(),
-    handleBulkMask: vi.fn(),
+    handleBulkMask: vi.fn().mockResolvedValue(undefined),
     requestDeleteForId: vi.fn(),
 };
 
@@ -195,7 +195,7 @@ const modalMocks = {
 
 const onClose = vi.fn();
 const onMoveToCollection = vi.fn();
-const clipboardWriteText = vi.fn();
+const clipboardWriteText = vi.fn().mockResolvedValue(undefined);
 const clipboardWrite = vi.fn();
 
 const requireMenu = (): CapturedMenuProps => {
