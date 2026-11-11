@@ -57,9 +57,10 @@ pub async fn discover_a1111_folders(
     app: tauri::AppHandle,
     root_path: String,
 ) -> Result<A1111DiscoveryResult, String> {
-    use tauri_plugin_fs::FsExt;
     tauri::async_runtime::spawn_blocking(move || {
-        discover_a1111_folders_in_scope(&root_path, |path| app.fs_scope().is_allowed(path))
+        discover_a1111_folders_in_scope(&root_path, |path| {
+            super::utils::fs_scope_allows(&app, path)
+        })
     })
     .await
     .map_err(|e| e.to_string())?

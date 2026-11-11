@@ -1,6 +1,7 @@
 ﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { processFoldersUnified, processNativePaths, processTargetedFiles, processWebFiles, scanResourceThumbnails } from '../importService';
 import { GeneratorTool } from '../../types';
+import { normalizePath } from '../../utils/pathUtils';
 
 const mocks = vi.hoisted(() => ({
     listen: vi.fn(),
@@ -641,6 +642,31 @@ describe('processTargetedFiles', () => {
         mocks.ensureFolderAccessible.mock.invocationCallOrder.forEach((registeredAt, index) => {
             expect(registeredAt).toBeLessThan(mocks.scanDirectoryWithStats.mock.invocationCallOrder[index]);
         });
+    });
+
+    // Review of #402: registration accepts only folders and does not cache a failure,
+    // so registering each picked file cost one failed call and one logged error per file.
+    it('does not register picked files, which the dialog already granted', async () => {
+        mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
+
+        await processFoldersUnified([{ path: 'C:/picked/a.png' }, { path: 'C:/picked/b.mp4' }, { path: 'C:/folder' }], {});
+
+        expect(mocks.ensureFolderAccessible.mock.calls.map(([path]) => path)).toEqual(['C:/folder']);
+    });
+
+    // Review of #402: a drive root cannot be registered, so its scan is refused. It
+    // must be reported, not dropped silently and marked complete.
+    it.each(['D:\\', 'D:/', 'E:', '/', '\\\\server\\share'])('reports the filesystem root %s instead of scanning it', async (root) => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        mocks.scanDirectoryWithStats.mockResolvedValue({ status: 'ok', data: [] });
+
+        const result = await processFoldersUnified([{ path: root }, { path: 'C:/folder' }], {});
+
+        expect(result.unscannableRootPaths).toEqual([normalizePath(root)]);
+        expect(result.completedSourcePaths).toContain(normalizePath(root));
+        expect(mocks.ensureFolderAccessible).not.toHaveBeenCalledWith(root);
+        expect(mocks.scanDirectoryWithStats.mock.calls.map(([path]) => path)).toEqual(['C:/folder']);
+        warn.mockRestore();
     });
 
     it('returns a cancelled result and skips work when aborted before discovery', async () => {

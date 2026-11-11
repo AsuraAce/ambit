@@ -242,14 +242,11 @@ pub fn start_native_folder_watcher(
     }
 
     // Refuse before the running watcher is replaced, so a refused call leaves it as it was.
-    {
-        use tauri_plugin_fs::FsExt;
-        crate::scanner::utils::validate_scoped_roots(
-            &paths,
-            |path| app.fs_scope().is_allowed(path),
-            "Watched folder",
-        )?;
-    }
+    crate::scanner::utils::validate_scoped_roots(
+        &paths,
+        |path| crate::scanner::utils::fs_scope_allows(&app, path),
+        "Watched folder",
+    )?;
 
     let mut watcher_guard = state.watcher.lock().map_err(|e| e.to_string())?;
 

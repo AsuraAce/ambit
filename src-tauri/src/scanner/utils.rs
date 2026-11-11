@@ -132,6 +132,48 @@ pub fn validate_thumbnail_dir(dir: Option<&str>, app_thumbnail_dir: &Path) -> Re
     }
 }
 
+/// The spelling of `path` to check against the fs scope.
+///
+/// The scope canonicalizes only paths that exist, and `register_library_path` stores
+/// canonical folders. A missing file under a mapped drive or a junction
+/// (`Z:\Invoke` is `\\?\UNC\server\share\Invoke`) would then match no pattern, and be
+/// refused instead of reported missing. A missing path is therefore spelled from its
+/// nearest existing ancestor, canonicalized. A missing path containing `.` or `..` is
+/// refused (`None`), so it cannot step out of that ancestor to probe what exists.
+pub fn scope_check_path(
+    path: &Path,
+    canonicalize: impl Fn(&Path) -> std::io::Result<PathBuf>,
+) -> Option<PathBuf> {
+    use std::path::Component;
+
+    if canonicalize(path).is_ok() {
+        return Some(path.to_path_buf());
+    }
+    if path
+        .components()
+        .any(|part| matches!(part, Component::CurDir | Component::ParentDir))
+    {
+        return None;
+    }
+    for ancestor in path.ancestors().skip(1) {
+        if ancestor.as_os_str().is_empty() {
+            break;
+        }
+        if let Ok(base) = canonicalize(ancestor) {
+            return Some(base.join(path.strip_prefix(ancestor).ok()?));
+        }
+    }
+    Some(path.to_path_buf())
+}
+
+/// Whether the fs scope allows `path`, with a missing path spelled as
+/// [`scope_check_path`] spells it. Every #384 check goes through this.
+pub fn fs_scope_allows<R: tauri::Runtime>(app: &tauri::AppHandle<R>, path: &Path) -> bool {
+    use tauri_plugin_fs::FsExt;
+    scope_check_path(path, |candidate| fs::canonicalize(candidate))
+        .is_some_and(|candidate| app.fs_scope().is_allowed(candidate))
+}
+
 fn normalize_dir_spelling(path: &Path) -> String {
     normalize_path_for_frontend(path)
         .trim_end_matches('/')
@@ -586,12 +628,13 @@ fn normalize_path_string(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        audit_invokeai_folder_in_scope, get_file_sizes_in_scope, list_invokeai_images_in_scope,
-        probe_file_metadata_bulk_impl, read_image_metadata_in_scope, resolve_existing_regular_file,
-        resolve_existing_show_target, resolve_known_media_file_target,
-        resolve_show_in_folder_target, scan_directory_recursive_in_scope,
-        scan_directory_since_in_scope, scan_directory_with_stats_in_scope, scan_image_in_scope,
-        scan_image_workflow_in_scope, validate_bulk_scan_request, validate_library_file_paths,
+        audit_invokeai_folder_in_scope, fs_scope_allows, get_file_sizes_in_scope,
+        list_invokeai_images_in_scope, probe_file_metadata_bulk_impl, read_image_metadata_in_scope,
+        resolve_existing_regular_file, resolve_existing_show_target,
+        resolve_known_media_file_target, resolve_show_in_folder_target,
+        scan_directory_recursive_in_scope, scan_directory_since_in_scope,
+        scan_directory_with_stats_in_scope, scan_image_in_scope, scan_image_workflow_in_scope,
+        scope_check_path, validate_bulk_scan_request, validate_library_file_paths,
         validate_metadata_probe_paths, validate_scoped_roots, validate_thumbnail_dir,
         verify_image_paths_in_scope,
     };
@@ -901,6 +944,110 @@ mod tests {
             verify_image_paths_in_scope(vec![path, missing.clone()], |_| true, |_| Ok(false)),
             Ok(vec![missing])
         );
+        let _ = fs::remove_dir_all(temp_root);
+    }
+
+    // A missing file is spelled from its nearest existing folder, canonicalized, so
+    // it matches the canonical folder that registration stored.
+    #[test]
+    fn missing_paths_are_checked_through_their_canonical_ancestor() {
+        let root = std::env::temp_dir().join("ambit_scope_check_path");
+        let link = root.join("link");
+        let real = root.join("real");
+        let canonicalize = |path: &Path| -> std::io::Result<PathBuf> {
+            if path == link {
+                Ok(real.clone())
+            } else if path == root || path == real || path == real.join("present.png") {
+                Ok(path.to_path_buf())
+            } else {
+                Err(std::io::ErrorKind::NotFound.into())
+            }
+        };
+
+        assert_eq!(
+            scope_check_path(&link.join("gone").join("a.png"), canonicalize),
+            Some(real.join("gone").join("a.png"))
+        );
+        // A path that exists is left for the scope to canonicalize.
+        let present = real.join("present.png");
+        assert_eq!(scope_check_path(&present, canonicalize), Some(present));
+        // `..` cannot step out of the existing folder to probe what exists elsewhere.
+        assert_eq!(
+            scope_check_path(
+                &link.join("gone").join("..").join("..").join("secret.png"),
+                canonicalize
+            ),
+            None
+        );
+        // With no existing ancestor (an unplugged drive), the spelling is unchanged.
+        let unplugged = PathBuf::from("unplugged").join("a.png");
+        assert_eq!(
+            scope_check_path(&unplugged, |_| Err(std::io::ErrorKind::NotFound.into())),
+            Some(unplugged)
+        );
+    }
+
+    // Review of #402: `verify_image_paths` refused a missing file under a junction or
+    // mapped-drive root instead of reporting it missing, because the scope matched
+    // the missing path literally against the root's canonical form.
+    #[test]
+    fn a_missing_file_under_a_linked_root_is_reported_missing_not_refused() {
+        use tauri_plugin_fs::FsExt;
+
+        let temp_root = temp_dir("linked_root");
+        let real = temp_root.join("real");
+        let link = temp_root.join("link");
+        let outside = temp_root.join("outside");
+        fs::create_dir_all(&real).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        #[cfg(windows)]
+        {
+            let status = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&link)
+                .arg(&real)
+                .stdout(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success(), "mklink /J failed");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let app = tauri::test::mock_builder()
+            .plugin(tauri_plugin_fs::init())
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .unwrap();
+        let handle = app.handle().clone();
+        // As `register_library_path` registers a folder: canonical and recursive.
+        handle
+            .fs_scope()
+            .allow_directory(fs::canonicalize(&link).unwrap(), true)
+            .unwrap();
+
+        let missing = link.join("missing.png");
+        assert!(
+            !handle.fs_scope().is_allowed(&missing),
+            "the raw scope check no longer refuses this case; fs_scope_allows may be unneeded"
+        );
+        assert!(fs_scope_allows(&handle, &missing));
+        assert!(!fs_scope_allows(&handle, &outside.join("missing.png")));
+        assert!(!fs_scope_allows(
+            &handle,
+            &link.join("..").join("outside").join("missing.png")
+        ));
+
+        let missing = missing.to_string_lossy().to_string();
+        assert_eq!(
+            verify_image_paths_in_scope(
+                vec![missing.clone()],
+                |path| fs_scope_allows(&handle, path),
+                |_| Ok(false)
+            ),
+            Ok(vec![missing])
+        );
+
+        let _ = fs::remove_dir(&link);
         let _ = fs::remove_dir_all(temp_root);
     }
 

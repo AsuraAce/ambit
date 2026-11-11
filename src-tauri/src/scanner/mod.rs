@@ -59,7 +59,7 @@ pub async fn scan_image(
         extract_workflow,
         default_tool,
         &app_thumbnail_dir,
-        |candidate| app.fs_scope().is_allowed(candidate),
+        |candidate| utils::fs_scope_allows(&app, candidate),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -82,7 +82,7 @@ pub async fn scan_images_bulk(
             &paths,
             thumbnail_dir.as_deref(),
             &app_thumbnail_dir,
-            |candidate| app.fs_scope().is_allowed(candidate),
+            |candidate| utils::fs_scope_allows(&app, candidate),
             |candidate| known_media.contains(candidate),
         )?;
         drop(known_media);
@@ -156,7 +156,7 @@ pub async fn scan_image_workflow(
     let mut known_media = utils::KnownMediaLookup::new(&app);
     utils::scan_image_workflow_in_scope(
         path,
-        |candidate| app.fs_scope().is_allowed(candidate),
+        |candidate| utils::fs_scope_allows(&app, candidate),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -172,7 +172,7 @@ pub async fn read_image_metadata(
     utils::read_image_metadata_in_scope(
         path,
         default_tool,
-        |candidate| app.fs_scope().is_allowed(candidate),
+        |candidate| utils::fs_scope_allows(&app, candidate),
         |candidate| known_media.contains(candidate),
     )
 }
@@ -187,7 +187,7 @@ pub async fn get_file_sizes_bulk(
         let mut known_media = utils::KnownMediaLookup::new(&app);
         utils::get_file_sizes_in_scope(
             paths,
-            |candidate| app.fs_scope().is_allowed(candidate),
+            |candidate| utils::fs_scope_allows(&app, candidate),
             |candidate| known_media.contains(candidate),
         )
     })
@@ -217,7 +217,7 @@ pub async fn verify_image_paths(
         let mut known_media = utils::KnownMediaLookup::new(&app);
         utils::verify_image_paths_in_scope(
             paths,
-            |candidate| app.fs_scope().is_allowed(candidate),
+            |candidate| utils::fs_scope_allows(&app, candidate),
             |candidate| known_media.contains(candidate),
         )
     })
@@ -233,7 +233,7 @@ pub async fn audit_invokeai_folder(
 ) -> Result<FolderStats, String> {
     tauri::async_runtime::spawn_blocking(move || {
         utils::audit_invokeai_folder_in_scope(&path, |candidate| {
-            app.fs_scope().is_allowed(candidate)
+            utils::fs_scope_allows(&app, candidate)
         })
     })
     .await
@@ -263,7 +263,7 @@ pub async fn scan_directory_recursive(
 ) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         utils::scan_directory_recursive_in_scope(&path, |candidate| {
-            app.fs_scope().is_allowed(candidate)
+            utils::fs_scope_allows(&app, candidate)
         })
     })
     .await
@@ -294,7 +294,7 @@ pub async fn scan_directory_with_stats(
 ) -> Result<Vec<models::FileEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         utils::scan_directory_with_stats_in_scope(&path, |candidate| {
-            app.fs_scope().is_allowed(candidate)
+            utils::fs_scope_allows(&app, candidate)
         })
     })
     .await
@@ -310,7 +310,7 @@ pub async fn scan_directory_since(
 ) -> Result<Vec<models::FileEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         utils::scan_directory_since_in_scope(&path, since, |candidate| {
-            app.fs_scope().is_allowed(candidate)
+            utils::fs_scope_allows(&app, candidate)
         })
     })
     .await
@@ -445,5 +445,24 @@ mod scope_source_tests {
             "validate_scoped_roots(",
             "Restarting watcher with new paths",
         );
+
+        // The raw scope check refuses a missing file under a junction or mapped
+        // drive; `fs_scope_allows` reports it missing instead.
+        let inline = [
+            (SCANNER, "scan_images_bulk"),
+            (THUMBS_SCAN, "scan_model_thumbnails"),
+            (WATCHER, "start_native_folder_watcher"),
+        ];
+        for (source, name) in routed
+            .iter()
+            .map(|(source, name, _)| (*source, *name))
+            .chain(inline)
+        {
+            let body = command_body(source, name);
+            assert!(
+                body.contains("fs_scope_allows(&app,") && !body.contains("fs_scope().is_allowed("),
+                "{name} must check the scope through fs_scope_allows"
+            );
+        }
     }
 }

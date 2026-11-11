@@ -74,6 +74,8 @@ export interface ImportResult {
     completedSourcePaths: string[];
     cancelledSourcePaths: string[];
     videoSummary?: VideoImportSummary;
+    /** Folders skipped because they are a filesystem root such as `D:\`. */
+    unscannableRootPaths?: string[];
 }
 
 export interface ImportProgressMeta {
@@ -542,6 +544,10 @@ const candidateMediaType = (entry: FileEntry): 'image' | 'video' | null => {
     return null;
 };
 
+/** `D:\`, `D:`, `/` or a bare `\\server\share`, which `register_library_path` refuses. */
+const isFilesystemRoot = (path: string): boolean =>
+    /^(?:[A-Za-z]:[\\/]?|[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]?)$/.test(path.trim());
+
 const isVideoSidecarPath = (path: string): boolean => /\.workflow\.json$/i.test(path);
 
 const resolveVideoSidecarPaths = async (paths: string[]): Promise<string[]> => {
@@ -795,11 +801,21 @@ export async function processFoldersUnified(
                 });
             }
 
+            // Ambit never adds a filesystem root to its scope, so the scan would refuse it.
+            if (isFilesystemRoot(folder.path)) {
+                console.warn(`[ImportUnified] Skipping ${folder.path}: a filesystem root cannot be scanned`);
+                result.unscannableRootPaths = [...(result.unscannableRootPaths ?? []), sourcePath];
+                pushUniquePath(result.completedSourcePaths, sourcePath);
+                continue;
+            }
+
             // Attempt to scan as directory first.
             // Note: scanDirectoryWithStats should be recursive on backend.
             // The scan refuses folders outside the scope. A picked file is already in
-            // scope through the dialog, so a failed registration still tries the scan.
-            await ensureFolderAccessible(folder.path);
+            // scope through the dialog, and registration accepts only folders.
+            if (!candidateMediaType({ path: folder.path, modified: 0, size: 0 })) {
+                await ensureFolderAccessible(folder.path);
+            }
             const files = await unwrap(commands.scanDirectoryWithStats(folder.path));
             if (abortSignal?.aborted) {
                 result.wasCancelled = true;

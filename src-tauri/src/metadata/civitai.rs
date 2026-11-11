@@ -369,8 +369,9 @@ pub fn import_a1111_cache(
     app: tauri::AppHandle,
     cache_path: String,
 ) -> Result<ImportResult, String> {
-    use tauri_plugin_fs::FsExt;
-    let content = read_a1111_cache_in_scope(&cache_path, |path| app.fs_scope().is_allowed(path))?;
+    let content = read_a1111_cache_in_scope(&cache_path, |path| {
+        crate::scanner::utils::fs_scope_allows(&app, path)
+    })?;
 
     let json: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;

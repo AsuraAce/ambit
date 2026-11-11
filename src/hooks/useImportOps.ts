@@ -113,6 +113,16 @@ export const useImportOps = ({
         }
     }, [images, setImages, addToast, refreshCollections, refreshMetadata, refreshHiddenAvailability]);
 
+    // A filesystem root is skipped on every scan until the user replaces it, so say so in every mode.
+    const reportUnscannableRoots = useCallback((result: ImportResult) => {
+        const roots = result.unscannableRootPaths ?? [];
+        if (roots.length === 0) return;
+        addToast(
+            `Ambit can't scan a whole drive (${roots.join(', ')}). In Settings → Connections → Folders, replace it with a subfolder.`,
+            'warning'
+        );
+    }, [addToast]);
+
     const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!e.target.files) return;
         const files = Array.from(e.target.files);
@@ -249,6 +259,7 @@ export const useImportOps = ({
                 shouldWaitForStableFiles,
                 deferFacetCacheRefresh
             );
+            reportUnscannableRoots(result);
             if (result.wasCancelled) {
                 if (isManual) addToast(MANUAL_IMPORT_CANCELLED_MESSAGE, 'info');
                 return result;
@@ -265,7 +276,7 @@ export const useImportOps = ({
                 finishImportRun(importRunId);
             }
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast, reportUnscannableRoots]);
 
     const handleImportFolders = useCallback(async (folders: { path: string, variant?: string }[], options: { mode?: ImportMode } = {}) => {
         const mode = options.mode ?? 'manual';
@@ -314,6 +325,7 @@ export const useImportOps = ({
                 isStartup,
                 forceRescan: false
             });
+            reportUnscannableRoots(result);
 
             if (result.images.length > 0) {
                 setImportProgressForRun(importRunId, formatStableImportProgress({
@@ -356,7 +368,7 @@ export const useImportOps = ({
         } finally {
             finishImportRun(importRunId);
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, addToast, commitImportResult]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, addToast, commitImportResult, reportUnscannableRoots]);
 
     const scanDirectory = useCallback(async (dirPath: string) => {
         const abortCtrl = new AbortController();
@@ -374,6 +386,7 @@ export const useImportOps = ({
             const result = await processNativePaths([dirPath], thumbDir, (current, total, message) => {
                 setImportProgressForRun(importRunId, { current, total, message });
             }, undefined, abortCtrl.signal, false);
+            reportUnscannableRoots(result);
             if (!result.wasCancelled && result.images.length > 0) {
                 await commitImportResult(result, { toastMode: 'compact' });
             }
@@ -382,7 +395,7 @@ export const useImportOps = ({
         } finally {
             finishImportRun(importRunId);
         }
-    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast]);
+    }, [beginImportRun, setImportProgressForRun, finishImportRun, commitImportResult, addToast, reportUnscannableRoots]);
 
     const resyncFolder = useCallback(async (
         folder: MonitoredFolder,

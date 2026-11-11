@@ -230,7 +230,9 @@ pub fn get_invoke_db_snapshot(
     app: tauri::AppHandle<Wry>,
     root_path: String,
 ) -> Result<InvokeDbSnapshot, String> {
-    invoke_db_snapshot_in_scope(&root_path, |path| app.fs_scope().is_allowed(path))
+    invoke_db_snapshot_in_scope(&root_path, |path| {
+        crate::scanner::utils::fs_scope_allows(&app, path)
+    })
 }
 
 /// Reports InvokeAI's database files only when the resolved `invokeai.db` is
