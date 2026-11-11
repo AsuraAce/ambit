@@ -475,6 +475,10 @@ fn an_invokeai_folder_at_a_drive_root_gets_a_clear_error() {
             .join(INVOKE_DB_FILE_NAME)
             .to_string_lossy()
             .to_string(),
+        "/".to_string(),
+        "\\".to_string(),
+        "/databases".to_string(),
+        "E:\\".to_string(),
     ];
     for candidate in candidates {
         let refused = resolve_scoped_invoke_db(&candidate, |_| true).unwrap_err();
@@ -483,6 +487,13 @@ fn an_invokeai_folder_at_a_drive_root_gets_a_clear_error() {
             "{candidate}: {refused}"
         );
     }
+
+    // A drive-relative path is relative, not a drive root.
+    let relative = resolve_scoped_invoke_db("E:databases", |_| true).unwrap_err();
+    assert!(
+        relative.contains("must name an InvokeAI folder"),
+        "{relative}"
+    );
 
     let fixture = Fixture::new("not-root");
     assert!(resolve_scoped_invoke_db(&fixture.root.to_string_lossy(), |_| true).is_ok());

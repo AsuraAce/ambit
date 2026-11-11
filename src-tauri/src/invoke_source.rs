@@ -62,7 +62,7 @@ where
         return Err("No InvokeAI path provided.".to_string());
     }
     let db_path = resolve_invoke_db_path(root_path);
-    if is_at_filesystem_root(&db_path) {
+    if is_at_filesystem_root(root_path, &db_path) {
         return Err(
             "InvokeAI at the root of a drive is not supported. Move it into a subfolder, or point Ambit at a subfolder that contains InvokeAI's databases folder."
                 .to_string(),
@@ -89,23 +89,33 @@ where
     Ok(db_path)
 }
 
-/// True when the InvokeAI folder is a filesystem root such as `E:\`. Ambit never
-/// adds a filesystem root to its scope, so such a folder can never be read.
-fn is_at_filesystem_root(db_path: &Path) -> bool {
-    let Some(mut root) = db_path.parent() else {
+/// True when the InvokeAI folder is a filesystem root such as `E:\` or `/`. Ambit
+/// never adds a filesystem root to its scope, so such a folder can never be read.
+fn is_at_filesystem_root(root_path: &str, db_path: &Path) -> bool {
+    // The resolver trims trailing separators, which turns `/` into "" and `E:\`
+    // into the drive-relative `E:`, so judge those from what the user entered.
+    let entered = root_path.trim().trim_end_matches(['\\', '/']);
+    let bytes = entered.as_bytes();
+    if entered.is_empty()
+        || (bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+    {
         return true;
+    }
+    let Some(mut root) = db_path.parent() else {
+        return false;
     };
     if root
         .file_name()
         .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("databases"))
     {
         let Some(parent) = root.parent() else {
-            return true;
+            return false;
         };
         root = parent;
     }
-    // An empty root is a relative path, which is refused later with its own error.
-    !root.as_os_str().is_empty() && root.parent().is_none()
+    // Relative and drive-relative paths (`E:databases`) have no root of their own;
+    // they are refused later with the relative-path error.
+    root.has_root() && root.parent().is_none()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
