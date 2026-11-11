@@ -2,6 +2,10 @@
  * Normalizes a file path to use forward slashes while preserving Windows
  * verbatim (`//?/`) and UNC (`//server/share`) prefixes.
  */
+/** `D:\`, `D:`, `/` or a bare `\\server\share`, which `register_library_path` refuses. */
+export const isFilesystemRoot = (path: string): boolean =>
+    /^(?:[A-Za-z]:[\\/]?|[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]?)$/.test(path.trim());
+
 export const normalizePath = (path: string): string => {
     const forwardSlashPath = path.replace(/\\/g, '/');
     const preservedPrefix = forwardSlashPath.startsWith('//?/')

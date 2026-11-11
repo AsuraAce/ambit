@@ -5,7 +5,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { exists } from '@tauri-apps/plugin-fs';
 import { commands, type ThumbnailScanResult } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
-import { normalizePath } from '../utils/pathUtils';
+import { isFilesystemRoot, normalizePath } from '../utils/pathUtils';
 import { ensureFolderAccessible, filterAccessibleFolders } from './assetScope';
 import { useLibraryStore } from '../stores/libraryStore';
 import { getDb } from './db/connection';
@@ -543,10 +543,6 @@ const candidateMediaType = (entry: FileEntry): 'image' | 'video' | null => {
     if (/\.(png|jpg|jpeg|webp)$/i.test(entry.path)) return 'image';
     return null;
 };
-
-/** `D:\`, `D:`, `/` or a bare `\\server\share`, which `register_library_path` refuses. */
-const isFilesystemRoot = (path: string): boolean =>
-    /^(?:[A-Za-z]:[\\/]?|[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+[\\/]?)$/.test(path.trim());
 
 const isVideoSidecarPath = (path: string): boolean => /\.workflow\.json$/i.test(path);
 

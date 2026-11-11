@@ -8,6 +8,7 @@ import { processWebFiles, processNativePaths, processFoldersUnified, ImportResul
 import { commands } from '../bindings';
 import { unwrap } from '../utils/spectaUtils';
 import { formatStableImportProgress } from '../utils/importProgress';
+import { formatUnscannableRootsWarning } from '../utils/importSourceStatus';
 import { getThumbnailDir } from '../services/thumbnailService';
 import { ensureFolderAccessible } from '../services/assetScope';
 import { rebuildFacetCache } from '../services/db/imageRepo';
@@ -117,10 +118,7 @@ export const useImportOps = ({
     const reportUnscannableRoots = useCallback((result: ImportResult) => {
         const roots = result.unscannableRootPaths ?? [];
         if (roots.length === 0) return;
-        addToast(
-            `Ambit can't scan a whole drive (${roots.join(', ')}). In Settings → Connections → Folders, replace it with a subfolder.`,
-            'warning'
-        );
+        addToast(formatUnscannableRootsWarning(roots), 'warning');
     }, [addToast]);
 
     const importImages = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -1,6 +1,10 @@
 import type { ImportResult } from '../services/importService';
 import { normalizePath } from './pathUtils';
 
+/** The warning for monitored filesystem roots, which Ambit skips on every scan. */
+export const formatUnscannableRootsWarning = (roots: string[]): string =>
+    `Ambit can't scan a whole drive (${roots.join(', ')}). In Settings → Connections → Folders, replace it with a subfolder.`;
+
 const toPathSet = (paths: string[]): Set<string> =>
     new Set(paths.map(path => normalizePath(path)));
 
