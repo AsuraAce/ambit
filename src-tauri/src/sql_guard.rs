@@ -9,27 +9,40 @@
 //! `ATTACH` can open and write any existing database and `VACUUM INTO` can
 //! create a file. Before the plugin sees such a call, every statement in the
 //! query is compiled — never run — on a separate read-only guard connection to
-//! the library: SQLite's own parser splits the statements, an authorizer refuses
-//! every `ATTACH` and `DETACH` (whatever form the filename takes), TEMP object
-//! creation, `load_extension()` and the directory pragmas, and a statement whose
-//! program contains the `Vacuum` opcode is refused (compiling `VACUUM` never
-//! reaches the authorizer). Any statement that fails to compile is refused too.
+//! the library. SQLite's own parser splits the statements; an authorizer
+//! refuses every `ATTACH` and `DETACH` (whatever form the filename takes),
+//! `load_extension()` and the directory pragmas, and makes every other pragma a
+//! no-op on the guard; and the compiled program is refused if it contains the
+//! `Vacuum` opcode (compiling `VACUUM` never reaches the authorizer) or a write
+//! transaction on the TEMP database. Any statement that fails to compile is
+//! refused too.
 //!
-//! So the pool never gains a second database or a TEMP object, the two kinds of
-//! per-connection state the guard could not see. Pragma and flag state can
-//! still differ between the pool and the guard, but none of it lets a statement
-//! reach another file: the refusals above depend only on the statement itself,
-//! triggers and views in `main` cannot name another database, and sqlx never
-//! enables extension loading.
+//! The TEMP-write check refuses every TEMP object, and also some statements
+//! that only touch the TEMP schema as a side effect: `ALTER TABLE … RENAME TO`,
+//! `RENAME COLUMN` and `DROP COLUMN` (SQLite rewrites `sqlite_temp_schema` in a
+//! nested parse) and `BEGIN IMMEDIATE` / `BEGIN EXCLUSIVE`. `ADD COLUMN` and a
+//! plain `BEGIN` pass. A frontend migration that needs a refused form must run
+//! in Rust instead.
+//!
+//! So the pool never gains a second database or a TEMP object. Pragma and flag
+//! state can still differ between the pool and the guard, but none of it lets a
+//! statement reach another file: the refusals above depend only on the
+//! statement itself, triggers and views in `main` cannot name another database,
+//! and sqlx never enables extension loading.
 //!
 //! Compiling is not running, so a later statement in one query that depends on
 //! an earlier statement's schema change is refused; the frontend sends one
-//! statement per call. The guard's schema copy can also lag the pool's. SQLite
-//! reloads it when a statement names a table or column it does not know, but a
-//! statement that compiles differently against the old copy (for example an
-//! INSERT into a table that was dropped and recreated with other columns) can
-//! be refused while the copy is stale. Every such case fails closed, and no
-//! frontend call drops and recreates a table.
+//! statement per call. The guard's schema copy can also lag the pool's: SQLite
+//! reloads it only when a statement names a table or column it does not know.
+//! - A statement that compiles differently against the old copy (for example an
+//!   INSERT into a table that was dropped and recreated with other columns) can
+//!   be refused while the copy is stale. That fails closed, and no frontend call
+//!   drops and recreates a table.
+//! - A trigger the pool created in an earlier call can be invisible to the
+//!   guard, so the guard does not check what that trigger does when it fires.
+//!   Nothing relies on it seeing triggers: trigger and view bodies in `main`
+//!   cannot name `temp` or another database, and the pool refuses
+//!   `load_extension()` because sqlx never enables extension loading.
 
 use rusqlite::{
     ffi,
@@ -563,6 +576,35 @@ mod tests {
         }
         // An index in temp must be on a temp table, so it cannot even compile.
         assert!(guard.check("CREATE INDEX temp.i ON images(path)").is_err());
+    }
+
+    #[test]
+    fn statements_that_write_the_temp_schema_as_a_side_effect_are_refused() {
+        // Not TEMP objects, but each compiles to a write transaction on the TEMP
+        // database too: the ALTERs rewrite sqlite_temp_schema in a nested parse,
+        // and BEGIN IMMEDIATE/EXCLUSIVE lock every database. The frontend sends
+        // none of them; a migration that needs one must run in Rust.
+        let guard = guard();
+        for sql in [
+            "ALTER TABLE images RENAME TO pictures",
+            "ALTER TABLE images RENAME COLUMN path TO file_path",
+            "ALTER TABLE images DROP COLUMN is_deleted",
+            "BEGIN IMMEDIATE",
+            "BEGIN EXCLUSIVE",
+        ] {
+            assert_eq!(
+                guard.check(sql),
+                Err(Refusal::Denied),
+                "{sql:?} must be refused"
+            );
+        }
+        for sql in [
+            "ALTER TABLE images ADD COLUMN is_pinned INTEGER DEFAULT 0",
+            "BEGIN",
+            "BEGIN DEFERRED",
+        ] {
+            assert_eq!(guard.check(sql), Ok(()), "{sql:?} must be allowed");
+        }
     }
 
     #[test]
