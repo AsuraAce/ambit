@@ -435,7 +435,7 @@ export const useCollectionStore = create<CollectionState>()(
                                 thumbnailHydrationPendingIds: Object.fromEntries(
                                     Object.entries(state.thumbnailHydrationPendingIds)
                                         .filter(([collectionId]) => !collectionBatch.some(collection => collection.id === collectionId))
-                                ) as Record<string, true>
+                                )
                             }));
 
                             await delay(COLLECTION_THUMBNAIL_YIELD_MS);

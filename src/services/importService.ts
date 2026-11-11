@@ -991,7 +991,7 @@ export async function processFoldersUnified(
 
 export const processWebFiles = async (files: File[]): Promise<ImportResult> => {
     const newImages: AIImage[] = [];
-    let skipped = 0;
+    const skipped = 0;
     let errors = 0;
 
     for (let i = 0; i < files.length; i++) {

@@ -376,7 +376,7 @@ export const parseExifData = (data: Uint8Array): string | null => {
                     // or \0\0\0\0\0\0\0\0 for undefined.
 
                     const encodingKey = textDecoder.decode(data.slice(dataOffset, dataOffset + 8));
-                    let start = dataOffset + 8;
+                    const start = dataOffset + 8;
 
                     if (encodingKey.startsWith('ASCII')) {
                         // It is ASCII (utf-8 compatible usually)
@@ -600,7 +600,7 @@ self.onmessage = async (e: MessageEvent) => {
     try {
         const metadata: Partial<ImageMetadata> = {};
         const extra: ParseResult['extra'] = {};
-        let isIntermediate = false;
+        const isIntermediate = false;
         if (chunks) {
             // 1. A1111 / SD.Next (Compatibility)
             if (chunks.parameters || chunks.Parameters || chunks.PARAMETERS) {

@@ -188,7 +188,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
                 showGrids: saved.showGrids, // Preserve
                 showIntermediates: saved.showIntermediates, // Preserve
                 showInvokeImageAssets: saved.showInvokeImageAssets // Preserve
-            } as FilterState;
+            };
 
             onUpdateCollectionFilters(activeSmartCol.id, mergedFilters);
 
@@ -219,7 +219,7 @@ export const FilterPanel: React.FC<FilterPanelProps> = ({
             }));
         } else {
             // Fallback
-            onSaveSmartCollection(activeSmartCol!.name, filters);
+            onSaveSmartCollection(activeSmartCol.name, filters);
         }
     };
 

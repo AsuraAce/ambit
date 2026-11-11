@@ -91,7 +91,7 @@ export const useImagesQuery = ({
         queryKey: imagesQueryKey,
         queryFn: async ({ pageParam }) => {
             if (useBrowserMocks) {
-                const cursor = pageParam as PaginationCursor | undefined;
+                const cursor = pageParam;
                 return searchBrowserMockImages(filters, sortOption, PAGE_SIZE, cursor?.id, { privacyEnabled, settings });
             }
 
@@ -130,7 +130,7 @@ export const useImagesQuery = ({
                 console.log(`[Perf] useImagesQuery: initial fetch ${elapsedMs}ms, returned ${images.length} images`);
                 return { images, totalCount, globalCount };
             } else {
-                const cursor = pageParam as PaginationCursor;
+                const cursor = pageParam;
                 const startedAt = performance.now();
                 const images = await searchImages(where, params, PAGE_SIZE, sortField, sortOrder, prioritizePinned, collectionId, loraName, cursor);
                 const elapsedMs = Math.round(performance.now() - startedAt);

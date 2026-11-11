@@ -157,7 +157,7 @@ export function parseA1111Parameters(text: string, defaultTool?: GeneratorTool):
     };
 
     const lines = text.split('\n').map(l => l.trim());
-    let positiveParts: string[] = [];
+    const positiveParts: string[] = [];
     let negativePrompt = "";
     let paramsLine = "";
     let state = 0; // 0: positive, 1: negative, 2: params

@@ -535,7 +535,7 @@ export const parsePersistedCollectionFilters = (filterState?: string | null): Fi
             return undefined;
         }
 
-        return createDefaultFilters(parsed as Partial<FilterState>);
+        return createDefaultFilters(parsed);
     } catch (error) {
         console.warn('[DB] Failed to parse collection filter state', error);
         return undefined;
@@ -1365,7 +1365,7 @@ export const getSmartCollectionSummaries = async (
                 generationTypes: [],
                 searchQuery: ''
             };
-            const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c as Collection]);
+            const { where, params } = buildSqlWhereClause(statsFilters, false, 'blur', [], [c]);
             return { id: c.id, where, params };
         });
 
@@ -1464,7 +1464,7 @@ export const getCollectionThumbnail = async (imageIds: string[]): Promise<string
         const BATCH_SIZE = 900;
         const normalizedIds = imageIds.map(normalizePath);
 
-        let candidates: Array<{ path: string | null, timestamp: number, is_pinned: number }> = [];
+        const candidates: Array<{ path: string | null, timestamp: number, is_pinned: number }> = [];
 
         for (let i = 0; i < normalizedIds.length; i += BATCH_SIZE) {
             const batch = normalizedIds.slice(i, i + BATCH_SIZE);

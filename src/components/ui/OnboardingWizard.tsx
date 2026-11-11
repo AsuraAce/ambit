@@ -435,7 +435,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                                                     error={verificationError}
                                                     isEnvKey={isEnvKey}
                                                     onTestEnvKey={() => {
-                                                        void handleVerifyKey(process.env.API_KEY!);
+                                                        void handleVerifyKey(process.env.API_KEY);
                                                     }}
                                                 />
                                                 <p className="text-xs leading-relaxed text-gray-500 dark:text-gray-400">

@@ -913,8 +913,8 @@ export const WorkflowInspector: React.FC<WorkflowInspectorProps> = ({ image, onW
 
                     if (isValidWorkflow) {
                         setLocalWorkflow(result);
-                        await updateImageWorkflow(image.id, result!); // result is checked in isValidWorkflow
-                        onWorkflowLoaded?.(result!);
+                        await updateImageWorkflow(image.id, result); // result is checked in isValidWorkflow
+                        onWorkflowLoaded?.(result);
                     } else {
                         // No workflow found - persist this so we hide the tab next time
                         console.log('[Workflow] No workflow found (or invalid graph), setting hasWorkflowHint=false for:', image.id);

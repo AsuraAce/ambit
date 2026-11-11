@@ -54,7 +54,7 @@ const scanOrigin = (
 ): Pick<ParseResult, 'detectedSourceKind' | 'photoMetadata' | 'photoMetadataError' | 'captureWallTimeMs' | 'thumbnailVersion'> => ({
     detectedSourceKind: metadata && hasGeneratedEvidence(metadata)
         ? 'generated'
-        : info.detectedSourceKind as SourceKind,
+        : info.detectedSourceKind,
     photoMetadata: info.photoMetadata ?? undefined,
     photoMetadataError: info.photoMetadataError ?? undefined,
     captureWallTimeMs: info.captureWallTimeMs ?? undefined,

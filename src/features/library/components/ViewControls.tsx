@@ -114,7 +114,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({
     const hasSettledCurrentOwnerScope = settledCountPresentation?.ownerPresentationKey === ownerPresentationKey;
     const isAwaitingFirstSettledCount = Boolean(isFiltering) && !showCountLoading && !hasSettledCurrentOwnerScope;
     const countPresentation = isFiltering && !showCountLoading && hasSettledCurrentOwnerScope
-        ? settledCountPresentation!
+        ? settledCountPresentation
         : { displayedCount, totalCount, scopeName, ownerPresentationKey };
 
     useEffect(() => {

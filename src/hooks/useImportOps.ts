@@ -451,7 +451,7 @@ export const useImportOps = ({
                 (current, total, message) => {
                     setImportProgressForRun(importRunId, { current, total, message });
                 },
-                variant as GeneratorTool | undefined,
+                variant,
                 abortCtrl.signal,
                 false,
                 isIncremental
