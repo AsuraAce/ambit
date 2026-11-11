@@ -228,7 +228,7 @@ export const PinnedShelf: React.FC<PinnedShelfProps> = ({
                 </div>
                 {/* Fade overlay for collapsed state if deeply overflowed */}
                 {isCollapsed && images.length > 5 && (
-                    <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-50 dark:from-[#111] to-transparent pointer-events-none opacity-80" />
+                    <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-50 dark:from-surface-shelf to-transparent pointer-events-none opacity-80" />
                 )}
 
                 {dragBox && (

@@ -46,6 +46,8 @@ const PROMPTS = [
 ];
 const INVOKE_IMAGE_CATEGORIES = ['general', 'user', 'control', 'mask', 'other', 'future-category', undefined] as const;
 
+// Token exception (docs/design-system.md): these hex values are mock image content and
+// user-selected collection colours in browser mock data, not application UI colours.
 const colorForIndex = (index: number): string => {
     const colors = ['#3b6f6a', '#8b5e34', '#5e6f9f', '#7b4f72', '#637047', '#9a5b54'];
     return colors[index % colors.length];

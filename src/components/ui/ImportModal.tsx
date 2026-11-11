@@ -94,7 +94,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                        className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0c0c0e]"
+                        className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-white/10 dark:bg-surface-modal"
                     >
                         {/* Header */}
                         <div className="px-6 py-5 border-b border-gray-100 dark:border-white/5 flex items-center justify-between bg-gradient-to-r from-transparent via-transparent to-sage-500/5">
@@ -168,7 +168,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                                 <div className="absolute inset-0 flex items-center">
                                     <div className="w-full border-t border-gray-100 dark:border-white/5" />
                                 </div>
-                                <span className="relative px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 bg-white dark:bg-[#0c0c0e]">or</span>
+                                <span className="relative px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 bg-white dark:bg-surface-modal">or</span>
                             </div>
 
                             {/* MANUAL IMPORT SECTION */}

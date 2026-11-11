@@ -607,7 +607,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                 {/* Main Canvas Area */}
                 <div
                     ref={containerRef}
-                    className="flex-1 flex overflow-hidden relative bg-[#050505] select-none"
+                    className="flex-1 flex overflow-hidden relative bg-surface-canvas select-none"
                     onWheel={handleWheel}
                     onMouseDown={handleMouseDown}
                     onDoubleClick={handleDoubleClick}
@@ -635,7 +635,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                                 <ImageContainer img={imageB} {...commonImageProps} />
                             </div>
                             <div
-                                className="absolute inset-0 flex items-center justify-center bg-[#050505] shadow-[2px_0_20px_rgba(0,0,0,0.8)]"
+                                className="absolute inset-0 flex items-center justify-center bg-surface-canvas shadow-[2px_0_20px_rgba(0,0,0,0.8)]"
                                 style={{ clipPath: sliderClipPath }}
                             >
                                 <ImageContainer img={imageA} {...commonImageProps} />
@@ -697,7 +697,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                     style={{ width: isPanelOpen ? `${panelWidth}px` : '0px' }}
                     aria-hidden={!isPanelOpen}
                     inert={isPanelOpen ? undefined : true}
-                    className={`bg-[#0a0a0a] border-l border-white/10 flex flex-col flex-shrink-0 relative shadow-2xl z-20 transition-all duration-500 ease-spring overflow-hidden ${isPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-20'}`}
+                    className={`bg-surface-panel border-l border-white/10 flex flex-col flex-shrink-0 relative shadow-2xl z-20 transition-all duration-500 ease-spring overflow-hidden ${isPanelOpen ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-20'}`}
                     onClick={e => e.stopPropagation()}
                 >
                     <div

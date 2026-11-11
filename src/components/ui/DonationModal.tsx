@@ -87,7 +87,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                                                 type="button"
                                                 onClick={() => provider.url && handleOpenLink(provider.url)}
                                                 className={`flex items-center justify-center gap-3 w-full py-3 rounded-xl font-bold transition-all shadow-lg hover:scale-[1.02] ${isKoFi
-                                                    ? 'bg-[#FF5E5B] hover:bg-[#ff4845] text-white'
+                                                    ? 'bg-kofi hover:bg-kofi-hover text-white'
                                                     : 'bg-gray-800 hover:bg-gray-700 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-gray-900'
                                                     }`}
                                             >

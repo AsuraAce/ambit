@@ -77,6 +77,8 @@ export const CollectionContextMenu: React.FC<CollectionContextMenuProps> = ({
     setMenuPos({ top, left });
   }, [x, y]);
 
+  // User-selected collection colours: a documented exception to the semantic palette
+  // (docs/design-system.md), so they use broad Tailwind hues rather than Ambit roles.
   const colors = [
     { id: 'red', class: 'bg-red-500' },
     { id: 'orange', class: 'bg-orange-500' },
