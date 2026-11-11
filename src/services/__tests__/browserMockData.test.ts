@@ -12,6 +12,8 @@ import {
     getBrowserMockImages,
     getBrowserMockScopeAvailability,
     getBrowserMockScopeCounts,
+    getBrowserMockInvokeMembershipSnapshot,
+    setBrowserMockInvokeMembershipSnapshot,
     removeBrowserMockImagesFromCollection,
     searchBrowserMockImages,
     updateBrowserMockImage,
@@ -730,4 +732,17 @@ describe('browserMockData filtering', () => {
             settings: expect.objectContaining({ librarySourceKind: 'photograph', libraryMediaType: 'image', viewerPreferredTab: 'details' }),
         }));
     });
+});
+
+
+it('stores source memberships separately so local edits cannot alter the reset snapshot', () => {
+    localStorage.clear();
+    upsertBrowserMockCollection({ id: 'invoke-reset-board', name: 'Board', source: 'invoke', imageIds: ['source-image'], invokeNameOverridden: false });
+    setBrowserMockInvokeMembershipSnapshot('invoke-reset-board', ['source-image']);
+    addBrowserMockImagesToCollection('invoke-reset-board', ['local-image']);
+    removeBrowserMockImagesFromCollection('invoke-reset-board', ['source-image']);
+    expect(getBrowserMockCollections().find(collection => collection.id === 'invoke-reset-board')?.imageIds).toEqual(['local-image']);
+    expect(getBrowserMockInvokeMembershipSnapshot('invoke-reset-board')).toEqual(['source-image']);
+    const stored = JSON.parse(localStorage.getItem('ambit_browser_mock_state_v1')!) as { invokeBoardMemberships: Record<string, string[]> };
+    expect(stored.invokeBoardMemberships['invoke-reset-board']).toEqual(['source-image']);
 });

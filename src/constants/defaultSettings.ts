@@ -16,7 +16,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maskingMode: 'blur',
   enableAI: false,
   aiThinkingMode: 'default',
-  syncBoardsToCollections: false,
+  syncBoardsToCollections: true,
   invokeSyncFavorites: true,
   invokeSyncBoards: true,
   importOrphans: false,
@@ -52,6 +52,9 @@ export const createDefaultAppSettings = (
       ? { ...DEFAULT_APP_SETTINGS.systemPrompts }
       : undefined,
     ...overrides,
+    invokeSyncBoards: overrides.invokeSyncBoards !== false,
+    // Compatibility only: historical scope snapshots retain their original evidence.
+    syncBoardsToCollections: overrides.invokeSyncBoards !== false,
   };
 
   settings.librarySourceKind = normalizeImageKindFilter(settings.librarySourceKind);

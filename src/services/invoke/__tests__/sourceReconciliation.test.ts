@@ -652,8 +652,54 @@ describe('reconcileInvokeSourceFacts', () => {
             onProgress: vi.fn(),
             signal: controller.signal,
         })).rejects.toThrow('Aborted');
+        expect(db.select).not.toHaveBeenCalled();
         expect(reconcileInvokeImageSources).not.toHaveBeenCalled();
     });
+
+    it.each(['inventory', 'facts', 'references'] as const)(
+        'preserves a completed %s write after cancellation and stops before any later stage',
+        async stage => {
+            const controller = new AbortController();
+            const db = createDb([{ image_name: 'asset.png', metadata_blob: {} }]);
+            let releaseWrite!: () => void;
+            const pendingWrite = new Promise<void>(resolve => { releaseWrite = resolve; });
+            const writeStarted = vi.fn();
+            const committedWrites: string[] = [];
+            const nativeWrite = stage === 'inventory'
+                ? reconcileInvokeOwnerInventory
+                : stage === 'facts' ? reconcileInvokeImageSources : replaceInvokeImageReferences;
+            nativeWrite.mockImplementationOnce(async () => {
+                writeStarted();
+                await pendingWrite;
+                committedWrites.push(stage);
+                return {
+                    status: 'ok',
+                    data: { activeUpdated: 1, removedUpdated: 0, sourcesReplaced: 1, referencesWritten: 0 },
+                };
+            });
+            const settled = vi.fn();
+            const operation = reconcileInvokeSourceFacts({
+                db: db as never,
+                columns: new Set(['metadata_json']),
+                pathResolver: createInvokeImagePathResolver(root, async () => ['outputs/images/asset.png']),
+                onProgress: vi.fn(),
+                signal: controller.signal,
+            }).finally(settled);
+            const rejection = expect(operation).rejects.toThrow('Aborted');
+            await vi.waitFor(() => expect(writeStarted).toHaveBeenCalledOnce());
+            controller.abort();
+            await Promise.resolve();
+            expect(settled).not.toHaveBeenCalled();
+
+            releaseWrite();
+            await rejection;
+
+            expect(committedWrites).toEqual([stage]);
+            if (stage === 'inventory') expect(reconcileInvokeImageSources).not.toHaveBeenCalled();
+            if (stage !== 'references') expect(replaceInvokeImageReferences).not.toHaveBeenCalled();
+            expect(db.select.mock.calls.filter(([sql]) => sql.includes('i.rowid > ?'))).toHaveLength(stage === 'inventory' ? 1 : 2);
+        }
+    );
 
     it('propagates native reconciliation failures', async () => {
         reconcileInvokeImageSources.mockResolvedValueOnce({

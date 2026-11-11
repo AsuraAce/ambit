@@ -10,6 +10,7 @@ interface OwnerScopeTransitionPresentationOptions {
     configuredRoot: string | null | undefined;
     ownerScopeState: InvokeOwnerScopeState;
     isInitialStartupPresentation: boolean;
+    isExplicitPreparation: boolean;
     onClearStaleView: () => void;
 }
 
@@ -26,6 +27,7 @@ export const useOwnerScopeTransitionPresentation = <T>({
     configuredRoot,
     ownerScopeState,
     isInitialStartupPresentation,
+    isExplicitPreparation,
     onClearStaleView,
 }: OwnerScopeTransitionPresentationOptions): OwnerScopeTransitionPresentation<T> => {
     const wasBlockingRef = React.useRef(false);
@@ -37,7 +39,8 @@ export const useOwnerScopeTransitionPresentation = <T>({
 
     const normalizedConfiguredRoot = normalizeInvokeRoot(configuredRoot);
     const applyingRoot = normalizeInvokeRoot(ownerScopeState.rootPath);
-    const isOwnerScopeAdmitted = isInvokeOwnerScopeAdmitted(configuredRoot, ownerScopeState);
+    // An accepted first connection can still be persisting its path. Keep it gated until admission.
+    const isOwnerScopeAdmitted = !isExplicitPreparation && isInvokeOwnerScopeAdmitted(configuredRoot, ownerScopeState);
     const isOwnerScopeBlocking = !isOwnerScopeAdmitted;
     const isRuntimeTransition = !isInitialStartupPresentation
         && ownerScopeState.status === 'applying'
@@ -47,11 +50,13 @@ export const useOwnerScopeTransitionPresentation = <T>({
     const scopeIdentity = ownerScopeState.scope?.mode === 'owner'
         ? ownerScopeState.scope.ownerId
         : (ownerScopeState.scope?.mode ?? 'none');
-    const isGateVisible = useDelayedBusyPresentation(isRuntimeTransition, {
+    const isDelayedGateVisible = useDelayedBusyPresentation(isRuntimeTransition && !isExplicitPreparation, {
         revealDelayMs: RUNTIME_OWNER_SCOPE_GRACE_MS,
         minimumVisibleMs: 0,
         resetKey: `${applyingRoot ?? 'unconfigured'}:${scopeIdentity}`,
     });
+    // Settings has closed for an explicit action: do not briefly expose the old gallery during the grace period.
+    const isGateVisible = isExplicitPreparation || isDelayedGateVisible;
     const isRetainingPreviousView = isRuntimeTransition && !isGateVisible;
 
     React.useEffect(() => {

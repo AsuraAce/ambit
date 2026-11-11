@@ -4,6 +4,8 @@ import { Folder, DatabaseZap, Palette, FlaskConical, Boxes } from 'lucide-react'
 import { AppSettings } from '../../../types';
 import { FoldersTab, InvokeAITab, A1111Tab, ComfyUITab, ResourcesTab } from './';
 import type { ImportResult } from '../../../services/importService';
+import type { InvokeConnectionDraftSession } from '../hooks/useInvokeConnectionDraft';
+import type { InvokeOwnerDiscoverySession } from '../hooks/useInvokeOwnerDiscovery';
 
 interface ConnectionsTabProps {
     settings: AppSettings;
@@ -12,6 +14,9 @@ interface ConnectionsTabProps {
     onScanFolder?: (folders: { path: string, variant?: string }[]) => Promise<ImportResult | void>;
     onInvokeSync?: () => Promise<void>; // Trigger InvokeAI database sync
     onClose?: () => void;
+    onInvokeAccepted?: () => void;
+    invokeDraftSession: InvokeConnectionDraftSession;
+    invokeOwnerDiscoverySession: InvokeOwnerDiscoverySession;
 }
 
 type ConnectionSubTab = 'folders' | 'resources' | 'invokeai' | 'a1111' | 'comfyui';
@@ -22,7 +27,10 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
     initialSubTab = 'folders',
     onScanFolder,
     onInvokeSync,
-    onClose
+    onClose,
+    onInvokeAccepted,
+    invokeDraftSession,
+    invokeOwnerDiscoverySession,
 }) => {
     const [activeTab, setActiveTab] = useState<ConnectionSubTab>(initialSubTab);
 
@@ -77,6 +85,9 @@ export const ConnectionsTab: React.FC<ConnectionsTabProps> = ({
                     <InvokeAITab
                         settings={settings}
                         setSettings={setSettings}
+                        draftSession={invokeDraftSession}
+                        ownerDiscoverySession={invokeOwnerDiscoverySession}
+                        onClose={onInvokeAccepted ?? onClose}
                     />
                 )}
                 {activeTab === 'a1111' && (
