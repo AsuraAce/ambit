@@ -322,8 +322,8 @@ export const useFoldersTabLogic = ({ settings, setSettings, onScanFolder, onInvo
                     return next;
                 });
             }
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- setSettings comes from SettingsModal and changes with onSave; adding it changes when this callback is recreated
         },
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- setSettings comes from SettingsModal and changes with onSave; adding it changes when this callback is recreated
         [settings.monitoredFolders, onScanFolder, onInvokeSync, addToast, updateFolderLastScanned, fetchCounts]
     );
 

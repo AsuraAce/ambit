@@ -38,8 +38,8 @@ export const useSelection = (filteredImages: AIImage[]) => {
                 setLastSelectedId(id);
                 setSelectedViewerIndex(index);
             }
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when the selection changes, as before
         },
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- kept so consumers get a new callback identity when the selection changes, as before
         [filteredImages, lastSelectedId, selectedIds]
     );
 

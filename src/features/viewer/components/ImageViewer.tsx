@@ -368,8 +368,8 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 else onClose();
             }
             if (key === 'z') setIsTheaterMode((p) => !p);
-            // eslint-disable-next-line react-hooks/exhaustive-deps -- lists ai.modalOpen and ai.closeModal, the members used; the ai object is new every render
         },
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- lists ai.modalOpen and ai.closeModal, the members used; the ai object is new every render
         [
             ai.modalOpen,
             ai.closeModal,
